@@ -21,7 +21,7 @@ const Settings: React.FC = () => {
     addUnit, updateUnit, removeUnit, 
     addSupplier, updateSupplier, removeSupplier,
     appSettings, updateAppSettings, clearAllData, connectionError,
-    users, addUser, updateUser, removeUser, user: currentUser
+    users, addUser, updateUser, removeUser, user: currentUser, logout
   } = useApp();
   
   const [activeTab, setActiveTab] = useState('general');
@@ -66,6 +66,11 @@ const Settings: React.FC = () => {
   const [newUnitName, setNewUnitName] = useState('');
   const [newSup, setNewSup] = useState({ name: '', contact: '', phone: '' });
 
+  // Password change state
+  const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
+  const [passError, setPassError] = useState('');
+  const [passSuccess, setPassSuccess] = useState('');
+
   useEffect(() => {
     setAppName(appSettings.name);
     setAppLogo(appSettings.logo);
@@ -75,7 +80,7 @@ const Settings: React.FC = () => {
   const handleSaveGeneral = (e: React.FormEvent) => {
     e.preventDefault();
     if (!appName.trim()) return;
-    updateAppSettings({ ...appSettings, name: appName, logo: appLogo });
+    updateAppSettings({ name: appName, logo: appLogo });
     alert("Đã cập nhật cấu hình ứng dụng!");
   };
 
@@ -316,6 +321,31 @@ const Settings: React.FC = () => {
     setIsUserModalOpen(false);
   };
 
+  const handleChangePassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPassError('');
+    setPassSuccess('');
+
+    if (passwords.current !== currentUser.password) {
+      setPassError('Mật khẩu hiện tại không chính xác.');
+      return;
+    }
+
+    if (passwords.new.length < 3) {
+      setPassError('Mật khẩu mới phải có ít nhất 3 ký tự.');
+      return;
+    }
+
+    if (passwords.new !== passwords.confirm) {
+      setPassError('Xác nhận mật khẩu mới không khớp.');
+      return;
+    }
+
+    updateUser({ ...currentUser, password: passwords.new });
+    setPassSuccess('Đã đổi mật khẩu thành công!');
+    setPasswords({ current: '', new: '', confirm: '' });
+  };
+
   const getRoleBadge = (role: Role) => {
     switch (role) {
       case Role.ADMIN: return <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-full text-[10px] font-bold">QUẢN TRỊ VIÊN</span>;
@@ -326,12 +356,20 @@ const Settings: React.FC = () => {
   };
 
   const tabs = [
-    { id: 'general', label: 'Chung', icon: SettingsIcon },
-    { id: 'warehouses', label: 'Kho bãi', icon: Building },
-    { id: 'master-data', label: 'Dữ liệu gốc', icon: Database },
-    { id: 'users', label: 'Người dùng', icon: Users },
-    { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle },
-  ];
+    { id: 'general', label: 'Chung', icon: SettingsIcon, roles: [Role.ADMIN] },
+    { id: 'warehouses', label: 'Kho bãi', icon: Building, roles: [Role.ADMIN] },
+    { id: 'master-data', label: 'Dữ liệu gốc', icon: Database, roles: [Role.ADMIN] },
+    { id: 'users', label: 'Người dùng', icon: Users, roles: [Role.ADMIN] },
+    { id: 'security', label: 'Bảo mật', icon: Shield },
+    { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle, roles: [Role.ADMIN] },
+  ].filter(tab => !tab.roles || tab.roles.includes(currentUser.role));
+
+  useEffect(() => {
+    // If current tab is not allowed, switch to security
+    if (!tabs.find(t => t.id === activeTab)) {
+      setActiveTab('security');
+    }
+  }, [currentUser.role]);
 
   return (
     <div className="space-y-6">
@@ -807,6 +845,85 @@ const Settings: React.FC = () => {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {activeTab === 'security' && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+               <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                  <h2 className="text-lg font-bold text-slate-800">Bảo mật tài khoản</h2>
+                  <p className="text-xs text-slate-500 font-medium">Thay đổi mật khẩu và quản lý đăng nhập.</p>
+               </div>
+               <div className="p-6 space-y-8">
+                  <form onSubmit={handleChangePassword} className="max-w-md space-y-4">
+                    {passError && (
+                      <div className="bg-red-50 border border-red-100 p-4 rounded-xl flex items-center gap-3 text-red-600">
+                        <AlertCircle size={18} />
+                        <p className="text-xs font-bold">{passError}</p>
+                      </div>
+                    )}
+                    {passSuccess && (
+                      <div className="bg-green-50 border border-green-100 p-4 rounded-xl flex items-center gap-3 text-green-600">
+                        <Save size={18} />
+                        <p className="text-xs font-bold">{passSuccess}</p>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mật khẩu hiện tại</label>
+                      <input 
+                        type="password" 
+                        required
+                        value={passwords.current}
+                        onChange={(e) => setPasswords({...passwords, current: e.target.value})}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-accent font-medium"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mật khẩu mới</label>
+                      <input 
+                        type="password" 
+                        required
+                        value={passwords.new}
+                        onChange={(e) => setPasswords({...passwords, new: e.target.value})}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-accent font-medium"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Xác nhận mật khẩu mới</label>
+                      <input 
+                        type="password" 
+                        required
+                        value={passwords.confirm}
+                        onChange={(e) => setPasswords({...passwords, confirm: e.target.value})}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-accent font-medium"
+                      />
+                    </div>
+
+                    <button 
+                      type="submit"
+                      className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition shadow-lg"
+                    >
+                      Cập nhật mật khẩu
+                    </button>
+                  </form>
+
+                  <div className="pt-8 border-t border-slate-100">
+                    <h3 className="text-sm font-bold text-slate-800 mb-2">Đăng xuất</h3>
+                    <p className="text-xs text-slate-500 mb-4">Kết thúc phiên làm việc hiện tại trên thiết bị này.</p>
+                    <button 
+                      onClick={() => {
+                        logout();
+                        window.location.href = '/login';
+                      }}
+                      className="px-6 py-3 bg-red-50 text-red-600 border border-red-100 rounded-xl font-bold hover:bg-red-600 hover:text-white transition"
+                    >
+                      Đăng xuất ngay
+                    </button>
+                  </div>
+               </div>
             </div>
           )}
 

@@ -14,7 +14,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
-  const { user, users, switchUser, warehouses, transactions, requests, appSettings } = useApp();
+  const { user, logout, warehouses, transactions, requests, appSettings } = useApp();
 
   const pendingTxCount = useMemo(() => {
     if (user.role === Role.ADMIN) {
@@ -57,13 +57,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
     { to: '/operations', icon: ArrowLeftRight, label: 'Nhập / Xuất', badge: pendingTxCount > 0 ? pendingTxCount : null, roles: [Role.ADMIN, Role.KEEPER] },
     { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
     { to: '/reports', icon: History, label: 'Báo cáo' },
+    { to: '/settings', icon: Settings, label: 'Cài đặt' },
   ];
 
   const filteredNavItems = navItems.filter(item => !item.roles || item.roles.includes(user.role));
-
-  if (user.role === Role.ADMIN) {
-    filteredNavItems.push({ to: '/settings', icon: Settings, label: 'Cấu hình' });
-  }
 
   const assignedWh = warehouses.find(w => w.id === user.assignedWarehouseId);
 
@@ -92,16 +89,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
                 <span className="truncate block font-bold text-white">{assignedWh.name}</span>
              </div>
            )}
-           <select 
-             className="w-full bg-slate-800 border-none text-[10px] text-slate-300 rounded p-1.5 outline-none cursor-pointer" 
-             value={user.id} 
-             onChange={(e) => {
-               const found = users.find(u => u.id === e.target.value);
-               if (found) switchUser(found);
+           <button 
+             onClick={() => {
+               logout();
+               window.location.href = '/login';
              }}
+             className="w-full mt-4 flex items-center justify-center gap-2 py-2 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all"
            >
-              {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
-           </select>
+             <LogOut size={14} /> Đăng xuất
+           </button>
         </div>
 
         <nav className="px-3 py-2 space-y-1">

@@ -13,7 +13,6 @@ import {
 } from '../constants';
 
 interface AppSettings {
-  id: string;
   name: string;
   logo: string;
 }
@@ -24,6 +23,8 @@ interface AppContextType {
   appSettings: AppSettings;
   setUser: (user: User) => void;
   switchUser: (user: User) => void;
+  login: (username: string, password: string) => Promise<User | null>;
+  logout: () => void;
   addUser: (user: User) => void;
   updateUser: (user: User) => void;
   removeUser: (userId: string) => void;
@@ -68,9 +69,12 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User>(MOCK_USERS[0]);
+  const [user, setUser] = useState<User>(() => {
+    const saved = localStorage.getItem('khoviet_user');
+    return saved ? JSON.parse(saved) : MOCK_USERS[0];
+  });
   const [users, setUsers] = useState<User[]>(isSupabaseConfigured ? [] : MOCK_USERS);
-  const [appSettings, setAppSettings] = useState<AppSettings>({ id: 'main-settings', name: 'KhoViet', logo: '' });
+  const [appSettings, setAppSettings] = useState<AppSettings>({ name: 'KhoViet', logo: '' });
   const [items, setItems] = useState<InventoryItem[]>(isSupabaseConfigured ? [] : MOCK_ITEMS);
   const [warehouses, setWarehouses] = useState<Warehouse[]>(MOCK_WAREHOUSES);
   const [suppliers, setSuppliers] = useState<Supplier[]>(isSupabaseConfigured ? [] : MOCK_SUPPLIERS);
@@ -459,16 +463,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: data.id,
           name: data.name,
           email: data.email,
+          username: data.username,
+          password: data.password,
           role: data.role,
           avatar: data.avatar,
           phone: data.phone,
           assigned_warehouse_id: data.assignedWarehouseId
-        };
-      } else if (table === 'app_settings') {
-        payload = {
-          id: data.id || 'main-settings',
-          name: data.name,
-          logo: data.logo
         };
       }
 
@@ -495,6 +495,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setActivities(prev => [newActivity, ...prev].slice(0, 50));
     syncToSupabase('activities', newActivity);
+  };
+
+  const login = async (username: string, password: string): Promise<User | null> => {
+    // In a real app, this would be a Supabase auth call or a database query
+    const foundUser = users.find(u => u.username === username && u.password === password);
+    if (foundUser) {
+      setUser(foundUser);
+      localStorage.setItem('khoviet_user', JSON.stringify(foundUser));
+      return foundUser;
+    }
+    return null;
+  };
+
+  const logout = () => {
+    localStorage.removeItem('khoviet_user');
+    // We don't set user to null because the app expects a user object. 
+    // We'll handle redirection in App.tsx
   };
 
   const switchUser = (newUser: User) => {
@@ -840,7 +857,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       user, users, appSettings, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
       categories, units, addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,
       addRequest, updateRequestStatus, logActivity, addCategory, updateCategory, removeCategory, addUnit, updateUnit, removeUnit, 
-      addSupplier, updateSupplier, removeSupplier, updateAppSettings, approvePartialTransaction, clearAllData, isLoading, isRefreshing, connectionError
+      addSupplier, updateSupplier, removeSupplier, updateAppSettings, approvePartialTransaction, clearAllData, 
+      login, logout, isLoading, isRefreshing, connectionError
     }}>
       {children}
     </AppContext.Provider>

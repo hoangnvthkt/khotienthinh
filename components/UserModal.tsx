@@ -15,6 +15,8 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
   const [formData, setFormData] = useState<Partial<User>>({
     name: '',
     email: '',
+    username: '',
+    password: '',
     phone: '',
     role: Role.EMPLOYEE,
     assignedWarehouseId: '',
@@ -24,7 +26,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
 
   useEffect(() => {
     if (userToEdit) {
-      setFormData(userToEdit);
+      setFormData({ ...userToEdit, password: '' });
     } else {
       setFormData({
         name: '',
@@ -43,18 +45,12 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     const newErrors: Record<string, string> = {};
     if (!formData.name?.trim()) newErrors.name = 'Vui lòng nhập họ tên';
     if (!formData.email?.trim()) newErrors.email = 'Vui lòng nhập email';
+    if (!formData.username?.trim()) newErrors.username = 'Vui lòng nhập tên đăng nhập';
+    if (!userToEdit && !formData.password?.trim()) newErrors.password = 'Vui lòng nhập mật khẩu';
     if (!formData.role) newErrors.role = 'Vui lòng chọn chức vụ';
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
-
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => setFormData({ ...formData, avatar: event.target?.result as string });
-    reader.readAsDataURL(file);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -65,6 +61,8 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
       id: userToEdit?.id || `u-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       name: formData.name || '',
       email: formData.email || '',
+      username: formData.username || '',
+      password: formData.password || userToEdit?.password || '',
       phone: formData.phone || '',
       role: formData.role as Role,
       avatar: formData.avatar || `https://i.pravatar.cc/150?u=${formData.email}`,
@@ -88,24 +86,6 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Avatar Upload */}
-          <div className="flex flex-col items-center gap-3 pb-4 border-b border-slate-50">
-            <div className="relative group">
-              <img 
-                src={formData.avatar || `https://i.pravatar.cc/150?u=${formData.email || 'default'}`} 
-                alt="Avatar" 
-                className="w-20 h-20 rounded-full object-cover border-4 border-slate-100 group-hover:opacity-75 transition-opacity" 
-              />
-              <label className="absolute inset-0 flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
-                <div className="bg-black/50 p-2 rounded-full text-white">
-                  <Save size={16} />
-                </div>
-                <input type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} />
-              </label>
-            </div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase">Nhấp vào ảnh để đổi Avatar</p>
-          </div>
-
           {/* Họ tên */}
           <div className="space-y-1">
             <label className="text-xs font-bold text-slate-500 uppercase flex items-center">
@@ -149,6 +129,38 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                 className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-accent"
                 placeholder="09xx xxx xxx"
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Username */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-500 uppercase flex items-center">
+                <UserIcon size={12} className="mr-1" /> Tên đăng nhập
+              </label>
+              <input 
+                type="text"
+                value={formData.username}
+                onChange={e => setFormData({ ...formData, username: e.target.value })}
+                className={`w-full p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-accent ${errors.username ? 'border-red-500' : 'border-slate-200'}`}
+                placeholder="username"
+              />
+              {errors.username && <p className="text-[10px] text-red-500 font-bold">{errors.username}</p>}
+            </div>
+
+            {/* Password */}
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-500 uppercase flex items-center">
+                <Shield size={12} className="mr-1" /> {userToEdit ? 'Mật khẩu mới (để trống nếu không đổi)' : 'Mật khẩu'}
+              </label>
+              <input 
+                type="password"
+                value={formData.password}
+                onChange={e => setFormData({ ...formData, password: e.target.value })}
+                className={`w-full p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-accent ${errors.password ? 'border-red-500' : 'border-slate-200'}`}
+                placeholder="••••••••"
+              />
+              {errors.password && <p className="text-[10px] text-red-500 font-bold">{errors.password}</p>}
             </div>
           </div>
 

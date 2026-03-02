@@ -9,32 +9,44 @@ import Settings from './pages/Settings';
 import RequestWorkflow from './pages/RequestWorkflow';
 import Audit from './pages/Audit';
 import Reports from './pages/Reports';
-import { AppProvider } from './context/AppContext';
+import Login from './pages/Login';
+import { AppProvider, useApp } from './context/AppContext';
 
-const Placeholder = ({ title }: { title: string }) => (
-  <div className="flex flex-col items-center justify-center h-full text-slate-400">
-    <h2 className="text-2xl font-bold mb-2">{title}</h2>
-    <p>Chức năng đang được phát triển.</p>
-  </div>
-);
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useApp();
+  const isAuthenticated = !!localStorage.getItem('khoviet_user');
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
+const AppRoutes: React.FC = () => {
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        <Route index element={<Dashboard />} />
+        <Route path="requests" element={<RequestWorkflow />} />
+        <Route path="inventory" element={<Inventory />} />
+        <Route path="operations" element={<Operations />} />
+        <Route path="audit" element={<Audit />} />
+        <Route path="reports" element={<Reports />} />
+        <Route path="users" element={<Navigate to="/settings" replace />} />
+        <Route path="settings" element={<Settings />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
+  );
+};
 
 const App: React.FC = () => {
   return (
     <AppProvider>
       <Router>
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="requests" element={<RequestWorkflow />} />
-            <Route path="inventory" element={<Inventory />} />
-            <Route path="operations" element={<Operations />} />
-            <Route path="audit" element={<Audit />} />
-            <Route path="reports" element={<Reports />} />
-            <Route path="users" element={<Navigate to="/settings" replace />} />
-            <Route path="settings" element={<Settings />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
+        <AppRoutes />
       </Router>
     </AppProvider>
   );

@@ -36,6 +36,8 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  username?: string; // Tên đăng nhập
+  password?: string; // Mật khẩu
   phone?: string; // SĐT nhân viên
   role: Role;
   avatar?: string;
