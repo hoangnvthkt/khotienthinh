@@ -1,6 +1,6 @@
 
 import React, { useMemo } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon, Bell
@@ -15,6 +15,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
+  const navigate = useNavigate();
   const { user, logout, warehouses, transactions, requests, appSettings, items } = useApp();
   const { isDark, toggleTheme } = useTheme();
 
@@ -106,7 +107,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
               {isDark ? <Sun size={15} /> : <Moon size={15} />}
             </button>
             <button
-              onClick={() => { logout(); window.location.href = '/login'; }}
+              onClick={() => { logout(); navigate('/login'); }}
               className="flex-1 flex items-center justify-center gap-2 py-2 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white hover:border-red-500 transition-all"
             >
               <LogOut size={13} /> Đăng xuất

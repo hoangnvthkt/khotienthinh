@@ -382,6 +382,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status
     };
     setActivities(prev => [newActivity, ...prev].slice(0, 50));
+    syncToSupabase('activities', newActivity);
   };
 
   const login = async (username: string, password: string): Promise<User | null> => {
@@ -606,16 +607,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const clearAllData = async () => {
-    setItems([]);
-    setTransactions([]);
-    setActivities([]);
-    setRequests([]);
+    if (!isSupabaseConfigured) {
+      setItems([]);
+      setTransactions([]);
+      setActivities([]);
+      setRequests([]);
+      return;
+    }
 
-    localStorage.removeItem('khoviet_items');
-    localStorage.removeItem('khoviet_transactions');
-    localStorage.removeItem('khoviet_activities');
-    localStorage.removeItem('khoviet_requests');
-    logActivity('SYSTEM', 'Xóa dữ liệu', 'Toàn bộ dữ liệu vật tư và giao dịch đã được xóa sạch', 'DANGER');
+    try {
+      setIsLoading(true);
+      // Delete all data from principal tables
+      await Promise.all([
+        supabase.from('items').delete().neq('id', '0'),
+        supabase.from('transactions').delete().neq('id', '0'),
+        supabase.from('activities').delete().neq('id', '0'),
+        supabase.from('requests').delete().neq('id', '0')
+      ]);
+
+      setItems([]);
+      setTransactions([]);
+      setActivities([]);
+      setRequests([]);
+
+      logActivity('SYSTEM', 'Xóa dữ liệu', 'Toàn bộ dữ liệu vật tư và giao dịch đã được xóa sạch trên Cloud', 'DANGER');
+    } catch (error) {
+      console.error("Error clearing all data:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const addWarehouse = (w: Warehouse) => {
