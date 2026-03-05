@@ -81,6 +81,7 @@ export interface InventoryItem {
   minStock: number;
   supplierId?: string; // Link to Supplier
   imageUrl?: string;
+  location?: string; // Vị trí trong kho, ví dụ: Kệ A-3, Ô 2
   stockByWarehouse: Record<string, number>; // warehouseId -> quantity
 }
 

@@ -1,17 +1,17 @@
 
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { 
-  FileText, Download, Calendar, Filter, 
-  ArrowDownLeft, ArrowUpRight, RotateCcw, 
-  Search, Building, Package, PieChart
+import {
+  FileText, Download, Calendar, Filter,
+  ArrowDownLeft, ArrowUpRight, RotateCcw,
+  Search, Building, Package, PieChart, Printer
 } from 'lucide-react';
 import { TransactionType, TransactionStatus, Role } from '../types';
 import * as XLSX from 'xlsx';
 
 const Reports: React.FC = () => {
-  const { items, transactions, warehouses, user } = useApp();
-  
+  const { items, transactions, warehouses, user, appSettings } = useApp();
+
   // State filter
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
@@ -41,7 +41,7 @@ const Reports: React.FC = () => {
       // Duyệt qua tất cả giao dịch của vật tư này
       transactions.forEach(tx => {
         if (tx.status !== TransactionStatus.COMPLETED) return;
-        
+
         const txDate = new Date(tx.date);
         const txItem = tx.items.find(i => i.itemId === item.id);
         if (!txItem) return;
@@ -49,10 +49,10 @@ const Reports: React.FC = () => {
         const qty = txItem.quantity;
 
         // Kiểm tra xem giao dịch có thuộc kho đang lọc không
-        const isRelatedToWh = selectedWh === 'ALL' || 
-                             tx.targetWarehouseId === selectedWh || 
-                             tx.sourceWarehouseId === selectedWh;
-        
+        const isRelatedToWh = selectedWh === 'ALL' ||
+          tx.targetWarehouseId === selectedWh ||
+          tx.sourceWarehouseId === selectedWh;
+
         if (!isRelatedToWh) return;
 
         // Logic tính toán
@@ -69,8 +69,8 @@ const Reports: React.FC = () => {
             }
             // Nếu ALL, Transfer không làm thay đổi tổng tồn hệ thống
           } else if (tx.type === TransactionType.ADJUSTMENT) {
-             // Giả định Adjustment trong db demo là nhập (+), bạn có thể tùy biến
-             if (tx.targetWarehouseId === selectedWh || selectedWh === 'ALL') openingBalance += qty;
+            // Giả định Adjustment trong db demo là nhập (+), bạn có thể tùy biến
+            if (tx.targetWarehouseId === selectedWh || selectedWh === 'ALL') openingBalance += qty;
           }
         } else if (txDate >= start && txDate <= end) {
           // Tính phát sinh TRONG kỳ
@@ -86,7 +86,7 @@ const Reports: React.FC = () => {
               if (tx.sourceWarehouseId === selectedWh) outTransfer += qty;
             }
           } else if (tx.type === TransactionType.ADJUSTMENT) {
-             inAdjustment += qty;
+            inAdjustment += qty;
           }
         }
       });
@@ -112,8 +112,8 @@ const Reports: React.FC = () => {
         closing: closingBalance,
         value: closingBalance * item.priceIn
       };
-    }).filter(row => 
-      row.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    }).filter(row =>
+      row.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       row.sku.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [items, transactions, startDate, endDate, selectedWh, searchTerm]);
@@ -160,12 +160,20 @@ const Reports: React.FC = () => {
           <h1 className="text-2xl font-black text-slate-800 tracking-tight">Báo cáo Xuất - Nhập - Tồn</h1>
           <p className="text-sm text-slate-500 font-medium">Thống kê chi tiết biến động vật tư theo thời gian.</p>
         </div>
-        <button 
-          onClick={handleExportExcel}
-          className="flex items-center px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition shadow-lg shadow-emerald-500/20 font-bold text-sm"
-        >
-          <Download size={18} className="mr-2" /> Xuất Excel
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => window.print()}
+            className="flex items-center px-4 py-2.5 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition shadow-lg shadow-slate-900/20 font-bold text-sm"
+          >
+            <Printer size={18} className="mr-2" /> In PDF
+          </button>
+          <button
+            onClick={handleExportExcel}
+            className="flex items-center px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition shadow-lg shadow-emerald-500/20 font-bold text-sm"
+          >
+            <Download size={18} className="mr-2" /> Xuất Excel
+          </button>
+        </div>
       </div>
 
       {/* Filter Bar */}
@@ -175,12 +183,12 @@ const Reports: React.FC = () => {
             <Calendar size={12} className="mr-1" /> Khoảng thời gian
           </label>
           <div className="flex items-center gap-2">
-            <input 
+            <input
               type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
               className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-accent"
             />
             <span className="text-slate-400 font-bold">→</span>
-            <input 
+            <input
               type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
               className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-accent"
             />
@@ -191,7 +199,7 @@ const Reports: React.FC = () => {
           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
             <Building size={12} className="mr-1" /> Kho lưu trữ
           </label>
-          <select 
+          <select
             disabled={!isAdmin && !isAccountant}
             value={selectedWh} onChange={e => setSelectedWh(e.target.value)}
             className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-accent disabled:opacity-60"
@@ -205,7 +213,7 @@ const Reports: React.FC = () => {
           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
             <Search size={12} className="mr-1" /> Tìm vật tư
           </label>
-          <input 
+          <input
             type="text" placeholder="Tên hoặc mã SKU..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
             className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-accent"
           />
@@ -215,21 +223,21 @@ const Reports: React.FC = () => {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center border border-blue-100"><PieChart size={24}/></div>
+          <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center border border-blue-100"><PieChart size={24} /></div>
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase">Giá trị tồn cuối kỳ</p>
             <p className="text-lg font-black text-slate-800">{summary.totalValue.toLocaleString()} ₫</p>
           </div>
         </div>
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center border border-emerald-100"><ArrowDownLeft size={24}/></div>
+          <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center border border-emerald-100"><ArrowDownLeft size={24} /></div>
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase">Tổng nhập trong kỳ</p>
             <p className="text-lg font-black text-emerald-600">{summary.totalIn.toLocaleString()}</p>
           </div>
         </div>
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-xl flex items-center justify-center border border-orange-100"><ArrowUpRight size={24}/></div>
+          <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-xl flex items-center justify-center border border-orange-100"><ArrowUpRight size={24} /></div>
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase">Tổng xuất trong kỳ</p>
             <p className="text-lg font-black text-orange-600">{summary.totalOut.toLocaleString()}</p>

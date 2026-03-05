@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { useToast } from '../context/ToastContext';
 import { Search, Filter, Plus, QrCode, Upload, FileSpreadsheet, Trash2, MoreHorizontal, ShieldAlert, AlertTriangle } from 'lucide-react';
 import ScannerModal from '../components/ScannerModal';
 import AddInventoryModal from '../components/AddInventoryModal';
@@ -13,20 +14,21 @@ import { InventoryItem, Role, Transaction, TransactionType, TransactionStatus } 
 const Inventory: React.FC = () => {
   const location = useLocation();
   const { items, warehouses, addItems, addItem, removeItem, addTransaction, user, transactions, categories, units } = useApp();
+  const toast = useToast();
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   const isKeeper = user.role === Role.KEEPER;
   const isAdmin = user.role === Role.ADMIN;
-  
+
   // Khởi tạo filter kho
   const [filterWarehouse, setFilterWarehouse] = useState('all');
   const [showLowStockOnly, setShowLowStockOnly] = useState(false);
 
   useEffect(() => {
     if (isKeeper && user.assignedWarehouseId) {
-        setFilterWarehouse(user.assignedWarehouseId);
+      setFilterWarehouse(user.assignedWarehouseId);
     }
-    
+
     // Handle filter from dashboard
     if (location.state?.filter === 'low') {
       setShowLowStockOnly(true);
@@ -41,37 +43,37 @@ const Inventory: React.FC = () => {
   // Logic lọc vật tư theo yêu cầu bảo mật mới
   const filteredItems = useMemo(() => {
     return items.filter(item => {
-      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                            item.sku.toLowerCase().includes(searchTerm.toLowerCase());
-      
+      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.sku.toLowerCase().includes(searchTerm.toLowerCase());
+
       let matchesFilter = true;
-      
+
       // Nếu là thủ kho, chỉ thấy vật tư có trong kho mình
       if (isKeeper && user.assignedWarehouseId) {
-          const hasStock = (item.stockByWarehouse[user.assignedWarehouseId] || 0) > 0;
-          matchesFilter = hasStock;
+        const hasStock = (item.stockByWarehouse[user.assignedWarehouseId] || 0) > 0;
+        matchesFilter = hasStock;
       } else if (filterWarehouse !== 'all') {
-          // Nếu là Admin nhưng đang chọn lọc 1 kho cụ thể
-          matchesFilter = (item.stockByWarehouse[filterWarehouse] || 0) > 0;
+        // Nếu là Admin nhưng đang chọn lọc 1 kho cụ thể
+        matchesFilter = (item.stockByWarehouse[filterWarehouse] || 0) > 0;
       }
 
       // Lọc cảnh báo tồn
       if (showLowStockOnly) {
-        const stock = filterWarehouse === 'all' 
+        const stock = filterWarehouse === 'all'
           ? Object.values(item.stockByWarehouse).reduce((a, b) => (a as number) + (b as number), 0)
           : (item.stockByWarehouse[filterWarehouse] || 0);
         matchesFilter = matchesFilter && stock <= item.minStock;
       }
-      
+
       return matchesSearch && matchesFilter;
     });
   }, [items, searchTerm, isKeeper, user, filterWarehouse, showLowStockOnly]);
 
   const getDisplayStock = (item: InventoryItem): number => {
-     if (filterWarehouse === 'all') {
-        return Object.values(item.stockByWarehouse).reduce((a, b) => (a as number) + (b as number), 0);
-     }
-     return item.stockByWarehouse[filterWarehouse] || 0;
+    if (filterWarehouse === 'all') {
+      return Object.values(item.stockByWarehouse).reduce((a, b) => (a as number) + (b as number), 0);
+    }
+    return item.stockByWarehouse[filterWarehouse] || 0;
   };
 
   const handleScanResult = (sku: string) => {
@@ -107,7 +109,7 @@ const Inventory: React.FC = () => {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
       const rows = data.slice(1) as any[];
-      
+
       const newItemsToCreate: InventoryItem[] = [];
       const stockRequestsByWh: Record<string, { itemId: string, quantity: number, price: number }[]> = {};
       const errors: string[] = [];
@@ -154,7 +156,7 @@ const Inventory: React.FC = () => {
         // Nếu qua được các bước trên thì mới xử lý tiếp
         // Kiểm tra trong danh mục chính
         const existingItem = items.find(i => i.sku === sku);
-        
+
         // Kiểm tra trong các phiếu đang chờ duyệt (để tránh tạo trùng SKU nếu import nhiều lần)
         const pendingItemInTxs = transactions
           .filter(t => t.status === TransactionStatus.PENDING && t.pendingItems)
@@ -176,12 +178,12 @@ const Inventory: React.FC = () => {
             itemId = `it-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
             const newItem: InventoryItem = {
               id: itemId,
-              sku: sku, 
-              name: row[1] || '', 
-              category: row[2] || '', 
+              sku: sku,
+              name: row[1] || '',
+              category: row[2] || '',
               unit: row[3] || '',
-              priceIn: Number(row[4]) || 0, 
-              priceOut: Number(row[5]) || 0, 
+              priceIn: Number(row[4]) || 0,
+              priceOut: Number(row[5]) || 0,
               minStock: Number(row[6]) || 0,
               stockByWarehouse: {}
             };
@@ -194,18 +196,21 @@ const Inventory: React.FC = () => {
           stockRequestsByWh[warehouseId].push({ itemId, quantity: initialQty, price: Number(row[4]) || 0 });
         }
       });
-      
+
       if (errors.length > 0) {
-        alert(`Có lỗi xảy ra khi nhập dữ liệu:\n\n${errors.slice(0, 10).join('\n')}${errors.length > 10 ? '\n...' : ''}\n\nVui lòng kiểm tra lại danh mục, đơn vị tính và tên kho.`);
+        toast.error(
+          `Có ${errors.length} lỗi dữ liệu`,
+          errors.slice(0, 3).join(' | ') + (errors.length > 3 ? ` (+${errors.length - 3} lỗi khác)` : '')
+        );
         if (newItemsToCreate.length === 0 && Object.keys(stockRequestsByWh).length === 0) return;
       }
-      
+
       // Không gọi addItems ngay lập tức nữa
 
       // Tạo các phiếu nhập kho cho từng kho
       Object.entries(stockRequestsByWh).forEach(([whId, itemsInWh]) => {
         // Lọc ra những metadata của các item mới có trong phiếu này
-        const pendingItemsForThisTx = newItemsToCreate.filter(ni => 
+        const pendingItemsForThisTx = newItemsToCreate.filter(ni =>
           itemsInWh.some(ti => ti.itemId === ni.id)
         );
 
@@ -225,8 +230,8 @@ const Inventory: React.FC = () => {
         };
         addTransaction(tx);
       });
-      
-      alert(`Đã gửi ${Object.keys(stockRequestsByWh).length} yêu cầu nhập kho chờ Admin phê duyệt.`);
+
+      toast.success('Import thành công', `Đã gửi ${Object.keys(stockRequestsByWh).length} yêu cầu nhập kho chờ Admin phê duyệt.`);
     };
     reader.readAsBinaryString(file);
   };
@@ -240,15 +245,15 @@ const Inventory: React.FC = () => {
 
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
         <div>
-           <h1 className="text-2xl font-black text-slate-800 tracking-tight">Kho & Vật tư</h1>
-           {isKeeper && (
-              <div className="flex items-center gap-2 mt-1 text-accent font-black uppercase text-[10px] tracking-widest bg-blue-50 px-2 py-1 rounded-lg border border-blue-100">
-                 <ShieldAlert size={12} />
-                 Kho quản lý: {warehouses.find(w => w.id === user.assignedWarehouseId)?.name}
-              </div>
-           )}
+          <h1 className="text-2xl font-black text-slate-800 tracking-tight">Kho & Vật tư</h1>
+          {isKeeper && (
+            <div className="flex items-center gap-2 mt-1 text-accent font-black uppercase text-[10px] tracking-widest bg-blue-50 px-2 py-1 rounded-lg border border-blue-100">
+              <ShieldAlert size={12} />
+              Kho quản lý: {warehouses.find(w => w.id === user.assignedWarehouseId)?.name}
+            </div>
+          )}
         </div>
-        
+
         <div className="flex flex-wrap gap-2 w-full xl:w-auto">
           {isAdmin && (
             <div className="flex gap-2 w-full sm:w-auto">
@@ -262,15 +267,15 @@ const Inventory: React.FC = () => {
             </div>
           )}
           <div className="flex gap-2 w-full sm:w-auto">
-             <button onClick={() => setScannerOpen(true)} className="flex-1 sm:flex-none flex items-center justify-center px-6 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition text-[10px] font-black uppercase tracking-widest">
-               <QrCode className="w-4 h-4 mr-2" /> Quét QR
-             </button>
-             
-             {(isAdmin || user.role === Role.KEEPER) && (
-               <button onClick={() => setAddModalOpen(true)} className="flex-1 sm:flex-none flex items-center justify-center px-6 py-2 bg-accent text-white rounded-xl hover:bg-blue-700 transition text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20">
-                 <Plus className="w-4 h-4 mr-2" /> Thêm mới
-               </button>
-             )}
+            <button onClick={() => setScannerOpen(true)} className="flex-1 sm:flex-none flex items-center justify-center px-6 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition text-[10px] font-black uppercase tracking-widest">
+              <QrCode className="w-4 h-4 mr-2" /> Quét QR
+            </button>
+
+            {(isAdmin || user.role === Role.KEEPER) && (
+              <button onClick={() => setAddModalOpen(true)} className="flex-1 sm:flex-none flex items-center justify-center px-6 py-2 bg-accent text-white rounded-xl hover:bg-blue-700 transition text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20">
+                <Plus className="w-4 h-4 mr-2" /> Thêm mới
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -278,8 +283,8 @@ const Inventory: React.FC = () => {
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row gap-4">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-          <input 
-            type="text" placeholder="Tìm theo tên, mã SKU..." 
+          <input
+            type="text" placeholder="Tìm theo tên, mã SKU..."
             className="w-full pl-10 pr-4 py-3 text-sm border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-accent font-medium bg-slate-50/50"
             value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -287,7 +292,7 @@ const Inventory: React.FC = () => {
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="w-full md:w-64 relative">
             <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-            <select 
+            <select
               disabled={isKeeper} // Khóa nếu là thủ kho
               className="w-full pl-9 pr-8 py-3 text-sm border border-slate-200 rounded-xl appearance-none bg-slate-50/50 outline-none focus:ring-2 focus:ring-accent disabled:opacity-70 font-black uppercase tracking-tighter"
               value={filterWarehouse} onChange={(e) => setFilterWarehouse(e.target.value)}
@@ -296,7 +301,7 @@ const Inventory: React.FC = () => {
               {warehouses.map(wh => <option key={wh.id} value={wh.id}>{wh.name}</option>)}
             </select>
           </div>
-          <button 
+          <button
             onClick={() => setShowLowStockOnly(!showLowStockOnly)}
             className={`flex items-center justify-center px-4 py-3 rounded-xl border transition-all text-[10px] font-black uppercase tracking-widest ${showLowStockOnly ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-slate-200 text-slate-400'}`}
           >
@@ -328,7 +333,7 @@ const Inventory: React.FC = () => {
                   <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
                     <td className="p-4 font-mono text-slate-400 font-bold text-xs">{item.sku}</td>
                     <td className="p-4 font-black text-slate-800 cursor-pointer hover:text-accent" onClick={() => setSelectedItem(item)}>
-                       <div className="truncate max-w-[200px]">{item.name}</div>
+                      <div className="truncate max-w-[200px]">{item.name}</div>
                     </td>
                     <td className="p-4 text-slate-500 font-medium">{item.category}</td>
                     <td className="p-4 text-right">
@@ -345,7 +350,7 @@ const Inventory: React.FC = () => {
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-1">
                         {isAdmin && (
-                          <button 
+                          <button
                             onClick={(e) => { e.stopPropagation(); setItemToDelete(item); }}
                             className="p-2 text-slate-300 hover:text-red-600 transition-colors"
                           >

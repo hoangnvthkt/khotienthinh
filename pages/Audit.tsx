@@ -1,8 +1,9 @@
 
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { 
-  ClipboardCheck, Search, QrCode, Save, AlertCircle, 
+import { useToast } from '../context/ToastContext';
+import {
+  ClipboardCheck, Search, QrCode, Save, AlertCircle,
   CheckCircle2, History, Warehouse as WarehouseIcon,
   ArrowRight, Package, Info
 } from 'lucide-react';
@@ -11,10 +12,11 @@ import ScannerModal from '../components/ScannerModal';
 
 const Audit: React.FC = () => {
   const { items, warehouses, user, addTransaction } = useApp();
+  const toast = useToast();
   const [selectedWhId, setSelectedWhId] = useState<string>(user.assignedWarehouseId || '');
   const [searchTerm, setSearchTerm] = useState('');
   const [isScannerOpen, setScannerOpen] = useState(false);
-  
+
   // State for audit session
   const [auditData, setAuditData] = useState<Record<string, number>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -23,8 +25,8 @@ const Audit: React.FC = () => {
   const filteredItems = useMemo(() => {
     if (!selectedWhId) return [];
     return items.filter(item => {
-      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                            item.sku.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.sku.toLowerCase().includes(searchTerm.toLowerCase());
       return matchesSearch;
     });
   }, [items, searchTerm, selectedWhId]);
@@ -49,17 +51,17 @@ const Audit: React.FC = () => {
 
   const handleSaveAudit = async () => {
     if (!selectedWhId || Object.keys(auditData).length === 0 || isAccountant) return;
-    
+
     setIsSaving(true);
-    
+
     // Create adjustment transactions for each item audited
     const now = new Date().toISOString();
-    
+
     const transactionItems = Object.entries(auditData).map(([itemId, actual]) => {
       const item = items.find(i => i.id === itemId);
       const system = (item?.stockByWarehouse[selectedWhId] || 0) as number;
       const delta = (actual as number) - system;
-      
+
       return {
         itemId,
         quantity: delta, // Store the delta
@@ -80,11 +82,12 @@ const Audit: React.FC = () => {
     };
 
     addTransaction(newTx);
-    
+
     setTimeout(() => {
       setIsSaving(false);
       setShowSuccess(true);
       setAuditData({});
+      toast.success('Kiểm kê thành công', 'Dữ liệu tồn kho đã được điều chỉnh.');
       setTimeout(() => setShowSuccess(false), 3000);
     }, 1000);
   };
@@ -92,7 +95,7 @@ const Audit: React.FC = () => {
   const stats = useMemo(() => {
     const itemsAudited = Object.keys(auditData).length;
     let discrepancies = 0;
-    
+
     Object.entries(auditData).forEach(([itemId, actual]) => {
       const item = items.find(i => i.id === itemId);
       const system = item?.stockByWarehouse[selectedWhId] || 0;
@@ -113,7 +116,7 @@ const Audit: React.FC = () => {
         </div>
         <div className="flex gap-2">
           {!isAccountant && (
-            <button 
+            <button
               disabled={Object.keys(auditData).length === 0 || isSaving}
               onClick={handleSaveAudit}
               className="flex items-center px-6 py-2.5 bg-accent text-white rounded-xl hover:bg-blue-700 transition font-black uppercase text-[10px] tracking-widest shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:shadow-none"
@@ -139,7 +142,7 @@ const Audit: React.FC = () => {
             </h3>
             <div>
               <label className="block text-[10px] font-black uppercase text-slate-500 mb-2">Chọn kho kiểm kê</label>
-              <select 
+              <select
                 value={selectedWhId}
                 onChange={(e) => {
                   setSelectedWhId(e.target.value);
@@ -198,14 +201,14 @@ const Audit: React.FC = () => {
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-              <input 
-                type="text" placeholder="Tìm vật tư để kiểm kê..." 
+              <input
+                type="text" placeholder="Tìm vật tư để kiểm kê..."
                 className="w-full pl-10 pr-4 py-3 text-sm border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-accent font-medium bg-slate-50/50"
                 value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
                 disabled={!selectedWhId}
               />
             </div>
-            <button 
+            <button
               onClick={() => setScannerOpen(true)}
               disabled={!selectedWhId}
               className="flex items-center justify-center px-6 py-3 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
@@ -238,7 +241,7 @@ const Audit: React.FC = () => {
                       const actualStock = auditData[item.id];
                       const hasInput = actualStock !== undefined;
                       const diff = hasInput ? actualStock - systemStock : 0;
-                      
+
                       return (
                         <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${hasInput ? 'bg-blue-50/30' : ''}`}>
                           <td className="p-4">
@@ -247,7 +250,7 @@ const Audit: React.FC = () => {
                           </td>
                           <td className="p-4 text-center font-black text-slate-500">{systemStock}</td>
                           <td className="p-4 text-center">
-                            <input 
+                            <input
                               type="number"
                               min="0"
                               placeholder={isAccountant ? "Chỉ xem" : "Nhập số..."}

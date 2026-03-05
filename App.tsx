@@ -10,16 +10,17 @@ import RequestWorkflow from './pages/RequestWorkflow';
 import Audit from './pages/Audit';
 import Reports from './pages/Reports';
 import Login from './pages/Login';
-import { AppProvider, useApp } from './context/AppContext';
+import { AppProvider } from './context/AppContext';
+import { ToastProvider } from './context/ToastContext';
+import { ThemeProvider } from './context/ThemeContext';
+import ErrorBoundary from './components/ErrorBoundary';
+import NotFound from './pages/NotFound';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useApp();
   const isAuthenticated = !!localStorage.getItem('khoviet_user');
-  
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
-  
   return <>{children}</>;
 };
 
@@ -36,7 +37,7 @@ const AppRoutes: React.FC = () => {
         <Route path="reports" element={<Reports />} />
         <Route path="users" element={<Navigate to="/settings" replace />} />
         <Route path="settings" element={<Settings />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
   );
@@ -44,11 +45,17 @@ const AppRoutes: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <AppProvider>
-      <Router>
-        <AppRoutes />
-      </Router>
-    </AppProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <ToastProvider>
+          <AppProvider>
+            <Router>
+              <AppRoutes />
+            </Router>
+          </AppProvider>
+        </ToastProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 };
 

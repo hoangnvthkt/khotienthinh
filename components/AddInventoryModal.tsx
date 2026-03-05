@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Save, ShieldAlert, Truck } from 'lucide-react';
+import { X, Save, ShieldAlert, Truck, MapPin } from 'lucide-react';
 import { InventoryItem, Role, Transaction, TransactionType, TransactionStatus } from '../types';
 import { useApp } from '../context/AppContext';
+import { useToast } from '../context/ToastContext';
 
 interface AddInventoryModalProps {
   isOpen: boolean;
@@ -12,7 +13,8 @@ interface AddInventoryModalProps {
 
 const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, onAdd }) => {
   const { warehouses, categories, units, suppliers, user, addTransaction, logActivity } = useApp();
-  
+  const toast = useToast();
+
   const [formData, setFormData] = useState({
     sku: '',
     name: '',
@@ -22,6 +24,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
     priceIn: 0,
     priceOut: 0,
     minStock: 0,
+    location: '',
     initialWarehouseId: '',
     initialStock: 0,
   });
@@ -40,7 +43,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     const numberFields = ['priceIn', 'priceOut', 'minStock', 'initialStock'];
-    
+
     setFormData(prev => ({
       ...prev,
       [name]: numberFields.includes(name) ? Number(value) : value
@@ -50,7 +53,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.sku || !formData.name || !formData.category || !formData.unit) {
-      alert('Vui lòng nhập đầy đủ thông tin bắt buộc (Mã, Tên, Danh mục, Đơn vị)');
+      toast.error('Thiếu thông tin', 'Vui lòng nhập đầy đủ: Mã SKU, Tên, Danh mục, Đơn vị tính');
       return;
     }
 
@@ -65,7 +68,8 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
       priceIn: formData.priceIn,
       priceOut: formData.priceOut,
       minStock: formData.minStock,
-      stockByWarehouse: {} 
+      location: formData.location || undefined,
+      stockByWarehouse: {}
     };
 
     onAdd(newItem);
@@ -86,21 +90,19 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
         status: status,
         note: `Nhập kho khởi tạo cho vật tư mới: ${newItem.name}`
       };
-      
+
       addTransaction(pendingTx);
-      
       logActivity('REQUEST', 'Đề xuất vật tư mới', `Tạo vật tư "${newItem.name}" và đề xuất nhập ${formData.initialStock} ${newItem.unit} vào kho.`, 'INFO');
-      alert(`Đã tạo danh mục vật tư. Số lượng ${formData.initialStock} đang chờ Admin phê duyệt để chính thức vào kho.`);
+      toast.success('Đã tạo vật tư', `Số lượng ${formData.initialStock} ${newItem.unit} đang chờ Admin phê duyệt để vào kho.`);
     } else {
       logActivity('INVENTORY', 'Thêm danh mục', `Đã thêm vật tư mới "${newItem.name}" vào hệ thống.`, 'SUCCESS');
-      alert('Đã thêm vật tư mới vào danh mục thành công.');
+      toast.success('Thêm vật tư thành công', `"${newItem.name}" đã được thêm vào danh mục.`);
     }
 
     onClose();
-    // Reset form
-    setFormData({ 
+    setFormData({
       sku: '', name: '', category: '', unit: '', supplierId: '',
-      priceIn: 0, priceOut: 0, minStock: 0,
+      priceIn: 0, priceOut: 0, minStock: 0, location: '',
       initialWarehouseId: '', initialStock: 0
     });
   };
@@ -121,12 +123,12 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
             <X size={24} />
           </button>
         </div>
-        
+
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">Mã SKU <span className="text-red-500">*</span></label>
-              <input 
+              <input
                 type="text" name="sku" value={formData.sku} onChange={handleChange}
                 placeholder="VD: STEEL-001"
                 className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none font-mono"
@@ -136,7 +138,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">Tên vật tư <span className="text-red-500">*</span></label>
-              <input 
+              <input
                 type="text" name="name" value={formData.name} onChange={handleChange}
                 placeholder="VD: Thép cuộn phi 6"
                 className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none"
@@ -146,7 +148,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">Danh mục <span className="text-red-500">*</span></label>
-              <select 
+              <select
                 name="category" value={formData.category} onChange={handleChange}
                 className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white"
                 required
@@ -158,7 +160,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">Đơn vị tính <span className="text-red-500">*</span></label>
-              <select 
+              <select
                 name="unit" value={formData.unit} onChange={handleChange}
                 className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white"
                 required
@@ -172,7 +174,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
               <label className="text-sm font-medium text-slate-700 flex items-center">
                 <Truck size={14} className="mr-2 text-slate-400" /> Nhà cung cấp mặc định
               </label>
-              <select 
+              <select
                 name="supplierId" value={formData.supplierId} onChange={handleChange}
                 className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white"
               >
@@ -183,7 +185,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">Giá nhập (VNĐ)</label>
-              <input 
+              <input
                 type="number" name="priceIn" value={formData.priceIn} onChange={handleChange} min="0"
                 className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-slate-700"
               />
@@ -191,78 +193,89 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">Giá xuất (VNĐ)</label>
-              <input 
+              <input
                 type="number" name="priceOut" value={formData.priceOut} onChange={handleChange} min="0"
                 className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-accent"
               />
             </div>
 
-             <div className="space-y-2 md:col-span-2">
+            <div className="space-y-2 md:col-span-2">
               <label className="text-sm font-medium text-slate-700">Mức tồn tối thiểu (Cảnh báo)</label>
-              <input 
+              <input
                 type="number" name="minStock" value={formData.minStock} onChange={handleChange} min="0"
+                className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none"
+              />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-sm font-medium text-slate-700 flex items-center">
+                <MapPin size={14} className="mr-2 text-slate-400" /> Vị trí trong kho (Bin Location)
+              </label>
+              <input
+                type="text" name="location" value={formData.location} onChange={handleChange}
+                placeholder="VD: Kệ A-3, Ô 2"
                 className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none"
               />
             </div>
 
             {/* Initial Stock Section */}
             <div className="md:col-span-2 border-t border-slate-100 pt-4 mt-2">
-                <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-sm font-bold text-slate-800 flex items-center">
-                        Nhập tồn kho khởi tạo
-                    </h4>
-                    {isKeeper && (
-                        <span className="text-[9px] bg-orange-50 text-orange-600 px-2 py-1 rounded-full border border-orange-100 flex items-center">
-                            <ShieldAlert size={10} className="mr-1" /> Cần Admin phê duyệt
-                        </span>
-                    )}
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-500 uppercase">Kho nhận hàng</label>
-                        <select
-                            name="initialWarehouseId"
-                            value={formData.initialWarehouseId}
-                            onChange={handleChange}
-                            disabled={isKeeper}
-                            className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white disabled:bg-white disabled:text-slate-700 font-bold"
-                        >
-                            {!isKeeper && <option value="">-- Chọn kho --</option>}
-                            {warehouses.map(w => (
-                                <option key={w.id} value={w.id}>{w.name}</option>
-                            ))}
-                        </select>
-                    </div>
-                    
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-500 uppercase">Số lượng ban đầu</label>
-                         <input 
-                            type="number" 
-                            name="initialStock"
-                            value={formData.initialStock}
-                            onChange={handleChange}
-                            min="0"
-                            className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-accent"
-                            placeholder="0"
-                        />
-                    </div>
-                </div>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-bold text-slate-800 flex items-center">
+                  Nhập tồn kho khởi tạo
+                </h4>
                 {isKeeper && (
-                    <p className="text-[10px] text-slate-400 mt-2 italic">
-                        * Bạn chỉ được phép thêm vật tư vào kho <strong>{warehouses.find(w => w.id === user.assignedWarehouseId)?.name}</strong>.
-                    </p>
+                  <span className="text-[9px] bg-orange-50 text-orange-600 px-2 py-1 rounded-full border border-orange-100 flex items-center">
+                    <ShieldAlert size={10} className="mr-1" /> Cần Admin phê duyệt
+                  </span>
                 )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Kho nhận hàng</label>
+                  <select
+                    name="initialWarehouseId"
+                    value={formData.initialWarehouseId}
+                    onChange={handleChange}
+                    disabled={isKeeper}
+                    className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white disabled:bg-white disabled:text-slate-700 font-bold"
+                  >
+                    {!isKeeper && <option value="">-- Chọn kho --</option>}
+                    {warehouses.map(w => (
+                      <option key={w.id} value={w.id}>{w.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase">Số lượng ban đầu</label>
+                  <input
+                    type="number"
+                    name="initialStock"
+                    value={formData.initialStock}
+                    onChange={handleChange}
+                    min="0"
+                    className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-accent"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+              {isKeeper && (
+                <p className="text-[10px] text-slate-400 mt-2 italic">
+                  * Bạn chỉ được phép thêm vật tư vào kho <strong>{warehouses.find(w => w.id === user.assignedWarehouseId)?.name}</strong>.
+                </p>
+              )}
             </div>
           </div>
 
           <div className="mt-8 pt-4 border-t border-slate-100 flex justify-end gap-3">
-            <button 
+            <button
               type="button" onClick={onClose}
               className="px-6 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-slate-50 transition-colors"
             >
               Hủy
             </button>
-            <button 
+            <button
               type="submit"
               className="px-6 py-2.5 bg-accent text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center shadow-lg shadow-blue-500/30"
             >
