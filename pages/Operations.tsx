@@ -52,9 +52,12 @@ const Operations: React.FC = () => {
   const isAdmin = user.role === Role.ADMIN;
 
   // State quản lý kho bãi
+  // - Nhập kho: selectedWarehouseId = kho nhận (kho của thủ kho)
+  // - Xuất kho / Xuất hủy: selectedWarehouseId = kho xuất (kho của thủ kho)
+  // - Chuyển kho: selectedWarehouseId = kho nguồn (kho của thủ kho), targetWarehouseId = kho đích
   const [selectedWarehouseId, setSelectedWarehouseId] = useState('');
   const [targetWarehouseId, setTargetWarehouseId] = useState('');
-  const [supplierId, setSupplierId] = useState(suppliers[0]?.id || '');
+  const [supplierId, setSupplierId] = useState(''); // Tùy chọn, không bắt buộc
   const [note, setNote] = useState('');
   const [txItems, setTxItems] = useState<TransactionItem[]>([]);
 
@@ -66,6 +69,15 @@ const Operations: React.FC = () => {
       setSelectedWarehouseId(warehouses[0]?.id || '');
     }
   }, [user, isKeeper, warehouses]);
+
+  // Reset item list khi chuyển tab
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    setTxItems([]);
+    setTargetWarehouseId('');
+    setSupplierId('');
+    setNote('');
+  };
 
   // State cho duyệt đếm ngược
   const [approvalModal, setApprovalModal] = useState<{
@@ -108,6 +120,12 @@ const Operations: React.FC = () => {
     return baseHistory.filter(t => t.requesterId === user.id);
   }, [transactions, isAdmin, user]);
 
+  // Tính tồn kho hiện tại của item trong kho đang chọn (chỉ để hiển thị)
+  const getStockInWarehouse = (itemId: string, warehouseId: string): number => {
+    const item = items.find(i => i.id === itemId);
+    return item?.stockByWarehouse[warehouseId] || 0;
+  };
+
   const handleSelectItem = (item: InventoryItem) => {
     const existing = txItems.find(i => i.itemId === item.id);
     if (existing) {
@@ -118,25 +136,8 @@ const Operations: React.FC = () => {
   };
 
   const executeSubmit = () => {
-    // Validate: Không cho phép xuất kho khi tồn = 0
-    if (activeTab === TransactionType.EXPORT || activeTab === TransactionType.TRANSFER || activeTab === TransactionType.LIQUIDATION) {
-      const insufficientItems = txItems.filter(txItem => {
-        const product = items.find(i => i.id === txItem.itemId);
-        const stock = product?.stockByWarehouse[selectedWarehouseId] || 0;
-        return txItem.quantity > stock;
-      });
-      if (insufficientItems.length > 0) {
-        const names = insufficientItems.map(txItem => {
-          const product = items.find(i => i.id === txItem.itemId);
-          const stock = product?.stockByWarehouse[selectedWarehouseId] || 0;
-          return `${product?.name} (Yêu cầu: ${txItem.quantity}, Tồn: ${stock})`;
-        }).join('\n');
-        toast.error('Không đủ tồn kho', `Các mặt hàng sau không đủ số lượng:\n${names}`);
-        setShowConfirmTransfer(false);
-        return;
-      }
-    }
-    // Mọi phiếu từ Thủ kho đều bắt đầu ở trạng thái PENDING
+    // Không validate tồn kho - thủ kho được phép đề xuất bất kỳ số lượng nào
+    // Chỉ validate logic kho nguồn/đích cho Chuyển kho
     const newTx: Transaction = {
       id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       type: activeTab as TransactionType,
@@ -145,14 +146,16 @@ const Operations: React.FC = () => {
       requesterId: user.id,
       status: TransactionStatus.PENDING,
       note,
-      sourceWarehouseId: (activeTab === TransactionType.EXPORT || activeTab === TransactionType.TRANSFER || activeTab === TransactionType.LIQUIDATION) ? selectedWarehouseId : undefined,
+      // Nhập kho → kho nhận = selectedWarehouseId; nguồn cung cấp tùy chọn
       targetWarehouseId: activeTab === TransactionType.IMPORT ? selectedWarehouseId : (activeTab === TransactionType.TRANSFER ? targetWarehouseId : undefined),
-      supplierId: activeTab === TransactionType.IMPORT ? supplierId : undefined,
+      sourceWarehouseId: (activeTab === TransactionType.EXPORT || activeTab === TransactionType.TRANSFER || activeTab === TransactionType.LIQUIDATION) ? selectedWarehouseId : undefined,
+      supplierId: (activeTab === TransactionType.IMPORT && supplierId) ? supplierId : undefined,
     };
 
     addTransaction(newTx);
     setTxItems([]);
     setNote('');
+    setSupplierId('');
     setShowConfirmTransfer(false);
     toast.success('Đã gửi đề xuất', 'Phiếu của bạn đang chờ Admin phê duyệt.');
   };
@@ -224,6 +227,25 @@ const Operations: React.FC = () => {
     setApprovalModal(prev => ({ ...prev, isOpen: false }));
   };
 
+  // Xác định filterWarehouseId cho ItemSelectionModal
+  // Thủ kho: Nhập kho → chọn từ toàn bộ vật tư (tìm theo mã, không cần tồn)
+  //          Xuất/Chuyển/Hủy → chọn từ vật tư có trong kho mình (để biết tồn)
+  const itemSelectFilterWarehouseId = useMemo(() => {
+    if (!isKeeper) return undefined; // Admin: tất cả vật tư
+    if (activeTab === TransactionType.IMPORT) return undefined; // Nhập kho: tìm theo mã vật tư, không filter kho
+    return selectedWarehouseId; // Xuất/Chuyển/Hủy: lọc theo kho của thủ kho
+  }, [isKeeper, activeTab, selectedWarehouseId]);
+
+  // Label cho kho chính
+  const warehouseLabel = useMemo(() => {
+    if (activeTab === TransactionType.IMPORT) return 'Kho nhận hàng';
+    if (activeTab === TransactionType.LIQUIDATION) return 'Kho cần hủy vật tư';
+    if (activeTab === TransactionType.TRANSFER) return 'Kho nguồn (kho xuất)';
+    return 'Kho xuất đi';
+  }, [activeTab]);
+
+  const activeWarehouse = warehouses.find(w => w.id === user.assignedWarehouseId);
+
   return (
     <div className="space-y-6">
       <ScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScan={(sku) => {
@@ -236,7 +258,8 @@ const Operations: React.FC = () => {
         onClose={() => setItemSelectOpen(false)}
         onSelect={handleSelectItem}
         onOpenScanner={() => setScannerOpen(true)}
-        filterWarehouseId={selectedWarehouseId}
+        filterWarehouseId={itemSelectFilterWarehouseId}
+        allowAllItems={activeTab === TransactionType.IMPORT}
       />
 
       <WarningModal isOpen={warningState.isOpen} onClose={() => setWarningState(p => ({ ...p, isOpen: false }))} title={warningState.title} message={warningState.message} />
@@ -259,20 +282,20 @@ const Operations: React.FC = () => {
 
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-black text-slate-800 tracking-tight">Nghiệp vụ kho</h1>
-        {isKeeper && (
+        {isKeeper && activeWarehouse && (
           <div className="flex items-center gap-2 bg-blue-50 text-accent px-3 py-1.5 rounded-xl border border-blue-100">
             <ShieldAlert size={14} />
-            <span className="text-[10px] font-black uppercase tracking-widest">Phạm vi: {warehouses.find(w => w.id === user.assignedWarehouseId)?.name}</span>
+            <span className="text-[10px] font-black uppercase tracking-widest">Phạm vi: {activeWarehouse.name}</span>
           </div>
         )}
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="flex border-b border-slate-100 overflow-x-auto bg-slate-50/50 scrollbar-hide">
-          <button onClick={() => { setActiveTab('IMPORT'); setTxItems([]); }} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'IMPORT' ? 'border-accent text-accent bg-white shadow-[0_-4px_0_inset_#2563eb]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Nhập kho</button>
-          <button onClick={() => { setActiveTab('EXPORT'); setTxItems([]); }} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'EXPORT' ? 'border-accent text-accent bg-white shadow-[0_-4px_0_inset_#2563eb]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Xuất kho</button>
-          <button onClick={() => { setActiveTab('TRANSFER'); setTxItems([]); }} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'TRANSFER' ? 'border-accent text-accent bg-white shadow-[0_-4px_0_inset_#2563eb]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Chuyển kho</button>
-          <button onClick={() => { setActiveTab('LIQUIDATION'); setTxItems([]); }} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'LIQUIDATION' ? 'border-red-600 text-red-600 bg-white shadow-[0_-4px_0_inset_#dc2626]' : 'border-transparent text-slate-400 hover:text-red-400'}`}>Xuất hủy</button>
+          <button onClick={() => handleTabChange('IMPORT')} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'IMPORT' ? 'border-accent text-accent bg-white shadow-[0_-4px_0_inset_#2563eb]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Nhập kho</button>
+          <button onClick={() => handleTabChange('EXPORT')} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'EXPORT' ? 'border-accent text-accent bg-white shadow-[0_-4px_0_inset_#2563eb]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Xuất kho</button>
+          <button onClick={() => handleTabChange('TRANSFER')} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'TRANSFER' ? 'border-accent text-accent bg-white shadow-[0_-4px_0_inset_#2563eb]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Chuyển kho</button>
+          <button onClick={() => handleTabChange('LIQUIDATION')} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'LIQUIDATION' ? 'border-red-600 text-red-600 bg-white shadow-[0_-4px_0_inset_#dc2626]' : 'border-transparent text-slate-400 hover:text-red-400'}`}>Xuất hủy</button>
           <button onClick={() => setActiveTab('PENDING')} className={`flex-1 min-w-[120px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all relative ${activeTab === 'PENDING' ? 'border-orange-500 text-orange-600 bg-white shadow-[0_-4px_0_inset_#f97316]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
             Quản lý phiếu
             {(pendingAdminTxs.length + pendingReceiptTxs.length) > 0 && <span className="ml-2 bg-orange-500 text-white text-[8px] md:text-[10px] px-1.5 py-0.5 rounded-full ring-2 ring-white">{(pendingAdminTxs.length + pendingReceiptTxs.length)}</span>}
@@ -297,20 +320,35 @@ const Operations: React.FC = () => {
                   <div className="grid grid-cols-1 gap-4">
                     {pendingAdminTxs.map(tx => {
                       const requester = users.find(u => u.id === tx.requesterId);
-                      const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId || w.id === tx.sourceWarehouseId);
+                      const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
+                      const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
+                      const displayWh = tx.type === TransactionType.IMPORT ? targetWh : (tx.type === TransactionType.TRANSFER ? sourceWh : sourceWh);
                       return (
                         <div key={tx.id} onClick={() => setViewingHistoryTx(tx)} className="bg-white border border-slate-100 rounded-2xl p-4 hover:border-orange-200 transition-all cursor-pointer group">
                           <div className="flex flex-col md:flex-row justify-between gap-4">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-2">
                                 <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider bg-orange-100 text-orange-700">CHỜ ADMIN DUYỆT</span>
+                                <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider bg-blue-50 text-blue-600 border border-blue-100">
+                                  {tx.type === 'IMPORT' ? '📥 Nhập kho' : tx.type === 'EXPORT' ? '📤 Xuất kho' : tx.type === 'TRANSFER' ? '🔄 Chuyển kho' : '🗑️ Xuất hủy'}
+                                </span>
                                 <span className="text-[10px] text-slate-400 font-mono font-bold">{new Date(tx.date).toLocaleString()}</span>
                               </div>
                               <div className="flex items-center gap-2 mb-3">
                                 <span className="text-sm font-black text-slate-700">{requester?.name}</span>
-                                <ArrowRight size={14} className="mx-1 text-slate-300" />
-                                <span className="text-sm font-black text-accent">{targetWh?.name}</span>
-                                <span className="text-xs text-slate-400 ml-2">({tx.type})</span>
+                                {tx.type === TransactionType.TRANSFER ? (
+                                  <>
+                                    <ArrowRight size={14} className="mx-1 text-slate-300" />
+                                    <span className="text-xs font-bold text-slate-500">{sourceWh?.name}</span>
+                                    <ArrowRight size={14} className="mx-0.5 text-accent" />
+                                    <span className="text-sm font-black text-accent">{targetWh?.name}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <ArrowRight size={14} className="mx-1 text-slate-300" />
+                                    <span className="text-sm font-black text-accent">{displayWh?.name}</span>
+                                  </>
+                                )}
                               </div>
                               <div className="text-xs text-slate-500 bg-slate-50 p-2 rounded-lg group-hover:bg-orange-50/50 transition-colors">
                                 {tx.items.length} vật tư • {tx.note || 'Không có ghi chú'}
@@ -419,18 +457,27 @@ const Operations: React.FC = () => {
             <>
               {/* Form tạo phiếu */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
-                {activeTab === 'IMPORT' && (
+                {/* Nhà cung cấp - chỉ cho NHẬP KHO, là tùy chọn */}
+                {activeTab === TransactionType.IMPORT && (
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nhà cung cấp</label>
-                    <select className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:ring-2 focus:ring-accent outline-none font-black text-sm" value={supplierId} onChange={e => setSupplierId(e.target.value)}>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      Nguồn cung cấp <span className="text-slate-300 normal-case font-normal">(tùy chọn)</span>
+                    </label>
+                    <select
+                      className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:ring-2 focus:ring-accent outline-none font-black text-sm"
+                      value={supplierId}
+                      onChange={e => setSupplierId(e.target.value)}
+                    >
+                      <option value="">— Không xác định —</option>
                       {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
                 )}
 
+                {/* Kho chính (kho của thủ kho) */}
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                    {activeTab === 'IMPORT' ? 'Kho nhận về' : (activeTab === 'LIQUIDATION' ? 'Kho cần hủy vật tư' : 'Kho xuất đi')}
+                    {warehouseLabel}
                   </label>
                   <select
                     disabled={isKeeper}
@@ -440,23 +487,44 @@ const Operations: React.FC = () => {
                   >
                     {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                   </select>
+                  {isKeeper && (
+                    <p className="text-[10px] text-blue-500 font-bold flex items-center gap-1">
+                      <ShieldAlert size={10} /> Kho được giao quản lý của bạn
+                    </p>
+                  )}
                 </div>
 
-                {activeTab === 'TRANSFER' && (
+                {/* Kho đích - chỉ cho CHUYỂN KHO */}
+                {activeTab === TransactionType.TRANSFER && (
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Kho đích nhận hàng</label>
-                    <select className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:ring-2 focus:ring-accent outline-none font-black text-sm" value={targetWarehouseId} onChange={e => setTargetWarehouseId(e.target.value)}>
+                    <select
+                      className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:ring-2 focus:ring-accent outline-none font-black text-sm"
+                      value={targetWarehouseId}
+                      onChange={e => setTargetWarehouseId(e.target.value)}
+                    >
                       <option value="">Chọn kho nhận...</option>
                       {warehouses.filter(w => w.id !== selectedWarehouseId).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                     </select>
                   </div>
                 )}
 
-                <div className={`space-y-2 ${activeTab === 'LIQUIDATION' || activeTab === 'IMPORT' ? 'lg:col-span-2' : 'lg:col-span-1'}`}>
+                <div className={`space-y-2 ${activeTab === TransactionType.LIQUIDATION || (activeTab === TransactionType.IMPORT && !supplierId) ? 'lg:col-span-2' : 'lg:col-span-1'}`}>
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ghi chú & Lý do</label>
                   <input type="text" className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 outline-none font-bold text-sm" placeholder="Thông tin bổ sung..." value={note} onChange={e => setNote(e.target.value)} />
                 </div>
               </div>
+
+              {/* Thông báo cho thủ kho: Nhập kho tìm theo mã vật tư */}
+              {isKeeper && activeTab === TransactionType.IMPORT && (
+                <div className="mb-6 p-3 bg-blue-50 border border-blue-100 rounded-xl flex items-start gap-3">
+                  <PackageSearch size={18} className="text-blue-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-black text-blue-700">Nhập kho theo mã vật tư</p>
+                    <p className="text-[11px] text-blue-600 font-medium mt-0.5">Tìm và chọn vật tư theo mã SKU hoặc tên. Số lượng đề xuất không bị giới hạn bởi tồn kho hiện tại.</p>
+                  </div>
+                </div>
+              )}
 
               <div className="mb-8">
                 <div className="flex justify-between items-center mb-4">
@@ -475,20 +543,49 @@ const Operations: React.FC = () => {
                     <div className="hidden md:block">
                       <table className="w-full text-left">
                         <thead className="bg-slate-50 text-[10px] uppercase text-slate-400 font-black tracking-widest border-b border-slate-100">
-                          <tr><th className="p-4">Sản phẩm</th><th className="p-4 w-32 text-center">Số lượng</th><th className="p-4 w-16"></th></tr>
+                          <tr>
+                            <th className="p-4">Sản phẩm</th>
+                            {/* Hiển thị tồn kho tham khảo khi XUẤT/CHUYỂN/HỦY */}
+                            {(activeTab !== TransactionType.IMPORT) && (
+                              <th className="p-4 w-36 text-right">Tồn kho hiện tại</th>
+                            )}
+                            <th className="p-4 w-32 text-center">Số lượng đề xuất</th>
+                            <th className="p-4 w-16"></th>
+                          </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {txItems.map((item, idx) => {
                             const product = items.find(i => i.id === item.itemId);
+                            const currentStock = getStockInWarehouse(item.itemId, selectedWarehouseId);
+                            const isOverStock = activeTab !== TransactionType.IMPORT && item.quantity > currentStock;
                             return (
                               <tr key={idx} className="hover:bg-slate-50/50">
                                 <td className="p-4">
                                   <div className="font-black text-slate-800 text-sm">{product?.name}</div>
                                   <div className="text-[10px] text-slate-400 font-bold uppercase">{product?.sku}</div>
                                 </td>
+                                {activeTab !== TransactionType.IMPORT && (
+                                  <td className="p-4 text-right">
+                                    <span className={`text-sm font-black ${currentStock === 0 ? 'text-red-500' : currentStock < item.quantity ? 'text-orange-500' : 'text-slate-600'}`}>
+                                      {currentStock.toLocaleString()}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 ml-1 uppercase font-bold">{product?.unit}</span>
+                                    {isOverStock && (
+                                      <div className="text-[9px] text-orange-500 font-black flex items-center justify-end gap-0.5 mt-0.5">
+                                        <AlertTriangle size={9} /> Vượt tồn kho
+                                      </div>
+                                    )}
+                                  </td>
+                                )}
                                 <td className="p-4">
                                   <div className="flex items-center gap-2">
-                                    <input type="number" min="1" value={item.quantity} onChange={(e) => setTxItems(txItems.map(ti => ti.itemId === item.itemId ? { ...ti, quantity: parseInt(e.target.value) } : ti))} className="w-full border-2 border-slate-100 rounded-lg px-2 py-1.5 text-center font-black text-accent outline-none focus:border-accent" />
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={item.quantity}
+                                      onChange={(e) => setTxItems(txItems.map(ti => ti.itemId === item.itemId ? { ...ti, quantity: parseInt(e.target.value) || 1 } : ti))}
+                                      className={`w-full border-2 rounded-lg px-2 py-1.5 text-center font-black text-accent outline-none focus:border-accent ${isOverStock ? 'border-orange-300 bg-orange-50' : 'border-slate-100'}`}
+                                    />
                                     <span className="text-[10px] font-black text-slate-400 uppercase">{product?.unit}</span>
                                   </div>
                                 </td>
@@ -506,12 +603,21 @@ const Operations: React.FC = () => {
                     <div className="md:hidden divide-y divide-slate-100">
                       {txItems.map((item, idx) => {
                         const product = items.find(i => i.id === item.itemId);
+                        const currentStock = getStockInWarehouse(item.itemId, selectedWarehouseId);
+                        const isOverStock = activeTab !== TransactionType.IMPORT && item.quantity > currentStock;
                         return (
                           <div key={idx} className="p-4 space-y-3">
                             <div className="flex justify-between items-start">
                               <div className="min-w-0 flex-1">
                                 <div className="text-[10px] font-mono text-slate-400 font-bold uppercase mb-0.5">{product?.sku}</div>
                                 <h4 className="font-black text-slate-800 text-sm truncate pr-4">{product?.name}</h4>
+                                {activeTab !== TransactionType.IMPORT && (
+                                  <div className={`text-[10px] font-bold mt-1 flex items-center gap-1 ${isOverStock ? 'text-orange-500' : 'text-slate-400'}`}>
+                                    {isOverStock && <AlertTriangle size={9} />}
+                                    Tồn kho: {currentStock} {product?.unit}
+                                    {isOverStock && ' (Vượt tồn)'}
+                                  </div>
+                                )}
                               </div>
                               <button onClick={() => setTxItems(txItems.filter(ti => ti.itemId !== item.itemId))} className="p-2 text-slate-300 hover:text-red-600 transition-colors shrink-0"><Trash2 size={18} /></button>
                             </div>
@@ -531,7 +637,21 @@ const Operations: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex justify-end pt-6 border-t border-slate-100">
+              {/* Tóm tắt và nút gửi */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center pt-6 border-t border-slate-100 gap-4">
+                <div className="text-xs text-slate-400 font-medium">
+                  {txItems.length > 0 && (
+                    <span className="font-black text-slate-600">{txItems.length} vật tư</span>
+                  )}
+                  {(activeTab !== TransactionType.IMPORT) && txItems.some(ti => {
+                    const stock = getStockInWarehouse(ti.itemId, selectedWarehouseId);
+                    return ti.quantity > stock;
+                  }) && (
+                      <span className="ml-3 text-orange-500 font-black flex items-center gap-1">
+                        <AlertTriangle size={12} /> Một số mặt hàng vượt tồn — phiếu vẫn có thể gửi, Admin sẽ xét duyệt
+                      </span>
+                    )}
+                </div>
                 <button
                   onClick={handleSubmit}
                   className="px-12 py-4 bg-accent text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-xl hover:bg-blue-700 transition-all flex items-center shadow-blue-500/20"

@@ -5,7 +5,7 @@ import {
   InventoryItem, Transaction, User, Warehouse, Supplier,
   Role, TransactionStatus, TransactionType, MaterialRequest,
   RequestStatus, AuditLog, GlobalActivity, ActivityType,
-  ItemCategory, ItemUnit
+  ItemCategory, ItemUnit, Employee
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_ITEMS,
@@ -36,6 +36,7 @@ interface AppContextType {
   activities: GlobalActivity[];
   categories: ItemCategory[];
   units: ItemUnit[];
+  employees: Employee[];
   addItem: (item: InventoryItem) => void;
   addItems: (items: InventoryItem[]) => void;
   updateItem: (item: InventoryItem) => void;
@@ -58,6 +59,9 @@ interface AppContextType {
   addSupplier: (supplier: Supplier) => void;
   updateSupplier: (supplier: Supplier) => void;
   removeSupplier: (id: string) => void;
+  addEmployee: (employee: Employee) => void;
+  updateEmployee: (employee: Employee) => void;
+  removeEmployee: (id: string) => void;
   updateAppSettings: (settings: AppSettings) => void;
   approvePartialTransaction: (id: string, selectedItemIds: string[], approverId: string) => void;
   clearAllData: () => void;
@@ -81,6 +85,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
   const [requests, setRequests] = useState<MaterialRequest[]>([]);
   const [activities, setActivities] = useState<GlobalActivity[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [categories, setCategories] = useState<ItemCategory[]>([
     { id: 'cat1', name: 'Vật liệu xây dựng' },
     { id: 'cat2', name: 'Công cụ dụng cụ' },
@@ -123,7 +128,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
 
         const [
-          itemsData, whData, supData, txData, reqData, actData, catData, unitData, settingsData, usersData
+          itemsData, whData, supData, txData, reqData, actData, catData, unitData, settingsData, usersData, empData
         ] = await Promise.all([
           fetchTable('items'),
           fetchTable('warehouses'),
@@ -134,7 +139,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTable('categories'),
           fetchTable('units'),
           fetchTable('app_settings', supabase.from('app_settings').select('*').maybeSingle()),
-          fetchTable('users')
+          fetchTable('users'),
+          fetchTable('employees')
         ]);
 
         if (usersData && usersData.length > 0) {
@@ -142,6 +148,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setUsers(mappedUsers);
           const currentInList = mappedUsers.find((u: any) => u.email === user.email);
           if (currentInList) setUser(currentInList);
+        }
+
+        if (empData) {
+          setEmployees(empData.map((e: any) => ({
+            id: e.id,
+            employeeCode: e.employee_code,
+            fullName: e.full_name,
+            title: e.title,
+            gender: e.gender,
+            phone: e.phone,
+            email: e.email,
+            dateOfBirth: e.date_of_birth,
+            startDate: e.start_date,
+            officialDate: e.official_date,
+            status: e.status,
+            userId: e.user_id,
+            createdAt: e.created_at,
+            updatedAt: e.updated_at
+          })));
         }
 
         if (itemsData) setItems(itemsData.map((i: any) => ({
@@ -277,6 +302,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }).subscribe(),
 
+      supabase.channel('public:employees').on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, payload => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          const e = payload.new as any;
+          const mappedEmp: Employee = {
+            id: e.id,
+            employeeCode: e.employee_code,
+            fullName: e.full_name,
+            title: e.title,
+            gender: e.gender,
+            phone: e.phone,
+            email: e.email,
+            dateOfBirth: e.date_of_birth,
+            startDate: e.start_date,
+            officialDate: e.official_date,
+            status: e.status,
+            userId: e.user_id,
+            createdAt: e.created_at,
+            updatedAt: e.updated_at
+          };
+          setEmployees(prev => {
+            const exists = prev.find(emp => emp.id === mappedEmp.id);
+            if (exists) return prev.map(emp => emp.id === mappedEmp.id ? mappedEmp : emp);
+            return [...prev, mappedEmp];
+          });
+        } else if (payload.eventType === 'DELETE') {
+          setEmployees(prev => prev.filter(emp => emp.id !== payload.old.id));
+        }
+      }).subscribe(),
+
       supabase.channel('public:categories').on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, payload => {
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const c = payload.new as any;
@@ -358,6 +412,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: data.id, name: data.name, email: data.email, username: data.username,
           phone: data.phone, role: data.role, avatar: data.avatar, assigned_warehouse_id: data.assignedWarehouseId
         };
+      } else if (table === 'employees') {
+        payload = {
+          id: data.id, employee_code: data.employeeCode, full_name: data.fullName, title: data.title,
+          gender: data.gender, phone: data.phone, email: data.email, date_of_birth: data.dateOfBirth,
+          start_date: data.startDate, official_date: data.officialDate, status: data.status, user_id: data.userId
+        };
       }
 
       const { error } = await supabase.from(table).upsert(payload);
@@ -413,7 +473,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const mappedUser = { ...userData, assignedWarehouseId: userData.assigned_warehouse_id };
         setUser(mappedUser);
-        localStorage.setItem('khoviet_user', JSON.stringify(mappedUser));
+        const { avatar, ...userForStorage } = mappedUser;
+        localStorage.setItem('khoviet_user', JSON.stringify(userForStorage));
         return mappedUser;
 
       } catch (err: any) {
@@ -425,7 +486,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const foundUser = users.find(u => (u.username === username || u.email === username) && u.password === password);
       if (foundUser) {
         setUser(foundUser);
-        localStorage.setItem('khoviet_user', JSON.stringify(foundUser));
+        const { avatar, ...userForStorage } = foundUser;
+        localStorage.setItem('khoviet_user', JSON.stringify(userForStorage));
         return foundUser;
       }
       return null;
@@ -756,6 +818,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (isSupabaseConfigured) await supabase.from('suppliers').delete().eq('id', id);
   };
 
+  const addEmployee = (e: Employee) => {
+    setEmployees(prev => [...prev, e]);
+    syncToSupabase('employees', e);
+    logActivity('SYSTEM', 'Thêm nhân sự', `Đã thêm hồ sơ nhân sự mới: ${e.fullName}`, 'SUCCESS');
+  };
+
+  const updateEmployee = (e: Employee) => {
+    setEmployees(prev => prev.map(item => item.id === e.id ? e : item));
+    syncToSupabase('employees', e);
+    logActivity('SYSTEM', 'Cập nhật nhân sự', `Đã cập nhật thông tin nhân sự: ${e.fullName}`, 'INFO');
+  };
+
+  const removeEmployee = async (id: string) => {
+    const e = employees.find(emp => emp.id === id);
+    setEmployees(prev => prev.filter(emp => emp.id !== id));
+    try {
+      if (isSupabaseConfigured) await supabase.from('employees').delete().eq('id', id);
+      if (e) logActivity('SYSTEM', 'Xóa nhân sự', `Đã xóa hồ sơ nhân sự: ${e.fullName}`, 'DANGER');
+    } catch (error) {
+      console.error('Error deleting employee from Supabase:', error);
+    }
+  };
+
   const updateAppSettings = (s: AppSettings) => {
     setAppSettings(s);
     syncToSupabase('app_settings', { ...s, id: 1 });
@@ -764,9 +849,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider value={{
       user, users, appSettings, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
-      categories, units, addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,
+      categories, units, employees, addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,
       addRequest, updateRequestStatus, logActivity, addCategory, updateCategory, removeCategory, addUnit, updateUnit, removeUnit,
-      addSupplier, updateSupplier, removeSupplier, updateAppSettings, approvePartialTransaction, clearAllData,
+      addSupplier, updateSupplier, removeSupplier, addEmployee, updateEmployee, removeEmployee, updateAppSettings, approvePartialTransaction, clearAllData,
       login, logout, isLoading, isRefreshing, connectionError
     }}>
       {children}

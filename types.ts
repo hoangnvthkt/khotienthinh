@@ -60,6 +60,23 @@ export interface Supplier {
   debt: number; // Công nợ
 }
 
+export interface Employee {
+  id: string;
+  employeeCode: string; // Mã nhân sự TT00x
+  fullName: string;
+  title: string;
+  gender: 'Nam' | 'Nữ' | 'Khác';
+  phone: string;
+  email: string;
+  dateOfBirth?: string;
+  startDate?: string;
+  officialDate?: string;
+  status: 'Đang làm việc' | 'Đã nghỉ việc';
+  userId?: string; // Liên kết tới bảng users
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ItemCategory {
   id: string;
   name: string;

@@ -1,9 +1,10 @@
 
-import React, { useMemo } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import React, { useMemo, useState } from 'react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ArrowLeftRight, ClipboardCheck,
-  History, Settings, LogOut, FileText, Sun, Moon, Bell
+  History, Settings, LogOut, FileText, Sun, Moon, Bell,
+  Users, Briefcase
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -16,8 +17,14 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout, warehouses, transactions, requests, appSettings, items } = useApp();
   const { isDark, toggleTheme } = useTheme();
+
+  // Auto-detect current app context based on URL
+  const [currentApp, setCurrentApp] = useState<'WMS' | 'HRM'>(
+    location.pathname.startsWith('/hrm') ? 'HRM' : 'WMS'
+  );
 
   const pendingTxCount = useMemo(() => {
     if (user.role === Role.ADMIN) {
@@ -53,17 +60,22 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
     }).length;
   }, [items]);
 
-  const navItems = [
+  const wmsNavItems = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/requests', icon: FileText, label: 'Đề xuất vật tư', badge: pendingReqCount > 0 ? pendingReqCount : null, roles: [Role.ADMIN, Role.KEEPER] },
     { to: '/inventory', icon: Package, label: 'Kho & Vật tư', badge: lowStockCount > 0 ? lowStockCount : null, badgeColor: 'bg-amber-500' },
     { to: '/operations', icon: ArrowLeftRight, label: 'Nhập / Xuất', badge: pendingTxCount > 0 ? pendingTxCount : null, roles: [Role.ADMIN, Role.KEEPER] },
     { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
-    { to: '/reports', icon: History, label: 'Báo cáo' },
+    { to: '/reports', icon: History, label: 'Báo cáo WMS' },
     { to: '/settings', icon: Settings, label: 'Cài đặt' },
   ];
 
-  const filteredNavItems = navItems.filter(item => !item.roles || item.roles.includes(user.role));
+  const hrmNavItems: any[] = [
+    { to: '/hrm/employees', icon: Users, label: 'Hồ sơ nhân sự' },
+  ];
+
+  const currentNavItems = currentApp === 'WMS' ? wmsNavItems : hrmNavItems;
+  const filteredNavItems = currentNavItems.filter(item => !(item as any).roles || (item as any).roles.includes(user.role));
   const assignedWh = warehouses.find(w => w.id === user.assignedWarehouseId);
 
   const sidebarBg = isDark ? 'bg-slate-900 border-slate-700' : 'bg-primary';
@@ -78,6 +90,22 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
             {appSettings.name.slice(0, 2)}
           </div>
           <span className="text-lg font-black tracking-tight truncate">{appSettings.name}</span>
+        </div>
+
+        {/* App Switcher */}
+        <div className={`px-4 py-2 mx-3 my-3 rounded-xl flex items-center bg-slate-800/50 border border-slate-700/50 shadow-inner p-1`}>
+          <button
+            onClick={() => { setCurrentApp('WMS'); navigate('/'); }}
+            className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1.5 ${currentApp === 'WMS' ? 'bg-accent text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}
+          >
+            <Package size={12} /> Kho
+          </button>
+          <button
+            onClick={() => { setCurrentApp('HRM'); navigate('/hrm/employees'); }}
+            className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1.5 ${currentApp === 'HRM' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}
+          >
+            <Briefcase size={12} /> Nhân sự
+          </button>
         </div>
 
         {/* User Info */}

@@ -12,6 +12,11 @@ import * as XLSX from 'xlsx';
 const Reports: React.FC = () => {
   const { items, transactions, warehouses, user, appSettings } = useApp();
 
+  const isAdmin = user.role === Role.ADMIN;
+  const isAccountant = user.role === Role.ACCOUNTANT;
+  const isKeeper = user.role === Role.KEEPER;
+  const assignedWarehouse = warehouses.find(w => w.id === user.assignedWarehouseId);
+
   // State filter
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
@@ -19,6 +24,7 @@ const Reports: React.FC = () => {
     return d.toISOString().split('T')[0];
   });
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  // Thủ kho: chỉ xem được kho mình, không cho đổi
   const [selectedWh, setSelectedWh] = useState(user.assignedWarehouseId || 'ALL');
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -29,93 +35,101 @@ const Reports: React.FC = () => {
     const end = new Date(endDate);
     end.setHours(23, 59, 59, 999);
 
-    return items.map(item => {
-      let openingBalance = 0;
-      let inImport = 0;
-      let inTransfer = 0;
-      let inAdjustment = 0;
-      let outExport = 0;
-      let outTransfer = 0;
-      let outLiquidation = 0;
-
-      // Duyệt qua tất cả giao dịch của vật tư này
-      transactions.forEach(tx => {
-        if (tx.status !== TransactionStatus.COMPLETED) return;
-
-        const txDate = new Date(tx.date);
-        const txItem = tx.items.find(i => i.itemId === item.id);
-        if (!txItem) return;
-
-        const qty = txItem.quantity;
-
-        // Kiểm tra xem giao dịch có thuộc kho đang lọc không
-        const isRelatedToWh = selectedWh === 'ALL' ||
-          tx.targetWarehouseId === selectedWh ||
-          tx.sourceWarehouseId === selectedWh;
-
-        if (!isRelatedToWh) return;
-
-        // Logic tính toán
-        if (txDate < start) {
-          // Tính tồn đầu kỳ: Cộng dồn mọi biến động TRƯỚC ngày bắt đầu
-          if (tx.type === TransactionType.IMPORT && (selectedWh === 'ALL' || tx.targetWarehouseId === selectedWh)) {
-            openingBalance += qty;
-          } else if (tx.type === TransactionType.EXPORT && (selectedWh === 'ALL' || tx.sourceWarehouseId === selectedWh)) {
-            openingBalance -= qty;
-          } else if (tx.type === TransactionType.TRANSFER) {
-            if (selectedWh !== 'ALL') {
-              if (tx.targetWarehouseId === selectedWh) openingBalance += qty;
-              if (tx.sourceWarehouseId === selectedWh) openingBalance -= qty;
-            }
-            // Nếu ALL, Transfer không làm thay đổi tổng tồn hệ thống
-          } else if (tx.type === TransactionType.ADJUSTMENT) {
-            // Giả định Adjustment trong db demo là nhập (+), bạn có thể tùy biến
-            if (tx.targetWarehouseId === selectedWh || selectedWh === 'ALL') openingBalance += qty;
-          }
-        } else if (txDate >= start && txDate <= end) {
-          // Tính phát sinh TRONG kỳ
-          if (tx.type === TransactionType.IMPORT && (selectedWh === 'ALL' || tx.targetWarehouseId === selectedWh)) {
-            inImport += qty;
-          } else if (tx.type === TransactionType.EXPORT && (selectedWh === 'ALL' || tx.sourceWarehouseId === selectedWh)) {
-            outExport += qty;
-          } else if (tx.type === TransactionType.TRANSFER) {
-            if (selectedWh === 'ALL') {
-              // ALL thì Transfer nội bộ không tính vào Nhập/Xuất hệ thống
-            } else {
-              if (tx.targetWarehouseId === selectedWh) inTransfer += qty;
-              if (tx.sourceWarehouseId === selectedWh) outTransfer += qty;
-            }
-          } else if (tx.type === TransactionType.ADJUSTMENT) {
-            inAdjustment += qty;
-          }
+    return items
+      .filter(item => {
+        // Thủ kho chỉ thấy vật tư có trong kho mình
+        if (isKeeper && user.assignedWarehouseId) {
+          return user.assignedWarehouseId in item.stockByWarehouse;
         }
-      });
+        return true;
+      })
+      .map(item => {
+        let openingBalance = 0;
+        let inImport = 0;
+        let inTransfer = 0;
+        let inAdjustment = 0;
+        let outExport = 0;
+        let outTransfer = 0;
+        let outLiquidation = 0;
 
-      const totalIn = inImport + inTransfer + inAdjustment;
-      const totalOut = outExport + outTransfer + outLiquidation;
-      const closingBalance = openingBalance + totalIn - totalOut;
+        // Duyệt qua tất cả giao dịch của vật tư này
+        transactions.forEach(tx => {
+          if (tx.status !== TransactionStatus.COMPLETED) return;
 
-      return {
-        id: item.id,
-        sku: item.sku,
-        name: item.name,
-        unit: item.unit,
-        opening: openingBalance,
-        inImport,
-        inTransfer,
-        inAdjustment,
-        totalIn,
-        outExport,
-        outTransfer,
-        outLiquidation,
-        totalOut,
-        closing: closingBalance,
-        value: closingBalance * item.priceIn
-      };
-    }).filter(row =>
-      row.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      row.sku.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+          const txDate = new Date(tx.date);
+          const txItem = tx.items.find(i => i.itemId === item.id);
+          if (!txItem) return;
+
+          const qty = txItem.quantity;
+
+          // Kiểm tra xem giao dịch có thuộc kho đang lọc không
+          const isRelatedToWh = selectedWh === 'ALL' ||
+            tx.targetWarehouseId === selectedWh ||
+            tx.sourceWarehouseId === selectedWh;
+
+          if (!isRelatedToWh) return;
+
+          // Logic tính toán
+          if (txDate < start) {
+            // Tính tồn đầu kỳ: Cộng dồn mọi biến động TRƯỜC ngày bắt đầu
+            if (tx.type === TransactionType.IMPORT && (selectedWh === 'ALL' || tx.targetWarehouseId === selectedWh)) {
+              openingBalance += qty;
+            } else if (tx.type === TransactionType.EXPORT && (selectedWh === 'ALL' || tx.sourceWarehouseId === selectedWh)) {
+              openingBalance -= qty;
+            } else if (tx.type === TransactionType.TRANSFER) {
+              if (selectedWh !== 'ALL') {
+                if (tx.targetWarehouseId === selectedWh) openingBalance += qty;
+                if (tx.sourceWarehouseId === selectedWh) openingBalance -= qty;
+              }
+              // Nếu ALL, Transfer không làm thay đổi tổng tồn hệ thống
+            } else if (tx.type === TransactionType.ADJUSTMENT) {
+              // Giả định Adjustment trong db demo là nhập (+), bạn có thể tùy biến
+              if (tx.targetWarehouseId === selectedWh || selectedWh === 'ALL') openingBalance += qty;
+            }
+          } else if (txDate >= start && txDate <= end) {
+            // Tính phát sinh TRONG kỳ
+            if (tx.type === TransactionType.IMPORT && (selectedWh === 'ALL' || tx.targetWarehouseId === selectedWh)) {
+              inImport += qty;
+            } else if (tx.type === TransactionType.EXPORT && (selectedWh === 'ALL' || tx.sourceWarehouseId === selectedWh)) {
+              outExport += qty;
+            } else if (tx.type === TransactionType.TRANSFER) {
+              if (selectedWh === 'ALL') {
+                // ALL thì Transfer nội bộ không tính vào Nhập/Xuất hệ thống
+              } else {
+                if (tx.targetWarehouseId === selectedWh) inTransfer += qty;
+                if (tx.sourceWarehouseId === selectedWh) outTransfer += qty;
+              }
+            } else if (tx.type === TransactionType.ADJUSTMENT) {
+              inAdjustment += qty;
+            }
+          }
+        });
+
+        const totalIn = inImport + inTransfer + inAdjustment;
+        const totalOut = outExport + outTransfer + outLiquidation;
+        const closingBalance = openingBalance + totalIn - totalOut;
+
+        return {
+          id: item.id,
+          sku: item.sku,
+          name: item.name,
+          unit: item.unit,
+          opening: openingBalance,
+          inImport,
+          inTransfer,
+          inAdjustment,
+          totalIn,
+          outExport,
+          outTransfer,
+          outLiquidation,
+          totalOut,
+          closing: closingBalance,
+          value: closingBalance * item.priceIn
+        };
+      }).filter(row =>
+        row.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        row.sku.toLowerCase().includes(searchTerm.toLowerCase())
+      );
   }, [items, transactions, startDate, endDate, selectedWh, searchTerm]);
 
   // Tổng hợp số liệu thẻ
@@ -150,8 +164,7 @@ const Reports: React.FC = () => {
     XLSX.writeFile(wb, `BaoCao_XNT_${startDate}_to_${endDate}.xlsx`);
   };
 
-  const isAdmin = user.role === Role.ADMIN;
-  const isAccountant = user.role === Role.ACCOUNTANT;
+
 
   return (
     <div className="space-y-6">
@@ -159,6 +172,12 @@ const Reports: React.FC = () => {
         <div>
           <h1 className="text-2xl font-black text-slate-800 tracking-tight">Báo cáo Xuất - Nhập - Tồn</h1>
           <p className="text-sm text-slate-500 font-medium">Thống kê chi tiết biến động vật tư theo thời gian.</p>
+          {isKeeper && assignedWarehouse && (
+            <div className="flex items-center gap-2 mt-2 bg-blue-50 text-accent px-2 py-1 rounded-lg border border-blue-100 text-[10px] font-black uppercase tracking-widest w-fit">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+              Phạm vi: {assignedWarehouse.name}
+            </div>
+          )}
         </div>
         <div className="flex gap-2">
           <button
@@ -200,13 +219,16 @@ const Reports: React.FC = () => {
             <Building size={12} className="mr-1" /> Kho lưu trữ
           </label>
           <select
-            disabled={!isAdmin && !isAccountant}
+            disabled={isKeeper || (!isAdmin && !isAccountant)}
             value={selectedWh} onChange={e => setSelectedWh(e.target.value)}
             className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-accent disabled:opacity-60"
           >
             {(isAdmin || isAccountant) && <option value="ALL">Tất cả kho (Toàn công ty)</option>}
             {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
+          {isKeeper && (
+            <p className="text-[10px] text-blue-500 font-bold">Bạn chỉ xem được kho được giao</p>
+          )}
         </div>
 
         <div className="space-y-1.5 flex-1 min-w-[200px]">

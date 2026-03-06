@@ -10,6 +10,7 @@ import RequestWorkflow from './pages/RequestWorkflow';
 import Audit from './pages/Audit';
 import Reports from './pages/Reports';
 import Login from './pages/Login';
+import Employees from './pages/hrm/Employees';
 import { AppProvider } from './context/AppContext';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -37,6 +38,7 @@ const AppRoutes: React.FC = () => {
         <Route path="reports" element={<Reports />} />
         <Route path="users" element={<Navigate to="/settings" replace />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="hrm/employees" element={<Employees />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

@@ -48,13 +48,14 @@ const Inventory: React.FC = () => {
 
       let matchesFilter = true;
 
-      // Nếu là thủ kho, chỉ thấy vật tư có trong kho mình
+      // Nếu là thủ kho:
+      // Thấy tất cả vật tư thuộc kho mình (có entry trong stockByWarehouse, kể cả tồn = 0)
+      // Điều này đảm bảo thủ kho thấy được hết danh mục vật tư kho mình quản lý
       if (isKeeper && user.assignedWarehouseId) {
-        const hasStock = (item.stockByWarehouse[user.assignedWarehouseId] || 0) > 0;
-        matchesFilter = hasStock;
+        matchesFilter = user.assignedWarehouseId in item.stockByWarehouse;
       } else if (filterWarehouse !== 'all') {
         // Nếu là Admin nhưng đang chọn lọc 1 kho cụ thể
-        matchesFilter = (item.stockByWarehouse[filterWarehouse] || 0) > 0;
+        matchesFilter = filterWarehouse in item.stockByWarehouse;
       }
 
       // Lọc cảnh báo tồn
