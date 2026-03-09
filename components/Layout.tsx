@@ -125,7 +125,7 @@ const Layout: React.FC = () => {
   }
 
   return (
-    <div className={`flex h-screen overflow-hidden relative ${isDark ? 'dark bg-slate-900' : 'bg-slate-50'}`}>
+    <div className={`flex h-screen overflow-hidden relative transparent`}>
       {/* Session Warning Modal */}
       {sessionWarning && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -162,7 +162,7 @@ const Layout: React.FC = () => {
 
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
         {/* Mobile Header */}
-        <header className={`lg:hidden h-16 flex items-center justify-between px-4 shrink-0 shadow-md z-20 ${isDark ? 'bg-slate-800 text-white' : 'bg-primary text-white'}`}>
+        <header className="lg:hidden h-16 flex items-center justify-between px-4 shrink-0 z-20 glass-panel border-b-0 m-2 rounded-2xl">
           <div className="flex items-center gap-3">
             {appSettings.logo ? (
               <img src={appSettings.logo} alt="Logo" className="w-8 h-8 object-contain rounded" />
@@ -176,14 +176,14 @@ const Layout: React.FC = () => {
 
           <div className="flex items-center gap-2">
             {/* Dark Mode Toggle */}
-            <button onClick={toggleTheme} className="p-2 rounded-lg hover:bg-white/10 transition-colors">
+            <button onClick={toggleTheme} className="p-2 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors">
               {isDark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
             {/* Notification Bell */}
             <div className="relative">
               <button
                 onClick={() => setBellOpen(!bellOpen)}
-                className="p-2 rounded-lg hover:bg-white/10 transition-colors relative"
+                className="p-2 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors relative"
               >
                 <Bell size={18} />
                 {lowStockItems.length > 0 && (
@@ -233,7 +233,7 @@ const Layout: React.FC = () => {
           </div>
         </header>
 
-        <main className={`flex-1 overflow-auto p-4 md:p-8 pb-24 lg:pb-8 ${isDark ? 'bg-slate-900' : 'bg-slate-50'}`}>
+        <main className="flex-1 overflow-auto p-4 md:p-8 pb-24 lg:pb-8 transparent">
           {isLoading || isRefreshing ? (
             <div className="h-full w-full flex flex-col items-center justify-center bg-white/50 backdrop-blur-sm">
               <RefreshCw size={48} className="text-accent animate-spin mb-4" />

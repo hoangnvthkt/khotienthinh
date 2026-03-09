@@ -20,12 +20,13 @@
             sans: ['Inter', 'system-ui', 'sans-serif'],
           },
           colors: {
-            primary: '#0f172a',
-            secondary: '#334155',
-            accent: '#2563eb',
+            // Tông xanh Emerald chủ đạo
+            primary: '#064e3b',   // emerald-900 
+            secondary: '#0f766e', // teal-700
+            accent: '#10b981',    // emerald-500
+            success: '#059669',   // emerald-600
             danger: '#dc2626',
-            success: '#16a34a',
-            warning: '#ca8a04',
+            warning: '#f59e0b',
           },
           keyframes: {
             shrink: {
@@ -135,10 +136,41 @@
         margin: 15mm;
       }
     }
+
+    /* Các Utility Classes tĩnh dùng chung cho Theme Glassmorphism */
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+    }
+
+    .dark .glass-panel {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .glass-card {
+      background: rgba(255, 255, 255, 0.5);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      box-shadow: 0 8px 32px 0 rgba(16, 185, 129, 0.05);
+      /* Bóng xanh nhẹ */
+    }
+
+    .dark .glass-card {
+      background: rgba(30, 41, 59, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+    }
   </style>
 </head>
 
-<body class="bg-slate-50 text-slate-900 font-sans antialiased">
+<body
+  class="bg-gradient-to-br from-emerald-50 via-slate-50 to-teal-50 dark:from-slate-950 dark:via-emerald-950/20 dark:to-slate-900 text-slate-900 dark:text-slate-100 font-sans antialiased min-h-screen bg-fixed transition-colors duration-500">
   <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>

@@ -24,7 +24,7 @@ const StatCard: React.FC<{
 }> = ({ title, value, icon: Icon, color, trend, onClick }) => (
   <div
     onClick={onClick}
-    className={`bg-white dark:bg-slate-800 p-4 md:p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex items-start justify-between hover:shadow-md transition-all ${onClick ? 'cursor-pointer active:scale-95' : ''}`}
+    className={`glass-card p-4 md:p-6 rounded-2xl flex items-start justify-between hover:shadow-lg transition-all duration-300 ${onClick ? 'cursor-pointer active:scale-95' : ''}`}
   >
     <div className="min-w-0 font-sans">
       <p className="text-slate-500 dark:text-slate-400 text-[10px] md:text-[11px] uppercase font-black tracking-widest mb-1 truncate">{title}</p>
@@ -209,7 +209,7 @@ const Dashboard: React.FC = () => {
           <select
             value={selectedWhId}
             onChange={(e) => setSelectedWhId(e.target.value)}
-            className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 outline-none focus:ring-2 focus:ring-accent"
+            className="glass-card rounded-xl px-4 py-2 text-xs font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 outline-none focus:ring-2 focus:ring-accent"
           >
             <option value="all">Tất cả kho</option>
             {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
@@ -222,7 +222,7 @@ const Dashboard: React.FC = () => {
           title="Giá trị kho"
           value={`${(stats.totalValue / 1000000).toLocaleString()} Tr`}
           icon={TrendingUp}
-          color="bg-blue-600"
+          color="bg-emerald-600"
           trend="+5.2%"
           onClick={() => navigate('/inventory')}
         />
@@ -230,7 +230,7 @@ const Dashboard: React.FC = () => {
           title="Tổng tồn kho"
           value={stats.totalStock.toLocaleString()}
           icon={Package}
-          color="bg-emerald-600"
+          color="bg-teal-600"
           onClick={() => navigate('/inventory')}
         />
         <StatCard
@@ -252,15 +252,15 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col overflow-hidden min-h-[400px]">
-          <div className="p-6 border-b border-slate-50 dark:border-slate-700 flex items-center justify-between">
+        <div className="lg:col-span-2 glass-panel rounded-2xl flex flex-col overflow-hidden min-h-[400px]">
+          <div className="p-6 border-b border-white/20 dark:border-white/5 flex items-center justify-between">
             <h3 className="font-black text-slate-800 dark:text-white flex items-center gap-2">
               <LayoutGrid size={18} className="text-accent" />
               {isKeeper ? 'Biến động tại kho quản lý' : 'Biến động vật tư hệ thống'}
             </h3>
-            <div className="bg-slate-100 dark:bg-slate-700 p-1 rounded-xl flex items-center">
-              <button onClick={() => setChartType('bar')} className={`p-2 rounded-lg ${chartType === 'bar' ? 'bg-white dark:bg-slate-600 text-accent shadow-sm' : 'text-slate-400'}`}><BarChart3 size={16} /></button>
-              <button onClick={() => setChartType('line')} className={`p-2 rounded-lg ${chartType === 'line' ? 'bg-white dark:bg-slate-600 text-accent shadow-sm' : 'text-slate-400'}`}><LineChartIcon size={16} /></button>
+            <div className="bg-white/20 dark:bg-slate-800/50 p-1 rounded-xl flex items-center shadow-inner">
+              <button onClick={() => setChartType('bar')} className={`p-2 rounded-lg ${chartType === 'bar' ? 'bg-white/40 dark:bg-slate-700 text-emerald-700 dark:text-accent shadow-sm' : 'text-slate-600 dark:text-slate-400'}`}><BarChart3 size={16} /></button>
+              <button onClick={() => setChartType('line')} className={`p-2 rounded-lg ${chartType === 'line' ? 'bg-white/40 dark:bg-slate-700 text-emerald-700 dark:text-accent shadow-sm' : 'text-slate-600 dark:text-slate-400'}`}><LineChartIcon size={16} /></button>
             </div>
           </div>
           <div className="p-6 flex-1">
@@ -271,8 +271,8 @@ const Dashboard: React.FC = () => {
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
                   <Tooltip contentStyle={{ backgroundColor: isDark ? '#1e293b' : '#fff', borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', color: isDark ? '#f8fafc' : '#1e293b' }} />
-                  <Bar dataKey="in" name="Nhập" fill="#2563eb" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="out" name="Xuất" fill="#f43f5e" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="in" name="Nhập" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="out" name="Xuất" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                 </BarChart>
               ) : (
                 <AreaChart data={fluctuationsData}>
@@ -280,15 +280,15 @@ const Dashboard: React.FC = () => {
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
                   <Tooltip contentStyle={{ backgroundColor: isDark ? '#1e293b' : '#fff', borderRadius: '16px', border: 'none' }} />
-                  <Area type="monotone" dataKey="in" stroke="#2563eb" fill="#2563eb" fillOpacity={isDark ? 0.2 : 0.1} />
+                  <Area type="monotone" dataKey="in" stroke="#10b981" fill="#10b981" fillOpacity={isDark ? 0.3 : 0.2} />
                 </AreaChart>
               )}
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col h-full overflow-hidden">
-          <div className="p-6 border-b border-slate-50 dark:border-slate-700 flex items-center justify-between">
+        <div className="glass-panel rounded-2xl flex flex-col h-full overflow-hidden">
+          <div className="p-6 border-b border-white/20 dark:border-white/5 flex items-center justify-between">
             <h3 className="font-black text-slate-800 dark:text-white text-sm uppercase tracking-widest">
               {isKeeper ? 'Nhật ký kho này' : 'Nhật ký toàn cục'}
             </h3>
@@ -298,7 +298,7 @@ const Dashboard: React.FC = () => {
             {filteredActivities.length > 0 ? (
               filteredActivities.map((act) => (
                 <div key={act.id} className="relative pl-8">
-                  <div className="absolute left-[11px] top-7 bottom-[-20px] w-px bg-slate-100 dark:bg-slate-700"></div>
+                  <div className="absolute left-[11px] top-7 bottom-[-20px] w-px bg-white/30 dark:bg-slate-700/50"></div>
                   <div className={`absolute left-0 top-0.5 w-6 h-6 rounded-lg border flex items-center justify-center z-10 ${getActivityColor(act.status)}`}>
                     {getActivityIcon(act.type)}
                   </div>

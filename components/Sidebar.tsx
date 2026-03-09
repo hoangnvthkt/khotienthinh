@@ -78,14 +78,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
   const filteredNavItems = currentNavItems.filter(item => !(item as any).roles || (item as any).roles.includes(user.role));
   const assignedWh = warehouses.find(w => w.id === user.assignedWarehouseId);
 
-  const sidebarBg = isDark ? 'bg-slate-900 border-slate-700' : 'bg-primary';
+  const sidebarBg = isDark ? 'glass-panel border-r border-white/10' : 'glass-panel border-r border-white/20';
 
   return (
     <>
       {isOpen && <div className="fixed inset-0 bg-black/60 z-20 lg:hidden backdrop-blur-sm" onClick={toggle} />}
-      <aside className={`fixed top-0 left-0 z-30 h-screen w-64 text-white transition-transform duration-300 lg:translate-x-0 lg:static ${sidebarBg} ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed top-0 left-0 z-30 h-screen w-64 text-slate-800 dark:text-white transition-transform duration-300 lg:translate-x-0 lg:static ${sidebarBg} ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         {/* Logo */}
-        <div className={`flex items-center space-x-3 h-16 px-6 border-b ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-900 border-slate-700'}`}>
+        <div className={`flex items-center space-x-3 h-16 px-6 border-b border-white/20 dark:border-white/5`}>
           <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center font-black text-xs uppercase shadow-lg shadow-blue-500/40">
             {appSettings.name.slice(0, 2)}
           </div>
@@ -96,20 +96,20 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
         <div className={`px-4 py-2 mx-3 my-3 rounded-xl flex items-center bg-slate-800/50 border border-slate-700/50 shadow-inner p-1`}>
           <button
             onClick={() => { setCurrentApp('WMS'); navigate('/'); }}
-            className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1.5 ${currentApp === 'WMS' ? 'bg-accent text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}
+            className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1.5 ${currentApp === 'WMS' ? 'bg-accent text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
           >
             <Package size={12} /> Kho
           </button>
           <button
             onClick={() => { setCurrentApp('HRM'); navigate('/hrm/employees'); }}
-            className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1.5 ${currentApp === 'HRM' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-slate-700/50'}`}
+            className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1.5 ${currentApp === 'HRM' ? 'bg-teal-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
           >
             <Briefcase size={12} /> Nhân sự
           </button>
         </div>
 
         {/* User Info */}
-        <div className={`p-4 border-b ${isDark ? 'border-slate-800' : 'border-slate-700'} mb-1`}>
+        <div className={`p-4 border-b border-white/20 dark:border-white/5 mb-1`}>
           <div className="flex items-center space-x-3 mb-3">
             <img src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=2563eb&color=fff`}
               className="w-10 h-10 rounded-full border-2 border-accent shadow" alt={user.name} />
@@ -119,7 +119,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
             </div>
           </div>
           {assignedWh && (
-            <div className={`p-2 rounded-lg text-[10px] border mb-2 ${isDark ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
+            <div className={`p-2 rounded-lg text-[10px] border mb-2 bg-white/40 border-white/60 dark:bg-slate-800/50 dark:border-slate-700/50 text-slate-600 dark:text-slate-400`}>
               <span className="font-black text-slate-300 block mb-0.5 uppercase tracking-tighter">Kho quản lý:</span>
               <span className="truncate block font-bold text-white">{assignedWh.name}</span>
             </div>
@@ -129,7 +129,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
           <div className="flex gap-2 mt-3">
             <button
               onClick={toggleTheme}
-              className={`flex-none flex items-center justify-center w-9 h-9 rounded-lg border transition-all ${isDark ? 'bg-slate-800 border-slate-700 text-yellow-400 hover:bg-slate-700' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-white'}`}
+              className={`flex-none flex items-center justify-center w-9 h-9 rounded-lg border transition-all ${isDark ? 'bg-slate-800/50 border-white/10 text-yellow-400 hover:bg-slate-700/50' : 'bg-white/50 border-white/60 text-slate-600 hover:bg-white hover:text-slate-900'}`}
               title={isDark ? 'Chuyển Light Mode' : 'Chuyển Dark Mode'}
             >
               {isDark ? <Sun size={15} /> : <Moon size={15} />}
@@ -151,8 +151,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
               to={item.to}
               end={item.to === '/'}
               className={({ isActive }) => `flex items-center justify-between px-4 py-3 rounded-xl transition-all group ${isActive
-                ? 'bg-accent text-white shadow-lg shadow-blue-500/30'
-                : `text-slate-400 hover:text-white ${isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-800'}`
+                ? 'bg-accent/90 text-white shadow-lg shadow-emerald-500/20 backdrop-blur-md border border-white/20'
+                : `text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50`
                 }`}
             >
               <div className="flex items-center">
