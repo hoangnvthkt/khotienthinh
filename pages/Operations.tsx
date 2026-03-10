@@ -8,7 +8,7 @@ import {
   Plus, Trash2, ArrowRight, Save, Send, Clock,
   CheckCircle, XCircle, FileText, User, History,
   AlertTriangle, Flame, ShieldAlert, PackageSearch,
-  ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Inbox, Minus
+  ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Inbox, Minus, Scale, Banknote
 } from 'lucide-react';
 import ScannerModal from '../components/ScannerModal';
 import ItemSelectionModal from '../components/ItemSelectionModal';
@@ -60,6 +60,8 @@ const Operations: React.FC = () => {
   const [supplierId, setSupplierId] = useState(''); // Tùy chọn, không bắt buộc
   const [note, setNote] = useState('');
   const [txItems, setTxItems] = useState<TransactionItem[]>([]);
+  // State lưu thông tin kế toán khi NHẬP KHO: itemId -> { accountingQty, accountingPrice }
+  const [accountingData, setAccountingData] = useState<Record<string, { qty: string; price: string }>>({});
 
   // Tự động gán kho cho Thủ kho khi mount hoặc đổi tab
   useEffect(() => {
@@ -74,6 +76,7 @@ const Operations: React.FC = () => {
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
     setTxItems([]);
+    setAccountingData({});
     setTargetWarehouseId('');
     setSupplierId('');
     setNote('');
@@ -138,11 +141,33 @@ const Operations: React.FC = () => {
   const executeSubmit = () => {
     // Không validate tồn kho - thủ kho được phép đề xuất bất kỳ số lượng nào
     // Chỉ validate logic kho nguồn/đích cho Chuyển kho
+
+    // Gắn thông tin kế toán vào từng txItem nếu đang NHẬP KHO
+    const enrichedItems: TransactionItem[] = txItems.map(ti => {
+      if (activeTab !== TransactionType.IMPORT) return ti;
+      const acc = accountingData[ti.itemId];
+      const product = items.find(i => i.id === ti.itemId);
+      const hasDualUnit = product?.purchaseUnit && product.purchaseUnit !== product.unit;
+      if (hasDualUnit && acc?.qty && parseFloat(acc.qty) > 0) {
+        return {
+          ...ti,
+          accountingQty: parseFloat(acc.qty),
+          accountingUnit: product!.purchaseUnit,
+          accountingPrice: acc.price ? parseFloat(acc.price) : undefined,
+          // Cập nhật price (giá vốn mỗi cây) = tổng tiền / số lượng (nếu có đủ dữ liệu)
+          price: (acc.qty && acc.price && ti.quantity > 0)
+            ? Math.round((parseFloat(acc.qty) * parseFloat(acc.price)) / ti.quantity)
+            : ti.price
+        };
+      }
+      return ti;
+    });
+
     const newTx: Transaction = {
       id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       type: activeTab as TransactionType,
       date: new Date().toISOString(),
-      items: txItems,
+      items: enrichedItems,
       requesterId: user.id,
       status: TransactionStatus.PENDING,
       note,
@@ -154,6 +179,7 @@ const Operations: React.FC = () => {
 
     addTransaction(newTx);
     setTxItems([]);
+    setAccountingData({});
     setNote('');
     setSupplierId('');
     setShowConfirmTransfer(false);
@@ -539,7 +565,7 @@ const Operations: React.FC = () => {
                   <div onClick={() => setItemSelectOpen(true)} className="border-4 border-dashed border-slate-50 rounded-2xl p-10 md:p-16 text-center text-slate-300 font-black uppercase tracking-widest cursor-pointer hover:bg-slate-50 transition-all text-sm">Nhấn để chọn vật tư...</div>
                 ) : (
                   <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-sm bg-white">
-                    {/* Desktop View */}
+                    {/* Desktop View - NHẬP KHO: hiển thị cột kế toán */}
                     <div className="hidden md:block">
                       <table className="w-full text-left">
                         <thead className="bg-slate-50 text-[10px] uppercase text-slate-400 font-black tracking-widest border-b border-slate-100">
@@ -549,7 +575,22 @@ const Operations: React.FC = () => {
                             {(activeTab !== TransactionType.IMPORT) && (
                               <th className="p-4 w-36 text-right">Tồn kho hiện tại</th>
                             )}
-                            <th className="p-4 w-32 text-center">Số lượng đề xuất</th>
+                            {/* Cột kế toán: Số KG - chỉ hiện khi NHẬP KHO */}
+                            {activeTab === TransactionType.IMPORT && (
+                              <th className="p-4 w-40 text-center">
+                                <span className="flex items-center justify-center gap-1 text-amber-600">
+                                  <Scale size={10} /> SL Kế toán (đ.vị mua)
+                                </span>
+                              </th>
+                            )}
+                            {activeTab === TransactionType.IMPORT && (
+                              <th className="p-4 w-36 text-center">
+                                <span className="flex items-center justify-center gap-1 text-amber-600">
+                                  <Banknote size={10} /> Đơn giá mua
+                                </span>
+                              </th>
+                            )}
+                            <th className="p-4 w-32 text-center">SL Nhập kho ({activeTab === TransactionType.IMPORT ? 'Đ.vị kho' : 'Số lượng'})</th>
                             <th className="p-4 w-16"></th>
                           </tr>
                         </thead>
@@ -558,11 +599,21 @@ const Operations: React.FC = () => {
                             const product = items.find(i => i.id === item.itemId);
                             const currentStock = getStockInWarehouse(item.itemId, selectedWarehouseId);
                             const isOverStock = activeTab !== TransactionType.IMPORT && item.quantity > currentStock;
+                            const hasDualUnit = activeTab === TransactionType.IMPORT && product?.purchaseUnit && product.purchaseUnit !== product.unit;
+                            const accData = accountingData[item.itemId] || { qty: '', price: '' };
+                            const totalAccValue = hasDualUnit && accData.qty && accData.price
+                              ? parseFloat(accData.qty) * parseFloat(accData.price)
+                              : undefined;
                             return (
-                              <tr key={idx} className="hover:bg-slate-50/50">
+                              <tr key={idx} className={`hover:bg-slate-50/50 ${hasDualUnit ? 'bg-amber-50/30' : ''}`}>
                                 <td className="p-4">
                                   <div className="font-black text-slate-800 text-sm">{product?.name}</div>
                                   <div className="text-[10px] text-slate-400 font-bold uppercase">{product?.sku}</div>
+                                  {hasDualUnit && (
+                                    <div className="mt-1 inline-flex items-center gap-1 text-[9px] bg-amber-100 text-amber-700 font-black px-1.5 py-0.5 rounded border border-amber-200">
+                                      <Scale size={8} /> Mua: {product?.purchaseUnit} → Kho: {product?.unit}
+                                    </div>
+                                  )}
                                 </td>
                                 {activeTab !== TransactionType.IMPORT && (
                                   <td className="p-4 text-right">
@@ -577,6 +628,57 @@ const Operations: React.FC = () => {
                                     )}
                                   </td>
                                 )}
+                                {/* Cột kế toán: SL mua (KG) */}
+                                {activeTab === TransactionType.IMPORT && (
+                                  <td className="p-4">
+                                    {hasDualUnit ? (
+                                      <div className="flex items-center gap-1">
+                                        <input
+                                          type="number" min="0" step="0.001"
+                                          placeholder="0.00"
+                                          value={accData.qty}
+                                          onChange={e => setAccountingData(prev => ({
+                                            ...prev,
+                                            [item.itemId]: { ...accData, qty: e.target.value }
+                                          }))}
+                                          className="w-full border-2 border-amber-200 bg-amber-50 rounded-lg px-2 py-1.5 text-center font-black text-amber-800 text-sm outline-none focus:border-amber-400"
+                                        />
+                                        <span className="text-[10px] font-black text-amber-600 uppercase whitespace-nowrap">{product?.purchaseUnit}</span>
+                                      </div>
+                                    ) : (
+                                      <div className="text-center text-[10px] text-slate-300 italic">—</div>
+                                    )}
+                                  </td>
+                                )}
+                                {/* Cột Đơn giá mua (KG) */}
+                                {activeTab === TransactionType.IMPORT && (
+                                  <td className="p-4">
+                                    {hasDualUnit ? (
+                                      <div className="space-y-1">
+                                        <div className="flex items-center gap-1">
+                                          <input
+                                            type="number" min="0"
+                                            placeholder="0"
+                                            value={accData.price}
+                                            onChange={e => setAccountingData(prev => ({
+                                              ...prev,
+                                              [item.itemId]: { ...accData, price: e.target.value }
+                                            }))}
+                                            className="w-full border-2 border-amber-200 bg-amber-50 rounded-lg px-2 py-1.5 text-center font-black text-amber-800 text-sm outline-none focus:border-amber-400"
+                                          />
+                                          <span className="text-[10px] font-black text-amber-600 whitespace-nowrap">₫/{product?.purchaseUnit}</span>
+                                        </div>
+                                        {totalAccValue !== undefined && (
+                                          <div className="text-[9px] text-amber-700 font-black text-center bg-amber-100 px-1 py-0.5 rounded">
+                                            = {totalAccValue.toLocaleString('vi-VN')} ₫
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className="text-center text-[10px] text-slate-300 italic">—</div>
+                                    )}
+                                  </td>
+                                )}
                                 <td className="p-4">
                                   <div className="flex items-center gap-2">
                                     <input
@@ -588,9 +690,17 @@ const Operations: React.FC = () => {
                                     />
                                     <span className="text-[10px] font-black text-slate-400 uppercase">{product?.unit}</span>
                                   </div>
+                                  {hasDualUnit && accData.qty && accData.price && item.quantity > 0 && (
+                                    <div className="text-[9px] text-slate-400 font-bold text-center mt-1 italic">
+                                      Giá vốn/cây: {Math.round(parseFloat(accData.qty) * parseFloat(accData.price) / item.quantity).toLocaleString('vi-VN')} ₫
+                                    </div>
+                                  )}
                                 </td>
                                 <td className="p-4 text-right">
-                                  <button onClick={() => setTxItems(txItems.filter(ti => ti.itemId !== item.itemId))} className="text-slate-300 hover:text-red-500 p-2 rounded-lg transition-colors"><Trash2 size={18} /></button>
+                                  <button onClick={() => {
+                                    setTxItems(txItems.filter(ti => ti.itemId !== item.itemId));
+                                    setAccountingData(prev => { const n = { ...prev }; delete n[item.itemId]; return n; });
+                                  }} className="text-slate-300 hover:text-red-500 p-2 rounded-lg transition-colors"><Trash2 size={18} /></button>
                                 </td>
                               </tr>
                             );
@@ -633,6 +743,43 @@ const Operations: React.FC = () => {
                         );
                       })}
                     </div>
+
+                    {activeTab === TransactionType.IMPORT && (
+                      <div className="p-4 border-t border-slate-100 bg-amber-50/30 text-right text-xs font-bold text-amber-700">
+                        {(() => {
+                          let totalAccQty = 0;
+                          let totalAccValue = 0;
+                          let hasDualUnitItem = false;
+
+                          txItems.forEach(item => {
+                            const product = items.find(i => i.id === item.itemId);
+                            const hasDualUnit = product?.purchaseUnit && product.purchaseUnit !== product.unit;
+                            if (hasDualUnit) {
+                              hasDualUnitItem = true;
+                              const accData = accountingData[item.itemId] || { qty: '', price: '' };
+                              const qty = parseFloat(accData.qty);
+                              const price = parseFloat(accData.price);
+                              if (!isNaN(qty)) totalAccQty += qty;
+                              if (!isNaN(qty) && !isNaN(price)) totalAccValue += qty * price;
+                            }
+                          });
+
+                          if (hasDualUnitItem) {
+                            return (
+                              <>
+                                <div className="flex justify-end items-center gap-1">
+                                  <Scale size={10} /> Tổng SL Kế toán: <span className="font-black text-sm">{totalAccQty.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                </div>
+                                <div className="flex justify-end items-center gap-1 mt-1">
+                                  <Banknote size={10} /> Tổng giá trị mua: <span className="font-black text-sm">{totalAccValue.toLocaleString('vi-VN')} ₫</span>
+                                </div>
+                              </>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

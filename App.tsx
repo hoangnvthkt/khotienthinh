@@ -9,6 +9,7 @@ import Settings from './pages/Settings';
 import RequestWorkflow from './pages/RequestWorkflow';
 import Audit from './pages/Audit';
 import Reports from './pages/Reports';
+import MisaExport from './pages/MisaExport';
 import Login from './pages/Login';
 import Employees from './pages/hrm/Employees';
 import { AppProvider } from './context/AppContext';
@@ -38,6 +39,7 @@ const AppRoutes: React.FC = () => {
         <Route path="reports" element={<Reports />} />
         <Route path="users" element={<Navigate to="/settings" replace />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="misa-export" element={<MisaExport />} />
         <Route path="hrm/employees" element={<Employees />} />
         <Route path="*" element={<NotFound />} />
       </Route>

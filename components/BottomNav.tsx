@@ -1,9 +1,9 @@
 
 import React, { useMemo } from 'react';
 import { NavLink } from 'react-router-dom';
-import { 
-  LayoutDashboard, Package, ArrowLeftRight, 
-  FileText, ClipboardCheck, History
+import {
+  LayoutDashboard, Package, ArrowLeftRight,
+  FileText, ClipboardCheck, History, FileSpreadsheet
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Role, TransactionStatus, RequestStatus } from '../types';
@@ -29,7 +29,7 @@ const BottomNav: React.FC = () => {
     }
     if (user.role === Role.KEEPER) {
       const myReq = requests.filter(r => r.requesterId === user.id && r.status === RequestStatus.PENDING).length;
-      const needAction = requests.filter(r => 
+      const needAction = requests.filter(r =>
         (r.status === RequestStatus.APPROVED && r.sourceWarehouseId === user.assignedWarehouseId) ||
         (r.status === RequestStatus.IN_TRANSIT && r.siteWarehouseId === user.assignedWarehouseId)
       ).length;
@@ -44,6 +44,7 @@ const BottomNav: React.FC = () => {
     { to: '/inventory', icon: Package, label: 'Kho' },
     { to: '/operations', icon: ArrowLeftRight, label: 'Nghiệp vụ', badge: pendingTxCount > 0 ? pendingTxCount : null, roles: [Role.ADMIN, Role.KEEPER] },
     { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
+    { to: '/misa-export', icon: FileSpreadsheet, label: 'MISA', roles: [Role.ADMIN, Role.ACCOUNTANT] },
   ];
 
   const filteredNavItems = navItems.filter(item => !item.roles || item.roles.includes(user.role));
@@ -51,9 +52,9 @@ const BottomNav: React.FC = () => {
   return (
     <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 px-2 py-1 flex justify-around items-center z-40 shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
       {filteredNavItems.map((item) => (
-        <NavLink 
-          key={item.to} 
-          to={item.to} 
+        <NavLink
+          key={item.to}
+          to={item.to}
           className={({ isActive }) => `flex flex-col items-center p-2 min-w-[64px] transition-colors relative ${isActive ? 'text-accent' : 'text-slate-400'}`}
         >
           <item.icon size={20} className="mb-1" />

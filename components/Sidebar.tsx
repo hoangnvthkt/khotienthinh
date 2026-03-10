@@ -4,7 +4,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon, Bell,
-  Users, Briefcase
+  Users, Briefcase, FileSpreadsheet
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -67,6 +67,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
     { to: '/operations', icon: ArrowLeftRight, label: 'Nhập / Xuất', badge: pendingTxCount > 0 ? pendingTxCount : null, roles: [Role.ADMIN, Role.KEEPER] },
     { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
     { to: '/reports', icon: History, label: 'Báo cáo WMS' },
+    { to: '/misa-export', icon: FileSpreadsheet, label: 'Đồng bộ MISA', roles: [Role.ADMIN, Role.ACCOUNTANT], accentColor: 'bg-green-600' },
     { to: '/settings', icon: Settings, label: 'Cài đặt' },
   ];
 

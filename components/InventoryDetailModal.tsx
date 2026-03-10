@@ -315,7 +315,7 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                 )}
               </div>
               <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <div className="text-slate-400 mb-1 text-[10px] uppercase font-bold tracking-tight">Đơn vị</div>
+                <div className="text-slate-400 mb-1 text-[10px] uppercase font-bold tracking-tight">Đơn vị kho</div>
                 {isEditing ? (
                   <select
                     className="w-full bg-white border border-slate-200 text-sm font-medium p-1 rounded outline-none"
@@ -328,6 +328,27 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                   <div className="font-medium text-slate-800 text-sm">{item.unit}</div>
                 )}
               </div>
+              {/* Đơn vị mua - chỉ hiển thị khi có, hoặc khi đang sửa */}
+              {(item.purchaseUnit || isEditing) && (
+                <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                  <div className="text-amber-600 mb-1 text-[10px] uppercase font-bold tracking-tight">Đơn vị mua</div>
+                  {isEditing ? (
+                    <select
+                      className="w-full bg-white border border-amber-200 text-sm font-medium p-1 rounded outline-none focus:ring-2 focus:ring-amber-400"
+                      value={editData.purchaseUnit || ''}
+                      onChange={e => setEditData({ ...editData, purchaseUnit: e.target.value || undefined })}
+                    >
+                      <option value="">— Giống đơn vị kho —</option>
+                      {units.map(unit => <option key={unit.id} value={unit.name}>{unit.name}</option>)}
+                    </select>
+                  ) : (
+                    <div className="font-bold text-amber-800 text-sm flex items-center gap-1">
+                      {item.purchaseUnit}
+                      <span className="text-[9px] text-amber-500 font-black ml-1 bg-amber-100 px-1 rounded">KHÁC Đ.VỌN KHO</span>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
                 <div className="text-slate-400 mb-1 text-[10px] uppercase font-bold tracking-tight">Giá nhập</div>
                 {isEditing ? (
@@ -484,7 +505,16 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                                 <td className={`p-3 text-right font-black ${tx.type === TransactionType.IMPORT ? 'text-emerald-600' :
                                   tx.type === TransactionType.LIQUIDATION ? 'text-red-600' : 'text-orange-600'
                                   }`}>
-                                  {tx.type === TransactionType.IMPORT ? '+' : '-'}{txItem?.quantity.toLocaleString()}
+                                  {tx.type === TransactionType.IMPORT ? '+' : '-'}{txItem?.quantity.toLocaleString()} {item.unit}
+                                  {/* Hiển thị số liệu kế toán (KG) nếu có */}
+                                  {txItem?.accountingQty && txItem?.accountingUnit && (
+                                    <div className="text-[9px] text-amber-600 font-black mt-0.5">
+                                      = {txItem.accountingQty.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {txItem.accountingUnit}
+                                      {txItem.accountingPrice && (
+                                        <span className="text-amber-500 ml-1">@ {txItem.accountingPrice.toLocaleString('vi-VN')}₫/{txItem.accountingUnit}</span>
+                                      )}
+                                    </div>
+                                  )}
                                 </td>
                                 <td className="p-3 text-slate-500 truncate italic">
                                   {requester?.name || 'Hệ thống'}

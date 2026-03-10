@@ -170,7 +170,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         if (itemsData) setItems(itemsData.map((i: any) => ({
-          ...i, priceIn: i.price_in, priceOut: i.price_out, minStock: i.min_stock, supplierId: i.supplier_id, imageUrl: i.image_url, stockByWarehouse: i.stock_by_warehouse
+          ...i, priceIn: i.price_in, priceOut: i.price_out, minStock: i.min_stock,
+          supplierId: i.supplier_id, imageUrl: i.image_url, stockByWarehouse: i.stock_by_warehouse,
+          purchaseUnit: i.purchase_unit ?? undefined
         })));
 
         if (whData && whData.length > 0) setWarehouses(whData.map((w: any) => ({ ...w, isArchived: w.is_archived })));
@@ -208,7 +210,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const i = payload.new as any;
           const mappedItem = {
-            ...i, priceIn: i.price_in, priceOut: i.price_out, minStock: i.min_stock, supplierId: i.supplier_id, imageUrl: i.image_url, stockByWarehouse: i.stock_by_warehouse
+            ...i, priceIn: i.price_in, priceOut: i.price_out, minStock: i.min_stock,
+            supplierId: i.supplier_id, imageUrl: i.image_url, stockByWarehouse: i.stock_by_warehouse,
+            purchaseUnit: i.purchase_unit ?? undefined
           };
           setItems(prev => {
             const exists = prev.find(item => item.id === mappedItem.id);
@@ -377,6 +381,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (table === 'items') {
         payload = {
           id: data.id, sku: data.sku, name: data.name, category: data.category, unit: data.unit,
+          purchase_unit: data.purchaseUnit ?? null,
           price_in: data.priceIn, price_out: data.priceOut, min_stock: data.minStock,
           supplier_id: data.supplierId, image_url: data.imageUrl, stock_by_warehouse: data.stockByWarehouse
         };
@@ -737,38 +742,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateRequestStatus = (id: string, status: RequestStatus, note?: string, approvedItems?: { itemId: string, qty: number }[], sourceWarehouseId?: string) => {
-    setRequests(prev => prev.map(req => {
-      if (req.id === id) {
-        const newLog: AuditLog = {
-          action: status,
-          userId: user.id,
-          timestamp: new Date().toISOString(),
-          note: note
-        };
+    const req = requests.find(r => r.id === id);
+    if (!req) return;
 
-        let updatedItems = [...req.items];
-        if (status === RequestStatus.APPROVED && approvedItems) {
-          updatedItems = req.items.map(item => {
-            const approved = approvedItems.find(i => i.itemId === item.itemId);
-            return approved ? { ...item, approvedQty: approved.qty } : item;
-          });
-        }
+    const newLog: AuditLog = {
+      action: status,
+      userId: user.id,
+      timestamp: new Date().toISOString(),
+      note: note
+    };
 
-        const updatedReq = {
-          ...req,
-          status,
-          sourceWarehouseId: sourceWarehouseId || req.sourceWarehouseId,
-          items: updatedItems,
-          logs: [...req.logs, newLog]
-        };
+    let updatedItems = [...req.items];
+    if (status === RequestStatus.APPROVED && approvedItems) {
+      updatedItems = req.items.map(item => {
+        const approved = approvedItems.find(i => i.itemId === item.itemId);
+        return approved ? { ...item, approvedQty: approved.qty } : item;
+      });
+    }
 
-        logActivity('REQUEST', 'Cập nhật yêu cầu', `Yêu cầu ${req.code} chuyển sang ${status}`, 'INFO', req.siteWarehouseId);
-        syncToSupabase('requests', updatedReq);
+    const effectiveSourceWhId = sourceWarehouseId || req.sourceWarehouseId;
 
-        return updatedReq;
-      }
-      return req;
-    }));
+    const updatedReq = {
+      ...req,
+      status,
+      sourceWarehouseId: effectiveSourceWhId,
+      items: updatedItems,
+      logs: [...req.logs, newLog]
+    };
+
+    setRequests(prev => prev.map(r => r.id === id ? updatedReq : r));
+    logActivity('REQUEST', 'Cập nhật yêu cầu', `Yêu cầu ${req.code} chuyển sang ${status}`, 'INFO', req.siteWarehouseId);
+    syncToSupabase('requests', updatedReq);
+
+    // Generate Transaction when Request is fully received
+    if (status === RequestStatus.COMPLETED) {
+      const tx: Transaction = {
+        id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        type: TransactionType.TRANSFER,
+        date: new Date().toISOString(),
+        items: updatedItems.map(i => ({ itemId: i.itemId, quantity: i.approvedQty })),
+        sourceWarehouseId: effectiveSourceWhId,
+        targetWarehouseId: req.siteWarehouseId,
+        requesterId: req.requesterId,
+        approverId: user.id,
+        status: TransactionStatus.COMPLETED,
+        note: `Điều chuyển từ phiếu yêu cầu: ${req.code}` + (note ? ` - ${note}` : ''),
+        relatedRequestId: req.id
+      };
+      // addTransaction handles applying stock changes, logging the transaction, and syncing to DB
+      addTransaction(tx);
+    }
   };
 
   const addCategory = (name: string) => {

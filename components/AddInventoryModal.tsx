@@ -20,6 +20,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
     name: '',
     category: '',
     unit: '',
+    purchaseUnit: '', // Đơn vị mua (KG, Tấn...) - để trống nếu giống đơn vị tồn kho
     supplierId: '',
     priceIn: 0,
     priceOut: 0,
@@ -64,6 +65,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
       name: formData.name,
       category: formData.category,
       unit: formData.unit,
+      purchaseUnit: (formData.purchaseUnit && formData.purchaseUnit !== formData.unit) ? formData.purchaseUnit : undefined,
       supplierId: formData.supplierId || undefined,
       priceIn: formData.priceIn,
       priceOut: formData.priceOut,
@@ -101,7 +103,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
 
     onClose();
     setFormData({
-      sku: '', name: '', category: '', unit: '', supplierId: '',
+      sku: '', name: '', category: '', unit: '', purchaseUnit: '', supplierId: '',
       priceIn: 0, priceOut: 0, minStock: 0, location: '',
       initialWarehouseId: '', initialStock: 0
     });
@@ -168,6 +170,35 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
                 <option value="">-- Chọn đơn vị --</option>
                 {units.map(unit => <option key={unit.id} value={unit.name}>{unit.name}</option>)}
               </select>
+            </div>
+
+            {/* Đơn vị mua hàng - Tính năng Dual Unit */}
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                Đơn vị mua hàng
+                <span className="text-[10px] font-normal text-slate-400">(tùy chọn - chỉ điền nếu khác đơn vị tồn kho)</span>
+              </label>
+              <div className="flex gap-3 items-start">
+                <select
+                  name="purchaseUnit" value={formData.purchaseUnit} onChange={handleChange}
+                  className="flex-1 p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none bg-white"
+                >
+                  <option value="">— Giống đơn vị tồn kho —</option>
+                  {units.map(unit => <option key={unit.id} value={unit.name}>{unit.name}</option>)}
+                </select>
+                {formData.purchaseUnit && formData.purchaseUnit !== formData.unit && formData.unit && (
+                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-black px-3 py-2.5 rounded-lg whitespace-nowrap">
+                    Mua: <span className="text-amber-600">{formData.purchaseUnit}</span>
+                    <span className="text-amber-400">→</span>
+                    Kho: <span className="text-amber-600">{formData.unit}</span>
+                  </div>
+                )}
+              </div>
+              {formData.purchaseUnit && formData.purchaseUnit !== formData.unit && (
+                <p className="text-[10px] text-amber-600 font-bold">
+                  ℹ️ Vật tư này sẽ hỗ trợ nhập kho theo {formData.purchaseUnit}, xuất kho theo {formData.unit || '...'}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2 md:col-span-2">

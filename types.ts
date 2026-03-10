@@ -92,20 +92,25 @@ export interface InventoryItem {
   sku: string;
   name: string;
   category: string;
-  unit: string;
+  unit: string;          // Đơn vị tồn kho & xuất kho (VD: Cây, Cái, Tấm)
+  purchaseUnit?: string; // Đơn vị mua hàng (VD: KG, Tấn) - khác với unit nếu có
   priceIn: number;
   priceOut: number;
   minStock: number;
   supplierId?: string; // Link to Supplier
   imageUrl?: string;
   location?: string; // Vị trí trong kho, ví dụ: Kệ A-3, Ô 2
-  stockByWarehouse: Record<string, number>; // warehouseId -> quantity
+  stockByWarehouse: Record<string, number>; // warehouseId -> quantity (in base unit)
 }
 
 export interface TransactionItem {
   itemId: string;
-  quantity: number;
-  price?: number; // Snapshot of price at transaction time
+  quantity: number;            // Số lượng theo đơn vị tồn kho (Cây, Cái...)
+  price?: number;              // Snapshot giá tại thời điểm giao dịch
+  // --- Thông tin kế toán (chỉ áp dụng khi NHẬP KHO với đơn vị mua khác) ---
+  accountingQty?: number;      // Số lượng theo đơn vị mua (VD: 10.05 KG)
+  accountingUnit?: string;     // Đơn vị mua (VD: 'KG') - snapshot tại thời điểm nhập
+  accountingPrice?: number;    // Đơn giá theo đơn vị mua (VD: 15000 VNĐ/KG)
 }
 
 export interface Transaction {
