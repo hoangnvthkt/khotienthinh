@@ -3,12 +3,14 @@ import { useApp } from '../../context/AppContext';
 import { Employee } from '../../types';
 import { Plus, Search, Edit2, Trash2 } from 'lucide-react';
 import EmployeeModal from '../../components/hrm/EmployeeModal';
+import EmployeeDetailModal from '../../components/hrm/EmployeeDetailModal';
 
 const Employees: React.FC = () => {
     const { employees, users, removeEmployee, hrmAreas, hrmOffices, hrmPositions } = useApp();
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+    const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
 
     const filteredEmployees = useMemo(() => {
         return employees.filter(emp =>
@@ -26,6 +28,10 @@ const Employees: React.FC = () => {
     const handleAdd = () => {
         setEditingEmployee(null);
         setIsModalOpen(true);
+    };
+
+    const handleView = (emp: Employee) => {
+        setViewingEmployee(emp);
     };
 
     const handleDelete = (id: string) => {
@@ -79,7 +85,7 @@ const Employees: React.FC = () => {
                         </thead>
                         <tbody className="text-sm">
                             {filteredEmployees.map(emp => (
-                                <tr key={emp.id} className="border-b dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                                <tr key={emp.id} onClick={() => handleView(emp)} className="border-b dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition cursor-pointer">
                                     <td className="p-4 font-bold text-accent">{emp.employeeCode}</td>
                                     <td className="p-4 font-bold text-slate-800 dark:text-white">{emp.fullName}</td>
                                     <td className="p-4 text-slate-600 dark:text-slate-300">{emp.title}</td>
@@ -114,10 +120,10 @@ const Employees: React.FC = () => {
                                         </span>
                                     </td>
                                     <td className="p-4 text-right">
-                                        <button onClick={() => handleEdit(emp)} className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg mr-2 transition">
+                                        <button onClick={(e) => { e.stopPropagation(); handleEdit(emp); }} className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg mr-2 transition">
                                             <Edit2 size={16} />
                                         </button>
-                                        <button onClick={() => handleDelete(emp.id)} className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition">
+                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(emp.id); }} className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition">
                                             <Trash2 size={16} />
                                         </button>
                                     </td>
@@ -139,6 +145,17 @@ const Employees: React.FC = () => {
                 <EmployeeModal
                     employee={editingEmployee}
                     onClose={() => setIsModalOpen(false)}
+                />
+            )}
+
+            {viewingEmployee && (
+                <EmployeeDetailModal
+                    employee={viewingEmployee}
+                    onClose={() => setViewingEmployee(null)}
+                    onEdit={(emp) => {
+                        setViewingEmployee(null);
+                        handleEdit(emp);
+                    }}
                 />
             )}
         </div>

@@ -4,7 +4,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon, Bell,
-  Users, Briefcase, FileSpreadsheet, GitBranch
+  Users, Briefcase, FileSpreadsheet, GitBranch, Workflow
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -22,8 +22,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
   const { isDark, toggleTheme } = useTheme();
 
   // Auto-detect current app context based on URL
-  const [currentApp, setCurrentApp] = useState<'WMS' | 'HRM'>(
-    location.pathname.startsWith('/hrm') ? 'HRM' : 'WMS'
+  const [currentApp, setCurrentApp] = useState<'WMS' | 'HRM' | 'WF'>(
+    location.pathname.startsWith('/hrm') ? 'HRM' : location.pathname.startsWith('/wf') ? 'WF' : 'WMS'
   );
 
   const pendingTxCount = useMemo(() => {
@@ -63,13 +63,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
   const wmsNavItems = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/requests', icon: FileText, label: 'Đề xuất vật tư', badge: pendingReqCount > 0 ? pendingReqCount : null, roles: [Role.ADMIN, Role.KEEPER] },
-    { to: '/workflow', icon: GitBranch, label: 'Quy trình', accentColor: 'bg-violet-600' },
     { to: '/inventory', icon: Package, label: 'Kho & Vật tư', badge: lowStockCount > 0 ? lowStockCount : null, badgeColor: 'bg-amber-500' },
     { to: '/operations', icon: ArrowLeftRight, label: 'Nhập / Xuất', badge: pendingTxCount > 0 ? pendingTxCount : null, roles: [Role.ADMIN, Role.KEEPER] },
     { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
     { to: '/reports', icon: History, label: 'Báo cáo WMS' },
     { to: '/misa-export', icon: FileSpreadsheet, label: 'Đồng bộ MISA', roles: [Role.ADMIN, Role.ACCOUNTANT], accentColor: 'bg-green-600' },
-    { to: '/workflow/templates', icon: Settings, label: 'Thiết kế QT', roles: [Role.ADMIN] },
+    { to: '/settings', icon: Settings, label: 'Cài đặt' },
+  ];
+
+  const wfNavItems = [
+    { to: '/wf', icon: GitBranch, label: 'Quy trình' },
+    { to: '/wf/templates', icon: Workflow, label: 'Mẫu quy trình', roles: [Role.ADMIN] },
     { to: '/settings', icon: Settings, label: 'Cài đặt' },
   ];
 
@@ -77,7 +81,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
     { to: '/hrm/employees', icon: Users, label: 'Hồ sơ nhân sự' },
   ];
 
-  const currentNavItems = currentApp === 'WMS' ? wmsNavItems : hrmNavItems;
+  const currentNavItems = currentApp === 'WMS' ? wmsNavItems : currentApp === 'HRM' ? hrmNavItems : wfNavItems;
   const filteredNavItems = currentNavItems.filter(item => !(item as any).roles || (item as any).roles.includes(user.role));
   const assignedWh = warehouses.find(w => w.id === user.assignedWarehouseId);
 
@@ -108,6 +112,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
             className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1.5 ${currentApp === 'HRM' ? 'bg-teal-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
           >
             <Briefcase size={12} /> Nhân sự
+          </button>
+          <button
+            onClick={() => { setCurrentApp('WF'); navigate('/wf'); }}
+            className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1.5 ${currentApp === 'WF' ? 'bg-violet-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
+          >
+            <GitBranch size={12} /> QT
           </button>
         </div>
 

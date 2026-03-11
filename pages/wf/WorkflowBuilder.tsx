@@ -1,9 +1,9 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useWorkflow } from '../context/WorkflowContext';
-import { useApp } from '../context/AppContext';
-import { WorkflowNode, WorkflowEdge, WorkflowNodeType, Role } from '../types';
+import { useWorkflow } from '../../context/WorkflowContext';
+import { useApp } from '../../context/AppContext';
+import { WorkflowNode, WorkflowEdge, WorkflowNodeType, Role } from '../../types';
 import {
     ArrowLeft, Save, Play, CheckCircle, Circle, Square, Trash2,
     Plus, GripVertical, Zap, UserCheck, Flag, Settings2, X
@@ -165,7 +165,7 @@ const WorkflowBuilder: React.FC = () => {
             <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400">
                 <Square size={48} className="mb-4 opacity-20" />
                 <h2 className="text-xl font-black">Không tìm thấy quy trình</h2>
-                <button onClick={() => navigate('/workflow/templates')} className="mt-4 text-accent hover:underline font-bold text-sm">← Quay lại</button>
+                <button onClick={() => navigate('/wf/templates')} className="mt-4 text-accent hover:underline font-bold text-sm">← Quay lại</button>
             </div>
         );
     }
@@ -177,7 +177,7 @@ const WorkflowBuilder: React.FC = () => {
             {/* Top Bar */}
             <div className="flex items-center justify-between px-4 py-3 glass-card rounded-xl mb-3">
                 <div className="flex items-center gap-3">
-                    <button onClick={() => navigate('/workflow/templates')} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition">
+                    <button onClick={() => navigate('/wf/templates')} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition">
                         <ArrowLeft size={18} />
                     </button>
                     <div>

@@ -1,11 +1,11 @@
 
 import React, { useState, useMemo } from 'react';
-import { useWorkflow } from '../context/WorkflowContext';
-import { useApp } from '../context/AppContext';
+import { useWorkflow } from '../../context/WorkflowContext';
+import { useApp } from '../../context/AppContext';
 import {
     WorkflowInstance, WorkflowInstanceStatus, WorkflowInstanceAction,
     WorkflowNodeType, Role
-} from '../types';
+} from '../../types';
 import {
     GitBranch, Plus, Search, Clock, CheckCircle, XCircle, Circle,
     ArrowRight, User, MessageSquare, FileText, Send, RotateCcw,

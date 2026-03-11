@@ -1,9 +1,9 @@
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useWorkflow } from '../context/WorkflowContext';
-import { useApp } from '../context/AppContext';
-import { Role } from '../types';
+import { useWorkflow } from '../../context/WorkflowContext';
+import { useApp } from '../../context/AppContext';
+import { Role } from '../../types';
 import {
     Plus, GitBranch, Settings2, Trash2, ToggleLeft, ToggleRight,
     Search, Layers, Clock, User, ShieldAlert, ChevronRight
@@ -41,7 +41,7 @@ const WorkflowTemplates: React.FC = () => {
             setShowCreateModal(false);
             setNewName('');
             setNewDesc('');
-            navigate(`/workflow/builder/${t.id}`);
+            navigate(`/wf/builder/${t.id}`);
         }
     };
 
@@ -94,7 +94,7 @@ const WorkflowTemplates: React.FC = () => {
                         <div
                             key={t.id}
                             className="glass-card rounded-2xl p-5 hover:shadow-lg transition-all group cursor-pointer relative overflow-hidden"
-                            onClick={() => navigate(`/workflow/builder/${t.id}`)}
+                            onClick={() => navigate(`/wf/builder/${t.id}`)}
                         >
                             {/* Active indicator */}
                             <div className={`absolute top-0 left-0 w-full h-1 ${t.isActive ? 'bg-gradient-to-r from-emerald-400 to-teal-500' : 'bg-slate-300 dark:bg-slate-600'}`} />

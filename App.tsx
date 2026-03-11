@@ -12,9 +12,9 @@ import Reports from './pages/Reports';
 import MisaExport from './pages/MisaExport';
 import Login from './pages/Login';
 import Employees from './pages/hrm/Employees';
-import WorkflowInstances from './pages/WorkflowInstances';
-import WorkflowTemplates from './pages/WorkflowTemplates';
-import WorkflowBuilder from './pages/WorkflowBuilder';
+import WorkflowInstances from './pages/wf/WorkflowInstances';
+import WorkflowTemplates from './pages/wf/WorkflowTemplates';
+import WorkflowBuilder from './pages/wf/WorkflowBuilder';
 import { AppProvider } from './context/AppContext';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -41,9 +41,9 @@ const AppRoutes: React.FC = () => {
         <Route path="operations" element={<Operations />} />
         <Route path="audit" element={<Audit />} />
         <Route path="reports" element={<Reports />} />
-        <Route path="workflow" element={<WorkflowInstances />} />
-        <Route path="workflow/templates" element={<WorkflowTemplates />} />
-        <Route path="workflow/builder/:id" element={<WorkflowBuilder />} />
+        <Route path="wf" element={<WorkflowInstances />} />
+        <Route path="wf/templates" element={<WorkflowTemplates />} />
+        <Route path="wf/builder/:id" element={<WorkflowBuilder />} />
         <Route path="users" element={<Navigate to="/settings" replace />} />
         <Route path="settings" element={<Settings />} />
         <Route path="misa-export" element={<MisaExport />} />
