@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Warehouse, WarehouseType, Supplier, ItemCategory, ItemUnit } from '../types';
+import { Warehouse, WarehouseType, Supplier, ItemCategory, ItemUnit, HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule } from '../types';
 import {
   Building, MapPin, Plus, X, Save, Settings as SettingsIcon, Users,
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Image as ImageIcon, Globe, Upload, Trash, Truck, User as UserIcon, Search, AlertCircle,
-  Database, Mail, Phone, Shield, MoreVertical
+  Database, Mail, Phone, Shield, MoreVertical, MapPinned, Clock, DollarSign, Calendar, Layers
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import UserModal from '../components/UserModal';
@@ -21,7 +21,9 @@ const Settings: React.FC = () => {
     addUnit, updateUnit, removeUnit,
     addSupplier, updateSupplier, removeSupplier,
     appSettings, updateAppSettings, clearAllData, connectionError,
-    users, addUser, updateUser, removeUser, user: currentUser, logout
+    users, addUser, updateUser, removeUser, user: currentUser, logout,
+    hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules,
+    addHrmItem, updateHrmItem, removeHrmItem
   } = useApp();
 
   const [activeTab, setActiveTab] = useState('general');
@@ -60,7 +62,11 @@ const Settings: React.FC = () => {
 
   // Master data state management
   const [activeMasterSection, setActiveMasterSection] = useState<'categories' | 'units' | 'suppliers' | null>(null);
+  const [activeHrmSection, setActiveHrmSection] = useState<'areas' | 'offices' | 'employee_types' | 'positions' | 'salary_policies' | 'work_schedules' | null>(null);
   const [editingItem, setEditingItem] = useState<{ type: 'cat' | 'unit' | 'sup', data: any } | null>(null);
+  const [editingHrmItem, setEditingHrmItem] = useState<any | null>(null);
+  const [newHrmName, setNewHrmName] = useState('');
+  const [newHrmDesc, setNewHrmDesc] = useState('');
 
   // Input fields for adding
   const [newCatName, setNewCatName] = useState('');
@@ -399,6 +405,7 @@ const Settings: React.FC = () => {
     { id: 'general', label: 'Chung', icon: SettingsIcon, roles: [Role.ADMIN] },
     { id: 'warehouses', label: 'Kho bãi', icon: Building, roles: [Role.ADMIN] },
     { id: 'master-data', label: 'Dữ liệu gốc', icon: Database, roles: [Role.ADMIN] },
+    { id: 'hrm-master-data', label: 'Dữ liệu gốc HRM', icon: Briefcase, roles: [Role.ADMIN] },
     { id: 'users', label: 'Người dùng', icon: Users, roles: [Role.ADMIN] },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
     { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle, roles: [Role.ADMIN] },
@@ -794,6 +801,174 @@ const Settings: React.FC = () => {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'hrm-master-data' && (
+            <div className="animate-in slide-in-from-right-4 duration-300">
+              {!activeHrmSection ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {[
+                    { key: 'areas' as const, label: 'Khu vực / Chuyên môn', desc: 'Phân vùng theo lĩnh vực chuyên môn.', icon: MapPinned, color: 'blue', count: hrmAreas.length },
+                    { key: 'offices' as const, label: 'Văn phòng', desc: 'Các địa điểm văn phòng công ty.', icon: Building, color: 'emerald', count: hrmOffices.length },
+                    { key: 'employee_types' as const, label: 'Phân loại nhân sự', desc: 'Fulltime, Part-time, Intern...', icon: Layers, color: 'violet', count: hrmEmployeeTypes.length },
+                    { key: 'positions' as const, label: 'Vị trí công việc', desc: 'Ban GĐ, Trưởng phòng, Chuyên viên...', icon: HardHat, color: 'amber', count: hrmPositions.length },
+                    { key: 'salary_policies' as const, label: 'Chính sách lương', desc: 'Lương VP, Lương nhà máy, công trường...', icon: DollarSign, color: 'rose', count: hrmSalaryPolicies.length },
+                    { key: 'work_schedules' as const, label: 'Lịch làm việc', desc: 'Lịch VP, Lịch nhà máy, công trường...', icon: Calendar, color: 'cyan', count: hrmWorkSchedules.length },
+                  ].map(item => (
+                    <button
+                      key={item.key}
+                      onClick={() => setActiveHrmSection(item.key)}
+                      className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl hover:border-slate-200 transition-all group text-left"
+                    >
+                      <div className={`w-14 h-14 bg-${item.color}-50 text-${item.color}-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform`}>
+                        <item.icon size={28} />
+                      </div>
+                      <h3 className="text-xl font-black text-slate-800 mb-2">{item.label}</h3>
+                      <p className="text-sm text-slate-500 font-medium">{item.desc}</p>
+                      <div className="mt-6 flex items-center justify-between">
+                        <span className={`text-${item.color}-600 font-bold text-xs uppercase tracking-widest flex items-center`}>
+                          Thiết lập ngay <Plus size={14} className="ml-1" />
+                        </span>
+                        <span className="text-xs font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-lg">{item.count} mục</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (() => {
+                const hrmConfig: Record<string, { table: string; label: string; items: any[]; hasDesc: boolean; placeholderName: string; placeholderDesc?: string; color: string; icon: any }> = {
+                  'areas': { table: 'hrm_areas', label: 'Khu vực / Chuyên môn', items: hrmAreas, hasDesc: true, placeholderName: 'VD: Kết cấu thép, Xây dựng, Cơ khí...', placeholderDesc: 'Mô tả khu vực', color: 'blue', icon: MapPinned },
+                  'offices': { table: 'hrm_offices', label: 'Văn phòng', items: hrmOffices, hasDesc: true, placeholderName: 'VD: Văn phòng Hà Nội...', placeholderDesc: 'Địa chỉ văn phòng', color: 'emerald', icon: Building },
+                  'employee_types': { table: 'hrm_employee_types', label: 'Phân loại nhân sự', items: hrmEmployeeTypes, hasDesc: false, placeholderName: 'VD: Fulltime, Part-time, Intern...', color: 'violet', icon: Layers },
+                  'positions': { table: 'hrm_positions', label: 'Vị trí công việc', items: hrmPositions, hasDesc: false, placeholderName: 'VD: Ban GĐ, Trưởng phòng, Chuyên viên...', color: 'amber', icon: HardHat },
+                  'salary_policies': { table: 'hrm_salary_policies', label: 'Chính sách lương', items: hrmSalaryPolicies, hasDesc: true, placeholderName: 'VD: Lương văn phòng, Lương nhà máy...', placeholderDesc: 'Mô tả chính sách', color: 'rose', icon: DollarSign },
+                  'work_schedules': { table: 'hrm_work_schedules', label: 'Lịch làm việc', items: hrmWorkSchedules, hasDesc: true, placeholderName: 'VD: Lịch văn phòng, Lịch nhà máy...', placeholderDesc: 'Mô tả lịch làm việc', color: 'cyan', icon: Calendar },
+                };
+                const cfg = hrmConfig[activeHrmSection];
+                if (!cfg) return null;
+
+                const handleHrmAdd = () => {
+                  if (!newHrmName.trim()) return;
+                  if (editingHrmItem) {
+                    const updated = { ...editingHrmItem, name: newHrmName.trim(), ...(cfg.hasDesc ? { [cfg.table === 'hrm_offices' ? 'address' : 'description']: newHrmDesc.trim() } : {}) };
+                    updateHrmItem(cfg.table, updated);
+                    setEditingHrmItem(null);
+                  } else {
+                    const newItem: any = { id: crypto.randomUUID(), name: newHrmName.trim() };
+                    if (cfg.hasDesc) {
+                      newItem[cfg.table === 'hrm_offices' ? 'address' : 'description'] = newHrmDesc.trim();
+                    }
+                    addHrmItem(cfg.table, newItem);
+                  }
+                  setNewHrmName('');
+                  setNewHrmDesc('');
+                };
+
+                const handleHrmEdit = (item: any) => {
+                  setEditingHrmItem(item);
+                  setNewHrmName(item.name);
+                  setNewHrmDesc(item.description || item.address || '');
+                };
+
+                const handleHrmDelete = (id: string) => {
+                  const item = cfg.items.find((i: any) => i.id === id);
+                  triggerAction(
+                    `Xoá ${cfg.label}`,
+                    `Bạn chắc chắn muốn xoá "${item?.name}"? Nhân sự đang sử dụng mục này sẽ mất liên kết.`,
+                    'danger',
+                    'Xoá vĩnh viễn',
+                    () => removeHrmItem(cfg.table, id)
+                  );
+                };
+
+                return (
+                  <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden flex flex-col min-h-[600px]">
+                    <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <button
+                          onClick={() => { setActiveHrmSection(null); setEditingHrmItem(null); setNewHrmName(''); setNewHrmDesc(''); }}
+                          className="p-2 hover:bg-white rounded-xl text-slate-400 hover:text-slate-800 transition-all border border-transparent hover:border-slate-200"
+                        >
+                          <X size={20} />
+                        </button>
+                        <div>
+                          <h2 className="text-lg font-black text-slate-800">Quản lý {cfg.label}</h2>
+                          <p className="text-xs text-slate-500 font-medium">Thêm, sửa hoặc xoá dữ liệu gốc HRM.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 p-8">
+                      <div className="max-w-2xl mx-auto space-y-6">
+                        <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 space-y-4">
+                          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                            {editingHrmItem ? `Cập nhật ${cfg.label}` : `Thêm ${cfg.label} mới`}
+                          </h3>
+                          <div className="space-y-3">
+                            <input
+                              type="text" placeholder={cfg.placeholderName} value={newHrmName}
+                              onChange={(e) => setNewHrmName(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && !cfg.hasDesc && handleHrmAdd()}
+                              className="w-full bg-white border border-slate-200 rounded-2xl px-6 py-4 text-sm font-bold outline-none focus:ring-2 focus:ring-accent transition-all"
+                            />
+                            {cfg.hasDesc && (
+                              <input
+                                type="text" placeholder={cfg.placeholderDesc} value={newHrmDesc}
+                                onChange={(e) => setNewHrmDesc(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleHrmAdd()}
+                                className="w-full bg-white border border-slate-200 rounded-2xl px-6 py-4 text-sm font-bold outline-none focus:ring-2 focus:ring-accent transition-all"
+                              />
+                            )}
+                            <div className="flex gap-3">
+                              {editingHrmItem && (
+                                <button
+                                  onClick={() => { setEditingHrmItem(null); setNewHrmName(''); setNewHrmDesc(''); }}
+                                  className="px-6 py-3 border border-slate-200 text-slate-500 rounded-2xl font-bold text-xs uppercase hover:bg-slate-50 transition-all"
+                                >
+                                  Hủy
+                                </button>
+                              )}
+                              <button onClick={handleHrmAdd} className={`flex-1 bg-${cfg.color}-600 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:opacity-90 transition shadow-lg flex items-center justify-center gap-2`}>
+                                {editingHrmItem ? <Save size={18} /> : <Plus size={18} />}
+                                {editingHrmItem ? 'Cập nhật' : 'Thêm mới'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3">
+                          {cfg.items.map((item: any) => (
+                            <div key={item.id} className={`flex items-center justify-between p-5 rounded-2xl bg-white border border-slate-100 hover:border-${cfg.color}-200 hover:shadow-md transition-all group`}>
+                              <div className="flex items-center gap-4">
+                                <div className={`w-10 h-10 bg-${cfg.color}-50 text-${cfg.color}-600 rounded-xl flex items-center justify-center font-black text-xs`}>
+                                  <cfg.icon size={18} />
+                                </div>
+                                <div>
+                                  <span className="text-sm font-bold text-slate-700 block">{item.name}</span>
+                                  {(item.description || item.address) && (
+                                    <span className="text-xs text-slate-400">{item.description || item.address}</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => handleHrmEdit(item)} className={`p-2 text-slate-400 hover:text-${cfg.color}-600 hover:bg-${cfg.color}-50 rounded-xl transition-colors`}><Edit2 size={16} /></button>
+                                <button onClick={() => handleHrmDelete(item.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={16} /></button>
+                              </div>
+                            </div>
+                          ))}
+                          {cfg.items.length === 0 && (
+                            <div className="text-center py-12 text-slate-400">
+                              <cfg.icon size={40} className="mx-auto mb-3 opacity-30" />
+                              <p className="text-sm font-bold">Chưa có dữ liệu nào</p>
+                              <p className="text-xs">Hãy thêm {cfg.label.toLowerCase()} đầu tiên</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 

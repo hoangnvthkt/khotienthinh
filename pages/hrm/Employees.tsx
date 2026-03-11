@@ -5,7 +5,7 @@ import { Plus, Search, Edit2, Trash2 } from 'lucide-react';
 import EmployeeModal from '../../components/hrm/EmployeeModal';
 
 const Employees: React.FC = () => {
-    const { employees, users, removeEmployee } = useApp();
+    const { employees, users, removeEmployee, hrmAreas, hrmOffices, hrmPositions } = useApp();
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -69,10 +69,11 @@ const Employees: React.FC = () => {
                                 <th className="p-4 border-b dark:border-slate-700">Mã NV</th>
                                 <th className="p-4 border-b dark:border-slate-700">Họ & Tên</th>
                                 <th className="p-4 border-b dark:border-slate-700">Chức Danh</th>
-                                <th className="p-4 border-b dark:border-slate-700">Giới Tính</th>
+                                <th className="p-4 border-b dark:border-slate-700">Khu Vực</th>
+                                <th className="p-4 border-b dark:border-slate-700">Văn Phòng</th>
+                                <th className="p-4 border-b dark:border-slate-700">Vị Trí</th>
                                 <th className="p-4 border-b dark:border-slate-700">Liên Hệ</th>
                                 <th className="p-4 border-b dark:border-slate-700">Trạng Thái</th>
-                                <th className="p-4 border-b dark:border-slate-700">Tài Khoản WMS</th>
                                 <th className="p-4 border-b dark:border-slate-700 text-right">Thao Tác</th>
                             </tr>
                         </thead>
@@ -82,7 +83,27 @@ const Employees: React.FC = () => {
                                     <td className="p-4 font-bold text-accent">{emp.employeeCode}</td>
                                     <td className="p-4 font-bold text-slate-800 dark:text-white">{emp.fullName}</td>
                                     <td className="p-4 text-slate-600 dark:text-slate-300">{emp.title}</td>
-                                    <td className="p-4 text-slate-600 dark:text-slate-300">{emp.gender}</td>
+                                    <td className="p-4">
+                                        {emp.areaId ? (
+                                            <span className="text-xs font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-1 rounded-lg">
+                                                {hrmAreas.find(a => a.id === emp.areaId)?.name || '--'}
+                                            </span>
+                                        ) : <span className="text-xs text-slate-400">--</span>}
+                                    </td>
+                                    <td className="p-4">
+                                        {emp.officeId ? (
+                                            <span className="text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400 px-2 py-1 rounded-lg">
+                                                {hrmOffices.find(o => o.id === emp.officeId)?.name || '--'}
+                                            </span>
+                                        ) : <span className="text-xs text-slate-400">--</span>}
+                                    </td>
+                                    <td className="p-4">
+                                        {emp.positionId ? (
+                                            <span className="text-xs font-bold text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-1 rounded-lg">
+                                                {hrmPositions.find(p => p.id === emp.positionId)?.name || '--'}
+                                            </span>
+                                        ) : <span className="text-xs text-slate-400">--</span>}
+                                    </td>
                                     <td className="p-4">
                                         <p className="text-slate-800 dark:text-slate-200">{emp.phone}</p>
                                         <p className="text-xs text-slate-500">{emp.email}</p>
@@ -91,23 +112,6 @@ const Employees: React.FC = () => {
                                         <span className={`px-2 py-1 rounded-md text-xs font-bold ${emp.status === 'Đang làm việc' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'}`}>
                                             {emp.status}
                                         </span>
-                                    </td>
-                                    <td className="p-4">
-                                        {emp.userId ? (() => {
-                                            const linkedUser = users.find(u => u.id === emp.userId);
-                                            return linkedUser ? (
-                                                <div className="flex flex-col">
-                                                    <span className="text-xs font-bold text-purple-600 dark:text-purple-400">{linkedUser.name}</span>
-                                                    <span className="text-[10px] text-slate-500 uppercase">{linkedUser.role}</span>
-                                                </div>
-                                            ) : (
-                                                <span className="text-xs text-slate-400 italic">User không tồn tại</span>
-                                            );
-                                        })() : (
-                                            <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 text-slate-400">
-                                                Chưa liên kết
-                                            </span>
-                                        )}
                                     </td>
                                     <td className="p-4 text-right">
                                         <button onClick={() => handleEdit(emp)} className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg mr-2 transition">
@@ -121,7 +125,7 @@ const Employees: React.FC = () => {
                             ))}
                             {filteredEmployees.length === 0 && (
                                 <tr>
-                                    <td colSpan={8} className="p-8 text-center text-slate-500">
+                                    <td colSpan={9} className="p-8 text-center text-slate-500">
                                         Chưa có nhân sự nào trong hệ thống.
                                     </td>
                                 </tr>

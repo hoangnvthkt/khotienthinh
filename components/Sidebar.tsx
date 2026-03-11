@@ -4,7 +4,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon, Bell,
-  Users, Briefcase, FileSpreadsheet
+  Users, Briefcase, FileSpreadsheet, GitBranch
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -63,11 +63,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
   const wmsNavItems = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/requests', icon: FileText, label: 'Đề xuất vật tư', badge: pendingReqCount > 0 ? pendingReqCount : null, roles: [Role.ADMIN, Role.KEEPER] },
+    { to: '/workflow', icon: GitBranch, label: 'Quy trình', accentColor: 'bg-violet-600' },
     { to: '/inventory', icon: Package, label: 'Kho & Vật tư', badge: lowStockCount > 0 ? lowStockCount : null, badgeColor: 'bg-amber-500' },
     { to: '/operations', icon: ArrowLeftRight, label: 'Nhập / Xuất', badge: pendingTxCount > 0 ? pendingTxCount : null, roles: [Role.ADMIN, Role.KEEPER] },
     { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
     { to: '/reports', icon: History, label: 'Báo cáo WMS' },
     { to: '/misa-export', icon: FileSpreadsheet, label: 'Đồng bộ MISA', roles: [Role.ADMIN, Role.ACCOUNTANT], accentColor: 'bg-green-600' },
+    { to: '/workflow/templates', icon: Settings, label: 'Thiết kế QT', roles: [Role.ADMIN] },
     { to: '/settings', icon: Settings, label: 'Cài đặt' },
   ];
 

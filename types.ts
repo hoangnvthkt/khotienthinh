@@ -60,6 +60,49 @@ export interface Supplier {
   debt: number; // Công nợ
 }
 
+// ==================== HRM MASTER DATA ====================
+
+export interface HrmArea {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt?: string;
+}
+
+export interface HrmOffice {
+  id: string;
+  name: string;
+  address?: string;
+  createdAt?: string;
+}
+
+export interface HrmEmployeeType {
+  id: string;
+  name: string;
+  createdAt?: string;
+}
+
+export interface HrmPosition {
+  id: string;
+  name: string;
+  level?: number;
+  createdAt?: string;
+}
+
+export interface HrmSalaryPolicy {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt?: string;
+}
+
+export interface HrmWorkSchedule {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt?: string;
+}
+
 export interface Employee {
   id: string;
   employeeCode: string; // Mã nhân sự TT00x
@@ -73,6 +116,14 @@ export interface Employee {
   officialDate?: string;
   status: 'Đang làm việc' | 'Đã nghỉ việc';
   userId?: string; // Liên kết tới bảng users
+  // HRM Master Data FK fields
+  areaId?: string;
+  officeId?: string;
+  employeeTypeId?: string;
+  positionId?: string;
+  salaryPolicyId?: string;
+  workScheduleId?: string;
+  maritalStatus?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -177,4 +228,83 @@ export interface Stats {
   lowStockCount: number;
   pendingRequests: number;
   monthlyFlow: { name: string; in: number; out: number }[];
+}
+
+// ==================== WORKFLOW MODULE ====================
+
+export enum WorkflowNodeType {
+  START = 'START',
+  ACTION = 'ACTION',
+  APPROVAL = 'APPROVAL',
+  END = 'END',
+}
+
+export enum WorkflowInstanceStatus {
+  RUNNING = 'RUNNING',
+  COMPLETED = 'COMPLETED',
+  REJECTED = 'REJECTED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum WorkflowInstanceAction {
+  SUBMITTED = 'SUBMITTED',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  REVISION_REQUESTED = 'REVISION_REQUESTED',
+}
+
+export interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  createdBy: string; // user id
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowNode {
+  id: string;
+  templateId: string;
+  type: WorkflowNodeType;
+  label: string;
+  config: {
+    assigneeRole?: Role;       // Vai trò phụ trách duyệt bước này
+    assigneeUserId?: string;   // Cụ thể user nào duyệt (ưu tiên hơn role)
+    formFields?: { name: string; label: string; type: 'text' | 'number' | 'textarea'; required?: boolean }[];
+    slaHours?: number;         // Thời gian tối đa xử lý (giờ)
+  };
+  positionX: number;
+  positionY: number;
+}
+
+export interface WorkflowEdge {
+  id: string;
+  templateId: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  label: string;
+}
+
+export interface WorkflowInstance {
+  id: string;
+  templateId: string;
+  code: string;
+  title: string;
+  createdBy: string; // user id
+  currentNodeId: string | null;
+  status: WorkflowInstanceStatus;
+  formData: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowInstanceLog {
+  id: string;
+  instanceId: string;
+  nodeId: string;
+  action: WorkflowInstanceAction;
+  actedBy: string; // user id
+  comment: string;
+  createdAt: string;
 }

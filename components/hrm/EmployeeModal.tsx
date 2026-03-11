@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Employee } from '../../types';
-import { X, Save, User as UserIcon } from 'lucide-react';
+import { X, Save, User as UserIcon, MapPinned, Building, Layers, HardHat, DollarSign, Calendar } from 'lucide-react';
 
 interface EmployeeModalProps {
     employee: Employee | null;
@@ -9,7 +9,7 @@ interface EmployeeModalProps {
 }
 
 const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
-    const { addEmployee, updateEmployee, users, employees } = useApp();
+    const { addEmployee, updateEmployee, users, employees, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules } = useApp();
     const [formData, setFormData] = useState<Partial<Employee>>({
         fullName: '',
         title: '',
@@ -20,7 +20,14 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
         startDate: '',
         officialDate: '',
         status: 'Đang làm việc',
-        userId: undefined
+        userId: undefined,
+        areaId: undefined,
+        officeId: undefined,
+        employeeTypeId: undefined,
+        positionId: undefined,
+        salaryPolicyId: undefined,
+        workScheduleId: undefined,
+        maritalStatus: ''
     });
 
     useEffect(() => {
@@ -172,27 +179,6 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                                     <option value="Đang làm việc">Đang làm việc</option>
                                     <option value="Đã nghỉ việc">Đã nghỉ việc</option>
                                 </select>
-                                <div className="space-y-2 col-span-1 md:col-span-2 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider text-purple-600 dark:text-purple-400">
-                                        Liên kết Tài khoản phần mềm (WMS)
-                                    </label>
-                                    <p className="text-[10px] text-slate-400 mb-2">
-                                        Chọn 1 tài khoản đăng nhập để theo dõi lịch sử giao dịch kho của nhân sự này.
-                                    </p>
-                                    <select
-                                        name="userId"
-                                        value={formData.userId || ''}
-                                        onChange={handleChange}
-                                        className="w-full px-4 py-3 rounded-xl border border-purple-200 dark:border-purple-800/30 bg-purple-50 dark:bg-purple-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-purple-500"
-                                    >
-                                        <option value="">-- Không liên kết --</option>
-                                        {availableUsers.map(u => (
-                                            <option key={u.id} value={u.id}>
-                                                {u.name} ({u.email}) - Role: {u.role}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
                             </div>
 
                             <div className="space-y-2">
@@ -215,6 +201,136 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                                     className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
                                 />
                             </div>
+                        </div>
+
+                        {/* ===== HRM MASTER DATA SECTION ===== */}
+                        <div className="border-t border-slate-100 dark:border-slate-800 pt-6 mt-6">
+                            <h3 className="text-sm font-black text-violet-600 dark:text-violet-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                                <Layers size={16} /> Thông tin chính
+                            </h3>
+                            <p className="text-[10px] text-slate-400 mb-4">Chọn thông tin từ dữ liệu gốc HRM đã khai báo trong Cài đặt.</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                        <MapPinned size={12} /> Khu vực / Chuyên môn *
+                                    </label>
+                                    <select
+                                        name="areaId"
+                                        value={formData.areaId || ''}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-3 rounded-xl border border-violet-200 dark:border-violet-800/30 bg-violet-50 dark:bg-violet-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-violet-500"
+                                    >
+                                        <option value="">-- Vui lòng chọn --</option>
+                                        {hrmAreas.map(a => (<option key={a.id} value={a.id}>{a.name}</option>))}
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                        <Building size={12} /> Văn phòng *
+                                    </label>
+                                    <select
+                                        name="officeId"
+                                        value={formData.officeId || ''}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-3 rounded-xl border border-violet-200 dark:border-violet-800/30 bg-violet-50 dark:bg-violet-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-violet-500"
+                                    >
+                                        <option value="">-- Vui lòng chọn --</option>
+                                        {hrmOffices.map(o => (<option key={o.id} value={o.id}>{o.name}</option>))}
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                        <Layers size={12} /> Phân loại nhân sự *
+                                    </label>
+                                    <select
+                                        name="employeeTypeId"
+                                        value={formData.employeeTypeId || ''}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-3 rounded-xl border border-violet-200 dark:border-violet-800/30 bg-violet-50 dark:bg-violet-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-violet-500"
+                                    >
+                                        <option value="">-- Vui lòng chọn --</option>
+                                        {hrmEmployeeTypes.map(t => (<option key={t.id} value={t.id}>{t.name}</option>))}
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                        <HardHat size={12} /> Vị trí công việc *
+                                    </label>
+                                    <select
+                                        name="positionId"
+                                        value={formData.positionId || ''}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-3 rounded-xl border border-violet-200 dark:border-violet-800/30 bg-violet-50 dark:bg-violet-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-violet-500"
+                                    >
+                                        <option value="">-- Vui lòng chọn --</option>
+                                        {hrmPositions.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                        <DollarSign size={12} /> Chính sách lương
+                                    </label>
+                                    <select
+                                        name="salaryPolicyId"
+                                        value={formData.salaryPolicyId || ''}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
+                                    >
+                                        <option value="">-- Vui lòng chọn --</option>
+                                        {hrmSalaryPolicies.map(s => (<option key={s.id} value={s.id}>{s.name}</option>))}
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                        <Calendar size={12} /> Lịch làm việc
+                                    </label>
+                                    <select
+                                        name="workScheduleId"
+                                        value={formData.workScheduleId || ''}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
+                                    >
+                                        <option value="">-- Vui lòng chọn --</option>
+                                        {hrmWorkSchedules.map(w => (<option key={w.id} value={w.id}>{w.name}</option>))}
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tình trạng hôn nhân</label>
+                                    <select
+                                        name="maritalStatus"
+                                        value={formData.maritalStatus || ''}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
+                                    >
+                                        <option value="">-- Vui lòng chọn --</option>
+                                        <option value="Độc thân">Độc thân</option>
+                                        <option value="Đã kết hôn">Đã kết hôn</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* ===== ACCOUNT LINKING ===== */}
+                        <div className="border-t border-slate-100 dark:border-slate-800 pt-6 mt-6">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider text-purple-600 dark:text-purple-400">
+                                Liên kết Tài khoản phần mềm (WMS)
+                            </label>
+                            <p className="text-[10px] text-slate-400 mb-2">
+                                Chọn 1 tài khoản đăng nhập để theo dõi lịch sử giao dịch kho của nhân sự này.
+                            </p>
+                            <select
+                                name="userId"
+                                value={formData.userId || ''}
+                                onChange={handleChange}
+                                className="w-full px-4 py-3 rounded-xl border border-purple-200 dark:border-purple-800/30 bg-purple-50 dark:bg-purple-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-purple-500"
+                            >
+                                <option value="">-- Không liên kết --</option>
+                                {availableUsers.map(u => (
+                                    <option key={u.id} value={u.id}>
+                                        {u.name} ({u.email}) - Role: {u.role}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                     </form>
                 </div>

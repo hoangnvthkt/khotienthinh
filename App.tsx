@@ -12,9 +12,13 @@ import Reports from './pages/Reports';
 import MisaExport from './pages/MisaExport';
 import Login from './pages/Login';
 import Employees from './pages/hrm/Employees';
+import WorkflowInstances from './pages/WorkflowInstances';
+import WorkflowTemplates from './pages/WorkflowTemplates';
+import WorkflowBuilder from './pages/WorkflowBuilder';
 import { AppProvider } from './context/AppContext';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { WorkflowProvider } from './context/WorkflowContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import NotFound from './pages/NotFound';
 
@@ -37,6 +41,9 @@ const AppRoutes: React.FC = () => {
         <Route path="operations" element={<Operations />} />
         <Route path="audit" element={<Audit />} />
         <Route path="reports" element={<Reports />} />
+        <Route path="workflow" element={<WorkflowInstances />} />
+        <Route path="workflow/templates" element={<WorkflowTemplates />} />
+        <Route path="workflow/builder/:id" element={<WorkflowBuilder />} />
         <Route path="users" element={<Navigate to="/settings" replace />} />
         <Route path="settings" element={<Settings />} />
         <Route path="misa-export" element={<MisaExport />} />
@@ -53,9 +60,11 @@ const App: React.FC = () => {
       <ThemeProvider>
         <ToastProvider>
           <AppProvider>
-            <Router>
-              <AppRoutes />
-            </Router>
+            <WorkflowProvider>
+              <Router>
+                <AppRoutes />
+              </Router>
+            </WorkflowProvider>
           </AppProvider>
         </ToastProvider>
       </ThemeProvider>

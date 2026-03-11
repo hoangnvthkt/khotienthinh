@@ -5,7 +5,8 @@ import {
   InventoryItem, Transaction, User, Warehouse, Supplier,
   Role, TransactionStatus, TransactionType, MaterialRequest,
   RequestStatus, AuditLog, GlobalActivity, ActivityType,
-  ItemCategory, ItemUnit, Employee
+  ItemCategory, ItemUnit, Employee,
+  HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_ITEMS,
@@ -37,6 +38,16 @@ interface AppContextType {
   categories: ItemCategory[];
   units: ItemUnit[];
   employees: Employee[];
+  // HRM Master Data
+  hrmAreas: HrmArea[];
+  hrmOffices: HrmOffice[];
+  hrmEmployeeTypes: HrmEmployeeType[];
+  hrmPositions: HrmPosition[];
+  hrmSalaryPolicies: HrmSalaryPolicy[];
+  hrmWorkSchedules: HrmWorkSchedule[];
+  addHrmItem: (table: string, item: any) => void;
+  updateHrmItem: (table: string, item: any) => void;
+  removeHrmItem: (table: string, id: string) => void;
   addItem: (item: InventoryItem) => void;
   addItems: (items: InventoryItem[]) => void;
   updateItem: (item: InventoryItem) => void;
@@ -86,6 +97,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [requests, setRequests] = useState<MaterialRequest[]>([]);
   const [activities, setActivities] = useState<GlobalActivity[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  // HRM Master Data states
+  const [hrmAreas, setHrmAreas] = useState<HrmArea[]>([]);
+  const [hrmOffices, setHrmOffices] = useState<HrmOffice[]>([]);
+  const [hrmEmployeeTypes, setHrmEmployeeTypes] = useState<HrmEmployeeType[]>([]);
+  const [hrmPositions, setHrmPositions] = useState<HrmPosition[]>([]);
+  const [hrmSalaryPolicies, setHrmSalaryPolicies] = useState<HrmSalaryPolicy[]>([]);
+  const [hrmWorkSchedules, setHrmWorkSchedules] = useState<HrmWorkSchedule[]>([]);
   const [categories, setCategories] = useState<ItemCategory[]>([
     { id: 'cat1', name: 'Vật liệu xây dựng' },
     { id: 'cat2', name: 'Công cụ dụng cụ' },
@@ -128,7 +146,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
 
         const [
-          itemsData, whData, supData, txData, reqData, actData, catData, unitData, settingsData, usersData, empData
+          itemsData, whData, supData, txData, reqData, actData, catData, unitData, settingsData, usersData, empData,
+          areasData, officesData, empTypesData, positionsData, salaryData, schedulesData
         ] = await Promise.all([
           fetchTable('items'),
           fetchTable('warehouses'),
@@ -140,7 +159,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTable('units'),
           fetchTable('app_settings', supabase.from('app_settings').select('*').maybeSingle()),
           fetchTable('users'),
-          fetchTable('employees')
+          fetchTable('employees'),
+          fetchTable('hrm_areas'),
+          fetchTable('hrm_offices'),
+          fetchTable('hrm_employee_types'),
+          fetchTable('hrm_positions'),
+          fetchTable('hrm_salary_policies'),
+          fetchTable('hrm_work_schedules')
         ]);
 
         if (usersData && usersData.length > 0) {
@@ -164,6 +189,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             officialDate: e.official_date,
             status: e.status,
             userId: e.user_id,
+            areaId: e.area_id,
+            officeId: e.office_id,
+            employeeTypeId: e.employee_type_id,
+            positionId: e.position_id,
+            salaryPolicyId: e.salary_policy_id,
+            workScheduleId: e.work_schedule_id,
+            maritalStatus: e.marital_status,
             createdAt: e.created_at,
             updatedAt: e.updated_at
           })));
@@ -193,6 +225,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (catData && catData.length > 0) setCategories(catData);
         if (unitData && unitData.length > 0) setUnits(unitData);
         if (settingsData) setAppSettings(settingsData);
+
+        // HRM Master Data
+        if (areasData) setHrmAreas(areasData);
+        if (officesData) setHrmOffices(officesData);
+        if (empTypesData) setHrmEmployeeTypes(empTypesData);
+        if (positionsData) setHrmPositions(positionsData);
+        if (salaryData) setHrmSalaryPolicies(salaryData);
+        if (schedulesData) setHrmWorkSchedules(schedulesData);
 
       } catch (error: any) {
         console.error('Error fetching data from Supabase:', error);
@@ -322,6 +362,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             officialDate: e.official_date,
             status: e.status,
             userId: e.user_id,
+            areaId: e.area_id,
+            officeId: e.office_id,
+            employeeTypeId: e.employee_type_id,
+            positionId: e.position_id,
+            salaryPolicyId: e.salary_policy_id,
+            workScheduleId: e.work_schedule_id,
+            maritalStatus: e.marital_status,
             createdAt: e.created_at,
             updatedAt: e.updated_at
           };
@@ -421,7 +468,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         payload = {
           id: data.id, employee_code: data.employeeCode, full_name: data.fullName, title: data.title,
           gender: data.gender, phone: data.phone, email: data.email, date_of_birth: data.dateOfBirth,
-          start_date: data.startDate, official_date: data.officialDate, status: data.status, user_id: data.userId
+          start_date: data.startDate, official_date: data.officialDate, status: data.status, user_id: data.userId,
+          area_id: data.areaId || null, office_id: data.officeId || null, employee_type_id: data.employeeTypeId || null,
+          position_id: data.positionId || null, salary_policy_id: data.salaryPolicyId || null,
+          work_schedule_id: data.workScheduleId || null, marital_status: data.maritalStatus || ''
         };
       }
 
@@ -869,10 +919,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncToSupabase('app_settings', { ...s, id: 1 });
   };
 
+  // ==================== HRM MASTER DATA CRUD ====================
+  const hrmSetterMap: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
+    'hrm_areas': setHrmAreas,
+    'hrm_offices': setHrmOffices,
+    'hrm_employee_types': setHrmEmployeeTypes,
+    'hrm_positions': setHrmPositions,
+    'hrm_salary_policies': setHrmSalaryPolicies,
+    'hrm_work_schedules': setHrmWorkSchedules,
+  };
+
+  const addHrmItem = async (table: string, item: any) => {
+    const setter = hrmSetterMap[table];
+    if (!setter) return;
+    setter((prev: any[]) => [...prev, item]);
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.from(table).insert(item);
+      if (error) console.error(`Error adding to ${table}:`, error);
+    }
+  };
+
+  const updateHrmItem = async (table: string, item: any) => {
+    const setter = hrmSetterMap[table];
+    if (!setter) return;
+    setter((prev: any[]) => prev.map((i: any) => i.id === item.id ? item : i));
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.from(table).update(item).eq('id', item.id);
+      if (error) console.error(`Error updating ${table}:`, error);
+    }
+  };
+
+  const removeHrmItem = async (table: string, id: string) => {
+    const setter = hrmSetterMap[table];
+    if (!setter) return;
+    setter((prev: any[]) => prev.filter((i: any) => i.id !== id));
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.from(table).delete().eq('id', id);
+      if (error) console.error(`Error deleting from ${table}:`, error);
+    }
+  };
+
   return (
     <AppContext.Provider value={{
       user, users, appSettings, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
-      categories, units, employees, addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,
+      categories, units, employees,
+      hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules,
+      addHrmItem, updateHrmItem, removeHrmItem,
+      addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,
       addRequest, updateRequestStatus, logActivity, addCategory, updateCategory, removeCategory, addUnit, updateUnit, removeUnit,
       addSupplier, updateSupplier, removeSupplier, addEmployee, updateEmployee, removeEmployee, updateAppSettings, approvePartialTransaction, clearAllData,
       login, logout, isLoading, isRefreshing, connectionError
