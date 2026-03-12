@@ -103,6 +103,26 @@ export interface HrmWorkSchedule {
   createdAt?: string;
 }
 
+export interface HrmConstructionSite {
+  id: string;
+  name: string;
+  address?: string;
+  description?: string;
+  createdAt?: string;
+}
+
+export type OrgUnitType = 'company' | 'department' | 'construction_site' | 'factory' | 'custom';
+
+export interface OrgUnit {
+  id: string;
+  name: string;
+  type: OrgUnitType;
+  parentId?: string | null;
+  description?: string;
+  orderIndex: number;
+  createdAt?: string;
+}
+
 export interface Employee {
   id: string;
   employeeCode: string; // Mã nhân sự TT00x
@@ -123,6 +143,9 @@ export interface Employee {
   positionId?: string;
   salaryPolicyId?: string;
   workScheduleId?: string;
+  constructionSiteId?: string;
+  departmentId?: string;
+  factoryId?: string;
   maritalStatus?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -253,12 +276,25 @@ export enum WorkflowInstanceAction {
   REVISION_REQUESTED = 'REVISION_REQUESTED',
 }
 
+export type CustomFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'file';
+
+export interface WorkflowCustomField {
+  id: string;
+  name: string;        // key identifier (e.g., "bo_phan")
+  label: string;       // Display label (e.g., "Bộ phận/Công trường")
+  type: CustomFieldType;
+  required: boolean;
+  options?: string[];   // For 'select' type
+  placeholder?: string;
+}
+
 export interface WorkflowTemplate {
   id: string;
   name: string;
   description: string;
   createdBy: string; // user id
   isActive: boolean;
+  customFields: WorkflowCustomField[];
   createdAt: string;
   updatedAt: string;
 }

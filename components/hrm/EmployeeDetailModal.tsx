@@ -12,7 +12,7 @@ interface EmployeeDetailModalProps {
 type TabKey = 'personal' | 'work' | 'contact';
 
 const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onClose, onEdit }) => {
-    const { users, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules } = useApp();
+    const { users, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits } = useApp();
     const [activeTab, setActiveTab] = useState<TabKey>('personal');
 
     const linkedUser = users.find(u => u.id === employee.userId);
@@ -22,6 +22,9 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
     const empType = hrmEmployeeTypes.find(t => t.id === employee.employeeTypeId);
     const salaryPolicy = hrmSalaryPolicies.find(s => s.id === employee.salaryPolicyId);
     const workSchedule = hrmWorkSchedules.find(w => w.id === employee.workScheduleId);
+    const constructionSite = hrmConstructionSites.find(cs => cs.id === employee.constructionSiteId);
+    const department = orgUnits.find(u => u.id === employee.departmentId);
+    const factory = orgUnits.find(u => u.id === employee.factoryId);
 
     const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
         { key: 'personal', label: 'Cá Nhân', icon: <UserIcon size={15} /> },
@@ -77,11 +80,10 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
                         <button
                             key={tab.key}
                             onClick={() => setActiveTab(tab.key)}
-                            className={`flex items-center space-x-1.5 px-4 py-3 text-xs font-bold uppercase tracking-wider transition border-b-2 -mb-px ${
-                                activeTab === tab.key
-                                    ? 'border-accent text-accent'
-                                    : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-                            }`}
+                            className={`flex items-center space-x-1.5 px-4 py-3 text-xs font-bold uppercase tracking-wider transition border-b-2 -mb-px ${activeTab === tab.key
+                                ? 'border-accent text-accent'
+                                : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                                }`}
                         >
                             {tab.icon}
                             <span>{tab.label}</span>
@@ -112,6 +114,9 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
                             <InfoRow label="Loại NV" value={empType?.name} />
                             <InfoRow label="Chính sách lương" value={salaryPolicy?.name} />
                             <InfoRow label="Lịch làm việc" value={workSchedule?.name} />
+                            <InfoRow label="Công trường" value={constructionSite?.name} badge badgeColor="bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" />
+                            <InfoRow label="Phòng / Ban" value={department?.name} badge badgeColor="bg-sky-50 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400" />
+                            <InfoRow label="Nhà máy" value={factory?.name} badge badgeColor="bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400" />
                             <InfoRow label="Ngày vào" value={employee.startDate} />
                             <InfoRow label="Ngày chính thức" value={employee.officialDate} />
                         </div>

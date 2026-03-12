@@ -1,18 +1,19 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Warehouse, WarehouseType, Supplier, ItemCategory, ItemUnit, HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule } from '../types';
+import { Warehouse, WarehouseType, Supplier, ItemCategory, ItemUnit, HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule, HrmConstructionSite } from '../types';
 import {
   Building, MapPin, Plus, X, Save, Settings as SettingsIcon, Users,
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Image as ImageIcon, Globe, Upload, Trash, Truck, User as UserIcon, Search, AlertCircle,
-  Database, Mail, Phone, Shield, MoreVertical, MapPinned, Clock, DollarSign, Calendar, Layers
+  Database, Mail, Phone, Shield, MoreVertical, MapPinned, Clock, DollarSign, Calendar, Layers, GitBranch
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import UserModal from '../components/UserModal';
 import DeleteUserModal from '../components/DeleteUserModal';
 import { Role, User } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import OrgChart from '../components/OrgChart';
 
 const Settings: React.FC = () => {
   const {
@@ -22,7 +23,7 @@ const Settings: React.FC = () => {
     addSupplier, updateSupplier, removeSupplier,
     appSettings, updateAppSettings, clearAllData, connectionError,
     users, addUser, updateUser, removeUser, user: currentUser, logout,
-    hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules,
+    hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
     addHrmItem, updateHrmItem, removeHrmItem
   } = useApp();
 
@@ -62,7 +63,7 @@ const Settings: React.FC = () => {
 
   // Master data state management
   const [activeMasterSection, setActiveMasterSection] = useState<'categories' | 'units' | 'suppliers' | null>(null);
-  const [activeHrmSection, setActiveHrmSection] = useState<'areas' | 'offices' | 'employee_types' | 'positions' | 'salary_policies' | 'work_schedules' | null>(null);
+  const [activeHrmSection, setActiveHrmSection] = useState<'areas' | 'offices' | 'employee_types' | 'positions' | 'salary_policies' | 'work_schedules' | 'construction_sites' | null>(null);
   const [editingItem, setEditingItem] = useState<{ type: 'cat' | 'unit' | 'sup', data: any } | null>(null);
   const [editingHrmItem, setEditingHrmItem] = useState<any | null>(null);
   const [newHrmName, setNewHrmName] = useState('');
@@ -405,6 +406,7 @@ const Settings: React.FC = () => {
     { id: 'general', label: 'Chung', icon: SettingsIcon, roles: [Role.ADMIN] },
     { id: 'warehouses', label: 'Kho bãi', icon: Building, roles: [Role.ADMIN] },
     { id: 'master-data', label: 'Dữ liệu gốc', icon: Database, roles: [Role.ADMIN] },
+    { id: 'org-chart', label: 'Sơ đồ tổ chức', icon: GitBranch, roles: [Role.ADMIN] },
     { id: 'hrm-master-data', label: 'Dữ liệu gốc HRM', icon: Briefcase, roles: [Role.ADMIN] },
     { id: 'users', label: 'Người dùng', icon: Users, roles: [Role.ADMIN] },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
@@ -804,6 +806,12 @@ const Settings: React.FC = () => {
             </div>
           )}
 
+          {activeTab === 'org-chart' && (
+            <div className="animate-in slide-in-from-right-4 duration-300">
+              <OrgChart />
+            </div>
+          )}
+
           {activeTab === 'hrm-master-data' && (
             <div className="animate-in slide-in-from-right-4 duration-300">
               {!activeHrmSection ? (
@@ -815,6 +823,7 @@ const Settings: React.FC = () => {
                     { key: 'positions' as const, label: 'Vị trí công việc', desc: 'Ban GĐ, Trưởng phòng, Chuyên viên...', icon: HardHat, color: 'amber', count: hrmPositions.length },
                     { key: 'salary_policies' as const, label: 'Chính sách lương', desc: 'Lương VP, Lương nhà máy, công trường...', icon: DollarSign, color: 'rose', count: hrmSalaryPolicies.length },
                     { key: 'work_schedules' as const, label: 'Lịch làm việc', desc: 'Lịch VP, Lịch nhà máy, công trường...', icon: Calendar, color: 'cyan', count: hrmWorkSchedules.length },
+                    { key: 'construction_sites' as const, label: 'Công trường', desc: 'Danh sách các công trường / dự án.', icon: HardHat, color: 'orange', count: hrmConstructionSites.length },
                   ].map(item => (
                     <button
                       key={item.key}
@@ -843,6 +852,7 @@ const Settings: React.FC = () => {
                   'positions': { table: 'hrm_positions', label: 'Vị trí công việc', items: hrmPositions, hasDesc: false, placeholderName: 'VD: Ban GĐ, Trưởng phòng, Chuyên viên...', color: 'amber', icon: HardHat },
                   'salary_policies': { table: 'hrm_salary_policies', label: 'Chính sách lương', items: hrmSalaryPolicies, hasDesc: true, placeholderName: 'VD: Lương văn phòng, Lương nhà máy...', placeholderDesc: 'Mô tả chính sách', color: 'rose', icon: DollarSign },
                   'work_schedules': { table: 'hrm_work_schedules', label: 'Lịch làm việc', items: hrmWorkSchedules, hasDesc: true, placeholderName: 'VD: Lịch văn phòng, Lịch nhà máy...', placeholderDesc: 'Mô tả lịch làm việc', color: 'cyan', icon: Calendar },
+                  'construction_sites': { table: 'hrm_construction_sites', label: 'Công trường', items: hrmConstructionSites, hasDesc: true, placeholderName: 'VD: Công trường A, Dự án B...', placeholderDesc: 'Địa chỉ / mô tả công trường', color: 'orange', icon: HardHat },
                 };
                 const cfg = hrmConfig[activeHrmSection];
                 if (!cfg) return null;

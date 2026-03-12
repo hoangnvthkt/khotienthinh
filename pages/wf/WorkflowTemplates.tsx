@@ -6,7 +6,7 @@ import { useApp } from '../../context/AppContext';
 import { Role } from '../../types';
 import {
     Plus, GitBranch, Settings2, Trash2, ToggleLeft, ToggleRight,
-    Search, Layers, Clock, User, ShieldAlert, ChevronRight
+    Search, Layers, Clock, User, ShieldAlert, ChevronRight, Edit2
 } from 'lucide-react';
 
 const WorkflowTemplates: React.FC = () => {
@@ -18,6 +18,9 @@ const WorkflowTemplates: React.FC = () => {
     const [newName, setNewName] = useState('');
     const [newDesc, setNewDesc] = useState('');
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+    const [editingTemplate, setEditingTemplate] = useState<typeof templates[0] | null>(null);
+    const [editName, setEditName] = useState('');
+    const [editDesc, setEditDesc] = useState('');
 
     if (user.role !== Role.ADMIN) {
         return (
@@ -52,6 +55,18 @@ const WorkflowTemplates: React.FC = () => {
     const handleDelete = async (id: string) => {
         await deleteTemplate(id);
         setDeleteConfirmId(null);
+    };
+
+    const openEditModal = (t: typeof templates[0]) => {
+        setEditingTemplate(t);
+        setEditName(t.name);
+        setEditDesc(t.description);
+    };
+
+    const handleEdit = async () => {
+        if (!editingTemplate || !editName.trim()) return;
+        await updateTemplate({ ...editingTemplate, name: editName.trim(), description: editDesc.trim() });
+        setEditingTemplate(null);
     };
 
     return (
@@ -121,6 +136,9 @@ const WorkflowTemplates: React.FC = () => {
                             <div className="flex items-center gap-4 text-[10px] text-slate-400 font-medium mb-4">
                                 <span className="flex items-center gap-1"><Layers size={10} /> {nodeCount} bước</span>
                                 <span className="flex items-center gap-1"><GitBranch size={10} /> {instanceCount} phiếu</span>
+                                {(t.customFields?.length || 0) > 0 && (
+                                    <span className="flex items-center gap-1 text-violet-500">📋 {t.customFields.length} trường</span>
+                                )}
                                 <span className="flex items-center gap-1"><Clock size={10} /> {new Date(t.createdAt).toLocaleDateString('vi-VN')}</span>
                             </div>
 
@@ -143,6 +161,13 @@ const WorkflowTemplates: React.FC = () => {
                                         title="Xóa quy trình"
                                     >
                                         <Trash2 size={14} />
+                                    </button>
+                                    <button
+                                        onClick={() => openEditModal(t)}
+                                        className="p-1.5 rounded-lg text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition"
+                                        title="Sửa thông tin"
+                                    >
+                                        <Edit2 size={14} />
                                     </button>
                                 </div>
                             </div>
@@ -206,6 +231,42 @@ const WorkflowTemplates: React.FC = () => {
                         <div className="flex gap-3">
                             <button onClick={() => setDeleteConfirmId(null)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
                             <button onClick={() => handleDelete(deleteConfirmId)} className="flex-1 px-4 py-2.5 bg-red-500 text-white rounded-xl font-bold text-sm hover:bg-red-600 transition shadow-lg shadow-red-500/20">Xóa</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Modal */}
+            {editingTemplate && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setEditingTemplate(null)}>
+                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                            <Edit2 size={20} className="text-blue-500" /> Sửa quy trình
+                        </h2>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Tên quy trình *</label>
+                                <input
+                                    type="text"
+                                    value={editName}
+                                    onChange={e => setEditName(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm"
+                                    autoFocus
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Mô tả</label>
+                                <textarea
+                                    value={editDesc}
+                                    onChange={e => setEditDesc(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm resize-none"
+                                    rows={3}
+                                />
+                            </div>
+                        </div>
+                        <div className="flex gap-3 mt-6">
+                            <button onClick={() => setEditingTemplate(null)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
+                            <button onClick={handleEdit} disabled={!editName.trim()} className="flex-1 px-4 py-2.5 bg-blue-500 text-white rounded-xl font-bold text-sm hover:bg-blue-600 transition disabled:opacity-50 shadow-lg shadow-blue-500/20">Lưu thay đổi</button>
                         </div>
                     </div>
                 </div>

@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase';
 import {
     WorkflowTemplate, WorkflowNode, WorkflowEdge,
     WorkflowInstance, WorkflowInstanceLog,
-    WorkflowInstanceStatus, WorkflowInstanceAction, WorkflowNodeType
+    WorkflowInstanceStatus, WorkflowInstanceAction, WorkflowNodeType,
+    WorkflowCustomField
 } from '../types';
 
 interface WorkflowContextType {
@@ -27,6 +28,9 @@ interface WorkflowContextType {
 
     // Instances
     createInstance: (templateId: string, title: string, userId: string, formData?: Record<string, any>) => Promise<WorkflowInstance | null>;
+    updateInstance: (instanceId: string, updates: { title?: string; formData?: Record<string, any> }) => Promise<boolean>;
+    deleteInstance: (instanceId: string) => Promise<boolean>;
+    cancelInstance: (instanceId: string, userId: string) => Promise<boolean>;
     processInstance: (instanceId: string, action: WorkflowInstanceAction, userId: string, comment?: string) => Promise<void>;
     getInstanceLogs: (instanceId: string) => WorkflowInstanceLog[];
 
@@ -42,6 +46,7 @@ const mapTemplateFromDB = (row: any): WorkflowTemplate => ({
     description: row.description || '',
     createdBy: row.created_by,
     isActive: row.is_active,
+    customFields: row.custom_fields || [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
 });
@@ -129,6 +134,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             description,
             created_by: userId,
             is_active: true,
+            custom_fields: [],
         }).select().single();
         if (error || !data) { console.error(error); return null; }
         const t = mapTemplateFromDB(data);
@@ -141,6 +147,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             name: template.name,
             description: template.description,
             is_active: template.isActive,
+            custom_fields: template.customFields || [],
             updated_at: new Date().toISOString(),
         }).eq('id', template.id);
         setTemplates(prev => prev.map(t => t.id === template.id ? template : t));
@@ -205,9 +212,9 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const startEdge = templateEdges.find(e => e.sourceNodeId === startNode.id);
         const firstTaskNodeId = startEdge ? startEdge.targetNodeId : null;
 
-        // Generate code: WF-YYYY-NNN
+        // Generate code: WF-YYYY-NNN (global sequential)
         const year = new Date().getFullYear();
-        const count = instances.filter(i => i.templateId === templateId).length + 1;
+        const count = instances.length + 1;
         const code = `WF-${year}-${String(count).padStart(3, '0')}`;
 
         const { data, error } = await supabase.from('workflow_instances').insert({
@@ -291,11 +298,47 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const getInstanceLogs = (instanceId: string) => logs.filter(l => l.instanceId === instanceId);
 
+    const updateInstance = async (instanceId: string, updates: { title?: string; formData?: Record<string, any> }): Promise<boolean> => {
+        const updatePayload: any = { updated_at: new Date().toISOString() };
+        if (updates.title !== undefined) updatePayload.title = updates.title;
+        if (updates.formData !== undefined) updatePayload.form_data = updates.formData;
+        const { error } = await supabase.from('workflow_instances').update(updatePayload).eq('id', instanceId);
+        if (error) { console.error(error); return false; }
+        setInstances(prev => prev.map(i => i.id === instanceId ? { ...i, ...(updates.title !== undefined ? { title: updates.title } : {}), ...(updates.formData !== undefined ? { formData: updates.formData } : {}), updatedAt: updatePayload.updated_at } : i));
+        return true;
+    };
+
+    const deleteInstance = async (instanceId: string): Promise<boolean> => {
+        await supabase.from('workflow_instance_logs').delete().eq('instance_id', instanceId);
+        const { error } = await supabase.from('workflow_instances').delete().eq('id', instanceId);
+        if (error) { console.error(error); return false; }
+        setInstances(prev => prev.filter(i => i.id !== instanceId));
+        setLogs(prev => prev.filter(l => l.instanceId !== instanceId));
+        return true;
+    };
+
+    const cancelInstance = async (instanceId: string, userId: string): Promise<boolean> => {
+        const { error } = await supabase.from('workflow_instances').update({
+            status: 'CANCELLED',
+            updated_at: new Date().toISOString(),
+        }).eq('id', instanceId);
+        if (error) { console.error(error); return false; }
+        await supabase.from('workflow_instance_logs').insert({
+            instance_id: instanceId,
+            node_id: instances.find(i => i.id === instanceId)?.currentNodeId,
+            action: 'REJECTED',
+            acted_by: userId,
+            comment: 'Phiếu đã bị hủy bởi người tạo',
+        });
+        await refreshData();
+        return true;
+    };
+
     const value: WorkflowContextType = {
         templates, nodes, edges, instances, logs, isLoading,
         createTemplate, updateTemplate, deleteTemplate,
         saveNodesAndEdges, getTemplateNodes, getTemplateEdges,
-        createInstance, processInstance, getInstanceLogs,
+        createInstance, updateInstance, deleteInstance, cancelInstance, processInstance, getInstanceLogs,
         refreshData,
     };
 

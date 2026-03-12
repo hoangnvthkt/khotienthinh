@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Employee } from '../../types';
-import { X, Save, User as UserIcon, MapPinned, Building, Layers, HardHat, DollarSign, Calendar } from 'lucide-react';
+import { X, Save, User as UserIcon, MapPinned, Building, Layers, HardHat, DollarSign, Calendar, Factory, FolderTree } from 'lucide-react';
 
 interface EmployeeModalProps {
     employee: Employee | null;
@@ -9,7 +9,7 @@ interface EmployeeModalProps {
 }
 
 const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
-    const { addEmployee, updateEmployee, users, employees, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules } = useApp();
+    const { addEmployee, updateEmployee, users, employees, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits } = useApp();
     const [formData, setFormData] = useState<Partial<Employee>>({
         fullName: '',
         title: '',
@@ -27,6 +27,9 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
         positionId: undefined,
         salaryPolicyId: undefined,
         workScheduleId: undefined,
+        constructionSiteId: undefined,
+        departmentId: undefined,
+        factoryId: undefined,
         maritalStatus: ''
     });
 
@@ -292,6 +295,48 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                                     >
                                         <option value="">-- Vui lòng chọn --</option>
                                         {hrmWorkSchedules.map(w => (<option key={w.id} value={w.id}>{w.name}</option>))}
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                        <FolderTree size={12} /> Phòng / Ban
+                                    </label>
+                                    <select
+                                        name="departmentId"
+                                        value={formData.departmentId || ''}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-3 rounded-xl border border-sky-200 dark:border-sky-800/30 bg-sky-50 dark:bg-sky-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-sky-500"
+                                    >
+                                        <option value="">-- Vui lòng chọn --</option>
+                                        {orgUnits.filter(u => u.type === 'department').map(d => (<option key={d.id} value={d.id}>{d.name}</option>))}
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                        <HardHat size={12} /> Công trường
+                                    </label>
+                                    <select
+                                        name="constructionSiteId"
+                                        value={formData.constructionSiteId || ''}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-3 rounded-xl border border-orange-200 dark:border-orange-800/30 bg-orange-50 dark:bg-orange-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-orange-500"
+                                    >
+                                        <option value="">-- Vui lòng chọn --</option>
+                                        {[...hrmConstructionSites.map(cs => ({ id: cs.id, name: cs.name })), ...orgUnits.filter(u => u.type === 'construction_site').filter(u => !hrmConstructionSites.find(cs => cs.name === u.name)).map(u => ({ id: u.id, name: u.name }))].map(cs => (<option key={cs.id} value={cs.id}>{cs.name}</option>))}
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                        <Factory size={12} /> Nhà máy
+                                    </label>
+                                    <select
+                                        name="factoryId"
+                                        value={formData.factoryId || ''}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-3 rounded-xl border border-purple-200 dark:border-purple-800/30 bg-purple-50 dark:bg-purple-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-purple-500"
+                                    >
+                                        <option value="">-- Vui lòng chọn --</option>
+                                        {orgUnits.filter(u => u.type === 'factory').map(f => (<option key={f.id} value={f.id}>{f.name}</option>))}
                                     </select>
                                 </div>
                                 <div className="space-y-2">

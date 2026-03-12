@@ -6,7 +6,8 @@ import {
   Role, TransactionStatus, TransactionType, MaterialRequest,
   RequestStatus, AuditLog, GlobalActivity, ActivityType,
   ItemCategory, ItemUnit, Employee,
-  HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule
+  HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule, HrmConstructionSite,
+  OrgUnit
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_ITEMS,
@@ -45,9 +46,15 @@ interface AppContextType {
   hrmPositions: HrmPosition[];
   hrmSalaryPolicies: HrmSalaryPolicy[];
   hrmWorkSchedules: HrmWorkSchedule[];
+  hrmConstructionSites: HrmConstructionSite[];
   addHrmItem: (table: string, item: any) => void;
   updateHrmItem: (table: string, item: any) => void;
   removeHrmItem: (table: string, id: string) => void;
+  // Org Chart
+  orgUnits: OrgUnit[];
+  addOrgUnit: (unit: OrgUnit) => void;
+  updateOrgUnit: (unit: OrgUnit) => void;
+  removeOrgUnit: (id: string) => void;
   addItem: (item: InventoryItem) => void;
   addItems: (items: InventoryItem[]) => void;
   updateItem: (item: InventoryItem) => void;
@@ -104,6 +111,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [hrmPositions, setHrmPositions] = useState<HrmPosition[]>([]);
   const [hrmSalaryPolicies, setHrmSalaryPolicies] = useState<HrmSalaryPolicy[]>([]);
   const [hrmWorkSchedules, setHrmWorkSchedules] = useState<HrmWorkSchedule[]>([]);
+  const [hrmConstructionSites, setHrmConstructionSites] = useState<HrmConstructionSite[]>([]);
+  const [orgUnits, setOrgUnits] = useState<OrgUnit[]>([]);
   const [categories, setCategories] = useState<ItemCategory[]>([
     { id: 'cat1', name: 'Vật liệu xây dựng' },
     { id: 'cat2', name: 'Công cụ dụng cụ' },
@@ -147,7 +156,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const [
           itemsData, whData, supData, txData, reqData, actData, catData, unitData, settingsData, usersData, empData,
-          areasData, officesData, empTypesData, positionsData, salaryData, schedulesData
+          areasData, officesData, empTypesData, positionsData, salaryData, schedulesData, constructionSitesData, orgUnitsData
         ] = await Promise.all([
           fetchTable('items'),
           fetchTable('warehouses'),
@@ -165,7 +174,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTable('hrm_employee_types'),
           fetchTable('hrm_positions'),
           fetchTable('hrm_salary_policies'),
-          fetchTable('hrm_work_schedules')
+          fetchTable('hrm_work_schedules'),
+          fetchTable('hrm_construction_sites'),
+          fetchTable('org_units')
         ]);
 
         if (usersData && usersData.length > 0) {
@@ -195,6 +206,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             positionId: e.position_id,
             salaryPolicyId: e.salary_policy_id,
             workScheduleId: e.work_schedule_id,
+            constructionSiteId: e.construction_site_id,
+            departmentId: e.department_id,
+            factoryId: e.factory_id,
             maritalStatus: e.marital_status,
             createdAt: e.created_at,
             updatedAt: e.updated_at
@@ -233,7 +247,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (positionsData) setHrmPositions(positionsData);
         if (salaryData) setHrmSalaryPolicies(salaryData);
         if (schedulesData) setHrmWorkSchedules(schedulesData);
+        if (constructionSitesData) setHrmConstructionSites(constructionSitesData);
 
+        // Org Units
+        if (orgUnitsData) setOrgUnits(orgUnitsData.map((u: any) => ({
+          id: u.id, name: u.name, type: u.type, parentId: u.parent_id,
+          description: u.description, orderIndex: u.order_index, createdAt: u.created_at
+        })));
       } catch (error: any) {
         console.error('Error fetching data from Supabase:', error);
         setConnectionError(error.message);
@@ -368,6 +388,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             positionId: e.position_id,
             salaryPolicyId: e.salary_policy_id,
             workScheduleId: e.work_schedule_id,
+            constructionSiteId: e.construction_site_id,
+            departmentId: e.department_id,
+            factoryId: e.factory_id,
             maritalStatus: e.marital_status,
             createdAt: e.created_at,
             updatedAt: e.updated_at
@@ -410,6 +433,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       supabase.channel('public:app_settings').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'app_settings' }, payload => {
         setAppSettings(payload.new as AppSettings);
+      }).subscribe(),
+
+      supabase.channel('public:org_units').on('postgres_changes', { event: '*', schema: 'public', table: 'org_units' }, payload => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          const u = payload.new as any;
+          const mapped: OrgUnit = { id: u.id, name: u.name, type: u.type, parentId: u.parent_id, description: u.description, orderIndex: u.order_index, createdAt: u.created_at };
+          setOrgUnits(prev => {
+            const exists = prev.find(ou => ou.id === mapped.id);
+            if (exists) return prev.map(ou => ou.id === mapped.id ? mapped : ou);
+            return [...prev, mapped];
+          });
+        } else if (payload.eventType === 'DELETE') {
+          setOrgUnits(prev => prev.filter(ou => ou.id !== payload.old.id));
+        }
       }).subscribe()
     ];
 
@@ -471,7 +508,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           start_date: data.startDate, official_date: data.officialDate, status: data.status, user_id: data.userId,
           area_id: data.areaId || null, office_id: data.officeId || null, employee_type_id: data.employeeTypeId || null,
           position_id: data.positionId || null, salary_policy_id: data.salaryPolicyId || null,
-          work_schedule_id: data.workScheduleId || null, marital_status: data.maritalStatus || ''
+          work_schedule_id: data.workScheduleId || null, construction_site_id: data.constructionSiteId || null,
+          department_id: data.departmentId || null, factory_id: data.factoryId || null,
+          marital_status: data.maritalStatus || ''
+        };
+      } else if (table === 'org_units') {
+        payload = {
+          id: data.id, name: data.name, type: data.type, parent_id: data.parentId || null,
+          description: data.description || '', order_index: data.orderIndex || 0
         };
       }
 
@@ -927,6 +971,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     'hrm_positions': setHrmPositions,
     'hrm_salary_policies': setHrmSalaryPolicies,
     'hrm_work_schedules': setHrmWorkSchedules,
+    'hrm_construction_sites': setHrmConstructionSites,
   };
 
   const addHrmItem = async (table: string, item: any) => {
@@ -959,12 +1004,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // Org Unit CRUD
+  const addOrgUnit = async (unit: OrgUnit) => {
+    setOrgUnits(prev => [...prev, unit]);
+    syncToSupabase('org_units', unit);
+  };
+
+  const updateOrgUnit = async (unit: OrgUnit) => {
+    setOrgUnits(prev => prev.map(u => u.id === unit.id ? unit : u));
+    syncToSupabase('org_units', unit);
+  };
+
+  const removeOrgUnit = async (id: string) => {
+    // Cascade: remove children first (DB handles it but update local state)
+    const removeRecursive = (parentId: string, units: OrgUnit[]): OrgUnit[] => {
+      const children = units.filter(u => u.parentId === parentId);
+      let result = units.filter(u => u.id !== parentId);
+      children.forEach(child => { result = removeRecursive(child.id, result); });
+      return result;
+    };
+    setOrgUnits(prev => removeRecursive(id, prev));
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.from('org_units').delete().eq('id', id);
+      if (error) console.error('Error deleting org_unit:', error);
+    }
+  };
+
   return (
     <AppContext.Provider value={{
       user, users, appSettings, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
       categories, units, employees,
-      hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules,
+      hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
       addHrmItem, updateHrmItem, removeHrmItem,
+      orgUnits, addOrgUnit, updateOrgUnit, removeOrgUnit,
       addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,
       addRequest, updateRequestStatus, logActivity, addCategory, updateCategory, removeCategory, addUnit, updateUnit, removeUnit,
       addSupplier, updateSupplier, removeSupplier, addEmployee, updateEmployee, removeEmployee, updateAppSettings, approvePartialTransaction, clearAllData,

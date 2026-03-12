@@ -100,24 +100,24 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
         </div>
 
         {/* App Switcher */}
-        <div className={`px-4 py-2 mx-3 my-3 rounded-xl flex items-center bg-slate-800/50 border border-slate-700/50 shadow-inner p-1`}>
+        <div className={`mx-3 my-3 rounded-xl flex items-center bg-slate-800/50 border border-slate-700/50 shadow-inner p-1 gap-1`}>
           <button
             onClick={() => { setCurrentApp('WMS'); navigate('/'); }}
-            className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1.5 ${currentApp === 'WMS' ? 'bg-accent text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
+            className={`flex-1 py-2 px-2 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${currentApp === 'WMS' ? 'bg-accent text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
           >
-            <Package size={12} /> Kho
+            <Package size={13} /> Kho
           </button>
           <button
             onClick={() => { setCurrentApp('HRM'); navigate('/hrm/employees'); }}
-            className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1.5 ${currentApp === 'HRM' ? 'bg-teal-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
+            className={`flex-1 py-2 px-2 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${currentApp === 'HRM' ? 'bg-teal-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
           >
-            <Briefcase size={12} /> Nhân sự
+            <Briefcase size={13} /> NS
           </button>
           <button
             onClick={() => { setCurrentApp('WF'); navigate('/wf'); }}
-            className={`flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1.5 ${currentApp === 'WF' ? 'bg-violet-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
+            className={`flex-1 py-2 px-2 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${currentApp === 'WF' ? 'bg-violet-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
           >
-            <GitBranch size={12} /> QT
+            <GitBranch size={13} /> QT
           </button>
         </div>
 
@@ -149,7 +149,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
             </button>
             <button
               onClick={() => { logout(); navigate('/login'); }}
-              className="flex-1 flex items-center justify-center gap-2 py-2 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white hover:border-red-500 transition-all"
+              className="flex-1 flex items-center justify-center gap-2 py-2 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-[11px] font-black uppercase tracking-wider hover:bg-red-500 hover:text-white hover:border-red-500 transition-all whitespace-nowrap"
             >
               <LogOut size={13} /> Đăng xuất
             </button>
@@ -162,7 +162,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
             <NavLink
               key={item.to}
               to={item.to}
-              end={item.to === '/'}
+              end
               className={({ isActive }) => `flex items-center justify-between px-4 py-3 rounded-xl transition-all group ${isActive
                 ? 'bg-accent/90 text-white shadow-lg shadow-emerald-500/20 backdrop-blur-md border border-white/20'
                 : `text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50`
