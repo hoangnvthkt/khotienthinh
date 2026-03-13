@@ -210,6 +210,68 @@ export interface AuditLog {
   note?: string;
 }
 
+// ==================== LOSS MANAGEMENT ====================
+
+export enum LossReason {
+  NATURAL_LOSS = 'NATURAL_LOSS',       // Hao hụt tự nhiên
+  DAMAGE = 'DAMAGE',                   // Hư hỏng
+  THEFT = 'THEFT',                     // Thất thoát/mất cắp
+  MEASUREMENT = 'MEASUREMENT',         // Sai lệch đo lường
+  EXPIRED = 'EXPIRED',                 // Hết hạn/biến chất
+  PROCESS_WASTE = 'PROCESS_WASTE',     // Hao hụt gia công
+}
+
+export const LOSS_REASON_LABELS: Record<LossReason, string> = {
+  [LossReason.NATURAL_LOSS]: 'Hao hụt tự nhiên',
+  [LossReason.DAMAGE]: 'Hư hỏng',
+  [LossReason.THEFT]: 'Thất thoát / mất cắp',
+  [LossReason.MEASUREMENT]: 'Sai lệch đo lường',
+  [LossReason.EXPIRED]: 'Hết hạn / biến chất',
+  [LossReason.PROCESS_WASTE]: 'Hao hụt gia công',
+};
+
+export interface MaterialLossNorm {
+  id: string;
+  itemId?: string;        // specific item (optional)
+  categoryId?: string;    // or by category
+  lossType: LossReason;
+  allowedPercentage: number;  // % allowed loss
+  period: 'monthly' | 'quarterly' | 'yearly';
+  createdBy?: string;
+  createdAt?: string;
+}
+
+export interface AuditSessionItem {
+  itemId: string;
+  itemName: string;
+  sku: string;
+  unit?: string;
+  systemStock: number;
+  actualStock: number;
+  delta: number;
+  lossReason?: LossReason;
+  note?: string;
+  exceedsNorm?: boolean;
+  lossPercent?: number;
+  normPercent?: number;
+  lossValue?: number;
+}
+
+export interface AuditSession {
+  id: string;
+  warehouseId: string;
+  warehouseName: string;
+  date: string;
+  auditorId: string;
+  auditorName: string;
+  items: AuditSessionItem[];
+  totalItems: number;
+  totalDiscrepancies: number;
+  totalExceedNorm: number;
+  totalLossValue: number;
+  transactionId?: string;
+}
+
 // New Global Activity Structure
 export type ActivityType = 'TRANSACTION' | 'INVENTORY' | 'REQUEST' | 'SYSTEM';
 
@@ -274,6 +336,7 @@ export enum WorkflowInstanceAction {
   APPROVED = 'APPROVED',
   REJECTED = 'REJECTED',
   REVISION_REQUESTED = 'REVISION_REQUESTED',
+  REOPENED = 'REOPENED',
 }
 
 export type CustomFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'file';

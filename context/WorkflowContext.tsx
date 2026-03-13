@@ -32,6 +32,7 @@ interface WorkflowContextType {
     deleteInstance: (instanceId: string) => Promise<boolean>;
     cancelInstance: (instanceId: string, userId: string) => Promise<boolean>;
     processInstance: (instanceId: string, action: WorkflowInstanceAction, userId: string, comment?: string) => Promise<void>;
+    reopenInstance: (instanceId: string, targetNodeId: string, userId: string, comment?: string) => Promise<boolean>;
     getInstanceLogs: (instanceId: string) => WorkflowInstanceLog[];
 
     refreshData: () => Promise<void>;
@@ -166,9 +167,8 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const getTemplateEdges = (templateId: string) => edges.filter(e => e.templateId === templateId);
 
     const saveNodesAndEdges = async (templateId: string, newNodes: WorkflowNode[], newEdges: WorkflowEdge[]) => {
-        // Delete existing then re-insert (simplest approach for canvas save)
-        await supabase.from('workflow_edges').delete().eq('template_id', templateId);
-        await supabase.from('workflow_nodes').delete().eq('template_id', templateId);
+        // Use UPSERT instead of delete+insert to avoid FK constraint violations
+        // (workflow_instance_logs references workflow_nodes)
 
         if (newNodes.length > 0) {
             const nodeRows = newNodes.map(n => ({
@@ -180,8 +180,22 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 position_x: n.positionX,
                 position_y: n.positionY,
             }));
-            await supabase.from('workflow_nodes').insert(nodeRows);
+            const { error: upsertNodeErr } = await supabase.from('workflow_nodes').upsert(nodeRows, { onConflict: 'id' });
+            if (upsertNodeErr) console.error('Error upserting nodes:', upsertNodeErr);
         }
+
+        // Delete nodes that were removed (but only ones not in the new set)
+        const existingNodes = nodes.filter(n => n.templateId === templateId);
+        const newNodeIds = new Set(newNodes.map(n => n.id));
+        const removedNodeIds = existingNodes.filter(n => !newNodeIds.has(n.id)).map(n => n.id);
+        if (removedNodeIds.length > 0) {
+            const { error: delNodeErr } = await supabase.from('workflow_nodes').delete().in('id', removedNodeIds);
+            if (delNodeErr) console.error('Error deleting removed nodes:', delNodeErr);
+        }
+
+        // Replace edges (edges have no FK references from other tables)
+        const { error: delEdgeErr } = await supabase.from('workflow_edges').delete().eq('template_id', templateId);
+        if (delEdgeErr) console.error('Error deleting edges:', delEdgeErr);
 
         if (newEdges.length > 0) {
             const edgeRows = newEdges.map(e => ({
@@ -191,7 +205,8 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 target_node_id: e.targetNodeId,
                 label: e.label,
             }));
-            await supabase.from('workflow_edges').insert(edgeRows);
+            const { error: insEdgeErr } = await supabase.from('workflow_edges').insert(edgeRows);
+            if (insEdgeErr) console.error('Error inserting edges:', insEdgeErr);
         }
 
         // Refresh local state
@@ -286,10 +301,22 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             // Send back to previous step (find edge where target = current)
             const prevEdge = templateEdges.find(e => e.targetNodeId === instance.currentNodeId);
             if (prevEdge) {
-                await supabase.from('workflow_instances').update({
-                    current_node_id: prevEdge.sourceNodeId,
-                    updated_at: new Date().toISOString(),
-                }).eq('id', instanceId);
+                const prevNode = templateNodes.find(n => n.id === prevEdge.sourceNodeId);
+                if (prevNode && prevNode.type === WorkflowNodeType.START) {
+                    // If prev is START, find the first real step (node right after START)
+                    const firstStepEdge = templateEdges.find(e => e.sourceNodeId === prevNode.id);
+                    if (firstStepEdge) {
+                        await supabase.from('workflow_instances').update({
+                            current_node_id: firstStepEdge.targetNodeId,
+                            updated_at: new Date().toISOString(),
+                        }).eq('id', instanceId);
+                    }
+                } else {
+                    await supabase.from('workflow_instances').update({
+                        current_node_id: prevEdge.sourceNodeId,
+                        updated_at: new Date().toISOString(),
+                    }).eq('id', instanceId);
+                }
             }
         }
 
@@ -334,11 +361,38 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return true;
     };
 
+    const reopenInstance = async (instanceId: string, targetNodeId: string, userId: string, comment: string = ''): Promise<boolean> => {
+        const instance = instances.find(i => i.id === instanceId);
+        if (!instance) return false;
+        // Only allow reopening COMPLETED or REJECTED instances
+        if (instance.status !== WorkflowInstanceStatus.COMPLETED && instance.status !== WorkflowInstanceStatus.REJECTED) return false;
+
+        const { error } = await supabase.from('workflow_instances').update({
+            status: 'RUNNING',
+            current_node_id: targetNodeId,
+            updated_at: new Date().toISOString(),
+        }).eq('id', instanceId);
+        if (error) { console.error(error); return false; }
+
+        // Log the reopen action
+        const targetNode = nodes.find(n => n.id === targetNodeId);
+        await supabase.from('workflow_instance_logs').insert({
+            instance_id: instanceId,
+            node_id: targetNodeId,
+            action: 'REOPENED',
+            acted_by: userId,
+            comment: comment || `Mở lại quy trình về bước "${targetNode?.label || ''}"`
+        });
+
+        await refreshData();
+        return true;
+    };
+
     const value: WorkflowContextType = {
         templates, nodes, edges, instances, logs, isLoading,
         createTemplate, updateTemplate, deleteTemplate,
         saveNodesAndEdges, getTemplateNodes, getTemplateEdges,
-        createInstance, updateInstance, deleteInstance, cancelInstance, processInstance, getInstanceLogs,
+        createInstance, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs,
         refreshData,
     };
 

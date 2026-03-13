@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
 import {
@@ -10,8 +10,9 @@ import {
     GitBranch, Plus, Search, Clock, CheckCircle, XCircle, Circle,
     ArrowRight, User, MessageSquare, FileText, Send, RotateCcw,
     ChevronDown, ChevronUp, Filter, Inbox, AlertCircle, X,
-    Edit2, Trash2, Ban, Save
+    Edit2, Trash2, Ban, Save, Upload, Paperclip, Table2, FileSpreadsheet, Eye, Download, Undo2
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 const STATUS_MAP: Record<WorkflowInstanceStatus, { label: string; color: string; icon: any }> = {
     RUNNING: { label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300', icon: Clock },
@@ -25,15 +26,390 @@ const ACTION_MAP: Record<WorkflowInstanceAction, { label: string; color: string 
     APPROVED: { label: 'Đã duyệt', color: 'text-emerald-600' },
     REJECTED: { label: 'Từ chối', color: 'text-red-600' },
     REVISION_REQUESTED: { label: 'Yêu cầu bổ sung', color: 'text-amber-600' },
+    REOPENED: { label: 'Mở lại', color: 'text-purple-600' },
+};
+
+// ========== Excel Table Preview ==========
+const ExcelTablePreview: React.FC<{
+    sheets: Record<string, any[][]>;
+    sheetNames: string[];
+    editable?: boolean;
+    onDataChange?: (sheets: Record<string, any[][]>, sheetNames: string[]) => void;
+}> = ({ sheets, sheetNames, editable = false, onDataChange }) => {
+    const [activeSheet, setActiveSheet] = useState(sheetNames[0] || '');
+    const [localSheets, setLocalSheets] = useState<Record<string, any[][]>>(() =>
+        JSON.parse(JSON.stringify(sheets))
+    );
+    const [changedCells, setChangedCells] = useState<Set<string>>(new Set());
+
+    const data = localSheets[activeSheet] || [];
+    if (!data.length) return <p className="text-xs text-slate-400 italic">Không có dữ liệu</p>;
+
+    const headers = data[0] || [];
+    const rows = data.slice(1);
+
+    const handleCellChange = (rowIdx: number, colIdx: number, value: string) => {
+        const newSheets = JSON.parse(JSON.stringify(localSheets));
+        const sheetData = newSheets[activeSheet];
+        if (!sheetData || !sheetData[rowIdx + 1]) return;
+        sheetData[rowIdx + 1][colIdx] = value;
+        setLocalSheets(newSheets);
+        setChangedCells(prev => new Set(prev).add(`${activeSheet}_${rowIdx}_${colIdx}`));
+        onDataChange?.(newSheets, sheetNames);
+    };
+
+    const isCellChanged = (rowIdx: number, colIdx: number) =>
+        changedCells.has(`${activeSheet}_${rowIdx}_${colIdx}`);
+
+    return (
+        <div className={`mt-2 rounded-xl border overflow-hidden bg-white dark:bg-slate-900 ${editable
+            ? 'border-amber-300 dark:border-amber-700 shadow-md shadow-amber-100/50 dark:shadow-amber-900/20'
+            : 'border-emerald-200 dark:border-emerald-800/40'
+            }`}>
+            {/* Sheet tabs */}
+            {sheetNames.length > 1 && (
+                <div className={`flex gap-0 border-b overflow-x-auto ${editable ? 'border-amber-200 dark:border-amber-800/30 bg-amber-50/50 dark:bg-amber-900/10' : 'border-emerald-100 dark:border-emerald-800/30 bg-emerald-50/50 dark:bg-emerald-900/10'
+                    }`}>
+                    {sheetNames.map(name => (
+                        <button key={name} onClick={() => setActiveSheet(name)}
+                            className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-all border-b-2 ${activeSheet === name
+                                ? (editable ? 'text-amber-700 dark:text-amber-300 border-amber-500 bg-white dark:bg-slate-800' : 'text-emerald-700 dark:text-emerald-300 border-emerald-500 bg-white dark:bg-slate-800')
+                                : 'text-slate-400 border-transparent hover:text-slate-600'
+                                }`}>
+                            <Table2 size={10} className="inline mr-1" />{name}
+                        </button>
+                    ))}
+                </div>
+            )}
+            {/* Editable banner */}
+            {editable && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800/30">
+                    <Edit2 size={11} className="text-amber-500" />
+                    <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                        Chế độ chỉnh sửa — click vào ô để nhập dữ liệu
+                    </span>
+                    {changedCells.size > 0 && (
+                        <span className="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-700 dark:text-amber-200 px-1.5 py-0.5 rounded-full font-bold ml-auto">
+                            {changedCells.size} ô đã sửa
+                        </span>
+                    )}
+                </div>
+            )}
+            {/* Table */}
+            <div className="overflow-auto max-h-[350px]" style={{ maxWidth: '100%' }}>
+                <table className="w-full text-xs">
+                    <thead className="sticky top-0 z-10">
+                        <tr className={editable ? 'bg-amber-100 dark:bg-amber-900/40' : 'bg-emerald-100 dark:bg-emerald-900/40'}>
+                            {headers.map((h: any, i: number) => (
+                                <th key={i} className={`px-3 py-2 text-left font-bold whitespace-nowrap border-b ${editable
+                                    ? 'text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700'
+                                    : 'text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700'
+                                    }`}>
+                                    {h ?? `Col ${i + 1}`}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map((row: any[], ri: number) => (
+                            <tr key={ri} className={ri % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50/50 dark:bg-slate-800/30'}>
+                                {headers.map((_: any, ci: number) => (
+                                    <td key={ci} className={`border-b border-slate-100 dark:border-slate-800 ${editable && isCellChanged(ri, ci)
+                                        ? 'bg-amber-50 dark:bg-amber-900/20'
+                                        : ''
+                                        } ${editable ? 'p-0' : 'px-3 py-1.5'}`}>
+                                        {editable ? (
+                                            <input
+                                                type="text"
+                                                value={row[ci] ?? ''}
+                                                onChange={e => handleCellChange(ri, ci, e.target.value)}
+                                                className={`w-full px-2 py-1.5 text-xs bg-transparent outline-none text-slate-700 dark:text-slate-300 ${isCellChanged(ri, ci)
+                                                    ? 'font-bold text-amber-700 dark:text-amber-300'
+                                                    : ''
+                                                    }`}
+                                                style={{ minWidth: '80px' }}
+                                            />
+                                        ) : (
+                                            <span className="text-slate-700 dark:text-slate-300 whitespace-nowrap">{row[ci] ?? ''}</span>
+                                        )}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            <div className={`px-3 py-1.5 text-[10px] text-slate-400 border-t border-slate-100 dark:border-slate-800 ${editable ? 'bg-amber-50/50 dark:bg-amber-900/10' : 'bg-slate-50 dark:bg-slate-800/50'
+                }`}>
+                <FileSpreadsheet size={10} className="inline mr-1" />
+                {rows.length} dòng × {headers.length} cột
+                {sheetNames.length > 1 && ` • ${sheetNames.length} sheet`}
+                {editable && changedCells.size > 0 && (
+                    <span className="ml-2 text-amber-500 font-bold">• {changedCells.size} thay đổi</span>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// ========== File Download Helper ==========
+const downloadFileFromBase64 = (base64: string, fileName: string, mimeType: string) => {
+    const byteChars = atob(base64);
+    const byteNumbers = new Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: mimeType || 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+};
+
+const getBase64DataUrl = (base64: string, mimeType: string) => `data:${mimeType};base64,${base64}`;
+
+// ========== File Preview Modal ==========
+const FilePreviewModal: React.FC<{
+    file: any;
+    onClose: () => void;
+}> = ({ file, onClose }) => {
+    if (!file) return null;
+
+    const isImage = /^image\//i.test(file.fileType || '');
+    const isPdf = /pdf/i.test(file.fileType || '') || /\.pdf$/i.test(file.fileName || '');
+    const isExcel = /\.(xlsx|xls|csv)$/i.test(file.fileName || '');
+
+    return (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-[90vw] max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                {/* Header */}
+                <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                    <Paperclip size={16} className="text-rose-400" />
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{file.fileName}</p>
+                        <p className="text-[10px] text-slate-400">{file.fileType} • {(file.fileSize / 1024).toFixed(1)} KB</p>
+                    </div>
+                    <button
+                        onClick={() => downloadFileFromBase64(file.data, file.fileName, file.fileType)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600 transition shadow-md"
+                    >
+                        <Download size={13} /> Tải về
+                    </button>
+                    <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 transition-colors">
+                        <X size={18} />
+                    </button>
+                </div>
+                {/* Content */}
+                <div className="flex-1 overflow-auto p-4">
+                    {isImage && file.data && (
+                        <div className="flex items-center justify-center">
+                            <img src={getBase64DataUrl(file.data, file.fileType)} alt={file.fileName} className="max-w-full max-h-[70vh] rounded-lg shadow-lg" />
+                        </div>
+                    )}
+                    {isPdf && file.data && (
+                        <iframe
+                            src={getBase64DataUrl(file.data, 'application/pdf')}
+                            className="w-full h-[70vh] rounded-lg border border-slate-200 dark:border-slate-700"
+                            title={file.fileName}
+                        />
+                    )}
+                    {isExcel && file.excelData && file.sheetNames && (
+                        <ExcelTablePreview sheets={file.excelData} sheetNames={file.sheetNames} />
+                    )}
+                    {!isImage && !isPdf && !isExcel && (
+                        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                            <FileText size={48} className="mb-3 opacity-50" />
+                            <p className="text-sm font-medium">Không thể xem trước loại file này</p>
+                            <p className="text-xs mt-1">Nhấn "Tải về" để mở trên máy tính</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ========== File Field Input ==========
+const FileFieldInput: React.FC<{
+    fieldName: string;
+    value: any;
+    onChange: (val: any) => void;
+    disabled: boolean;
+}> = ({ fieldName, value, onChange, disabled }) => {
+    const fileRef = useRef<HTMLInputElement>(null);
+    const [dragOver, setDragOver] = useState(false);
+    const [showPreview, setShowPreview] = useState(false);
+
+    const isExcelFile = (name: string) => /\.(xlsx|xls|csv)$/i.test(name);
+
+    const parseExcel = useCallback((buffer: ArrayBuffer, fileName: string) => {
+        try {
+            const wb = XLSX.read(buffer, { type: 'array' });
+            const sheetNames = wb.SheetNames;
+            const excelData: Record<string, any[][]> = {};
+            sheetNames.forEach(name => {
+                excelData[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1 });
+            });
+            return { excelData, sheetNames };
+        } catch (err) {
+            console.error('Error parsing Excel:', err);
+            return null;
+        }
+    }, []);
+
+    const handleFile = useCallback((file: File) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const buffer = e.target?.result as ArrayBuffer;
+            // Convert to base64 for storage
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            bytes.forEach(b => binary += String.fromCharCode(b));
+            const base64 = btoa(binary);
+
+            const fileData: any = {
+                fileName: file.name,
+                fileType: file.type,
+                fileSize: file.size,
+                data: base64,
+            };
+
+            if (isExcelFile(file.name)) {
+                const parsed = parseExcel(buffer, file.name);
+                if (parsed) {
+                    fileData.excelData = parsed.excelData;
+                    fileData.sheetNames = parsed.sheetNames;
+                }
+            }
+
+            onChange(fileData);
+        };
+        reader.readAsArrayBuffer(file);
+    }, [onChange, parseExcel]);
+
+    const handleDrop = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        setDragOver(false);
+        const file = e.dataTransfer.files[0];
+        if (file && !disabled) handleFile(file);
+    }, [disabled, handleFile]);
+
+    // If disabled and has value, show preview only
+    if (disabled && value && typeof value === 'object' && value.fileName) {
+        return (
+            <div>
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-sm">
+                    <Paperclip size={14} className="text-rose-400" />
+                    <span className="font-medium text-slate-700 dark:text-slate-300 flex-1 truncate">{value.fileName}</span>
+                    <span className="text-xs text-slate-400 shrink-0">({(value.fileSize / 1024).toFixed(1)} KB)</span>
+                    <button onClick={() => setShowPreview(true)}
+                        className="p-1 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-800/30 text-blue-500 transition-colors" title="Xem trước">
+                        <Eye size={14} />
+                    </button>
+                    {value.data && (
+                        <button onClick={() => downloadFileFromBase64(value.data, value.fileName, value.fileType)}
+                            className="p-1 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về">
+                            <Download size={14} />
+                        </button>
+                    )}
+                </div>
+                {value.excelData && value.sheetNames && (
+                    <ExcelTablePreview sheets={value.excelData} sheetNames={value.sheetNames} />
+                )}
+                {showPreview && <FilePreviewModal file={value} onClose={() => setShowPreview(false)} />}
+            </div>
+        );
+    }
+
+    return (
+        <div>
+            <input
+                ref={fileRef}
+                type="file"
+                className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+                accept=".xlsx,.xls,.csv,.pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.txt"
+            />
+            {/* Upload zone */}
+            {!value || typeof value !== 'object' ? (
+                <div
+                    onClick={() => !disabled && fileRef.current?.click()}
+                    onDragOver={e => { e.preventDefault(); !disabled && setDragOver(true); }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={handleDrop}
+                    className={`flex flex-col items-center gap-2 px-4 py-5 rounded-xl border-2 border-dashed cursor-pointer transition-all ${dragOver
+                        ? 'border-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10'
+                        : 'border-slate-200 dark:border-slate-600 hover:border-emerald-300 hover:bg-emerald-50/30 dark:hover:bg-emerald-900/5'
+                        } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                    <Upload size={20} className={dragOver ? 'text-emerald-500' : 'text-slate-400'} />
+                    <span className="text-xs text-slate-500 text-center">
+                        <span className="font-bold text-emerald-600">Chọn file</span> hoặc kéo thả vào đây
+                        <br /><span className="text-[10px] text-slate-400">Excel, PDF, Word, Ảnh (tối đa 5MB)</span>
+                    </span>
+                </div>
+            ) : (
+                <div>
+                    <div className="flex items-center gap-2 px-4 py-2.5 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30 rounded-xl">
+                        {isExcelFile(value.fileName) ? (
+                            <FileSpreadsheet size={16} className="text-emerald-600 shrink-0" />
+                        ) : (
+                            <Paperclip size={16} className="text-rose-400 shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">{value.fileName}</p>
+                            <p className="text-[10px] text-slate-400">{(value.fileSize / 1024).toFixed(1)} KB</p>
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                            <button onClick={() => setShowPreview(true)}
+                                className="p-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-800/30 text-blue-500 transition-colors" title="Xem trước">
+                                <Eye size={14} />
+                            </button>
+                            {value.data && (
+                                <button onClick={() => downloadFileFromBase64(value.data, value.fileName, value.fileType)}
+                                    className="p-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về">
+                                    <Download size={14} />
+                                </button>
+                            )}
+                            {!disabled && (
+                                <>
+                                    <button onClick={() => fileRef.current?.click()}
+                                        className="p-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Chọn file khác">
+                                        <Upload size={14} />
+                                    </button>
+                                    <button onClick={() => onChange('')}
+                                        className="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-800/30 text-red-400 transition-colors" title="Xoá file">
+                                        <X size={14} />
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                    {/* Excel preview */}
+                    {value.excelData && value.sheetNames && (
+                        <ExcelTablePreview sheets={value.excelData} sheetNames={value.sheetNames} />
+                    )}
+                </div>
+            )}
+            {showPreview && value && typeof value === 'object' && (
+                <FilePreviewModal file={value} onClose={() => setShowPreview(false)} />
+            )}
+        </div>
+    );
 };
 
 const WorkflowInstances: React.FC = () => {
-    const { templates, instances, nodes, edges, logs, createInstance, updateInstance, deleteInstance, cancelInstance, processInstance, getInstanceLogs } = useWorkflow();
+    const { templates, instances, nodes, edges, logs, createInstance, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs } = useWorkflow();
     const { user, users } = useApp();
     const [activeTab, setActiveTab] = useState<'mine' | 'pending'>('mine');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedId, setExpandedId] = useState<string | null>(null);
+
+    // File preview state
+    const [previewFile, setPreviewFile] = useState<any>(null);
 
     // Create form state
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -58,8 +434,14 @@ const WorkflowInstances: React.FC = () => {
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
     const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
 
+    // Reopen modal state (Admin can revert completed/rejected instances)
+    const [reopenInstanceId, setReopenInstanceId] = useState<string | null>(null);
+    const [reopenTargetNodeId, setReopenTargetNodeId] = useState('');
+    const [reopenComment, setReopenComment] = useState('');
+
     // Step data editing state
     const [stepFormData, setStepFormData] = useState<Record<string, any>>({});
+    const [stepExcelData, setStepExcelData] = useState<{ sheets: Record<string, any[][]>; sheetNames: string[] } | null>(null);
 
     const activeTemplates = templates.filter(t => t.isActive);
 
@@ -140,17 +522,33 @@ const WorkflowInstances: React.FC = () => {
         setProcessingId(instanceId);
         // Save step data if any
         const instance = instances.find(i => i.id === instanceId);
-        if (instance && Object.keys(stepFormData).length > 0) {
+        if (instance) {
             const nodeId = instance.currentNodeId;
             const newFormData = { ...instance.formData };
-            Object.entries(stepFormData).forEach(([key, value]) => {
-                newFormData[`step_${nodeId}_${key}`] = value;
-            });
-            await updateInstance(instanceId, { formData: newFormData });
+            // Save step form fields (exclude _files which is handled separately)
+            const formEntries = Object.entries(stepFormData).filter(([k]) => k !== '_files');
+            if (formEntries.length > 0) {
+                formEntries.forEach(([key, value]) => {
+                    newFormData[`step_${nodeId}_${key}`] = value;
+                });
+            }
+            // Save step file attachments
+            if (stepFormData._files && stepFormData._files.length > 0) {
+                newFormData[`step_${nodeId}_files`] = stepFormData._files;
+            }
+            // Save step-level Excel edits
+            if (stepExcelData) {
+                newFormData[`step_${nodeId}_excel_data`] = stepExcelData.sheets;
+                newFormData[`step_${nodeId}_excel_sheets`] = stepExcelData.sheetNames;
+            }
+            if (formEntries.length > 0 || stepExcelData || (stepFormData._files && stepFormData._files.length > 0)) {
+                await updateInstance(instanceId, { formData: newFormData });
+            }
         }
         await processInstance(instanceId, action, user.id, actionComment);
         setActionComment('');
         setStepFormData({});
+        setStepExcelData(null);
         setProcessingId(null);
     };
 
@@ -259,7 +657,33 @@ const WorkflowInstances: React.FC = () => {
         if (user.role === Role.ADMIN) return true;
         if (currentNode.config.assigneeUserId === user.id) return true;
         if (currentNode.config.assigneeRole === user.role) return true;
+        // Allow creator to act on first step after REVISION_REQUESTED
+        if (instance.createdBy === user.id) {
+            const templateEdgesLocal = edges.filter(e => e.templateId === instance.templateId);
+            const startNode = nodes.find(n => n.templateId === instance.templateId && n.type === WorkflowNodeType.START);
+            if (startNode) {
+                const firstEdge = templateEdgesLocal.find(e => e.sourceNodeId === startNode.id);
+                if (firstEdge && firstEdge.targetNodeId === instance.currentNodeId) {
+                    // Check if there was a REVISION_REQUESTED log for this instance
+                    const instanceLogs = logs.filter(l => l.instanceId === instance.id);
+                    const hasRevision = instanceLogs.some(l => l.action === WorkflowInstanceAction.REVISION_REQUESTED);
+                    if (hasRevision) return true;
+                }
+            }
+        }
         return false;
+    };
+
+    // Check if current step is the first step and was sent back for revision
+    const isRevisionAtFirstStep = (instance: WorkflowInstance): boolean => {
+        if (!instance.currentNodeId) return false;
+        const startNode = nodes.find(n => n.templateId === instance.templateId && n.type === WorkflowNodeType.START);
+        if (!startNode) return false;
+        const templateEdgesLocal = edges.filter(e => e.templateId === instance.templateId);
+        const firstEdge = templateEdgesLocal.find(e => e.sourceNodeId === startNode.id);
+        if (!firstEdge || firstEdge.targetNodeId !== instance.currentNodeId) return false;
+        const instanceLogs = logs.filter(l => l.instanceId === instance.id);
+        return instanceLogs.some(l => l.action === WorkflowInstanceAction.REVISION_REQUESTED);
     };
 
     // Render custom fields form (reused in create and edit modals)
@@ -327,13 +751,11 @@ const WorkflowInstances: React.FC = () => {
                     </select>
                 )}
                 {field.type === 'file' && (
-                    <input
-                        type="text"
-                        value={data[field.name] || ''}
-                        onChange={e => onChange(field.name, e.target.value)}
+                    <FileFieldInput
+                        fieldName={field.name}
+                        value={data[field.name]}
+                        onChange={(val: any) => onChange(field.name, val)}
                         disabled={disabled}
-                        placeholder="Nhập tài liệu đính kèm..."
-                        className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm disabled:opacity-50"
                     />
                 )}
             </div>
@@ -508,6 +930,22 @@ const WorkflowInstances: React.FC = () => {
                                                 </button>
                                             </div>
                                         )}
+                                        {/* Admin revert button for COMPLETED/REJECTED */}
+                                        {user.role === Role.ADMIN && (instance.status === WorkflowInstanceStatus.COMPLETED || instance.status === WorkflowInstanceStatus.REJECTED) && (
+                                            <div onClick={e => e.stopPropagation()}>
+                                                <button
+                                                    onClick={() => {
+                                                        setReopenInstanceId(instance.id);
+                                                        setReopenTargetNodeId('');
+                                                        setReopenComment('');
+                                                    }}
+                                                    className="p-1.5 rounded-lg text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition"
+                                                    title="Mở lại / Đảo ngược quy trình"
+                                                >
+                                                    <Undo2 size={14} />
+                                                </button>
+                                            </div>
+                                        )}
                                         {isExpanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
                                     </div>
                                 </div>
@@ -557,16 +995,7 @@ const WorkflowInstances: React.FC = () => {
                                                                     })}
                                                                 </div>
                                                             )}
-                                                            {/* Show step data (read-only for past steps) */}
-                                                            {Object.keys(step.stepData).length > 0 && (
-                                                                <div className="mt-1 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded text-[8px] text-blue-600 dark:text-blue-300 max-w-[120px]">
-                                                                    {Object.entries(step.stepData).map(([k, v]) => (
-                                                                        <div key={k} className="truncate">
-                                                                            <span className="font-bold">{k}:</span> {String(v)}
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            )}
+                                                            {/* Step data and Excel hidden from timeline - shown in log section below */}
                                                         </div>
                                                         {idx < timeline.length - 1 && (
                                                             <div className={`flex-shrink-0 w-8 h-0.5 mt-4 ${isCompleted ? 'bg-emerald-400' : 'bg-slate-200 dark:bg-slate-700'}`} />
@@ -586,10 +1015,34 @@ const WorkflowInstances: React.FC = () => {
                                                     const tpl = templates.find(t => t.id === instance.templateId);
                                                     const fieldDef = (tpl?.customFields || []).find(f => f.name === key);
                                                     const displayLabel = fieldDef ? fieldDef.label : key;
+                                                    const v = value as any;
                                                     return (
-                                                        <div key={key} className="flex items-start gap-2 py-1.5 border-b border-slate-100 dark:border-slate-700 last:border-0">
-                                                            <span className="font-bold text-slate-400 text-[10px] min-w-[100px] uppercase tracking-wider">{displayLabel}:</span>
-                                                            <span className="flex-1">{String(value)}</span>
+                                                        <div key={key} className="py-1.5 border-b border-slate-100 dark:border-slate-700 last:border-0">
+                                                            <span className="font-bold text-slate-400 text-[10px] uppercase tracking-wider">{displayLabel}:</span>
+                                                            {typeof v === 'object' && v !== null && v.fileName ? (
+                                                                <div className="mt-1.5">
+                                                                    <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 mb-1">
+                                                                        <Paperclip size={12} className="text-rose-400" />
+                                                                        <span className="font-medium flex-1 truncate">{v.fileName}</span>
+                                                                        <span className="text-slate-400 shrink-0">({(v.fileSize / 1024).toFixed(1)} KB)</span>
+                                                                        <button onClick={() => setPreviewFile(v)}
+                                                                            className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-800/30 text-blue-500 transition-colors" title="Xem trước">
+                                                                            <Eye size={12} />
+                                                                        </button>
+                                                                        {v.data && (
+                                                                            <button onClick={() => downloadFileFromBase64(v.data, v.fileName, v.fileType)}
+                                                                                className="p-1 rounded hover:bg-emerald-100 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về">
+                                                                                <Download size={12} />
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                    {v.excelData && v.sheetNames && (
+                                                                        <ExcelTablePreview sheets={v.excelData} sheetNames={v.sheetNames} />
+                                                                    )}
+                                                                </div>
+                                                            ) : (
+                                                                <span className="flex-1 ml-2">{String(value)}</span>
+                                                            )}
                                                         </div>
                                                     );
                                                 })}
@@ -625,6 +1078,63 @@ const WorkflowInstances: React.FC = () => {
                                                 </div>
                                             )}
 
+                                            {/* Editable Excel from attached file */}
+                                            {(() => {
+                                                // Find Excel data from file fields in formData
+                                                const tpl = templates.find(t => t.id === instance.templateId);
+                                                const fileFields = (tpl?.customFields || []).filter(f => f.type === 'file');
+                                                // Also check for step-level Excel from previous steps
+                                                const allFormData = instance.formData || {};
+
+                                                // Get the latest Excel data: check previous steps first, then original
+                                                let excelSource: { sheets: Record<string, any[][]>; sheetNames: string[]; label: string } | null = null;
+
+                                                // Check previous steps for Excel edits (latest first)
+                                                const orderedNodeIds = nodes
+                                                    .filter(n => n.templateId === instance.templateId)
+                                                    .map(n => n.id);
+                                                for (let i = orderedNodeIds.length - 1; i >= 0; i--) {
+                                                    const nid = orderedNodeIds[i];
+                                                    if (nid === instance.currentNodeId) continue; // skip current
+                                                    const stepData = allFormData[`step_${nid}_excel_data`];
+                                                    const stepSheets = allFormData[`step_${nid}_excel_sheets`];
+                                                    if (stepData && stepSheets) {
+                                                        const prevNode = nodes.find(n => n.id === nid);
+                                                        excelSource = { sheets: stepData, sheetNames: stepSheets, label: `Dữ liệu từ bước "${prevNode?.label || nid}"` };
+                                                        break;
+                                                    }
+                                                }
+
+                                                // If no previous step edits, use original file attachment
+                                                if (!excelSource) {
+                                                    for (const ff of fileFields) {
+                                                        const fv = allFormData[ff.name] as any;
+                                                        if (fv && typeof fv === 'object' && fv.excelData && fv.sheetNames) {
+                                                            excelSource = { sheets: fv.excelData, sheetNames: fv.sheetNames, label: `Dữ liệu từ "${ff.label}"` };
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+
+                                                if (!excelSource) return null;
+
+                                                return (
+                                                    <div className="mb-4 border-b border-amber-200 dark:border-amber-700 pb-4">
+                                                        <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1">
+                                                            <FileSpreadsheet size={11} className="inline mr-1" />
+                                                            {excelSource.label} — Chỉnh sửa bảng Excel
+                                                        </p>
+                                                        <ExcelTablePreview
+                                                            sheets={excelSource.sheets}
+                                                            sheetNames={excelSource.sheetNames}
+                                                            editable={true}
+                                                            onDataChange={(newSheets, newSheetNames) => {
+                                                                setStepExcelData({ sheets: newSheets, sheetNames: newSheetNames });
+                                                            }}
+                                                        />
+                                                    </div>
+                                                );
+                                            })()}
                                             {/* Free-form step note */}
                                             <div className="mb-3">
                                                 <label className="block text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1.5">Ghi chú bước này</label>
@@ -637,6 +1147,52 @@ const WorkflowInstances: React.FC = () => {
                                                 />
                                             </div>
 
+                                            {/* Step file attachment */}
+                                            <div className="mb-3">
+                                                <label className="block text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1.5">
+                                                    <Paperclip size={11} className="inline mr-1" />Tệp đính kèm bước này
+                                                </label>
+                                                {/* Show existing step files */}
+                                                {(stepFormData._files || []).map((f: any, fi: number) => (
+                                                    <div key={fi} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 mb-1 bg-white/60 dark:bg-slate-800/40 p-2 rounded-lg">
+                                                        <Paperclip size={11} className="text-rose-400 shrink-0" />
+                                                        <span className="truncate flex-1">{f.fileName}</span>
+                                                        <span className="text-slate-400 shrink-0">({(f.fileSize / 1024).toFixed(1)} KB)</span>
+                                                        <button onClick={() => setPreviewFile(f)} className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-800/30 text-blue-500" title="Xem trước"><Eye size={11} /></button>
+                                                        <button onClick={() => {
+                                                            const newFiles = [...(stepFormData._files || [])];
+                                                            newFiles.splice(fi, 1);
+                                                            setStepFormData(prev => ({ ...prev, _files: newFiles }));
+                                                        }} className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-800/30 text-red-400" title="Xóa"><X size={11} /></button>
+                                                    </div>
+                                                ))}
+                                                <label className="flex items-center gap-2 px-3 py-2 border border-dashed border-amber-300 dark:border-amber-700 rounded-xl cursor-pointer hover:bg-amber-50/50 dark:hover:bg-amber-900/10 transition">
+                                                    <Upload size={14} className="text-amber-400" />
+                                                    <span className="text-[10px] text-amber-500 font-bold">Chọn file đính kèm...</span>
+                                                    <input type="file" className="hidden" multiple onChange={async (e) => {
+                                                        const files = e.target.files;
+                                                        if (!files) return;
+                                                        const newFiles = [...(stepFormData._files || [])];
+                                                        for (let i = 0; i < files.length; i++) {
+                                                            const file = files[i];
+                                                            const reader = new FileReader();
+                                                            const fileData = await new Promise<string>((resolve) => {
+                                                                reader.onload = () => resolve((reader.result as string).split(',')[1]);
+                                                                reader.readAsDataURL(file);
+                                                            });
+                                                            newFiles.push({
+                                                                fileName: file.name,
+                                                                fileType: file.type,
+                                                                fileSize: file.size,
+                                                                data: fileData,
+                                                            });
+                                                        }
+                                                        setStepFormData(prev => ({ ...prev, _files: newFiles }));
+                                                        e.target.value = '';
+                                                    }} />
+                                                </label>
+                                            </div>
+
                                             <textarea
                                                 value={actionComment}
                                                 onChange={e => setActionComment(e.target.value)}
@@ -645,48 +1201,98 @@ const WorkflowInstances: React.FC = () => {
                                                 rows={2}
                                             />
                                             <div className="flex gap-2 flex-wrap">
-                                                <button
-                                                    onClick={() => handleAction(instance.id, WorkflowInstanceAction.APPROVED)}
-                                                    disabled={processingId === instance.id}
-                                                    className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 transition shadow-md shadow-emerald-500/20 disabled:opacity-50"
-                                                >
-                                                    <CheckCircle size={13} /> Duyệt
-                                                </button>
-                                                <button
-                                                    onClick={() => handleAction(instance.id, WorkflowInstanceAction.REJECTED)}
-                                                    disabled={processingId === instance.id}
-                                                    className="flex items-center gap-1.5 px-4 py-2 bg-red-500 text-white rounded-xl text-xs font-bold hover:bg-red-600 transition shadow-md shadow-red-500/20 disabled:opacity-50"
-                                                >
-                                                    <XCircle size={13} /> Từ chối
-                                                </button>
-                                                <button
-                                                    onClick={() => handleAction(instance.id, WorkflowInstanceAction.REVISION_REQUESTED)}
-                                                    disabled={processingId === instance.id}
-                                                    className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold hover:bg-amber-600 transition shadow-md shadow-amber-500/20 disabled:opacity-50"
-                                                >
-                                                    <RotateCcw size={13} /> Yêu cầu bổ sung
-                                                </button>
+                                                {isRevisionAtFirstStep(instance) && isCreator(instance) ? (
+                                                    <button
+                                                        onClick={() => handleAction(instance.id, WorkflowInstanceAction.APPROVED)}
+                                                        disabled={processingId === instance.id}
+                                                        className="flex items-center gap-1.5 px-4 py-2 bg-blue-500 text-white rounded-xl text-xs font-bold hover:bg-blue-600 transition shadow-md shadow-blue-500/20 disabled:opacity-50"
+                                                    >
+                                                        <Send size={13} /> Gửi lại
+                                                    </button>
+                                                ) : (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleAction(instance.id, WorkflowInstanceAction.APPROVED)}
+                                                            disabled={processingId === instance.id}
+                                                            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 transition shadow-md shadow-emerald-500/20 disabled:opacity-50"
+                                                        >
+                                                            <CheckCircle size={13} /> Duyệt
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleAction(instance.id, WorkflowInstanceAction.REJECTED)}
+                                                            disabled={processingId === instance.id}
+                                                            className="flex items-center gap-1.5 px-4 py-2 bg-red-500 text-white rounded-xl text-xs font-bold hover:bg-red-600 transition shadow-md shadow-red-500/20 disabled:opacity-50"
+                                                        >
+                                                            <XCircle size={13} /> Từ chối
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleAction(instance.id, WorkflowInstanceAction.REVISION_REQUESTED)}
+                                                            disabled={processingId === instance.id}
+                                                            className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold hover:bg-amber-600 transition shadow-md shadow-amber-500/20 disabled:opacity-50"
+                                                        >
+                                                            <RotateCcw size={13} /> Yêu cầu bổ sung
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </div>
                                     )}
 
-                                    {/* Log History */}
+                                    {/* Conversation History */}
                                     {getInstanceLogs(instance.id).length > 0 && (
                                         <div>
-                                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Lịch sử xử lý</p>
-                                            <div className="space-y-1.5">
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-1.5">
+                                                <MessageSquare size={11} /> Lịch sử trao đổi
+                                            </p>
+                                            <div className="space-y-3 max-h-[400px] overflow-y-auto">
                                                 {getInstanceLogs(instance.id).map(log => {
                                                     const actor = users.find(u => u.id === log.actedBy);
                                                     const node = nodes.find(n => n.id === log.nodeId);
+                                                    const actionInfo = ACTION_MAP[log.action];
+                                                    const isMe = log.actedBy === user.id;
+                                                    // Get step files if any
+                                                    const stepFiles = (instance.formData || {})[`step_${log.nodeId}_files`] as any[] | undefined;
                                                     return (
-                                                        <div key={log.id} className="flex items-start gap-2 text-[10px] bg-slate-50 dark:bg-slate-800/30 p-2 rounded-lg">
-                                                            <div className={`w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0 ${ACTION_MAP[log.action]?.color.replace('text-', 'bg-')}`} />
-                                                            <div>
-                                                                <span className="font-bold text-slate-600 dark:text-slate-300">{actor?.name}</span>
-                                                                <span className={`font-bold ml-1 ${ACTION_MAP[log.action]?.color}`}>{ACTION_MAP[log.action]?.label}</span>
-                                                                <span className="text-slate-400 ml-1">tại "{node?.label}"</span>
-                                                                {log.comment && <p className="text-slate-400 mt-0.5 italic">"{log.comment}"</p>}
-                                                                <p className="text-slate-300 dark:text-slate-600">{new Date(log.createdAt).toLocaleString('vi-VN')}</p>
+                                                        <div key={log.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>
+                                                            {/* Avatar */}
+                                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${isMe ? 'bg-accent/20 text-accent' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}>
+                                                                {actor?.name?.charAt(0)?.toUpperCase() || '?'}
+                                                            </div>
+                                                            {/* Message bubble */}
+                                                            <div className={`max-w-[75%] ${isMe ? 'text-right' : ''}`}>
+                                                                <div className="flex items-center gap-1.5 mb-1 flex-wrap" style={{ justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
+                                                                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">{actor?.name}</span>
+                                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${actionInfo?.color} bg-opacity-10`} style={{ backgroundColor: 'rgba(0,0,0,0.05)' }}>
+                                                                        {actionInfo?.label}
+                                                                    </span>
+                                                                </div>
+                                                                <div className={`rounded-2xl px-3 py-2 text-xs ${isMe
+                                                                    ? 'bg-accent/10 dark:bg-accent/20 text-slate-700 dark:text-slate-200 rounded-tr-sm'
+                                                                    : 'bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 rounded-tl-sm'
+                                                                    }`}>
+                                                                    <p className="text-[9px] text-slate-400 mb-0.5">tại "{node?.label}"</p>
+                                                                    {log.comment ? (
+                                                                        <p className="text-sm leading-relaxed">{log.comment}</p>
+                                                                    ) : (
+                                                                        <p className="text-slate-400 italic text-[10px]">Không có ghi chú</p>
+                                                                    )}
+                                                                    {/* Show step files in this log's node */}
+                                                                    {stepFiles && stepFiles.length > 0 && (
+                                                                        <div className="mt-2 space-y-1 border-t border-slate-200/50 dark:border-slate-700/50 pt-1.5">
+                                                                            {stepFiles.map((f: any, fi: number) => (
+                                                                                <div key={fi} className="flex items-center gap-1.5 text-[10px]">
+                                                                                    <Paperclip size={10} className="text-rose-400" />
+                                                                                    <span className="truncate">{f.fileName}</span>
+                                                                                    <button onClick={() => setPreviewFile(f)} className="text-blue-500 hover:underline">Xem</button>
+                                                                                    {f.data && <button onClick={() => downloadFileFromBase64(f.data, f.fileName, f.fileType)} className="text-emerald-500 hover:underline">Tải</button>}
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                <p className="text-[9px] text-slate-300 dark:text-slate-600 mt-1" style={{ textAlign: isMe ? 'right' : 'left' }}>
+                                                                    {new Date(log.createdAt).toLocaleString('vi-VN')}
+                                                                </p>
                                                             </div>
                                                         </div>
                                                     );
@@ -880,6 +1486,89 @@ const WorkflowInstances: React.FC = () => {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Reopen/Revert Modal for Admin */}
+            {reopenInstanceId && (() => {
+                const inst = instances.find(i => i.id === reopenInstanceId);
+                if (!inst) return null;
+                const tplNodes = nodes.filter(n => n.templateId === inst.templateId && n.type !== WorkflowNodeType.START && n.type !== WorkflowNodeType.END);
+                // Order nodes by edge sequence
+                const tplEdges = edges.filter(e => e.templateId === inst.templateId);
+                const startNode = nodes.find(n => n.templateId === inst.templateId && n.type === WorkflowNodeType.START);
+                const orderedNodes: typeof tplNodes = [];
+                if (startNode) {
+                    let currentId: string | undefined = startNode.id;
+                    while (currentId) {
+                        const edge = tplEdges.find(e => e.sourceNodeId === currentId);
+                        if (!edge) break;
+                        const node = tplNodes.find(n => n.id === edge.targetNodeId);
+                        if (node) orderedNodes.push(node);
+                        currentId = edge.targetNodeId;
+                    }
+                }
+                const displayNodes = orderedNodes.length > 0 ? orderedNodes : tplNodes;
+                return (
+                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setReopenInstanceId(null)}>
+                        <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+                            <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-1 flex items-center gap-2">
+                                <Undo2 size={20} className="text-purple-500" /> Mở lại quy trình
+                            </h2>
+                            <p className="text-xs text-slate-400 mb-4">Chọn bước muốn quay lại để tiếp tục xử lý.</p>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Quay lại bước *</label>
+                                    <select
+                                        value={reopenTargetNodeId}
+                                        onChange={e => setReopenTargetNodeId(e.target.value)}
+                                        className="w-full px-3 py-2 bg-white/80 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                                    >
+                                        <option value="">-- Chọn bước --</option>
+                                        {displayNodes.map((n, idx) => (
+                                            <option key={n.id} value={n.id}>Bước {idx + 1}: {n.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Lý do mở lại</label>
+                                    <textarea
+                                        value={reopenComment}
+                                        onChange={e => setReopenComment(e.target.value)}
+                                        placeholder="Nhập lý do mở lại quy trình..."
+                                        className="w-full px-3 py-2 bg-white/80 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                                        rows={3}
+                                    />
+                                </div>
+                                <div className="flex gap-2 justify-end">
+                                    <button
+                                        onClick={() => setReopenInstanceId(null)}
+                                        className="px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-200 transition"
+                                    >
+                                        Hủy
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            if (!reopenTargetNodeId) return;
+                                            await reopenInstance(reopenInstanceId, reopenTargetNodeId, user.id, reopenComment);
+                                            setReopenInstanceId(null);
+                                            setReopenTargetNodeId('');
+                                            setReopenComment('');
+                                        }}
+                                        disabled={!reopenTargetNodeId}
+                                        className="px-4 py-2 bg-purple-500 text-white rounded-xl text-xs font-bold hover:bg-purple-600 transition shadow-md shadow-purple-500/20 disabled:opacity-50 flex items-center gap-1.5"
+                                    >
+                                        <Undo2 size={13} /> Mở lại
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* File Preview Modal */}
+            {previewFile && (
+                <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
             )}
         </div>
     );

@@ -5,7 +5,7 @@ import {
   InventoryItem, Transaction, User, Warehouse, Supplier,
   Role, TransactionStatus, TransactionType, MaterialRequest,
   RequestStatus, AuditLog, GlobalActivity, ActivityType,
-  ItemCategory, ItemUnit, Employee,
+  ItemCategory, ItemUnit, Employee, MaterialLossNorm, AuditSession,
   HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule, HrmConstructionSite,
   OrgUnit
 } from '../types';
@@ -83,6 +83,14 @@ interface AppContextType {
   updateAppSettings: (settings: AppSettings) => void;
   approvePartialTransaction: (id: string, selectedItemIds: string[], approverId: string) => void;
   clearAllData: () => void;
+  // Loss Management
+  lossNorms: MaterialLossNorm[];
+  addLossNorm: (norm: MaterialLossNorm) => void;
+  updateLossNorm: (norm: MaterialLossNorm) => void;
+  removeLossNorm: (id: string) => void;
+  // Audit Sessions
+  auditSessions: AuditSession[];
+  addAuditSession: (session: AuditSession) => void;
   isLoading: boolean;
   isRefreshing: boolean;
   connectionError: string | null;
@@ -113,6 +121,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [hrmWorkSchedules, setHrmWorkSchedules] = useState<HrmWorkSchedule[]>([]);
   const [hrmConstructionSites, setHrmConstructionSites] = useState<HrmConstructionSite[]>([]);
   const [orgUnits, setOrgUnits] = useState<OrgUnit[]>([]);
+  const [lossNorms, setLossNorms] = useState<MaterialLossNorm[]>([]);
+  const [auditSessions, setAuditSessions] = useState<AuditSession[]>([]);
   const [categories, setCategories] = useState<ItemCategory[]>([
     { id: 'cat1', name: 'Vật liệu xây dựng' },
     { id: 'cat2', name: 'Công cụ dụng cụ' },
@@ -156,7 +166,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const [
           itemsData, whData, supData, txData, reqData, actData, catData, unitData, settingsData, usersData, empData,
-          areasData, officesData, empTypesData, positionsData, salaryData, schedulesData, constructionSitesData, orgUnitsData
+          areasData, officesData, empTypesData, positionsData, salaryData, schedulesData, constructionSitesData, orgUnitsData,
+          lossNormsData, auditSessionsData
         ] = await Promise.all([
           fetchTable('items'),
           fetchTable('warehouses'),
@@ -176,7 +187,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTable('hrm_salary_policies'),
           fetchTable('hrm_work_schedules'),
           fetchTable('hrm_construction_sites'),
-          fetchTable('org_units')
+          fetchTable('org_units'),
+          fetchTable('loss_norms'),
+          fetchTable('audit_sessions', supabase.from('audit_sessions').select('*').order('date', { ascending: false }))
         ]);
 
         if (usersData && usersData.length > 0) {
@@ -254,6 +267,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: u.id, name: u.name, type: u.type, parentId: u.parent_id,
           description: u.description, orderIndex: u.order_index, createdAt: u.created_at
         })));
+
+        // Loss Norms
+        if (lossNormsData) setLossNorms(lossNormsData.map((n: any) => ({
+          id: n.id, itemId: n.item_id, categoryId: n.category_id, lossType: n.loss_type,
+          allowedPercentage: n.allowed_percentage, period: n.period,
+          createdBy: n.created_by, createdAt: n.created_at
+        })));
+
+        // Audit Sessions
+        if (auditSessionsData) setAuditSessions(auditSessionsData);
       } catch (error: any) {
         console.error('Error fetching data from Supabase:', error);
         setConnectionError(error.message);
@@ -1030,6 +1053,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // ==================== LOSS NORMS CRUD ====================
+  const addLossNorm = (norm: MaterialLossNorm) => {
+    setLossNorms(prev => [...prev, norm]);
+    if (isSupabaseConfigured) {
+      supabase.from('loss_norms').upsert({
+        id: norm.id, item_id: norm.itemId || null, category_id: norm.categoryId || null,
+        loss_type: norm.lossType, allowed_percentage: norm.allowedPercentage,
+        period: norm.period, created_by: norm.createdBy, created_at: norm.createdAt
+      }).then(({ error }) => { if (error) console.error('Error adding loss_norm:', error); });
+    }
+  };
+
+  const updateLossNorm = (norm: MaterialLossNorm) => {
+    setLossNorms(prev => prev.map(n => n.id === norm.id ? norm : n));
+    if (isSupabaseConfigured) {
+      supabase.from('loss_norms').upsert({
+        id: norm.id, item_id: norm.itemId || null, category_id: norm.categoryId || null,
+        loss_type: norm.lossType, allowed_percentage: norm.allowedPercentage,
+        period: norm.period, created_by: norm.createdBy, created_at: norm.createdAt
+      }).then(({ error }) => { if (error) console.error('Error updating loss_norm:', error); });
+    }
+  };
+
+  const removeLossNorm = async (id: string) => {
+    setLossNorms(prev => prev.filter(n => n.id !== id));
+    if (isSupabaseConfigured) await supabase.from('loss_norms').delete().eq('id', id);
+  };
+
+  // ==================== AUDIT SESSIONS CRUD ====================
+  const addAuditSession = (session: AuditSession) => {
+    setAuditSessions(prev => [session, ...prev]);
+    if (isSupabaseConfigured) {
+      supabase.from('audit_sessions').upsert(session)
+        .then(({ error }) => { if (error) console.error('Error saving audit_session:', error); });
+    }
+  };
+
   return (
     <AppContext.Provider value={{
       user, users, appSettings, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
@@ -1040,6 +1100,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,
       addRequest, updateRequestStatus, logActivity, addCategory, updateCategory, removeCategory, addUnit, updateUnit, removeUnit,
       addSupplier, updateSupplier, removeSupplier, addEmployee, updateEmployee, removeEmployee, updateAppSettings, approvePartialTransaction, clearAllData,
+      lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
+      auditSessions, addAuditSession,
       login, logout, isLoading, isRefreshing, connectionError
     }}>
       {children}

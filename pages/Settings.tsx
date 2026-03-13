@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Warehouse, WarehouseType, Supplier, ItemCategory, ItemUnit, HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule, HrmConstructionSite } from '../types';
+import { Warehouse, WarehouseType, Supplier, ItemCategory, ItemUnit, HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule, HrmConstructionSite, LossReason, LOSS_REASON_LABELS, MaterialLossNorm } from '../types';
 import {
   Building, MapPin, Plus, X, Save, Settings as SettingsIcon, Users,
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Image as ImageIcon, Globe, Upload, Trash, Truck, User as UserIcon, Search, AlertCircle,
-  Database, Mail, Phone, Shield, MoreVertical, MapPinned, Clock, DollarSign, Calendar, Layers, GitBranch
+  Database, Mail, Phone, Shield, MoreVertical, MapPinned, Clock, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import UserModal from '../components/UserModal';
@@ -24,7 +24,8 @@ const Settings: React.FC = () => {
     appSettings, updateAppSettings, clearAllData, connectionError,
     users, addUser, updateUser, removeUser, user: currentUser, logout,
     hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
-    addHrmItem, updateHrmItem, removeHrmItem
+    addHrmItem, updateHrmItem, removeHrmItem,
+    items, lossNorms, addLossNorm, updateLossNorm, removeLossNorm
   } = useApp();
 
   const [activeTab, setActiveTab] = useState('general');
@@ -73,6 +74,11 @@ const Settings: React.FC = () => {
   const [newCatName, setNewCatName] = useState('');
   const [newUnitName, setNewUnitName] = useState('');
   const [newSup, setNewSup] = useState({ name: '', contact: '', phone: '' });
+
+  // Loss Norms States
+  const [isLossNormModalOpen, setIsLossNormModalOpen] = useState(false);
+  const [editingLossNorm, setEditingLossNorm] = useState<MaterialLossNorm | null>(null);
+  const [lossNormForm, setLossNormForm] = useState({ itemId: '', categoryId: '', lossType: '' as LossReason | '', allowedPercentage: '', period: 'monthly' as 'monthly' | 'quarterly' | 'yearly' });
 
   // Password change state
   const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
@@ -407,6 +413,7 @@ const Settings: React.FC = () => {
     { id: 'warehouses', label: 'Kho bãi', icon: Building, roles: [Role.ADMIN] },
     { id: 'master-data', label: 'Dữ liệu gốc', icon: Database, roles: [Role.ADMIN] },
     { id: 'org-chart', label: 'Sơ đồ tổ chức', icon: GitBranch, roles: [Role.ADMIN] },
+    { id: 'loss-norms', label: 'Định mức hao hụt', icon: TrendingDown, roles: [Role.ADMIN] },
     { id: 'hrm-master-data', label: 'Dữ liệu gốc HRM', icon: Briefcase, roles: [Role.ADMIN] },
     { id: 'users', label: 'Người dùng', icon: Users, roles: [Role.ADMIN] },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
@@ -1165,6 +1172,99 @@ const Settings: React.FC = () => {
             </div>
           )}
 
+          {activeTab === 'loss-norms' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-800 flex items-center"><TrendingDown size={20} className="mr-2 text-orange-500" /> Định mức hao hụt</h2>
+                    <p className="text-xs text-slate-500 font-medium mt-1">Thiết lập tỷ lệ hao hụt cho phép theo vật tư hoặc danh mục. Khi kiểm kê vượt định mức sẽ cảnh báo.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setEditingLossNorm(null);
+                      setLossNormForm({ itemId: '', categoryId: '', lossType: '' as any, allowedPercentage: '', period: 'monthly' });
+                      setIsLossNormModalOpen(true);
+                    }}
+                    className="flex items-center px-4 py-2.5 bg-accent text-white rounded-xl hover:bg-blue-700 transition font-bold text-xs shadow-lg shadow-blue-500/20"
+                  >
+                    <Plus size={16} className="mr-2" /> Thêm định mức
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] uppercase font-black tracking-widest text-slate-400">
+                        <th className="p-4">Áp dụng cho</th>
+                        <th className="p-4">Loại hao hụt</th>
+                        <th className="p-4 text-center">Tỷ lệ cho phép</th>
+                        <th className="p-4 text-center">Chu kỳ</th>
+                        <th className="p-4 text-center">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {lossNorms.length === 0 ? (
+                        <tr><td colSpan={5} className="p-12 text-center text-slate-300 text-sm font-medium">Chưa có định mức nào. Nhấn "Thêm định mức" để bắt đầu.</td></tr>
+                      ) : lossNorms.map(norm => {
+                        const targetItem = items.find(i => i.id === norm.itemId);
+                        const targetCat = categories.find(c => c.id === norm.categoryId);
+                        return (
+                          <tr key={norm.id} className="hover:bg-slate-50 transition">
+                            <td className="p-4">
+                              {targetItem ? (
+                                <div><span className="font-bold text-sm text-slate-800">{targetItem.name}</span><span className="text-[10px] text-slate-400 font-mono ml-2">{targetItem.sku}</span></div>
+                              ) : targetCat ? (
+                                <div><span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold">Danh mục</span> <span className="font-bold text-sm text-slate-800 ml-1">{targetCat.name}</span></div>
+                              ) : (
+                                <span className="text-slate-400 text-sm font-medium italic">Tất cả</span>
+                              )}
+                            </td>
+                            <td className="p-4"><span className="font-bold text-sm text-slate-700">{LOSS_REASON_LABELS[norm.lossType] || norm.lossType}</span></td>
+                            <td className="p-4 text-center"><span className="bg-orange-50 text-orange-700 px-3 py-1 rounded-full text-sm font-black">{norm.allowedPercentage}%</span></td>
+                            <td className="p-4 text-center"><span className="text-xs font-bold text-slate-500">{norm.period === 'monthly' ? 'Hàng tháng' : norm.period === 'quarterly' ? 'Hàng quý' : 'Hàng năm'}</span></td>
+                            <td className="p-4 text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    setEditingLossNorm(norm);
+                                    setLossNormForm({ itemId: norm.itemId || '', categoryId: norm.categoryId || '', lossType: norm.lossType, allowedPercentage: String(norm.allowedPercentage), period: norm.period });
+                                    setIsLossNormModalOpen(true);
+                                  }}
+                                  className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition"
+                                ><Edit2 size={14} /></button>
+                                <button
+                                  onClick={() => {
+                                    setConfirmModal({
+                                      isOpen: true, title: 'Xóa định mức', type: 'danger', actionLabel: 'Xóa', countdown: false,
+                                      message: 'Bạn có chắc muốn xóa định mức hao hụt này?',
+                                      onConfirm: () => removeLossNorm(norm.id)
+                                    });
+                                  }}
+                                  className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition"
+                                ><Trash2 size={14} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Info card */}
+              <div className="bg-gradient-to-r from-orange-50 to-amber-50 p-5 rounded-2xl border border-orange-100">
+                <h3 className="font-bold text-sm text-orange-800 flex items-center"><AlertCircle size={16} className="mr-2" /> Cách hoạt động</h3>
+                <ul className="text-xs text-orange-700 font-medium mt-2 space-y-1.5 list-disc pl-5">
+                  <li>Khi kiểm kê, nếu chênh lệch vượt tỷ lệ % cho phép → hệ thống cảnh báo đỏ</li>
+                  <li>Định mức theo <b>vật tư cụ thể</b> sẽ ưu tiên hơn định mức theo <b>danh mục</b></li>
+                  <li>Ví dụ: Xi măng → Hao hụt tự nhiên → 2% / tháng → Nếu lệch &gt;2% sẽ báo bất thường</li>
+                </ul>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'maintenance' && (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
               <div className="p-6 border-b border-slate-100 bg-red-50/30">
@@ -1249,6 +1349,87 @@ const Settings: React.FC = () => {
                 <button type="button" onClick={() => setIsWhModalOpen(false)} className="py-3 border border-slate-200 text-slate-500 rounded-xl font-bold text-xs hover:bg-slate-50 transition">Hủy bỏ</button>
                 <button type="submit" className="py-3 bg-accent text-white rounded-xl font-bold text-xs hover:bg-blue-700 transition shadow-lg shadow-blue-500/20 flex items-center justify-center">
                   <Save size={16} className="mr-2" /> {editingWarehouse ? 'Cập nhật' : 'Lưu thông tin'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Loss Norm Modal */}
+      {isLossNormModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-slate-800">{editingLossNorm ? 'Sửa định mức' : 'Thêm định mức hao hụt'}</h3>
+              <button onClick={() => setIsLossNormModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-lg transition"><X size={18} /></button>
+            </div>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (!lossNormForm.lossType || !lossNormForm.allowedPercentage) return;
+              const norm: MaterialLossNorm = {
+                id: editingLossNorm?.id || `ln-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                itemId: lossNormForm.itemId || undefined,
+                categoryId: lossNormForm.categoryId || undefined,
+                lossType: lossNormForm.lossType as LossReason,
+                allowedPercentage: parseFloat(lossNormForm.allowedPercentage),
+                period: lossNormForm.period,
+                createdBy: currentUser.id,
+                createdAt: editingLossNorm?.createdAt || new Date().toISOString()
+              };
+              if (editingLossNorm) { updateLossNorm(norm); } else { addLossNorm(norm); }
+              setIsLossNormModalOpen(false);
+            }} className="p-6 space-y-4">
+              {/* Target: item or category */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Theo vật tư</label>
+                  <select value={lossNormForm.itemId} onChange={(e) => setLossNormForm(f => ({ ...f, itemId: e.target.value, categoryId: e.target.value ? '' : f.categoryId }))} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-accent">
+                    <option value="">-- Không chọn --</option>
+                    {items.map(item => <option key={item.id} value={item.id}>{item.name} ({item.sku})</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Hoặc theo danh mục</label>
+                  <select value={lossNormForm.categoryId} onChange={(e) => setLossNormForm(f => ({ ...f, categoryId: e.target.value, itemId: e.target.value ? '' : f.itemId }))} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-accent" disabled={!!lossNormForm.itemId}>
+                    <option value="">-- Không chọn --</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Loss Reason */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loại hao hụt *</label>
+                <select value={lossNormForm.lossType} onChange={(e) => setLossNormForm(f => ({ ...f, lossType: e.target.value as LossReason }))} required className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-accent">
+                  <option value="">-- Chọn loại --</option>
+                  {Object.entries(LOSS_REASON_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+              </div>
+
+              {/* Percentage and Period */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tỷ lệ cho phép (%) *</label>
+                  <div className="relative">
+                    <input type="number" step="0.1" min="0" max="100" required value={lossNormForm.allowedPercentage} onChange={(e) => setLossNormForm(f => ({ ...f, allowedPercentage: e.target.value }))} className="w-full p-3 pr-10 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-accent" placeholder="Ví dụ: 2.0" />
+                    <Percent size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Chu kỳ</label>
+                  <select value={lossNormForm.period} onChange={(e) => setLossNormForm(f => ({ ...f, period: e.target.value as any }))} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-accent">
+                    <option value="monthly">Hàng tháng</option>
+                    <option value="quarterly">Hàng quý</option>
+                    <option value="yearly">Hàng năm</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-2 grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => setIsLossNormModalOpen(false)} className="py-3 border border-slate-200 text-slate-500 rounded-xl font-bold text-xs hover:bg-slate-50 transition">Hủy bỏ</button>
+                <button type="submit" className="py-3 bg-accent text-white rounded-xl font-bold text-xs hover:bg-blue-700 transition shadow-lg shadow-blue-500/20 flex items-center justify-center">
+                  <Save size={16} className="mr-2" /> {editingLossNorm ? 'Cập nhật' : 'Thêm mới'}
                 </button>
               </div>
             </form>
