@@ -661,9 +661,11 @@ const Audit: React.FC = () => {
                           const norm = getAllowedLoss(item);
                           let exceedsNorm = false;
                           let lossPercent = 0;
-                          if (isLoss && systemStock > 0 && norm) {
+                          if (isLoss && systemStock > 0) {
                             lossPercent = (Math.abs(diff) / systemStock) * 100;
-                            exceedsNorm = lossPercent > norm.percentage;
+                            if (norm) {
+                              exceedsNorm = lossPercent > norm.percentage;
+                            }
                           }
 
                           return (

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { useApp } from '../context/AppContext';
 import { OrgUnit, OrgUnitType } from '../types';
 import {
@@ -41,8 +42,8 @@ const OrgChartStyles = () => (
     .org-node-enter { animation: nodeAppear 0.35s ease-out forwards; }
     .org-actions-menu {
       opacity: 0; pointer-events: none;
-      transition: opacity 0.2s; position: absolute;
-      right: -8px; top: 50%; transform: translateY(-50%);
+      transition: opacity 0.2s;
+      position: relative;
     }
     .org-node-card:hover .org-actions-menu,
     .org-actions-menu.force-show {
@@ -84,6 +85,7 @@ const OrgNode: React.FC<OrgNodeProps> = ({ unit, allUnits, depth, onAdd, onEdit,
     const [expanded, setExpanded] = useState(true);
     const [showMenu, setShowMenu] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
+    const portalRef = useRef<HTMLDivElement>(null);
 
     const children = allUnits
         .filter(u => u.parentId === unit.id)
@@ -94,14 +96,18 @@ const OrgNode: React.FC<OrgNodeProps> = ({ unit, allUnits, depth, onAdd, onEdit,
 
     useEffect(() => {
         const handleClick = (e: MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false);
+            const target = e.target as Node;
+            // Don't close if click is inside the trigger button OR the portal dropdown
+            if (menuRef.current && menuRef.current.contains(target)) return;
+            if (portalRef.current && portalRef.current.contains(target)) return;
+            setShowMenu(false);
         };
         if (showMenu) document.addEventListener('mousedown', handleClick);
         return () => document.removeEventListener('mousedown', handleClick);
     }, [showMenu]);
 
     return (
-        <div className="org-node-enter" style={{ marginBottom: children.length > 0 ? 4 : 0 }}>
+        <div className="org-node-enter" style={{ marginBottom: children.length > 0 ? 4 : 0, position: 'relative' }}>
             {/* Node card */}
             <div className="org-node-card relative flex items-center gap-3 px-4 py-3 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 bg-white/80 dark:bg-slate-800/80 backdrop-blur-lg shadow-sm"
                 style={{ borderLeft: `4px solid ${cfg.color}` }}>
@@ -137,27 +143,57 @@ const OrgNode: React.FC<OrgNodeProps> = ({ unit, allUnits, depth, onAdd, onEdit,
                 )}
 
                 {/* Actions */}
-                <div ref={menuRef} className={`org-actions-menu ${showMenu ? 'force-show' : ''}`}>
-                    <button onClick={() => setShowMenu(!showMenu)}
+                <div ref={menuRef} className={`org-actions-menu ${showMenu ? 'force-show' : ''}`} style={{ position: 'relative' }}>
+                    <button onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
                         className="w-7 h-7 rounded-lg flex items-center justify-center bg-white dark:bg-slate-700 shadow-md border border-slate-200 dark:border-slate-600 text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors">
                         <MoreVertical size={14} />
                     </button>
-                    {showMenu && (
-                        <div className="absolute right-0 top-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1 z-50 min-w-[160px] overflow-hidden">
-                            <button onClick={() => { onAdd(unit.id); setShowMenu(false); }}
-                                className="w-full px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 flex items-center gap-2 transition-colors">
-                                <Plus size={14} className="text-emerald-500" /> Thêm nhánh con
-                            </button>
-                            <button onClick={() => { onEdit(unit); setShowMenu(false); }}
-                                className="w-full px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 flex items-center gap-2 transition-colors">
-                                <Edit2 size={14} className="text-blue-500" /> Chỉnh sửa
-                            </button>
-                            <div className="border-t border-slate-100 dark:border-slate-700 my-1" />
-                            <button onClick={() => { onDelete(unit.id); setShowMenu(false); }}
-                                className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 transition-colors">
-                                <Trash2 size={14} /> Xoá {children.length > 0 ? `(+ ${children.length} nhánh con)` : ''}
-                            </button>
-                        </div>
+                    {showMenu && ReactDOM.createPortal(
+                        <div
+                            style={{
+                                position: 'fixed',
+                                top: 0, left: 0, right: 0, bottom: 0,
+                                zIndex: 9998,
+                            }}
+                            onClick={() => setShowMenu(false)}
+                        >
+                            <div
+                                ref={portalRef}
+                                className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 py-1.5 min-w-[200px]"
+                                style={{
+                                    position: 'fixed',
+                                    zIndex: 9999,
+                                    top: (() => {
+                                        const btn = menuRef.current?.querySelector('button');
+                                        if (!btn) return 0;
+                                        const rect = btn.getBoundingClientRect();
+                                        return rect.bottom + 6;
+                                    })(),
+                                    left: (() => {
+                                        const btn = menuRef.current?.querySelector('button');
+                                        if (!btn) return 0;
+                                        const rect = btn.getBoundingClientRect();
+                                        return Math.min(rect.right - 200, window.innerWidth - 220);
+                                    })(),
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <button onClick={() => { onAdd(unit.id); setShowMenu(false); }}
+                                    className="w-full px-4 py-2.5 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 flex items-center gap-2 transition-colors">
+                                    <Plus size={14} className="text-emerald-500" /> Thêm nhánh con
+                                </button>
+                                <button onClick={() => { onEdit(unit); setShowMenu(false); }}
+                                    className="w-full px-4 py-2.5 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 flex items-center gap-2 transition-colors">
+                                    <Edit2 size={14} className="text-blue-500" /> Chỉnh sửa
+                                </button>
+                                <div className="border-t border-slate-100 dark:border-slate-700 my-1" />
+                                <button onClick={() => { onDelete(unit.id); setShowMenu(false); }}
+                                    className="w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 transition-colors">
+                                    <Trash2 size={14} /> Xoá {children.length > 0 ? `(+ ${children.length} nhánh con)` : ''}
+                                </button>
+                            </div>
+                        </div>,
+                        document.body
                     )}
                 </div>
             </div>
@@ -263,8 +299,8 @@ const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, editUnit, parentId,
                                 return (
                                     <button key={key} onClick={() => setType(key)}
                                         className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${type === key
-                                                ? 'border-current shadow-md scale-[1.02]'
-                                                : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-300'
+                                            ? 'border-current shadow-md scale-[1.02]'
+                                            : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-300'
                                             }`}
                                         style={type === key ? { borderColor: cfg.color, color: cfg.color, background: `${cfg.color}08` } : {}}>
                                         <Icon size={16} />
@@ -385,7 +421,7 @@ const OrgChart: React.FC = () => {
                     </button>
                 </div>
             ) : (
-                <div className="bg-white/50 dark:bg-slate-800/30 backdrop-blur-sm rounded-2xl border border-slate-200/60 dark:border-slate-700/60 p-6">
+                <div className="bg-white/50 dark:bg-slate-800/30 backdrop-blur-sm rounded-2xl border border-slate-200/60 dark:border-slate-700/60 p-6" style={{ overflow: 'visible' }}>
                     {rootUnits.map(root => (
                         <OrgNode key={root.id} unit={root} allUnits={orgUnits} depth={0}
                             onAdd={(pid) => handleAdd(pid)} onEdit={handleEdit} onDelete={handleDelete} />

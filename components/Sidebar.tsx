@@ -4,7 +4,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon, Bell,
-  Users, Briefcase, FileSpreadsheet, GitBranch, Workflow
+  Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -22,8 +22,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
   const { isDark, toggleTheme } = useTheme();
 
   // Auto-detect current app context based on URL
-  const [currentApp, setCurrentApp] = useState<'WMS' | 'HRM' | 'WF'>(
-    location.pathname.startsWith('/hrm') ? 'HRM' : location.pathname.startsWith('/wf') ? 'WF' : 'WMS'
+  const [currentApp, setCurrentApp] = useState<'WMS' | 'HRM' | 'WF' | 'DA'>(
+    location.pathname.startsWith('/hrm') ? 'HRM' : location.pathname.startsWith('/wf') ? 'WF' : location.pathname.startsWith('/da') ? 'DA' : 'WMS'
   );
 
   const pendingTxCount = useMemo(() => {
@@ -81,7 +81,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
     { to: '/hrm/employees', icon: Users, label: 'Hồ sơ nhân sự' },
   ];
 
-  const currentNavItems = currentApp === 'WMS' ? wmsNavItems : currentApp === 'HRM' ? hrmNavItems : wfNavItems;
+  const daNavItems = [
+    { to: '/da', icon: BarChart3, label: 'Tổng quan DA' },
+    { to: '/settings', icon: Settings, label: 'Cài đặt' },
+  ];
+
+  const currentNavItems = currentApp === 'WMS' ? wmsNavItems : currentApp === 'HRM' ? hrmNavItems : currentApp === 'DA' ? daNavItems : wfNavItems;
   const filteredNavItems = currentNavItems.filter(item => !(item as any).roles || (item as any).roles.includes(user.role));
   const assignedWh = warehouses.find(w => w.id === user.assignedWarehouseId);
 
@@ -100,24 +105,30 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
         </div>
 
         {/* App Switcher */}
-        <div className={`mx-3 my-3 rounded-xl flex items-center bg-slate-800/50 border border-slate-700/50 shadow-inner p-1 gap-1`}>
+        <div className="mx-3 my-3 rounded-2xl flex items-center bg-gradient-to-r from-slate-100 to-slate-200 dark:from-slate-800/80 dark:to-slate-700/60 border border-white/40 dark:border-slate-600/40 shadow-lg p-1.5 gap-1.5">
           <button
             onClick={() => { setCurrentApp('WMS'); navigate('/'); }}
-            className={`flex-1 py-2 px-2 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${currentApp === 'WMS' ? 'bg-accent text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
+            className={`flex-1 py-2.5 px-2 text-[11px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${currentApp === 'WMS' ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/30 scale-[1.02]' : 'text-slate-400 dark:text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-white/60 dark:hover:bg-slate-700/50'}`}
           >
-            <Package size={13} /> Kho
+            <Package size={13} /> KHO
           </button>
           <button
             onClick={() => { setCurrentApp('HRM'); navigate('/hrm/employees'); }}
-            className={`flex-1 py-2 px-2 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${currentApp === 'HRM' ? 'bg-teal-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
+            className={`flex-1 py-2.5 px-2 text-[11px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${currentApp === 'HRM' ? 'bg-gradient-to-r from-teal-500 to-cyan-600 text-white shadow-lg shadow-teal-500/30 scale-[1.02]' : 'text-slate-400 dark:text-slate-500 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-white/60 dark:hover:bg-slate-700/50'}`}
           >
             <Briefcase size={13} /> NS
           </button>
           <button
             onClick={() => { setCurrentApp('WF'); navigate('/wf'); }}
-            className={`flex-1 py-2 px-2 text-[11px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${currentApp === 'WF' ? 'bg-violet-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
+            className={`flex-1 py-2.5 px-2 text-[11px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${currentApp === 'WF' ? 'bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-500/30 scale-[1.02]' : 'text-slate-400 dark:text-slate-500 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-white/60 dark:hover:bg-slate-700/50'}`}
           >
             <GitBranch size={13} /> QT
+          </button>
+          <button
+            onClick={() => { setCurrentApp('DA'); navigate('/da'); }}
+            className={`flex-1 py-2.5 px-2 text-[11px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${currentApp === 'DA' ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30 scale-[1.02]' : 'text-slate-400 dark:text-slate-500 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-white/60 dark:hover:bg-slate-700/50'}`}
+          >
+            <BarChart3 size={13} /> DA
           </button>
         </div>
 

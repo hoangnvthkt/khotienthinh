@@ -111,6 +111,64 @@ export interface HrmConstructionSite {
   createdAt?: string;
 }
 
+// ==================== DỰ ÁN (DA) ====================
+export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed';
+
+export interface ProjectFinance {
+  id: string;
+  constructionSiteId: string;
+
+  // Hợp đồng
+  contractValue: number;
+  contractSignDate?: string;
+  estimatedEndDate?: string;
+
+  // Ngân sách (Dự toán)
+  budgetMaterials: number;
+  budgetLabor: number;
+  budgetSubcontract: number;
+  budgetMachinery: number;
+  budgetOverhead: number;
+
+  // Chi phí thực tế
+  actualMaterials: number;
+  actualLabor: number;
+  actualSubcontract: number;
+  actualMachinery: number;
+  actualOverhead: number;
+
+  // Doanh thu
+  revenueReceived: number;
+  revenuePending: number;
+
+  // Tiến độ
+  progressPercent: number;
+  status: ProjectStatus;
+
+  notes?: string;
+  updatedAt: string;
+}
+
+export type ProjectCostCategory = 'materials' | 'labor' | 'subcontract' | 'machinery' | 'overhead' | 'other';
+export type ProjectTxType = 'expense' | 'revenue_received' | 'revenue_pending';
+export type ProjectTxSource = 'manual' | 'import' | 'workflow';
+
+export interface ProjectTransaction {
+  id: string;
+  projectFinanceId: string;
+  constructionSiteId: string;
+  type: ProjectTxType;
+  category: ProjectCostCategory;
+  amount: number;
+  description: string;
+  date: string;
+  source: ProjectTxSource;
+  sourceRef?: string;
+  attachments?: { name: string; url: string; type: string }[];
+  createdBy?: string;
+  createdAt: string;
+}
+
 export type OrgUnitType = 'company' | 'department' | 'construction_site' | 'factory' | 'custom';
 
 export interface OrgUnit {

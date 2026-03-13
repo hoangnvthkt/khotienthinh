@@ -7,7 +7,7 @@ import {
   RequestStatus, AuditLog, GlobalActivity, ActivityType,
   ItemCategory, ItemUnit, Employee, MaterialLossNorm, AuditSession,
   HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule, HrmConstructionSite,
-  OrgUnit
+  OrgUnit, ProjectFinance, ProjectTransaction
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_ITEMS,
@@ -91,6 +91,17 @@ interface AppContextType {
   // Audit Sessions
   auditSessions: AuditSession[];
   addAuditSession: (session: AuditSession) => void;
+  // Project Finances (DA)
+  projectFinances: ProjectFinance[];
+  addProjectFinance: (pf: ProjectFinance) => void;
+  updateProjectFinance: (pf: ProjectFinance) => void;
+  removeProjectFinance: (id: string) => void;
+  // Project Transactions
+  projectTransactions: ProjectTransaction[];
+  addProjectTransaction: (tx: ProjectTransaction) => void;
+  addProjectTransactions: (txs: ProjectTransaction[]) => void;
+  updateProjectTransaction: (tx: ProjectTransaction) => void;
+  removeProjectTransaction: (id: string) => void;
   isLoading: boolean;
   isRefreshing: boolean;
   connectionError: string | null;
@@ -123,6 +134,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [orgUnits, setOrgUnits] = useState<OrgUnit[]>([]);
   const [lossNorms, setLossNorms] = useState<MaterialLossNorm[]>([]);
   const [auditSessions, setAuditSessions] = useState<AuditSession[]>([]);
+  const [projectFinances, setProjectFinances] = useState<ProjectFinance[]>([]);
+  const [projectTransactions, setProjectTransactions] = useState<ProjectTransaction[]>([]);
   const [categories, setCategories] = useState<ItemCategory[]>([
     { id: 'cat1', name: 'Vật liệu xây dựng' },
     { id: 'cat2', name: 'Công cụ dụng cụ' },
@@ -167,7 +180,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const [
           itemsData, whData, supData, txData, reqData, actData, catData, unitData, settingsData, usersData, empData,
           areasData, officesData, empTypesData, positionsData, salaryData, schedulesData, constructionSitesData, orgUnitsData,
-          lossNormsData, auditSessionsData
+          lossNormsData, auditSessionsData, projectFinancesData, projectTxData
         ] = await Promise.all([
           fetchTable('items'),
           fetchTable('warehouses'),
@@ -189,7 +202,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTable('hrm_construction_sites'),
           fetchTable('org_units'),
           fetchTable('loss_norms'),
-          fetchTable('audit_sessions', supabase.from('audit_sessions').select('*').order('date', { ascending: false }))
+          fetchTable('audit_sessions', supabase.from('audit_sessions').select('*').order('date', { ascending: false })),
+          fetchTable('project_finances'),
+          fetchTable('project_transactions', supabase.from('project_transactions').select('*').order('date', { ascending: false }))
         ]);
 
         if (usersData && usersData.length > 0) {
@@ -277,6 +292,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // Audit Sessions
         if (auditSessionsData) setAuditSessions(auditSessionsData);
+
+        // Project Finances
+        if (projectFinancesData) setProjectFinances(projectFinancesData);
+
+        // Project Transactions
+        if (projectTxData) setProjectTransactions(projectTxData);
       } catch (error: any) {
         console.error('Error fetching data from Supabase:', error);
         setConnectionError(error.message);
@@ -1090,6 +1111,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // ==================== PROJECT FINANCES CRUD ====================
+  const addProjectFinance = (pf: ProjectFinance) => {
+    setProjectFinances(prev => [pf, ...prev]);
+    if (isSupabaseConfigured) {
+      supabase.from('project_finances').upsert(pf)
+        .then(({ error }) => { if (error) console.error('Error saving project_finance:', error); });
+    }
+  };
+
+  const updateProjectFinance = (pf: ProjectFinance) => {
+    setProjectFinances(prev => prev.map(p => p.id === pf.id ? pf : p));
+    if (isSupabaseConfigured) {
+      supabase.from('project_finances').upsert(pf)
+        .then(({ error }) => { if (error) console.error('Error updating project_finance:', error); });
+    }
+  };
+
+  const removeProjectFinance = (id: string) => {
+    setProjectFinances(prev => prev.filter(p => p.id !== id));
+    if (isSupabaseConfigured) {
+      supabase.from('project_finances').delete().eq('id', id)
+        .then(({ error }) => { if (error) console.error('Error deleting project_finance:', error); });
+    }
+  };
+
+  // ==================== PROJECT TRANSACTIONS CRUD ====================
+  const addProjectTransaction = (tx: ProjectTransaction) => {
+    setProjectTransactions(prev => [tx, ...prev]);
+    if (isSupabaseConfigured) {
+      supabase.from('project_transactions').upsert(tx)
+        .then(({ error }) => { if (error) console.error('Error saving project_tx:', error); });
+    }
+  };
+
+  const addProjectTransactions = (txs: ProjectTransaction[]) => {
+    setProjectTransactions(prev => [...txs, ...prev]);
+    if (isSupabaseConfigured) {
+      supabase.from('project_transactions').upsert(txs)
+        .then(({ error }) => { if (error) console.error('Error saving project_txs:', error); });
+    }
+  };
+
+  const updateProjectTransaction = (tx: ProjectTransaction) => {
+    setProjectTransactions(prev => prev.map(t => t.id === tx.id ? tx : t));
+    if (isSupabaseConfigured) {
+      supabase.from('project_transactions').upsert(tx)
+        .then(({ error }) => { if (error) console.error('Error updating project_tx:', error); });
+    }
+  };
+
+  const removeProjectTransaction = (id: string) => {
+    setProjectTransactions(prev => prev.filter(t => t.id !== id));
+    if (isSupabaseConfigured) {
+      supabase.from('project_transactions').delete().eq('id', id)
+        .then(({ error }) => { if (error) console.error('Error deleting project_tx:', error); });
+    }
+  };
+
   return (
     <AppContext.Provider value={{
       user, users, appSettings, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
@@ -1102,6 +1181,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addSupplier, updateSupplier, removeSupplier, addEmployee, updateEmployee, removeEmployee, updateAppSettings, approvePartialTransaction, clearAllData,
       lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
       auditSessions, addAuditSession,
+      projectFinances, addProjectFinance, updateProjectFinance, removeProjectFinance,
+      projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction,
       login, logout, isLoading, isRefreshing, connectionError
     }}>
       {children}

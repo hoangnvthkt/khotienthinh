@@ -11,6 +11,7 @@ import Audit from './pages/Audit';
 import Reports from './pages/Reports';
 import MisaExport from './pages/MisaExport';
 import Login from './pages/Login';
+import ProjectDashboard from './pages/ProjectDashboard';
 import Employees from './pages/hrm/Employees';
 import WorkflowInstances from './pages/wf/WorkflowInstances';
 import WorkflowTemplates from './pages/wf/WorkflowTemplates';
@@ -48,6 +49,7 @@ const AppRoutes: React.FC = () => {
         <Route path="settings" element={<Settings />} />
         <Route path="misa-export" element={<MisaExport />} />
         <Route path="hrm/employees" element={<Employees />} />
+        <Route path="da" element={<ProjectDashboard />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
