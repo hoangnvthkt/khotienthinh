@@ -13,6 +13,11 @@ interface ChatContextType {
     sendMessage: (conversationId: string, content: string, type?: ChatMessage['type'], attachments?: ChatMessage['attachments']) => Promise<void>;
     createDirectConversation: (targetUserId: string) => Promise<string>;
     createGroupConversation: (name: string, memberIds: string[]) => Promise<string>;
+    addMember: (conversationId: string, userId: string) => Promise<void>;
+    removeMember: (conversationId: string, userId: string) => Promise<void>;
+    updateGroupName: (conversationId: string, name: string) => Promise<void>;
+    deleteConversation: (conversationId: string) => Promise<void>;
+    leaveGroup: (conversationId: string) => Promise<void>;
     markAsRead: (conversationId: string) => Promise<void>;
     loadMessages: (conversationId: string) => Promise<void>;
     setTyping: (conversationId: string, isTyping: boolean) => void;
@@ -277,6 +282,101 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return conv.id;
     }, [user?.id, loadConversations]);
 
+    // === ADD MEMBER TO GROUP ===
+    const addMember = useCallback(async (conversationId: string, userId: string) => {
+        if (!isSupabaseConfigured || !user?.id) return;
+
+        await supabase.from('chat_members').insert({
+            conversation_id: conversationId,
+            user_id: userId,
+            role: 'member',
+        });
+
+        const addedUser = users.find(u => u.id === userId);
+        await supabase.from('chat_messages').insert({
+            conversation_id: conversationId,
+            sender_id: user.id,
+            content: `${addedUser?.name || 'Người dùng'} đã được thêm vào nhóm`,
+            type: 'system',
+        });
+
+        await loadConversations();
+        if (activeConversationId === conversationId) await loadMessages(conversationId);
+    }, [user?.id, users, loadConversations, loadMessages, activeConversationId]);
+
+    // === REMOVE MEMBER FROM GROUP ===
+    const removeMember = useCallback(async (conversationId: string, userId: string) => {
+        if (!isSupabaseConfigured || !user?.id) return;
+
+        await supabase.from('chat_members')
+            .delete()
+            .eq('conversation_id', conversationId)
+            .eq('user_id', userId);
+
+        const removedUser = users.find(u => u.id === userId);
+        await supabase.from('chat_messages').insert({
+            conversation_id: conversationId,
+            sender_id: user.id,
+            content: `${removedUser?.name || 'Người dùng'} đã bị xóa khỏi nhóm`,
+            type: 'system',
+        });
+
+        await loadConversations();
+        if (activeConversationId === conversationId) await loadMessages(conversationId);
+    }, [user?.id, users, loadConversations, loadMessages, activeConversationId]);
+
+    // === UPDATE GROUP NAME ===
+    const updateGroupName = useCallback(async (conversationId: string, name: string) => {
+        if (!isSupabaseConfigured || !user?.id) return;
+
+        await supabase.from('chat_conversations')
+            .update({ name })
+            .eq('id', conversationId);
+
+        await supabase.from('chat_messages').insert({
+            conversation_id: conversationId,
+            sender_id: user.id,
+            content: `Tên nhóm đã được đổi thành "${name}"`,
+            type: 'system',
+        });
+
+        await loadConversations();
+        if (activeConversationId === conversationId) await loadMessages(conversationId);
+    }, [user?.id, loadConversations, loadMessages, activeConversationId]);
+
+    // === DELETE CONVERSATION ===
+    const deleteConversation = useCallback(async (conversationId: string) => {
+        if (!isSupabaseConfigured || !user?.id) return;
+
+        // Delete messages, members, then conversation
+        await supabase.from('chat_messages').delete().eq('conversation_id', conversationId);
+        await supabase.from('chat_members').delete().eq('conversation_id', conversationId);
+        await supabase.from('chat_conversations').delete().eq('id', conversationId);
+
+        if (activeConversationId === conversationId) setActiveConversationId(null);
+        await loadConversations();
+    }, [user?.id, activeConversationId, loadConversations]);
+
+    // === LEAVE GROUP ===
+    const leaveGroup = useCallback(async (conversationId: string) => {
+        if (!isSupabaseConfigured || !user?.id) return;
+
+        await supabase.from('chat_members')
+            .delete()
+            .eq('conversation_id', conversationId)
+            .eq('user_id', user.id);
+
+        await supabase.from('chat_messages').insert({
+            conversation_id: conversationId,
+            sender_id: user.id,
+            content: `${user.name || 'Người dùng'} đã rời nhóm`,
+            type: 'system',
+        });
+
+        if (activeConversationId === conversationId) setActiveConversationId(null);
+        await loadConversations();
+    }, [user?.id, user?.name, activeConversationId, loadConversations]);
+
     // === MARK AS READ ===
     const markAsRead = useCallback(async (conversationId: string) => {
         if (!isSupabaseConfigured || !user?.id) return;
@@ -462,7 +562,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         <ChatContext.Provider value={{
             conversations, messages, activeConversationId, setActiveConversationId,
             onlineUsers, typingUsers, sendMessage, createDirectConversation,
-            createGroupConversation, markAsRead, loadMessages, setTyping, toggleReaction, totalUnread,
+            createGroupConversation, addMember, removeMember, updateGroupName,
+            deleteConversation, leaveGroup, markAsRead, loadMessages, setTyping, toggleReaction, totalUnread,
         }}>
             {children}
         </ChatContext.Provider>

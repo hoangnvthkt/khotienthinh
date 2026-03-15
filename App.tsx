@@ -17,6 +17,8 @@ import WorkflowInstances from './pages/wf/WorkflowInstances';
 import WorkflowTemplates from './pages/wf/WorkflowTemplates';
 import WorkflowBuilder from './pages/wf/WorkflowBuilder';
 import Chat from './pages/Chat';
+import AssetCatalog from './pages/ts/AssetCatalog';
+import AssetAssignment from './pages/ts/AssetAssignment';
 import { AppProvider } from './context/AppContext';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -53,6 +55,8 @@ const AppRoutes: React.FC = () => {
         <Route path="hrm/employees" element={<Employees />} />
         <Route path="da" element={<ProjectDashboard />} />
         <Route path="chat" element={<Chat />} />
+        <Route path="ts/catalog" element={<AssetCatalog />} />
+        <Route path="ts/assignment" element={<AssetAssignment />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

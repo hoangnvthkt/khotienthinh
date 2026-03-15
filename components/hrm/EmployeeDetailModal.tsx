@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Employee } from '../../types';
-import { X, User as UserIcon, Briefcase, Phone, Edit2, Calendar, MapPin, Building, Heart } from 'lucide-react';
+import { Employee, AssetStatus, ASSET_STATUS_LABELS, Asset } from '../../types';
+import { X, User as UserIcon, Briefcase, Phone, Edit2, Calendar, MapPin, Building, Heart, Landmark } from 'lucide-react';
 
 interface EmployeeDetailModalProps {
     employee: Employee;
@@ -9,10 +9,10 @@ interface EmployeeDetailModalProps {
     onEdit: (emp: Employee) => void;
 }
 
-type TabKey = 'personal' | 'work' | 'contact';
+type TabKey = 'personal' | 'work' | 'contact' | 'assets';
 
 const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onClose, onEdit }) => {
-    const { users, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits } = useApp();
+    const { users, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, assets, assetAssignments, assetCategories } = useApp();
     const [activeTab, setActiveTab] = useState<TabKey>('personal');
 
     const linkedUser = users.find(u => u.id === employee.userId);
@@ -30,7 +30,19 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
         { key: 'personal', label: 'Cá Nhân', icon: <UserIcon size={15} /> },
         { key: 'work', label: 'Công Việc', icon: <Briefcase size={15} /> },
         { key: 'contact', label: 'Liên Hệ', icon: <Phone size={15} /> },
+        { key: 'assets', label: 'Tài Sản', icon: <Landmark size={15} /> },
     ];
+
+    // Assets assigned to this employee (match via userId)
+    const employeeAssets = useMemo(() => {
+        return assets.filter(a => a.assignedToUserId === employee.userId && a.status === AssetStatus.IN_USE);
+    }, [assets, employee.userId]);
+
+    const employeeAssetHistory = useMemo(() => {
+        return assetAssignments.filter(a => a.userId === employee.userId);
+    }, [assetAssignments, employee.userId]);
+
+    const getCategoryName = (catId: string) => assetCategories.find(c => c.id === catId)?.name || '';
 
     const InfoRow: React.FC<{ label: string; value?: string | null; badge?: boolean; badgeColor?: string }> = ({ label, value, badge, badgeColor }) => (
         <div className="flex items-start py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
@@ -126,6 +138,68 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
                         <div>
                             <InfoRow label="Số điện thoại" value={employee.phone} />
                             <InfoRow label="Email" value={employee.email} />
+                        </div>
+                    )}
+
+                    {activeTab === 'assets' && (
+                        <div className="space-y-4">
+                            {/* Currently assigned assets */}
+                            <div>
+                                <h4 className="text-[10px] font-black text-rose-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                    <Landmark size={12} /> Tài sản đang sử dụng ({employeeAssets.length})
+                                </h4>
+                                {employeeAssets.length === 0 ? (
+                                    <div className="text-center py-6 text-slate-300 dark:text-slate-600 text-sm italic">Chưa được cấp phát tài sản nào</div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {employeeAssets.map(asset => (
+                                            <div key={asset.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                                                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-rose-500 to-pink-500 flex items-center justify-center text-white shrink-0">
+                                                    <Landmark size={14} />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-sm font-black text-slate-800 dark:text-white truncate">{asset.name}</div>
+                                                    <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                                                        <span className="font-mono font-bold">{asset.code}</span>
+                                                        <span>•</span>
+                                                        <span>{getCategoryName(asset.categoryId)}</span>
+                                                        {asset.brand && <><span>•</span><span>{asset.brand} {asset.model || ''}</span></>}
+                                                    </div>
+                                                </div>
+                                                <div className="text-right shrink-0">
+                                                    <div className="text-xs font-black text-slate-700 dark:text-slate-300">{asset.originalValue.toLocaleString('vi-VN')}đ</div>
+                                                    {asset.assignedDate && <div className="text-[9px] text-slate-400">từ {new Date(asset.assignedDate).toLocaleDateString('vi-VN')}</div>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        <div className="text-right text-xs font-black text-rose-600 pt-1">
+                                            Tổng giá trị: {employeeAssets.reduce((s, a) => s + a.originalValue, 0).toLocaleString('vi-VN')}đ
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Assignment history */}
+                            {employeeAssetHistory.length > 0 && (
+                                <div>
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">Lịch sử cấp phát / thu hồi</h4>
+                                    <div className="space-y-1">
+                                        {employeeAssetHistory.map(record => {
+                                            const asset = assets.find(a => a.id === record.assetId);
+                                            const isAssign = record.type === 'assign';
+                                            return (
+                                                <div key={record.id} className="flex items-center gap-2 py-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
+                                                    <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${isAssign ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400'}`}>
+                                                        {isAssign ? 'Nhận' : 'Trả'}
+                                                    </span>
+                                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">{asset?.name || record.assetId}</span>
+                                                    <span className="text-[10px] text-slate-400 ml-auto shrink-0">{new Date(record.date).toLocaleDateString('vi-VN')}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

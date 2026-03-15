@@ -4,7 +4,8 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon, Bell,
-  Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle
+  Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
+  Landmark, Repeat, Wrench
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -24,8 +25,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
   const { totalUnread } = useChat();
 
   // Auto-detect current app context based on URL
-  const [currentApp, setCurrentApp] = useState<'WMS' | 'HRM' | 'WF' | 'DA'>(
-    location.pathname.startsWith('/hrm') ? 'HRM' : location.pathname.startsWith('/wf') ? 'WF' : location.pathname.startsWith('/da') ? 'DA' : 'WMS'
+  const [currentApp, setCurrentApp] = useState<'WMS' | 'HRM' | 'WF' | 'DA' | 'TS'>(
+    location.pathname.startsWith('/hrm') ? 'HRM' : location.pathname.startsWith('/wf') ? 'WF' : location.pathname.startsWith('/da') ? 'DA' : location.pathname.startsWith('/ts') ? 'TS' : 'WMS'
   );
 
   const pendingTxCount = useMemo(() => {
@@ -88,7 +89,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
     { to: '/settings', icon: Settings, label: 'Cài đặt' },
   ];
 
-  const currentNavItems = currentApp === 'WMS' ? wmsNavItems : currentApp === 'HRM' ? hrmNavItems : currentApp === 'DA' ? daNavItems : wfNavItems;
+  const tsNavItems = [
+    { to: '/ts/catalog', icon: Landmark, label: 'Danh mục tài sản' },
+    { to: '/ts/assignment', icon: Repeat, label: 'Cấp phát / Thu hồi' },
+    { to: '/settings', icon: Settings, label: 'Cài đặt' },
+  ];
+
+  const currentNavItems = currentApp === 'WMS' ? wmsNavItems : currentApp === 'HRM' ? hrmNavItems : currentApp === 'DA' ? daNavItems : currentApp === 'TS' ? tsNavItems : wfNavItems;
   const filteredNavItems = currentNavItems.filter(item => !(item as any).roles || (item as any).roles.includes(user.role));
   const assignedWh = warehouses.find(w => w.id === user.assignedWarehouseId);
 
@@ -131,6 +138,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
             className={`flex-1 py-2.5 px-2 text-[11px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${currentApp === 'DA' ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30 scale-[1.02]' : 'text-slate-400 dark:text-slate-500 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-white/60 dark:hover:bg-slate-700/50'}`}
           >
             <BarChart3 size={13} /> DA
+          </button>
+          <button
+            onClick={() => { setCurrentApp('TS'); navigate('/ts/catalog'); }}
+            className={`flex-1 py-2.5 px-2 text-[11px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${currentApp === 'TS' ? 'bg-gradient-to-r from-rose-500 to-pink-600 text-white shadow-lg shadow-rose-500/30 scale-[1.02]' : 'text-slate-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white/60 dark:hover:bg-slate-700/50'}`}
+          >
+            <Landmark size={13} /> TS
           </button>
         </div>
 

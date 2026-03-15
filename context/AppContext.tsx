@@ -7,7 +7,8 @@ import {
   RequestStatus, AuditLog, GlobalActivity, ActivityType,
   ItemCategory, ItemUnit, Employee, MaterialLossNorm, AuditSession,
   HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule, HrmConstructionSite,
-  OrgUnit, ProjectFinance, ProjectTransaction
+  OrgUnit, ProjectFinance, ProjectTransaction,
+  Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_ITEMS,
@@ -102,6 +103,20 @@ interface AppContextType {
   addProjectTransactions: (txs: ProjectTransaction[]) => void;
   updateProjectTransaction: (tx: ProjectTransaction) => void;
   removeProjectTransaction: (id: string) => void;
+  // Assets (TS)
+  assets: Asset[];
+  assetCategories: AssetCategory[];
+  assetAssignments: AssetAssignment[];
+  assetMaintenances: AssetMaintenance[];
+  addAsset: (asset: Asset) => void;
+  updateAsset: (asset: Asset) => void;
+  removeAsset: (id: string) => void;
+  addAssetCategory: (cat: AssetCategory) => void;
+  updateAssetCategory: (cat: AssetCategory) => void;
+  removeAssetCategory: (id: string) => void;
+  addAssetAssignment: (a: AssetAssignment) => void;
+  addAssetMaintenance: (m: AssetMaintenance) => void;
+  updateAssetMaintenance: (m: AssetMaintenance) => void;
   isLoading: boolean;
   isRefreshing: boolean;
   connectionError: string | null;
@@ -136,6 +151,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [auditSessions, setAuditSessions] = useState<AuditSession[]>([]);
   const [projectFinances, setProjectFinances] = useState<ProjectFinance[]>([]);
   const [projectTransactions, setProjectTransactions] = useState<ProjectTransaction[]>([]);
+  // Asset Management
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [assetCategories, setAssetCategories] = useState<AssetCategory[]>([
+    { id: 'ac1', name: 'Máy xúc', type: 'machinery', depreciationYears: 8 },
+    { id: 'ac2', name: 'Máy khoan', type: 'equipment', depreciationYears: 5 },
+    { id: 'ac3', name: 'Xe tải', type: 'vehicle', depreciationYears: 10 },
+    { id: 'ac4', name: 'Máy tính', type: 'it', depreciationYears: 3 },
+    { id: 'ac5', name: 'Bàn ghế VP', type: 'furniture', depreciationYears: 5 },
+  ]);
+  const [assetAssignments, setAssetAssignments] = useState<AssetAssignment[]>([]);
+  const [assetMaintenances, setAssetMaintenances] = useState<AssetMaintenance[]>([]);
   const [categories, setCategories] = useState<ItemCategory[]>([
     { id: 'cat1', name: 'Vật liệu xây dựng' },
     { id: 'cat2', name: 'Công cụ dụng cụ' },
@@ -298,6 +324,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // Project Transactions
         if (projectTxData) setProjectTransactions(projectTxData);
+
+        // Assets
+        const [assetsData, assetCatData, assetAssignData, assetMaintData] = await Promise.all([
+          fetchTable('assets'),
+          fetchTable('asset_categories'),
+          fetchTable('asset_assignments', supabase.from('asset_assignments').select('*').order('date', { ascending: false })),
+          fetchTable('asset_maintenances', supabase.from('asset_maintenances').select('*').order('start_date', { ascending: false })),
+        ]);
+        if (assetsData) setAssets(assetsData.map((a: any) => ({
+          ...a, categoryId: a.category_id, serialNumber: a.serial_number,
+          originalValue: a.original_value, purchaseDate: a.purchase_date,
+          depreciationYears: a.depreciation_years, residualValue: a.residual_value,
+          warehouseId: a.warehouse_id, locationNote: a.location_note,
+          assignedToUserId: a.assigned_to_user_id, assignedToName: a.assigned_to_name,
+          assignedDate: a.assigned_date, disposalDate: a.disposal_date,
+          disposalValue: a.disposal_value, disposalNote: a.disposal_note,
+          imageUrl: a.image_url, createdAt: a.created_at, updatedAt: a.updated_at
+        })));
+        if (assetCatData && assetCatData.length > 0) setAssetCategories(assetCatData.map((c: any) => ({
+          ...c, depreciationYears: c.depreciation_years
+        })));
+        if (assetAssignData) setAssetAssignments(assetAssignData.map((a: any) => ({
+          ...a, assetId: a.asset_id, userId: a.user_id, userName: a.user_name,
+          performedBy: a.performed_by, performedByName: a.performed_by_name
+        })));
+        if (assetMaintData) setAssetMaintenances(assetMaintData.map((m: any) => ({
+          ...m, assetId: m.asset_id, startDate: m.start_date, endDate: m.end_date,
+          performedBy: m.performed_by
+        })));
       } catch (error: any) {
         console.error('Error fetching data from Supabase:', error);
         setConnectionError(error.message);
@@ -1169,6 +1224,96 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // ==================== ASSET MANAGEMENT CRUD ====================
+
+  const addAsset = (asset: Asset) => {
+    setAssets(prev => [...prev, asset]);
+    if (isSupabaseConfigured) {
+      syncToSupabase('assets', { ...asset, category_id: asset.categoryId, serial_number: asset.serialNumber, original_value: asset.originalValue, purchase_date: asset.purchaseDate, depreciation_years: asset.depreciationYears, residual_value: asset.residualValue, warehouse_id: asset.warehouseId, location_note: asset.locationNote, assigned_to_user_id: asset.assignedToUserId, assigned_to_name: asset.assignedToName, assigned_date: asset.assignedDate, disposal_date: asset.disposalDate, disposal_value: asset.disposalValue, disposal_note: asset.disposalNote, image_url: asset.imageUrl, created_at: asset.createdAt, updated_at: asset.updatedAt });
+    }
+    logActivity('SYSTEM', 'Thêm tài sản', `Thêm tài sản ${asset.name} (${asset.code})`, 'SUCCESS');
+  };
+
+  const updateAsset = (asset: Asset) => {
+    setAssets(prev => prev.map(a => a.id === asset.id ? asset : a));
+    if (isSupabaseConfigured) {
+      syncToSupabase('assets', { ...asset, category_id: asset.categoryId, serial_number: asset.serialNumber, original_value: asset.originalValue, purchase_date: asset.purchaseDate, depreciation_years: asset.depreciationYears, residual_value: asset.residualValue, warehouse_id: asset.warehouseId, location_note: asset.locationNote, assigned_to_user_id: asset.assignedToUserId, assigned_to_name: asset.assignedToName, assigned_date: asset.assignedDate, disposal_date: asset.disposalDate, disposal_value: asset.disposalValue, disposal_note: asset.disposalNote, image_url: asset.imageUrl, created_at: asset.createdAt, updated_at: asset.updatedAt });
+    }
+  };
+
+  const removeAsset = (id: string) => {
+    const asset = assets.find(a => a.id === id);
+    setAssets(prev => prev.filter(a => a.id !== id));
+    if (isSupabaseConfigured) {
+      supabase.from('assets').delete().eq('id', id).then();
+    }
+    logActivity('SYSTEM', 'Xóa tài sản', `Xóa tài sản ${asset?.name || id}`, 'WARNING');
+  };
+
+  const addAssetCategory = (cat: AssetCategory) => {
+    setAssetCategories(prev => [...prev, cat]);
+    if (isSupabaseConfigured) {
+      syncToSupabase('asset_categories', { ...cat, depreciation_years: cat.depreciationYears });
+    }
+  };
+
+  const updateAssetCategory = (cat: AssetCategory) => {
+    setAssetCategories(prev => prev.map(c => c.id === cat.id ? cat : c));
+    if (isSupabaseConfigured) {
+      syncToSupabase('asset_categories', { ...cat, depreciation_years: cat.depreciationYears });
+    }
+  };
+
+  const removeAssetCategory = (id: string) => {
+    setAssetCategories(prev => prev.filter(c => c.id !== id));
+    if (isSupabaseConfigured) {
+      supabase.from('asset_categories').delete().eq('id', id).then();
+    }
+  };
+
+  const addAssetAssignment = (a: AssetAssignment) => {
+    setAssetAssignments(prev => [a, ...prev]);
+    if (isSupabaseConfigured) {
+      syncToSupabase('asset_assignments', { ...a, asset_id: a.assetId, user_id: a.userId, user_name: a.userName, performed_by: a.performedBy, performed_by_name: a.performedByName });
+    }
+    // Update asset status
+    const asset = assets.find(ast => ast.id === a.assetId);
+    if (asset) {
+      if (a.type === 'assign') {
+        updateAsset({ ...asset, status: AssetStatus.IN_USE, assignedToUserId: a.userId, assignedToName: a.userName, assignedDate: a.date, updatedAt: new Date().toISOString() });
+      } else {
+        updateAsset({ ...asset, status: AssetStatus.AVAILABLE, assignedToUserId: undefined, assignedToName: undefined, assignedDate: undefined, updatedAt: new Date().toISOString() });
+      }
+    }
+    logActivity('SYSTEM', a.type === 'assign' ? 'Cấp phát tài sản' : 'Thu hồi tài sản', `${a.type === 'assign' ? 'Cấp phát' : 'Thu hồi'} tài sản cho ${a.userName}`, 'INFO');
+  };
+
+  const addAssetMaintenance = (m: AssetMaintenance) => {
+    setAssetMaintenances(prev => [m, ...prev]);
+    if (isSupabaseConfigured) {
+      syncToSupabase('asset_maintenances', { ...m, asset_id: m.assetId, start_date: m.startDate, end_date: m.endDate, performed_by: m.performedBy });
+    }
+    if (m.status === 'in_progress') {
+      const asset = assets.find(a => a.id === m.assetId);
+      if (asset) updateAsset({ ...asset, status: AssetStatus.MAINTENANCE, updatedAt: new Date().toISOString() });
+    }
+    logActivity('SYSTEM', 'Bảo trì tài sản', `Ghi nhận bảo trì: ${m.description}`, 'INFO');
+  };
+
+  const updateAssetMaintenance = (m: AssetMaintenance) => {
+    setAssetMaintenances(prev => prev.map(x => x.id === m.id ? m : x));
+    if (isSupabaseConfigured) {
+      syncToSupabase('asset_maintenances', { ...m, asset_id: m.assetId, start_date: m.startDate, end_date: m.endDate, performed_by: m.performedBy });
+    }
+    if (m.status === 'completed') {
+      const asset = assets.find(a => a.id === m.assetId);
+      if (asset && asset.status === AssetStatus.MAINTENANCE) {
+        const isAssigned = asset.assignedToUserId;
+        updateAsset({ ...asset, status: isAssigned ? AssetStatus.IN_USE : AssetStatus.AVAILABLE, updatedAt: new Date().toISOString() });
+      }
+    }
+  };
+
   return (
     <AppContext.Provider value={{
       user, users, appSettings, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
@@ -1183,6 +1328,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       auditSessions, addAuditSession,
       projectFinances, addProjectFinance, updateProjectFinance, removeProjectFinance,
       projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction,
+      assets, assetCategories, assetAssignments, assetMaintenances,
+      addAsset, updateAsset, removeAsset, addAssetCategory, updateAssetCategory, removeAssetCategory,
+      addAssetAssignment, addAssetMaintenance, updateAssetMaintenance,
       login, logout, isLoading, isRefreshing, connectionError
     }}>
       {children}

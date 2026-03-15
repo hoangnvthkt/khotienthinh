@@ -500,3 +500,101 @@ export interface ChatMessage {
   reactions?: Record<string, string[]>; // emoji -> userIds
   createdAt: string;
 }
+
+// ==================== TÀI SẢN CỐ ĐỊNH (ASSETS) ====================
+
+export enum AssetStatus {
+  AVAILABLE = 'AVAILABLE',       // Chờ cấp phát
+  IN_USE = 'IN_USE',             // Đang sử dụng
+  MAINTENANCE = 'MAINTENANCE',   // Đang bảo trì
+  BROKEN = 'BROKEN',             // Hỏng
+  DISPOSED = 'DISPOSED',         // Đã thanh lý
+}
+
+export const ASSET_STATUS_LABELS: Record<AssetStatus, string> = {
+  [AssetStatus.AVAILABLE]: 'Chờ cấp phát',
+  [AssetStatus.IN_USE]: 'Đang sử dụng',
+  [AssetStatus.MAINTENANCE]: 'Đang bảo trì',
+  [AssetStatus.BROKEN]: 'Hỏng',
+  [AssetStatus.DISPOSED]: 'Đã thanh lý',
+};
+
+export type AssetCategoryType = 'machinery' | 'equipment' | 'vehicle' | 'it' | 'furniture' | 'other';
+
+export const ASSET_CATEGORY_LABELS: Record<AssetCategoryType, string> = {
+  machinery: 'Máy móc',
+  equipment: 'Thiết bị',
+  vehicle: 'Phương tiện',
+  it: 'CNTT',
+  furniture: 'Nội thất',
+  other: 'Khác',
+};
+
+export interface AssetCategory {
+  id: string;
+  name: string;
+  type: AssetCategoryType;
+  depreciationYears: number; // Số năm khấu hao mặc định
+}
+
+export interface Asset {
+  id: string;
+  code: string;              // Mã tài sản: TS-001
+  name: string;
+  categoryId: string;
+  brand?: string;            // Nhãn hiệu
+  model?: string;            // Model
+  serialNumber?: string;     // Số serial
+  status: AssetStatus;
+
+  // Tài chính
+  originalValue: number;     // Nguyên giá
+  purchaseDate: string;      // Ngày mua
+  depreciationYears: number; // Thời gian khấu hao (năm)
+  residualValue: number;     // Giá trị thanh lý dự kiến
+
+  // Vị trí
+  warehouseId?: string;      // Kho lưu trữ hiện tại
+  locationNote?: string;     // Ghi chú vị trí
+
+  // Cấp phát hiện tại
+  assignedToUserId?: string;
+  assignedToName?: string;
+  assignedDate?: string;
+
+  // Thanh lý
+  disposalDate?: string;
+  disposalValue?: number;
+  disposalNote?: string;
+
+  imageUrl?: string;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssetAssignment {
+  id: string;
+  assetId: string;
+  type: 'assign' | 'return';  // Cấp phát / Thu hồi
+  userId: string;              // Người nhận / Người trả
+  userName: string;
+  date: string;
+  note?: string;
+  performedBy: string;         // Admin/Keeper thực hiện
+  performedByName: string;
+}
+
+export interface AssetMaintenance {
+  id: string;
+  assetId: string;
+  type: 'scheduled' | 'repair'; // Bảo trì định kỳ / Sửa chữa
+  description: string;
+  cost: number;
+  vendor?: string;             // Đơn vị sửa chữa
+  startDate: string;
+  endDate?: string;
+  status: 'planned' | 'in_progress' | 'completed';
+  performedBy: string;
+  note?: string;
+}
