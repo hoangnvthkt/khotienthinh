@@ -130,7 +130,7 @@ const OrgNode: React.FC<OrgNodeProps> = ({ unit, allUnits, depth, onAdd, onEdit,
                     <div className="font-bold text-sm text-slate-800 dark:text-white truncate">{unit.name}</div>
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
-                            style={{ background: `${cfg.color}18`, color: cfg.color }}>{cfg.label}</span>
+                            style={{ background: `${cfg.color}18`, color: cfg.color }}>{unit.customTypeLabel || cfg.label}</span>
                         {unit.description && <span className="text-xs text-slate-400 truncate max-w-[180px]">{unit.description}</span>}
                     </div>
                 </div>
@@ -232,10 +232,11 @@ const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, editUnit, parentId,
     const [name, setName] = useState('');
     const [type, setType] = useState<OrgUnitType>('department');
     const [description, setDescription] = useState('');
+    const [customTypeLabel, setCustomTypeLabel] = useState('');
 
     useEffect(() => {
-        if (editUnit) { setName(editUnit.name); setType(editUnit.type); setDescription(editUnit.description || ''); }
-        else { setName(''); setType(parentId ? 'department' : 'company'); setDescription(''); }
+        if (editUnit) { setName(editUnit.name); setType(editUnit.type); setDescription(editUnit.description || ''); setCustomTypeLabel(editUnit.customTypeLabel || ''); }
+        else { setName(''); setType(parentId ? 'department' : 'company'); setDescription(''); setCustomTypeLabel(''); }
     }, [editUnit, parentId, isOpen]);
 
     if (!isOpen) return null;
@@ -249,6 +250,7 @@ const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, editUnit, parentId,
             id: editUnit?.id || crypto.randomUUID(),
             name: name.trim(),
             type,
+            customTypeLabel: type === 'custom' ? customTypeLabel.trim() || undefined : undefined,
             parentId: editUnit ? editUnit.parentId : (parentId || null),
             description: description.trim() || undefined,
             orderIndex: editUnit?.orderIndex ?? siblings.length,
@@ -304,11 +306,18 @@ const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, editUnit, parentId,
                                             }`}
                                         style={type === key ? { borderColor: cfg.color, color: cfg.color, background: `${cfg.color}08` } : {}}>
                                         <Icon size={16} />
-                                        {cfg.label}
+                                        {key === 'custom' && customTypeLabel ? customTypeLabel : cfg.label}
                                     </button>
                                 );
                             })}
                         </div>
+                        {type === 'custom' && (
+                            <div className="mt-2">
+                                <input value={customTypeLabel} onChange={e => setCustomTypeLabel(e.target.value)} autoFocus
+                                    placeholder="Nhập tên loại đơn vị (VD: Kho, Chi nhánh, Ban QLDA...)"
+                                    className="w-full px-4 py-2.5 rounded-xl border border-emerald-300 bg-emerald-50/50 text-sm font-bold text-emerald-700 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all placeholder:font-normal placeholder:text-emerald-300" />
+                            </div>
+                        )}
                     </div>
 
                     {/* Description */}

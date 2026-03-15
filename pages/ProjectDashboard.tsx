@@ -118,12 +118,12 @@ const ProjectDashboard: React.FC = () => {
 
     // === BUDGET CATEGORIES for chart ===
     const BUDGET_CATS = [
-        { key: 'Materials', label: 'Vật tư', icon: '🧱', color: '#f97316', aggKey: 'actualMaterials' as const },
-        { key: 'Labor', label: 'Nhân công', icon: '👷', color: '#0ea5e9', aggKey: 'actualLabor' as const },
-        { key: 'Subcontract', label: 'Thầu phụ', icon: '🏗️', color: '#8b5cf6', aggKey: 'actualSubcontract' as const },
-        { key: 'Machinery', label: 'Máy móc', icon: '⚙️', color: '#10b981', aggKey: 'actualMachinery' as const },
-        { key: 'Overhead', label: 'Quản lý chung', icon: '📋', color: '#6366f1', aggKey: 'actualOverhead' as const },
-        { key: 'Other', label: 'Phát sinh', icon: '📦', color: '#ec4899', aggKey: 'actualOther' as const },
+        { key: 'Materials', label: 'Vật tư', icon: '🧱', color: '#f97316', aggKey: 'actualMaterials' as const, filterKey: 'materials' as ProjectCostCategory },
+        { key: 'Labor', label: 'Nhân công', icon: '👷', color: '#0ea5e9', aggKey: 'actualLabor' as const, filterKey: 'labor' as ProjectCostCategory },
+        { key: 'Subcontract', label: 'Thầu phụ', icon: '🏗️', color: '#8b5cf6', aggKey: 'actualSubcontract' as const, filterKey: 'subcontract' as ProjectCostCategory },
+        { key: 'Machinery', label: 'Máy móc', icon: '⚙️', color: '#10b981', aggKey: 'actualMachinery' as const, filterKey: 'machinery' as ProjectCostCategory },
+        { key: 'Overhead', label: 'Quản lý chung', icon: '📋', color: '#6366f1', aggKey: 'actualOverhead' as const, filterKey: 'overhead' as ProjectCostCategory },
+        { key: 'Other', label: 'Phát sinh', icon: '📦', color: '#ec4899', aggKey: 'actualOther' as const, filterKey: 'other' as ProjectCostCategory },
     ];
 
     // === ALL-PROJECT AGGREGATE ===
@@ -154,17 +154,59 @@ const ProjectDashboard: React.FC = () => {
         setActiveView('overview');
     };
 
+    const fileToBase64 = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    };
+
     const uploadFiles = async (files: File[]): Promise<{ name: string; url: string; type: string }[]> => {
-        if (!isSupabaseConfigured || files.length === 0) return [];
+        if (files.length === 0) return [];
         const results: { name: string; url: string; type: string }[] = [];
+
         for (const file of files) {
-            const ext = file.name.split('.').pop();
-            const path = `tx/${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${ext}`;
-            const { error } = await supabase.storage.from('project-attachments').upload(path, file);
-            if (!error) {
-                const { data: urlData } = supabase.storage.from('project-attachments').getPublicUrl(path);
-                results.push({ name: file.name, url: urlData.publicUrl, type: file.type });
+            let uploaded = false;
+
+            // Try Supabase Storage first
+            if (isSupabaseConfigured) {
+                try {
+                    const ext = file.name.split('.').pop();
+                    const path = `tx/${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${ext}`;
+                    console.log('[Attachment] Uploading to storage:', path, 'size:', file.size);
+                    const { data, error } = await supabase.storage.from('project-attachments').upload(path, file, {
+                        cacheControl: '3600',
+                        upsert: false,
+                    });
+                    if (error) {
+                        console.error('[Attachment] Storage upload error:', error.message);
+                    } else {
+                        const { data: urlData } = supabase.storage.from('project-attachments').getPublicUrl(path);
+                        console.log('[Attachment] Upload OK, URL:', urlData.publicUrl);
+                        results.push({ name: file.name, url: urlData.publicUrl, type: file.type });
+                        uploaded = true;
+                    }
+                } catch (err: any) {
+                    console.error('[Attachment] Storage exception:', err.message);
+                }
             }
+
+            // Fallback: convert to base64 data URL
+            if (!uploaded) {
+                try {
+                    console.log('[Attachment] Falling back to base64 for:', file.name);
+                    const base64 = await fileToBase64(file);
+                    results.push({ name: file.name, url: base64, type: file.type });
+                } catch (err: any) {
+                    console.error('[Attachment] Base64 conversion failed:', err.message);
+                }
+            }
+        }
+
+        if (results.length > 0) {
+            console.log(`[Attachment] ${results.length}/${files.length} files processed`);
         }
         return results;
     };
@@ -256,10 +298,44 @@ const ProjectDashboard: React.FC = () => {
                 const data = new Uint8Array(ev.target?.result as ArrayBuffer);
                 const wb = XLSX.read(data, { type: 'array' });
                 const ws = wb.Sheets[wb.SheetNames[0]];
-                const rows: any[] = XLSX.utils.sheet_to_json(ws);
-                console.log('[DA Import] Sheet:', wb.SheetNames[0], 'Rows:', rows.length);
-                if (rows.length > 0) console.log('[DA Import] First row keys:', Object.keys(rows[0]), 'values:', rows[0]);
 
+                // ===== SMART HEADER DETECTION =====
+                const rawRows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+                console.log('[DA Import] Sheet:', wb.SheetNames[0], 'Total raw rows:', rawRows.length);
+
+                const headerKeywords = ['thành tiền', 'thanh tien', 'đơn giá', 'don gia', 'số tiền', 'so tien', 'amount', 'số lượng', 'so luong', 'tên hàng', 'ten hang', 'stt', 'hạng mục', 'mô tả', 'nội dung'];
+                let headerRowIdx = -1;
+                let headerCols: string[] = [];
+                for (let r = 0; r < Math.min(rawRows.length, 30); r++) {
+                    const row = rawRows[r];
+                    if (!row || row.length < 2) continue;
+                    const cellTexts = row.map((c: any) => String(c || '').toLowerCase().trim());
+                    const matchCount = cellTexts.filter((t: string) => headerKeywords.some(kw => t.includes(kw))).length;
+                    if (matchCount >= 2) {
+                        headerRowIdx = r;
+                        headerCols = row.map((c: any) => String(c || '').trim());
+                        console.log(`[DA Import] Found header at row ${r}:`, headerCols);
+                        break;
+                    }
+                }
+
+                let rows: any[];
+                if (headerRowIdx >= 0) {
+                    rows = [];
+                    for (let r = headerRowIdx + 1; r < rawRows.length; r++) {
+                        const rawRow = rawRows[r];
+                        if (!rawRow || rawRow.every((c: any) => !c && c !== 0)) continue;
+                        const obj: any = {};
+                        headerCols.forEach((col, i) => { if (col) obj[col] = rawRow[i] ?? ''; });
+                        rows.push(obj);
+                    }
+                    console.log('[DA Import] Parsed rows with detected header:', rows.length);
+                } else {
+                    rows = XLSX.utils.sheet_to_json(ws);
+                    console.log('[DA Import] Fallback: standard header, rows:', rows.length);
+                }
+
+                if (rows.length > 0) console.log('[DA Import] First data row keys:', Object.keys(rows[0]), 'values:', rows[0]);
                 if (rows.length === 0) { alert('File rỗng hoặc không có dữ liệu'); return; }
 
                 // Fuzzy column finder
@@ -312,33 +388,76 @@ const ProjectDashboard: React.FC = () => {
                     return Number(cleaned) || 0;
                 };
 
-                const txs: ProjectTransaction[] = rows.map((row, i) => {
-                    const rawAmount = findCol(row, ['số tiền', 'so tien', 'amount', 'tiền', 'tien', 'giá trị', 'gia tri', 'value', 'số tiền (vnđ)', 'money']);
+                // Detect "total" summary rows vs detail rows
+                const totalKeywords = ['tổng số', 'tong so', 'tổng cộng', 'tong cong', 'tổng số tiền', 'tong so tien', 'total', 'tổng', 'tong', 'cộng', 'cong', 'sum', 'grand total', 'subtotal'];
+
+                const isTotalRow = (row: any): boolean => {
+                    // Check all string values in the row for total keywords
+                    for (const val of Object.values(row)) {
+                        if (typeof val === 'string') {
+                            const lower = val.toLowerCase().trim();
+                            if (totalKeywords.some(kw => lower === kw || lower.startsWith(kw + ' ') || lower.startsWith(kw + ':') || lower.startsWith(kw + '(') || lower.endsWith(' ' + kw) || lower.includes('tổng') || lower.includes('total'))) return true;
+                        }
+                    }
+                    return false;
+                };
+
+                const allParsed = rows.map((row, i) => {
+                    const rawAmount = findCol(row, ['thành tiền', 'thanh tien', 'số tiền', 'so tien', 'amount', 'tiền', 'tien', 'giá trị', 'gia tri', 'value', 'số tiền (vnđ)', 'money', 'đơn giá', 'don gia']);
                     const rawCat = String(findCol(row, ['hạng mục', 'hang muc', 'category', 'loại chi phí', 'loai chi phi', 'mục', 'muc']) || 'other').toLowerCase().trim();
                     const rawType = String(findCol(row, ['loại', 'loai', 'type', 'loại giao dịch']) || 'expense').toLowerCase().trim();
-                    const rawDesc = findCol(row, ['mô tả', 'mo ta', 'description', 'diễn giải', 'dien giai', 'nội dung', 'noi dung', 'ghi chú', 'ghi chu', 'note']);
+                    const rawDesc = findCol(row, ['mô tả', 'mo ta', 'description', 'diễn giải', 'dien giai', 'nội dung', 'noi dung', 'ghi chú', 'ghi chu', 'note', 'tên hàng hóa', 'ten hang hoa', 'tên hàng', 'ten hang', 'hàng hóa', 'hang hoa']);
                     const rawDate = findCol(row, ['ngày', 'ngay', 'date', 'ngày giao dịch', 'ngay giao dich']);
                     const amount = parseAmount(rawAmount);
-                    console.log(`[DA Import] Row ${i}: amount=${amount}, cat=${rawCat}, type=${rawType}, desc=${rawDesc}`);
+                    const isTotal = isTotalRow(row);
+                    console.log(`[DA Import] Row ${i}: amount=${amount}, cat=${rawCat}, type=${rawType}, desc=${rawDesc}, isTotal=${isTotal}`);
 
                     return {
-                        id: crypto.randomUUID(),
-                        projectFinanceId: financeId!,
-                        constructionSiteId: selectedSiteId,
-                        type: typeMap[rawType] || 'expense',
-                        category: catMap[rawCat] || 'other',
-                        amount,
-                        description: String(rawDesc || ''),
-                        date: parseDate(rawDate),
-                        source: 'import' as ProjectTxSource,
-                        createdBy: user.id,
-                        createdAt: new Date().toISOString(),
+                        tx: {
+                            id: crypto.randomUUID(),
+                            projectFinanceId: financeId!,
+                            constructionSiteId: selectedSiteId,
+                            type: typeMap[rawType] || 'expense',
+                            category: catMap[rawCat] || 'other',
+                            amount,
+                            description: String(rawDesc || ''),
+                            date: parseDate(rawDate),
+                            source: 'import' as ProjectTxSource,
+                            createdBy: user.id,
+                            createdAt: new Date().toISOString(),
+                        } as ProjectTransaction,
+                        isTotal,
                     };
-                }).filter(t => t.amount > 0);
+                }).filter(p => p.tx.amount > 0);
+
+                // If there are total rows → use only those (avoid double-counting with details)
+                const totalRows = allParsed.filter(p => p.isTotal);
+                const detailRows = allParsed.filter(p => !p.isTotal);
+                let txs: ProjectTransaction[];
+                let importMode: string;
+
+                if (totalRows.length > 0) {
+                    // Merge all total rows into ONE transaction
+                    const mergedAmount = totalRows.reduce((sum, p) => sum + p.tx.amount, 0);
+                    const mergedDesc = totalRows.map(p => p.tx.description).filter(Boolean).join('; ') || 'Tổng import từ Excel';
+                    const mergedTx: ProjectTransaction = {
+                        ...totalRows[0].tx,
+                        amount: mergedAmount,
+                        description: mergedDesc,
+                    };
+                    txs = [mergedTx];
+                    importMode = totalRows.length === 1
+                        ? `Tìm thấy 1 dòng tổng → import dòng tổng (bỏ ${detailRows.length} dòng chi tiết)`
+                        : `Tìm thấy ${totalRows.length} dòng tổng → cộng lại = ${mergedAmount.toLocaleString('vi-VN')}đ (bỏ ${detailRows.length} dòng chi tiết)`;
+                } else {
+                    txs = detailRows.map(p => p.tx);
+                    importMode = `Không có dòng tổng → import ${txs.length} dòng chi tiết`;
+                }
+                console.log(`[DA Import] Mode: ${importMode}`);
 
                 if (txs.length > 0) {
                     addProjectTransactions(txs);
-                    alert(`✅ Import thành công ${txs.length}/${rows.length} giao dịch từ file "${file.name}"`);
+                    alert(`✅ Import thành công ${txs.length} giao dịch từ file "${file.name}"\n\n${importMode}`);
                 } else {
                     const sampleKeys = rows.length > 0 ? Object.keys(rows[0]).join(', ') : 'N/A';
                     alert(`❌ Không tìm thấy giao dịch hợp lệ (số tiền > 0).\n\nCột trong file: ${sampleKeys}\n\nCần ít nhất cột: Số tiền (hoặc Amount)\nTùy chọn: Hạng mục, Mô tả, Ngày, Loại`);
@@ -447,12 +566,12 @@ const ProjectDashboard: React.FC = () => {
         if (!showTxForm) return null;
         return (
             <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowTxForm(false)}>
-                <div onClick={e => e.stopPropagation()} className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg mx-4">
+                <div onClick={e => e.stopPropagation()} className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
                     <div className={`px-6 py-4 border-b border-slate-100 rounded-t-3xl flex items-center justify-between ${editingTx ? 'bg-gradient-to-r from-amber-500 to-orange-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500'}`}>
                         <span className="font-bold text-lg text-white flex items-center gap-2">{editingTx ? <><Edit2 size={20} /> Chỉnh sửa giao dịch</> : <><Plus size={20} /> Thêm giao dịch</>}</span>
                         <button onClick={resetTxForm} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><X size={18} /></button>
                     </div>
-                    <div className="p-6 space-y-4">
+                    <div className="p-6 space-y-4 overflow-y-auto flex-1">
                         {/* Type */}
                         <div>
                             <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Loại giao dịch</label>
@@ -501,19 +620,19 @@ const ProjectDashboard: React.FC = () => {
                         {/* Attachments */}
                         <div>
                             <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Tệp đính kèm</label>
-                            <div
-                                onClick={() => txFileInputRef.current?.click()}
+                            <label
+                                htmlFor="tx-file-input-field"
                                 onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('border-blue-400', 'bg-blue-50'); }}
                                 onDragLeave={e => { e.preventDefault(); e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50'); }}
                                 onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50'); const newFiles = Array.from(e.dataTransfer.files); setTxFiles(prev => [...prev, ...newFiles]); }}
-                                className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-all"
+                                className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-all block"
                             >
                                 <Paperclip size={20} className="mx-auto mb-1 text-slate-300" />
                                 <p className="text-xs text-slate-400">Nhấn hoặc kéo thả file vào đây</p>
                                 <p className="text-[10px] text-slate-300 mt-0.5">Hình ảnh CK, biên bản nghiệm thu, hoá đơn...</p>
-                            </div>
-                            <input ref={txFileInputRef} type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" className="hidden"
-                                onChange={e => { if (e.target.files) { setTxFiles(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ''; } }} />
+                            </label>
+                            <input id="tx-file-input-field" type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style={{ display: 'none' }}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { const files = e.target.files; console.log('[Attachment] onChange fired, files:', files?.length); if (files && files.length > 0) { const arr: File[] = Array.from(files); console.log('[Attachment] Adding files:', arr.map((f: File) => f.name)); setTxFiles(prev => [...prev, ...arr]); } e.target.value = ''; }} />
                             {txFiles.length > 0 && (
                                 <div className="mt-2 flex flex-wrap gap-2">
                                     {txFiles.map((f, i) => (
@@ -663,9 +782,13 @@ const ProjectDashboard: React.FC = () => {
                                 const actual = (selectedAgg as any)[cat.aggKey] || 0;
                                 const diff = actual - budget;
                                 return (
-                                    <div key={cat.key}>
+                                    <div key={cat.key}
+                                        onClick={() => { setTxFilter(txFilter === cat.filterKey ? 'all' : cat.filterKey); document.getElementById('tx-list-section')?.scrollIntoView({ behavior: 'smooth' }); }}
+                                        className={`cursor-pointer rounded-xl p-2 -mx-2 transition-all hover:bg-slate-50 ${txFilter === cat.filterKey ? 'ring-2 ring-offset-1 bg-slate-50 scale-[1.02]' : ''}`}
+                                        style={txFilter === cat.filterKey ? { ringColor: cat.color } : {}}
+                                    >
                                         <div className="flex items-center justify-between mb-1.5">
-                                            <div className="flex items-center gap-2"><span className="text-lg">{cat.icon}</span><span className="text-sm font-bold text-slate-700">{cat.label}</span></div>
+                                            <div className="flex items-center gap-2"><span className="text-lg">{cat.icon}</span><span className="text-sm font-bold text-slate-700">{cat.label}</span>{txFilter === cat.filterKey && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold text-white" style={{ backgroundColor: cat.color }}>Đang lọc</span>}</div>
                                             <div className="flex items-center gap-3 text-xs">
                                                 <span className="text-slate-400">DT: <span className="font-bold text-slate-600">{fmt(budget)}</span></span>
                                                 <span className="text-slate-400">TT: <span className={`font-bold ${diff > 0 ? 'text-red-500' : 'text-emerald-600'}`}>{fmt(actual)}</span></span>
@@ -720,7 +843,7 @@ const ProjectDashboard: React.FC = () => {
                 </div>
 
                 {/* Transaction List */}
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div id="tx-list-section" className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                     <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between flex-wrap gap-2">
                         <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider flex items-center gap-2">
                             <List size={16} /> Danh sách giao dịch ({siteTxs.length})

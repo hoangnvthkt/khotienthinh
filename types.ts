@@ -175,6 +175,7 @@ export interface OrgUnit {
   id: string;
   name: string;
   type: OrgUnitType;
+  customTypeLabel?: string; // User-defined type label when type='custom'
   parentId?: string | null;
   description?: string;
   orderIndex: number;
@@ -463,5 +464,38 @@ export interface WorkflowInstanceLog {
   action: WorkflowInstanceAction;
   actedBy: string; // user id
   comment: string;
+  createdAt: string;
+}
+
+// ==================== CHAT ====================
+export interface ChatConversation {
+  id: string;
+  type: 'direct' | 'group';
+  name?: string;
+  avatarUrl?: string;
+  createdBy?: string;
+  createdAt: string;
+  // Computed (local only)
+  members?: ChatMember[];
+  lastMessage?: ChatMessage;
+  unreadCount?: number;
+}
+
+export interface ChatMember {
+  id: string;
+  conversationId: string;
+  userId: string;
+  role: 'admin' | 'member';
+  lastReadAt: string;
+  joinedAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  content?: string;
+  type: 'text' | 'image' | 'file' | 'system';
+  attachments?: { url: string; name: string; type: string; size?: number }[];
   createdAt: string;
 }

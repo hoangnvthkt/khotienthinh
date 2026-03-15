@@ -279,8 +279,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // Org Units
         if (orgUnitsData) setOrgUnits(orgUnitsData.map((u: any) => ({
-          id: u.id, name: u.name, type: u.type, parentId: u.parent_id,
-          description: u.description, orderIndex: u.order_index, createdAt: u.created_at
+          id: u.id, name: u.name, type: u.type, customTypeLabel: u.customTypeLabel || undefined,
+          parentId: u.parent_id, description: u.description, orderIndex: u.order_index, createdAt: u.created_at
         })));
 
         // Loss Norms
@@ -558,8 +558,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       } else if (table === 'org_units') {
         payload = {
-          id: data.id, name: data.name, type: data.type, parent_id: data.parentId || null,
-          description: data.description || '', order_index: data.orderIndex || 0
+          id: data.id, name: data.name, type: data.type, "customTypeLabel": data.customTypeLabel || null,
+          parent_id: data.parentId || null, description: data.description || '', order_index: data.orderIndex || 0
         };
       }
 

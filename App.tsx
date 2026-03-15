@@ -16,10 +16,12 @@ import Employees from './pages/hrm/Employees';
 import WorkflowInstances from './pages/wf/WorkflowInstances';
 import WorkflowTemplates from './pages/wf/WorkflowTemplates';
 import WorkflowBuilder from './pages/wf/WorkflowBuilder';
+import Chat from './pages/Chat';
 import { AppProvider } from './context/AppContext';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { WorkflowProvider } from './context/WorkflowContext';
+import { ChatProvider } from './context/ChatContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import NotFound from './pages/NotFound';
 
@@ -50,6 +52,7 @@ const AppRoutes: React.FC = () => {
         <Route path="misa-export" element={<MisaExport />} />
         <Route path="hrm/employees" element={<Employees />} />
         <Route path="da" element={<ProjectDashboard />} />
+        <Route path="chat" element={<Chat />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
@@ -63,9 +66,11 @@ const App: React.FC = () => {
         <ToastProvider>
           <AppProvider>
             <WorkflowProvider>
-              <Router>
-                <AppRoutes />
-              </Router>
+              <ChatProvider>
+                <Router>
+                  <AppRoutes />
+                </Router>
+              </ChatProvider>
             </WorkflowProvider>
           </AppProvider>
         </ToastProvider>

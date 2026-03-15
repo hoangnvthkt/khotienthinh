@@ -1245,7 +1245,7 @@ const WorkflowInstances: React.FC = () => {
                                                 <MessageSquare size={11} /> Lịch sử trao đổi
                                             </p>
                                             <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                                                {getInstanceLogs(instance.id).map(log => {
+                                                {getInstanceLogs(instance.id).slice().reverse().map(log => {
                                                     const actor = users.find(u => u.id === log.actedBy);
                                                     const node = nodes.find(n => n.id === log.nodeId);
                                                     const actionInfo = ACTION_MAP[log.action];

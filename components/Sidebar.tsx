@@ -4,10 +4,11 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon, Bell,
-  Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3
+  Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
+import { useChat } from '../context/ChatContext';
 import { Role, TransactionStatus, RequestStatus } from '../types';
 
 interface SidebarProps {
@@ -20,6 +21,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
   const location = useLocation();
   const { user, logout, warehouses, transactions, requests, appSettings, items } = useApp();
   const { isDark, toggleTheme } = useTheme();
+  const { totalUnread } = useChat();
 
   // Auto-detect current app context based on URL
   const [currentApp, setCurrentApp] = useState<'WMS' | 'HRM' | 'WF' | 'DA'>(
@@ -190,6 +192,27 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
               )}
             </NavLink>
           ))}
+
+          {/* Chat Link - Luôn hiển thị */}
+          <div className="mt-3 pt-3 border-t border-white/10 dark:border-slate-700/50">
+            <NavLink
+              to="/chat"
+              className={({ isActive }) => `flex items-center justify-between px-4 py-3 rounded-xl transition-all group ${isActive
+                ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'
+                }`}
+            >
+              <div className="flex items-center">
+                <MessageCircle className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                <span className="font-bold text-sm">Tin nhắn</span>
+              </div>
+              {totalUnread > 0 && (
+                <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 bg-red-500 ring-slate-900 animate-pulse">
+                  {totalUnread > 9 ? '9+' : totalUnread}
+                </span>
+              )}
+            </NavLink>
+          </div>
         </nav>
       </aside>
     </>
