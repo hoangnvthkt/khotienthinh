@@ -16,6 +16,7 @@ interface ChatContextType {
     markAsRead: (conversationId: string) => Promise<void>;
     loadMessages: (conversationId: string) => Promise<void>;
     setTyping: (conversationId: string, isTyping: boolean) => void;
+    toggleReaction: (messageId: string, conversationId: string, emoji: string) => Promise<void>;
     totalUnread: number;
 }
 
@@ -36,6 +37,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
     const channelRef = useRef<any>(null);
     const presenceRef = useRef<any>(null);
+    const processedMsgIds = useRef<Set<string>>(new Set());
 
     // === LOAD CONVERSATIONS ===
     const loadConversations = useCallback(async () => {
@@ -148,6 +150,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     content: m.content,
                     type: m.type,
                     attachments: m.attachments,
+                    reactions: m.reactions || {},
                     createdAt: m.created_at,
                 })),
             }));
@@ -174,7 +177,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { data, error } = await supabase.from('chat_messages').insert(msg).select().single();
         if (error) { console.error('Error sending message:', error); return; }
 
-        // Optimistic update (realtime will also push)
+        // Mark as processed BEFORE state update (synchronous guard)
+        processedMsgIds.current.add(data.id);
+
         const newMsg: ChatMessage = {
             id: data.id,
             conversationId: data.conversation_id,
@@ -182,14 +187,14 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             content: data.content,
             type: data.type,
             attachments: data.attachments,
+            reactions: data.reactions || {},
             createdAt: data.created_at,
         };
 
-        setMessages(prev => {
-            const existing = prev[conversationId] || [];
-            if (existing.some(m => m.id === newMsg.id)) return prev;
-            return { ...prev, [conversationId]: [...existing, newMsg] };
-        });
+        setMessages(prev => ({
+            ...prev,
+            [conversationId]: [...(prev[conversationId] || []), newMsg],
+        }));
 
         // Update conversation last message
         setConversations(prev => prev.map(c =>
@@ -297,21 +302,59 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
     }, [user?.id]);
 
+    // === TOGGLE REACTION ===
+    const toggleReaction = useCallback(async (messageId: string, conversationId: string, emoji: string) => {
+        if (!isSupabaseConfigured || !user?.id) return;
+
+        // Get current reactions from state
+        const convMessages = messages[conversationId] || [];
+        const msg = convMessages.find(m => m.id === messageId);
+        const currentReactions = { ...(msg?.reactions || {}) };
+
+        // Toggle user in this emoji
+        const usersForEmoji = currentReactions[emoji] || [];
+        if (usersForEmoji.includes(user.id)) {
+            currentReactions[emoji] = usersForEmoji.filter(uid => uid !== user.id);
+            if (currentReactions[emoji].length === 0) delete currentReactions[emoji];
+        } else {
+            currentReactions[emoji] = [...usersForEmoji, user.id];
+        }
+
+        // Optimistic update
+        setMessages(prev => ({
+            ...prev,
+            [conversationId]: (prev[conversationId] || []).map(m =>
+                m.id === messageId ? { ...m, reactions: currentReactions } : m
+            ),
+        }));
+
+        // Update in DB
+        await supabase
+            .from('chat_messages')
+            .update({ reactions: currentReactions })
+            .eq('id', messageId);
+    }, [user?.id, messages]);
+
     // === REALTIME SUBSCRIPTIONS ===
     useEffect(() => {
         if (!isSupabaseConfigured || !user?.id) return;
 
         loadConversations();
 
-        // Subscribe to new messages
+        // Subscribe to new messages (unique channel name to avoid StrictMode conflicts)
+        const channelName = `chat-realtime-${Date.now()}`;
         channelRef.current = supabase
-            .channel('chat-realtime')
+            .channel(channelName)
             .on('postgres_changes', {
                 event: 'INSERT',
                 schema: 'public',
                 table: 'chat_messages',
             }, (payload: any) => {
                 const m = payload.new;
+
+                // Synchronous dedup: skip if already processed
+                if (processedMsgIds.current.has(m.id)) return;
+                processedMsgIds.current.add(m.id);
 
                 const newMsg: ChatMessage = {
                     id: m.id,
@@ -320,15 +363,14 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     content: m.content,
                     type: m.type,
                     attachments: m.attachments,
+                    reactions: m.reactions || {},
                     createdAt: m.created_at,
                 };
 
-                // Deduplicate by message ID (prevents double from optimistic + realtime)
-                setMessages(prev => {
-                    const existing = prev[m.conversation_id] || [];
-                    if (existing.some(msg => msg.id === m.id)) return prev;
-                    return { ...prev, [m.conversation_id]: [...existing, newMsg] };
-                });
+                setMessages(prev => ({
+                    ...prev,
+                    [m.conversation_id]: [...(prev[m.conversation_id] || []), newMsg],
+                }));
 
                 setConversations(prev => {
                     const exists = prev.some(c => c.id === m.conversation_id);
@@ -346,6 +388,24 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         const bTime = b.lastMessage?.createdAt || b.createdAt;
                         return bTime.localeCompare(aTime);
                     });
+                });
+            })
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'chat_messages',
+            }, (payload: any) => {
+                const m = payload.new;
+                // Update reactions in state
+                setMessages(prev => {
+                    const convMsgs = prev[m.conversation_id];
+                    if (!convMsgs) return prev;
+                    return {
+                        ...prev,
+                        [m.conversation_id]: convMsgs.map(msg =>
+                            msg.id === m.id ? { ...msg, reactions: m.reactions || {} } : msg
+                        ),
+                    };
                 });
             })
             .subscribe();
@@ -402,7 +462,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         <ChatContext.Provider value={{
             conversations, messages, activeConversationId, setActiveConversationId,
             onlineUsers, typingUsers, sendMessage, createDirectConversation,
-            createGroupConversation, markAsRead, loadMessages, setTyping, totalUnread,
+            createGroupConversation, markAsRead, loadMessages, setTyping, toggleReaction, totalUnread,
         }}>
             {children}
         </ChatContext.Provider>

@@ -497,5 +497,6 @@ export interface ChatMessage {
   content?: string;
   type: 'text' | 'image' | 'file' | 'system';
   attachments?: { url: string; name: string; type: string; size?: number }[];
+  reactions?: Record<string, string[]>; // emoji -> userIds
   createdAt: string;
 }

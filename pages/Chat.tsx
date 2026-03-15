@@ -6,6 +6,10 @@ import {
     Hash, User as UserIcon, Smile, MoreVertical, ArrowLeft, Image as ImageIcon, File
 } from 'lucide-react';
 
+// ===================== CONSTANTS =====================
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡', '🔥', '👏'];
+const QUICK_EMOJIS = ['😀', '😂', '🤣', '😍', '🥰', '😘', '😎', '🤩', '🥳', '😇', '🤔', '🤗', '😏', '😈', '👻', '💀', '🤖', '👽', '🎃', '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '💯', '🔥', '⭐', '✨', '💫', '🎉', '🎊', '👍', '👎', '👏', '🙌', '🤝', '✌️', '🤞', '💪', '🙏', '☕', '🍕', '🍺', '🎵', '📌', '✅', '❌', '⚡', '💡'];
+
 // ===================== HELPERS =====================
 const timeAgo = (dateStr: string) => {
     const now = new Date();
@@ -37,7 +41,7 @@ const Chat: React.FC = () => {
     const {
         conversations, messages, activeConversationId, setActiveConversationId,
         onlineUsers, typingUsers, sendMessage, createDirectConversation,
-        createGroupConversation, markAsRead, loadMessages, setTyping, totalUnread,
+        createGroupConversation, markAsRead, loadMessages, setTyping, toggleReaction, totalUnread,
     } = useChat();
 
     const [msgInput, setMsgInput] = useState('');
@@ -47,6 +51,9 @@ const Chat: React.FC = () => {
     const [groupName, setGroupName] = useState('');
     const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
     const [mobileShowChat, setMobileShowChat] = useState(false);
+    const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null);
+    const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const typingTimeoutRef = useRef<any>(null);
@@ -68,6 +75,17 @@ const Chat: React.FC = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [activeMessages.length]);
 
+    // Close pickers on click outside
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            const t = e.target as HTMLElement;
+            if (!t.closest('.reaction-picker') && !t.closest('.reaction-trigger')) setReactionPickerMsgId(null);
+            if (!t.closest('.emoji-picker') && !t.closest('.emoji-trigger')) setShowEmojiPicker(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
     // Get display name for a conversation
     const getConvName = (conv: typeof conversations[0]) => {
         if (conv.type === 'group') return conv.name || 'Nhóm';
@@ -76,7 +94,6 @@ const Chat: React.FC = () => {
         return otherUser?.name || 'Người dùng';
     };
 
-    // Get avatar for a conversation
     const getConvAvatar = (conv: typeof conversations[0]) => {
         if (conv.type === 'group') return null;
         const otherMember = conv.members?.find(m => m.userId !== user.id);
@@ -84,21 +101,17 @@ const Chat: React.FC = () => {
         return otherUser?.avatar;
     };
 
-    // Is other user online?
     const isConvOnline = (conv: typeof conversations[0]) => {
         if (conv.type === 'group') return conv.members?.some(m => m.userId !== user.id && onlineUsers.has(m.userId));
         const otherMember = conv.members?.find(m => m.userId !== user.id);
         return otherMember ? onlineUsers.has(otherMember.userId) : false;
     };
 
-    // Filter conversations by search
     const filteredConversations = conversations.filter(c => {
         if (!searchQuery) return true;
-        const name = getConvName(c).toLowerCase();
-        return name.includes(searchQuery.toLowerCase());
+        return getConvName(c).toLowerCase().includes(searchQuery.toLowerCase());
     });
 
-    // Other users not in current conversation
     const availableUsers = users.filter(u => u.id !== user.id);
 
     // Handle send
@@ -107,6 +120,7 @@ const Chat: React.FC = () => {
         await sendMessage(activeConversationId, msgInput.trim());
         setMsgInput('');
         setTyping(activeConversationId, false);
+        setShowEmojiPicker(false);
         inputRef.current?.focus();
     };
 
@@ -114,19 +128,21 @@ const Chat: React.FC = () => {
     const handleInputChange = (value: string) => {
         setMsgInput(value);
         if (!activeConversationId) return;
-
         if (value.length > 0) {
             setTyping(activeConversationId, true);
             clearTimeout(typingTimeoutRef.current);
-            typingTimeoutRef.current = setTimeout(() => {
-                setTyping(activeConversationId, false);
-            }, 3000);
+            typingTimeoutRef.current = setTimeout(() => setTyping(activeConversationId, false), 3000);
         } else {
             setTyping(activeConversationId, false);
         }
     };
 
-    // Create direct chat
+    // Insert emoji into input
+    const insertEmoji = (emoji: string) => {
+        setMsgInput(prev => prev + emoji);
+        inputRef.current?.focus();
+    };
+
     const handleStartDirect = async (targetUserId: string) => {
         const convId = await createDirectConversation(targetUserId);
         setActiveConversationId(convId);
@@ -134,7 +150,6 @@ const Chat: React.FC = () => {
         setMobileShowChat(true);
     };
 
-    // Create group
     const handleCreateGroup = async () => {
         if (!groupName.trim() || selectedMembers.length === 0) return;
         const convId = await createGroupConversation(groupName.trim(), selectedMembers);
@@ -161,7 +176,6 @@ const Chat: React.FC = () => {
         return groups;
     }, [activeMessages]);
 
-    // Typing display
     const activeTyping = activeConversationId ? (typingUsers[activeConversationId] || []) : [];
     const typingNames = activeTyping.map(uid => users.find(u => u.id === uid)?.name || '').filter(Boolean);
 
@@ -182,18 +196,12 @@ const Chat: React.FC = () => {
                         <div className="flex items-center gap-1">
                             <button onClick={() => { setShowNewChat(true); setShowNewGroup(false); }}
                                 className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-indigo-50 dark:hover:bg-slate-800 text-indigo-500 transition-colors"
-                                title="Chat mới">
-                                <Plus size={18} />
-                            </button>
+                                title="Chat mới"><Plus size={18} /></button>
                             <button onClick={() => { setShowNewGroup(true); setShowNewChat(false); }}
                                 className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-indigo-50 dark:hover:bg-slate-800 text-indigo-500 transition-colors"
-                                title="Nhóm mới">
-                                <Users size={18} />
-                            </button>
+                                title="Nhóm mới"><Users size={18} /></button>
                         </div>
                     </div>
-
-                    {/* Search */}
                     <div className="relative">
                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                         <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
@@ -283,7 +291,6 @@ const Chat: React.FC = () => {
                                         ? 'bg-indigo-50 dark:bg-indigo-950/40 border-l-4 border-l-indigo-500'
                                         : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-4 border-l-transparent'
                                         }`}>
-                                    {/* Avatar */}
                                     <div className="relative shrink-0">
                                         {conv.type === 'group' ? (
                                             <div className="w-11 h-11 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-sm shadow-md">
@@ -296,8 +303,6 @@ const Chat: React.FC = () => {
                                         )}
                                         {online && <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900" />}
                                     </div>
-
-                                    {/* Content */}
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between">
                                             <span className={`text-sm truncate ${unread > 0 ? 'font-black text-slate-800 dark:text-white' : 'font-bold text-slate-700 dark:text-slate-200'}`}>{name}</span>
@@ -328,7 +333,6 @@ const Chat: React.FC = () => {
             {/* ============ CHAT AREA ============ */}
             <div className={`flex-1 flex flex-col ${!mobileShowChat ? 'hidden md:flex' : 'flex'}`}>
                 {!activeConv ? (
-                    /* Empty State */
                     <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
                         <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center mb-6 shadow-2xl shadow-indigo-500/30">
                             <MessageCircle size={40} className="text-white" />
@@ -373,7 +377,6 @@ const Chat: React.FC = () => {
                         <div className="flex-1 overflow-y-auto p-4 space-y-1" style={{ background: 'linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)' }}>
                             {groupedMessages.map((group, gi) => (
                                 <div key={gi}>
-                                    {/* Date separator */}
                                     <div className="flex items-center justify-center my-4">
                                         <span className="text-[10px] font-bold text-slate-400 bg-white dark:bg-slate-800 px-3 py-1 rounded-full shadow-sm border border-slate-100 dark:border-slate-700">
                                             {formatDate(group.date)}
@@ -387,6 +390,10 @@ const Chat: React.FC = () => {
                                         const prevMsg = mi > 0 ? group.messages[mi - 1] : null;
                                         const showAvatar = !isMe && (!prevMsg || prevMsg.senderId !== msg.senderId);
                                         const showName = !isMe && activeConv.type === 'group' && showAvatar;
+                                        const reactions = msg.reactions || {};
+                                        const hasReactions = Object.keys(reactions).length > 0;
+                                        const isHovered = hoveredMsgId === msg.id;
+                                        const showReactionPicker = reactionPickerMsgId === msg.id;
 
                                         if (isSystem) {
                                             return (
@@ -397,7 +404,10 @@ const Chat: React.FC = () => {
                                         }
 
                                         return (
-                                            <div key={msg.id} className={`flex gap-2 mb-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                            <div key={msg.id}
+                                                className={`flex gap-2 mb-1 ${isMe ? 'justify-end' : 'justify-start'} ${hasReactions ? 'mb-5' : ''}`}
+                                                onMouseEnter={() => setHoveredMsgId(msg.id)}
+                                                onMouseLeave={() => { if (!showReactionPicker) setHoveredMsgId(null); }}>
                                                 {/* Avatar */}
                                                 {!isMe && (
                                                     <div className="w-7 shrink-0 self-end">
@@ -409,26 +419,82 @@ const Chat: React.FC = () => {
                                                     </div>
                                                 )}
 
-                                                {/* Bubble */}
-                                                <div className={`max-w-[70%] ${isMe ? 'items-end' : 'items-start'}`}>
+                                                {/* Bubble + Reactions */}
+                                                <div className={`max-w-[70%] relative ${isMe ? 'items-end' : 'items-start'}`}>
                                                     {showName && <p className="text-[10px] font-bold text-slate-400 mb-0.5 ml-1">{sender?.name}</p>}
-                                                    <div className={`px-3.5 py-2 text-sm leading-relaxed shadow-sm ${isMe
-                                                        ? 'bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-2xl rounded-br-md'
-                                                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-2xl rounded-bl-md border border-slate-100 dark:border-slate-700'
-                                                        }`}>
-                                                        {msg.content && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
-                                                        {msg.attachments && msg.attachments.length > 0 && (
-                                                            <div className="mt-1.5 space-y-1">
-                                                                {msg.attachments.map((att, ai) => (
-                                                                    <a key={ai} href={att.url} target="_blank" rel="noopener noreferrer"
-                                                                        className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg ${isMe ? 'bg-white/20 hover:bg-white/30 text-white' : 'bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300'}`}>
-                                                                        {att.type?.startsWith('image') ? <ImageIcon size={12} /> : <File size={12} />}
-                                                                        <span className="truncate max-w-[150px]">{att.name}</span>
-                                                                    </a>
-                                                                ))}
+
+                                                    {/* Message content */}
+                                                    <div className="relative group">
+                                                        <div className={`px-3.5 py-2 text-sm leading-relaxed shadow-sm ${isMe
+                                                            ? 'bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-2xl rounded-br-md'
+                                                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-2xl rounded-bl-md border border-slate-100 dark:border-slate-700'
+                                                            }`}>
+                                                            {msg.content && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
+                                                            {msg.attachments && msg.attachments.length > 0 && (
+                                                                <div className="mt-1.5 space-y-1">
+                                                                    {msg.attachments.map((att, ai) => (
+                                                                        <a key={ai} href={att.url} target="_blank" rel="noopener noreferrer"
+                                                                            className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg ${isMe ? 'bg-white/20 hover:bg-white/30 text-white' : 'bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300'}`}>
+                                                                            {att.type?.startsWith('image') ? <ImageIcon size={12} /> : <File size={12} />}
+                                                                            <span className="truncate max-w-[150px]">{att.name}</span>
+                                                                        </a>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Reaction trigger button */}
+                                                        {isHovered && (
+                                                            <button
+                                                                className={`reaction-trigger absolute top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 flex items-center justify-center shadow-md hover:scale-110 transition-all ${isMe ? '-left-9' : '-right-9'}`}
+                                                                onClick={() => setReactionPickerMsgId(showReactionPicker ? null : msg.id)}>
+                                                                <Smile size={14} className="text-slate-400" />
+                                                            </button>
+                                                        )}
+
+                                                        {/* Reaction Picker Popup */}
+                                                        {showReactionPicker && (
+                                                            <div className={`reaction-picker absolute z-50 ${isMe ? 'right-0' : 'left-0'} -top-12 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 px-2 py-1.5 flex items-center gap-0.5 animate-[fadeIn_0.15s_ease-out]`}>
+                                                                {REACTION_EMOJIS.map(emoji => {
+                                                                    const myReacted = reactions[emoji]?.includes(user.id);
+                                                                    return (
+                                                                        <button key={emoji}
+                                                                            onClick={() => {
+                                                                                toggleReaction(msg.id, msg.conversationId, emoji);
+                                                                                setReactionPickerMsgId(null);
+                                                                                setHoveredMsgId(null);
+                                                                            }}
+                                                                            className={`w-8 h-8 rounded-lg flex items-center justify-center text-lg hover:bg-slate-100 dark:hover:bg-slate-700 hover:scale-125 transition-all ${myReacted ? 'bg-indigo-100 dark:bg-indigo-900/50 ring-2 ring-indigo-400' : ''}`}>
+                                                                            {emoji}
+                                                                        </button>
+                                                                    );
+                                                                })}
                                                             </div>
                                                         )}
                                                     </div>
+
+                                                    {/* Reactions Display */}
+                                                    {hasReactions && (
+                                                        <div className={`flex flex-wrap gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                                            {Object.entries(reactions).map(([emoji, userIds]) => {
+                                                                const myReacted = userIds.includes(user.id);
+                                                                const reactorNames = userIds.map(uid => users.find(u => u.id === uid)?.name || '').filter(Boolean);
+                                                                return (
+                                                                    <button key={emoji}
+                                                                        onClick={() => toggleReaction(msg.id, msg.conversationId, emoji)}
+                                                                        title={reactorNames.join(', ')}
+                                                                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs border transition-all hover:scale-105 ${myReacted
+                                                                            ? 'bg-indigo-100 dark:bg-indigo-900/40 border-indigo-300 dark:border-indigo-600 text-indigo-600 dark:text-indigo-300'
+                                                                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-500 hover:border-indigo-300'
+                                                                            }`}>
+                                                                        <span className="text-sm">{emoji}</span>
+                                                                        <span className="font-bold text-[10px]">{userIds.length}</span>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+
                                                     <p className={`text-[9px] text-slate-300 mt-0.5 ${isMe ? 'text-right mr-1' : 'ml-1'}`}>
                                                         {formatTime(msg.createdAt)}
                                                     </p>
@@ -456,8 +522,35 @@ const Chat: React.FC = () => {
                         </div>
 
                         {/* Message Input */}
-                        <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+                        <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 relative">
+                            {/* Emoji Picker */}
+                            {showEmojiPicker && (
+                                <div className="emoji-picker absolute bottom-16 left-3 right-3 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-3 z-50 animate-[fadeIn_0.15s_ease-out]">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-xs font-bold text-slate-500 uppercase">Biểu tượng cảm xúc</span>
+                                        <button onClick={() => setShowEmojiPicker(false)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
+                                    </div>
+                                    <div className="grid grid-cols-10 gap-1 max-h-[200px] overflow-y-auto">
+                                        {QUICK_EMOJIS.map(emoji => (
+                                            <button key={emoji}
+                                                onClick={() => insertEmoji(emoji)}
+                                                className="w-9 h-9 rounded-lg flex items-center justify-center text-xl hover:bg-slate-100 dark:hover:bg-slate-700 hover:scale-125 transition-all">
+                                                {emoji}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                                    className={`emoji-trigger w-10 h-10 rounded-xl flex items-center justify-center transition-all ${showEmojiPicker
+                                        ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-500'
+                                        : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-indigo-500'
+                                        }`}>
+                                    <Smile size={20} />
+                                </button>
                                 <div className="flex-1 flex items-center gap-2 bg-slate-100 dark:bg-slate-800 rounded-2xl px-4 py-2">
                                     <input ref={inputRef} value={msgInput}
                                         onChange={e => handleInputChange(e.target.value)}
