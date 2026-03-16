@@ -19,11 +19,14 @@ import WorkflowBuilder from './pages/wf/WorkflowBuilder';
 import Chat from './pages/Chat';
 import AssetCatalog from './pages/ts/AssetCatalog';
 import AssetAssignment from './pages/ts/AssetAssignment';
+import CashBook from './pages/kt/CashBook';
+import CashVouchers from './pages/kt/CashVouchers';
 import { AppProvider } from './context/AppContext';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { WorkflowProvider } from './context/WorkflowContext';
 import { ChatProvider } from './context/ChatContext';
+import { FinanceProvider } from './context/FinanceContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import NotFound from './pages/NotFound';
 
@@ -57,6 +60,8 @@ const AppRoutes: React.FC = () => {
         <Route path="chat" element={<Chat />} />
         <Route path="ts/catalog" element={<AssetCatalog />} />
         <Route path="ts/assignment" element={<AssetAssignment />} />
+        <Route path="kt" element={<CashBook />} />
+        <Route path="kt/vouchers" element={<CashVouchers />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
@@ -71,9 +76,11 @@ const App: React.FC = () => {
           <AppProvider>
             <WorkflowProvider>
               <ChatProvider>
-                <Router>
-                  <AppRoutes />
-                </Router>
+                <FinanceProvider>
+                  <Router>
+                    <AppRoutes />
+                  </Router>
+                </FinanceProvider>
               </ChatProvider>
             </WorkflowProvider>
           </AppProvider>

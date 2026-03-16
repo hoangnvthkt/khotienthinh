@@ -5,7 +5,8 @@ import {
   LayoutDashboard, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon, Bell,
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
-  Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight
+  Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight,
+  Wallet, BookOpen
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -21,6 +22,7 @@ interface SidebarProps {
 
 const MODULE_CONFIG = [
   { key: 'WMS' as const, icon: Package, label: 'KHO', gradient: 'from-emerald-500 to-emerald-600', shadow: 'shadow-emerald-500/30', hover: 'hover:text-emerald-600 dark:hover:text-emerald-400', route: '/' },
+  { key: 'KT' as const, icon: Wallet, label: 'KT', gradient: 'from-cyan-500 to-blue-600', shadow: 'shadow-cyan-500/30', hover: 'hover:text-cyan-600 dark:hover:text-cyan-400', route: '/kt' },
   { key: 'HRM' as const, icon: Briefcase, label: 'NS', gradient: 'from-teal-500 to-cyan-600', shadow: 'shadow-teal-500/30', hover: 'hover:text-teal-600 dark:hover:text-teal-400', route: '/hrm/employees' },
   { key: 'WF' as const, icon: GitBranch, label: 'QT', gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/30', hover: 'hover:text-violet-600 dark:hover:text-violet-400', route: '/wf' },
   { key: 'DA' as const, icon: BarChart3, label: 'DA', gradient: 'from-orange-500 to-amber-500', shadow: 'shadow-orange-500/30', hover: 'hover:text-orange-600 dark:hover:text-orange-400', route: '/da' },
@@ -38,7 +40,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   // Auto-detect current app context based on URL
   const [currentApp, setCurrentApp] = useState<AppKey>(
-    location.pathname.startsWith('/hrm') ? 'HRM' : location.pathname.startsWith('/wf') ? 'WF' : location.pathname.startsWith('/da') ? 'DA' : location.pathname.startsWith('/ts') ? 'TS' : 'WMS'
+    location.pathname.startsWith('/kt') ? 'KT' : location.pathname.startsWith('/hrm') ? 'HRM' : location.pathname.startsWith('/wf') ? 'WF' : location.pathname.startsWith('/da') ? 'DA' : location.pathname.startsWith('/ts') ? 'TS' : 'WMS'
   );
 
   // Filter modules based on user permissions
@@ -116,7 +118,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     { to: '/settings', icon: Settings, label: 'Cài đặt' },
   ];
 
-  const currentNavItems = currentApp === 'WMS' ? wmsNavItems : currentApp === 'HRM' ? hrmNavItems : currentApp === 'DA' ? daNavItems : currentApp === 'TS' ? tsNavItems : wfNavItems;
+  const ktNavItems = [
+    { to: '/kt', icon: BookOpen, label: 'Sổ quỹ' },
+    { to: '/kt/vouchers', icon: FileText, label: 'Phiếu thu/chi' },
+    { to: '/settings', icon: Settings, label: 'Cài đặt' },
+  ];
+
+  const currentNavItems = currentApp === 'WMS' ? wmsNavItems : currentApp === 'KT' ? ktNavItems : currentApp === 'HRM' ? hrmNavItems : currentApp === 'DA' ? daNavItems : currentApp === 'TS' ? tsNavItems : wfNavItems;
   const filteredNavItems = currentNavItems.filter(item => !(item as any).roles || (item as any).roles.includes(user.role));
   const assignedWh = warehouses.find(w => w.id === user.assignedWarehouseId);
 

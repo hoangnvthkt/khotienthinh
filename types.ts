@@ -599,3 +599,66 @@ export interface AssetMaintenance {
   performedBy: string;
   note?: string;
 }
+
+// ==================== QUỸ TIỀN MẶT (CASH FUND) ====================
+
+export type CashVoucherType = 'receipt' | 'payment';
+export type CashVoucherStatus = 'draft' | 'approved' | 'cancelled';
+export type CashContactType = 'supplier' | 'customer' | 'employee' | 'other';
+
+export const CASH_VOUCHER_TYPE_LABELS: Record<CashVoucherType, string> = {
+  receipt: 'Phiếu thu',
+  payment: 'Phiếu chi',
+};
+
+export const CASH_VOUCHER_STATUS_LABELS: Record<CashVoucherStatus, string> = {
+  draft: 'Nháp',
+  approved: 'Đã duyệt',
+  cancelled: 'Đã hủy',
+};
+
+export const CASH_CONTACT_TYPE_LABELS: Record<CashContactType, string> = {
+  supplier: 'Nhà cung cấp',
+  customer: 'Khách hàng',
+  employee: 'Nhân viên',
+  other: 'Khác',
+};
+
+export interface CashFund {
+  id: string;
+  name: string;
+  currency: string;
+  openingBalance: number;
+  description?: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CashVoucher {
+  id: string;
+  code: string;
+  type: CashVoucherType;
+  fundId: string;
+  date: string;
+  amount: number;
+  contactName?: string;
+  contactType?: CashContactType;
+  contactId?: string;
+  reason: string;
+  status: CashVoucherStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  note?: string;
+  createdBy: string;
+  createdAt: string;
+  // Computed - populated locally
+  items?: CashVoucherItem[];
+}
+
+export interface CashVoucherItem {
+  id: string;
+  voucherId: string;
+  description: string;
+  amount: number;
+  costCategory?: string;
+}
