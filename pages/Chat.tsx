@@ -65,6 +65,8 @@ const Chat: React.FC = () => {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const typingTimeoutRef = useRef<any>(null);
+    const sendingRef = useRef(false);
+    const justSentRef = useRef(false);
 
     const activeConv = conversations.find(c => c.id === activeConversationId);
     const activeMessages = activeConversationId ? (messages[activeConversationId] || []) : [];
@@ -127,14 +129,33 @@ const Chat: React.FC = () => {
 
     const handleSend = async () => {
         if (!msgInput.trim() || !activeConversationId) return;
-        await sendMessage(activeConversationId, msgInput.trim());
+        // Guard against concurrent sends (e.g. fast Enter key)
+        if (sendingRef.current) return;
+        sendingRef.current = true;
+
+        const text = msgInput.trim();
+        // Block onChange from IME compositionend that fires after Enter
+        justSentRef.current = true;
+        // Clear input IMMEDIATELY — both React state AND DOM element directly
         setMsgInput('');
+        if (inputRef.current) inputRef.current.value = '';
         setTyping(activeConversationId, false);
         setShowEmojiPicker(false);
+
+        // Allow onChange again after IME events settle
+        setTimeout(() => { justSentRef.current = false; }, 150);
+
+        try {
+            await sendMessage(activeConversationId, text);
+        } finally {
+            sendingRef.current = false;
+        }
         inputRef.current?.focus();
     };
 
     const handleInputChange = (value: string) => {
+        // Ignore onChange events from IME composition after Enter-send
+        if (justSentRef.current) return;
         setMsgInput(value);
         if (!activeConversationId) return;
         if (value.length > 0) {

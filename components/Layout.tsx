@@ -12,6 +12,10 @@ const WARN_BEFORE_MS = 5 * 60 * 1000; // Cảnh báo 5 phút trước
 
 const Layout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    const saved = localStorage.getItem('sidebar_collapsed');
+    return saved === 'true';
+  });
   const [bellOpen, setBellOpen] = useState(false);
   const [sessionWarning, setSessionWarning] = useState(false);
   const [countdown, setCountdown] = useState(300); // 5 minutes in seconds
@@ -158,7 +162,7 @@ const Layout: React.FC = () => {
         </div>
       )}
 
-      <Sidebar isOpen={sidebarOpen} toggle={() => setSidebarOpen(!sidebarOpen)} />
+      <Sidebar isOpen={sidebarOpen} toggle={() => setSidebarOpen(!sidebarOpen)} collapsed={sidebarCollapsed} setCollapsed={(v) => { setSidebarCollapsed(v); localStorage.setItem('sidebar_collapsed', String(v)); }} />
 
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
         {/* Mobile Header */}

@@ -364,29 +364,43 @@ const Settings: React.FC = () => {
 
     if (isSupabaseConfigured) {
       try {
+        // Step 1: Verify current password
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email: currentUser.email,
           password: passwords.current,
         });
 
         if (signInError) {
-          setPassError('Mật khẩu hiện tại không chính xác.');
+          setPassError(`Mật khẩu hiện tại không chính xác. (Chi tiết: ${signInError.message})`);
           return;
         }
 
-        const { error: updateError } = await supabase.auth.updateUser({
-          password: passwords.new
+        // Step 2: Use Edge Function to update password in Supabase Auth
+        const response = await supabase.functions.invoke('reset-password', {
+          body: {
+            email: currentUser.email,
+            newPassword: passwords.new,
+          },
         });
 
-        if (updateError) {
-          setPassError('Có lỗi xảy ra khi cập nhật mật khẩu.');
+        if (response.error) {
+          setPassError(`Lỗi khi gọi chức năng đổi mật khẩu: ${response.error.message}`);
           return;
         }
 
-        setPassSuccess('Đã đổi mật khẩu thành công!');
+        const result = response.data;
+        if (result?.error) {
+          setPassError(`Đổi mật khẩu thất bại: ${result.error}`);
+          return;
+        }
+
+        // Step 3: Also update local state and users table
+        updateUser({ ...currentUser, password: passwords.new });
+
+        setPassSuccess('✅ Đã đổi mật khẩu thành công! Mật khẩu mới đã được cập nhật trên Supabase Auth.');
         setPasswords({ current: '', new: '', confirm: '' });
       } catch (err: any) {
-        setPassError(err.message || 'Có lỗi xảy ra.');
+        setPassError(`Có lỗi xảy ra: ${err.message || 'Không xác định'}`);
       }
     } else {
       if (passwords.current !== currentUser.password) {
@@ -394,7 +408,7 @@ const Settings: React.FC = () => {
         return;
       }
       updateUser({ ...currentUser, password: passwords.new });
-      setPassSuccess('Đã đổi mật khẩu thành công!');
+      setPassSuccess('✅ Đã đổi mật khẩu thành công!');
       setPasswords({ current: '', new: '', confirm: '' });
     }
   };

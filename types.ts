@@ -42,6 +42,7 @@ export interface User {
   role: Role;
   avatar?: string;
   assignedWarehouseId?: string; // ID kho được giao quản lý (null = Toàn quyền)
+  allowedModules?: string[]; // Danh sách module được phép sử dụng (VD: ['WMS', 'TS'])
 }
 
 export interface Warehouse {

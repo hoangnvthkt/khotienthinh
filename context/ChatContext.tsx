@@ -196,10 +196,14 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             createdAt: data.created_at,
         };
 
-        setMessages(prev => ({
-            ...prev,
-            [conversationId]: [...(prev[conversationId] || []), newMsg],
-        }));
+        setMessages(prev => {
+            const existing = prev[conversationId] || [];
+            if (existing.some(msg => msg.id === newMsg.id)) return prev;
+            return {
+                ...prev,
+                [conversationId]: [...existing, newMsg],
+            };
+        });
 
         // Update conversation last message
         setConversations(prev => prev.map(c =>
@@ -441,8 +445,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         loadConversations();
 
-        // Subscribe to new messages (unique channel name to avoid StrictMode conflicts)
-        const channelName = `chat-realtime-${Date.now()}`;
+        // Subscribe to new messages (stable channel name per user)
+        const channelName = `chat-realtime-${user.id}`;
         channelRef.current = supabase
             .channel(channelName)
             .on('postgres_changes', {
@@ -452,7 +456,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }, (payload: any) => {
                 const m = payload.new;
 
-                // Synchronous dedup: skip if already processed
+                // Synchronous dedup via ref: skip if already processed by sendMessage
                 if (processedMsgIds.current.has(m.id)) return;
                 processedMsgIds.current.add(m.id);
 
@@ -467,10 +471,15 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     createdAt: m.created_at,
                 };
 
-                setMessages(prev => ({
-                    ...prev,
-                    [m.conversation_id]: [...(prev[m.conversation_id] || []), newMsg],
-                }));
+                // State-level dedup: only add if not already in the array
+                setMessages(prev => {
+                    const existing = prev[m.conversation_id] || [];
+                    if (existing.some(msg => msg.id === m.id)) return prev;
+                    return {
+                        ...prev,
+                        [m.conversation_id]: [...existing, newMsg],
+                    };
+                });
 
                 setConversations(prev => {
                     const exists = prev.some(c => c.id === m.conversation_id);

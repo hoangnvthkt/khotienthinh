@@ -234,7 +234,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ]);
 
         if (usersData && usersData.length > 0) {
-          const mappedUsers = usersData.map((u: any) => ({ ...u, assignedWarehouseId: u.assigned_warehouse_id }));
+          const mappedUsers = usersData.map((u: any) => ({ ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined }));
           setUsers(mappedUsers);
           const currentInList = mappedUsers.find((u: any) => u.email === user.email);
           if (currentInList) setUser(currentInList);
@@ -454,7 +454,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       supabase.channel('public:users').on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, payload => {
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const u = payload.new as any;
-          const mappedUser = { ...u, assignedWarehouseId: u.assigned_warehouse_id };
+          const mappedUser = { ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined };
           setUsers(prev => {
             const exists = prev.find(user => user.id === mappedUser.id);
             if (exists) return prev.map(user => user.id === mappedUser.id ? mappedUser : user);
@@ -598,7 +598,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else if (table === 'users') {
         payload = {
           id: data.id, name: data.name, email: data.email, username: data.username,
-          phone: data.phone, role: data.role, avatar: data.avatar, assigned_warehouse_id: data.assignedWarehouseId
+          phone: data.phone, role: data.role, avatar: data.avatar,
+          assigned_warehouse_id: data.assignedWarehouseId,
+          allowed_modules: data.allowedModules || null
         };
       } else if (table === 'employees') {
         payload = {
@@ -669,7 +671,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const { data: userData, error: userError } = await supabase.from('users').select('*').eq('email', loginEmail).single();
         if (userError || !userData) throw new Error('Lỗi lấy thông tin người dùng');
 
-        const mappedUser = { ...userData, assignedWarehouseId: userData.assigned_warehouse_id };
+        const mappedUser = { ...userData, assignedWarehouseId: userData.assigned_warehouse_id, allowedModules: userData.allowed_modules || undefined };
         setUser(mappedUser);
         const { avatar, ...userForStorage } = mappedUser;
         localStorage.setItem('khoviet_user', JSON.stringify(userForStorage));
