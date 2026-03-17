@@ -335,7 +335,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (assetsData) setAssets(assetsData.map((a: any) => ({
           ...a, categoryId: a.category_id, serialNumber: a.serial_number,
           originalValue: a.original_value, purchaseDate: a.purchase_date,
-          depreciationYears: a.depreciation_years, residualValue: a.residual_value,
+          depreciationYears: a.depreciation_years, warrantyMonths: a.warranty_months,
+          residualValue: a.residual_value,
           warehouseId: a.warehouse_id, locationNote: a.location_note,
           assignedToUserId: a.assigned_to_user_id, assignedToName: a.assigned_to_name,
           assignedDate: a.assigned_date, disposalDate: a.disposal_date,
@@ -347,11 +348,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         })));
         if (assetAssignData) setAssetAssignments(assetAssignData.map((a: any) => ({
           ...a, assetId: a.asset_id, userId: a.user_id, userName: a.user_name,
+          fromUserId: a.from_user_id, fromUserName: a.from_user_name,
           performedBy: a.performed_by, performedByName: a.performed_by_name
         })));
         if (assetMaintData) setAssetMaintenances(assetMaintData.map((m: any) => ({
           ...m, assetId: m.asset_id, startDate: m.start_date, endDate: m.end_date,
-          performedBy: m.performed_by
+          performedBy: m.performed_by, performedByName: m.performed_by_name,
+          invoiceNumber: m.invoice_number, estimatedCost: m.estimated_cost,
+          actualCost: m.actual_cost,
+          attachments: typeof m.attachments === 'string' ? JSON.parse(m.attachments) : (m.attachments || [])
         })));
       } catch (error: any) {
         console.error('Error fetching data from Supabase:', error);
@@ -1296,7 +1301,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addAssetMaintenance = (m: AssetMaintenance) => {
     setAssetMaintenances(prev => [m, ...prev]);
     if (isSupabaseConfigured) {
-      syncToSupabase('asset_maintenances', { ...m, asset_id: m.assetId, start_date: m.startDate, end_date: m.endDate, performed_by: m.performedBy, performed_by_name: m.performedByName, invoice_number: m.invoiceNumber, attachments: JSON.stringify(m.attachments || []) });
+      syncToSupabase('asset_maintenances', { ...m, asset_id: m.assetId, start_date: m.startDate, end_date: m.endDate, performed_by: m.performedBy, performed_by_name: m.performedByName, invoice_number: m.invoiceNumber, estimated_cost: m.estimatedCost, actual_cost: m.actualCost, attachments: JSON.stringify(m.attachments || []) });
     }
     if (m.status === 'in_progress') {
       const asset = assets.find(a => a.id === m.assetId);
@@ -1308,7 +1313,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateAssetMaintenance = (m: AssetMaintenance) => {
     setAssetMaintenances(prev => prev.map(x => x.id === m.id ? m : x));
     if (isSupabaseConfigured) {
-      syncToSupabase('asset_maintenances', { ...m, asset_id: m.assetId, start_date: m.startDate, end_date: m.endDate, performed_by: m.performedBy });
+      syncToSupabase('asset_maintenances', { ...m, asset_id: m.assetId, start_date: m.startDate, end_date: m.endDate, performed_by: m.performedBy, estimated_cost: m.estimatedCost, actual_cost: m.actualCost });
     }
     if (m.status === 'completed') {
       const asset = assets.find(a => a.id === m.assetId);

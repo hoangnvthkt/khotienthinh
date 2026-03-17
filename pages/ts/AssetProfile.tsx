@@ -10,8 +10,10 @@ import {
 } from 'lucide-react';
 import { AssetStatus, ASSET_STATUS_LABELS, AssetMaintenance, MaintenanceAttachment } from '../../types';
 
-const TYPE_LABELS: Record<string, string> = { scheduled: 'Bảo trì định kỳ', repair: 'Sửa chữa', inspection: 'Kiểm tra' };
+const TYPE_LABELS: Record<string, string> = { scheduled: 'Bảo trì định kỳ', repair: 'Sửa chữa', inspection: 'Kiểm tra', warranty: 'Bảo hành' };
 const STATUS_LABELS: Record<string, string> = { planned: 'Lên kế hoạch', in_progress: 'Đang thực hiện', completed: 'Hoàn thành' };
+const getEffectiveCost = (m: AssetMaintenance) => m.actualCost ?? m.cost ?? 0;
+const getEstimatedCost = (m: AssetMaintenance) => m.estimatedCost ?? m.cost ?? 0;
 
 const AssetProfile: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -27,8 +29,8 @@ const AssetProfile: React.FC = () => {
 
     // Maintenance quick-add form
     const [mForm, setMForm] = useState({
-        type: 'repair' as 'scheduled' | 'repair' | 'inspection',
-        description: '', cost: 0, vendor: '', invoiceNumber: '',
+        type: 'repair' as 'scheduled' | 'repair' | 'inspection' | 'warranty',
+        description: '', estimatedCost: 0, actualCost: 0, vendor: '', invoiceNumber: '',
         startDate: new Date().toISOString().split('T')[0], status: 'in_progress' as any, note: '',
     });
     const [mAttachments, setMAttachments] = useState<MaintenanceAttachment[]>([]);
@@ -48,10 +50,11 @@ const AssetProfile: React.FC = () => {
 
     // Cost summary
     const costSummary = useMemo(() => {
-        const totalMaintenance = maintenanceHistory.reduce((sum, m) => sum + m.cost, 0);
-        const repairCost = maintenanceHistory.filter(m => m.type === 'repair').reduce((sum, m) => sum + m.cost, 0);
-        const scheduledCost = maintenanceHistory.filter(m => m.type === 'scheduled').reduce((sum, m) => sum + m.cost, 0);
-        return { totalMaintenance, repairCost, scheduledCost, count: maintenanceHistory.length };
+        const totalMaintenance = maintenanceHistory.reduce((sum, m) => sum + getEffectiveCost(m), 0);
+        const repairCost = maintenanceHistory.filter(m => m.type === 'repair').reduce((sum, m) => sum + getEffectiveCost(m), 0);
+        const scheduledCost = maintenanceHistory.filter(m => m.type === 'scheduled').reduce((sum, m) => sum + getEffectiveCost(m), 0);
+        const warrantyCost = maintenanceHistory.filter(m => m.type === 'warranty').reduce((sum, m) => sum + getEffectiveCost(m), 0);
+        return { totalMaintenance, repairCost, scheduledCost, warrantyCost, count: maintenanceHistory.length };
     }, [maintenanceHistory]);
 
     if (!asset) {
@@ -103,10 +106,14 @@ const AssetProfile: React.FC = () => {
     // Handle quick-add maintenance
     const handleAddMaintenance = () => {
         if (!mForm.description.trim()) { toast.error('Lỗi', 'Vui lòng nhập mô tả'); return; }
+        const estCost = Number(mForm.estimatedCost) || 0;
+        const actCost = Number(mForm.actualCost) || 0;
         const m: AssetMaintenance = {
             id: `mt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
             assetId: asset.id, type: mForm.type, description: mForm.description,
-            cost: Number(mForm.cost), vendor: mForm.vendor || undefined,
+            cost: actCost || estCost,
+            estimatedCost: estCost, actualCost: actCost,
+            vendor: mForm.vendor || undefined,
             invoiceNumber: mForm.invoiceNumber || undefined,
             startDate: mForm.startDate, status: mForm.status,
             performedBy: user.id, performedByName: user.name, note: mForm.note || undefined,
@@ -115,7 +122,7 @@ const AssetProfile: React.FC = () => {
         addAssetMaintenance(m);
         toast.success('Thành công', `Đã ghi nhận bảo trì cho ${asset.name}`);
         setShowAddMaintenance(false);
-        setMForm({ type: 'repair', description: '', cost: 0, vendor: '', invoiceNumber: '', startDate: new Date().toISOString().split('T')[0], status: 'in_progress', note: '' });
+        setMForm({ type: 'repair', description: '', estimatedCost: 0, actualCost: 0, vendor: '', invoiceNumber: '', startDate: new Date().toISOString().split('T')[0], status: 'in_progress', note: '' });
         setMAttachments([]);
     };
 
@@ -145,7 +152,7 @@ const AssetProfile: React.FC = () => {
             else if (a.type === 'transfer') items.push({ date: a.date, type: 'transfer', title: 'Luân chuyển', desc: `${a.fromUserName} → ${a.userName}`, icon: ArrowLeftRight, color: 'text-violet-500 bg-violet-50 dark:bg-violet-950/30' });
         });
         maintenanceHistory.forEach(m => {
-            items.push({ date: m.startDate, type: 'maintenance', title: TYPE_LABELS[m.type], desc: `${m.description} — ${formatCurrency(m.cost)}`, icon: Wrench, color: 'text-orange-500 bg-orange-50 dark:bg-orange-950/30' });
+            items.push({ date: m.startDate, type: 'maintenance', title: TYPE_LABELS[m.type], desc: `${m.description} — Dự kiến: ${formatCurrency(getEstimatedCost(m))}${getEffectiveCost(m) > 0 ? ` / Thực tế: ${formatCurrency(getEffectiveCost(m))}` : ''}`, icon: Wrench, color: 'text-orange-500 bg-orange-50 dark:bg-orange-950/30' });
         });
         return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [assignmentHistory, maintenanceHistory]);
@@ -401,12 +408,12 @@ const AssetProfile: React.FC = () => {
                             ) : (
                                 maintenanceHistory.map(m => (
                                     <div key={m.id} className="p-4 flex items-center gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${m.type === 'repair' ? 'bg-red-50 dark:bg-red-950/30' : m.type === 'inspection' ? 'bg-blue-50 dark:bg-blue-950/30' : 'bg-orange-50 dark:bg-orange-950/30'}`}>
-                                            <Wrench size={16} className={m.type === 'repair' ? 'text-red-500' : m.type === 'inspection' ? 'text-blue-500' : 'text-orange-500'} />
+                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${m.type === 'repair' ? 'bg-red-50 dark:bg-red-950/30' : m.type === 'inspection' ? 'bg-blue-50 dark:bg-blue-950/30' : m.type === 'warranty' ? 'bg-emerald-50 dark:bg-emerald-950/30' : 'bg-orange-50 dark:bg-orange-950/30'}`}>
+                                            <Wrench size={16} className={m.type === 'repair' ? 'text-red-500' : m.type === 'inspection' ? 'text-blue-500' : m.type === 'warranty' ? 'text-emerald-500' : 'text-orange-500'} />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 flex-wrap">
-                                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${m.type === 'repair' ? 'bg-red-100 text-red-600' : m.type === 'inspection' ? 'bg-blue-100 text-blue-600' : 'bg-orange-100 text-orange-600'}`}>
+                                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${m.type === 'repair' ? 'bg-red-100 text-red-600' : m.type === 'inspection' ? 'bg-blue-100 text-blue-600' : m.type === 'warranty' ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
                                                     {TYPE_LABELS[m.type]}
                                                 </span>
                                                 <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${m.status === 'completed' ? 'bg-emerald-100 text-emerald-600' : m.status === 'in_progress' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
@@ -419,7 +426,8 @@ const AssetProfile: React.FC = () => {
                                             {m.invoiceNumber && <p className="text-[10px] text-slate-400">HĐ: {m.invoiceNumber}</p>}
                                         </div>
                                         <div className="text-right shrink-0">
-                                            <p className="text-sm font-black text-red-600">{formatCurrency(m.cost)}</p>
+                                            <p className="text-[10px] text-slate-400">Dự kiến: {formatCurrency(getEstimatedCost(m))}</p>
+                                            <p className="text-sm font-black text-red-600">{getEffectiveCost(m) > 0 ? formatCurrency(getEffectiveCost(m)) : '—'}</p>
                                             <p className="text-[10px] text-slate-400">{new Date(m.startDate).toLocaleDateString('vi-VN')}</p>
                                         </div>
                                     </div>
@@ -434,7 +442,7 @@ const AssetProfile: React.FC = () => {
             {activeTab === 'costs' && (
                 <div className="space-y-4">
                     {/* Cost summary cards */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                         <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-100 dark:border-slate-800 shadow-sm">
                             <p className="text-[9px] text-slate-400 font-bold uppercase">Nguyên giá mua</p>
                             <p className="text-xl font-black text-slate-800 dark:text-white mt-1">{formatCurrency(asset.originalValue)}</p>
@@ -451,6 +459,10 @@ const AssetProfile: React.FC = () => {
                         <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-100 dark:border-slate-800 shadow-sm">
                             <p className="text-[9px] text-blue-400 font-bold uppercase">Chi phí bảo trì ĐK</p>
                             <p className="text-xl font-black text-blue-600 mt-1">{formatCurrency(costSummary.scheduledCost)}</p>
+                        </div>
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-100 dark:border-slate-800 shadow-sm">
+                            <p className="text-[9px] text-emerald-400 font-bold uppercase">Chi phí bảo hành</p>
+                            <p className="text-xl font-black text-emerald-600 mt-1">{formatCurrency(costSummary.warrantyCost)}</p>
                         </div>
                     </div>
 
@@ -495,20 +507,22 @@ const AssetProfile: React.FC = () => {
                                     <th className="text-left p-3 text-[10px] font-black text-slate-400 uppercase">Loại</th>
                                     <th className="text-left p-3 text-[10px] font-black text-slate-400 uppercase">Mô tả</th>
                                     <th className="text-left p-3 text-[10px] font-black text-slate-400 uppercase">Số HĐ</th>
-                                    <th className="text-right p-3 text-[10px] font-black text-slate-400 uppercase">Chi phí</th>
+                                    <th className="text-right p-3 text-[10px] font-black text-slate-400 uppercase">CP Dự kiến</th>
+                                    <th className="text-right p-3 text-[10px] font-black text-slate-400 uppercase">CP Thực tế</th>
                                 </tr></thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                     {maintenanceHistory.map(m => (
                                         <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                                             <td className="p-3 text-xs text-slate-500">{new Date(m.startDate).toLocaleDateString('vi-VN')}</td>
-                                            <td className="p-3"><span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${m.type === 'repair' ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'}`}>{TYPE_LABELS[m.type]}</span></td>
+                                            <td className="p-3"><span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${m.type === 'repair' ? 'bg-red-100 text-red-600' : m.type === 'warranty' ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>{TYPE_LABELS[m.type]}</span></td>
                                             <td className="p-3 text-xs text-slate-700 dark:text-slate-300">{m.description}</td>
                                             <td className="p-3 text-xs text-slate-400 font-mono">{m.invoiceNumber || '—'}</td>
-                                            <td className="p-3 text-right font-black text-red-600">{formatCurrency(m.cost)}</td>
+                                    <td className="p-3 text-right text-xs text-slate-500">{formatCurrency(getEstimatedCost(m))}</td>
+                                            <td className="p-3 text-right font-black text-red-600">{getEffectiveCost(m) > 0 ? formatCurrency(getEffectiveCost(m)) : '—'}</td>
                                         </tr>
                                     ))}
                                     <tr className="bg-slate-50 dark:bg-slate-800">
-                                        <td colSpan={4} className="p-3 text-xs font-black text-slate-600 dark:text-slate-300 text-right">TỔNG CỘNG</td>
+                                        <td colSpan={5} className="p-3 text-xs font-black text-slate-600 dark:text-slate-300 text-right">TỔNG CỘNG</td>
                                         <td className="p-3 text-right font-black text-red-600 text-base">{formatCurrency(costSummary.totalMaintenance)}</td>
                                     </tr>
                                 </tbody>
@@ -531,12 +545,18 @@ const AssetProfile: React.FC = () => {
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Loại</label>
                                     <select value={mForm.type} onChange={e => setMForm(f => ({ ...f, type: e.target.value as any }))} className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-orange-500">
-                                        <option value="repair">Sửa chữa</option><option value="scheduled">Bảo trì định kỳ</option><option value="inspection">Kiểm tra</option>
+                                        <option value="repair">Sửa chữa</option><option value="scheduled">Bảo trì định kỳ</option><option value="inspection">Kiểm tra</option><option value="warranty">Bảo hành</option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Chi phí (VNĐ)</label>
-                                    <input type="number" value={mForm.cost} onChange={e => setMForm(f => ({ ...f, cost: Number(e.target.value) }))} className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-orange-500" />
+                                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">CP Dự kiến (báo giá)</label>
+                                    <input type="number" value={mForm.estimatedCost} onChange={e => setMForm(f => ({ ...f, estimatedCost: Number(e.target.value) }))} className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-orange-500" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">CP Thực tế</label>
+                                    <input type="number" value={mForm.actualCost} onChange={e => setMForm(f => ({ ...f, actualCost: Number(e.target.value) }))} className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-orange-500" />
                                 </div>
                             </div>
                             <div>

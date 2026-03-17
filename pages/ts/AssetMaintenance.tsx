@@ -9,8 +9,12 @@ import {
 import { AssetMaintenance as MaintenanceType, MaintenanceAttachment, AssetStatus } from '../../types';
 import * as XLSX from 'xlsx';
 
-const TYPE_LABELS: Record<string, string> = { scheduled: 'Bảo trì định kỳ', repair: 'Sửa chữa', inspection: 'Kiểm tra' };
+const TYPE_LABELS: Record<string, string> = { scheduled: 'Bảo trì định kỳ', repair: 'Sửa chữa', inspection: 'Kiểm tra', warranty: 'Bảo hành' };
 const STATUS_LABELS: Record<string, string> = { planned: 'Lên kế hoạch', in_progress: 'Đang thực hiện', completed: 'Hoàn thành' };
+
+// Helper: lấy chi phí thực tế (ưu tiên actualCost, fallback cost)
+const getEffectiveCost = (m: MaintenanceType) => m.actualCost ?? m.cost ?? 0;
+const getEstimatedCost = (m: MaintenanceType) => m.estimatedCost ?? m.cost ?? 0;
 
 const AssetMaintenancePage: React.FC = () => {
     const { assets, assetMaintenances, users, user, addAssetMaintenance, updateAssetMaintenance } = useApp();
@@ -19,13 +23,13 @@ const AssetMaintenancePage: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'list' | 'create'>('list');
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState<'all' | 'planned' | 'in_progress' | 'completed'>('all');
-    const [filterType, setFilterType] = useState<'all' | 'scheduled' | 'repair' | 'inspection'>('all');
+    const [filterType, setFilterType] = useState<'all' | 'scheduled' | 'repair' | 'inspection' | 'warranty'>('all');
     const [viewDetail, setViewDetail] = useState<MaintenanceType | null>(null);
 
     // Create form state
     const [form, setForm] = useState({
-        assetId: '', type: 'repair' as 'scheduled' | 'repair' | 'inspection',
-        description: '', cost: 0, vendor: '', invoiceNumber: '',
+        assetId: '', type: 'repair' as 'scheduled' | 'repair' | 'inspection' | 'warranty',
+        description: '', estimatedCost: 0, actualCost: 0, vendor: '', invoiceNumber: '',
         startDate: new Date().toISOString().split('T')[0], endDate: '',
         status: 'in_progress' as 'planned' | 'in_progress' | 'completed', note: '',
     });
@@ -35,7 +39,7 @@ const AssetMaintenancePage: React.FC = () => {
 
     const resetForm = () => {
         setForm({
-            assetId: '', type: 'repair', description: '', cost: 0, vendor: '', invoiceNumber: '',
+            assetId: '', type: 'repair', description: '', estimatedCost: 0, actualCost: 0, vendor: '', invoiceNumber: '',
             startDate: new Date().toISOString().split('T')[0], endDate: '',
             status: 'in_progress', note: '',
         });
@@ -44,7 +48,7 @@ const AssetMaintenancePage: React.FC = () => {
 
     // Stats
     const stats = useMemo(() => {
-        const totalCost = assetMaintenances.reduce((sum, m) => sum + m.cost, 0);
+        const totalCost = assetMaintenances.reduce((sum, m) => sum + getEffectiveCost(m), 0);
         const inProgress = assetMaintenances.filter(m => m.status === 'in_progress').length;
         const completed = assetMaintenances.filter(m => m.status === 'completed').length;
         return { total: assetMaintenances.length, totalCost, inProgress, completed };
@@ -73,7 +77,7 @@ const AssetMaintenancePage: React.FC = () => {
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files) return;
-        Array.from(files).forEach(file => {
+        Array.from(files).forEach((file: File) => {
             const reader = new FileReader();
             reader.onload = () => {
                 const att: MaintenanceAttachment = {
@@ -97,10 +101,14 @@ const AssetMaintenancePage: React.FC = () => {
             toast.error('Lỗi', 'Vui lòng chọn tài sản và nhập mô tả');
             return;
         }
+        const estCost = Number(form.estimatedCost) || 0;
+        const actCost = Number(form.actualCost) || 0;
         const m: MaintenanceType = {
             id: `mt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
             assetId: form.assetId, type: form.type, description: form.description,
-            cost: Number(form.cost), vendor: form.vendor || undefined,
+            cost: actCost || estCost, // legacy: dùng actualCost nếu có, fallback estimatedCost
+            estimatedCost: estCost, actualCost: actCost,
+            vendor: form.vendor || undefined,
             invoiceNumber: form.invoiceNumber || undefined,
             startDate: form.startDate, endDate: form.endDate || undefined,
             status: form.status, performedBy: user.id, performedByName: user.name,
@@ -132,9 +140,11 @@ const AssetMaintenancePage: React.FC = () => {
                     const m: MaintenanceType = {
                         id: `mt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}-${imported}`,
                         assetId: asset.id,
-                        type: (row['Loại'] || row['type'] || 'repair').toLowerCase().includes('định kỳ') ? 'scheduled' : (row['Loại'] || row['type'] || '').toLowerCase().includes('kiểm tra') ? 'inspection' : 'repair',
+                        type: (() => { const t = (row['Loại'] || row['type'] || 'repair').toLowerCase(); if (t.includes('định kỳ')) return 'scheduled' as const; if (t.includes('kiểm tra')) return 'inspection' as const; if (t.includes('bảo hành')) return 'warranty' as const; return 'repair' as const; })(),
                         description: String(row['Mô tả'] || row['description'] || 'Bảo trì nhập từ Excel'),
-                        cost: Number(row['Chi phí'] || row['cost'] || 0),
+                        estimatedCost: Number(row['CP dự kiến'] || row['estimated_cost'] || row['Chi phí'] || row['cost'] || 0),
+                        actualCost: Number(row['CP thực tế'] || row['actual_cost'] || 0),
+                        cost: Number(row['CP thực tế'] || row['actual_cost'] || row['Chi phí'] || row['cost'] || 0),
                         vendor: String(row['Đơn vị'] || row['vendor'] || ''),
                         invoiceNumber: String(row['Số HĐ'] || row['invoice'] || ''),
                         startDate: row['Ngày'] || row['date'] || new Date().toISOString().split('T')[0],
@@ -245,7 +255,7 @@ const AssetMaintenancePage: React.FC = () => {
                             ))}
                         </div>
                         <div className="flex gap-2 flex-wrap">
-                            {(['all', 'scheduled', 'repair', 'inspection'] as const).map(t => (
+                            {(['all', 'scheduled', 'repair', 'inspection', 'warranty'] as const).map(t => (
                                 <button key={t} onClick={() => setFilterType(t)}
                                     className={`px-3 py-2 rounded-lg text-[10px] font-bold ${filterType === t ? 'bg-orange-100 dark:bg-orange-950/40 text-orange-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
                                     {t === 'all' ? 'Tất cả loại' : TYPE_LABELS[t]}
@@ -263,7 +273,8 @@ const AssetMaintenancePage: React.FC = () => {
                                         <th className="text-left p-4 text-[10px] font-black text-slate-400 uppercase">Tài sản</th>
                                         <th className="text-left p-4 text-[10px] font-black text-slate-400 uppercase">Loại</th>
                                         <th className="text-left p-4 text-[10px] font-black text-slate-400 uppercase">Mô tả</th>
-                                        <th className="text-right p-4 text-[10px] font-black text-slate-400 uppercase">Chi phí</th>
+                                        <th className="text-right p-4 text-[10px] font-black text-slate-400 uppercase">CP Dự kiến</th>
+                                        <th className="text-right p-4 text-[10px] font-black text-slate-400 uppercase">CP Thực tế</th>
                                         <th className="text-left p-4 text-[10px] font-black text-slate-400 uppercase">Đơn vị</th>
                                         <th className="text-left p-4 text-[10px] font-black text-slate-400 uppercase">Ngày</th>
                                         <th className="text-center p-4 text-[10px] font-black text-slate-400 uppercase">Trạng thái</th>
@@ -287,7 +298,7 @@ const AssetMaintenancePage: React.FC = () => {
                                                         <div className="font-bold text-slate-800 dark:text-white text-sm">{asset?.name || m.assetId}</div>
                                                     </td>
                                                     <td className="p-4">
-                                                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${m.type === 'repair' ? 'bg-red-100 text-red-600 dark:bg-red-950/40' : m.type === 'inspection' ? 'bg-blue-100 text-blue-600 dark:bg-blue-950/40' : 'bg-orange-100 text-orange-600 dark:bg-orange-950/40'}`}>
+                                                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${m.type === 'repair' ? 'bg-red-100 text-red-600 dark:bg-red-950/40' : m.type === 'inspection' ? 'bg-blue-100 text-blue-600 dark:bg-blue-950/40' : m.type === 'warranty' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40' : 'bg-orange-100 text-orange-600 dark:bg-orange-950/40'}`}>
                                                             {TYPE_LABELS[m.type]}
                                                         </span>
                                                     </td>
@@ -295,7 +306,8 @@ const AssetMaintenancePage: React.FC = () => {
                                                         <div className="text-sm text-slate-700 dark:text-slate-300 truncate">{m.description}</div>
                                                         {m.invoiceNumber && <div className="text-[9px] text-slate-400">HĐ: {m.invoiceNumber}</div>}
                                                     </td>
-                                                    <td className="p-4 text-right font-black text-red-600">{formatCurrency(m.cost)}</td>
+                                                    <td className="p-4 text-right text-xs text-slate-500">{formatCurrency(getEstimatedCost(m))}</td>
+                                                    <td className="p-4 text-right font-black text-red-600">{getEffectiveCost(m) > 0 ? formatCurrency(getEffectiveCost(m)) : '—'}</td>
                                                     <td className="p-4 text-xs text-slate-500">{m.vendor || '—'}</td>
                                                     <td className="p-4 text-xs text-slate-500">{new Date(m.startDate).toLocaleDateString('vi-VN')}</td>
                                                     <td className="p-4 text-center">
@@ -352,6 +364,7 @@ const AssetMaintenancePage: React.FC = () => {
                                         <option value="repair">Sửa chữa</option>
                                         <option value="scheduled">Bảo trì định kỳ</option>
                                         <option value="inspection">Kiểm tra</option>
+                                        <option value="warranty">Bảo hành</option>
                                     </select>
                                 </div>
                                 <div>
@@ -388,16 +401,21 @@ const AssetMaintenancePage: React.FC = () => {
                         <div className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Chi phí (VNĐ)</label>
-                                    <input type="number" value={form.cost} onChange={e => setForm(f => ({ ...f, cost: Number(e.target.value) }))}
-                                        className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500 font-bold" />
+                                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Chi phí dự kiến (báo giá)</label>
+                                    <input type="number" value={form.estimatedCost} onChange={e => setForm(f => ({ ...f, estimatedCost: Number(e.target.value) }))}
+                                        className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500 font-bold" placeholder="0" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Số hoá đơn</label>
-                                    <input type="text" value={form.invoiceNumber} onChange={e => setForm(f => ({ ...f, invoiceNumber: e.target.value }))}
-                                        placeholder="VD: HD-2026-001"
-                                        className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500 font-bold" />
+                                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Chi phí thực tế</label>
+                                    <input type="number" value={form.actualCost} onChange={e => setForm(f => ({ ...f, actualCost: Number(e.target.value) }))}
+                                        className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500 font-bold" placeholder="0" />
                                 </div>
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Số hoá đơn</label>
+                                <input type="text" value={form.invoiceNumber} onChange={e => setForm(f => ({ ...f, invoiceNumber: e.target.value }))}
+                                    placeholder="VD: HD-2026-001"
+                                    className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500 font-bold" />
                             </div>
                             <div>
                                 <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Đơn vị sửa chữa / Nhà cung cấp</label>
@@ -472,9 +490,13 @@ const AssetMaintenancePage: React.FC = () => {
                                         <p className="text-[9px] text-slate-400 font-bold uppercase">Loại</p>
                                         <p className="text-sm font-bold text-slate-800 dark:text-white">{TYPE_LABELS[viewDetail.type]}</p>
                                     </div>
+                                    <div className="bg-amber-50 dark:bg-amber-950/20 p-3 rounded-xl border border-amber-100 dark:border-amber-900/30">
+                                        <p className="text-[9px] text-amber-400 font-bold uppercase">CP Dự kiến</p>
+                                        <p className="text-sm font-black text-amber-600">{formatCurrency(getEstimatedCost(viewDetail))}</p>
+                                    </div>
                                     <div className="bg-red-50 dark:bg-red-950/20 p-3 rounded-xl border border-red-100 dark:border-red-900/30">
-                                        <p className="text-[9px] text-red-400 font-bold uppercase">Chi phí</p>
-                                        <p className="text-sm font-black text-red-600">{formatCurrency(viewDetail.cost)}</p>
+                                        <p className="text-[9px] text-red-400 font-bold uppercase">CP Thực tế</p>
+                                        <p className="text-sm font-black text-red-600">{getEffectiveCost(viewDetail) > 0 ? formatCurrency(getEffectiveCost(viewDetail)) : '—'}</p>
                                     </div>
                                     <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded-xl">
                                         <p className="text-[9px] text-slate-400 font-bold uppercase">Trạng thái</p>

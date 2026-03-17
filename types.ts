@@ -601,11 +601,13 @@ export interface MaintenanceAttachment {
 export interface AssetMaintenance {
   id: string;
   assetId: string;
-  type: 'scheduled' | 'repair' | 'inspection'; // Bảo trì định kỳ / Sửa chữa / Kiểm tra
+  type: 'scheduled' | 'repair' | 'inspection' | 'warranty'; // Bảo trì định kỳ / Sửa chữa / Kiểm tra / Bảo hành
   description: string;
-  cost: number;
-  vendor?: string;             // Đơn vị sửa chữa
-  invoiceNumber?: string;      // Số hoá đơn
+  cost: number;                  // Legacy — tổng chi phí (dùng actualCost nếu có, fallback estimatedCost)
+  estimatedCost?: number;        // Chi phí dự kiến (theo báo giá)
+  actualCost?: number;           // Chi phí thực tế
+  vendor?: string;               // Đơn vị sửa chữa
+  invoiceNumber?: string;        // Số hoá đơn
   startDate: string;
   endDate?: string;
   status: 'planned' | 'in_progress' | 'completed';
