@@ -117,6 +117,7 @@ interface AppContextType {
   addAssetAssignment: (a: AssetAssignment) => void;
   addAssetMaintenance: (m: AssetMaintenance) => void;
   updateAssetMaintenance: (m: AssetMaintenance) => void;
+  isModuleAdmin: (moduleKey: string) => boolean;
   isLoading: boolean;
   isRefreshing: boolean;
   connectionError: string | null;
@@ -234,7 +235,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ]);
 
         if (usersData && usersData.length > 0) {
-          const mappedUsers = usersData.map((u: any) => ({ ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined }));
+          const mappedUsers = usersData.map((u: any) => ({ ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined }));
           setUsers(mappedUsers);
           const currentInList = mappedUsers.find((u: any) => u.email === user.email);
           if (currentInList) setUser(currentInList);
@@ -459,7 +460,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       supabase.channel('public:users').on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, payload => {
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const u = payload.new as any;
-          const mappedUser = { ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined };
+          const mappedUser = { ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined };
           setUsers(prev => {
             const exists = prev.find(user => user.id === mappedUser.id);
             if (exists) return prev.map(user => user.id === mappedUser.id ? mappedUser : user);
@@ -605,7 +606,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: data.id, name: data.name, email: data.email, username: data.username,
           phone: data.phone, role: data.role, avatar: data.avatar,
           assigned_warehouse_id: data.assignedWarehouseId,
-          allowed_modules: data.allowedModules || null
+          allowed_modules: data.allowedModules || null,
+          admin_modules: data.adminModules || null
         };
       } else if (table === 'employees') {
         payload = {
@@ -730,7 +732,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const { data: userData, error: userError } = await supabase.from('users').select('*').eq('email', loginEmail).single();
         if (userError || !userData) throw new Error('Lỗi lấy thông tin người dùng');
 
-        const mappedUser = { ...userData, assignedWarehouseId: userData.assigned_warehouse_id, allowedModules: userData.allowed_modules || undefined };
+        const mappedUser = { ...userData, assignedWarehouseId: userData.assigned_warehouse_id, allowedModules: userData.allowed_modules || undefined, adminModules: userData.admin_modules || undefined };
         setUser(mappedUser);
         const { avatar, ...userForStorage } = mappedUser;
         localStorage.setItem('khoviet_user', JSON.stringify(userForStorage));
@@ -1399,6 +1401,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // Helper: kiểm tra user có phải QTV ứng dụng của module không
+  const isModuleAdmin = (moduleKey: string): boolean => {
+    if (user.role === Role.ADMIN) return true;
+    return (user.adminModules || []).includes(moduleKey);
+  };
+
   return (
     <AppContext.Provider value={{
       user, users, appSettings, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
@@ -1416,6 +1424,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       assets, assetCategories, assetAssignments, assetMaintenances,
       addAsset, updateAsset, removeAsset, addAssetCategory, updateAssetCategory, removeAssetCategory,
       addAssetAssignment, addAssetMaintenance, updateAssetMaintenance,
+      isModuleAdmin,
       login, logout, isLoading, isRefreshing, connectionError
     }}>
       {children}

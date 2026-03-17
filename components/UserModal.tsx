@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, CheckCircle2, XCircle, Crown } from 'lucide-react';
 import { Role, User, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
@@ -30,6 +30,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     role: Role.EMPLOYEE,
     assignedWarehouseId: '',
     allowedModules: ALL_MODULES.map(m => m.key),
+    adminModules: [],
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -38,7 +39,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
 
   useEffect(() => {
     if (userToEdit) {
-      setFormData({ ...userToEdit, password: '', allowedModules: userToEdit.allowedModules || ALL_MODULES.map(m => m.key) });
+      setFormData({ ...userToEdit, password: '', allowedModules: userToEdit.allowedModules || ALL_MODULES.map(m => m.key), adminModules: userToEdit.adminModules || [] });
     } else {
       setFormData({
         name: '',
@@ -49,6 +50,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
         role: Role.EMPLOYEE,
         assignedWarehouseId: '',
         allowedModules: ALL_MODULES.map(m => m.key),
+        adminModules: [],
       });
     }
     setErrors({});
@@ -131,6 +133,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
         avatar: formData.avatar || `https://i.pravatar.cc/150?u=${formData.email}`,
         assignedWarehouseId: formData.assignedWarehouseId || undefined,
         allowedModules: formData.role === Role.ADMIN ? ALL_MODULES.map(m => m.key) : (formData.allowedModules || []),
+        adminModules: formData.role === Role.ADMIN ? [] : (formData.adminModules || []),
       };
 
       onSave(finalUser);
@@ -333,6 +336,50 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
               </div>
             )}
           </div>
+
+          {/* App Admin Permissions — only for non-ADMIN users */}
+          {formData.role !== Role.ADMIN && (
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-amber-600 uppercase flex items-center">
+                <Crown size={12} className="mr-1" /> Quản trị viên ứng dụng
+              </label>
+              <p className="text-[9px] text-slate-400 italic -mt-1">QTV ứng dụng có quyền chỉnh sửa toàn bộ dữ liệu trong module được chỉ định.</p>
+              <div className="grid grid-cols-2 gap-2">
+                {ALL_MODULES.map(mod => {
+                  const ModIcon = mod.icon;
+                  const isChecked = (formData.adminModules || []).includes(mod.key);
+                  const isModuleAllowed = (formData.allowedModules || []).includes(mod.key);
+                  return (
+                    <label
+                      key={mod.key}
+                      className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                        !isModuleAllowed ? 'opacity-40 cursor-not-allowed bg-slate-50 border-slate-200' :
+                        isChecked ? 'bg-amber-50 border-amber-300 text-amber-700 shadow-sm dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-400' : 'bg-slate-50 border-slate-200 text-slate-400'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        disabled={!isModuleAllowed}
+                        onChange={(e) => {
+                          const modules = formData.adminModules || [];
+                          if (e.target.checked) {
+                            setFormData({ ...formData, adminModules: [...modules, mod.key] });
+                          } else {
+                            setFormData({ ...formData, adminModules: modules.filter(m => m !== mod.key) });
+                          }
+                        }}
+                        className="w-4 h-4 rounded accent-amber-600"
+                      />
+                      <Crown size={12} />
+                      <ModIcon size={14} />
+                      <span className="text-xs font-bold">QTV {mod.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="pt-4 flex gap-3">
             <button

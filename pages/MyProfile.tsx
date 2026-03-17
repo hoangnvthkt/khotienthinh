@@ -4,8 +4,9 @@ import { Employee, AssetStatus, Asset } from '../types';
 import {
     User as UserIcon, Briefcase, Phone, Calendar, MapPin, Building,
     Heart, Landmark, Mail, Shield, Clock, Award, ChevronRight,
-    Settings, Package, FileText, Hash
+    Settings, Package, FileText, Hash, Edit3, Save, X, Check
 } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 type TabKey = 'personal' | 'work' | 'contact' | 'assets';
 
@@ -13,10 +14,13 @@ const MyProfile: React.FC = () => {
     const {
         user, users, employees, hrmAreas, hrmOffices, hrmEmployeeTypes,
         hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
-        orgUnits, assets, assetAssignments, assetCategories
+        orgUnits, assets, assetAssignments, assetCategories,
+        updateEmployee, updateUser,
     } = useApp();
+    const toast = useToast();
 
     const [activeTab, setActiveTab] = useState<TabKey>('personal');
+    const [isEditing, setIsEditing] = useState(false);
 
     // Find the employee record linked to the current user
     const employee = useMemo(() => {
@@ -24,6 +28,55 @@ const MyProfile: React.FC = () => {
     }, [employees, user.id]);
 
     const linkedUser = user;
+
+    // Editable form state
+    const [editForm, setEditForm] = useState({
+        fullName: '',
+        gender: '' as 'Nam' | 'Nữ' | 'Khác',
+        dateOfBirth: '',
+        maritalStatus: '',
+        phone: '',
+    });
+
+    const startEditing = () => {
+        setEditForm({
+            fullName: employee?.fullName || linkedUser.name || '',
+            gender: (employee?.gender || 'Nam') as 'Nam' | 'Nữ' | 'Khác',
+            dateOfBirth: employee?.dateOfBirth || '',
+            maritalStatus: employee?.maritalStatus || '',
+            phone: employee?.phone || linkedUser.phone || '',
+        });
+        setIsEditing(true);
+    };
+
+    const cancelEditing = () => {
+        setIsEditing(false);
+    };
+
+    const saveEditing = () => {
+        // Update employee record
+        if (employee) {
+            updateEmployee({
+                ...employee,
+                fullName: editForm.fullName,
+                gender: editForm.gender,
+                dateOfBirth: editForm.dateOfBirth,
+                maritalStatus: editForm.maritalStatus,
+                phone: editForm.phone,
+                updatedAt: new Date().toISOString(),
+            });
+        }
+        // Sync name & phone to User record
+        if (editForm.fullName !== linkedUser.name || editForm.phone !== (linkedUser.phone || '')) {
+            updateUser({
+                ...linkedUser,
+                name: editForm.fullName,
+                phone: editForm.phone,
+            });
+        }
+        setIsEditing(false);
+        toast.success('Đã cập nhật thông tin cá nhân!');
+    };
 
     // Lookup helpers
     const area = hrmAreas.find(a => a.id === employee?.areaId);
@@ -65,6 +118,36 @@ const MyProfile: React.FC = () => {
             ) : (
                 <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{value || <span className="text-slate-300 dark:text-slate-600 italic">Chưa cập nhật</span>}</span>
             )}
+        </div>
+    );
+
+    const EditRow: React.FC<{
+        label: string; icon?: React.ReactNode;
+        type?: 'text' | 'date' | 'select';
+        value: string; onChange: (v: string) => void;
+        options?: { value: string; label: string }[];
+    }> = ({ label, icon, type = 'text', value, onChange, options }) => (
+        <div className="flex items-center py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0 -mx-2 px-2 rounded-lg">
+            {icon && <span className="text-indigo-400 mr-3 shrink-0">{icon}</span>}
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 w-40 shrink-0">{label}</span>
+            <div className="flex-1">
+                {type === 'select' && options ? (
+                    <select
+                        value={value}
+                        onChange={e => onChange(e.target.value)}
+                        className="w-full p-2 border border-indigo-200 rounded-lg text-sm font-semibold bg-white dark:bg-slate-800 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-300"
+                    >
+                        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                ) : (
+                    <input
+                        type={type}
+                        value={value}
+                        onChange={e => onChange(e.target.value)}
+                        className="w-full p-2 border border-indigo-200 rounded-lg text-sm font-semibold bg-white dark:bg-slate-800 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-300"
+                    />
+                )}
+            </div>
         </div>
     );
 
@@ -160,7 +243,7 @@ const MyProfile: React.FC = () => {
                     {tabs.map(tab => (
                         <button
                             key={tab.key}
-                            onClick={() => setActiveTab(tab.key)}
+                            onClick={() => { setActiveTab(tab.key); setIsEditing(false); }}
                             className={`flex items-center gap-2 px-5 py-4 text-xs font-bold uppercase tracking-wider transition border-b-2 -mb-px ${activeTab === tab.key
                                 ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
                                 : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
@@ -180,12 +263,48 @@ const MyProfile: React.FC = () => {
                     {/* === CÁ NHÂN === */}
                     {activeTab === 'personal' && (
                         <div>
-                            <InfoRow icon={<UserIcon size={14} />} label="Họ & Tên" value={employee?.fullName || linkedUser.name} />
-                            <InfoRow icon={<Heart size={14} />} label="Giới tính" value={employee?.gender} />
-                            <InfoRow icon={<Calendar size={14} />} label="Ngày sinh" value={formatDate(employee?.dateOfBirth)} />
-                            <InfoRow icon={<Heart size={14} />} label="Tình trạng HN" value={employee?.maritalStatus} />
-                            <InfoRow icon={<Award size={14} />} label="Chức danh" value={employee?.title} />
-                            <InfoRow icon={<Settings size={14} />} label="Tài khoản" value={`${linkedUser.username} (${linkedUser.email})`} />
+                            {/* Edit/Save buttons */}
+                            <div className="flex justify-end mb-2 gap-2">
+                                {!isEditing ? (
+                                    <button onClick={startEditing} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100 transition dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-900/50">
+                                        <Edit3 size={12} /> Sửa thông tin
+                                    </button>
+                                ) : (
+                                    <>
+                                        <button onClick={cancelEditing} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-200 transition">
+                                            <X size={12} /> Hủy
+                                        </button>
+                                        <button onClick={saveEditing} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600 transition shadow-sm">
+                                            <Check size={12} /> Lưu
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+
+                            {isEditing ? (
+                                <>
+                                    <EditRow icon={<UserIcon size={14} />} label="Họ & Tên" value={editForm.fullName} onChange={v => setEditForm({...editForm, fullName: v})} />
+                                    <EditRow icon={<Heart size={14} />} label="Giới tính" type="select" value={editForm.gender} onChange={v => setEditForm({...editForm, gender: v as any})}
+                                        options={[{ value: 'Nam', label: 'Nam' }, { value: 'Nữ', label: 'Nữ' }, { value: 'Khác', label: 'Khác' }]} />
+                                    <EditRow icon={<Calendar size={14} />} label="Ngày sinh" type="date" value={editForm.dateOfBirth} onChange={v => setEditForm({...editForm, dateOfBirth: v})} />
+                                    <EditRow icon={<Heart size={14} />} label="Tình trạng HN" type="select" value={editForm.maritalStatus} onChange={v => setEditForm({...editForm, maritalStatus: v})}
+                                        options={[{ value: '', label: 'Chưa cập nhật' }, { value: 'Độc thân', label: 'Độc thân' }, { value: 'Đã kết hôn', label: 'Đã kết hôn' }, { value: 'Ly hôn', label: 'Ly hôn' }]} />
+                                    <EditRow icon={<Phone size={14} />} label="Số điện thoại" value={editForm.phone} onChange={v => setEditForm({...editForm, phone: v})} />
+                                    {/* Read-only fields */}
+                                    <InfoRow icon={<Award size={14} />} label="Chức danh" value={employee?.title} />
+                                    <InfoRow icon={<Settings size={14} />} label="Tài khoản" value={`${linkedUser.username} (${linkedUser.email})`} />
+                                </>
+                            ) : (
+                                <>
+                                    <InfoRow icon={<UserIcon size={14} />} label="Họ & Tên" value={employee?.fullName || linkedUser.name} />
+                                    <InfoRow icon={<Heart size={14} />} label="Giới tính" value={employee?.gender} />
+                                    <InfoRow icon={<Calendar size={14} />} label="Ngày sinh" value={formatDate(employee?.dateOfBirth)} />
+                                    <InfoRow icon={<Heart size={14} />} label="Tình trạng HN" value={employee?.maritalStatus} />
+                                    <InfoRow icon={<Phone size={14} />} label="Số điện thoại" value={employee?.phone || linkedUser.phone} />
+                                    <InfoRow icon={<Award size={14} />} label="Chức danh" value={employee?.title} />
+                                    <InfoRow icon={<Settings size={14} />} label="Tài khoản" value={`${linkedUser.username} (${linkedUser.email})`} />
+                                </>
+                            )}
                             {!employee && (
                                 <div className="mt-6 p-4 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800">
                                     <p className="text-xs font-bold text-amber-600 dark:text-amber-400">

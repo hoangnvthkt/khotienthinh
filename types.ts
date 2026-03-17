@@ -43,6 +43,7 @@ export interface User {
   avatar?: string;
   assignedWarehouseId?: string; // ID kho được giao quản lý (null = Toàn quyền)
   allowedModules?: string[]; // Danh sách module được phép sử dụng (VD: ['WMS', 'TS'])
+  adminModules?: string[]; // Danh sách module mà user là Quản trị viên ứng dụng
 }
 
 export interface Warehouse {
