@@ -1,14 +1,16 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import {
     Search, Plus, Filter, Trash2, Edit3, MoreHorizontal, QrCode,
     Landmark, Tag, Calendar, DollarSign, MapPin, User, X, Check,
-    AlertTriangle, CheckCircle, Wrench, Ban, Package, Shield
+    AlertTriangle, CheckCircle, Wrench, Ban, Package, Shield, XCircle, FileWarning,
+    Upload, Download, FileSpreadsheet, Table2, CheckCircle2, Loader2
 } from 'lucide-react';
 import { Asset, AssetStatus, ASSET_STATUS_LABELS, ASSET_CATEGORY_LABELS, AssetCategoryType } from '../../types';
 import ScannerModal from '../../components/ScannerModal';
+import * as XLSX from 'xlsx';
 
 const AssetCatalog: React.FC = () => {
     const navigate = useNavigate();
@@ -26,7 +28,16 @@ const AssetCatalog: React.FC = () => {
     const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
     const [detailAsset, setDetailAsset] = useState<Asset | null>(null);
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+    const [disposeConfirm, setDisposeConfirm] = useState<Asset | null>(null);
+    const [disposeReason, setDisposeReason] = useState('');
     const [isScannerOpen, setScannerOpen] = useState(false);
+
+    // Excel Import state
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [importRows, setImportRows] = useState<Array<Record<string, any>>>([]);
+    const [importErrors, setImportErrors] = useState<Record<number, string>>({});
+    const [importing, setImporting] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Form state
     const [form, setForm] = useState({
@@ -102,8 +113,162 @@ const AssetCatalog: React.FC = () => {
         toast.success('Đã xóa', 'Tài sản đã được xóa khỏi danh mục');
     };
 
+    const handleDispose = () => {
+        if (!disposeConfirm) return;
+        updateAsset({
+            ...disposeConfirm,
+            status: AssetStatus.DISPOSED,
+            assignedToUserId: undefined,
+            assignedToName: undefined,
+            assignedDate: undefined,
+            note: `${disposeConfirm.note ? disposeConfirm.note + '\n' : ''}[XUẤT HUỶ ${new Date().toLocaleDateString('vi-VN')}] ${disposeReason}`.trim(),
+            updatedAt: new Date().toISOString(),
+        });
+        toast.success('Xuất huỷ thành công', `Tài sản ${disposeConfirm.name} đã được xuất huỷ. Lịch sử vẫn được lưu lại.`);
+        setDisposeConfirm(null);
+        setDisposeReason('');
+    };
+
     const handleScanResult = (code: string) => {
         setSearchTerm(code);
+    };
+
+    // ========== EXCEL IMPORT ==========
+    const EXCEL_COLUMNS = [
+        'Mã TS', 'Tên tài sản', 'Loại tài sản', 'Nhãn hiệu', 'Model',
+        'Số Serial', 'Nguyên giá', 'Ngày mua (DD/MM/YYYY)', 'Khấu hao (năm)',
+        'Bảo hành (tháng)', 'Giá trị thanh lý', 'Kho', 'Vị trí', 'Ghi chú',
+    ];
+
+    const downloadTemplate = () => {
+        const ws = XLSX.utils.aoa_to_sheet([
+            EXCEL_COLUMNS,
+            ['TS-001', 'Máy xúc CAT 320D', 'Máy móc', 'CAT', '320D', 'SN12345', '500000000', '17/03/2026', '10', '24', '50000000', '', '', ''],
+        ]);
+        // column widths
+        ws['!cols'] = EXCEL_COLUMNS.map(() => ({ wch: 18 }));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Mẫu nhập tài sản');
+        XLSX.writeFile(wb, 'Mau_nhap_tai_san.xlsx');
+        toast.success('Tải mẫu', 'File mẫu Excel đã được tải về');
+    };
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+                const wb = XLSX.read(data, { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const jsonRows: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+                // validate & map
+                const errors: Record<number, string> = {};
+                const mapped = jsonRows.map((row, i) => {
+                    const errs: string[] = [];
+                    const code = String(row['Mã TS'] || '').trim();
+                    const name = String(row['Tên tài sản'] || '').trim();
+                    const catName = String(row['Loại tài sản'] || '').trim();
+                    const originalValue = Number(row['Nguyên giá']) || 0;
+
+                    if (!code) errs.push('Thiếu mã TS');
+                    if (!name) errs.push('Thiếu tên');
+                    if (originalValue <= 0) errs.push('Nguyên giá phải > 0');
+                    // Check duplicate code in existing assets
+                    if (code && assets.some(a => a.code === code)) errs.push('Mã đã tồn tại');
+
+                    // Parse date DD/MM/YYYY
+                    let purchaseDate = new Date().toISOString().split('T')[0];
+                    const rawDate = String(row['Ngày mua (DD/MM/YYYY)'] || '').trim();
+                    if (rawDate) {
+                        const parts = rawDate.split('/');
+                        if (parts.length === 3) {
+                            purchaseDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                        } else {
+                            // try parsing as Excel serial number or ISO date
+                            const d = new Date(rawDate);
+                            if (!isNaN(d.getTime())) purchaseDate = d.toISOString().split('T')[0];
+                        }
+                    }
+
+                    // Find category
+                    const cat = assetCategories.find(c => c.name.toLowerCase() === catName.toLowerCase());
+                    if (catName && !cat) errs.push(`Loại "${catName}" không tồn tại`);
+
+                    if (errs.length > 0) errors[i] = errs.join('; ');
+
+                    return {
+                        _rowIndex: i,
+                        code,
+                        name,
+                        categoryId: cat?.id || assetCategories[0]?.id || '',
+                        categoryName: catName || assetCategories[0]?.name || '',
+                        brand: String(row['Nhãn hiệu'] || '').trim(),
+                        model: String(row['Model'] || '').trim(),
+                        serialNumber: String(row['Số Serial'] || '').trim(),
+                        originalValue,
+                        purchaseDate,
+                        depreciationYears: Number(row['Khấu hao (năm)']) || 5,
+                        warrantyMonths: Number(row['Bảo hành (tháng)']) || 0,
+                        residualValue: Number(row['Giá trị thanh lý']) || 0,
+                        warehouseId: (() => {
+                            const wName = String(row['Kho'] || '').trim();
+                            return warehouses.find(w => w.name.toLowerCase() === wName.toLowerCase())?.id || '';
+                        })(),
+                        locationNote: String(row['Vị trí'] || '').trim(),
+                        note: String(row['Ghi chú'] || '').trim(),
+                    };
+                });
+
+                setImportRows(mapped);
+                setImportErrors(errors);
+                setShowImportModal(true);
+            } catch (err) {
+                toast.error('Lỗi đọc file', 'File Excel không hợp lệ. Vui lòng dùng file mẫu.');
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        // Reset input so same file can be re-selected
+        e.target.value = '';
+    };
+
+    const handleBulkImport = () => {
+        const validRows = importRows.filter((_, i) => !importErrors[i]);
+        if (validRows.length === 0) {
+            toast.error('Không có dữ liệu hợp lệ', 'Vui lòng kiểm tra lại file Excel');
+            return;
+        }
+        setImporting(true);
+        const now = new Date().toISOString();
+        validRows.forEach(row => {
+            addAsset({
+                id: `ast-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                code: row.code,
+                name: row.name,
+                categoryId: row.categoryId,
+                brand: row.brand,
+                model: row.model,
+                serialNumber: row.serialNumber,
+                originalValue: row.originalValue,
+                purchaseDate: row.purchaseDate,
+                depreciationYears: row.depreciationYears,
+                warrantyMonths: row.warrantyMonths,
+                residualValue: row.residualValue,
+                warehouseId: row.warehouseId,
+                locationNote: row.locationNote,
+                note: row.note,
+                status: AssetStatus.AVAILABLE,
+                createdAt: now,
+                updatedAt: now,
+            });
+        });
+        toast.success('Nhập thành công', `Đã nhập ${validRows.length} tài sản từ file Excel`);
+        setShowImportModal(false);
+        setImportRows([]);
+        setImportErrors({});
+        setImporting(false);
     };
 
     const filteredAssets = useMemo(() => {
@@ -170,10 +335,12 @@ const AssetCatalog: React.FC = () => {
         return { hasWarranty: true, percentRemaining, daysRemaining, expiryDate, label, barColor, textColor };
     };
 
-    const totalValue = assets.reduce((sum, a) => sum + a.originalValue, 0);
-    const totalRemaining = assets.reduce((sum, a) => sum + getDepreciation(a).remaining, 0);
-    const inUseCount = assets.filter(a => a.status === AssetStatus.IN_USE).length;
-    const availableCount = assets.filter(a => a.status === AssetStatus.AVAILABLE).length;
+    const activeAssets = assets.filter(a => a.status !== AssetStatus.DISPOSED);
+    const totalValue = activeAssets.reduce((sum, a) => sum + a.originalValue, 0);
+    const totalRemaining = activeAssets.reduce((sum, a) => sum + getDepreciation(a).remaining, 0);
+    const inUseCount = activeAssets.filter(a => a.status === AssetStatus.IN_USE).length;
+    const availableCount = activeAssets.filter(a => a.status === AssetStatus.AVAILABLE).length;
+    const disposedCount = assets.filter(a => a.status === AssetStatus.DISPOSED).length;
 
     const getCategoryName = (catId: string) => assetCategories.find(c => c.id === catId)?.name || 'Chưa phân loại';
 
@@ -193,6 +360,13 @@ const AssetCatalog: React.FC = () => {
                     <button onClick={() => setScannerOpen(true)} className="flex items-center px-4 py-2 bg-slate-800 dark:bg-slate-700 text-white rounded-xl hover:bg-slate-700 transition text-[10px] font-black uppercase tracking-widest">
                         <QrCode className="w-4 h-4 mr-2" /> Quét QR
                     </button>
+                    <button onClick={downloadTemplate} className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 transition text-[10px] font-black uppercase tracking-widest">
+                        <Download className="w-4 h-4 mr-2" /> Tải mẫu
+                    </button>
+                    <button onClick={() => fileInputRef.current?.click()} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-500 transition text-[10px] font-black uppercase tracking-widest">
+                        <Upload className="w-4 h-4 mr-2" /> Nhập Excel
+                    </button>
+                    <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileUpload} />
                     <button onClick={openAdd} className="flex items-center px-6 py-2 bg-gradient-to-r from-rose-500 to-pink-600 text-white rounded-xl hover:shadow-lg transition text-[10px] font-black uppercase tracking-widest shadow-lg shadow-rose-500/20">
                         <Plus className="w-4 h-4 mr-2" /> Thêm tài sản
                     </button>
@@ -205,8 +379,9 @@ const AssetCatalog: React.FC = () => {
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-950/30 flex items-center justify-center"><Landmark size={18} className="text-rose-500" /></div>
                         <div>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase">Tổng tài sản</p>
-                            <p className="text-xl font-black text-slate-800 dark:text-white">{assets.length}</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase">Tồn kho</p>
+                            <p className="text-xl font-black text-slate-800 dark:text-white">{activeAssets.length}</p>
+                            {disposedCount > 0 && <div className="text-[9px] text-slate-400 font-bold">{disposedCount} đã xuất huỷ</div>}
                         </div>
                     </div>
                 </div>
@@ -310,14 +485,21 @@ const AssetCatalog: React.FC = () => {
                                         <td className="p-4 text-xs text-slate-500">{asset.assignedToName || <span className="text-slate-300 italic">—</span>}</td>
                                         <td className="p-4 text-right">
                                             <div className="flex items-center justify-end gap-1">
-                                                <button onClick={() => openEdit(asset)} className="p-2 text-slate-300 hover:text-blue-600 transition-colors"><Edit3 size={14} /></button>
+                                                {asset.status !== AssetStatus.DISPOSED && (
+                                                    <button onClick={() => openEdit(asset)} className="p-2 text-slate-300 hover:text-blue-600 transition-colors" title="Sửa"><Edit3 size={14} /></button>
+                                                )}
+                                                {asset.status !== AssetStatus.DISPOSED && asset.status !== AssetStatus.IN_USE && (
+                                                    <button onClick={() => { setDisposeConfirm(asset); setDisposeReason(''); }} className="p-2 text-slate-300 hover:text-orange-600 transition-colors" title="Xuất huỷ">
+                                                        <XCircle size={14} />
+                                                    </button>
+                                                )}
                                                 {deleteConfirm === asset.id ? (
                                                     <div className="flex gap-1">
                                                         <button onClick={() => handleDelete(asset.id)} className="p-1.5 bg-red-500 text-white rounded-lg text-[9px] font-bold">Xóa</button>
                                                         <button onClick={() => setDeleteConfirm(null)} className="p-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg text-[9px] font-bold">Hủy</button>
                                                     </div>
                                                 ) : (
-                                                    <button onClick={() => setDeleteConfirm(asset.id)} className="p-2 text-slate-300 hover:text-red-600 transition-colors"><Trash2 size={14} /></button>
+                                                    <button onClick={() => setDeleteConfirm(asset.id)} className="p-2 text-slate-300 hover:text-red-600 transition-colors" title="Xoá vĩnh viễn"><Trash2 size={14} /></button>
                                                 )}
                                             </div>
                                         </td>
@@ -602,6 +784,167 @@ const AssetCatalog: React.FC = () => {
                             <button onClick={() => { setDetailAsset(null); openEdit(detailAsset); }}
                                 className="px-4 py-2 rounded-xl bg-blue-500 text-white font-bold text-xs hover:bg-blue-600 transition-colors flex items-center gap-2">
                                 <Edit3 size={13} /> Chỉnh sửa
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ===================== EXCEL IMPORT PREVIEW MODAL ===================== */}
+            {showImportModal && (
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowImportModal(false)}>
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        {/* Header */}
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-950/30 flex items-center justify-center">
+                                    <FileSpreadsheet size={20} className="text-blue-600" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-black text-slate-800 dark:text-white">Xem trước dữ liệu nhập</h3>
+                                    <p className="text-xs text-slate-400">
+                                        {importRows.length} dòng •{' '}
+                                        <span className="text-emerald-500 font-bold">{importRows.length - Object.keys(importErrors).length} hợp lệ</span>
+                                        {Object.keys(importErrors).length > 0 && (
+                                            <> • <span className="text-red-500 font-bold">{Object.keys(importErrors).length} lỗi</span></>
+                                        )}
+                                    </p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowImportModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                        </div>
+
+                        {/* Table */}
+                        <div className="flex-1 overflow-auto p-4">
+                            <table className="w-full text-left border-collapse min-w-[900px]">
+                                <thead>
+                                    <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-700 text-slate-500 text-[9px] uppercase font-black tracking-widest sticky top-0">
+                                        <th className="p-3 w-8">#</th>
+                                        <th className="p-3">Mã TS</th>
+                                        <th className="p-3">Tên tài sản</th>
+                                        <th className="p-3">Loại</th>
+                                        <th className="p-3 text-right">Nguyên giá</th>
+                                        <th className="p-3">Ngày mua</th>
+                                        <th className="p-3">Nhãn hiệu</th>
+                                        <th className="p-3">KH (năm)</th>
+                                        <th className="p-3">BH (tháng)</th>
+                                        <th className="p-3">Trạng thái</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                                    {importRows.map((row, i) => {
+                                        const hasError = !!importErrors[i];
+                                        return (
+                                            <tr key={i} className={hasError ? 'bg-red-50/50 dark:bg-red-950/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}>
+                                                <td className="p-3 text-slate-400 font-mono text-[10px]">{i + 1}</td>
+                                                <td className="p-3 font-mono font-bold text-slate-600 dark:text-slate-300">{row.code || '—'}</td>
+                                                <td className="p-3 font-bold text-slate-800 dark:text-white max-w-[200px] truncate">{row.name || '—'}</td>
+                                                <td className="p-3 text-slate-500">{row.categoryName || '—'}</td>
+                                                <td className="p-3 text-right font-bold text-slate-800 dark:text-white">{row.originalValue > 0 ? row.originalValue.toLocaleString('vi-VN') + 'đ' : '—'}</td>
+                                                <td className="p-3 text-slate-500">{row.purchaseDate ? new Date(row.purchaseDate).toLocaleDateString('vi-VN') : '—'}</td>
+                                                <td className="p-3 text-slate-500">{row.brand || '—'}</td>
+                                                <td className="p-3 text-slate-500 text-center">{row.depreciationYears}</td>
+                                                <td className="p-3 text-slate-500 text-center">{row.warrantyMonths}</td>
+                                                <td className="p-3">
+                                                    {hasError ? (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black text-red-600 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800" title={importErrors[i]}>
+                                                            <XCircle size={10} /> {importErrors[i]}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800">
+                                                            <CheckCircle2 size={10} /> OK
+                                                        </span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                            {importRows.length === 0 && (
+                                <div className="p-16 text-center">
+                                    <FileSpreadsheet size={48} className="mx-auto text-slate-200 dark:text-slate-700 mb-3" />
+                                    <p className="text-slate-400 font-bold">Không có dữ liệu</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
+                            <div className="text-xs text-slate-400">
+                                Chỉ nhập <strong className="text-emerald-600">{importRows.length - Object.keys(importErrors).length}</strong> dòng hợp lệ — bỏ qua {Object.keys(importErrors).length} dòng lỗi
+                            </div>
+                            <div className="flex gap-3">
+                                <button onClick={() => setShowImportModal(false)} className="px-6 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Huỷ</button>
+                                <button onClick={handleBulkImport} disabled={importing || importRows.length - Object.keys(importErrors).length === 0}
+                                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold text-sm shadow-lg shadow-blue-500/20 hover:shadow-xl transition-all disabled:opacity-50 flex items-center gap-2">
+                                    {importing ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                                    Nhập {importRows.length - Object.keys(importErrors).length} tài sản
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ===================== DISPOSE CONFIRM MODAL ===================== */}
+            {disposeConfirm && (
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setDisposeConfirm(null)}>
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-950/30 flex items-center justify-center">
+                                <FileWarning size={20} className="text-orange-500" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-black text-slate-800 dark:text-white">Xuất huỷ tài sản</h3>
+                                <p className="text-xs text-slate-400">Tài sản sẽ bị loại khỏi tồn kho</p>
+                            </div>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            {/* Asset Info */}
+                            <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl space-y-2">
+                                <div className="flex justify-between">
+                                    <span className="text-[10px] text-slate-400 font-black uppercase">Mã TS</span>
+                                    <span className="text-xs font-mono font-bold text-slate-600 dark:text-slate-300">{disposeConfirm.code}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[10px] text-slate-400 font-black uppercase">Tên</span>
+                                    <span className="text-xs font-black text-slate-800 dark:text-white">{disposeConfirm.name}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[10px] text-slate-400 font-black uppercase">Nguyên giá</span>
+                                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">{disposeConfirm.originalValue.toLocaleString('vi-VN')}đ</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-[10px] text-slate-400 font-black uppercase">Giá trị còn lại</span>
+                                    <span className="text-xs font-bold text-emerald-600">{Math.round(getDepreciation(disposeConfirm).remaining).toLocaleString('vi-VN')}đ</span>
+                                </div>
+                            </div>
+
+                            {/* Warning */}
+                            <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 p-3 rounded-xl flex gap-2">
+                                <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                                <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+                                    Tài sản sẽ chuyển sang trạng thái <strong>"Đã thanh lý"</strong> và bị trừ khỏi tồn kho. Toàn bộ lịch sử (cấp phát, bảo trì, khấu hao) vẫn được lưu lại.
+                                </p>
+                            </div>
+
+                            {/* Reason */}
+                            <div>
+                                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Lý do xuất huỷ</label>
+                                <textarea
+                                    value={disposeReason}
+                                    onChange={e => setDisposeReason(e.target.value)}
+                                    rows={2}
+                                    placeholder="VD: Hết khấu hao, hỏng không sửa được..."
+                                    className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+                                />
+                            </div>
+                        </div>
+                        <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
+                            <button onClick={() => setDisposeConfirm(null)} className="px-6 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Huỷ</button>
+                            <button onClick={handleDispose} className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 text-white font-bold text-sm shadow-lg shadow-orange-500/20 hover:shadow-xl transition-all flex items-center gap-2">
+                                <XCircle size={16} /> Xác nhận xuất huỷ
                             </button>
                         </div>
                     </div>

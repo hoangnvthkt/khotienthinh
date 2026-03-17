@@ -18,6 +18,8 @@ import WorkflowInstances from './pages/wf/WorkflowInstances';
 import WorkflowTemplates from './pages/wf/WorkflowTemplates';
 import WorkflowBuilder from './pages/wf/WorkflowBuilder';
 import Chat from './pages/Chat';
+import RequestCategories from './pages/request/RequestCategories';
+import RequestList from './pages/request/RequestList';
 import AssetCatalog from './pages/ts/AssetCatalog';
 import AssetAssignment from './pages/ts/AssetAssignment';
 import AssetDashboard from './pages/ts/AssetDashboard';
@@ -30,6 +32,7 @@ import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { WorkflowProvider } from './context/WorkflowContext';
 import { ChatProvider } from './context/ChatContext';
+import { RequestProvider } from './context/RequestContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import NotFound from './pages/NotFound';
 
@@ -62,6 +65,8 @@ const AppRoutes: React.FC = () => {
         <Route path="hrm/employees" element={<Employees />} />
         <Route path="da" element={<ProjectDashboard />} />
         <Route path="chat" element={<Chat />} />
+        <Route path="rq" element={<RequestList />} />
+        <Route path="rq/categories" element={<RequestCategories />} />
         <Route path="ts/dashboard" element={<AssetDashboard />} />
         <Route path="ts/catalog" element={<AssetCatalog />} />
         <Route path="ts/assignment" element={<AssetAssignment />} />
@@ -82,11 +87,13 @@ const App: React.FC = () => {
         <ToastProvider>
           <AppProvider>
             <WorkflowProvider>
-              <ChatProvider>
-                <Router>
-                  <AppRoutes />
-                </Router>
-              </ChatProvider>
+              <RequestProvider>
+                <ChatProvider>
+                  <Router>
+                    <AppRoutes />
+                  </Router>
+                </ChatProvider>
+              </RequestProvider>
             </WorkflowProvider>
           </AppProvider>
         </ToastProvider>

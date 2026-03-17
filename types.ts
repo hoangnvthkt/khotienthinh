@@ -469,6 +469,71 @@ export interface WorkflowInstanceLog {
   createdAt: string;
 }
 
+// ==================== REQUEST MODULE ====================
+
+export enum RQStatus {
+  DRAFT = 'DRAFT',
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  DONE = 'DONE',
+  REJECTED = 'REJECTED',
+  CANCELLED = 'CANCELLED',
+}
+
+export type RQPriority = 'low' | 'medium' | 'high' | 'urgent';
+
+export interface RequestCategory {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  customFields: WorkflowCustomField[]; // reuse from Workflow
+  approverRole?: Role;
+  approverUserId?: string;
+  slaHours?: number;
+  isActive: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RequestApprover {
+  userId: string;
+  order: number;
+  status: 'waiting' | 'approved' | 'rejected';
+  comment?: string;
+  actedAt?: string;
+}
+
+export interface RequestInstance {
+  id: string;
+  categoryId: string;
+  code: string;
+  title: string;
+  description: string;
+  priority: RQPriority;
+  formData: Record<string, any>;
+  createdBy: string;
+  approverId?: string;
+  approvers: RequestApprover[];
+  assignedTo?: string;
+  status: RQStatus;
+  dueDate?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RequestLog {
+  id: string;
+  requestId: string;
+  action: string;
+  actedBy: string;
+  comment: string;
+  createdAt: string;
+}
+
 // ==================== CHAT ====================
 export interface ChatConversation {
   id: string;

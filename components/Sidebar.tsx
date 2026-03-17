@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon,
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
-  Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft
+  Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -25,6 +25,7 @@ const MODULE_CONFIG = [
   { key: 'WF' as const, icon: GitBranch, label: 'QT - Quy trình', shortLabel: 'QT', gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/30', color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/30', border: 'border-violet-200 dark:border-violet-700', route: '/wf' },
   { key: 'DA' as const, icon: BarChart3, label: 'DA - Dự án', shortLabel: 'DA', gradient: 'from-orange-500 to-amber-500', shadow: 'shadow-orange-500/30', color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-900/30', border: 'border-orange-200 dark:border-orange-700', route: '/da' },
   { key: 'TS' as const, icon: Landmark, label: 'TS - Tài sản', shortLabel: 'TS', gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/30', color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/30', border: 'border-rose-200 dark:border-rose-700', route: '/ts/dashboard' },
+  { key: 'RQ' as const, icon: Inbox, label: 'RQ - Yêu cầu', shortLabel: 'RQ', gradient: 'from-cyan-500 to-blue-600', shadow: 'shadow-cyan-500/30', color: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-50 dark:bg-cyan-900/30', border: 'border-cyan-200 dark:border-cyan-700', route: '/rq' },
 ] as const;
 
 type AppKey = typeof MODULE_CONFIG[number]['key'];
@@ -46,6 +47,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p.startsWith('/wf')) return 'WF';
     if (p.startsWith('/da')) return 'DA';
     if (p.startsWith('/ts')) return 'TS';
+    if (p.startsWith('/rq')) return 'RQ';
     if (['/dashboard', '/inventory', '/operations', '/audit', '/reports', '/requests', '/misa-export'].includes(p)) return 'WMS';
     return null;
   };
@@ -126,6 +128,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/ts/maintenance', icon: Wrench, label: 'Bảo trì / Sửa chữa' },
       { to: '/ts/audit', icon: ClipboardCheck, label: 'Kiểm kê TS' },
       { to: '/ts/reports', icon: History, label: 'Báo cáo TS' },
+    ],
+    RQ: [
+      { to: '/rq', icon: Inbox, label: 'Phiếu yêu cầu' },
+      { to: '/rq/categories', icon: Settings, label: 'Danh mục yêu cầu', roles: [Role.ADMIN] },
     ],
   };
 
