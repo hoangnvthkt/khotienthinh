@@ -772,6 +772,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setUsers(prev => [...prev, u]);
     syncToSupabase('users', u);
     logActivity('SYSTEM', 'Thêm người dùng', `Đã thêm người dùng mới: ${u.name}`, 'SUCCESS');
+
+    // Auto-sync: tạo hồ sơ nhân sự từ thông tin người dùng (Họ tên, Email, SĐT)
+    const existingEmployee = employees.find(e => e.userId === u.id || e.email === u.email);
+    if (!existingEmployee) {
+      const empCount = employees.length + 1;
+      const employeeCode = `TT${String(empCount).padStart(3, '0')}`;
+      const newEmployee: Employee = {
+        id: crypto.randomUUID(),
+        employeeCode,
+        fullName: u.name,
+        title: '',
+        gender: 'Nam',
+        phone: u.phone || '',
+        email: u.email,
+        status: 'Đang làm việc',
+        userId: u.id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      addEmployee(newEmployee);
+    }
   };
 
   const updateUser = (u: User) => {
