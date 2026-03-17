@@ -12,6 +12,7 @@ import Reports from './pages/Reports';
 import MisaExport from './pages/MisaExport';
 import Login from './pages/Login';
 import ProjectDashboard from './pages/ProjectDashboard';
+import MyProfile from './pages/MyProfile';
 import Employees from './pages/hrm/Employees';
 import WorkflowInstances from './pages/wf/WorkflowInstances';
 import WorkflowTemplates from './pages/wf/WorkflowTemplates';
@@ -19,6 +20,11 @@ import WorkflowBuilder from './pages/wf/WorkflowBuilder';
 import Chat from './pages/Chat';
 import AssetCatalog from './pages/ts/AssetCatalog';
 import AssetAssignment from './pages/ts/AssetAssignment';
+import AssetDashboard from './pages/ts/AssetDashboard';
+import AssetAudit from './pages/ts/AssetAudit';
+import AssetReports from './pages/ts/AssetReports';
+import AssetMaintenancePage from './pages/ts/AssetMaintenance';
+import AssetProfile from './pages/ts/AssetProfile';
 import { AppProvider } from './context/AppContext';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -40,7 +46,8 @@ const AppRoutes: React.FC = () => {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route index element={<Dashboard />} />
+        <Route index element={<MyProfile />} />
+        <Route path="dashboard" element={<Dashboard />} />
         <Route path="requests" element={<RequestWorkflow />} />
         <Route path="inventory" element={<Inventory />} />
         <Route path="operations" element={<Operations />} />
@@ -55,8 +62,13 @@ const AppRoutes: React.FC = () => {
         <Route path="hrm/employees" element={<Employees />} />
         <Route path="da" element={<ProjectDashboard />} />
         <Route path="chat" element={<Chat />} />
+        <Route path="ts/dashboard" element={<AssetDashboard />} />
         <Route path="ts/catalog" element={<AssetCatalog />} />
         <Route path="ts/assignment" element={<AssetAssignment />} />
+        <Route path="ts/audit" element={<AssetAudit />} />
+        <Route path="ts/reports" element={<AssetReports />} />
+        <Route path="ts/maintenance" element={<AssetMaintenancePage />} />
+        <Route path="ts/asset/:id" element={<AssetProfile />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

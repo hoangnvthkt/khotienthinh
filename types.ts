@@ -552,6 +552,7 @@ export interface Asset {
   originalValue: number;     // Nguyên giá
   purchaseDate: string;      // Ngày mua
   depreciationYears: number; // Thời gian khấu hao (năm)
+  warrantyMonths?: number;   // Thời gian bảo hành (tháng)
   residualValue: number;     // Giá trị thanh lý dự kiến
 
   // Vị trí
@@ -577,25 +578,39 @@ export interface Asset {
 export interface AssetAssignment {
   id: string;
   assetId: string;
-  type: 'assign' | 'return';  // Cấp phát / Thu hồi
-  userId: string;              // Người nhận / Người trả
+  type: 'assign' | 'return' | 'transfer';  // Cấp phát / Thu hồi / Luân chuyển
+  userId: string;              // Người nhận (hoặc người nhận mới khi transfer)
   userName: string;
+  fromUserId?: string;         // Người giao (khi luân chuyển)
+  fromUserName?: string;       // Tên người giao (khi luân chuyển)
   date: string;
   note?: string;
   performedBy: string;         // Admin/Keeper thực hiện
   performedByName: string;
 }
 
+export interface MaintenanceAttachment {
+  id: string;
+  name: string;       // Tên file (hoá đơn, chứng từ)
+  url: string;         // Data URL or blob URL
+  type: string;        // MIME type
+  size: number;        // File size in bytes
+  uploadedAt: string;
+}
+
 export interface AssetMaintenance {
   id: string;
   assetId: string;
-  type: 'scheduled' | 'repair'; // Bảo trì định kỳ / Sửa chữa
+  type: 'scheduled' | 'repair' | 'inspection'; // Bảo trì định kỳ / Sửa chữa / Kiểm tra
   description: string;
   cost: number;
   vendor?: string;             // Đơn vị sửa chữa
+  invoiceNumber?: string;      // Số hoá đơn
   startDate: string;
   endDate?: string;
   status: 'planned' | 'in_progress' | 'completed';
   performedBy: string;
+  performedByName?: string;
   note?: string;
+  attachments?: MaintenanceAttachment[];  // Hoá đơn, chứng từ đính kèm
 }

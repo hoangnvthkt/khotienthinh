@@ -20,11 +20,11 @@ interface SidebarProps {
 }
 
 const MODULE_CONFIG = [
-  { key: 'WMS' as const, icon: Package, label: 'KHO', gradient: 'from-emerald-500 to-emerald-600', shadow: 'shadow-emerald-500/30', hover: 'hover:text-emerald-600 dark:hover:text-emerald-400', route: '/' },
+  { key: 'WMS' as const, icon: Package, label: 'KHO', gradient: 'from-emerald-500 to-emerald-600', shadow: 'shadow-emerald-500/30', hover: 'hover:text-emerald-600 dark:hover:text-emerald-400', route: '/dashboard' },
   { key: 'HRM' as const, icon: Briefcase, label: 'NS', gradient: 'from-teal-500 to-cyan-600', shadow: 'shadow-teal-500/30', hover: 'hover:text-teal-600 dark:hover:text-teal-400', route: '/hrm/employees' },
   { key: 'WF' as const, icon: GitBranch, label: 'QT', gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/30', hover: 'hover:text-violet-600 dark:hover:text-violet-400', route: '/wf' },
   { key: 'DA' as const, icon: BarChart3, label: 'DA', gradient: 'from-orange-500 to-amber-500', shadow: 'shadow-orange-500/30', hover: 'hover:text-orange-600 dark:hover:text-orange-400', route: '/da' },
-  { key: 'TS' as const, icon: Landmark, label: 'TS', gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/30', hover: 'hover:text-rose-600 dark:hover:text-rose-400', route: '/ts/catalog' },
+  { key: 'TS' as const, icon: Landmark, label: 'TS', gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/30', hover: 'hover:text-rose-600 dark:hover:text-rose-400', route: '/ts/dashboard' },
 ] as const;
 
 type AppKey = typeof MODULE_CONFIG[number]['key'];
@@ -85,7 +85,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   }, [items]);
 
   const wmsNavItems = [
-    { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/requests', icon: FileText, label: 'Đề xuất vật tư', badge: pendingReqCount > 0 ? pendingReqCount : null, roles: [Role.ADMIN, Role.KEEPER] },
     { to: '/inventory', icon: Package, label: 'Kho & Vật tư', badge: lowStockCount > 0 ? lowStockCount : null, badgeColor: 'bg-amber-500' },
     { to: '/operations', icon: ArrowLeftRight, label: 'Nhập / Xuất', badge: pendingTxCount > 0 ? pendingTxCount : null, roles: [Role.ADMIN, Role.KEEPER] },
@@ -111,8 +111,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   ];
 
   const tsNavItems = [
+    { to: '/ts/dashboard', icon: LayoutDashboard, label: 'Dashboard TS' },
     { to: '/ts/catalog', icon: Landmark, label: 'Danh mục tài sản' },
     { to: '/ts/assignment', icon: Repeat, label: 'Cấp phát / Thu hồi' },
+    { to: '/ts/maintenance', icon: Wrench, label: 'Bảo trì / Sửa chữa' },
+    { to: '/ts/audit', icon: ClipboardCheck, label: 'Kiểm kê TS' },
+    { to: '/ts/reports', icon: History, label: 'Báo cáo TS' },
     { to: '/settings', icon: Settings, label: 'Cài đặt' },
   ];
 
@@ -237,7 +241,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
         {/* User Info */}
         {!collapsed ? (
           <div className={`px-4 py-3 border-b border-white/20 dark:border-white/5 shrink-0`}>
-            <div className="flex items-center space-x-3 mb-2">
+            <div className="flex items-center space-x-3 mb-2 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => navigate('/')} title="Xem hồ sơ cá nhân">
               <img src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=2563eb&color=fff`}
                 className="w-9 h-9 rounded-full border-2 border-accent shadow" alt={user.name} />
               <div className="min-w-0">
@@ -271,7 +275,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
           /* Collapsed user area */
           <div className="flex flex-col items-center py-3 border-b border-white/20 dark:border-white/5 shrink-0 gap-2">
             <img src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=2563eb&color=fff`}
-              className="w-9 h-9 rounded-full border-2 border-accent shadow" alt={user.name} title={user.name} />
+              className="w-9 h-9 rounded-full border-2 border-accent shadow cursor-pointer hover:opacity-80 transition-opacity" alt={user.name} title="Xem hồ sơ cá nhân" onClick={() => navigate('/')} />
             <button
               onClick={toggleTheme}
               className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-all ${isDark ? 'bg-slate-800/50 border-white/10 text-yellow-400' : 'bg-white/50 border-white/60 text-slate-600'}`}

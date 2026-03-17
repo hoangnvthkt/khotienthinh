@@ -1231,7 +1231,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addAsset = (asset: Asset) => {
     setAssets(prev => [...prev, asset]);
     if (isSupabaseConfigured) {
-      syncToSupabase('assets', { ...asset, category_id: asset.categoryId, serial_number: asset.serialNumber, original_value: asset.originalValue, purchase_date: asset.purchaseDate, depreciation_years: asset.depreciationYears, residual_value: asset.residualValue, warehouse_id: asset.warehouseId, location_note: asset.locationNote, assigned_to_user_id: asset.assignedToUserId, assigned_to_name: asset.assignedToName, assigned_date: asset.assignedDate, disposal_date: asset.disposalDate, disposal_value: asset.disposalValue, disposal_note: asset.disposalNote, image_url: asset.imageUrl, created_at: asset.createdAt, updated_at: asset.updatedAt });
+      syncToSupabase('assets', { ...asset, category_id: asset.categoryId, serial_number: asset.serialNumber, original_value: asset.originalValue, purchase_date: asset.purchaseDate, depreciation_years: asset.depreciationYears, warranty_months: asset.warrantyMonths || 0, residual_value: asset.residualValue, warehouse_id: asset.warehouseId, location_note: asset.locationNote, assigned_to_user_id: asset.assignedToUserId, assigned_to_name: asset.assignedToName, assigned_date: asset.assignedDate, disposal_date: asset.disposalDate, disposal_value: asset.disposalValue, disposal_note: asset.disposalNote, image_url: asset.imageUrl, created_at: asset.createdAt, updated_at: asset.updatedAt });
     }
     logActivity('SYSTEM', 'Thêm tài sản', `Thêm tài sản ${asset.name} (${asset.code})`, 'SUCCESS');
   };
@@ -1239,7 +1239,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateAsset = (asset: Asset) => {
     setAssets(prev => prev.map(a => a.id === asset.id ? asset : a));
     if (isSupabaseConfigured) {
-      syncToSupabase('assets', { ...asset, category_id: asset.categoryId, serial_number: asset.serialNumber, original_value: asset.originalValue, purchase_date: asset.purchaseDate, depreciation_years: asset.depreciationYears, residual_value: asset.residualValue, warehouse_id: asset.warehouseId, location_note: asset.locationNote, assigned_to_user_id: asset.assignedToUserId, assigned_to_name: asset.assignedToName, assigned_date: asset.assignedDate, disposal_date: asset.disposalDate, disposal_value: asset.disposalValue, disposal_note: asset.disposalNote, image_url: asset.imageUrl, created_at: asset.createdAt, updated_at: asset.updatedAt });
+      syncToSupabase('assets', { ...asset, category_id: asset.categoryId, serial_number: asset.serialNumber, original_value: asset.originalValue, purchase_date: asset.purchaseDate, depreciation_years: asset.depreciationYears, warranty_months: asset.warrantyMonths || 0, residual_value: asset.residualValue, warehouse_id: asset.warehouseId, location_note: asset.locationNote, assigned_to_user_id: asset.assignedToUserId, assigned_to_name: asset.assignedToName, assigned_date: asset.assignedDate, disposal_date: asset.disposalDate, disposal_value: asset.disposalValue, disposal_note: asset.disposalNote, image_url: asset.imageUrl, created_at: asset.createdAt, updated_at: asset.updatedAt });
     }
   };
 
@@ -1276,24 +1276,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addAssetAssignment = (a: AssetAssignment) => {
     setAssetAssignments(prev => [a, ...prev]);
     if (isSupabaseConfigured) {
-      syncToSupabase('asset_assignments', { ...a, asset_id: a.assetId, user_id: a.userId, user_name: a.userName, performed_by: a.performedBy, performed_by_name: a.performedByName });
+      syncToSupabase('asset_assignments', { ...a, asset_id: a.assetId, user_id: a.userId, user_name: a.userName, from_user_id: a.fromUserId, from_user_name: a.fromUserName, performed_by: a.performedBy, performed_by_name: a.performedByName });
     }
     // Update asset status
     const asset = assets.find(ast => ast.id === a.assetId);
     if (asset) {
       if (a.type === 'assign') {
         updateAsset({ ...asset, status: AssetStatus.IN_USE, assignedToUserId: a.userId, assignedToName: a.userName, assignedDate: a.date, updatedAt: new Date().toISOString() });
+      } else if (a.type === 'transfer') {
+        // Luân chuyển: đổi người sử dụng, giữ nguyên status IN_USE
+        updateAsset({ ...asset, status: AssetStatus.IN_USE, assignedToUserId: a.userId, assignedToName: a.userName, assignedDate: a.date, updatedAt: new Date().toISOString() });
       } else {
         updateAsset({ ...asset, status: AssetStatus.AVAILABLE, assignedToUserId: undefined, assignedToName: undefined, assignedDate: undefined, updatedAt: new Date().toISOString() });
       }
     }
-    logActivity('SYSTEM', a.type === 'assign' ? 'Cấp phát tài sản' : 'Thu hồi tài sản', `${a.type === 'assign' ? 'Cấp phát' : 'Thu hồi'} tài sản cho ${a.userName}`, 'INFO');
+    logActivity('SYSTEM', a.type === 'assign' ? 'Cấp phát tài sản' : a.type === 'transfer' ? 'Luân chuyển tài sản' : 'Thu hồi tài sản', `${a.type === 'assign' ? 'Cấp phát' : a.type === 'transfer' ? `Luân chuyển từ ${a.fromUserName} sang` : 'Thu hồi'} tài sản ${a.type !== 'return' ? 'cho' : 'từ'} ${a.userName}`, 'INFO');
   };
 
   const addAssetMaintenance = (m: AssetMaintenance) => {
     setAssetMaintenances(prev => [m, ...prev]);
     if (isSupabaseConfigured) {
-      syncToSupabase('asset_maintenances', { ...m, asset_id: m.assetId, start_date: m.startDate, end_date: m.endDate, performed_by: m.performedBy });
+      syncToSupabase('asset_maintenances', { ...m, asset_id: m.assetId, start_date: m.startDate, end_date: m.endDate, performed_by: m.performedBy, performed_by_name: m.performedByName, invoice_number: m.invoiceNumber, attachments: JSON.stringify(m.attachments || []) });
     }
     if (m.status === 'in_progress') {
       const asset = assets.find(a => a.id === m.assetId);

@@ -1,15 +1,17 @@
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import {
     Search, Plus, Filter, Trash2, Edit3, MoreHorizontal, QrCode,
     Landmark, Tag, Calendar, DollarSign, MapPin, User, X, Check,
-    AlertTriangle, CheckCircle, Wrench, Ban, Package
+    AlertTriangle, CheckCircle, Wrench, Ban, Package, Shield
 } from 'lucide-react';
 import { Asset, AssetStatus, ASSET_STATUS_LABELS, ASSET_CATEGORY_LABELS, AssetCategoryType } from '../../types';
 import ScannerModal from '../../components/ScannerModal';
 
 const AssetCatalog: React.FC = () => {
+    const navigate = useNavigate();
     const {
         assets, assetCategories, warehouses, users, user,
         addAsset, updateAsset, removeAsset,
@@ -30,14 +32,14 @@ const AssetCatalog: React.FC = () => {
     const [form, setForm] = useState({
         code: '', name: '', categoryId: '', brand: '', model: '', serialNumber: '',
         originalValue: 0, purchaseDate: new Date().toISOString().split('T')[0],
-        depreciationYears: 5, residualValue: 0, warehouseId: '', locationNote: '', note: '',
+        depreciationYears: 5, warrantyMonths: 12, residualValue: 0, warehouseId: '', locationNote: '', note: '',
     });
 
     const resetForm = () => {
         setForm({
             code: '', name: '', categoryId: assetCategories[0]?.id || '', brand: '', model: '', serialNumber: '',
             originalValue: 0, purchaseDate: new Date().toISOString().split('T')[0],
-            depreciationYears: 5, residualValue: 0, warehouseId: '', locationNote: '', note: '',
+            depreciationYears: 5, warrantyMonths: 12, residualValue: 0, warehouseId: '', locationNote: '', note: '',
         });
     };
 
@@ -54,7 +56,7 @@ const AssetCatalog: React.FC = () => {
             code: asset.code, name: asset.name, categoryId: asset.categoryId,
             brand: asset.brand || '', model: asset.model || '', serialNumber: asset.serialNumber || '',
             originalValue: asset.originalValue, purchaseDate: asset.purchaseDate.split('T')[0],
-            depreciationYears: asset.depreciationYears, residualValue: asset.residualValue,
+            depreciationYears: asset.depreciationYears, warrantyMonths: asset.warrantyMonths || 0, residualValue: asset.residualValue,
             warehouseId: asset.warehouseId || '', locationNote: asset.locationNote || '', note: asset.note || '',
         });
         setEditingAsset(asset);
@@ -72,6 +74,7 @@ const AssetCatalog: React.FC = () => {
                 ...editingAsset, ...form,
                 originalValue: Number(form.originalValue),
                 depreciationYears: Number(form.depreciationYears),
+                warrantyMonths: Number(form.warrantyMonths),
                 residualValue: Number(form.residualValue),
                 updatedAt: now,
             });
@@ -82,6 +85,7 @@ const AssetCatalog: React.FC = () => {
                 ...form,
                 originalValue: Number(form.originalValue),
                 depreciationYears: Number(form.depreciationYears),
+                warrantyMonths: Number(form.warrantyMonths),
                 residualValue: Number(form.residualValue),
                 status: AssetStatus.AVAILABLE,
                 createdAt: now,
@@ -134,6 +138,36 @@ const AssetCatalog: React.FC = () => {
         const remaining = asset.originalValue - accumulated;
         const percentUsed = Math.min(100, (monthsUsed / totalMonths) * 100);
         return { accumulated, remaining, percentUsed, monthsUsed };
+    };
+
+    const getWarrantyInfo = (asset: Asset) => {
+        const warrantyMonths = asset.warrantyMonths || 0;
+        if (warrantyMonths <= 0) return { hasWarranty: false, percentRemaining: 0, daysRemaining: 0, expiryDate: '', label: 'Không BH', barColor: 'bg-slate-300 dark:bg-slate-600', textColor: 'text-slate-400' };
+        const purchase = new Date(asset.purchaseDate);
+        const expiry = new Date(purchase);
+        expiry.setMonth(expiry.getMonth() + warrantyMonths);
+        const now = new Date();
+        const totalMs = expiry.getTime() - purchase.getTime();
+        const elapsedMs = now.getTime() - purchase.getTime();
+        const remainingMs = expiry.getTime() - now.getTime();
+        const daysRemaining = Math.ceil(remainingMs / (1000 * 60 * 60 * 24));
+        const percentRemaining = Math.max(0, Math.min(100, ((totalMs - elapsedMs) / totalMs) * 100));
+        const expiryDate = expiry.toLocaleDateString('vi-VN');
+
+        let barColor: string, textColor: string, label: string;
+        if (daysRemaining <= 0) {
+            barColor = 'bg-slate-300 dark:bg-slate-600'; textColor = 'text-slate-400'; label = 'Hết bảo hành';
+        } else if (percentRemaining <= 15) {
+            barColor = 'bg-gradient-to-r from-red-500 to-red-600'; textColor = 'text-red-500'; label = `${daysRemaining} ngày`;
+        } else if (percentRemaining <= 35) {
+            barColor = 'bg-gradient-to-r from-orange-500 to-amber-500'; textColor = 'text-orange-500'; label = `${daysRemaining} ngày`;
+        } else if (percentRemaining <= 60) {
+            barColor = 'bg-gradient-to-r from-amber-400 to-yellow-400'; textColor = 'text-amber-500'; label = `${Math.floor(daysRemaining / 30)} tháng`;
+        } else {
+            barColor = 'bg-gradient-to-r from-emerald-400 to-green-500'; textColor = 'text-emerald-500'; label = `${Math.floor(daysRemaining / 30)} tháng`;
+        }
+
+        return { hasWarranty: true, percentRemaining, daysRemaining, expiryDate, label, barColor, textColor };
     };
 
     const totalValue = assets.reduce((sum, a) => sum + a.originalValue, 0);
@@ -235,7 +269,7 @@ const AssetCatalog: React.FC = () => {
                                 <th className="p-4">Tên tài sản</th>
                                 <th className="p-4">Loại</th>
                                 <th className="p-4 text-right">Nguyên giá</th>
-                                <th className="p-4 text-right">Còn lại</th>
+                                <th className="p-4 text-center">Bảo hành</th>
                                 <th className="p-4 text-center">Trạng thái</th>
                                 <th className="p-4">Người sử dụng</th>
                                 <th className="p-4"></th>
@@ -246,19 +280,26 @@ const AssetCatalog: React.FC = () => {
                                 const cfg = getStatusConfig(asset.status);
                                 const StatusIcon = cfg.icon;
                                 const dep = getDepreciation(asset);
+                                const warranty = getWarrantyInfo(asset);
                                 return (
                                     <tr key={asset.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
                                         <td className="p-4 font-mono text-slate-400 font-bold text-xs">{asset.code}</td>
-                                        <td className="p-4 cursor-pointer hover:text-rose-500" onClick={() => setDetailAsset(asset)}>
+                                        <td className="p-4 cursor-pointer hover:text-rose-500" onClick={() => navigate(`/ts/asset/${asset.id}`)}>
                                             <div className="font-black text-slate-800 dark:text-white truncate max-w-[200px]">{asset.name}</div>
                                             {asset.brand && <div className="text-[10px] text-slate-400">{asset.brand} {asset.model || ''}</div>}
                                         </td>
                                         <td className="p-4 text-slate-500 font-medium text-xs">{getCategoryName(asset.categoryId)}</td>
                                         <td className="p-4 text-right font-black text-slate-800 dark:text-white">{asset.originalValue.toLocaleString('vi-VN')}đ</td>
-                                        <td className="p-4 text-right">
-                                            <div className="font-bold text-slate-700 dark:text-slate-300">{Math.round(dep.remaining).toLocaleString('vi-VN')}đ</div>
-                                            <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5 mt-1">
-                                                <div className="h-1.5 rounded-full bg-gradient-to-r from-rose-500 to-pink-500" style={{ width: `${100 - dep.percentUsed}%` }} />
+                                        <td className="p-4">
+                                            <div className="w-28 mx-auto">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <Shield size={10} className={warranty.textColor} />
+                                                    <span className={`text-[9px] font-black ${warranty.textColor}`}>{warranty.label}</span>
+                                                </div>
+                                                <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2">
+                                                    <div className={`h-2 rounded-full transition-all ${warranty.barColor}`} style={{ width: `${warranty.percentRemaining}%` }} />
+                                                </div>
+                                                {warranty.hasWarranty && <div className="text-[8px] text-slate-400 text-right mt-0.5">đến {warranty.expiryDate}</div>}
                                             </div>
                                         </td>
                                         <td className="p-4 text-center">
@@ -293,7 +334,7 @@ const AssetCatalog: React.FC = () => {
                         const cfg = getStatusConfig(asset.status);
                         const StatusIcon = cfg.icon;
                         return (
-                            <div key={asset.id} className="p-4 space-y-2" onClick={() => setDetailAsset(asset)}>
+                            <div key={asset.id} className="p-4 space-y-2" onClick={() => navigate(`/ts/asset/${asset.id}`)}>
                                 <div className="flex justify-between items-start">
                                     <div>
                                         <div className="text-[10px] font-mono text-slate-400 font-bold">{asset.code}</div>
@@ -379,18 +420,53 @@ const AssetCatalog: React.FC = () => {
                                         className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-rose-500" />
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-3 gap-4">
                                 <div>
-                                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Thời gian khấu hao (năm)</label>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Khấu hao (năm)</label>
                                     <input type="number" value={form.depreciationYears} onChange={e => setForm(p => ({ ...p, depreciationYears: Number(e.target.value) }))}
                                         className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-rose-500" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Giá trị thanh lý dự kiến</label>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Bảo hành (tháng)</label>
+                                    <input type="number" min={0} value={form.warrantyMonths} onChange={e => setForm(p => ({ ...p, warrantyMonths: Number(e.target.value) }))}
+                                        className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-rose-500" placeholder="12" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Giá trị thanh lý</label>
                                     <input type="number" value={form.residualValue} onChange={e => setForm(p => ({ ...p, residualValue: Number(e.target.value) }))}
                                         className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-rose-500" />
                                 </div>
                             </div>
+                            {/* Warranty Preview */}
+                            {form.warrantyMonths > 0 && form.purchaseDate && (() => {
+                                const expiry = new Date(form.purchaseDate);
+                                expiry.setMonth(expiry.getMonth() + Number(form.warrantyMonths));
+                                const now = new Date();
+                                const purchase = new Date(form.purchaseDate);
+                                const totalMs = expiry.getTime() - purchase.getTime();
+                                const elapsedMs = now.getTime() - purchase.getTime();
+                                const pct = Math.max(0, Math.min(100, ((totalMs - elapsedMs) / totalMs) * 100));
+                                const daysLeft = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                                const isExpired = daysLeft <= 0;
+                                const barColor = isExpired ? 'bg-slate-300' : pct <= 15 ? 'bg-gradient-to-r from-red-500 to-red-600' : pct <= 35 ? 'bg-gradient-to-r from-orange-500 to-amber-500' : pct <= 60 ? 'bg-gradient-to-r from-amber-400 to-yellow-400' : 'bg-gradient-to-r from-emerald-400 to-green-500';
+                                return (
+                                    <div className="bg-gradient-to-r from-sky-50 to-blue-50 dark:from-sky-950/20 dark:to-blue-950/20 p-3 rounded-xl border border-sky-100 dark:border-sky-900/30 -mt-1">
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <span className="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase flex items-center gap-1"><Shield size={11} /> Bảo hành</span>
+                                            <span className="text-[10px] font-bold text-slate-500">
+                                                {isExpired ? 'Đã hết hạn' : `Còn ${daysLeft > 30 ? Math.floor(daysLeft / 30) + ' tháng ' + (daysLeft % 30) + ' ngày' : daysLeft + ' ngày'}`}
+                                            </span>
+                                        </div>
+                                        <div className="w-full bg-white dark:bg-slate-800 rounded-full h-2.5">
+                                            <div className={`h-2.5 rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+                                        </div>
+                                        <div className="flex justify-between mt-1 text-[9px] text-slate-400">
+                                            <span>Mua: {new Date(form.purchaseDate).toLocaleDateString('vi-VN')}</span>
+                                            <span>Hết BH: {expiry.toLocaleDateString('vi-VN')}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Kho lưu trữ</label>
@@ -438,6 +514,7 @@ const AssetCatalog: React.FC = () => {
                         <div className="p-6 space-y-4">
                             {(() => {
                                 const dep = getDepreciation(detailAsset);
+                                const warranty = getWarrantyInfo(detailAsset);
                                 const cfg = getStatusConfig(detailAsset.status);
                                 const StatusIcon = cfg.icon;
                                 return (
@@ -486,6 +563,27 @@ const AssetCatalog: React.FC = () => {
                                                 <span className="font-black text-emerald-600">Còn lại: {Math.round(dep.remaining).toLocaleString('vi-VN')}đ</span>
                                             </div>
                                         </div>
+
+                                        {/* Warranty Section */}
+                                        {warranty.hasWarranty && (
+                                            <div className={`p-4 rounded-xl border ${warranty.daysRemaining <= 0 ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700' : warranty.percentRemaining <= 15 ? 'bg-red-50 dark:bg-red-950/20 border-red-100 dark:border-red-900/30' : 'bg-sky-50 dark:bg-sky-950/20 border-sky-100 dark:border-sky-900/30'}`}>
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <p className={`text-[10px] font-black uppercase flex items-center gap-1 ${warranty.textColor}`}>
+                                                        <Shield size={12} /> Bảo hành
+                                                    </p>
+                                                    <span className={`text-xs font-black ${warranty.textColor}`}>
+                                                        {warranty.daysRemaining <= 0 ? 'Đã hết hạn' : `Còn ${warranty.label}`}
+                                                    </span>
+                                                </div>
+                                                <div className="w-full bg-white dark:bg-slate-800 rounded-full h-3 mb-2">
+                                                    <div className={`h-3 rounded-full transition-all ${warranty.barColor}`} style={{ width: `${warranty.percentRemaining}%` }} />
+                                                </div>
+                                                <div className="flex justify-between text-[10px] text-slate-400">
+                                                    <span>Thời hạn: {detailAsset.warrantyMonths} tháng</span>
+                                                    <span>Hết hạn: {warranty.expiryDate}</span>
+                                                </div>
+                                            </div>
+                                        )}
 
                                         {detailAsset.assignedToName && (
                                             <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-xl border border-blue-100 dark:border-blue-900/30 flex items-center gap-3">
