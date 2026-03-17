@@ -623,6 +623,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: data.id, name: data.name, type: data.type, "customTypeLabel": data.customTypeLabel || null,
           parent_id: data.parentId || null, description: data.description || '', order_index: data.orderIndex || 0
         };
+      } else if (table === 'assets') {
+        payload = {
+          id: data.id, code: data.code, name: data.name, category_id: data.category_id || data.categoryId,
+          brand: data.brand || null, model: data.model || null, serial_number: data.serial_number || data.serialNumber || null,
+          status: data.status, original_value: data.original_value ?? data.originalValue ?? 0,
+          purchase_date: data.purchase_date || data.purchaseDate,
+          depreciation_years: data.depreciation_years ?? data.depreciationYears ?? 5,
+          warranty_months: data.warranty_months ?? data.warrantyMonths ?? 0,
+          residual_value: data.residual_value ?? data.residualValue ?? 0,
+          warehouse_id: data.warehouse_id || data.warehouseId || null,
+          location_note: data.location_note || data.locationNote || null,
+          assigned_to_user_id: data.assigned_to_user_id || data.assignedToUserId || null,
+          assigned_to_name: data.assigned_to_name || data.assignedToName || null,
+          assigned_date: data.assigned_date || data.assignedDate || null,
+          disposal_date: data.disposal_date || data.disposalDate || null,
+          disposal_value: data.disposal_value ?? data.disposalValue ?? null,
+          disposal_note: data.disposal_note || data.disposalNote || null,
+          image_url: data.image_url || data.imageUrl || null,
+          note: data.note || null,
+          created_at: data.created_at || data.createdAt, updated_at: data.updated_at || data.updatedAt
+        };
+      } else if (table === 'asset_categories') {
+        payload = {
+          id: data.id, name: data.name, type: data.type,
+          depreciation_years: data.depreciation_years ?? data.depreciationYears ?? 5
+        };
+      } else if (table === 'asset_assignments') {
+        payload = {
+          id: data.id, asset_id: data.asset_id || data.assetId,
+          type: data.type, user_id: data.user_id || data.userId,
+          user_name: data.user_name || data.userName,
+          from_user_id: data.from_user_id || data.fromUserId || null,
+          from_user_name: data.from_user_name || data.fromUserName || null,
+          date: data.date, note: data.note || null,
+          performed_by: data.performed_by || data.performedBy,
+          performed_by_name: data.performed_by_name || data.performedByName
+        };
+      } else if (table === 'asset_maintenances') {
+        payload = {
+          id: data.id, asset_id: data.asset_id || data.assetId,
+          type: data.type, description: data.description,
+          cost: data.cost ?? 0,
+          estimated_cost: data.estimated_cost ?? data.estimatedCost ?? 0,
+          actual_cost: data.actual_cost ?? data.actualCost ?? 0,
+          vendor: data.vendor || null,
+          invoice_number: data.invoice_number || data.invoiceNumber || null,
+          start_date: data.start_date || data.startDate,
+          end_date: data.end_date || data.endDate || null,
+          status: data.status,
+          performed_by: data.performed_by || data.performedBy,
+          performed_by_name: data.performed_by_name || data.performedByName || null,
+          note: data.note || null,
+          attachments: typeof data.attachments === 'string' ? data.attachments : JSON.stringify(data.attachments || [])
+        };
       }
 
       const { error } = await supabase.from(table).upsert(payload);
