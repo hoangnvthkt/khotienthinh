@@ -243,6 +243,104 @@ export interface DailyLog {
   createdAt: string;
 }
 
+// ==================== NGHIỆM THU NHÀ THẦU ====================
+export type AcceptanceStatus = 'draft' | 'submitted' | 'approved' | 'paid';
+
+export interface AcceptanceRecord {
+  id: string;
+  contractId: string;           // Liên kết HĐ thầu phụ
+  constructionSiteId: string;
+  periodNumber: number;         // Đợt nghiệm thu (1, 2, 3...)
+  description: string;          // "Nghiệm thu đợt 1 - Phần móng"
+  periodStart: string;
+  periodEnd: string;
+  approvedValue: number;        // Giá trị nghiệm thu
+  retentionPercent: number;     // % giữ lại bảo hành (VD: 5%)
+  retentionAmount?: number;     // Auto = approvedValue * retentionPercent / 100
+  payableAmount?: number;       // Auto = approvedValue - retentionAmount
+  status: AcceptanceStatus;
+  attachments?: { name: string; url: string; type: string }[];
+  approvedBy?: string;
+  approvedAt?: string;
+  paidAt?: string;
+  note?: string;
+  createdAt: string;
+}
+
+// ==================== VẬT TƯ & HAO HỤT ====================
+export type MaterialRequestStatus = 'pending' | 'approved' | 'rejected' | 'fulfilled';
+
+export interface MaterialBudgetItem {
+  id: string;
+  constructionSiteId: string;
+  category: string;             // Nhóm: Xi măng, Thép, Cát...
+  itemName: string;             // Tên vật tư cụ thể
+  unit: string;                 // Đơn vị: kg, m3, tấn, bao...
+  budgetQty: number;            // Khối lượng dự toán (BOQ)
+  budgetUnitPrice: number;      // Đơn giá dự toán
+  budgetTotal?: number;         // Auto: budgetQty * budgetUnitPrice
+  actualQty: number;            // Khối lượng thực xuất (auto cộng dồn)
+  actualTotal?: number;         // Auto: actualQty * budgetUnitPrice
+  wasteQty?: number;            // Auto: actualQty - budgetQty
+  wastePercent?: number;        // Auto: (actualQty - budgetQty)/budgetQty * 100
+  wasteThreshold: number;       // Ngưỡng cảnh báo hao hụt (%) — mặc định 5
+  notes?: string;
+}
+
+export interface ProjectMaterialRequest {
+  id: string;
+  constructionSiteId: string;
+  requestNumber: string;        // Số phiếu: YC-001
+  requestedBy: string;
+  requestDate: string;
+  items: { itemName: string; unit: string; qty: number; note?: string }[];
+  totalItems: number;
+  status: MaterialRequestStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  fulfilledAt?: string;
+  note?: string;
+  createdAt: string;
+}
+
+// ==================== CUNG ỨNG ====================
+export type POStatus = 'draft' | 'sent' | 'partial' | 'delivered' | 'cancelled';
+
+export interface ProjectVendor {
+  id: string;
+  constructionSiteId: string;
+  name: string;
+  contact: string;           // Người liên hệ
+  phone: string;
+  email?: string;
+  address?: string;
+  taxCode?: string;          // Mã số thuế
+  rating: number;            // 1-5
+  categories: string[];      // Loại vật tư cung cấp
+  totalOrders?: number;
+  totalValue?: number;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  constructionSiteId: string;
+  vendorId: string;
+  vendorName?: string;       // cache tên NCC
+  poNumber: string;          // PO-001
+  items: { name: string; unit: string; qty: number; unitPrice: number; receivedQty?: number }[];
+  totalAmount: number;
+  orderDate: string;
+  expectedDeliveryDate?: string;
+  actualDeliveryDate?: string;
+  status: POStatus;
+  materialRequestId?: string;
+  deliveryNote?: string;     // Ghi chú giao hàng
+  note?: string;
+  createdAt: string;
+}
+
 export type OrgUnitType = 'company' | 'department' | 'construction_site' | 'factory' | 'custom';
 
 export interface OrgUnit {

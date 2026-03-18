@@ -7,6 +7,10 @@ import CashFlowTab from './project/CashFlowTab';
 import ContractTab from './project/ContractTab';
 import GanttTab from './project/GanttTab';
 import DailyLogTab from './project/DailyLogTab';
+import SubcontractTab from './project/SubcontractTab';
+import MaterialTab from './project/MaterialTab';
+import SupplyChainTab from './project/SupplyChainTab';
+import ReportTab from './project/ReportTab';
 import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, FileText,
@@ -69,7 +73,7 @@ const ProjectDashboard: React.FC = () => {
 
     const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
     const [activeView, setActiveView] = useState<'list' | 'overview'>('list');
-    const [overviewTab, setOverviewTab] = useState<'budget' | 'cashflow' | 'contract' | 'gantt' | 'dailylog'>('budget');
+    const [overviewTab, setOverviewTab] = useState<'budget' | 'cashflow' | 'contract' | 'gantt' | 'dailylog' | 'subcontract' | 'material' | 'supply' | 'report'>('budget');
     const [showBudgetForm, setShowBudgetForm] = useState(false);
     const [showTxForm, setShowTxForm] = useState(false);
     const [budgetData, setBudgetData] = useState<ProjectFinance | null>(null);
@@ -756,6 +760,10 @@ const ProjectDashboard: React.FC = () => {
                         { key: 'contract' as const, label: 'Hợp đồng', icon: '📋' },
                         { key: 'gantt' as const, label: 'Tiến độ', icon: '📐' },
                         { key: 'dailylog' as const, label: 'Nhật ký', icon: '📝' },
+                        { key: 'subcontract' as const, label: 'Nhà thầu', icon: '🏗️' },
+                        { key: 'material' as const, label: 'Vật tư', icon: '📦' },
+                        { key: 'supply' as const, label: 'Cung ứng', icon: '🚛' },
+                        { key: 'report' as const, label: 'Báo cáo', icon: '📊' },
                     ].map(tab => (
                         <button key={tab.key} onClick={() => setOverviewTab(tab.key)}
                             className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
@@ -778,6 +786,18 @@ const ProjectDashboard: React.FC = () => {
                     <GanttTab constructionSiteId={selectedSiteId!} />
                 ) : overviewTab === 'dailylog' ? (
                     <DailyLogTab constructionSiteId={selectedSiteId!} />
+                ) : overviewTab === 'subcontract' ? (
+                    <SubcontractTab constructionSiteId={selectedSiteId!} />
+                ) : overviewTab === 'material' ? (
+                    <MaterialTab constructionSiteId={selectedSiteId!} />
+                ) : overviewTab === 'supply' ? (
+                    <SupplyChainTab constructionSiteId={selectedSiteId!} />
+                ) : overviewTab === 'report' ? (
+                    <ReportTab
+                        constructionSiteId={selectedSiteId!}
+                        contractValue={selectedFinance?.contractValue || 0}
+                        totalSpent={selectedAgg?.totalExpense || 0}
+                    />
                 ) : (
                 <>
                 {/* KPI Cards — AUTO-AGGREGATED */}
