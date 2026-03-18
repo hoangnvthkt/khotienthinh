@@ -3,6 +3,10 @@ import { useApp } from '../context/AppContext';
 import { ProjectFinance, ProjectTransaction, ProjectCostCategory, ProjectTxType, ProjectTxSource } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import * as XLSX from 'xlsx';
+import CashFlowTab from './project/CashFlowTab';
+import ContractTab from './project/ContractTab';
+import GanttTab from './project/GanttTab';
+import DailyLogTab from './project/DailyLogTab';
 import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, FileText,
@@ -65,6 +69,7 @@ const ProjectDashboard: React.FC = () => {
 
     const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
     const [activeView, setActiveView] = useState<'list' | 'overview'>('list');
+    const [overviewTab, setOverviewTab] = useState<'budget' | 'cashflow' | 'contract' | 'gantt' | 'dailylog'>('budget');
     const [showBudgetForm, setShowBudgetForm] = useState(false);
     const [showTxForm, setShowTxForm] = useState(false);
     const [budgetData, setBudgetData] = useState<ProjectFinance | null>(null);
@@ -743,6 +748,38 @@ const ProjectDashboard: React.FC = () => {
                     </div>
                 </div>
 
+                {/* Overview Sub-tabs */}
+                <div className="flex gap-1 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm overflow-x-auto">
+                    {[
+                        { key: 'budget' as const, label: 'Ngân sách', icon: '📊' },
+                        { key: 'cashflow' as const, label: 'Dòng tiền', icon: '💰' },
+                        { key: 'contract' as const, label: 'Hợp đồng', icon: '📋' },
+                        { key: 'gantt' as const, label: 'Tiến độ', icon: '📐' },
+                        { key: 'dailylog' as const, label: 'Nhật ký', icon: '📝' },
+                    ].map(tab => (
+                        <button key={tab.key} onClick={() => setOverviewTab(tab.key)}
+                            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                                overviewTab === tab.key ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25' : 'text-slate-500 hover:bg-slate-50'
+                            }`}>
+                            <span>{tab.icon}</span> {tab.label}
+                        </button>
+                    ))}
+                </div>
+
+                {overviewTab === 'cashflow' ? (
+                    <CashFlowTab
+                        constructionSiteId={selectedSiteId!}
+                        transactions={projectTransactions.filter(t => t.constructionSiteId === selectedSiteId)}
+                        contractValue={selectedFinance.contractValue}
+                    />
+                ) : overviewTab === 'contract' ? (
+                    <ContractTab constructionSiteId={selectedSiteId!} />
+                ) : overviewTab === 'gantt' ? (
+                    <GanttTab constructionSiteId={selectedSiteId!} />
+                ) : overviewTab === 'dailylog' ? (
+                    <DailyLogTab constructionSiteId={selectedSiteId!} />
+                ) : (
+                <>
                 {/* KPI Cards — AUTO-AGGREGATED */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
@@ -931,6 +968,8 @@ const ProjectDashboard: React.FC = () => {
                         </div>
                     )}
                 </div>
+                </>
+                )}
             </div>
         );
     };

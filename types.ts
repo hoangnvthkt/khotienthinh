@@ -171,6 +171,78 @@ export interface ProjectTransaction {
   createdAt: string;
 }
 
+export type PaymentScheduleStatus = 'pending' | 'paid' | 'overdue';
+export interface PaymentSchedule {
+  id: string;
+  constructionSiteId: string;
+  description: string;         // "Đợt 1 - Tạm ứng 30%"
+  amount: number;
+  dueDate: string;
+  paidDate?: string;
+  paidAmount?: number;
+  status: PaymentScheduleStatus;
+  type: 'receivable' | 'payable'; // Phải thu (CĐT) / Phải trả (NTP)
+  contactName?: string;           // Tên CĐT hoặc NTP
+  note?: string;
+}
+
+// ==================== HỢP ĐỒNG (HD) ====================
+export type ContractType = 'main' | 'subcontract';
+export type ContractStatus = 'draft' | 'active' | 'completed' | 'terminated';
+
+export interface ProjectContract {
+  id: string;
+  constructionSiteId: string;
+  contractNumber: string;
+  type: ContractType;
+  partyName: string;
+  value: number;
+  signDate: string;
+  startDate: string;
+  endDate: string;
+  paymentTerms?: string;
+  attachments?: { name: string; url: string; type: string }[];
+  status: ContractStatus;
+  note?: string;
+  createdAt: string;
+}
+
+// ==================== TIẾN ĐỘ (Gantt) ====================
+export type TaskDependencyType = 'FS' | 'SS' | 'FF' | 'SF';
+
+export interface ProjectTask {
+  id: string;
+  constructionSiteId: string;
+  parentId?: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  duration: number;         // ngày
+  progress: number;         // 0-100
+  assignee?: string;
+  dependencies?: { taskId: string; type: TaskDependencyType }[];
+  isMilestone: boolean;
+  color?: string;
+  notes?: string;
+  order: number;
+}
+
+// ==================== NHẬT KÝ CÔNG TRƯỜNG ====================
+export type WeatherType = 'sunny' | 'cloudy' | 'rainy' | 'storm';
+
+export interface DailyLog {
+  id: string;
+  constructionSiteId: string;
+  date: string;
+  weather: WeatherType;
+  workerCount: number;
+  description: string;
+  issues?: string;
+  photos?: { name: string; url: string }[];
+  createdBy: string;
+  createdAt: string;
+}
+
 export type OrgUnitType = 'company' | 'department' | 'construction_site' | 'factory' | 'custom';
 
 export interface OrgUnit {
