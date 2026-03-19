@@ -37,24 +37,7 @@
   }
 }
 
-/* Small screen improvements */
-@media (max-width: 640px) {
-  /* Modal adjustments for mobile */
-  .fixed.inset-0 > div {
-    max-height: 90vh !important;
-    margin: auto 8px !important;
-  }
-  /* Tables scroll horizontally on mobile */
-  table {
-    display: block;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-  /* Better spacing for mobile forms */
-  input, select, textarea {
-    font-size: 16px !important; /* Prevents iOS zoom on focus */
-  }
-}
+/* Small screen improvements — see comprehensive section below */
 
 /* Smooth transitions for online/offline status */
 .online-indicator {
@@ -87,4 +70,128 @@
   main {
     overscroll-behavior-y: contain;
   }
+}
+
+/* ============================
+   BOTTOM NAV — RESPONSIVE
+   ============================ */
+
+/* Safe area for bottom nav on notched devices */
+.btm-nav-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Bottom nav button reset — override touch min-height */
+.btm-nav-item {
+  min-height: auto !important;
+  min-width: 0 !important;
+}
+
+/* Very small screens (≤360px): icon-only bottom nav */
+@media (max-width: 360px) {
+  .btm-nav-label {
+    display: none !important;
+  }
+  .btm-nav-dot {
+    display: none !important;
+  }
+  .btm-nav-icon {
+    width: 28px !important;
+    height: 28px !important;
+  }
+}
+
+/* Small screens (361–480): smaller labels */
+@media (min-width: 361px) and (max-width: 480px) {
+  .btm-nav-label {
+    font-size: 8px !important;
+  }
+}
+
+/* ============================
+   GLOBAL TEXT OVERFLOW
+   ============================ */
+
+/* Prevent text lines from overflowing containers */
+h1, h2, h3, h4, h5, h6, p, span, div, td, th {
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Mobile: force truncation on long texts in common UI patterns */
+@media (max-width: 640px) {
+  /* Dashboard KPI cards — smaller text */
+  .grid > div .text-xl,
+  .grid > div .text-2xl {
+    font-size: 1rem !important;
+    line-height: 1.3;
+  }
+
+  /* Truncate card labels on mobile */
+  .grid > div .text-\[10px\],
+  .grid > div .text-\[9px\],
+  .grid > div .text-xs {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+
+  /* Modal adjustments for mobile */
+  .fixed.inset-0 > div {
+    max-height: 90vh !important;
+    margin: auto 8px !important;
+  }
+
+  /* Tables scroll horizontally on mobile */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Better spacing for mobile forms */
+  input, select, textarea {
+    font-size: 16px !important; /* Prevents iOS zoom on focus */
+  }
+
+  /* Compact page headers on mobile */
+  .space-y-6 > div:first-child h1 {
+    font-size: 1.25rem !important;
+    line-height: 1.3;
+  }
+}
+
+/* ============================
+   TABLET (641–1024px)
+   ============================ */
+@media (min-width: 641px) and (max-width: 1024px) {
+  /* Make grids 2-col on tablet when they're 4+ cols */
+  .grid.grid-cols-2.lg\:grid-cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .grid.grid-cols-2.lg\:grid-cols-5 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ============================
+   RESPONSIVE UTILITIES
+   ============================ */
+
+/* Utility: truncate with ellipsis */
+.mobile-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* Utility: clamp to 2 lines */
+.mobile-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }

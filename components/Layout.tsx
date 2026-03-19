@@ -187,6 +187,7 @@ const Layout: React.FC = () => {
             {/* Notification Center */}
             <NotificationCenter userId={user?.id} />
             <button
+              data-sidebar-toggle
               onClick={() => setSidebarOpen(true)}
               className="p-2 hover:bg-white/10 rounded-lg transition-colors"
             >
