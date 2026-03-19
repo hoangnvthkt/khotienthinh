@@ -3,6 +3,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import BottomNav from './BottomNav';
+import NotificationCenter from './NotificationCenter';
+import PWAInstallPrompt from './PWAInstallPrompt';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
 import { RefreshCw, Menu, AlertTriangle, ExternalLink, Bell, X, Moon, Sun, Package } from 'lucide-react';
@@ -16,11 +18,10 @@ const Layout: React.FC = () => {
     const saved = localStorage.getItem('sidebar_collapsed');
     return saved === 'true';
   });
-  const [bellOpen, setBellOpen] = useState(false);
   const [sessionWarning, setSessionWarning] = useState(false);
   const [countdown, setCountdown] = useState(300); // 5 minutes in seconds
 
-  const { isRefreshing, appSettings, isLoading, connectionError, logout, items } = useApp();
+  const { isRefreshing, appSettings, isLoading, connectionError, logout, items, user } = useApp();
   const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
@@ -183,51 +184,8 @@ const Layout: React.FC = () => {
             <button onClick={toggleTheme} className="p-2 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors">
               {isDark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            {/* Notification Bell */}
-            <div className="relative">
-              <button
-                onClick={() => setBellOpen(!bellOpen)}
-                className="p-2 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors relative"
-              >
-                <Bell size={18} />
-                {lowStockItems.length > 0 && (
-                  <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center ring-2 ring-white/20">
-                    {lowStockItems.length}
-                  </span>
-                )}
-              </button>
-              {bellOpen && (
-                <div className="absolute top-12 right-0 w-80 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden">
-                  <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-700">
-                    <h3 className="font-black text-sm text-slate-800 dark:text-white">Cảnh báo tồn kho</h3>
-                    <button onClick={() => setBellOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
-                  </div>
-                  {lowStockItems.length === 0 ? (
-                    <div className="p-8 text-center text-slate-300">
-                      <Package size={32} className="mx-auto mb-2 opacity-40" />
-                      <p className="text-xs font-bold">Tồn kho ổn định</p>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-slate-100 dark:divide-slate-700 max-h-64 overflow-y-auto">
-                      {lowStockItems.map(item => {
-                        const totalStock = Object.values(item.stockByWarehouse).reduce((a: number, b) => a + (b as number), 0);
-                        return (
-                          <div key={item.id} className="flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
-                            <div className="w-8 h-8 bg-red-50 rounded-lg flex items-center justify-center shrink-0">
-                              <AlertTriangle size={14} className="text-red-500" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-black text-slate-800 dark:text-slate-200 truncate">{item.name}</p>
-                              <p className="text-[10px] text-red-500 font-bold">Còn {totalStock} {item.unit} / Min: {item.minStock}</p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            {/* Notification Center */}
+            <NotificationCenter userId={user?.id} />
             <button
               onClick={() => setSidebarOpen(true)}
               className="p-2 hover:bg-white/10 rounded-lg transition-colors"
@@ -253,10 +211,8 @@ const Layout: React.FC = () => {
           )}
         </main>
         <BottomNav />
+        <PWAInstallPrompt />
       </div>
-
-      {/* Click outside to close bell */}
-      {bellOpen && <div className="fixed inset-0 z-40" onClick={() => setBellOpen(false)} />}
     </div>
   );
 };

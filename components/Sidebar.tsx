@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon,
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
-  Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox
+  Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -120,6 +120,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     ],
     DA: [
       { to: '/da', icon: BarChart3, label: 'Tổng quan DA' },
+      { to: '/da/portfolio', icon: Layers, label: 'Đa dự án' },
     ],
     TS: [
       { to: '/ts/dashboard', icon: LayoutDashboard, label: 'Dashboard TS' },

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
@@ -7,6 +7,7 @@ import {
     AlertTriangle, Clock, ArrowUpRight, ArrowDownRight, Trash2, Edit2, Save
 } from 'lucide-react';
 import { ProjectTransaction, PaymentSchedule, PaymentScheduleStatus } from '../../types';
+import { paymentService } from '../../lib/projectService';
 
 interface CashFlowTabProps {
     constructionSiteId: string;
@@ -40,16 +41,12 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
     const [showPaymentForm, setShowPaymentForm] = useState(false);
     const [editingPayment, setEditingPayment] = useState<PaymentSchedule | null>(null);
 
-    // Payment schedule state (localStorage)
-    const [paymentSchedules, setPaymentSchedules] = useState<PaymentSchedule[]>(() => {
-        const saved = localStorage.getItem(`payment_schedules_${constructionSiteId}`);
-        return saved ? JSON.parse(saved) : [];
-    });
+    // Payment schedule state (Supabase)
+    const [paymentSchedules, setPaymentSchedules] = useState<PaymentSchedule[]>([]);
 
-    const savePayments = (ps: PaymentSchedule[]) => {
-        setPaymentSchedules(ps);
-        localStorage.setItem(`payment_schedules_${constructionSiteId}`, JSON.stringify(ps));
-    };
+    useEffect(() => {
+        paymentService.list(constructionSiteId).then(setPaymentSchedules).catch(console.error);
+    }, [constructionSiteId]);
 
     // Payment form state
     const [pDesc, setPDesc] = useState('');
@@ -72,54 +69,52 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
         setShowPaymentForm(true);
     };
 
-    const handleSavePayment = () => {
+    const handleSavePayment = async () => {
         if (!pDesc || !pAmount || !pDueDate) return;
         const now = new Date().toISOString().split('T')[0];
         const isOverdue = pDueDate < now;
 
-        if (editingPayment) {
-            const updated: PaymentSchedule = {
-                ...editingPayment,
-                description: pDesc, amount: Number(pAmount), dueDate: pDueDate,
-                type: pType, contactName: pContact,
-                status: editingPayment.status === 'paid' ? 'paid' : isOverdue ? 'overdue' : 'pending',
-            };
-            savePayments(paymentSchedules.map(p => p.id === updated.id ? updated : p));
-        } else {
-            const newP: PaymentSchedule = {
-                id: crypto.randomUUID(),
-                constructionSiteId,
-                description: pDesc, amount: Number(pAmount), dueDate: pDueDate,
-                status: isOverdue ? 'overdue' : 'pending',
-                type: pType, contactName: pContact,
-            };
-            savePayments([...paymentSchedules, newP]);
-        }
+        const item: PaymentSchedule = editingPayment ? {
+            ...editingPayment,
+            description: pDesc, amount: Number(pAmount), dueDate: pDueDate,
+            type: pType, contactName: pContact,
+            status: editingPayment.status === 'paid' ? 'paid' : isOverdue ? 'overdue' : 'pending',
+        } : {
+            id: crypto.randomUUID(),
+            constructionSiteId,
+            description: pDesc, amount: Number(pAmount), dueDate: pDueDate,
+            status: isOverdue ? 'overdue' : 'pending',
+            type: pType, contactName: pContact,
+        };
+        await paymentService.upsert(item);
+        setPaymentSchedules(await paymentService.list(constructionSiteId));
         resetPaymentForm();
     };
 
-    const markPaid = (id: string) => {
-        savePayments(paymentSchedules.map(p =>
-            p.id === id ? { ...p, status: 'paid' as const, paidDate: new Date().toISOString().split('T')[0], paidAmount: p.amount } : p
-        ));
+    const markPaid = async (id: string) => {
+        const p = paymentSchedules.find(x => x.id === id);
+        if (!p) return;
+        await paymentService.upsert({ ...p, status: 'paid', paidDate: new Date().toISOString().split('T')[0], paidAmount: p.amount });
+        setPaymentSchedules(await paymentService.list(constructionSiteId));
     };
 
-    const deletePayment = (id: string) => {
-        if (confirm('Xoá lịch thanh toán này?')) {
-            savePayments(paymentSchedules.filter(p => p.id !== id));
-        }
+    const deletePayment = async (id: string) => {
+        if (!confirm('Xoá lịch thanh toán này?')) return;
+        await paymentService.remove(id);
+        setPaymentSchedules(await paymentService.list(constructionSiteId));
     };
 
     // Auto-update overdue
-    useMemo(() => {
+    useEffect(() => {
         const now = new Date().toISOString().split('T')[0];
-        let changed = false;
-        const updated = paymentSchedules.map(p => {
-            if (p.status === 'pending' && p.dueDate < now) { changed = true; return { ...p, status: 'overdue' as const }; }
-            return p;
-        });
-        if (changed) savePayments(updated);
-    }, [paymentSchedules]);
+        const overdueItems = paymentSchedules.filter(p => p.status === 'pending' && p.dueDate < now);
+        if (overdueItems.length > 0) {
+            Promise.all(overdueItems.map(p => paymentService.upsert({ ...p, status: 'overdue' as const })))
+                .then(() => paymentService.list(constructionSiteId))
+                .then(setPaymentSchedules)
+                .catch(console.error);
+        }
+    }, [paymentSchedules.length]);
 
     // ========== CHART DATA ==========
     const chartData = useMemo(() => {

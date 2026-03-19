@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     Plus, Edit2, Trash2, X, Save, FileText, Paperclip,
     CheckCircle2, AlertCircle, Clock, Ban
 } from 'lucide-react';
 import { ProjectContract, ContractType, ContractStatus } from '../../types';
+import { contractService } from '../../lib/projectService';
 
 interface ContractTabProps {
     constructionSiteId: string;
@@ -28,10 +29,11 @@ const TYPE_CFG: Record<ContractType, { label: string; icon: string; color: strin
 };
 
 const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
-    const [contracts, setContracts] = useState<ProjectContract[]>(() => {
-        const saved = localStorage.getItem(`contracts_${constructionSiteId}`);
-        return saved ? JSON.parse(saved) : [];
-    });
+    const [contracts, setContracts] = useState<ProjectContract[]>([]);
+
+    useEffect(() => {
+        contractService.list(constructionSiteId).then(setContracts).catch(console.error);
+    }, [constructionSiteId]);
 
     const [showForm, setShowForm] = useState(false);
     const [editing, setEditing] = useState<ProjectContract | null>(null);
@@ -50,11 +52,6 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
     const [fTerms, setFTerms] = useState('');
     const [fNote, setFNote] = useState('');
 
-    const save = (list: ProjectContract[]) => {
-        setContracts(list);
-        localStorage.setItem(`contracts_${constructionSiteId}`, JSON.stringify(list));
-    };
-
     const resetForm = () => {
         setEditing(null);
         setFNum(''); setFType('main'); setFParty(''); setFValue('');
@@ -72,29 +69,28 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
         setShowForm(true);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!fNum || !fParty || !fValue) return;
-        if (editing) {
-            save(contracts.map(c => c.id === editing.id ? {
-                ...editing, contractNumber: fNum, type: fType, partyName: fParty,
-                value: Number(fValue), signDate: fSignDate, startDate: fStartDate,
-                endDate: fEndDate, status: fStatus, paymentTerms: fTerms, note: fNote,
-            } : c));
-        } else {
-            const nc: ProjectContract = {
-                id: crypto.randomUUID(), constructionSiteId,
-                contractNumber: fNum, type: fType, partyName: fParty,
-                value: Number(fValue), signDate: fSignDate, startDate: fStartDate,
-                endDate: fEndDate, status: fStatus, paymentTerms: fTerms, note: fNote,
-                createdAt: new Date().toISOString(),
-            };
-            save([...contracts, nc]);
-        }
+        const item: ProjectContract = editing ? {
+            ...editing, contractNumber: fNum, type: fType, partyName: fParty,
+            value: Number(fValue), signDate: fSignDate, startDate: fStartDate,
+            endDate: fEndDate, status: fStatus, paymentTerms: fTerms, note: fNote,
+        } : {
+            id: crypto.randomUUID(), constructionSiteId,
+            contractNumber: fNum, type: fType, partyName: fParty,
+            value: Number(fValue), signDate: fSignDate, startDate: fStartDate,
+            endDate: fEndDate, status: fStatus, paymentTerms: fTerms, note: fNote,
+            createdAt: new Date().toISOString(),
+        };
+        await contractService.upsert(item);
+        setContracts(await contractService.list(constructionSiteId));
         resetForm();
     };
 
-    const handleDelete = (id: string) => {
-        if (confirm('Xoá hợp đồng này?')) save(contracts.filter(c => c.id !== id));
+    const handleDelete = async (id: string) => {
+        if (!confirm('Xoá hợp đồng này?')) return;
+        await contractService.remove(id);
+        setContracts(await contractService.list(constructionSiteId));
     };
 
     const filtered = useMemo(() => {

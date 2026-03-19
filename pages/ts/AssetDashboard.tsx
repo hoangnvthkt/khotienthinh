@@ -249,7 +249,7 @@ const AssetDashboard: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="glass-card p-4 md:p-6 rounded-2xl flex items-start justify-between hover:shadow-lg transition-all">
+                <div onClick={() => navigate('/ts/catalog')} className="glass-card p-4 md:p-6 rounded-2xl flex items-start justify-between hover:shadow-lg transition-all cursor-pointer active:scale-95">
                     <div>
                         <p className="text-slate-500 dark:text-slate-400 text-[10px] md:text-[11px] uppercase font-black tracking-widest mb-1">Sắp hết BH</p>
                         <h3 className={`text-lg md:text-2xl font-black ${stats.expiringWarranty.length > 0 ? 'text-red-500' : 'text-slate-800 dark:text-white'}`}>{stats.expiringWarranty.length}</h3>

@@ -12,6 +12,7 @@ import Reports from './pages/Reports';
 import MisaExport from './pages/MisaExport';
 import Login from './pages/Login';
 import ProjectDashboard from './pages/ProjectDashboard';
+import PortfolioDashboard from './pages/PortfolioDashboard';
 import MyProfile from './pages/MyProfile';
 import Employees from './pages/hrm/Employees';
 import WorkflowInstances from './pages/wf/WorkflowInstances';
@@ -64,6 +65,7 @@ const AppRoutes: React.FC = () => {
         <Route path="misa-export" element={<MisaExport />} />
         <Route path="hrm/employees" element={<Employees />} />
         <Route path="da" element={<ProjectDashboard />} />
+        <Route path="da/portfolio" element={<PortfolioDashboard />} />
         <Route path="chat" element={<Chat />} />
         <Route path="rq" element={<RequestList />} />
         <Route path="rq/categories" element={<RequestCategories />} />

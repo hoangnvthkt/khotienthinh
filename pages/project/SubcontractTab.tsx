@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     Plus, Edit2, Trash2, X, Save, FileText, CheckCircle2, Clock,
     Send, CreditCard, ChevronDown, ChevronUp, AlertTriangle, Users,
     TrendingUp, DollarSign, Percent
 } from 'lucide-react';
 import { ProjectContract, AcceptanceRecord, AcceptanceStatus } from '../../types';
+import { contractService, acceptanceService } from '../../lib/projectService';
 
 interface SubcontractTabProps {
     constructionSiteId: string;
@@ -24,17 +25,15 @@ const STATUS_CFG: Record<AcceptanceStatus, { label: string; color: string; bg: s
 };
 
 const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId }) => {
-    // Load contracts (subcontract type only) from ContractTab's localStorage
-    const contracts = useMemo<ProjectContract[]>(() => {
-        const saved = localStorage.getItem(`contracts_${constructionSiteId}`);
-        const all: ProjectContract[] = saved ? JSON.parse(saved) : [];
-        return all.filter(c => c.type === 'subcontract');
-    }, [constructionSiteId]);
+    const [contracts, setContracts] = useState<ProjectContract[]>([]);
+    const [acceptances, setAcceptances] = useState<AcceptanceRecord[]>([]);
 
-    const [acceptances, setAcceptances] = useState<AcceptanceRecord[]>(() => {
-        const saved = localStorage.getItem(`acceptances_${constructionSiteId}`);
-        return saved ? JSON.parse(saved) : [];
-    });
+    useEffect(() => {
+        contractService.list(constructionSiteId)
+            .then(all => setContracts(all.filter(c => c.type === 'subcontract')))
+            .catch(console.error);
+        acceptanceService.list(constructionSiteId).then(setAcceptances).catch(console.error);
+    }, [constructionSiteId]);
 
     const [expandedContractId, setExpandedContractId] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
@@ -51,11 +50,6 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId }) =
     const [fStatus, setFStatus] = useState<AcceptanceStatus>('draft');
     const [fNote, setFNote] = useState('');
     const [fApprovedBy, setFApprovedBy] = useState('');
-
-    const saveAcceptances = (list: AcceptanceRecord[]) => {
-        setAcceptances(list);
-        localStorage.setItem(`acceptances_${constructionSiteId}`, JSON.stringify(list));
-    };
 
     const resetForm = () => {
         setEditing(null);
@@ -84,53 +78,54 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId }) =
         setShowForm(true);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!formContractId || !fValue || !fDesc) return;
         const value = Number(fValue);
         const retention = Number(fRetention);
         const retentionAmount = Math.round(value * retention / 100);
         const payableAmount = value - retentionAmount;
 
-        if (editing) {
-            saveAcceptances(acceptances.map(a => a.id === editing.id ? {
-                ...editing,
-                periodNumber: Number(fPeriod), description: fDesc,
-                periodStart: fStart, periodEnd: fEnd, approvedValue: value,
-                retentionPercent: retention, retentionAmount, payableAmount,
-                status: fStatus, note: fNote || undefined,
-                approvedBy: fApprovedBy || undefined,
-                approvedAt: fStatus === 'approved' && editing.status !== 'approved' ? new Date().toISOString() : editing.approvedAt,
-                paidAt: fStatus === 'paid' && editing.status !== 'paid' ? new Date().toISOString() : editing.paidAt,
-            } : a));
-        } else {
-            const na: AcceptanceRecord = {
-                id: crypto.randomUUID(), contractId: formContractId, constructionSiteId,
-                periodNumber: Number(fPeriod), description: fDesc,
-                periodStart: fStart, periodEnd: fEnd, approvedValue: value,
-                retentionPercent: retention, retentionAmount, payableAmount,
-                status: fStatus, note: fNote || undefined,
-                approvedBy: fApprovedBy || undefined,
-                approvedAt: fStatus === 'approved' ? new Date().toISOString() : undefined,
-                paidAt: fStatus === 'paid' ? new Date().toISOString() : undefined,
-                createdAt: new Date().toISOString(),
-            };
-            saveAcceptances([...acceptances, na]);
-        }
+        const item: AcceptanceRecord = editing ? {
+            ...editing,
+            periodNumber: Number(fPeriod), description: fDesc,
+            periodStart: fStart, periodEnd: fEnd, approvedValue: value,
+            retentionPercent: retention, retentionAmount, payableAmount,
+            status: fStatus, note: fNote || undefined,
+            approvedBy: fApprovedBy || undefined,
+            approvedAt: fStatus === 'approved' && editing.status !== 'approved' ? new Date().toISOString() : editing.approvedAt,
+            paidAt: fStatus === 'paid' && editing.status !== 'paid' ? new Date().toISOString() : editing.paidAt,
+        } : {
+            id: crypto.randomUUID(), contractId: formContractId, constructionSiteId,
+            periodNumber: Number(fPeriod), description: fDesc,
+            periodStart: fStart, periodEnd: fEnd, approvedValue: value,
+            retentionPercent: retention, retentionAmount, payableAmount,
+            status: fStatus, note: fNote || undefined,
+            approvedBy: fApprovedBy || undefined,
+            approvedAt: fStatus === 'approved' ? new Date().toISOString() : undefined,
+            paidAt: fStatus === 'paid' ? new Date().toISOString() : undefined,
+            createdAt: new Date().toISOString(),
+        };
+        await acceptanceService.upsert(item);
+        setAcceptances(await acceptanceService.list(constructionSiteId));
         resetForm();
     };
 
-    const handleDeleteAcceptance = (id: string) => {
-        if (confirm('Xoá biên bản nghiệm thu này?')) {
-            saveAcceptances(acceptances.filter(a => a.id !== id));
-        }
+    const handleDeleteAcceptance = async (id: string) => {
+        if (!confirm('Xoá biên bản nghiệm thu này?')) return;
+        await acceptanceService.remove(id);
+        setAcceptances(await acceptanceService.list(constructionSiteId));
     };
 
-    const updateAcceptanceStatus = (id: string, status: AcceptanceStatus) => {
-        saveAcceptances(acceptances.map(a => a.id === id ? {
-            ...a, status,
-            approvedAt: status === 'approved' ? new Date().toISOString() : a.approvedAt,
-            paidAt: status === 'paid' ? new Date().toISOString() : a.paidAt,
-        } : a));
+    const updateAcceptanceStatus = async (id: string, status: AcceptanceStatus) => {
+        const record = acceptances.find(a => a.id === id);
+        if (!record) return;
+        const updated = {
+            ...record, status,
+            approvedAt: status === 'approved' ? new Date().toISOString() : record.approvedAt,
+            paidAt: status === 'paid' ? new Date().toISOString() : record.paidAt,
+        };
+        await acceptanceService.upsert(updated);
+        setAcceptances(await acceptanceService.list(constructionSiteId));
     };
 
     // Stats per contract

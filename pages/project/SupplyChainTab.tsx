@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     Plus, Edit2, Trash2, X, Save, Truck, Star, Phone, Mail, MapPin,
     FileText, CheckCircle2, Clock, Ban, Send, Package, ChevronDown,
     ChevronUp, Users, DollarSign, ShoppingCart, AlertTriangle
 } from 'lucide-react';
 import { ProjectVendor, PurchaseOrder, POStatus } from '../../types';
+import { vendorService, poService } from '../../lib/projectService';
 
 interface SupplyChainTabProps {
     constructionSiteId: string;
@@ -30,15 +31,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
     const [subTab, setSubTab] = useState<'vendor' | 'po'>('vendor');
 
     // Vendors
-    const [vendors, setVendors] = useState<ProjectVendor[]>(() => {
-        const s = localStorage.getItem(`vendors_${constructionSiteId}`);
-        return s ? JSON.parse(s) : [];
-    });
+    const [vendors, setVendors] = useState<ProjectVendor[]>([]);
     // POs
-    const [pos, setPos] = useState<PurchaseOrder[]>(() => {
-        const s = localStorage.getItem(`pos_${constructionSiteId}`);
-        return s ? JSON.parse(s) : [];
-    });
+    const [pos, setPos] = useState<PurchaseOrder[]>([]);
+
+    useEffect(() => {
+        vendorService.list(constructionSiteId).then(setVendors).catch(console.error);
+        poService.list(constructionSiteId).then(setPos).catch(console.error);
+    }, [constructionSiteId]);
 
     const [showVendorForm, setShowVendorForm] = useState(false);
     const [editingVendor, setEditingVendor] = useState<ProjectVendor | null>(null);
@@ -65,9 +65,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
     const [pItems, setPItems] = useState<{ name: string; unit: string; qty: number; unitPrice: number }[]>([{ name: '', unit: '', qty: 0, unitPrice: 0 }]);
     const [pNote, setPNote] = useState('');
 
-    const saveVendors = (list: ProjectVendor[]) => { setVendors(list); localStorage.setItem(`vendors_${constructionSiteId}`, JSON.stringify(list)); };
-    const savePos = (list: PurchaseOrder[]) => { setPos(list); localStorage.setItem(`pos_${constructionSiteId}`, JSON.stringify(list)); };
-
     // Vendor CRUD
     const resetVendorForm = () => {
         setEditingVendor(null); setShowVendorForm(false);
@@ -80,22 +77,19 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
         setVTax(v.taxCode || ''); setVRating(v.rating); setVCats([...v.categories]);
         setVNotes(v.notes || ''); setShowVendorForm(true);
     };
-    const handleSaveVendor = () => {
+    const handleSaveVendor = async () => {
         if (!vName || !vPhone) return;
-        const vendorPos = pos.filter(p => editingVendor ? p.vendorId === editingVendor.id : false);
+        const vendorPosData = pos.filter(p => editingVendor ? p.vendorId === editingVendor.id : false);
         const v: ProjectVendor = {
             id: editingVendor?.id || crypto.randomUUID(), constructionSiteId,
             name: vName, contact: vContact, phone: vPhone, email: vEmail || undefined,
             address: vAddress || undefined, taxCode: vTax || undefined, rating: vRating,
-            categories: vCats, totalOrders: vendorPos.length,
-            totalValue: vendorPos.reduce((s, p) => s + p.totalAmount, 0),
+            categories: vCats, totalOrders: vendorPosData.length,
+            totalValue: vendorPosData.reduce((s, p) => s + p.totalAmount, 0),
             notes: vNotes || undefined, createdAt: editingVendor?.createdAt || new Date().toISOString(),
         };
-        if (editingVendor) {
-            saveVendors(vendors.map(x => x.id === editingVendor.id ? v : x));
-        } else {
-            saveVendors([...vendors, v]);
-        }
+        await vendorService.upsert(v);
+        setVendors(await vendorService.list(constructionSiteId));
         resetVendorForm();
     };
 
@@ -111,34 +105,35 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
         setPItems(po.items.map(i => ({ name: i.name, unit: i.unit, qty: i.qty, unitPrice: i.unitPrice })));
         setPNote(po.note || ''); setShowPoForm(true);
     };
-    const handleSavePo = () => {
+    const handleSavePo = async () => {
         if (!pVendorId || !pNum) return;
         const validItems = pItems.filter(i => i.name);
         const totalAmount = validItems.reduce((s, i) => s + i.qty * i.unitPrice, 0);
         const vendor = vendors.find(v => v.id === pVendorId);
-        if (editingPo) {
-            savePos(pos.map(p => p.id === editingPo.id ? {
-                ...editingPo, vendorId: pVendorId, vendorName: vendor?.name,
-                poNumber: pNum, items: validItems, totalAmount, orderDate: pDate,
-                expectedDeliveryDate: pExpDate || undefined, note: pNote || undefined,
-            } : p));
-        } else {
-            const np: PurchaseOrder = {
-                id: crypto.randomUUID(), constructionSiteId, vendorId: pVendorId,
-                vendorName: vendor?.name, poNumber: pNum, items: validItems,
-                totalAmount, orderDate: pDate, expectedDeliveryDate: pExpDate || undefined,
-                status: 'draft', note: pNote || undefined, createdAt: new Date().toISOString(),
-            };
-            savePos([np, ...pos]);
-        }
+        const poItem: PurchaseOrder = editingPo ? {
+            ...editingPo, vendorId: pVendorId, vendorName: vendor?.name,
+            poNumber: pNum, items: validItems, totalAmount, orderDate: pDate,
+            expectedDeliveryDate: pExpDate || undefined, note: pNote || undefined,
+        } : {
+            id: crypto.randomUUID(), constructionSiteId, vendorId: pVendorId,
+            vendorName: vendor?.name, poNumber: pNum, items: validItems,
+            totalAmount, orderDate: pDate, expectedDeliveryDate: pExpDate || undefined,
+            status: 'draft', note: pNote || undefined, createdAt: new Date().toISOString(),
+        };
+        await poService.upsert(poItem);
+        setPos(await poService.list(constructionSiteId));
         resetPoForm();
     };
 
-    const updatePoStatus = (id: string, status: POStatus) => {
-        savePos(pos.map(p => p.id === id ? {
-            ...p, status,
-            actualDeliveryDate: status === 'delivered' ? new Date().toISOString().split('T')[0] : p.actualDeliveryDate,
-        } : p));
+    const updatePoStatus = async (id: string, status: POStatus) => {
+        const po = pos.find(p => p.id === id);
+        if (!po) return;
+        const updated = {
+            ...po, status,
+            actualDeliveryDate: status === 'delivered' ? new Date().toISOString().split('T')[0] : po.actualDeliveryDate,
+        };
+        await poService.upsert(updated);
+        setPos(await poService.list(constructionSiteId));
     };
 
     // Stats
@@ -247,7 +242,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
                                                 </div>
                                                 <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
                                                     <button onClick={() => openEditVendor(v)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
-                                                    <button onClick={() => { if(confirm('Xoá NCC?')) saveVendors(vendors.filter(x => x.id !== v.id)); }}
+                                                    <button onClick={async () => { if(confirm('Xoá NCC?')) { await vendorService.remove(v.id); setVendors(await vendorService.list(constructionSiteId)); } }}
                                                         className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
                                                 </div>
                                             </div>
@@ -331,7 +326,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
                                                     </div>
                                                     <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
                                                         <button onClick={e => { e.stopPropagation(); openEditPo(po); }} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
-                                                        <button onClick={e => { e.stopPropagation(); if(confirm('Xoá?')) savePos(pos.filter(p => p.id !== po.id)); }}
+                                                        <button onClick={async e => { e.stopPropagation(); if(confirm('Xoá?')) { await poService.remove(po.id); setPos(await poService.list(constructionSiteId)); } }}
                                                             className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
                                                     </div>
                                                     {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}

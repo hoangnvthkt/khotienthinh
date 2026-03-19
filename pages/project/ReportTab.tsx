@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, AreaChart, Area, LineChart, Line, RadarChart, Radar,
@@ -10,6 +10,7 @@ import {
     Calendar, Activity
 } from 'lucide-react';
 import { ProjectContract, AcceptanceRecord, MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor, PurchaseOrder, ProjectTask, DailyLog } from '../../types';
+import { contractService, acceptanceService, boqService, matRequestService, vendorService, poService, taskService, dailyLogService } from '../../lib/projectService';
 
 interface ReportTabProps {
     constructionSiteId: string;
@@ -33,45 +34,25 @@ const GRADIENT_PAIRS = [
 const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue = 0, totalSpent = 0 }) => {
     const [selectedChart, setSelectedChart] = useState<string | null>(null);
 
-    // Load all data from localStorage
-    const contracts = useMemo<ProjectContract[]>(() => {
-        const s = localStorage.getItem(`contracts_${constructionSiteId}`);
-        return s ? JSON.parse(s) : [];
-    }, [constructionSiteId]);
+    // Load all data from Supabase
+    const [contracts, setContracts] = useState<ProjectContract[]>([]);
+    const [acceptances, setAcceptances] = useState<AcceptanceRecord[]>([]);
+    const [boqItems, setBoqItems] = useState<MaterialBudgetItem[]>([]);
+    const [matRequests, setMatRequests] = useState<ProjectMaterialRequest[]>([]);
+    const [vendors, setVendors] = useState<ProjectVendor[]>([]);
+    const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+    const [tasks, setTasks] = useState<ProjectTask[]>([]);
+    const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
 
-    const acceptances = useMemo<AcceptanceRecord[]>(() => {
-        const s = localStorage.getItem(`acceptances_${constructionSiteId}`);
-        return s ? JSON.parse(s) : [];
-    }, [constructionSiteId]);
-
-    const boqItems = useMemo<MaterialBudgetItem[]>(() => {
-        const s = localStorage.getItem(`boq_${constructionSiteId}`);
-        return s ? JSON.parse(s) : [];
-    }, [constructionSiteId]);
-
-    const matRequests = useMemo<ProjectMaterialRequest[]>(() => {
-        const s = localStorage.getItem(`mat_requests_${constructionSiteId}`);
-        return s ? JSON.parse(s) : [];
-    }, [constructionSiteId]);
-
-    const vendors = useMemo<ProjectVendor[]>(() => {
-        const s = localStorage.getItem(`vendors_${constructionSiteId}`);
-        return s ? JSON.parse(s) : [];
-    }, [constructionSiteId]);
-
-    const purchaseOrders = useMemo<PurchaseOrder[]>(() => {
-        const s = localStorage.getItem(`pos_${constructionSiteId}`);
-        return s ? JSON.parse(s) : [];
-    }, [constructionSiteId]);
-
-    const tasks = useMemo<ProjectTask[]>(() => {
-        const s = localStorage.getItem(`gantt_tasks_${constructionSiteId}`);
-        return s ? JSON.parse(s) : [];
-    }, [constructionSiteId]);
-
-    const dailyLogs = useMemo<DailyLog[]>(() => {
-        const s = localStorage.getItem(`dailylogs_${constructionSiteId}`);
-        return s ? JSON.parse(s) : [];
+    useEffect(() => {
+        contractService.list(constructionSiteId).then(setContracts).catch(console.error);
+        acceptanceService.list(constructionSiteId).then(setAcceptances).catch(console.error);
+        boqService.list(constructionSiteId).then(setBoqItems).catch(console.error);
+        matRequestService.list(constructionSiteId).then(setMatRequests).catch(console.error);
+        vendorService.list(constructionSiteId).then(setVendors).catch(console.error);
+        poService.list(constructionSiteId).then(setPurchaseOrders).catch(console.error);
+        taskService.list(constructionSiteId).then(setTasks).catch(console.error);
+        dailyLogService.list(constructionSiteId).then(setDailyLogs).catch(console.error);
     }, [constructionSiteId]);
 
     // ==================== COMPUTED DATA ====================

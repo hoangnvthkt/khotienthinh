@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     Plus, Edit2, Trash2, X, Save, Package, AlertTriangle, TrendingUp,
     CheckCircle2, Clock, Ban, FileCheck, ChevronDown, ChevronUp,
@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { MaterialBudgetItem, ProjectMaterialRequest, MaterialRequestStatus } from '../../types';
+import { boqService, matRequestService } from '../../lib/projectService';
 
 interface MaterialTabProps {
     constructionSiteId: string;
@@ -30,16 +31,15 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
     const [activeSubTab, setActiveSubTab] = useState<'boq' | 'request' | 'waste'>('boq');
 
     // BOQ Data
-    const [boqItems, setBoqItems] = useState<MaterialBudgetItem[]>(() => {
-        const saved = localStorage.getItem(`boq_${constructionSiteId}`);
-        return saved ? JSON.parse(saved) : [];
-    });
+    const [boqItems, setBoqItems] = useState<MaterialBudgetItem[]>([]);
 
     // Material Requests
-    const [requests, setRequests] = useState<ProjectMaterialRequest[]>(() => {
-        const saved = localStorage.getItem(`mat_requests_${constructionSiteId}`);
-        return saved ? JSON.parse(saved) : [];
-    });
+    const [requests, setRequests] = useState<ProjectMaterialRequest[]>([]);
+
+    useEffect(() => {
+        boqService.list(constructionSiteId).then(setBoqItems).catch(console.error);
+        matRequestService.list(constructionSiteId).then(setRequests).catch(console.error);
+    }, [constructionSiteId]);
 
     const [showBoqForm, setShowBoqForm] = useState(false);
     const [editingBoq, setEditingBoq] = useState<MaterialBudgetItem | null>(null);
@@ -63,16 +63,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
     const [rItems, setRItems] = useState<{ itemName: string; unit: string; qty: number; note?: string }[]>([{ itemName: '', unit: '', qty: 0 }]);
     const [rNote, setRNote] = useState('');
 
-    const saveBoq = (list: MaterialBudgetItem[]) => {
-        setBoqItems(list);
-        localStorage.setItem(`boq_${constructionSiteId}`, JSON.stringify(list));
-    };
-
-    const saveRequests = (list: ProjectMaterialRequest[]) => {
-        setRequests(list);
-        localStorage.setItem(`mat_requests_${constructionSiteId}`, JSON.stringify(list));
-    };
-
     const resetBoqForm = () => {
         setEditingBoq(null); setShowBoqForm(false);
         setBCat('Xi măng'); setBName(''); setBUnit(''); setBBudgetQty('');
@@ -88,7 +78,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
         setShowBoqForm(true);
     };
 
-    const handleSaveBoq = () => {
+    const handleSaveBoq = async () => {
         if (!bName || !bUnit || !bBudgetQty || !bPrice) return;
         const budgetQty = Number(bBudgetQty);
         const actualQty = Number(bActualQty);
@@ -108,11 +98,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
             notes: bNotes || undefined,
         };
 
-        if (editingBoq) {
-            saveBoq(boqItems.map(b => b.id === editingBoq.id ? item : b));
-        } else {
-            saveBoq([...boqItems, item]);
-        }
+        await boqService.upsert(item);
+        setBoqItems(await boqService.list(constructionSiteId));
         resetBoqForm();
     };
 
@@ -129,34 +116,35 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
         setShowReqForm(true);
     };
 
-    const handleSaveReq = () => {
+    const handleSaveReq = async () => {
         if (!rNum || !rBy || rItems.every(i => !i.itemName)) return;
         const validItems = rItems.filter(i => i.itemName);
-        if (editingReq) {
-            saveRequests(requests.map(r => r.id === editingReq.id ? {
-                ...editingReq, requestNumber: rNum, requestedBy: rBy,
-                requestDate: rDate, items: validItems, totalItems: validItems.length,
-                note: rNote || undefined,
-            } : r));
-        } else {
-            const nr: ProjectMaterialRequest = {
-                id: crypto.randomUUID(), constructionSiteId,
-                requestNumber: rNum, requestedBy: rBy, requestDate: rDate,
-                items: validItems, totalItems: validItems.length,
-                status: 'pending', note: rNote || undefined,
-                createdAt: new Date().toISOString(),
-            };
-            saveRequests([nr, ...requests]);
-        }
+        const reqItem: ProjectMaterialRequest = editingReq ? {
+            ...editingReq, requestNumber: rNum, requestedBy: rBy,
+            requestDate: rDate, items: validItems, totalItems: validItems.length,
+            note: rNote || undefined,
+        } : {
+            id: crypto.randomUUID(), constructionSiteId,
+            requestNumber: rNum, requestedBy: rBy, requestDate: rDate,
+            items: validItems, totalItems: validItems.length,
+            status: 'pending' as const, note: rNote || undefined,
+            createdAt: new Date().toISOString(),
+        };
+        await matRequestService.upsert(reqItem);
+        setRequests(await matRequestService.list(constructionSiteId));
         resetReqForm();
     };
 
-    const updateReqStatus = (id: string, status: MaterialRequestStatus) => {
-        saveRequests(requests.map(r => r.id === id ? {
-            ...r, status,
-            approvedAt: status === 'approved' ? new Date().toISOString() : r.approvedAt,
-            fulfilledAt: status === 'fulfilled' ? new Date().toISOString() : r.fulfilledAt,
-        } : r));
+    const updateReqStatus = async (id: string, status: MaterialRequestStatus) => {
+        const req = requests.find(r => r.id === id);
+        if (!req) return;
+        const updated = {
+            ...req, status,
+            approvedAt: status === 'approved' ? new Date().toISOString() : req.approvedAt,
+            fulfilledAt: status === 'fulfilled' ? new Date().toISOString() : req.fulfilledAt,
+        };
+        await matRequestService.upsert(updated);
+        setRequests(await matRequestService.list(constructionSiteId));
     };
 
     // Stats
@@ -279,7 +267,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
                                                 <td className="px-4 py-2.5">
                                                     <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
                                                         <button onClick={() => openEditBoq(item)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
-                                                        <button onClick={() => { if(confirm('Xoá?')) saveBoq(boqItems.filter(b => b.id !== item.id)); }} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
+                                                        <button onClick={async () => { if(confirm('Xoá?')) { await boqService.remove(item.id); setBoqItems(await boqService.list(constructionSiteId)); } }} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -365,7 +353,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
                                                 )}
                                                 <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
                                                     <button onClick={() => openEditReq(req)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
-                                                    <button onClick={() => { if(confirm('Xoá?')) saveRequests(requests.filter(r => r.id !== req.id)); }} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
+                                                    <button onClick={async () => { if(confirm('Xoá?')) { await matRequestService.remove(req.id); setRequests(await matRequestService.list(constructionSiteId)); } }} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
                                                 </div>
                                             </div>
                                         </div>

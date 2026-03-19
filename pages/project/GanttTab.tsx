@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { Plus, Edit2, Trash2, X, Save, ChevronRight, ChevronDown, Flag, GripVertical, ZoomIn, ZoomOut } from 'lucide-react';
 import { ProjectTask } from '../../types';
+import { taskService } from '../../lib/projectService';
 
 interface GanttTabProps {
     constructionSiteId: string;
@@ -22,10 +23,11 @@ const addDays = (d: string, n: number) => {
 const formatDate = (d: string) => new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
 
 const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
-    const [tasks, setTasks] = useState<ProjectTask[]>(() => {
-        const saved = localStorage.getItem(`gantt_tasks_${constructionSiteId}`);
-        return saved ? JSON.parse(saved) : [];
-    });
+    const [tasks, setTasks] = useState<ProjectTask[]>([]);
+
+    useEffect(() => {
+        taskService.list(constructionSiteId).then(setTasks).catch(console.error);
+    }, [constructionSiteId]);
 
     const [showForm, setShowForm] = useState(false);
     const [editing, setEditing] = useState<ProjectTask | null>(null);
@@ -44,11 +46,6 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
     const [fNotes, setFNotes] = useState('');
     const [fColor, setFColor] = useState('');
 
-    const save = (list: ProjectTask[]) => {
-        setTasks(list);
-        localStorage.setItem(`gantt_tasks_${constructionSiteId}`, JSON.stringify(list));
-    };
-
     const resetForm = () => {
         setEditing(null);
         setFName(''); setFStart(''); setFEnd(''); setFProgress('0');
@@ -66,38 +63,42 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
         setShowForm(true);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!fName || !fStart || !fEnd) return;
         const duration = daysBetween(fStart, fEnd);
-        if (editing) {
-            save(tasks.map(t => t.id === editing.id ? {
-                ...editing, name: fName, startDate: fStart, endDate: fEnd, duration,
-                progress: Number(fProgress), assignee: fAssignee || undefined,
-                parentId: fParentId || undefined, isMilestone: fMilestone,
-                notes: fNotes || undefined, color: fColor || undefined,
-            } : t));
-        } else {
-            const nt: ProjectTask = {
-                id: crypto.randomUUID(), constructionSiteId,
-                name: fName, startDate: fStart, endDate: fEnd, duration,
-                progress: Number(fProgress), assignee: fAssignee || undefined,
-                parentId: fParentId || undefined, isMilestone: fMilestone,
-                notes: fNotes || undefined, color: fColor || undefined,
-                order: tasks.length,
-            };
-            save([...tasks, nt]);
-        }
+        const item: ProjectTask = editing ? {
+            ...editing, name: fName, startDate: fStart, endDate: fEnd, duration,
+            progress: Number(fProgress), assignee: fAssignee || undefined,
+            parentId: fParentId || undefined, isMilestone: fMilestone,
+            notes: fNotes || undefined, color: fColor || undefined,
+        } : {
+            id: crypto.randomUUID(), constructionSiteId,
+            name: fName, startDate: fStart, endDate: fEnd, duration,
+            progress: Number(fProgress), assignee: fAssignee || undefined,
+            parentId: fParentId || undefined, isMilestone: fMilestone,
+            notes: fNotes || undefined, color: fColor || undefined,
+            order: tasks.length,
+        };
+        await taskService.upsert(item);
+        setTasks(await taskService.list(constructionSiteId));
         resetForm();
     };
 
-    const handleDelete = (id: string) => {
-        if (confirm('Xoá hạng mục này?')) {
-            save(tasks.filter(t => t.id !== id && t.parentId !== id));
-        }
+    const handleDelete = async (id: string) => {
+        if (!confirm('Xoá hạng mục này?')) return;
+        // Delete children first
+        const children = tasks.filter(t => t.parentId === id);
+        for (const c of children) await taskService.remove(c.id);
+        await taskService.remove(id);
+        setTasks(await taskService.list(constructionSiteId));
     };
 
-    const updateProgress = (id: string, progress: number) => {
-        save(tasks.map(t => t.id === id ? { ...t, progress: Math.max(0, Math.min(100, progress)) } : t));
+    const updateProgress = async (id: string, progress: number) => {
+        const task = tasks.find(t => t.id === id);
+        if (!task) return;
+        const updated = { ...task, progress: Math.max(0, Math.min(100, progress)) };
+        await taskService.upsert(updated);
+        setTasks(prev => prev.map(t => t.id === id ? updated : t));
     };
 
     // Build tree structure

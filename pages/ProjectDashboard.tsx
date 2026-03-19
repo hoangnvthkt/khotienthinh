@@ -11,6 +11,7 @@ import SubcontractTab from './project/SubcontractTab';
 import MaterialTab from './project/MaterialTab';
 import SupplyChainTab from './project/SupplyChainTab';
 import ReportTab from './project/ReportTab';
+import DocumentsTab from './project/DocumentsTab';
 import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, FileText,
@@ -73,7 +74,7 @@ const ProjectDashboard: React.FC = () => {
 
     const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
     const [activeView, setActiveView] = useState<'list' | 'overview'>('list');
-    const [overviewTab, setOverviewTab] = useState<'budget' | 'cashflow' | 'contract' | 'gantt' | 'dailylog' | 'subcontract' | 'material' | 'supply' | 'report'>('budget');
+    const [overviewTab, setOverviewTab] = useState<'budget' | 'cashflow' | 'contract' | 'gantt' | 'dailylog' | 'subcontract' | 'material' | 'supply' | 'report' | 'documents'>('budget');
     const [showBudgetForm, setShowBudgetForm] = useState(false);
     const [showTxForm, setShowTxForm] = useState(false);
     const [budgetData, setBudgetData] = useState<ProjectFinance | null>(null);
@@ -763,6 +764,7 @@ const ProjectDashboard: React.FC = () => {
                         { key: 'subcontract' as const, label: 'Nhà thầu', icon: '🏗️' },
                         { key: 'material' as const, label: 'Vật tư', icon: '📦' },
                         { key: 'supply' as const, label: 'Cung ứng', icon: '🚛' },
+                        { key: 'documents' as const, label: 'Tài liệu', icon: '📎' },
                         { key: 'report' as const, label: 'Báo cáo', icon: '📊' },
                     ].map(tab => (
                         <button key={tab.key} onClick={() => setOverviewTab(tab.key)}
@@ -798,31 +800,33 @@ const ProjectDashboard: React.FC = () => {
                         contractValue={selectedFinance?.contractValue || 0}
                         totalSpent={selectedAgg?.totalExpense || 0}
                     />
+                ) : overviewTab === 'documents' ? (
+                    <DocumentsTab constructionSiteId={selectedSiteId!} uploadedBy={user?.name} />
                 ) : (
                 <>
                 {/* KPI Cards — AUTO-AGGREGATED */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5"><FileText size={12} /> Giá trị HĐ</div>
+                    <div onClick={() => setOverviewTab('contract')} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-indigo-500 transition-colors"><FileText size={12} /> Giá trị HĐ</div>
                         <div className="text-xl font-black text-slate-800">{fmt(selectedFinance.contractValue)}</div>
                         <div className="text-[10px] text-slate-400 mt-1">{fmtFull(selectedFinance.contractValue)}</div>
                     </div>
-                    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5"><DollarSign size={12} /> Chi phí thực tế</div>
+                    <div onClick={() => setOverviewTab('budget')} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-orange-500 transition-colors"><DollarSign size={12} /> Chi phí thực tế</div>
                         <div className="text-xl font-black text-slate-800">{fmt(selectedAgg.totalExpense)}</div>
                         <div className={`text-[10px] mt-1 font-bold flex items-center gap-1 ${budgetUsed > 100 ? 'text-red-500' : 'text-emerald-500'}`}>
                             {budgetUsed > 100 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />} {budgetUsed.toFixed(1)}% ngân sách
                         </div>
                     </div>
-                    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5"><TrendingUp size={12} /> Lợi nhuận</div>
+                    <div onClick={() => setOverviewTab('cashflow')} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-emerald-500 transition-colors"><TrendingUp size={12} /> Lợi nhuận</div>
                         <div className={`text-xl font-black ${profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmt(profit)}</div>
                         <div className={`text-[10px] mt-1 font-bold ${profitPct >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
                             {profitPct >= 0 ? '+' : ''}{profitPct.toFixed(1)}%
                         </div>
                     </div>
-                    <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Target size={12} /> Thu / Chờ thu</div>
+                    <div onClick={() => setOverviewTab('cashflow')} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-cyan-500 transition-colors"><Target size={12} /> Thu / Chờ thu</div>
                         <div className="text-xl font-black text-emerald-600">{fmt(selectedAgg.revenueReceived)}</div>
                         <div className="text-[10px] text-amber-500 font-bold mt-1">Chờ: {fmt(selectedAgg.revenuePending)}</div>
                     </div>
@@ -1000,21 +1004,21 @@ const ProjectDashboard: React.FC = () => {
             {/* Aggregate KPIs */}
             {projectFinances.length > 0 && (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-lg">
+                    <div onClick={() => setActiveView('overview')} className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all cursor-pointer">
                         <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">Tổng giá trị HĐ</div>
                         <div className="text-2xl font-black">{fmt(allStats.totalContract)}</div>
                         <div className="text-xs opacity-60 mt-1">{projectFinances.length} dự án</div>
                     </div>
-                    <div className="bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl p-5 text-white shadow-lg">
+                    <div onClick={() => setActiveView('overview')} className="bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all cursor-pointer">
                         <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">Tổng chi thực tế</div>
                         <div className="text-2xl font-black">{fmt(allStats.totalActual)}</div>
                         <div className="text-xs opacity-60 mt-1">NS: {fmt(allStats.totalBudget)}</div>
                     </div>
-                    <div className={`bg-gradient-to-br ${allStats.profit >= 0 ? 'from-emerald-500 to-green-600' : 'from-red-500 to-rose-600'} rounded-2xl p-5 text-white shadow-lg`}>
+                    <div onClick={() => setActiveView('overview')} className={`bg-gradient-to-br ${allStats.profit >= 0 ? 'from-emerald-500 to-green-600' : 'from-red-500 to-rose-600'} rounded-2xl p-5 text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all cursor-pointer`}>
                         <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">{allStats.profit >= 0 ? 'Lợi nhuận' : 'Thua lỗ'}</div>
                         <div className="text-2xl font-black">{fmt(allStats.profit)}</div>
                     </div>
-                    <div className="bg-gradient-to-br from-violet-500 to-purple-600 rounded-2xl p-5 text-white shadow-lg">
+                    <div onClick={() => setActiveView('overview')} className="bg-gradient-to-br from-violet-500 to-purple-600 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all cursor-pointer">
                         <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">Tiến độ TB</div>
                         <div className="text-2xl font-black">{allStats.avgProgress.toFixed(0)}%</div>
                         <div className="text-xs opacity-60 mt-1">Thu: {fmt(allStats.totalRevenue)}</div>

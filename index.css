@@ -1,0 +1,90 @@
+/* KhoViet - Mobile & PWA Styles */
+
+/* Safe area insets for notched devices */
+:root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+}
+
+/* Standalone mode adjustments (PWA) */
+@media (display-mode: standalone) {
+  body {
+    padding-top: var(--safe-area-top);
+    padding-bottom: var(--safe-area-bottom);
+  }
+  /* Hide browser-specific elements in standalone */
+  .browser-only { display: none !important; }
+}
+
+/* Touch optimization */
+@media (pointer: coarse) {
+  /* Larger tap targets on touch devices */
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  /* Prevent text selection on interactive elements */
+  button, [role="button"] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Smoother scrolling */
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Small screen improvements */
+@media (max-width: 640px) {
+  /* Modal adjustments for mobile */
+  .fixed.inset-0 > div {
+    max-height: 90vh !important;
+    margin: auto 8px !important;
+  }
+  /* Tables scroll horizontally on mobile */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Better spacing for mobile forms */
+  input, select, textarea {
+    font-size: 16px !important; /* Prevents iOS zoom on focus */
+  }
+}
+
+/* Smooth transitions for online/offline status */
+.online-indicator {
+  transition: all 0.3s ease;
+}
+
+/* PWA splash screen styling */
+@media (display-mode: standalone) {
+  #root:empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #f0fdf4, #f1f5f9, #f0fdfa);
+  }
+  #root:empty::after {
+    content: '🏗️';
+    font-size: 4rem;
+    animation: float 2s ease-in-out infinite;
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+/* Pull-to-refresh visual cue */
+@media (pointer: coarse) {
+  main {
+    overscroll-behavior-y: contain;
+  }
+}

@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle } from 'lucide-react';
 import { DailyLog, WeatherType } from '../../types';
+import { dailyLogService } from '../../lib/projectService';
 
 interface DailyLogTabProps {
     constructionSiteId: string;
@@ -14,10 +15,11 @@ const WEATHER: Record<WeatherType, { label: string; icon: React.ReactNode; emoji
 };
 
 const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
-    const [logs, setLogs] = useState<DailyLog[]>(() => {
-        const saved = localStorage.getItem(`daily_logs_${constructionSiteId}`);
-        return saved ? JSON.parse(saved) : [];
-    });
+    const [logs, setLogs] = useState<DailyLog[]>([]);
+
+    useEffect(() => {
+        dailyLogService.list(constructionSiteId).then(setLogs).catch(console.error);
+    }, [constructionSiteId]);
 
     const [showForm, setShowForm] = useState(false);
     const [editing, setEditing] = useState<DailyLog | null>(null);
@@ -29,11 +31,6 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
     const [fWorkers, setFWorkers] = useState('');
     const [fDesc, setFDesc] = useState('');
     const [fIssues, setFIssues] = useState('');
-
-    const save = (list: DailyLog[]) => {
-        setLogs(list);
-        localStorage.setItem(`daily_logs_${constructionSiteId}`, JSON.stringify(list));
-    };
 
     const resetForm = () => {
         setEditing(null);
@@ -49,27 +46,26 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
         setShowForm(true);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!fDate || !fDesc) return;
-        if (editing) {
-            save(logs.map(l => l.id === editing.id ? {
-                ...editing, date: fDate, weather: fWeather, workerCount: Number(fWorkers) || 0,
-                description: fDesc, issues: fIssues || undefined,
-            } : l));
-        } else {
-            const nl: DailyLog = {
-                id: crypto.randomUUID(), constructionSiteId, date: fDate,
-                weather: fWeather, workerCount: Number(fWorkers) || 0,
-                description: fDesc, issues: fIssues || undefined,
-                createdBy: 'admin', createdAt: new Date().toISOString(),
-            };
-            save([nl, ...logs]);
-        }
+        const item: DailyLog = editing ? {
+            ...editing, date: fDate, weather: fWeather, workerCount: Number(fWorkers) || 0,
+            description: fDesc, issues: fIssues || undefined,
+        } : {
+            id: crypto.randomUUID(), constructionSiteId, date: fDate,
+            weather: fWeather, workerCount: Number(fWorkers) || 0,
+            description: fDesc, issues: fIssues || undefined,
+            createdBy: 'admin', createdAt: new Date().toISOString(),
+        };
+        await dailyLogService.upsert(item);
+        setLogs(await dailyLogService.list(constructionSiteId));
         resetForm();
     };
 
-    const handleDelete = (id: string) => {
-        if (confirm('Xoá nhật ký này?')) save(logs.filter(l => l.id !== id));
+    const handleDelete = async (id: string) => {
+        if (!confirm('Xoá nhật ký này?')) return;
+        await dailyLogService.remove(id);
+        setLogs(await dailyLogService.list(constructionSiteId));
     };
 
     const filtered = useMemo(() => {
