@@ -8,7 +8,8 @@ import {
   ItemCategory, ItemUnit, Employee, MaterialLossNorm, AuditSession,
   HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule, HrmConstructionSite,
   OrgUnit, ProjectFinance, ProjectTransaction,
-  Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus
+  Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus,
+  AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_ITEMS,
@@ -51,6 +52,11 @@ interface AppContextType {
   addHrmItem: (table: string, item: any) => void;
   updateHrmItem: (table: string, item: any) => void;
   removeHrmItem: (table: string, id: string) => void;
+  // HRM 5A — Chấm công & Lương
+  attendanceRecords: AttendanceRecord[];
+  leaveRequests: LeaveRequest[];
+  payrollRecords: PayrollRecord[];
+  laborContracts: LaborContract[];
   // Org Chart
   orgUnits: OrgUnit[];
   addOrgUnit: (unit: OrgUnit) => void;
@@ -147,6 +153,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [hrmSalaryPolicies, setHrmSalaryPolicies] = useState<HrmSalaryPolicy[]>([]);
   const [hrmWorkSchedules, setHrmWorkSchedules] = useState<HrmWorkSchedule[]>([]);
   const [hrmConstructionSites, setHrmConstructionSites] = useState<HrmConstructionSite[]>([]);
+  // HRM 5A
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
+  const [laborContracts, setLaborContracts] = useState<LaborContract[]>([]);
   const [orgUnits, setOrgUnits] = useState<OrgUnit[]>([]);
   const [lossNorms, setLossNorms] = useState<MaterialLossNorm[]>([]);
   const [auditSessions, setAuditSessions] = useState<AuditSession[]>([]);
@@ -1155,6 +1166,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     'hrm_salary_policies': setHrmSalaryPolicies,
     'hrm_work_schedules': setHrmWorkSchedules,
     'hrm_construction_sites': setHrmConstructionSites,
+    // HRM 5A
+    'hrm_attendance': setAttendanceRecords,
+    'hrm_leave_requests': setLeaveRequests,
+    'hrm_payrolls': setPayrollRecords,
+    'hrm_labor_contracts': setLaborContracts,
   };
 
   const addHrmItem = async (table: string, item: any) => {
@@ -1412,6 +1428,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       user, users, appSettings, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
       categories, units, employees,
       hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
+      attendanceRecords, leaveRequests, payrollRecords, laborContracts,
       addHrmItem, updateHrmItem, removeHrmItem,
       orgUnits, addOrgUnit, updateOrgUnit, removeOrgUnit,
       addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,

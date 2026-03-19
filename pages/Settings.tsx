@@ -69,6 +69,9 @@ const Settings: React.FC = () => {
   const [editingHrmItem, setEditingHrmItem] = useState<any | null>(null);
   const [newHrmName, setNewHrmName] = useState('');
   const [newHrmDesc, setNewHrmDesc] = useState('');
+  const [newHrmLat, setNewHrmLat] = useState('');
+  const [newHrmLng, setNewHrmLng] = useState('');
+  const [newHrmRadius, setNewHrmRadius] = useState('');
 
   // Input fields for adding
   const [newCatName, setNewCatName] = useState('');
@@ -880,8 +883,14 @@ const Settings: React.FC = () => {
 
                 const handleHrmAdd = () => {
                   if (!newHrmName.trim()) return;
+                  const hasGps = activeHrmSection === 'construction_sites' || activeHrmSection === 'offices';
                   if (editingHrmItem) {
-                    const updated = { ...editingHrmItem, name: newHrmName.trim(), ...(cfg.hasDesc ? { [cfg.table === 'hrm_offices' ? 'address' : 'description']: newHrmDesc.trim() } : {}) };
+                    const updated: any = { ...editingHrmItem, name: newHrmName.trim(), ...(cfg.hasDesc ? { [cfg.table === 'hrm_offices' ? 'address' : 'description']: newHrmDesc.trim() } : {}) };
+                    if (hasGps) {
+                      updated.latitude = newHrmLat ? parseFloat(newHrmLat) : undefined;
+                      updated.longitude = newHrmLng ? parseFloat(newHrmLng) : undefined;
+                      updated.checkInRadius = newHrmRadius ? parseInt(newHrmRadius) : (activeHrmSection === 'offices' ? 100 : 200);
+                    }
                     updateHrmItem(cfg.table, updated);
                     setEditingHrmItem(null);
                   } else {
@@ -889,16 +898,23 @@ const Settings: React.FC = () => {
                     if (cfg.hasDesc) {
                       newItem[cfg.table === 'hrm_offices' ? 'address' : 'description'] = newHrmDesc.trim();
                     }
+                    if (hasGps) {
+                      newItem.latitude = newHrmLat ? parseFloat(newHrmLat) : undefined;
+                      newItem.longitude = newHrmLng ? parseFloat(newHrmLng) : undefined;
+                      newItem.checkInRadius = newHrmRadius ? parseInt(newHrmRadius) : (activeHrmSection === 'offices' ? 100 : 200);
+                    }
                     addHrmItem(cfg.table, newItem);
                   }
-                  setNewHrmName('');
-                  setNewHrmDesc('');
+                  setNewHrmName(''); setNewHrmDesc(''); setNewHrmLat(''); setNewHrmLng(''); setNewHrmRadius('');
                 };
 
                 const handleHrmEdit = (item: any) => {
                   setEditingHrmItem(item);
                   setNewHrmName(item.name);
                   setNewHrmDesc(item.description || item.address || '');
+                  setNewHrmLat(item.latitude ? String(item.latitude) : '');
+                  setNewHrmLng(item.longitude ? String(item.longitude) : '');
+                  setNewHrmRadius(item.checkInRadius ? String(item.checkInRadius) : '');
                 };
 
                 const handleHrmDelete = (id: string) => {
@@ -917,7 +933,7 @@ const Settings: React.FC = () => {
                     <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <button
-                          onClick={() => { setActiveHrmSection(null); setEditingHrmItem(null); setNewHrmName(''); setNewHrmDesc(''); }}
+                          onClick={() => { setActiveHrmSection(null); setEditingHrmItem(null); setNewHrmName(''); setNewHrmDesc(''); setNewHrmLat(''); setNewHrmLng(''); setNewHrmRadius(''); }}
                           className="p-2 hover:bg-white rounded-xl text-slate-400 hover:text-slate-800 transition-all border border-transparent hover:border-slate-200"
                         >
                           <X size={20} />
@@ -950,10 +966,44 @@ const Settings: React.FC = () => {
                                 className="w-full bg-white border border-slate-200 rounded-2xl px-6 py-4 text-sm font-bold outline-none focus:ring-2 focus:ring-accent transition-all"
                               />
                             )}
+                            {(activeHrmSection === 'construction_sites' || activeHrmSection === 'offices') && (
+                              <div className="space-y-3 bg-blue-50 p-4 rounded-2xl border border-blue-200">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest">📍 Toạ độ GPS (Check-in)</h4>
+                                  <button type="button" onClick={() => {
+                                    navigator.geolocation.getCurrentPosition(
+                                      (pos) => { setNewHrmLat(String(pos.coords.latitude)); setNewHrmLng(String(pos.coords.longitude)); },
+                                      () => alert('Không thể lấy vị trí GPS'),
+                                      { enableHighAccuracy: true }
+                                    );
+                                  }} className="px-3 py-1.5 bg-blue-500 text-white rounded-xl text-[10px] font-black hover:bg-blue-600 transition flex items-center gap-1">
+                                    <MapPin size={12} /> Lấy toạ độ hiện tại
+                                  </button>
+                                </div>
+                                <div className="grid grid-cols-3 gap-3">
+                                  <div>
+                                    <label className="text-[9px] font-bold text-blue-500 uppercase block mb-1">Latitude</label>
+                                    <input type="text" placeholder="VD: 21.0285" value={newHrmLat} onChange={e => setNewHrmLat(e.target.value)}
+                                      className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2.5 text-xs font-mono font-bold outline-none focus:ring-2 focus:ring-blue-400" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] font-bold text-blue-500 uppercase block mb-1">Longitude</label>
+                                    <input type="text" placeholder="VD: 105.8542" value={newHrmLng} onChange={e => setNewHrmLng(e.target.value)}
+                                      className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2.5 text-xs font-mono font-bold outline-none focus:ring-2 focus:ring-blue-400" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] font-bold text-blue-500 uppercase block mb-1">Bán kính (m)</label>
+                                    <input type="number" placeholder={activeHrmSection === 'offices' ? '100' : '200'} value={newHrmRadius} onChange={e => setNewHrmRadius(e.target.value)}
+                                      className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-400" />
+                                  </div>
+                                </div>
+                                <p className="text-[9px] text-blue-400 font-medium">NV check-in phải ở trong bán kính này. Để trống = không giới hạn.</p>
+                              </div>
+                            )}
                             <div className="flex gap-3">
                               {editingHrmItem && (
                                 <button
-                                  onClick={() => { setEditingHrmItem(null); setNewHrmName(''); setNewHrmDesc(''); }}
+                                  onClick={() => { setEditingHrmItem(null); setNewHrmName(''); setNewHrmDesc(''); setNewHrmLat(''); setNewHrmLng(''); setNewHrmRadius(''); }}
                                   className="px-6 py-3 border border-slate-200 text-slate-500 rounded-2xl font-bold text-xs uppercase hover:bg-slate-50 transition-all"
                                 >
                                   Hủy

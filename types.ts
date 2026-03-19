@@ -75,6 +75,9 @@ export interface HrmOffice {
   id: string;
   name: string;
   address?: string;
+  latitude?: number;
+  longitude?: number;
+  checkInRadius?: number;   // mét — bán kính check-in (default 100m)
   createdAt?: string;
 }
 
@@ -110,6 +113,9 @@ export interface HrmConstructionSite {
   name: string;
   address?: string;
   description?: string;
+  latitude?: number;
+  longitude?: number;
+  checkInRadius?: number;   // mét — bán kính check-in (default 200m)
   createdAt?: string;
 }
 
@@ -851,4 +857,153 @@ export interface AssetMaintenance {
   performedByName?: string;
   note?: string;
   attachments?: MaintenanceAttachment[];  // Hoá đơn, chứng từ đính kèm
+}
+
+// ==================== HRM CHẤM CÔNG & LƯƠNG (PHASE 5A) ====================
+
+export type AttendanceStatus = 'present' | 'absent' | 'half_day' | 'leave' | 'holiday' | 'business_trip';
+
+export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {
+  present: 'Đi làm',
+  absent: 'Vắng',
+  half_day: 'Nửa ngày',
+  leave: 'Nghỉ phép',
+  holiday: 'Lễ/Tết',
+  business_trip: 'Công tác',
+};
+
+export const ATTENDANCE_STATUS_COLORS: Record<AttendanceStatus, string> = {
+  present: 'bg-emerald-500 text-white',
+  absent: 'bg-red-500 text-white',
+  half_day: 'bg-amber-500 text-white',
+  leave: 'bg-blue-500 text-white',
+  holiday: 'bg-purple-500 text-white',
+  business_trip: 'bg-cyan-500 text-white',
+};
+
+export interface AttendanceRecord {
+  id: string;
+  employeeId: string;
+  date: string;             // YYYY-MM-DD
+  status: AttendanceStatus;
+  checkIn?: string;         // HH:mm
+  checkOut?: string;        // HH:mm
+  overtimeHours?: number;
+  constructionSiteId?: string;
+  note?: string;
+  // Selfie + GPS check-in
+  checkInPhoto?: string;    // base64 hoặc URL ảnh selfie
+  checkOutPhoto?: string;
+  checkInLat?: number;
+  checkInLng?: number;
+  checkOutLat?: number;
+  checkOutLng?: number;
+  locationName?: string;    // Tên CT/VP (cache)
+  locationType?: 'construction_site' | 'office';
+  isOutOfRange?: boolean;   // NV ngoài phạm vi khi check-in
+  createdAt?: string;
+}
+
+// ===== NGHỈ PHÉP =====
+
+export type LeaveType = 'annual' | 'sick' | 'personal' | 'maternity' | 'unpaid' | 'other';
+
+export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
+  annual: 'Phép năm',
+  sick: 'Ốm đau',
+  personal: 'Việc riêng',
+  maternity: 'Thai sản',
+  unpaid: 'Không lương',
+  other: 'Khác',
+};
+
+export type LeaveRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+export interface LeaveRequest {
+  id: string;
+  employeeId: string;
+  type: LeaveType;
+  startDate: string;
+  endDate: string;
+  totalDays: number;
+  reason: string;
+  status: LeaveRequestStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectionReason?: string;
+  createdAt: string;
+}
+
+export interface LeaveBalance {
+  employeeId: string;
+  year: number;
+  annualTotal: number;       // Tổng phép năm (default 12)
+  annualUsed: number;        // Đã sử dụng
+  sickUsed: number;
+  personalUsed: number;
+  unpaidUsed: number;
+}
+
+// ===== BẢNG LƯƠNG =====
+
+export interface PayrollRecord {
+  id: string;
+  employeeId: string;
+  month: number;             // 1-12
+  year: number;
+  // Ngày công
+  workingDays: number;       // Ngày công thực tế (từ chấm công)
+  standardDays: number;      // Ngày công chuẩn tháng (VD: 26)
+  overtimeHours: number;
+  // Lương
+  baseSalary: number;        // Lương cơ bản / tháng
+  dailyRate?: number;        // Đơn giá / ngày (auto: baseSalary / standardDays)
+  overtimeRate?: number;     // Đơn giá OT / giờ
+  // Phụ cấp
+  allowancePosition: number; // Phụ cấp chức vụ
+  allowanceMeal: number;     // Phụ cấp ăn trưa
+  allowanceTransport: number; // Phụ cấp đi lại
+  allowancePhone: number;    // Phụ cấp điện thoại
+  allowanceOther: number;    // Phụ cấp khác
+  // Khấu trừ
+  deductionInsurance: number; // BHXH/BHYT/BHTN
+  deductionTax: number;      // Thuế TNCN
+  deductionAdvance: number;  // Tạm ứng
+  deductionOther: number;    // Khấu trừ khác
+  // Tổng
+  grossSalary: number;       // Tổng thu nhập
+  netSalary: number;         // Thực lĩnh
+  note?: string;
+  status: 'draft' | 'confirmed' | 'paid';
+  paidDate?: string;
+  createdAt: string;
+}
+
+// ===== HỢP ĐỒNG LAO ĐỘNG =====
+
+export type LaborContractType = 'probation' | 'fixed_term' | 'indefinite' | 'seasonal';
+
+export const LABOR_CONTRACT_LABELS: Record<LaborContractType, string> = {
+  probation: 'Thử việc',
+  fixed_term: 'Có thời hạn',
+  indefinite: 'Không thời hạn',
+  seasonal: 'Thời vụ',
+};
+
+export type LaborContractStatus = 'active' | 'expired' | 'terminated' | 'renewed';
+
+export interface LaborContract {
+  id: string;
+  employeeId: string;
+  contractNumber: string;    // HĐ-001
+  type: LaborContractType;
+  status: LaborContractStatus;
+  startDate: string;
+  endDate?: string;          // null = vô thời hạn
+  baseSalary: number;        // Mức lương cơ bản
+  allowancePosition?: number;
+  allowanceOther?: number;
+  signedBy?: string;         // Người ký (đại diện công ty)
+  note?: string;
+  createdAt: string;
 }

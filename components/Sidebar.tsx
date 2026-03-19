@@ -5,7 +5,8 @@ import {
   LayoutDashboard, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon,
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
-  Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers
+  Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers,
+  Calendar, CalendarOff, DollarSign, FileSignature, MapPin
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -112,7 +113,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/misa-export', icon: FileSpreadsheet, label: 'Đồng bộ MISA', roles: [Role.ADMIN, Role.ACCOUNTANT] },
     ],
     HRM: [
+      { to: '/hrm/checkin', icon: MapPin, label: 'Check-in' },
       { to: '/hrm/employees', icon: Users, label: 'Hồ sơ nhân sự' },
+      { to: '/hrm/attendance', icon: Calendar, label: 'Chấm công' },
+      { to: '/hrm/leave', icon: CalendarOff, label: 'Nghỉ phép' },
+      { to: '/hrm/payroll', icon: DollarSign, label: 'Bảng lương' },
+      { to: '/hrm/contracts', icon: FileSignature, label: 'Hợp đồng LĐ' },
     ],
     WF: [
       { to: '/wf', icon: GitBranch, label: 'Quy trình' },
