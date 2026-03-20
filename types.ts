@@ -935,13 +935,66 @@ export interface LeaveRequest {
 }
 
 export interface LeaveBalance {
+  id: string;
   employeeId: string;
   year: number;
-  annualTotal: number;       // Tổng phép năm (default 12)
-  annualUsed: number;        // Đã sử dụng
-  sickUsed: number;
-  personalUsed: number;
-  unpaidUsed: number;
+  initialDays: number;       // Tổng phép năm ban đầu (default 12)
+  monthlyAccrual: number;    // Số ngày cộng thêm mỗi tháng (default 1)
+  accruedDays: number;       // Tổng ngày đã tích lũy (cộng dồn hàng tháng)
+  usedPaidDays: number;      // Ngày phép đã sử dụng (có lương)
+  usedUnpaidDays: number;    // Ngày phép không lương
+  lastAccrualMonth: number;  // Tháng cuối cùng đã tích lũy (1-12)
+  createdAt?: string;
+}
+
+// ===== NGÀY LỄ =====
+
+export interface HrmHoliday {
+  id: string;
+  name: string;
+  date: string;  // YYYY-MM-DD
+  year: number;
+  createdAt?: string;
+}
+
+// ===== BẢNG LƯƠNG MẪU =====
+
+export type PayrollFieldType = 'income' | 'deduction' | 'info' | 'formula';
+export type PayrollFieldSource = 'manual' | 'attendance_days' | 'attendance_ot_normal' | 'attendance_ot_weekend' | 'attendance_ot_holiday' | 'contract_salary' | 'contract_allowance' | 'contract_daily_rate';
+
+export const PAYROLL_FIELD_SOURCE_LABELS: Record<PayrollFieldSource, string> = {
+  manual: 'Nhập tay',
+  attendance_days: 'Ngày công (từ chấm công)',
+  attendance_ot_normal: 'OT ngày thường (giờ)',
+  attendance_ot_weekend: 'OT cuối tuần (giờ)',
+  attendance_ot_holiday: 'OT ngày lễ (giờ)',
+  contract_salary: 'Lương cơ bản (từ HĐLĐ)',
+  contract_allowance: 'Phụ cấp chức vụ (từ HĐLĐ)',
+  contract_daily_rate: 'Đơn giá ngày (lương CB / ngày chuẩn)',
+};
+
+export const PAYROLL_FIELD_TYPE_LABELS: Record<PayrollFieldType, string> = {
+  income: 'Thu nhập',
+  deduction: 'Khấu trừ',
+  info: 'Thông tin',
+  formula: 'Công thức',
+};
+
+export interface PayrollTemplateField {
+  id: string;
+  name: string;
+  type: PayrollFieldType;
+  source?: PayrollFieldSource;  // for non-formula fields
+  formula?: string;             // for formula fields, e.g. "{Lương HĐ} * 10.5%"
+  order: number;
+}
+
+export interface PayrollTemplate {
+  id: string;
+  name: string;
+  salaryPolicyId?: string;
+  fields: PayrollTemplateField[];
+  createdAt?: string;
 }
 
 // ===== BẢNG LƯƠNG =====
@@ -1006,4 +1059,56 @@ export interface LaborContract {
   signedBy?: string;         // Người ký (đại diện công ty)
   note?: string;
   createdAt: string;
+}
+
+// ===== LỊCH SỬ LƯƠNG =====
+
+export interface HrmSalaryHistory {
+  id: string;
+  employeeId: string;
+  contractId?: string;
+  changeDate: string;
+  previousSalary: number;
+  newSalary: number;
+  previousAllowance: number;
+  newAllowance: number;
+  reason?: string;
+  changedBy?: string;
+  createdAt?: string;
+}
+
+// ===== KẾ HOẠCH CHI PHÍ =====
+
+export type BudgetSource = 'manual' | 'payroll_salary' | 'payroll_allowance' | 'payroll_insurance' | 'payroll_total' | 'inventory_import' | 'asset_maintenance';
+
+export interface BudgetCategory {
+  id: string;
+  name: string;
+  code: string;        // I, I.1, II, II.3...
+  parentId?: string | null;
+  year: number;
+  order: number;
+  source: BudgetSource; // Nguồn dữ liệu thực tế
+  createdAt?: string;
+}
+
+export interface BudgetEntry {
+  id: string;
+  categoryId: string;
+  month: number;       // 1-12
+  year: number;
+  planned: number;     // Dự kiến (VNĐ)
+  actual: number;      // Thực tế (VNĐ)
+  createdAt?: string;
+}
+
+export interface ExpenseRecord {
+  id: string;
+  categoryId: string;
+  amount: number;
+  date: string;
+  description?: string;
+  receiptUrl?: string;
+  createdBy?: string;
+  createdAt?: string;
 }

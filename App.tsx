@@ -20,6 +20,9 @@ import LeaveManagement from './pages/hrm/LeaveManagement';
 import Payroll from './pages/hrm/Payroll';
 import LaborContractPage from './pages/hrm/LaborContract';
 import CheckIn from './pages/hrm/CheckIn';
+import HrmReports from './pages/hrm/HrmReports';
+import HrmDashboard from './pages/hrm/HrmDashboard';
+import BudgetDashboard from './pages/expense/BudgetDashboard';
 import WorkflowInstances from './pages/wf/WorkflowInstances';
 import WorkflowTemplates from './pages/wf/WorkflowTemplates';
 import WorkflowBuilder from './pages/wf/WorkflowBuilder';
@@ -69,11 +72,14 @@ const AppRoutes: React.FC = () => {
         <Route path="settings" element={<Settings />} />
         <Route path="misa-export" element={<MisaExport />} />
         <Route path="hrm/employees" element={<Employees />} />
+        <Route path="hrm/dashboard" element={<HrmDashboard />} />
+        <Route path="expense" element={<BudgetDashboard />} />
         <Route path="hrm/attendance" element={<Attendance />} />
         <Route path="hrm/leave" element={<LeaveManagement />} />
         <Route path="hrm/payroll" element={<Payroll />} />
         <Route path="hrm/contracts" element={<LaborContractPage />} />
         <Route path="hrm/checkin" element={<CheckIn />} />
+        <Route path="hrm/reports" element={<HrmReports />} />
         <Route path="da" element={<ProjectDashboard />} />
         <Route path="da/portfolio" element={<PortfolioDashboard />} />
         <Route path="chat" element={<Chat />} />

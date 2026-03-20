@@ -9,7 +9,8 @@ import {
   HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule, HrmConstructionSite,
   OrgUnit, ProjectFinance, ProjectTransaction,
   Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus,
-  AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract
+  AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract, LeaveBalance, PayrollTemplate, HrmHoliday, HrmSalaryHistory,
+  BudgetCategory, BudgetEntry, ExpenseRecord
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_ITEMS,
@@ -55,7 +56,15 @@ interface AppContextType {
   // HRM 5A — Chấm công & Lương
   attendanceRecords: AttendanceRecord[];
   leaveRequests: LeaveRequest[];
+  leaveBalances: LeaveBalance[];
   payrollRecords: PayrollRecord[];
+  payrollTemplates: PayrollTemplate[];
+  holidays: HrmHoliday[];
+  salaryHistory: HrmSalaryHistory[];
+  // Budget
+  budgetCategories: BudgetCategory[];
+  budgetEntries: BudgetEntry[];
+  expenseRecords: ExpenseRecord[];
   laborContracts: LaborContract[];
   // Org Chart
   orgUnits: OrgUnit[];
@@ -156,7 +165,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // HRM 5A
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([]);
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
+  const [payrollTemplates, setPayrollTemplates] = useState<PayrollTemplate[]>([]);
+  const [holidays, setHolidays] = useState<HrmHoliday[]>([]);
+  const [salaryHistory, setSalaryHistory] = useState<HrmSalaryHistory[]>([]);
+  const [budgetCategories, setBudgetCategories] = useState<BudgetCategory[]>([]);
+  const [budgetEntries, setBudgetEntries] = useState<BudgetEntry[]>([]);
+  const [expenseRecords, setExpenseRecords] = useState<ExpenseRecord[]>([]);
   const [laborContracts, setLaborContracts] = useState<LaborContract[]>([]);
   const [orgUnits, setOrgUnits] = useState<OrgUnit[]>([]);
   const [lossNorms, setLossNorms] = useState<MaterialLossNorm[]>([]);
@@ -336,6 +352,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // Project Transactions
         if (projectTxData) setProjectTransactions(projectTxData);
+
+        // HRM 5A — Leave Balances + Auto-accrual
+        const [leaveBalData, leaveReqData, attendData, payrollData, contractData, payrollTplData, holidayData, salaryHistData] = await Promise.all([
+          fetchTable('hrm_leave_balances'),
+          fetchTable('hrm_leave_requests'),
+          fetchTable('hrm_attendance'),
+          fetchTable('hrm_payrolls'),
+          fetchTable('hrm_labor_contracts'),
+          fetchTable('hrm_payroll_templates'),
+          fetchTable('hrm_holidays'),
+          fetchTable('hrm_salary_history'),
+        ]);
+        if (leaveBalData) setLeaveBalances(leaveBalData);
+        if (leaveReqData) setLeaveRequests(leaveReqData);
+        if (attendData) setAttendanceRecords(attendData);
+        if (payrollData) setPayrollRecords(payrollData);
+        if (contractData) setLaborContracts(contractData);
+        if (payrollTplData) setPayrollTemplates(payrollTplData);
+        if (holidayData) setHolidays(holidayData);
+        if (salaryHistData) setSalaryHistory(salaryHistData);
+
+        // Budget
+        const [budgetCatData, budgetEntData, expRecData] = await Promise.all([
+          fetchTable('budget_categories'),
+          fetchTable('budget_entries'),
+          fetchTable('expense_records'),
+        ]);
+        if (budgetCatData) setBudgetCategories(budgetCatData);
+        if (budgetEntData) setBudgetEntries(budgetEntData);
+        if (expRecData) setExpenseRecords(expRecData);
+
+        // Auto-accrual + Reset sau tháng 3 năm kế tiếp
+        if (leaveBalData && leaveBalData.length > 0) {
+          const now = new Date();
+          const currentMonth = now.getMonth() + 1; // 1-12
+          const currentYear = now.getFullYear();
+          for (const bal of leaveBalData) {
+            // Reset: nếu đã qua tháng 3 năm sau năm của balance → reset về 0 cho năm mới
+            const shouldReset = (bal.year < currentYear && (currentYear - bal.year > 1 || currentMonth > 3));
+            if (shouldReset) {
+              const newAccrued = currentMonth; // Cộng dồn cho các tháng đã qua của năm mới
+              const updated = { ...bal, year: currentYear, accruedDays: newAccrued, usedPaidDays: 0, usedUnpaidDays: 0, lastAccrualMonth: currentMonth };
+              setLeaveBalances(prev => prev.map(b => b.id === bal.id ? updated : b));
+              supabase.from('hrm_leave_balances').update({ year: currentYear, accruedDays: newAccrued, usedPaidDays: 0, usedUnpaidDays: 0, lastAccrualMonth: currentMonth }).eq('id', bal.id).then();
+            } else if (bal.year === currentYear && bal.lastAccrualMonth < currentMonth) {
+              // Accrual bình thường cho năm hiện tại
+              const monthsMissing = currentMonth - bal.lastAccrualMonth;
+              const newAccrued = bal.accruedDays + bal.monthlyAccrual * monthsMissing;
+              const updated = { ...bal, accruedDays: newAccrued, lastAccrualMonth: currentMonth };
+              setLeaveBalances(prev => prev.map(b => b.id === bal.id ? updated : b));
+              supabase.from('hrm_leave_balances').update({ accruedDays: newAccrued, lastAccrualMonth: currentMonth }).eq('id', bal.id).then();
+            }
+          }
+        }
 
         // Assets
         const [assetsData, assetCatData, assetAssignData, assetMaintData] = await Promise.all([
@@ -1169,8 +1239,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // HRM 5A
     'hrm_attendance': setAttendanceRecords,
     'hrm_leave_requests': setLeaveRequests,
+    'hrm_leave_balances': setLeaveBalances,
     'hrm_payrolls': setPayrollRecords,
+    'hrm_payroll_templates': setPayrollTemplates,
+    'hrm_holidays': setHolidays,
     'hrm_labor_contracts': setLaborContracts,
+    'hrm_salary_history': setSalaryHistory,
+    'budget_categories': setBudgetCategories,
+    'budget_entries': setBudgetEntries,
+    'expense_records': setExpenseRecords,
   };
 
   const addHrmItem = async (table: string, item: any) => {
@@ -1428,7 +1505,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       user, users, appSettings, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
       categories, units, employees,
       hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
-      attendanceRecords, leaveRequests, payrollRecords, laborContracts,
+      attendanceRecords, leaveRequests, leaveBalances, payrollRecords, payrollTemplates, holidays, laborContracts, salaryHistory,
+      budgetCategories, budgetEntries, expenseRecords,
       addHrmItem, updateHrmItem, removeHrmItem,
       orgUnits, addOrgUnit, updateOrgUnit, removeOrgUnit,
       addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,

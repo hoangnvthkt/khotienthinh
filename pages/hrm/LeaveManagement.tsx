@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
 import {
   CalendarOff, Plus, CheckCircle, XCircle, Clock, Search, Filter,
-  Calendar, ChevronDown
+  Calendar, ChevronDown, AlertTriangle, RotateCcw
 } from 'lucide-react';
 import {
   LeaveType, LeaveRequest, LeaveRequestStatus,
@@ -21,7 +21,7 @@ const STATUS_COLORS: Record<LeaveRequestStatus, string> = {
 };
 
 const LeaveManagement: React.FC = () => {
-  const { employees, leaveRequests, addHrmItem, updateHrmItem, user } = useApp();
+  const { employees, leaveRequests, leaveBalances, attendanceRecords, holidays, addHrmItem, updateHrmItem, removeHrmItem, user } = useApp();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -35,20 +35,25 @@ const LeaveManagement: React.FC = () => {
   const [formStart, setFormStart] = useState('');
   const [formEnd, setFormEnd] = useState('');
   const [formReason, setFormReason] = useState('');
+  const [formHalfDay, setFormHalfDay] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);
   const employeeMap = useMemo(() => new Map(activeEmployees.map(e => [e.id, e])), [activeEmployees]);
 
-  // Calculate total days
-  const calcDays = (start: string, end: string): number => {
+  // Calculate total days (skip weekends + holidays)
+  const calcDays = (start: string, end: string, isHalfDay: boolean = false): number => {
     if (!start || !end) return 0;
+    if (isHalfDay) return 0.5;
     const s = new Date(start);
     const e = new Date(end);
+    const holidayDates = new Set(holidays.map(h => h.date));
     let days = 0;
     const cur = new Date(s);
     while (cur <= e) {
       const dow = cur.getDay();
-      if (dow !== 0 && dow !== 6) days++;
+      const dateStr = cur.toISOString().split('T')[0];
+      if (dow !== 0 && dow !== 6 && !holidayDates.has(dateStr)) days++;
       cur.setDate(cur.getDate() + 1);
     }
     return days;
@@ -68,20 +73,23 @@ const LeaveManagement: React.FC = () => {
     return list;
   }, [leaveRequests, filterStatus, searchText, employeeMap]);
 
-  // Leave balance per employee (current year)
+  // Leave balance per employee (current year) — from leaveBalances context
   const currentYear = new Date().getFullYear();
   const balanceMap = useMemo(() => {
-    const map = new Map<string, { total: number; used: number; pending: number }>();
-    activeEmployees.forEach(e => map.set(e.id, { total: 12, used: 0, pending: 0 }));
-    leaveRequests.filter(r => r.type === 'annual' && new Date(r.startDate).getFullYear() === currentYear).forEach(r => {
-      const b = map.get(r.employeeId);
-      if (b) {
-        if (r.status === 'approved') b.used += r.totalDays;
-        else if (r.status === 'pending') b.pending += r.totalDays;
-      }
+    const map = new Map<string, { total: number; accrued: number; used: number; pending: number; remaining: number }>();
+    activeEmployees.forEach(e => {
+      const bal = leaveBalances.find(b => b.employeeId === e.id && b.year === currentYear);
+      const accrued = bal ? bal.accruedDays : 0;
+      const used = bal ? bal.usedPaidDays : 0;
+      const total = bal ? bal.initialDays : 12;
+      // Also count pending requests
+      const pendingDays = leaveRequests
+        .filter(r => r.employeeId === e.id && r.type === 'annual' && r.status === 'pending' && new Date(r.startDate).getFullYear() === currentYear)
+        .reduce((sum, r) => sum + r.totalDays, 0);
+      map.set(e.id, { total, accrued, used, pending: pendingDays, remaining: accrued - used - pendingDays });
     });
     return map;
-  }, [activeEmployees, leaveRequests, currentYear]);
+  }, [activeEmployees, leaveRequests, leaveBalances, currentYear]);
 
   // Summary KPIs
   const summaryKPIs = useMemo(() => {
@@ -95,9 +103,20 @@ const LeaveManagement: React.FC = () => {
 
   const handleSubmit = () => {
     if (!formEmployee || !formStart || !formEnd || !formReason) return;
-    const totalDays = calcDays(formStart, formEnd);
+    const totalDays = calcDays(formStart, formEnd, formHalfDay);
     if (totalDays <= 0) return;
 
+    // Kiểm tra số ngày phép còn lại nếu là phép năm
+    if (formType === 'annual') {
+      const bal = balanceMap.get(formEmployee);
+      const remaining = bal ? bal.remaining : 0;
+      if (totalDays > remaining) {
+        setSubmitError(`Không đủ ngày phép! Còn lại: ${remaining} ngày, yêu cầu: ${totalDays} ngày.`);
+        return;
+      }
+    }
+
+    setSubmitError('');
     const newReq: LeaveRequest = {
       id: crypto.randomUUID(),
       employeeId: formEmployee,
@@ -111,17 +130,78 @@ const LeaveManagement: React.FC = () => {
     };
     addHrmItem('hrm_leave_requests', newReq);
     setShowModal(false);
-    setFormEmployee(''); setFormStart(''); setFormEnd(''); setFormReason('');
+    setFormEmployee(''); setFormStart(''); setFormEnd(''); setFormReason(''); setFormHalfDay(false); setSubmitError('');
   };
 
   const handleApprove = (req: LeaveRequest) => {
     updateHrmItem('hrm_leave_requests', { ...req, status: 'approved', approvedBy: user.id, approvedAt: new Date().toISOString() });
+    // Tự động trừ ngày phép
+    const bal = leaveBalances.find(b => b.employeeId === req.employeeId && b.year === currentYear);
+    if (bal) {
+      if (req.type === 'unpaid') {
+        updateHrmItem('hrm_leave_balances', { ...bal, usedUnpaidDays: bal.usedUnpaidDays + req.totalDays });
+      } else {
+        updateHrmItem('hrm_leave_balances', { ...bal, usedPaidDays: bal.usedPaidDays + req.totalDays });
+      }
+    }
+    // Tự động đánh dấu chấm công = 'leave' cho các ngày trong đơn (bỏ qua T7/CN)
+    const start = new Date(req.startDate);
+    const end = new Date(req.endDate);
+    const cur = new Date(start);
+    while (cur <= end) {
+      const dow = cur.getDay();
+      if (dow !== 0 && dow !== 6) {
+        const dateStr = cur.toISOString().split('T')[0];
+        const existingRec = attendanceRecords.find(r => r.employeeId === req.employeeId && r.date === dateStr);
+        if (existingRec) {
+          // Update existing record to 'leave'
+          updateHrmItem('hrm_attendance', { ...existingRec, status: 'leave' });
+        } else {
+          // Create new record
+          addHrmItem('hrm_attendance', {
+            id: crypto.randomUUID(),
+            employeeId: req.employeeId,
+            date: dateStr,
+            status: 'leave' as any,
+            note: `Nghỉ phép: ${req.reason}`,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
   };
 
   const handleReject = (req: LeaveRequest) => {
     const reason = prompt('Lý do từ chối:');
     if (reason === null) return;
     updateHrmItem('hrm_leave_requests', { ...req, status: 'rejected', approvedBy: user.id, approvedAt: new Date().toISOString(), rejectionReason: reason });
+  };
+
+  // Thu hồi đơn đã duyệt: hoàn phép + xoá attendance
+  const handleRevoke = (req: LeaveRequest) => {
+    if (!confirm(`Thu hồi đơn nghỉ phép ${req.totalDays} ngày của NV? Sẽ hoàn lại ngày phép và xoá chấm công.`)) return;
+    // 1. Update status
+    updateHrmItem('hrm_leave_requests', { ...req, status: 'cancelled' as any });
+    // 2. Restore leave balance
+    const bal = leaveBalances.find(b => b.employeeId === req.employeeId && b.year === currentYear);
+    if (bal) {
+      if (req.type === 'unpaid') {
+        updateHrmItem('hrm_leave_balances', { ...bal, usedUnpaidDays: Math.max(0, bal.usedUnpaidDays - req.totalDays) });
+      } else {
+        updateHrmItem('hrm_leave_balances', { ...bal, usedPaidDays: Math.max(0, bal.usedPaidDays - req.totalDays) });
+      }
+    }
+    // 3. Remove attendance 'leave' records for these dates
+    const start = new Date(req.startDate);
+    const end = new Date(req.endDate);
+    const cur = new Date(start);
+    while (cur <= end) {
+      const dateStr = cur.toISOString().split('T')[0];
+      const rec = attendanceRecords.find(r => r.employeeId === req.employeeId && r.date === dateStr && r.status === 'leave');
+      if (rec) removeHrmItem('hrm_attendance', rec.id);
+      cur.setDate(cur.getDate() + 1);
+    }
   };
 
   return (
@@ -214,6 +294,11 @@ const LeaveManagement: React.FC = () => {
                         </button>
                       </div>
                     )}
+                    {req.status === 'approved' && (
+                      <button onClick={() => handleRevoke(req)} className="p-1.5 rounded-lg bg-amber-100 text-amber-600 hover:bg-amber-200 transition" title="Thu hồi đơn">
+                        <RotateCcw size={14} />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -246,12 +331,25 @@ const LeaveManagement: React.FC = () => {
                 </select>
               </div>
               {formEmployee && (
-                <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-xl">
-                  <p className="text-[10px] font-black text-blue-500 uppercase">Phép năm còn lại</p>
-                  <p className="text-lg font-black text-blue-700 dark:text-blue-300">
-                    {(() => { const b = balanceMap.get(formEmployee); return b ? b.total - b.used - b.pending : 12; })()} / 12 ngày
-                  </p>
-                </div>
+                (() => {
+                  const bal = balanceMap.get(formEmployee);
+                  const remaining = bal ? bal.remaining : 0;
+                  const accrued = bal ? bal.accrued : 0;
+                  const isInsufficient = formType === 'annual' && remaining <= 0;
+                  return (
+                    <div className={`p-3 rounded-xl ${isInsufficient ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800/30' : 'bg-blue-50 dark:bg-blue-950/20'}`}>
+                      <p className={`text-[10px] font-black uppercase ${isInsufficient ? 'text-red-500' : 'text-blue-500'}`}>Phép năm còn lại</p>
+                      <p className={`text-lg font-black ${isInsufficient ? 'text-red-600 dark:text-red-400' : 'text-blue-700 dark:text-blue-300'}`}>
+                        {remaining} / {accrued} ngày tích lũy
+                      </p>
+                      {isInsufficient && (
+                        <div className="flex items-center gap-1.5 mt-2 text-xs font-bold text-red-600 dark:text-red-400">
+                          <AlertTriangle size={14} /> Hết ngày phép! Không thể đăng ký phép năm.
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
               )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -267,9 +365,22 @@ const LeaveManagement: React.FC = () => {
               </div>
               {formStart && formEnd && (
                 <div className="text-sm font-black text-slate-600 dark:text-slate-300">
-                  Tổng: <span className="text-blue-600">{calcDays(formStart, formEnd)}</span> ngày làm việc
+                  Tổng: <span className="text-blue-600">{calcDays(formStart, formEnd, formHalfDay)}</span> ngày làm việc
+                  {holidays.filter(h => {
+                    return h.date >= formStart && h.date <= formEnd;
+                  }).length > 0 && (
+                    <span className="text-[10px] text-amber-500 ml-2">(đã trừ ngày lễ)</span>
+                  )}
                 </div>
               )}
+              {/* Half-day option */}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={formHalfDay} onChange={e => {
+                  setFormHalfDay(e.target.checked);
+                  if (e.target.checked && formStart) setFormEnd(formStart);
+                }} className="w-4 h-4 rounded-md border-slate-300 text-blue-500 focus:ring-blue-500" />
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Nghỉ nửa ngày (0.5 ngày)</span>
+              </label>
               <div>
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Lý do</label>
                 <textarea value={formReason} onChange={e => setFormReason(e.target.value)} rows={2}
@@ -277,11 +388,18 @@ const LeaveManagement: React.FC = () => {
                   placeholder="Nhập lý do nghỉ..." />
               </div>
             </div>
-            <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
-              <button onClick={() => setShowModal(false)} className="px-4 py-2.5 text-xs font-black text-slate-500 hover:text-slate-700 transition">Huỷ</button>
-              <button onClick={handleSubmit} className="px-4 py-2.5 bg-blue-500 text-white rounded-xl text-xs font-black hover:bg-blue-600 transition">
-                Gửi đơn
-              </button>
+            <div className="p-6 border-t border-slate-100 dark:border-slate-800 space-y-3">
+              {submitError && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800/30 text-red-600 dark:text-red-400 text-xs font-bold">
+                  <AlertTriangle size={16} /> {submitError}
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <button onClick={() => { setShowModal(false); setSubmitError(''); }} className="px-4 py-2.5 text-xs font-black text-slate-500 hover:text-slate-700 transition">Huỷ</button>
+                <button onClick={handleSubmit} className="px-4 py-2.5 bg-blue-500 text-white rounded-xl text-xs font-black hover:bg-blue-600 transition">
+                  Gửi đơn
+                </button>
+              </div>
             </div>
           </div>
         </div>

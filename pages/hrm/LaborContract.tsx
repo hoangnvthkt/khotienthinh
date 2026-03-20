@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
 import {
-  FileText, Plus, Search, AlertTriangle, CheckCircle, Clock, XCircle
+  FileText, Plus, Search, AlertTriangle, CheckCircle, Clock, XCircle, History
 } from 'lucide-react';
 import {
   LaborContract, LaborContractType, LaborContractStatus,
@@ -20,7 +20,7 @@ const STATUS_COLORS: Record<LaborContractStatus, string> = {
 };
 
 const LaborContractPage: React.FC = () => {
-  const { employees, laborContracts, addHrmItem, updateHrmItem } = useApp();
+  const { employees, laborContracts, salaryHistory, addHrmItem, updateHrmItem } = useApp();
   const { theme } = useTheme();
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);
@@ -79,10 +79,40 @@ const LaborContractPage: React.FC = () => {
   const handleSave = () => {
     if (!form.employeeId || !form.contractNumber || !form.startDate || form.baseSalary <= 0) return;
     if (editId) {
+      // Auto-log salary change if salary or allowance changed
+      const oldContract = laborContracts.find(c => c.id === editId);
+      if (oldContract && (oldContract.baseSalary !== form.baseSalary || (oldContract.allowancePosition || 0) !== form.allowancePosition)) {
+        addHrmItem('hrm_salary_history', {
+          id: crypto.randomUUID(),
+          employeeId: form.employeeId,
+          contractId: editId,
+          changeDate: new Date().toISOString().split('T')[0],
+          previousSalary: oldContract.baseSalary,
+          newSalary: form.baseSalary,
+          previousAllowance: oldContract.allowancePosition || 0,
+          newAllowance: form.allowancePosition,
+          reason: 'Cập nhật hợp đồng',
+          createdAt: new Date().toISOString(),
+        });
+      }
       updateHrmItem('hrm_labor_contracts', { ...form, id: editId, status: 'active' as LaborContractStatus });
     } else {
+      const newId = crypto.randomUUID();
       addHrmItem('hrm_labor_contracts', {
-        ...form, id: crypto.randomUUID(), status: 'active' as LaborContractStatus,
+        ...form, id: newId, status: 'active' as LaborContractStatus,
+        createdAt: new Date().toISOString(),
+      });
+      // Log initial salary
+      addHrmItem('hrm_salary_history', {
+        id: crypto.randomUUID(),
+        employeeId: form.employeeId,
+        contractId: newId,
+        changeDate: form.startDate,
+        previousSalary: 0,
+        newSalary: form.baseSalary,
+        previousAllowance: 0,
+        newAllowance: form.allowancePosition,
+        reason: 'Hợp đồng mới: ' + form.contractNumber,
         createdAt: new Date().toISOString(),
       });
     }
@@ -233,6 +263,51 @@ const LaborContractPage: React.FC = () => {
           })
         )}
       </div>
+
+      {/* Salary History Timeline */}
+      {salaryHistory.length > 0 && (
+        <div className="glass-panel rounded-2xl p-5">
+          <h3 className="text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <History size={14} className="text-indigo-500" /> Lịch sử thay đổi lương
+          </h3>
+          <div className="space-y-2">
+            {[...salaryHistory]
+              .sort((a, b) => new Date(b.changeDate).getTime() - new Date(a.changeDate).getTime())
+              .slice(0, 20)
+              .map(h => {
+                const emp = employeeMap.get(h.employeeId);
+                const diff = h.newSalary - h.previousSalary;
+                const isIncrease = diff > 0;
+                return (
+                  <div key={h.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/30">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-black ${
+                      h.previousSalary === 0 ? 'bg-blue-500' : isIncrease ? 'bg-emerald-500' : 'bg-red-500'
+                    }`}>
+                      {h.previousSalary === 0 ? '+' : isIncrease ? '↑' : '↓'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-black text-slate-800 dark:text-white truncate">{emp?.fullName || 'N/A'}</div>
+                      <div className="text-[10px] text-slate-400">
+                        {new Date(h.changeDate).toLocaleDateString('vi-VN')} • {h.reason || 'Thay đổi lương'}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      {h.previousSalary > 0 && (
+                        <div className="text-[10px] text-slate-400 line-through">{h.previousSalary.toLocaleString('vi-VN')}đ</div>
+                      )}
+                      <div className="text-xs font-black text-slate-800 dark:text-white">{h.newSalary.toLocaleString('vi-VN')}đ</div>
+                      {diff !== 0 && h.previousSalary > 0 && (
+                        <div className={`text-[9px] font-black ${isIncrease ? 'text-emerald-500' : 'text-red-500'}`}>
+                          {isIncrease ? '+' : ''}{diff.toLocaleString('vi-VN')}đ
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
 
       {/* Modal Form */}
       {showModal && (

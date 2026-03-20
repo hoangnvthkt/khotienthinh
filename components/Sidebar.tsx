@@ -27,6 +27,7 @@ const MODULE_CONFIG = [
   { key: 'DA' as const, icon: BarChart3, label: 'DA - Dự án', shortLabel: 'DA', gradient: 'from-orange-500 to-amber-500', shadow: 'shadow-orange-500/30', color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-900/30', border: 'border-orange-200 dark:border-orange-700', route: '/da' },
   { key: 'TS' as const, icon: Landmark, label: 'TS - Tài sản', shortLabel: 'TS', gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/30', color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/30', border: 'border-rose-200 dark:border-rose-700', route: '/ts/dashboard' },
   { key: 'RQ' as const, icon: Inbox, label: 'RQ - Yêu cầu', shortLabel: 'RQ', gradient: 'from-cyan-500 to-blue-600', shadow: 'shadow-cyan-500/30', color: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-50 dark:bg-cyan-900/30', border: 'border-cyan-200 dark:border-cyan-700', route: '/rq' },
+  { key: 'EX' as const, icon: BarChart3, label: 'CP - Chi phí', shortLabel: 'CP', gradient: 'from-indigo-500 to-blue-600', shadow: 'shadow-indigo-500/30', color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-900/30', border: 'border-indigo-200 dark:border-indigo-700', route: '/expense' },
 ] as const;
 
 type AppKey = typeof MODULE_CONFIG[number]['key'];
@@ -49,6 +50,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p.startsWith('/da')) return 'DA';
     if (p.startsWith('/ts')) return 'TS';
     if (p.startsWith('/rq')) return 'RQ';
+    if (p.startsWith('/expense')) return 'EX';
     if (['/dashboard', '/inventory', '/operations', '/audit', '/reports', '/requests', '/misa-export'].includes(p)) return 'WMS';
     return null;
   };
@@ -113,12 +115,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/misa-export', icon: FileSpreadsheet, label: 'Đồng bộ MISA', roles: [Role.ADMIN, Role.ACCOUNTANT] },
     ],
     HRM: [
+      { to: '/hrm/dashboard', icon: LayoutDashboard, label: 'Dashboard NS' },
       { to: '/hrm/checkin', icon: MapPin, label: 'Check-in' },
       { to: '/hrm/employees', icon: Users, label: 'Hồ sơ nhân sự' },
       { to: '/hrm/attendance', icon: Calendar, label: 'Chấm công' },
       { to: '/hrm/leave', icon: CalendarOff, label: 'Nghỉ phép' },
       { to: '/hrm/payroll', icon: DollarSign, label: 'Bảng lương' },
       { to: '/hrm/contracts', icon: FileSignature, label: 'Hợp đồng LĐ' },
+      { to: '/hrm/reports', icon: BarChart3, label: 'Báo cáo NS' },
     ],
     WF: [
       { to: '/wf', icon: GitBranch, label: 'Quy trình' },
@@ -139,6 +143,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     RQ: [
       { to: '/rq', icon: Inbox, label: 'Phiếu yêu cầu' },
       { to: '/rq/categories', icon: Settings, label: 'Danh mục yêu cầu', roles: [Role.ADMIN] },
+    ],
+    EX: [
+      { to: '/expense', icon: BarChart3, label: 'Kế hoạch chi phí' },
     ],
   };
 

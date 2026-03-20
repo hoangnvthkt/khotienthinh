@@ -20,6 +20,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     { key: 'DA', label: 'DA - Dự án', icon: BarChart3, color: 'text-orange-600 bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-700' },
     { key: 'TS', label: 'TS - Tài sản', icon: Landmark, color: 'text-rose-600 bg-rose-50 border-rose-200 dark:bg-rose-900/30 dark:border-rose-700' },
     { key: 'RQ', label: 'RQ - Yêu cầu', icon: Inbox, color: 'text-cyan-600 bg-cyan-50 border-cyan-200 dark:bg-cyan-900/30 dark:border-cyan-700' },
+    { key: 'EX', label: 'CP - Chi phí', icon: BarChart3, color: 'text-indigo-600 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-700' },
   ];
 
   const [formData, setFormData] = useState<Partial<User>>({

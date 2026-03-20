@@ -4,12 +4,13 @@ import { useTheme } from '../../context/ThemeContext';
 import {
   Calendar, ChevronLeft, ChevronRight, Clock, Users, Download,
   CheckCircle, XCircle, Sun, Coffee, Plane, Filter, Search,
-  Upload, FileSpreadsheet, Loader2, CheckCircle2, AlertTriangle
+  Upload, FileSpreadsheet, Loader2, CheckCircle2, AlertTriangle, Trash2, Star, Plus
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
   AttendanceStatus, AttendanceRecord,
-  ATTENDANCE_STATUS_LABELS, ATTENDANCE_STATUS_COLORS
+  ATTENDANCE_STATUS_LABELS, ATTENDANCE_STATUS_COLORS,
+  Role, HrmHoliday
 } from '../../types';
 
 const STATUS_CYCLE: AttendanceStatus[] = ['present', 'absent', 'half_day', 'leave', 'holiday', 'business_trip'];
@@ -19,7 +20,7 @@ const STATUS_SHORT: Record<AttendanceStatus, string> = {
 };
 
 const Attendance: React.FC = () => {
-  const { employees, attendanceRecords, hrmConstructionSites, addHrmItem, updateHrmItem } = useApp();
+  const { employees, attendanceRecords, hrmConstructionSites, holidays, addHrmItem, updateHrmItem, removeHrmItem, user } = useApp();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -37,6 +38,15 @@ const Attendance: React.FC = () => {
   const [importErrors, setImportErrors] = useState<Record<number, string>>({});
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Holiday state
+  const [showHolidayModal, setShowHolidayModal] = useState(false);
+  const [holidayName, setHolidayName] = useState('');
+  const [holidayDate, setHolidayDate] = useState('');
+
+  // Standard work times for late/early tracking
+  const [stdStartTime, setStdStartTime] = useState('08:00');
+  const [stdEndTime, setStdEndTime] = useState('17:00');
 
   const daysInMonth = useMemo(() => new Date(currentYear, currentMonth, 0).getDate(), [currentYear, currentMonth]);
   const dayHeaders = useMemo(() => {
@@ -93,6 +103,19 @@ const Attendance: React.FC = () => {
     }
   }, [recordMap, addHrmItem, updateHrmItem, currentYear, currentMonth]);
 
+  // Admin: right-click để xóa ngày công
+  const isAdmin = user.role === Role.ADMIN;
+  const handleCellDelete = useCallback((e: React.MouseEvent, employeeId: string, day: number) => {
+    e.preventDefault();
+    if (!isAdmin) return;
+    const dateStr = getDateKey(day);
+    const key = `${employeeId}_${dateStr}`;
+    const existing = recordMap.get(key);
+    if (existing) {
+      removeHrmItem('hrm_attendance', existing.id);
+    }
+  }, [isAdmin, recordMap, removeHrmItem, currentYear, currentMonth]);
+
   // Stats per employee
   const getStats = useCallback((employeeId: string) => {
     let present = 0, absent = 0, halfDay = 0, leave = 0, holiday = 0, trip = 0, overtime = 0;
@@ -110,8 +133,30 @@ const Attendance: React.FC = () => {
       }
     }
     const workDays = present + halfDay * 0.5 + trip;
-    return { present, absent, halfDay, leave, holiday, trip, overtime, workDays };
-  }, [recordMap, daysInMonth, currentYear, currentMonth]);
+    // Late / early tracking
+    let lateCount = 0, earlyCount = 0, totalLateMin = 0, totalEarlyMin = 0;
+    const [stdH, stdM] = stdStartTime.split(':').map(Number);
+    const [endH, endM] = stdEndTime.split(':').map(Number);
+    const stdStart = stdH * 60 + stdM;
+    const stdEnd = endH * 60 + endM;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const key = `${employeeId}_${getDateKey(d)}`;
+      const rec = recordMap.get(key);
+      if (rec && (rec.status === 'present' || rec.status === 'half_day' || rec.status === 'business_trip')) {
+        if (rec.checkIn) {
+          const [ch, cm] = rec.checkIn.split(':').map(Number);
+          const ciMin = ch * 60 + cm;
+          if (ciMin > stdStart) { lateCount++; totalLateMin += ciMin - stdStart; }
+        }
+        if (rec.checkOut) {
+          const [ch, cm] = rec.checkOut.split(':').map(Number);
+          const coMin = ch * 60 + cm;
+          if (coMin < stdEnd) { earlyCount++; totalEarlyMin += stdEnd - coMin; }
+        }
+      }
+    }
+    return { present, absent, halfDay, leave, holiday, trip, overtime, workDays, lateCount, earlyCount, totalLateMin, totalEarlyMin };
+  }, [recordMap, daysInMonth, currentYear, currentMonth, stdStartTime, stdEndTime]);
 
   // Month nav
   const prevMonth = () => {
@@ -125,14 +170,16 @@ const Attendance: React.FC = () => {
 
   // Summary stats
   const totalStats = useMemo(() => {
-    let totalWork = 0, totalAbsent = 0, totalLeave = 0;
+    let totalWork = 0, totalAbsent = 0, totalLeave = 0, totalLate = 0, totalEarly = 0;
     filteredEmployees.forEach(emp => {
       const s = getStats(emp.id);
       totalWork += s.workDays;
       totalAbsent += s.absent;
       totalLeave += s.leave;
+      totalLate += s.lateCount;
+      totalEarly += s.earlyCount;
     });
-    return { totalWork, totalAbsent, totalLeave, totalEmployees: filteredEmployees.length };
+    return { totalWork, totalAbsent, totalLeave, totalLate, totalEarly, totalEmployees: filteredEmployees.length };
   }, [filteredEmployees, getStats]);
 
   // Quick fill: mark all empty cells of today as 'present'
@@ -368,6 +415,9 @@ const Attendance: React.FC = () => {
           <button onClick={exportCSV} className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-black hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-1.5">
             <Download size={14} /> Xuất CSV
           </button>
+          <button onClick={() => setShowHolidayModal(true)} className="px-3 py-2 bg-amber-500 text-white rounded-xl text-xs font-black hover:bg-amber-600 transition flex items-center gap-1.5">
+            <Star size={14} /> Ngày lễ
+          </button>
         </div>
       </div>
 
@@ -389,6 +439,26 @@ const Attendance: React.FC = () => {
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nghỉ phép</p>
           <p className="text-xl font-black text-blue-500">{totalStats.totalLeave}</p>
         </div>
+        <div className="glass-card p-4 rounded-2xl">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Đi muộn</p>
+          <p className="text-xl font-black text-orange-500">{totalStats.totalLate}</p>
+        </div>
+      </div>
+
+      {/* Standard time config */}
+      <div className="glass-panel rounded-2xl p-3 flex items-center gap-4 flex-wrap">
+        <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Giờ chuẩn:</span>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-slate-400">Vào</span>
+          <input type="time" value={stdStartTime} onChange={e => setStdStartTime(e.target.value)}
+            className="px-2 py-1 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 outline-none w-24" />
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-slate-400">Ra</span>
+          <input type="time" value={stdEndTime} onChange={e => setStdEndTime(e.target.value)}
+            className="px-2 py-1 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 outline-none w-24" />
+        </div>
+        <span className="text-[9px] text-slate-400">Dùng so sánh checkIn/checkOut để phát hiện đi muộn, về sớm</span>
       </div>
 
       {/* Month Navigator + Filters */}
@@ -443,6 +513,7 @@ const Attendance: React.FC = () => {
           </div>
         ))}
         <span className="text-[10px] text-slate-400 font-bold ml-2">• Click ô để chuyển trạng thái</span>
+        {isAdmin && <span className="text-[10px] text-red-400 font-bold ml-1">• Chuột phải để xóa</span>}
       </div>
 
       {/* Timesheet Grid */}
@@ -499,13 +570,29 @@ const Attendance: React.FC = () => {
                         return (
                           <td key={d.dayNum}
                             onClick={() => handleCellClick(emp.id, d.dayNum)}
+                            onContextMenu={(e) => handleCellDelete(e, emp.id, d.dayNum)}
                             className={`px-0 py-0.5 text-center border-b border-slate-100 dark:border-slate-800 cursor-pointer transition-all hover:scale-110 hover:z-10 ${
                               d.isWeekend ? 'bg-rose-50/30 dark:bg-rose-950/10' : ''
                             }`}>
                             {rec ? (
-                              <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-black ${ATTENDANCE_STATUS_COLORS[rec.status]}`}>
+                            <div className="relative inline-flex">
+                              <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-black ${ATTENDANCE_STATUS_COLORS[rec.status]}`}
+                                title={`${rec.checkIn ? 'Vào: '+rec.checkIn : ''} ${rec.checkOut ? ' Ra: '+rec.checkOut : ''}${rec.note ? ' | '+rec.note : ''}`}>
                                 {STATUS_SHORT[rec.status]}
                               </span>
+                              {/* Late/early dot */}
+                              {(rec.status === 'present' || rec.status === 'half_day' || rec.status === 'business_trip') && (() => {
+                                const [sh, sm] = stdStartTime.split(':').map(Number);
+                                const [eh, em2] = stdEndTime.split(':').map(Number);
+                                const stdS = sh * 60 + sm;
+                                const stdE = eh * 60 + em2;
+                                let isLate = false, isEarly = false;
+                                if (rec.checkIn) { const [h, m] = rec.checkIn.split(':').map(Number); if (h*60+m > stdS) isLate = true; }
+                                if (rec.checkOut) { const [h, m] = rec.checkOut.split(':').map(Number); if (h*60+m < stdE) isEarly = true; }
+                                if (isLate || isEarly) return <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-orange-500 border border-white dark:border-slate-900"></span>;
+                                return null;
+                              })()}
+                            </div>
                             ) : (
                               <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] text-slate-300 dark:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700">
                                 ·
@@ -518,6 +605,12 @@ const Attendance: React.FC = () => {
                         <span className="text-sm font-black text-emerald-600">{stats.workDays}</span>
                         {stats.overtime > 0 && (
                           <div className="text-[8px] text-amber-500 font-bold">+{stats.overtime}h</div>
+                        )}
+                        {(stats.lateCount > 0 || stats.earlyCount > 0) && (
+                          <div className="text-[8px] text-orange-500 font-bold" title={`Muộn: ${stats.totalLateMin} phút, Sớm: ${stats.totalEarlyMin} phút`}>
+                            {stats.lateCount > 0 && `⏰${stats.lateCount}`}
+                            {stats.earlyCount > 0 && ` 🏃${stats.earlyCount}`}
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -613,6 +706,98 @@ const Attendance: React.FC = () => {
                   {importing ? <><Loader2 size={14} className="animate-spin" /> Đang nhập...</> : <><Upload size={14} /> Nhập {importRows.length - Object.keys(importErrors).length} bản ghi</>}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Holiday Management Modal */}
+      {showHolidayModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+              <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+                <Star size={20} className="text-amber-500" /> Quản lý Ngày lễ — {currentYear}
+              </h3>
+              <button onClick={() => setShowHolidayModal(false)} className="p-1 rounded-lg hover:bg-slate-100">
+                <XCircle size={18} className="text-slate-400" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {/* Add holiday form */}
+              <div className="flex gap-2">
+                <input type="text" value={holidayName} onChange={e => setHolidayName(e.target.value)}
+                  placeholder="Tên ngày lễ..." className="flex-1 px-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                <input type="date" value={holidayDate} onChange={e => setHolidayDate(e.target.value)}
+                  className="px-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                <button onClick={() => {
+                  if (!holidayName || !holidayDate) return;
+                  addHrmItem('hrm_holidays', { id: crypto.randomUUID(), name: holidayName, date: holidayDate, year: parseInt(holidayDate.split('-')[0]), createdAt: new Date().toISOString() });
+                  setHolidayName(''); setHolidayDate('');
+                }} className="px-3 py-2 bg-amber-500 text-white rounded-xl text-xs font-black hover:bg-amber-600 transition">
+                  <Plus size={14} />
+                </button>
+              </div>
+
+              {/* Pre-fill VN defaults */}
+              {holidays.filter(h => h.year === currentYear).length === 0 && (
+                <button onClick={() => {
+                  const defaults = [
+                    { name: 'Tết Dương lịch', date: `${currentYear}-01-01` },
+                    { name: 'Giải phóng miền Nam', date: `${currentYear}-04-30` },
+                    { name: 'Quốc tế Lao động', date: `${currentYear}-05-01` },
+                    { name: 'Quốc khánh', date: `${currentYear}-09-02` },
+                    { name: 'Nghỉ bù Quốc khánh', date: `${currentYear}-09-03` },
+                  ];
+                  defaults.forEach(d => addHrmItem('hrm_holidays', { id: crypto.randomUUID(), ...d, year: currentYear, createdAt: new Date().toISOString() }));
+                }} className="w-full px-3 py-2.5 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 rounded-xl text-xs font-bold hover:bg-amber-100 transition border border-amber-200 dark:border-amber-800">
+                  🇻🇳 Thêm ngày lễ mặc định Việt Nam ({currentYear})
+                </button>
+              )}
+
+              {/* Holiday list */}
+              <div className="space-y-1">
+                {holidays.filter(h => h.year === currentYear).sort((a, b) => a.date.localeCompare(b.date)).map(h => (
+                  <div key={h.id} className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 group">
+                    <div>
+                      <span className="text-xs font-black text-slate-800 dark:text-white">{h.name}</span>
+                      <span className="text-[10px] text-slate-400 ml-2">{new Date(h.date).toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' })}</span>
+                    </div>
+                    <button onClick={() => removeHrmItem('hrm_holidays', h.id)} className="p-1 rounded text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+                {holidays.filter(h => h.year === currentYear).length === 0 && (
+                  <p className="text-center text-xs text-slate-400 py-4">Chưa có ngày lễ nào cho năm {currentYear}</p>
+                )}
+              </div>
+
+              {/* Apply to attendance */}
+              {holidays.filter(h => h.year === currentYear).length > 0 && (
+                <button onClick={() => {
+                  const yearHolidays = holidays.filter(h => h.year === currentYear);
+                  let count = 0;
+                  yearHolidays.forEach(h => {
+                    activeEmployees.forEach(emp => {
+                      const existing = attendanceRecords.find(r => r.employeeId === emp.id && r.date === h.date);
+                      if (existing) {
+                        if (existing.status !== 'holiday') {
+                          updateHrmItem('hrm_attendance', { ...existing, status: 'holiday', note: h.name });
+                          count++;
+                        }
+                      } else {
+                        addHrmItem('hrm_attendance', { id: crypto.randomUUID(), employeeId: emp.id, date: h.date, status: 'holiday' as any, note: h.name, createdAt: new Date().toISOString() });
+                        count++;
+                      }
+                    });
+                  });
+                  alert(`Đã áp dụng ${yearHolidays.length} ngày lễ cho ${activeEmployees.length} NV (${count} bản ghi cập nhật)`);
+                  setShowHolidayModal(false);
+                }} className="w-full px-4 py-3 bg-emerald-500 text-white rounded-xl text-sm font-black hover:bg-emerald-600 transition flex items-center justify-center gap-2">
+                  <CheckCircle size={16} /> Áp dụng tất cả ngày lễ vào chấm công
+                </button>
+              )}
             </div>
           </div>
         </div>
