@@ -917,12 +917,19 @@ export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
   other: 'Khác',
 };
 
+// Phân loại: có lương vs không lương
+export const PAID_LEAVE_TYPES: LeaveType[] = ['annual', 'sick', 'maternity', 'personal'];
+export const UNPAID_LEAVE_TYPES: LeaveType[] = ['unpaid', 'other'];
+
+export const isLeaveTypePaid = (type: LeaveType): boolean => PAID_LEAVE_TYPES.includes(type);
+
 export type LeaveRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 
 export interface LeaveRequest {
   id: string;
   employeeId: string;
   type: LeaveType;
+  isPaid: boolean;           // true = nghỉ có lương, false = không lương
   startDate: string;
   endDate: string;
   totalDays: number;
@@ -935,13 +942,16 @@ export interface LeaveRequest {
 }
 
 export interface LeaveBalance {
+  id: string;
   employeeId: string;
   year: number;
-  annualTotal: number;       // Tổng phép năm (default 12)
-  annualUsed: number;        // Đã sử dụng
-  sickUsed: number;
-  personalUsed: number;
-  unpaidUsed: number;
+  initialDays: number;       // Số phép năm ban đầu (admin khai báo, default 12)
+  monthlyAccrual: number;    // Số phép cộng mỗi tháng (default 1)
+  accruedDays: number;       // Phép đã tích luỹ (cộng dồn mỗi tháng)
+  usedPaidDays: number;      // Đã dùng (nghỉ có lương)
+  usedUnpaidDays: number;    // Đã dùng (nghỉ không lương)
+  lastAccrualMonth: number;  // Tháng cuối cùng đã cộng phép (1-12)
+  createdAt?: string;
 }
 
 // ===== BẢNG LƯƠNG =====

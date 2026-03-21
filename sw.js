@@ -1,5 +1,5 @@
 // KhoViet Service Worker — Cache-first with Network fallback
-const CACHE_NAME = 'khoviet-v1';
+const CACHE_NAME = 'khoviet-v2';
 const OFFLINE_URL = '/offline.html';
 
 // Assets to pre-cache

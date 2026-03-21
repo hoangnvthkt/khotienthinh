@@ -9,7 +9,7 @@ import {
   HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule, HrmConstructionSite,
   OrgUnit, ProjectFinance, ProjectTransaction,
   Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus,
-  AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract
+  AttendanceRecord, LeaveRequest, LeaveBalance, PayrollRecord, LaborContract
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_ITEMS,
@@ -55,6 +55,7 @@ interface AppContextType {
   // HRM 5A — Chấm công & Lương
   attendanceRecords: AttendanceRecord[];
   leaveRequests: LeaveRequest[];
+  leaveBalances: LeaveBalance[];
   payrollRecords: PayrollRecord[];
   laborContracts: LaborContract[];
   // Org Chart
@@ -156,6 +157,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // HRM 5A
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([]);
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
   const [laborContracts, setLaborContracts] = useState<LaborContract[]>([]);
   const [orgUnits, setOrgUnits] = useState<OrgUnit[]>([]);
@@ -218,7 +220,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const [
           itemsData, whData, supData, txData, reqData, actData, catData, unitData, settingsData, usersData, empData,
           areasData, officesData, empTypesData, positionsData, salaryData, schedulesData, constructionSitesData, orgUnitsData,
-          lossNormsData, auditSessionsData, projectFinancesData, projectTxData
+          lossNormsData, auditSessionsData, projectFinancesData, projectTxData,
+          attendanceData, leaveData, payrollData, contractData, leaveBalanceData
         ] = await Promise.all([
           fetchTable('items'),
           fetchTable('warehouses'),
@@ -242,7 +245,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTable('loss_norms'),
           fetchTable('audit_sessions', supabase.from('audit_sessions').select('*').order('date', { ascending: false })),
           fetchTable('project_finances'),
-          fetchTable('project_transactions', supabase.from('project_transactions').select('*').order('date', { ascending: false }))
+          fetchTable('project_transactions', supabase.from('project_transactions').select('*').order('date', { ascending: false })),
+          fetchTable('hrm_attendance'),
+          fetchTable('hrm_leave_requests'),
+          fetchTable('hrm_payrolls'),
+          fetchTable('hrm_labor_contracts'),
+          fetchTable('hrm_leave_balances')
         ]);
 
         if (usersData && usersData.length > 0) {
@@ -314,6 +322,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (salaryData) setHrmSalaryPolicies(salaryData);
         if (schedulesData) setHrmWorkSchedules(schedulesData);
         if (constructionSitesData) setHrmConstructionSites(constructionSitesData);
+
+        // HRM Operational Data
+        if (attendanceData) setAttendanceRecords(attendanceData);
+        if (leaveData) setLeaveRequests(leaveData);
+        if (payrollData) setPayrollRecords(payrollData);
+        if (contractData) setLaborContracts(contractData);
+        if (leaveBalanceData) setLeaveBalances(leaveBalanceData);
 
         // Org Units
         if (orgUnitsData) setOrgUnits(orgUnitsData.map((u: any) => ({
@@ -1169,6 +1184,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // HRM 5A
     'hrm_attendance': setAttendanceRecords,
     'hrm_leave_requests': setLeaveRequests,
+    'hrm_leave_balances': setLeaveBalances,
     'hrm_payrolls': setPayrollRecords,
     'hrm_labor_contracts': setLaborContracts,
   };
@@ -1428,7 +1444,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       user, users, appSettings, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
       categories, units, employees,
       hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
-      attendanceRecords, leaveRequests, payrollRecords, laborContracts,
+      attendanceRecords, leaveRequests, leaveBalances, payrollRecords, laborContracts,
       addHrmItem, updateHrmItem, removeHrmItem,
       orgUnits, addOrgUnit, updateOrgUnit, removeOrgUnit,
       addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,
