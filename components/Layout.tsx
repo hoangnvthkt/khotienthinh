@@ -196,7 +196,7 @@ const Layout: React.FC = () => {
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto p-4 md:p-8 pb-24 lg:pb-8 transparent">
+        <main className="flex-1 overflow-auto p-2 sm:p-4 md:p-8 pb-20 lg:pb-8 transparent">
           {isLoading || isRefreshing ? (
             <div className="h-full w-full flex flex-col items-center justify-center bg-white/50 backdrop-blur-sm">
               <RefreshCw size={48} className="text-accent animate-spin mb-4" />

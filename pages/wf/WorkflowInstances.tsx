@@ -10,8 +10,10 @@ import {
     GitBranch, Plus, Search, Clock, CheckCircle, XCircle, Circle,
     ArrowRight, User, MessageSquare, FileText, Send, RotateCcw,
     ChevronDown, ChevronUp, Filter, Inbox, AlertCircle, X,
-    Edit2, Trash2, Ban, Save, Upload, Paperclip, Table2, FileSpreadsheet, Eye, Download, Undo2
+    Edit2, Trash2, Ban, Save, Upload, Paperclip, Table2, FileSpreadsheet, Eye, Download, Undo2,
+    LayoutGrid, List
 } from 'lucide-react';
+import KanbanBoard from '../../components/KanbanBoard';
 import * as XLSX from 'xlsx';
 
 const STATUS_MAP: Record<WorkflowInstanceStatus, { label: string; color: string; icon: any }> = {
@@ -406,6 +408,9 @@ const WorkflowInstances: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'mine' | 'pending'>('mine');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
     const [searchTerm, setSearchTerm] = useState('');
+    const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
+    const [boardTemplateId, setBoardTemplateId] = useState<string>('');
+    const [boardDetailInstanceId, setBoardDetailInstanceId] = useState<string | null>(null);
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
     // File preview state
@@ -785,13 +790,30 @@ const WorkflowInstances: React.FC = () => {
                     </h1>
                     <p className="text-sm text-slate-500 dark:text-slate-400">Tạo và theo dõi các phiếu yêu cầu theo quy trình.</p>
                 </div>
-                <button
-                    onClick={() => setShowCreateModal(true)}
-                    disabled={activeTemplates.length === 0}
-                    className="flex items-center px-4 py-2.5 bg-accent text-white rounded-xl hover:bg-emerald-600 transition font-bold shadow-lg shadow-emerald-500/20 disabled:opacity-50"
-                >
-                    <Plus size={18} className="mr-2" /> Tạo phiếu mới
-                </button>
+                <div className="flex items-center gap-2">
+                    {/* View mode toggle */}
+                    <div className="flex bg-slate-100 dark:bg-slate-700 rounded-xl p-0.5">
+                        <button
+                            onClick={() => setViewMode('list')}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition ${viewMode === 'list' ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <List size={14} /> Danh sách
+                        </button>
+                        <button
+                            onClick={() => setViewMode('board')}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition ${viewMode === 'board' ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <LayoutGrid size={14} /> Dạng bảng
+                        </button>
+                    </div>
+                    <button
+                        onClick={() => setShowCreateModal(true)}
+                        disabled={activeTemplates.length === 0}
+                        className="flex items-center px-4 py-2.5 bg-accent text-white rounded-xl hover:bg-emerald-600 transition font-bold shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                    >
+                        <Plus size={18} className="mr-2" /> Tạo phiếu mới
+                    </button>
+                </div>
             </div>
 
             {/* Tabs & Filters */}
@@ -853,8 +875,346 @@ const WorkflowInstances: React.FC = () => {
                 </div>
             </div>
 
-            {/* Instance List */}
-            <div className="space-y-3">
+            {/* Board View — Template Selector + Kanban */}
+            {viewMode === 'board' && (
+                <div className="space-y-4">
+                    {/* Template selector for board view */}
+                    <div className="glass-card p-4 rounded-xl">
+                        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block">Chọn quy trình để xem bảng:</label>
+                        <div className="flex flex-wrap gap-2">
+                            {activeTemplates.map(t => (
+                                <button
+                                    key={t.id}
+                                    onClick={() => setBoardTemplateId(t.id)}
+                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${boardTemplateId === t.id
+                                        ? 'bg-indigo-500 text-white shadow-md shadow-indigo-500/20'
+                                        : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                                    }`}
+                                >
+                                    <GitBranch size={12} /> {t.name}
+                                    <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full">
+                                        {instances.filter(i => i.templateId === t.id && i.status === 'RUNNING').length}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {boardTemplateId ? (
+                        <KanbanBoard
+                            templateId={boardTemplateId}
+                            instances={instances}
+                            onCardClick={(instance) => setBoardDetailInstanceId(instance.id)}
+                            onDragComplete={async (instanceId, action, comment, assigneeId) => {
+                                if (assigneeId) {
+                                    // Update the target node's assignee for this instance
+                                    const inst = instances.find(i => i.id === instanceId);
+                                    if (inst) {
+                                        const tplNodes = nodes.filter(n => n.templateId === inst.templateId);
+                                        const tplEdges = edges.filter(e => e.templateId === inst.templateId);
+                                        const nextEdge = tplEdges.find(e => e.sourceNodeId === inst.currentNodeId);
+                                        if (nextEdge) {
+                                            const nextNode = tplNodes.find(n => n.id === nextEdge.targetNodeId);
+                                            if (nextNode) {
+                                                // Temporarily assign user to the next node for this action
+                                                nextNode.config.assigneeUserId = assigneeId;
+                                            }
+                                        }
+                                    }
+                                }
+                                await processInstance(instanceId, action, user.id, comment);
+                            }}
+                        />
+                    ) : (
+                        <div className="glass-card rounded-2xl p-12 flex flex-col items-center text-slate-400 dark:text-slate-500">
+                            <LayoutGrid size={48} className="mb-4 opacity-30" />
+                            <p className="text-sm font-bold">Chọn quy trình ở trên để xem dạng bảng Kanban</p>
+                            <p className="text-xs mt-1">Mỗi cột đại diện cho một bước xử lý</p>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Board Detail Slide-over Modal */}
+            {viewMode === 'board' && boardDetailInstanceId && (() => {
+                const instance = instances.find(i => i.id === boardDetailInstanceId);
+                if (!instance) return null;
+                const template = templates.find(t => t.id === instance.templateId);
+                const creator = users.find(u => u.id === instance.createdBy);
+                const statusInfo = STATUS_MAP[instance.status];
+                const StatusIcon = statusInfo.icon;
+                const timeline = getNodeTimeline(instance);
+                const canAct = canActOnInstance(instance);
+                const currentNode = nodes.find(n => n.id === instance.currentNodeId);
+                const isOwner = isCreator(instance);
+                const running = isRunning(instance);
+
+                return (
+                    <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setBoardDetailInstanceId(null)}>
+                        {/* Backdrop */}
+                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+                        {/* Panel */}
+                        <div
+                            className="relative bg-white dark:bg-slate-900 w-full max-w-2xl h-full shadow-2xl overflow-y-auto"
+                            onClick={e => e.stopPropagation()}
+                            style={{ animation: 'slideInRight 0.3s ease-out' }}
+                        >
+                            {/* Panel Header */}
+                            <div className="sticky top-0 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 px-6 py-4">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                            <span className="font-mono text-[10px] font-bold bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-500">{instance.code}</span>
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 ${statusInfo.color}`}>
+                                                <StatusIcon size={10} /> {statusInfo.label}
+                                            </span>
+                                            {canAct && (
+                                                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded animate-pulse flex items-center gap-1">
+                                                    <AlertCircle size={10} /> Cần bạn xử lý
+                                                </span>
+                                            )}
+                                        </div>
+                                        <h2 className="text-lg font-bold text-slate-800 dark:text-white">{instance.title}</h2>
+                                        <div className="flex items-center gap-4 mt-1 text-[10px] text-slate-400">
+                                            <span className="flex items-center gap-1"><User size={9} /> {creator?.name || 'N/A'}</span>
+                                            <span className="flex items-center gap-1"><GitBranch size={9} /> {template?.name || 'N/A'}</span>
+                                            <span className="flex items-center gap-1"><Clock size={9} /> {new Date(instance.createdAt).toLocaleString('vi-VN')}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                        {isOwner && running && (
+                                            <>
+                                                <button onClick={() => openEditModal(instance)} className="p-2 rounded-lg text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition" title="Sửa phiếu"><Edit2 size={16} /></button>
+                                                <button onClick={() => setCancelConfirmId(instance.id)} className="p-2 rounded-lg text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition" title="Hủy phiếu"><Ban size={16} /></button>
+                                            </>
+                                        )}
+                                        {isOwner && (
+                                            <button onClick={() => setDeleteConfirmId(instance.id)} className="p-2 rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition" title="Xóa phiếu"><Trash2 size={16} /></button>
+                                        )}
+                                        {user.role === Role.ADMIN && (instance.status === WorkflowInstanceStatus.COMPLETED || instance.status === WorkflowInstanceStatus.REJECTED) && (
+                                            <button onClick={() => { setReopenInstanceId(instance.id); setReopenTargetNodeId(''); setReopenComment(''); }} className="p-2 rounded-lg text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition" title="Mở lại"><Undo2 size={16} /></button>
+                                        )}
+                                        <button onClick={() => setBoardDetailInstanceId(null)} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition ml-2"><X size={20} /></button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Panel Content */}
+                            <div className="px-6 py-5 space-y-5">
+                                {/* Timeline */}
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Tiến trình</p>
+                                    <div className="flex items-start gap-0 overflow-x-auto pb-2">
+                                        {timeline.map((step, idx) => {
+                                            const nodeColors = { START: 'emerald', ACTION: 'blue', APPROVAL: 'amber', END: 'red' }[step.node.type] || 'slate';
+                                            const isCompleted2 = step.isPast && !step.isCurrent;
+                                            const isCurrent2 = step.isCurrent;
+                                            return (
+                                                <React.Fragment key={step.node.id}>
+                                                    <div className="flex flex-col items-center min-w-[100px]">
+                                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all ${isCompleted2 ? `bg-${nodeColors}-500 border-${nodeColors}-500 text-white` :
+                                                            isCurrent2 ? `bg-white dark:bg-slate-800 border-${nodeColors}-400 text-${nodeColors}-600 ring-4 ring-${nodeColors}-100 dark:ring-${nodeColors}-900/30 animate-pulse` :
+                                                                `bg-slate-100 dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-400`
+                                                            }`}>
+                                                            {isCompleted2 ? <CheckCircle size={14} /> : isCurrent2 ? <Clock size={14} /> : <Circle size={14} />}
+                                                        </div>
+                                                        <p className={`text-[9px] font-bold mt-1.5 text-center leading-tight ${isCurrent2 ? 'text-slate-800 dark:text-white' : 'text-slate-400'}`}>
+                                                            {step.node.label}
+                                                        </p>
+                                                        {step.logs.length > 0 && (
+                                                            <div className="mt-1 space-y-0.5">
+                                                                {step.logs.map(log => {
+                                                                    const actor = users.find(u => u.id === log.actedBy);
+                                                                    return (
+                                                                        <div key={log.id} className="text-[8px] text-slate-400 text-center">
+                                                                            <span className={ACTION_MAP[log.action]?.color || ''}>{ACTION_MAP[log.action]?.label}</span>
+                                                                            <br /><span>{actor?.name}</span>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {idx < timeline.length - 1 && (
+                                                        <div className={`flex-shrink-0 w-8 h-0.5 mt-4 ${isCompleted2 ? 'bg-emerald-400' : 'bg-slate-200 dark:bg-slate-700'}`} />
+                                                    )}
+                                                </React.Fragment>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Form Data */}
+                                {instance.formData && Object.keys(instance.formData).filter(k => !k.startsWith('step_') && (k !== 'note' || instance.formData[k])).length > 0 && (
+                                    <div>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Dữ liệu phiếu</p>
+                                        <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3 text-xs text-slate-600 dark:text-slate-300">
+                                            {Object.entries(instance.formData).filter(([k, v]) => v && !k.startsWith('step_')).map(([key, value]) => {
+                                                const tpl2 = templates.find(t => t.id === instance.templateId);
+                                                const fieldDef = (tpl2?.customFields || []).find(f => f.name === key);
+                                                const displayLabel = fieldDef ? fieldDef.label : key;
+                                                const fv = value as any;
+                                                return (
+                                                    <div key={key} className="py-1.5 border-b border-slate-100 dark:border-slate-700 last:border-0">
+                                                        <span className="font-bold text-slate-400 text-[10px] uppercase tracking-wider">{displayLabel}:</span>
+                                                        {typeof fv === 'object' && fv !== null && fv.fileName ? (
+                                                            <div className="mt-1.5">
+                                                                <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 mb-1">
+                                                                    <Paperclip size={12} className="text-rose-400" />
+                                                                    <span className="font-medium flex-1 truncate">{fv.fileName}</span>
+                                                                    <span className="text-slate-400 shrink-0">({(fv.fileSize / 1024).toFixed(1)} KB)</span>
+                                                                    <button onClick={() => setPreviewFile(fv)} className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-800/30 text-blue-500 transition-colors" title="Xem trước"><Eye size={12} /></button>
+                                                                    {fv.data && <button onClick={() => downloadFileFromBase64(fv.data, fv.fileName, fv.fileType)} className="p-1 rounded hover:bg-emerald-100 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về"><Download size={12} /></button>}
+                                                                </div>
+                                                                {fv.excelData && fv.sheetNames && <ExcelTablePreview sheets={fv.excelData} sheetNames={fv.sheetNames} />}
+                                                            </div>
+                                                        ) : (
+                                                            <span className="flex-1 ml-2">{String(value)}</span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Action Panel */}
+                                {canAct && (
+                                    <div className="bg-amber-50/50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-3">
+                                            Hành động ({currentNode?.label})
+                                        </p>
+                                        {currentNode && currentNode.config.formFields && currentNode.config.formFields.length > 0 && (
+                                            <div className="mb-4 space-y-3 border-b border-amber-200 dark:border-amber-700 pb-4">
+                                                <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Nhập dữ liệu bước này</p>
+                                                {currentNode.config.formFields.map((field: any) => (
+                                                    <div key={field.name || field.label}>
+                                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">{field.label || field.name}</label>
+                                                        <input type="text" value={stepFormData[field.name || field.label] || ''} onChange={e => setStepFormData(prev => ({ ...prev, [field.name || field.label]: e.target.value }))} placeholder={`Nhập ${(field.label || field.name).toLowerCase()}...`} className="w-full px-3 py-2 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs outline-none focus:ring-2 focus:ring-accent" />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Editable Excel */}
+                                        {(() => {
+                                            const tpl3 = templates.find(t => t.id === instance.templateId);
+                                            const fileFields = (tpl3?.customFields || []).filter(f => f.type === 'file');
+                                            const allFormData = instance.formData || {};
+                                            let excelSource: { sheets: Record<string, any[][]>; sheetNames: string[]; label: string } | null = null;
+                                            const orderedNodeIds = nodes.filter(n => n.templateId === instance.templateId).map(n => n.id);
+                                            for (let i = orderedNodeIds.length - 1; i >= 0; i--) {
+                                                const nid = orderedNodeIds[i];
+                                                if (nid === instance.currentNodeId) continue;
+                                                const sd = allFormData[`step_${nid}_excel_data`];
+                                                const ss = allFormData[`step_${nid}_excel_sheets`];
+                                                if (sd && ss) { const pn = nodes.find(n => n.id === nid); excelSource = { sheets: sd, sheetNames: ss, label: `Dữ liệu từ bước "${pn?.label || nid}"` }; break; }
+                                            }
+                                            if (!excelSource) { for (const ff of fileFields) { const fval = allFormData[ff.name] as any; if (fval && typeof fval === 'object' && fval.excelData && fval.sheetNames) { excelSource = { sheets: fval.excelData, sheetNames: fval.sheetNames, label: `Dữ liệu từ "${ff.label}"` }; break; } } }
+                                            if (!excelSource) return null;
+                                            return (
+                                                <div className="mb-4 border-b border-amber-200 dark:border-amber-700 pb-4">
+                                                    <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1"><FileSpreadsheet size={11} className="inline mr-1" />{excelSource.label} — Chỉnh sửa bảng Excel</p>
+                                                    <ExcelTablePreview sheets={excelSource.sheets} sheetNames={excelSource.sheetNames} editable={true} onDataChange={(newSheets, newSheetNames) => setStepExcelData({ sheets: newSheets, sheetNames: newSheetNames })} />
+                                                </div>
+                                            );
+                                        })()}
+
+                                        <div className="mb-3">
+                                            <label className="block text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1.5">Ghi chú bước này</label>
+                                            <textarea value={stepFormData._note || ''} onChange={e => setStepFormData(prev => ({ ...prev, _note: e.target.value }))} placeholder="Nhập ghi chú, dữ liệu bổ sung cho bước này..." className="w-full px-3 py-2 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs outline-none focus:ring-2 focus:ring-accent resize-none" rows={2} />
+                                        </div>
+
+                                        <div className="mb-3">
+                                            <label className="block text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1.5"><Paperclip size={11} className="inline mr-1" />Tệp đính kèm bước này</label>
+                                            {(stepFormData._files || []).map((f: any, fi: number) => (
+                                                <div key={fi} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 mb-1 bg-white/60 dark:bg-slate-800/40 p-2 rounded-lg">
+                                                    <Paperclip size={11} className="text-rose-400 shrink-0" /><span className="truncate flex-1">{f.fileName}</span>
+                                                    <span className="text-slate-400 shrink-0">({(f.fileSize / 1024).toFixed(1)} KB)</span>
+                                                    <button onClick={() => setPreviewFile(f)} className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-800/30 text-blue-500"><Eye size={11} /></button>
+                                                    <button onClick={() => { const nf = [...(stepFormData._files || [])]; nf.splice(fi, 1); setStepFormData(prev => ({ ...prev, _files: nf })); }} className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-800/30 text-red-400"><X size={11} /></button>
+                                                </div>
+                                            ))}
+                                            <label className="flex items-center gap-2 px-3 py-2 border border-dashed border-amber-300 dark:border-amber-700 rounded-xl cursor-pointer hover:bg-amber-50/50 dark:hover:bg-amber-900/10 transition">
+                                                <Upload size={14} className="text-amber-400" /><span className="text-[10px] text-amber-500 font-bold">Chọn file đính kèm...</span>
+                                                <input type="file" className="hidden" multiple onChange={async (e) => {
+                                                    const files = e.target.files; if (!files) return;
+                                                    const nf = [...(stepFormData._files || [])];
+                                                    for (let i = 0; i < files.length; i++) {
+                                                        const file = files[i]; const reader = new FileReader();
+                                                        const fd = await new Promise<string>((resolve) => { reader.onload = () => resolve((reader.result as string).split(',')[1]); reader.readAsDataURL(file); });
+                                                        nf.push({ fileName: file.name, fileType: file.type, fileSize: file.size, data: fd });
+                                                    }
+                                                    setStepFormData(prev => ({ ...prev, _files: nf })); e.target.value = '';
+                                                }} />
+                                            </label>
+                                        </div>
+
+                                        <textarea value={actionComment} onChange={e => setActionComment(e.target.value)} placeholder="Ghi chú / lý do (tùy chọn)..." className="w-full px-3 py-2 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs outline-none focus:ring-2 focus:ring-accent resize-none mb-3" rows={2} />
+                                        <div className="flex gap-2 flex-wrap">
+                                            {isRevisionAtFirstStep(instance) && isCreator(instance) ? (
+                                                <button onClick={() => handleAction(instance.id, WorkflowInstanceAction.APPROVED)} disabled={processingId === instance.id} className="flex items-center gap-1.5 px-4 py-2 bg-blue-500 text-white rounded-xl text-xs font-bold hover:bg-blue-600 transition shadow-md shadow-blue-500/20 disabled:opacity-50"><Send size={13} /> Gửi lại</button>
+                                            ) : (
+                                                <>
+                                                    <button onClick={() => handleAction(instance.id, WorkflowInstanceAction.APPROVED)} disabled={processingId === instance.id} className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold hover:bg-emerald-600 transition shadow-md shadow-emerald-500/20 disabled:opacity-50"><CheckCircle size={13} /> Duyệt</button>
+                                                    <button onClick={() => handleAction(instance.id, WorkflowInstanceAction.REJECTED)} disabled={processingId === instance.id} className="flex items-center gap-1.5 px-4 py-2 bg-red-500 text-white rounded-xl text-xs font-bold hover:bg-red-600 transition shadow-md shadow-red-500/20 disabled:opacity-50"><XCircle size={13} /> Từ chối</button>
+                                                    <button onClick={() => handleAction(instance.id, WorkflowInstanceAction.REVISION_REQUESTED)} disabled={processingId === instance.id} className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold hover:bg-amber-600 transition shadow-md shadow-amber-500/20 disabled:opacity-50"><RotateCcw size={13} /> Yêu cầu bổ sung</button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Conversation History */}
+                                {getInstanceLogs(instance.id).length > 0 && (
+                                    <div>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-1.5"><MessageSquare size={11} /> Lịch sử trao đổi</p>
+                                        <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                                            {getInstanceLogs(instance.id).slice().reverse().map(log => {
+                                                const actor = users.find(u => u.id === log.actedBy);
+                                                const node2 = nodes.find(n => n.id === log.nodeId);
+                                                const actionInfo = ACTION_MAP[log.action];
+                                                const isMe = log.actedBy === user.id;
+                                                const stepFiles = (instance.formData || {})[`step_${log.nodeId}_files`] as any[] | undefined;
+                                                return (
+                                                    <div key={log.id} className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''}`}>
+                                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${isMe ? 'bg-accent/20 text-accent' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}>{actor?.name?.charAt(0)?.toUpperCase() || '?'}</div>
+                                                        <div className={`max-w-[75%] ${isMe ? 'text-right' : ''}`}>
+                                                            <div className="flex items-center gap-1.5 mb-1 flex-wrap" style={{ justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
+                                                                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">{actor?.name}</span>
+                                                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${actionInfo?.color} bg-opacity-10`} style={{ backgroundColor: 'rgba(0,0,0,0.05)' }}>{actionInfo?.label}</span>
+                                                            </div>
+                                                            <div className={`rounded-2xl px-3 py-2 text-xs ${isMe ? 'bg-accent/10 dark:bg-accent/20 text-slate-700 dark:text-slate-200 rounded-tr-sm' : 'bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 rounded-tl-sm'}`}>
+                                                                <p className="text-[9px] text-slate-400 mb-0.5">tại "{node2?.label}"</p>
+                                                                {log.comment ? <p className="text-sm leading-relaxed">{log.comment}</p> : <p className="text-slate-400 italic text-[10px]">Không có ghi chú</p>}
+                                                                {stepFiles && stepFiles.length > 0 && (
+                                                                    <div className="mt-2 space-y-1 border-t border-slate-200/50 dark:border-slate-700/50 pt-1.5">
+                                                                        {stepFiles.map((f: any, fi: number) => (
+                                                                            <div key={fi} className="flex items-center gap-1.5 text-[10px]">
+                                                                                <Paperclip size={10} className="text-rose-400" /><span className="truncate">{f.fileName}</span>
+                                                                                <button onClick={() => setPreviewFile(f)} className="text-blue-500 hover:underline">Xem</button>
+                                                                                {f.data && <button onClick={() => downloadFileFromBase64(f.data, f.fileName, f.fileType)} className="text-emerald-500 hover:underline">Tải</button>}
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <p className="text-[9px] text-slate-300 dark:text-slate-600 mt-1" style={{ textAlign: isMe ? 'right' : 'left' }}>{new Date(log.createdAt).toLocaleString('vi-VN')}</p>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* Instance List (original view) */}
+            {viewMode === 'list' && <div className="space-y-3">
                 {filteredInstances.map(instance => {
                     const template = templates.find(t => t.id === instance.templateId);
                     const creator = users.find(u => u.id === instance.createdBy);
@@ -1314,7 +1674,7 @@ const WorkflowInstances: React.FC = () => {
                         </p>
                     </div>
                 )}
-            </div>
+            </div>}
 
             {/* Create Instance Modal */}
             {showCreateModal && (

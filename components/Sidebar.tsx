@@ -231,6 +231,115 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
         {/* ==================== NAVIGATION ==================== */}
         <nav className="px-2 py-2 flex-1 overflow-y-auto space-y-0.5">
 
+          {/* ====== MOBILE FLAT VIEW — show everything at once ====== */}
+          <div className="lg:hidden">
+            {view === 'home' || view === 'apps' ? (
+              <>
+                {/* Module Grid on mobile */}
+                <div className="px-2 pb-2">
+                  <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 px-1">Ứng dụng</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {userModules.map(mod => {
+                      const ModIcon = mod.icon;
+                      const isActiveModule = detectAppFromUrl() === mod.key;
+                      return (
+                        <button
+                          key={mod.key}
+                          onClick={() => { handleModuleClick(mod); toggle(); }}
+                          className={`flex flex-col items-center gap-1.5 py-3 px-1 rounded-xl transition-all ${isActiveModule ? `bg-gradient-to-br ${mod.gradient} text-white shadow-lg ${mod.shadow}` : `${mod.bg} border ${mod.border} hover:shadow-md`}`}
+                        >
+                          <ModIcon size={20} className={isActiveModule ? '' : mod.color.split(' ')[0]} />
+                          <span className={`text-[9px] font-bold leading-tight text-center ${isActiveModule ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`}>{mod.shortLabel}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="border-t border-white/10 dark:border-slate-700/50 pt-2 mt-1 space-y-0.5">
+                  <NavLink to="/settings" onClick={toggle}
+                    className={({ isActive }) => `flex items-center px-4 py-2.5 rounded-xl transition-all group ${isActive
+                      ? 'bg-accent/90 text-white shadow-lg shadow-blue-500/20 border border-white/20'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                    <Settings className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                    <span className="font-bold text-sm">Cài đặt</span>
+                  </NavLink>
+
+                  <NavLink to="/chat" onClick={toggle}
+                    className={({ isActive }) => `flex items-center justify-between px-4 py-2.5 rounded-xl transition-all group ${isActive
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                    <div className="flex items-center">
+                      <MessageCircle className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                      <span className="font-bold text-sm">Tin nhắn</span>
+                    </div>
+                    {totalUnread > 0 && (
+                      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 bg-red-500 ring-slate-900 animate-pulse">
+                        {totalUnread > 9 ? '9+' : totalUnread}
+                      </span>
+                    )}
+                  </NavLink>
+                </div>
+              </>
+            ) : isModuleView && activeModule && isModuleAllowed ? (
+              <>
+                <button
+                  onClick={() => setView('home')}
+                  className="w-full flex items-center px-4 py-2 rounded-xl text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-white/40 dark:hover:bg-slate-800/50 transition-all group mb-1"
+                >
+                  <ArrowLeft size={14} className="mr-2 group-hover:-translate-x-0.5 transition-transform" />
+                  <span className="text-xs font-bold">Quay lại</span>
+                </button>
+                <div className={`mx-1 mb-2 px-3 py-2 rounded-xl flex items-center gap-2.5 bg-gradient-to-r ${activeModule.gradient} text-white shadow-lg ${activeModule.shadow}`}>
+                  <activeModule.icon size={18} />
+                  <span className="text-sm font-black">{activeModule.label}</span>
+                </div>
+                {filteredNavItems.map((item: any) => (
+                  <NavLink key={item.to} to={item.to} end onClick={toggle}
+                    className={({ isActive }) => `flex items-center justify-between px-4 py-2.5 rounded-xl transition-all group ${isActive
+                      ? 'bg-accent/90 text-white shadow-lg shadow-emerald-500/20 backdrop-blur-md border border-white/20'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                    <div className="flex items-center">
+                      <item.icon className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                      <span className="font-bold text-sm">{item.label}</span>
+                    </div>
+                    {item.badge && (
+                      <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 ${item.badgeColor || 'bg-red-500'} ring-slate-900`}>
+                        {item.badge}
+                      </span>
+                    )}
+                  </NavLink>
+                ))}
+                <div className="mt-3 pt-2 border-t border-white/10 dark:border-slate-700/50 space-y-0.5">
+                  <NavLink to="/settings" onClick={toggle}
+                    className={({ isActive }) => `flex items-center px-4 py-2.5 rounded-xl transition-all group ${isActive
+                      ? 'bg-accent/90 text-white shadow-lg shadow-blue-500/20 border border-white/20'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                    <Settings className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                    <span className="font-bold text-sm">Cài đặt</span>
+                  </NavLink>
+                  <NavLink to="/chat" onClick={toggle}
+                    className={({ isActive }) => `flex items-center justify-between px-4 py-2.5 rounded-xl transition-all group ${isActive
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                    <div className="flex items-center">
+                      <MessageCircle className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                      <span className="font-bold text-sm">Tin nhắn</span>
+                    </div>
+                    {totalUnread > 0 && (
+                      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 bg-red-500 ring-slate-900 animate-pulse">
+                        {totalUnread > 9 ? '9+' : totalUnread}
+                      </span>
+                    )}
+                  </NavLink>
+                </div>
+              </>
+            ) : null}
+          </div>
+
+          {/* ====== DESKTOP VIEW — existing drill-down behavior ====== */}
+          <div className="hidden lg:block space-y-0.5">
+
           {/* ====== VIEW: HOME (default) ====== */}
           {view === 'home' && (
             <>
@@ -409,6 +518,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
               </div>
             </>
           )}
+          </div>
         </nav>
 
         {/* Collapse Toggle */}

@@ -148,6 +148,18 @@ h1, h2, h3, h4, h5, h6, p, span, div, td, th {
     display: block;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    min-width: 100%;
+  }
+
+  /* Ensure table body doesn't shrink columns */
+  table thead, table tbody, table tr {
+    min-width: max-content;
+  }
+
+  /* Sidebar mobile: ensure full scrollability */
+  aside nav {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
   }
 
   /* Better spacing for mobile forms */
@@ -194,4 +206,10 @@ h1, h2, h3, h4, h5, h6, p, span, div, td, th {
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* Slide-in animation for detail panels */
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0.8; }
+  to { transform: translateX(0); opacity: 1; }
 }

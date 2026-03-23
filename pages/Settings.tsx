@@ -1,19 +1,21 @@
-
+﻿
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Warehouse, WarehouseType, Supplier, ItemCategory, ItemUnit, HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule, HrmConstructionSite, LossReason, LOSS_REASON_LABELS, MaterialLossNorm } from '../types';
+import { Warehouse, WarehouseType, Supplier, ItemCategory, ItemUnit, LossReason, LOSS_REASON_LABELS, MaterialLossNorm } from '../types';
 import {
   Building, MapPin, Plus, X, Save, Settings as SettingsIcon, Users,
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
-  Image as ImageIcon, Globe, Upload, Trash, Truck, User as UserIcon, Search, AlertCircle,
-  Database, Mail, Phone, Shield, MoreVertical, MapPinned, Clock, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown
+  Truck, User as UserIcon, Search, AlertCircle,
+  Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
-import UserModal from '../components/UserModal';
-import DeleteUserModal from '../components/DeleteUserModal';
 import { Role, User } from '../types';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import OrgChart from '../components/OrgChart';
+import SettingsGeneral from './settings/SettingsGeneral';
+import SettingsWarehouses from './settings/SettingsWarehouses';
+import SettingsUsers from './settings/SettingsUsers';
+import SettingsAccount from './settings/SettingsAccount';
+import SettingsMaintenance from './settings/SettingsMaintenance';
 
 const Settings: React.FC = () => {
   const {
@@ -82,11 +84,6 @@ const Settings: React.FC = () => {
   const [isLossNormModalOpen, setIsLossNormModalOpen] = useState(false);
   const [editingLossNorm, setEditingLossNorm] = useState<MaterialLossNorm | null>(null);
   const [lossNormForm, setLossNormForm] = useState({ itemId: '', categoryId: '', lossType: '' as LossReason | '', allowedPercentage: '', period: 'monthly' as 'monthly' | 'quarterly' | 'yearly' });
-
-  // Password change state
-  const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
-  const [passError, setPassError] = useState('');
-  const [passSuccess, setPassSuccess] = useState('');
 
   useEffect(() => {
     setAppName(appSettings.name);
@@ -350,71 +347,7 @@ const Settings: React.FC = () => {
     setIsUserModalOpen(false);
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPassError('');
-    setPassSuccess('');
 
-    if (passwords.new.length < 6) {
-      setPassError('Mật khẩu mới phải có ít nhất 6 ký tự.');
-      return;
-    }
-
-    if (passwords.new !== passwords.confirm) {
-      setPassError('Xác nhận mật khẩu mới không khớp.');
-      return;
-    }
-
-    if (isSupabaseConfigured) {
-      try {
-        // Step 1: Verify current password
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email: currentUser.email,
-          password: passwords.current,
-        });
-
-        if (signInError) {
-          setPassError(`Mật khẩu hiện tại không chính xác. (Chi tiết: ${signInError.message})`);
-          return;
-        }
-
-        // Step 2: Use Edge Function to update password in Supabase Auth
-        const response = await supabase.functions.invoke('reset-password', {
-          body: {
-            email: currentUser.email,
-            newPassword: passwords.new,
-          },
-        });
-
-        if (response.error) {
-          setPassError(`Lỗi khi gọi chức năng đổi mật khẩu: ${response.error.message}`);
-          return;
-        }
-
-        const result = response.data;
-        if (result?.error) {
-          setPassError(`Đổi mật khẩu thất bại: ${result.error}`);
-          return;
-        }
-
-        // Step 3: Also update local state and users table
-        updateUser({ ...currentUser, password: passwords.new });
-
-        setPassSuccess('✅ Đã đổi mật khẩu thành công! Mật khẩu mới đã được cập nhật trên Supabase Auth.');
-        setPasswords({ current: '', new: '', confirm: '' });
-      } catch (err: any) {
-        setPassError(`Có lỗi xảy ra: ${err.message || 'Không xác định'}`);
-      }
-    } else {
-      if (passwords.current !== currentUser.password) {
-        setPassError('Mật khẩu hiện tại không chính xác.');
-        return;
-      }
-      updateUser({ ...currentUser, password: passwords.new });
-      setPassSuccess('✅ Đã đổi mật khẩu thành công!');
-      setPasswords({ current: '', new: '', confirm: '' });
-    }
-  };
 
   const getRoleBadge = (role: Role) => {
     switch (role) {
@@ -493,110 +426,26 @@ const Settings: React.FC = () => {
         {/* Content Area */}
         <div className="flex-1">
           {activeTab === 'general' && (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                <h2 className="text-lg font-bold text-slate-800">Thông tin ứng dụng</h2>
-                <p className="text-xs text-slate-500 font-medium">Cấu hình nhận diện thương hiệu công ty.</p>
-              </div>
-              <form onSubmit={handleSaveGeneral} className="p-6 space-y-8">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  <div className="space-y-6">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">Tên doanh nghiệp</label>
-                      <input
-                        type="text" value={appName} onChange={(e) => setAppName(e.target.value)}
-                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-accent outline-none font-bold text-slate-700"
-                      />
-                    </div>
-                    <div className="space-y-4">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Logo công ty</label>
-                      <div className="flex items-center gap-3">
-                        <button type="button" onClick={() => fileInputRef.current?.click()} className="flex-1 px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 hover:bg-slate-50 transition flex items-center justify-center gap-2">
-                          <Upload size={18} /> Tải logo mới
-                        </button>
-                        <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
-                        {appLogo && (
-                          <button type="button" onClick={() => setAppLogo('')} className="p-3 bg-red-50 text-red-600 rounded-xl border border-red-100 hover:bg-red-600 hover:text-white transition shadow-sm"><Trash size={18} /></button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="space-y-4 bg-primary/5 p-6 rounded-2xl border border-dashed border-slate-200">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center block">Xem trước thương hiệu</label>
-                    <div className="bg-primary p-6 rounded-xl flex items-center gap-4 shadow-xl">
-                      {appLogo ? <img src={appLogo} alt="" className="w-10 h-10 object-contain rounded" /> : <div className="w-10 h-10 bg-accent rounded flex items-center justify-center font-bold text-white">KV</div>}
-                      <span className="text-white text-xl font-black">{appName}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="pt-4 border-t border-slate-100 flex justify-end">
-                  <button type="submit" className="px-8 py-3 bg-accent text-white rounded-xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-500/20 flex items-center"><Save size={18} className="mr-2" /> Lưu cấu hình</button>
-                </div>
-              </form>
-            </div>
+            <SettingsGeneral
+              appName={appName} setAppName={setAppName}
+              appLogo={appLogo} setAppLogo={setAppLogo}
+              fileInputRef={fileInputRef} handleLogoUpload={handleLogoUpload}
+              handleSaveGeneral={handleSaveGeneral}
+            />
           )}
 
           {activeTab === 'warehouses' && (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-800">Danh mục Kho bãi</h2>
-                  <p className="text-xs text-slate-500 font-medium">Hệ thống quản lý địa điểm lưu trữ.</p>
-                </div>
-                <button
-                  onClick={() => {
-                    setEditingWarehouse(null);
-                    setNewWhName('');
-                    setNewWhAddress('');
-                    setNewWhType('SITE');
-                    setIsWhModalOpen(true);
-                  }}
-                  className="flex items-center px-4 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition font-bold text-xs"
-                >
-                  <Plus className="w-4 h-4 mr-2" /> Thêm kho
-                </button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {warehouses.map((wh) => (
-                  <div key={wh.id} className={`bg-white p-5 rounded-2xl shadow-sm border group relative transition-all ${wh.isArchived ? 'opacity-60 border-dashed border-slate-300 bg-slate-50' : 'border-slate-100 hover:border-accent/30'}`}>
-                    <div className="flex items-start justify-between mb-3">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${wh.isArchived ? 'bg-slate-200 text-slate-400' : 'bg-slate-50 text-slate-400 group-hover:text-accent'}`}>
-                        <Building size={20} />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {wh.isArchived && (
-                          <span className="text-[9px] font-black px-2 py-1 rounded-lg uppercase bg-red-50 text-red-600 border border-red-100">
-                            Đã lưu trữ (Còn tồn)
-                          </span>
-                        )}
-                        <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase border ${wh.type === 'GENERAL' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-orange-50 text-orange-600 border-orange-100'}`}>
-                          {wh.type === 'GENERAL' ? 'Kho Tổng' : 'Công trình'}
-                        </span>
-                      </div>
-                    </div>
-                    <h3 className={`font-bold mb-1 ${wh.isArchived ? 'text-slate-500' : 'text-slate-800'}`}>{wh.name}</h3>
-                    <div className="flex items-start text-slate-400 text-[11px] leading-relaxed mb-4">
-                      <MapPin className="w-3 h-3 mr-1 mt-0.5" />{wh.address}
-                    </div>
-
-                    <div className="flex gap-2 pt-3 border-t border-slate-50 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => handleEditWarehouse(wh)}
-                        className="flex-1 py-2 bg-slate-50 text-slate-600 rounded-lg text-[10px] font-bold hover:bg-blue-50 hover:text-accent transition-colors flex items-center justify-center"
-                      >
-                        <Edit2 size={12} className="mr-1" /> Chỉnh sửa
-                      </button>
-                      <button
-                        onClick={() => handleDeleteWarehouse(wh)}
-                        className="flex-1 py-2 bg-slate-50 text-slate-600 rounded-lg text-[10px] font-bold hover:bg-red-50 hover:text-red-600 transition-colors flex items-center justify-center"
-                      >
-                        <Trash2 size={12} className="mr-1" /> Xoá kho
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <SettingsWarehouses
+              warehouses={warehouses}
+              isWhModalOpen={isWhModalOpen} setIsWhModalOpen={setIsWhModalOpen}
+              editingWarehouse={editingWarehouse} setEditingWarehouse={setEditingWarehouse}
+              newWhName={newWhName} setNewWhName={setNewWhName}
+              newWhAddress={newWhAddress} setNewWhAddress={setNewWhAddress}
+              newWhType={newWhType} setNewWhType={setNewWhType}
+              handleAddWarehouse={handleAddWarehouse}
+              handleEditWarehouse={handleEditWarehouse}
+              handleDeleteWarehouse={handleDeleteWarehouse}
+            />
           )}
 
           {activeTab === 'master-data' && (
@@ -1053,186 +902,27 @@ const Settings: React.FC = () => {
           )}
 
           {activeTab === 'users' && (
-            <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
-              <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-800">Quản lý nhân sự</h2>
-                  <p className="text-xs text-slate-500 font-medium">Phân quyền và phạm vi quản lý kho bãi cho nhân viên.</p>
-                </div>
-                <button
-                  onClick={handleAddUser}
-                  className="flex items-center px-4 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition font-bold text-xs shadow-lg shadow-slate-900/20"
-                >
-                  <Plus className="w-4 h-4 mr-2" /> Thêm nhân sự
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {users.map((u) => {
-                  const assignedWarehouse = warehouses.find(w => w.id === u.assignedWarehouseId);
-                  return (
-                    <div key={u.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden group hover:border-accent/30 transition-all">
-                      <div className="p-6">
-                        <div className="flex justify-between items-start mb-4">
-                          <div className="relative">
-                            <img src={u.avatar} alt={u.name} className="w-14 h-14 rounded-full border-4 border-slate-50" />
-                            <div className="absolute -bottom-1 -right-1 bg-white p-1 rounded-full shadow-sm">
-                              <Shield size={12} className={`text-accent ${u.role === Role.ADMIN ? 'text-red-500' : 'text-blue-500'}`} />
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {u.id === currentUser.id && <span className="text-[9px] font-black text-accent bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">BẠN</span>}
-                            <button className="text-slate-300 hover:text-slate-600">
-                              <MoreVertical size={18} />
-                            </button>
-                          </div>
-                        </div>
-
-                        <h3 className="font-black text-slate-800 mb-1">{u.name}</h3>
-                        <div className="space-y-1 mb-4">
-                          <div className="flex items-center text-[11px] text-slate-500 font-medium">
-                            <Mail size={12} className="mr-2 shrink-0 text-slate-300" /> {u.email}
-                          </div>
-                          {u.phone && (
-                            <div className="flex items-center text-[11px] text-slate-500 font-medium">
-                              <Phone size={12} className="mr-2 shrink-0 text-slate-300" /> {u.phone}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="mb-4">
-                          {getRoleBadge(u.role)}
-                        </div>
-
-                        <div className="pt-4 border-t border-slate-50 space-y-2">
-                          <div className="flex items-center text-[10px] text-slate-400 uppercase font-black tracking-widest">
-                            <MapPin size={12} className="mr-1" /> Phạm vi quản lý
-                          </div>
-                          <div className="font-bold text-xs text-slate-700">
-                            {assignedWarehouse ? assignedWarehouse.name : 'Toàn hệ thống'}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="px-6 py-3 bg-slate-50/50 flex gap-2 border-t border-slate-50">
-                        <button
-                          onClick={() => handleEditUser(u)}
-                          className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest text-accent bg-white border border-slate-200 rounded-xl hover:bg-accent hover:text-white transition-all shadow-sm"
-                        >
-                          Sửa
-                        </button>
-                        <button
-                          onClick={() => handleDeleteUserClick(u)}
-                          className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-sm border
-                              ${u.id === currentUser.id
-                              ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
-                              : 'bg-white text-red-600 border-red-100 hover:bg-red-600 hover:text-white'
-                            }`}
-                        >
-                          Xoá
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <SettingsUsers
+              users={users} currentUser={currentUser} warehouses={warehouses}
+              isUserModalOpen={isUserModalOpen} setIsUserModalOpen={setIsUserModalOpen}
+              isUserDeleteModalOpen={isUserDeleteModalOpen} setIsUserDeleteModalOpen={setIsUserDeleteModalOpen}
+              editingUser={editingUser} deletingUser={deletingUser}
+              handleAddUser={handleAddUser} handleEditUser={handleEditUser}
+              handleDeleteUserClick={handleDeleteUserClick}
+              handleConfirmDeleteUser={handleConfirmDeleteUser}
+              handleSaveUser={handleSaveUser}
+              getRoleBadge={getRoleBadge}
+            />
           )}
 
           {activeTab === 'account' && (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                <h2 className="text-lg font-bold text-slate-800">Tài khoản cá nhân</h2>
-                <p className="text-xs text-slate-500 font-medium">Thay đổi thông tin, ảnh đại diện và mật khẩu.</p>
-              </div>
-              <div className="p-6 space-y-8">
-                {/* Avatar Section */}
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800 mb-4">Ảnh đại diện</h3>
-                  <div className="flex items-center gap-6">
-                    <img src={currentUser.avatar} alt="Avatar" className="w-20 h-20 rounded-full border-4 border-slate-50 shadow-sm object-cover" />
-                    <div className="space-y-2">
-                      <button onClick={() => avatarInputRef.current?.click()} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-sm flex items-center">
-                        <Upload size={14} className="mr-2" /> Tải ảnh lên
-                      </button>
-                      <input type="file" ref={avatarInputRef} onChange={handleAvatarUpload} accept="image/*" className="hidden" />
-                      <p className="text-[10px] text-slate-400">Định dạng hỗ trợ: JPG, PNG. Ảnh sẽ được tự động cắt theo hình vuông.</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Password Section */}
-                <h3 className="text-sm font-bold text-slate-800 mb-4">Đổi mật khẩu</h3>
-                <form onSubmit={handleChangePassword} className="max-w-md space-y-4">
-                  {passError && (
-                    <div className="bg-red-50 border border-red-100 p-4 rounded-xl flex items-center gap-3 text-red-600">
-                      <AlertCircle size={18} />
-                      <p className="text-xs font-bold">{passError}</p>
-                    </div>
-                  )}
-                  {passSuccess && (
-                    <div className="bg-green-50 border border-green-100 p-4 rounded-xl flex items-center gap-3 text-green-600">
-                      <Save size={18} />
-                      <p className="text-xs font-bold">{passSuccess}</p>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mật khẩu hiện tại</label>
-                    <input
-                      type="password"
-                      required
-                      value={passwords.current}
-                      onChange={(e) => setPasswords({ ...passwords, current: e.target.value })}
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-accent font-medium"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mật khẩu mới</label>
-                    <input
-                      type="password"
-                      required
-                      value={passwords.new}
-                      onChange={(e) => setPasswords({ ...passwords, new: e.target.value })}
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-accent font-medium"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Xác nhận mật khẩu mới</label>
-                    <input
-                      type="password"
-                      required
-                      value={passwords.confirm}
-                      onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-accent font-medium"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="px-6 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition shadow-lg"
-                  >
-                    Cập nhật mật khẩu
-                  </button>
-                </form>
-
-                <div className="pt-8 border-t border-slate-100">
-                  <h3 className="text-sm font-bold text-slate-800 mb-2">Đăng xuất</h3>
-                  <p className="text-xs text-slate-500 mb-4">Kết thúc phiên làm việc hiện tại trên thiết bị này.</p>
-                  <button
-                    onClick={() => {
-                      logout();
-                      window.location.href = '/login';
-                    }}
-                    className="px-6 py-3 bg-red-50 text-red-600 border border-red-100 rounded-xl font-bold hover:bg-red-600 hover:text-white transition"
-                  >
-                    Đăng xuất ngay
-                  </button>
-                </div>
-              </div>
-            </div>
+            <SettingsAccount
+              currentUser={currentUser}
+              updateUser={updateUser}
+              logout={logout}
+              avatarInputRef={avatarInputRef}
+              handleAvatarUpload={handleAvatarUpload}
+            />
           )}
 
           {activeTab === 'loss-norms' && (
@@ -1316,7 +1006,6 @@ const Settings: React.FC = () => {
                 </div>
               </div>
 
-              {/* Info card */}
               <div className="bg-gradient-to-r from-orange-50 to-amber-50 p-5 rounded-2xl border border-orange-100">
                 <h3 className="font-bold text-sm text-orange-800 flex items-center"><AlertCircle size={16} className="mr-2" /> Cách hoạt động</h3>
                 <ul className="text-xs text-orange-700 font-medium mt-2 space-y-1.5 list-disc pl-5">
@@ -1329,95 +1018,10 @@ const Settings: React.FC = () => {
           )}
 
           {activeTab === 'maintenance' && (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="p-6 border-b border-slate-100 bg-red-50/30">
-                <h2 className="text-lg font-bold text-red-800 flex items-center">
-                  <AlertCircle size={20} className="mr-2" /> Khu vực nguy hiểm
-                </h2>
-                <p className="text-xs text-red-500 font-medium">Các thao tác tại đây không thể hoàn tác. Hãy cẩn trọng.</p>
-              </div>
-              <div className="p-8 space-y-8">
-                <div className="flex flex-col md:flex-row items-center justify-between gap-6 p-6 rounded-2xl border border-red-100 bg-red-50/10">
-                  <div className="space-y-1 text-center md:text-left">
-                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Xóa toàn bộ dữ liệu vật tư & giao dịch</h3>
-                    <p className="text-xs text-slate-500 max-w-md">Xóa sạch danh sách vật tư, lịch sử nhập/xuất kho, yêu cầu vật tư và nhật ký hoạt động. Danh mục kho bãi và người dùng sẽ được giữ lại.</p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      triggerAction(
-                        "Xác nhận XÓA SẠCH dữ liệu",
-                        "Hành động này sẽ xóa toàn bộ vật tư và lịch sử giao dịch. Bạn sẽ không thể khôi phục lại dữ liệu này.",
-                        'danger',
-                        'XÓA VĨNH VIỄN',
-                        () => {
-                          clearAllData();
-                          alert("Đã xóa sạch dữ liệu vật tư và giao dịch.");
-                        },
-                        true // countdown
-                      );
-                    }}
-                    className="px-6 py-3 bg-red-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-red-700 transition shadow-lg shadow-red-500/20 flex items-center gap-2"
-                  >
-                    <Trash2 size={16} /> Xóa dữ liệu
-                  </button>
-                </div>
-              </div>
-            </div>
+            <SettingsMaintenance triggerAction={triggerAction} clearAllData={clearAllData} />
           )}
         </div>
       </div>
-
-      {/* Warehouse Add/Edit Modal */}
-      <UserModal
-        isOpen={isUserModalOpen}
-        onClose={() => setIsUserModalOpen(false)}
-        onSave={handleSaveUser}
-        userToEdit={editingUser}
-        warehouses={warehouses}
-      />
-
-      <DeleteUserModal
-        isOpen={isUserDeleteModalOpen}
-        onClose={() => setIsUserDeleteModalOpen(false)}
-        onConfirm={handleConfirmDeleteUser}
-        targetUser={deletingUser}
-      />
-
-      {isWhModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
-              <h3 className="font-black text-xs uppercase tracking-widest text-slate-800">
-                {editingWarehouse ? 'Cập nhật kho bãi' : 'Thêm kho bãi mới'}
-              </h3>
-              <button onClick={() => setIsWhModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
-            </div>
-            <form onSubmit={handleAddWarehouse} className="p-6 space-y-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tên kho nhận diện</label>
-                <input type="text" value={newWhName} onChange={(e) => setNewWhName(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-accent outline-none font-bold" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loại hình kho</label>
-                <select value={newWhType} onChange={(e) => setNewWhType(e.target.value as WarehouseType)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-accent outline-none font-bold">
-                  <option value="SITE">Kho Công Trình</option>
-                  <option value="GENERAL">Kho Tổng</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Địa chỉ vật lý</label>
-                <textarea value={newWhAddress} onChange={(e) => setNewWhAddress(e.target.value)} rows={3} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-accent outline-none resize-none font-medium text-xs" />
-              </div>
-              <div className="pt-2 grid grid-cols-2 gap-3">
-                <button type="button" onClick={() => setIsWhModalOpen(false)} className="py-3 border border-slate-200 text-slate-500 rounded-xl font-bold text-xs hover:bg-slate-50 transition">Hủy bỏ</button>
-                <button type="submit" className="py-3 bg-accent text-white rounded-xl font-bold text-xs hover:bg-blue-700 transition shadow-lg shadow-blue-500/20 flex items-center justify-center">
-                  <Save size={16} className="mr-2" /> {editingWarehouse ? 'Cập nhật' : 'Lưu thông tin'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Loss Norm Modal */}
       {isLossNormModalOpen && (
@@ -1443,7 +1047,6 @@ const Settings: React.FC = () => {
               if (editingLossNorm) { updateLossNorm(norm); } else { addLossNorm(norm); }
               setIsLossNormModalOpen(false);
             }} className="p-6 space-y-4">
-              {/* Target: item or category */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Theo vật tư</label>
@@ -1460,8 +1063,6 @@ const Settings: React.FC = () => {
                   </select>
                 </div>
               </div>
-
-              {/* Loss Reason */}
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loại hao hụt *</label>
                 <select value={lossNormForm.lossType} onChange={(e) => setLossNormForm(f => ({ ...f, lossType: e.target.value as LossReason }))} required className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-accent">
@@ -1469,8 +1070,6 @@ const Settings: React.FC = () => {
                   {Object.entries(LOSS_REASON_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                 </select>
               </div>
-
-              {/* Percentage and Period */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tỷ lệ cho phép (%) *</label>
@@ -1488,7 +1087,6 @@ const Settings: React.FC = () => {
                   </select>
                 </div>
               </div>
-
               <div className="pt-2 grid grid-cols-2 gap-3">
                 <button type="button" onClick={() => setIsLossNormModalOpen(false)} className="py-3 border border-slate-200 text-slate-500 rounded-xl font-bold text-xs hover:bg-slate-50 transition">Hủy bỏ</button>
                 <button type="submit" className="py-3 bg-accent text-white rounded-xl font-bold text-xs hover:bg-blue-700 transition shadow-lg shadow-blue-500/20 flex items-center justify-center">

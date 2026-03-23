@@ -4,7 +4,8 @@ import { Employee, AssetStatus, Asset } from '../types';
 import {
     User as UserIcon, Briefcase, Phone, Calendar, MapPin, Building,
     Heart, Landmark, Mail, Shield, Clock, Award, ChevronRight,
-    Settings, Package, FileText, Hash, Edit3, Save, X, Check
+    Settings, Package, FileText, Hash, Edit3, Save, X, Check,
+    Sparkles, Zap, TrendingUp, Activity
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
@@ -22,14 +23,12 @@ const MyProfile: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabKey>('personal');
     const [isEditing, setIsEditing] = useState(false);
 
-    // Find the employee record linked to the current user
     const employee = useMemo(() => {
         return employees.find(e => e.userId === user.id);
     }, [employees, user.id]);
 
     const linkedUser = user;
 
-    // Editable form state
     const [editForm, setEditForm] = useState({
         fullName: '',
         gender: '' as 'Nam' | 'Nữ' | 'Khác',
@@ -54,7 +53,6 @@ const MyProfile: React.FC = () => {
     };
 
     const saveEditing = () => {
-        // Update employee record
         if (employee) {
             updateEmployee({
                 ...employee,
@@ -66,7 +64,6 @@ const MyProfile: React.FC = () => {
                 updatedAt: new Date().toISOString(),
             });
         }
-        // Sync name & phone to User record
         if (editForm.fullName !== linkedUser.name || editForm.phone !== (linkedUser.phone || '')) {
             updateUser({
                 ...linkedUser,
@@ -78,7 +75,6 @@ const MyProfile: React.FC = () => {
         toast.success('Đã cập nhật thông tin cá nhân!');
     };
 
-    // Lookup helpers
     const area = hrmAreas.find(a => a.id === employee?.areaId);
     const office = hrmOffices.find(o => o.id === employee?.officeId);
     const position = hrmPositions.find(p => p.id === employee?.positionId);
@@ -89,7 +85,6 @@ const MyProfile: React.FC = () => {
     const department = orgUnits.find(u => u.id === employee?.departmentId);
     const factory = orgUnits.find(u => u.id === employee?.factoryId);
 
-    // Assets assigned to this user
     const employeeAssets = useMemo(() => {
         return assets.filter(a => a.assignedToUserId === user.id && a.status === AssetStatus.IN_USE);
     }, [assets, user.id]);
@@ -101,22 +96,27 @@ const MyProfile: React.FC = () => {
     const getCategoryName = (catId: string) => assetCategories.find(c => c.id === catId)?.name || '';
 
     const tabs: { key: TabKey; label: string; icon: React.ReactNode; count?: number }[] = [
-        { key: 'personal', label: 'Cá Nhân', icon: <UserIcon size={16} /> },
-        { key: 'work', label: 'Công Việc', icon: <Briefcase size={16} /> },
-        { key: 'contact', label: 'Liên Hệ', icon: <Phone size={16} /> },
-        { key: 'assets', label: 'Tài Sản', icon: <Landmark size={16} />, count: employeeAssets.length },
+        { key: 'personal', label: 'Cá Nhân', icon: <UserIcon size={15} /> },
+        { key: 'work', label: 'Công Việc', icon: <Briefcase size={15} /> },
+        { key: 'contact', label: 'Liên Hệ', icon: <Phone size={15} /> },
+        { key: 'assets', label: 'Tài Sản', icon: <Landmark size={15} />, count: employeeAssets.length },
     ];
 
+    // Glass info row
     const InfoRow: React.FC<{ label: string; value?: string | null; icon?: React.ReactNode; badge?: boolean; badgeColor?: string }> = ({ label, value, icon, badge, badgeColor }) => (
-        <div className="flex items-center py-3.5 border-b border-slate-100 dark:border-slate-800 last:border-0 group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 -mx-2 px-2 rounded-lg transition-colors">
-            {icon && <span className="text-slate-400 mr-3 shrink-0">{icon}</span>}
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 w-40 shrink-0">{label}</span>
+        <div className="group flex items-center py-4 border-b border-white/5 dark:border-white/[0.03] last:border-0 hover:bg-white/[0.03] -mx-3 px-3 rounded-xl transition-all duration-300">
+            {icon && (
+                <span className="w-8 h-8 rounded-lg bg-white/[0.06] dark:bg-white/[0.04] flex items-center justify-center mr-3 shrink-0 text-indigo-400 group-hover:bg-indigo-500/10 group-hover:text-indigo-300 transition-all duration-300">
+                    {icon}
+                </span>
+            )}
+            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400/80 dark:text-slate-500 w-36 shrink-0">{label}</span>
             {badge && value ? (
-                <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${badgeColor || 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'}`}>
+                <span className={`text-[11px] font-bold px-3 py-1 rounded-lg backdrop-blur-sm ${badgeColor || 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
                     {value}
                 </span>
             ) : (
-                <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{value || <span className="text-slate-300 dark:text-slate-600 italic">Chưa cập nhật</span>}</span>
+                <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{value || <span className="text-slate-300/50 dark:text-slate-600 italic text-xs">Chưa cập nhật</span>}</span>
             )}
         </div>
     );
@@ -127,15 +127,19 @@ const MyProfile: React.FC = () => {
         value: string; onChange: (v: string) => void;
         options?: { value: string; label: string }[];
     }> = ({ label, icon, type = 'text', value, onChange, options }) => (
-        <div className="flex items-center py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0 -mx-2 px-2 rounded-lg">
-            {icon && <span className="text-indigo-400 mr-3 shrink-0">{icon}</span>}
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 w-40 shrink-0">{label}</span>
+        <div className="flex items-center py-3 border-b border-white/5 dark:border-white/[0.03] last:border-0 -mx-3 px-3 rounded-xl">
+            {icon && (
+                <span className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center mr-3 shrink-0 text-indigo-400">
+                    {icon}
+                </span>
+            )}
+            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400/80 dark:text-slate-500 w-36 shrink-0">{label}</span>
             <div className="flex-1">
                 {type === 'select' && options ? (
                     <select
                         value={value}
                         onChange={e => onChange(e.target.value)}
-                        className="w-full p-2 border border-indigo-200 rounded-lg text-sm font-semibold bg-white dark:bg-slate-800 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-300"
+                        className="w-full p-2.5 border border-white/10 rounded-xl text-sm font-semibold bg-white/[0.04] dark:bg-white/[0.03] backdrop-blur-sm outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500/30 transition-all text-slate-700 dark:text-slate-200"
                     >
                         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
@@ -144,7 +148,7 @@ const MyProfile: React.FC = () => {
                         type={type}
                         value={value}
                         onChange={e => onChange(e.target.value)}
-                        className="w-full p-2 border border-indigo-200 rounded-lg text-sm font-semibold bg-white dark:bg-slate-800 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-300"
+                        className="w-full p-2.5 border border-white/10 rounded-xl text-sm font-semibold bg-white/[0.04] dark:bg-white/[0.03] backdrop-blur-sm outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500/30 transition-all text-slate-700 dark:text-slate-200"
                     />
                 )}
             </div>
@@ -169,112 +173,161 @@ const MyProfile: React.FC = () => {
     }, [employee?.startDate]);
 
     return (
-        <div className="max-w-4xl mx-auto space-y-6">
-            {/* Profile Header Card */}
-            <div className="glass-panel rounded-3xl overflow-hidden">
-                {/* Banner */}
-                <div className="h-32 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 relative">
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_40%,rgba(255,255,255,0.2),transparent_60%)]"></div>
-                    <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-white/10 to-transparent"></div>
+        <div className="max-w-4xl mx-auto space-y-5">
+
+            {/* ═══════════════════════════════════════════════
+                HERO BANNER — Animated Gradient + Glass
+               ═══════════════════════════════════════════════ */}
+            <div className="relative rounded-3xl overflow-hidden"
+                style={{
+                    background: 'linear-gradient(135deg, #0f0c29 0%, #302b63 40%, #24243e 100%)',
+                    boxShadow: '0 20px 60px -12px rgba(48,43,99,0.5)',
+                }}
+            >
+                {/* Animated mesh bg */}
+                <div className="absolute inset-0 opacity-30">
+                    <div className="absolute top-0 -left-4 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-[80px] animate-pulse" style={{ animationDuration: '4s' }} />
+                    <div className="absolute top-0 right-0 w-72 h-72 bg-cyan-500 rounded-full mix-blend-multiply filter blur-[80px] animate-pulse" style={{ animationDuration: '6s', animationDelay: '2s' }} />
+                    <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-500 rounded-full mix-blend-multiply filter blur-[80px] animate-pulse" style={{ animationDuration: '5s', animationDelay: '1s' }} />
                 </div>
 
-                {/* Profile Info */}
-                <div className="px-8 pb-6 -mt-14 relative">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-end gap-4">
+                {/* Grid pattern overlay */}
+                <div className="absolute inset-0 opacity-[0.03]"
+                    style={{
+                        backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+                        backgroundSize: '40px 40px',
+                    }}
+                />
+
+                {/* Content */}
+                <div className="relative px-6 sm:px-8 py-8 sm:py-10">
+                    <div className="flex flex-col sm:flex-row items-center sm:items-end gap-5 sm:gap-6">
                         {/* Avatar */}
-                        <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-3xl font-black shadow-2xl shadow-indigo-500/30 border-4 border-white dark:border-slate-900 shrink-0 overflow-hidden">
-                            {linkedUser.avatar
-                                ? <img src={linkedUser.avatar} className="w-full h-full object-cover" alt="" />
-                                : (employee?.fullName || linkedUser.name || '?').charAt(0).toUpperCase()
-                            }
+                        <div className="relative group">
+                            <div className="absolute -inset-1 bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500 rounded-2xl blur opacity-60 group-hover:opacity-80 transition-opacity duration-500" />
+                            <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center text-3xl sm:text-4xl font-black text-white overflow-hidden ring-2 ring-white/20">
+                                {linkedUser.avatar
+                                    ? <img src={linkedUser.avatar} className="w-full h-full object-cover" alt="" />
+                                    : (employee?.fullName || linkedUser.name || '?').charAt(0).toUpperCase()
+                                }
+                            </div>
+                            {/* Online indicator */}
+                            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-400 rounded-full border-3 border-[#302b63] shadow-lg shadow-emerald-400/50" />
                         </div>
 
-                        {/* Name & Role */}
-                        <div className="flex-1 min-w-0 pb-1">
-                            <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">
+                        {/* Info */}
+                        <div className="flex-1 min-w-0 text-center sm:text-left pb-1">
+                            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight drop-shadow-lg">
                                 {employee?.fullName || linkedUser.name}
                             </h1>
-                            <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-2.5">
                                 {employee?.employeeCode && (
-                                    <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                    <span className="text-[10px] font-bold text-cyan-300 bg-cyan-400/10 px-2.5 py-1 rounded-lg flex items-center gap-1 backdrop-blur-sm border border-cyan-400/20">
                                         <Hash size={10} /> {employee.employeeCode}
                                     </span>
                                 )}
                                 {position && (
-                                    <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                    <span className="text-[10px] font-bold text-amber-300 bg-amber-400/10 px-2.5 py-1 rounded-lg flex items-center gap-1 backdrop-blur-sm border border-amber-400/20">
                                         <Award size={10} /> {position.name}
                                     </span>
                                 )}
                                 {employee?.status && (
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${employee.status === 'Đang làm việc'
-                                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
-                                        : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'
-                                        }`}>
+                                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg backdrop-blur-sm border ${employee.status === 'Đang làm việc'
+                                        ? 'bg-emerald-400/10 text-emerald-300 border-emerald-400/20'
+                                        : 'bg-red-400/10 text-red-300 border-red-400/20'
+                                    }`}>
+                                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-current mr-1 animate-pulse" />
                                         {employee.status}
                                     </span>
                                 )}
-                                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                <span className="text-[10px] font-bold text-slate-300 bg-white/5 px-2.5 py-1 rounded-lg flex items-center gap-1 backdrop-blur-sm border border-white/10">
                                     <Shield size={10} /> {linkedUser.role}
                                 </span>
                             </div>
                         </div>
 
-                        {/* Quick Stats */}
-                        <div className="flex gap-4 shrink-0">
+                        {/* Stats Cards */}
+                        <div className="flex gap-3 shrink-0">
                             {daysSinceJoin && (
-                                <div className="text-center">
-                                    <div className="text-lg font-black text-indigo-600 dark:text-indigo-400">{daysSinceJoin}</div>
-                                    <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Thâm niên</div>
+                                <div className="text-center px-4 py-3 rounded-2xl bg-white/[0.06] backdrop-blur-md border border-white/10 hover:bg-white/[0.1] transition-all duration-300 group cursor-default">
+                                    <div className="flex items-center justify-center gap-1 mb-1">
+                                        <TrendingUp size={12} className="text-purple-400 group-hover:text-purple-300 transition-colors" />
+                                    </div>
+                                    <div className="text-lg font-black text-white drop-shadow-lg">{daysSinceJoin}</div>
+                                    <div className="text-[8px] font-bold uppercase tracking-[0.2em] text-slate-400">Thâm niên</div>
                                 </div>
                             )}
-                            <div className="text-center">
-                                <div className="text-lg font-black text-rose-600 dark:text-rose-400">{employeeAssets.length}</div>
-                                <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Tài sản</div>
+                            <div className="text-center px-4 py-3 rounded-2xl bg-white/[0.06] backdrop-blur-md border border-white/10 hover:bg-white/[0.1] transition-all duration-300 group cursor-default">
+                                <div className="flex items-center justify-center gap-1 mb-1">
+                                    <Zap size={12} className="text-rose-400 group-hover:text-rose-300 transition-colors" />
+                                </div>
+                                <div className="text-lg font-black text-white drop-shadow-lg">{employeeAssets.length}</div>
+                                <div className="text-[8px] font-bold uppercase tracking-[0.2em] text-slate-400">Tài sản</div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* Tabs + Content */}
-            <div className="glass-panel rounded-3xl overflow-hidden">
+            {/* ═══════════════════════════════════════════════
+                TAB CONTENT — Frosted Glass Panel
+               ═══════════════════════════════════════════════ */}
+            <div className="rounded-3xl overflow-hidden"
+                style={{
+                    background: 'rgba(255,255,255,0.5)',
+                    backdropFilter: 'blur(20px)',
+                    WebkitBackdropFilter: 'blur(20px)',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.6)',
+                    border: '1px solid rgba(255,255,255,0.4)',
+                }}
+            >
                 {/* Tab Bar */}
-                <div className="flex border-b border-slate-100 dark:border-slate-800 px-6 bg-white/50 dark:bg-slate-900/50">
+                <div className="flex overflow-x-auto px-2 sm:px-4 pt-2 gap-1"
+                    style={{
+                        background: 'rgba(248,250,252,0.6)',
+                        borderBottom: '1px solid rgba(0,0,0,0.04)',
+                    }}
+                >
                     {tabs.map(tab => (
                         <button
                             key={tab.key}
                             onClick={() => { setActiveTab(tab.key); setIsEditing(false); }}
-                            className={`flex items-center gap-2 px-5 py-4 text-xs font-bold uppercase tracking-wider transition border-b-2 -mb-px ${activeTab === tab.key
-                                ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
-                                : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
-                                }`}
+                            className={`flex items-center gap-2 px-4 sm:px-5 py-3 text-[11px] font-bold uppercase tracking-wider transition-all duration-300 rounded-t-xl whitespace-nowrap ${activeTab === tab.key
+                                ? 'bg-white/80 dark:bg-slate-800/80 text-indigo-600 dark:text-indigo-400 shadow-sm border border-white/60 dark:border-slate-700 border-b-transparent -mb-px'
+                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-white/30'
+                            }`}
                         >
                             {tab.icon}
                             <span>{tab.label}</span>
                             {tab.count !== undefined && tab.count > 0 && (
-                                <span className="text-[9px] font-black bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 rounded-full">{tab.count}</span>
+                                <span className="text-[9px] font-black bg-rose-500/10 text-rose-500 px-1.5 py-0.5 rounded-full border border-rose-500/20">{tab.count}</span>
                             )}
                         </button>
                     ))}
                 </div>
 
-                {/* Tab Content */}
-                <div className="p-6 md:p-8">
+                {/* Content */}
+                <div className="p-4 sm:p-6 md:p-8">
+
                     {/* === CÁ NHÂN === */}
                     {activeTab === 'personal' && (
                         <div>
-                            {/* Edit/Save buttons */}
-                            <div className="flex justify-end mb-2 gap-2">
+                            <div className="flex justify-end mb-3 gap-2">
                                 {!isEditing ? (
-                                    <button onClick={startEditing} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100 transition dark:bg-indigo-900/30 dark:text-indigo-400 dark:hover:bg-indigo-900/50">
-                                        <Edit3 size={12} /> Sửa thông tin
+                                    <button onClick={startEditing}
+                                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 bg-indigo-500/5 text-indigo-600 hover:bg-indigo-500/10 border border-indigo-500/10 hover:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20 group"
+                                    >
+                                        <Edit3 size={12} className="group-hover:rotate-12 transition-transform" /> Sửa thông tin
                                     </button>
                                 ) : (
                                     <>
-                                        <button onClick={cancelEditing} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-200 transition">
+                                        <button onClick={cancelEditing} className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition-all border border-slate-200">
                                             <X size={12} /> Hủy
                                         </button>
-                                        <button onClick={saveEditing} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600 transition shadow-sm">
+                                        <button onClick={saveEditing}
+                                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 text-white shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40"
+                                            style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
+                                        >
                                             <Check size={12} /> Lưu
                                         </button>
                                     </>
@@ -290,7 +343,6 @@ const MyProfile: React.FC = () => {
                                     <EditRow icon={<Heart size={14} />} label="Tình trạng HN" type="select" value={editForm.maritalStatus} onChange={v => setEditForm({...editForm, maritalStatus: v})}
                                         options={[{ value: '', label: 'Chưa cập nhật' }, { value: 'Độc thân', label: 'Độc thân' }, { value: 'Đã kết hôn', label: 'Đã kết hôn' }, { value: 'Ly hôn', label: 'Ly hôn' }]} />
                                     <EditRow icon={<Phone size={14} />} label="Số điện thoại" value={editForm.phone} onChange={v => setEditForm({...editForm, phone: v})} />
-                                    {/* Read-only fields */}
                                     <InfoRow icon={<Award size={14} />} label="Chức danh" value={employee?.title} />
                                     <InfoRow icon={<Settings size={14} />} label="Tài khoản" value={`${linkedUser.username} (${linkedUser.email})`} />
                                 </>
@@ -306,7 +358,7 @@ const MyProfile: React.FC = () => {
                                 </>
                             )}
                             {!employee && (
-                                <div className="mt-6 p-4 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800">
+                                <div className="mt-6 p-4 rounded-xl border border-amber-400/20 bg-amber-400/5 backdrop-blur-sm">
                                     <p className="text-xs font-bold text-amber-600 dark:text-amber-400">
                                         ⚠️ Hồ sơ nhân sự chưa được liên kết với tài khoản. Liên hệ Admin để cập nhật.
                                     </p>
@@ -318,15 +370,15 @@ const MyProfile: React.FC = () => {
                     {/* === CÔNG VIỆC === */}
                     {activeTab === 'work' && (
                         <div>
-                            <InfoRow icon={<MapPin size={14} />} label="Khu vực" value={area?.name} badge badgeColor="bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400" />
-                            <InfoRow icon={<Building size={14} />} label="Văn phòng" value={office?.name} badge badgeColor="bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400" />
-                            <InfoRow icon={<Award size={14} />} label="Vị trí" value={position?.name} badge badgeColor="bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400" />
+                            <InfoRow icon={<MapPin size={14} />} label="Khu vực" value={area?.name} badge badgeColor="bg-blue-500/10 text-blue-500 border border-blue-500/20" />
+                            <InfoRow icon={<Building size={14} />} label="Văn phòng" value={office?.name} badge badgeColor="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" />
+                            <InfoRow icon={<Award size={14} />} label="Vị trí" value={position?.name} badge badgeColor="bg-amber-500/10 text-amber-500 border border-amber-500/20" />
                             <InfoRow icon={<FileText size={14} />} label="Loại NV" value={empType?.name} />
                             <InfoRow icon={<Package size={14} />} label="Chính sách lương" value={salaryPolicy?.name} />
                             <InfoRow icon={<Clock size={14} />} label="Lịch làm việc" value={workSchedule?.name} />
-                            <InfoRow icon={<Building size={14} />} label="Công trường" value={constructionSite?.name} badge badgeColor="bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400" />
-                            <InfoRow icon={<Building size={14} />} label="Phòng / Ban" value={department?.name} badge badgeColor="bg-sky-50 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400" />
-                            <InfoRow icon={<Building size={14} />} label="Nhà máy" value={factory?.name} badge badgeColor="bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400" />
+                            <InfoRow icon={<Building size={14} />} label="Công trường" value={constructionSite?.name} badge badgeColor="bg-orange-500/10 text-orange-500 border border-orange-500/20" />
+                            <InfoRow icon={<Building size={14} />} label="Phòng / Ban" value={department?.name} badge badgeColor="bg-sky-500/10 text-sky-500 border border-sky-500/20" />
+                            <InfoRow icon={<Building size={14} />} label="Nhà máy" value={factory?.name} badge badgeColor="bg-purple-500/10 text-purple-500 border border-purple-500/20" />
                             <InfoRow icon={<Calendar size={14} />} label="Ngày vào" value={formatDate(employee?.startDate)} />
                             <InfoRow icon={<Calendar size={14} />} label="Ngày chính thức" value={formatDate(employee?.officialDate)} />
                         </div>
@@ -345,25 +397,37 @@ const MyProfile: React.FC = () => {
                         <div className="space-y-6">
                             {/* Currently assigned */}
                             <div>
-                                <h4 className="text-[10px] font-black text-rose-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                                    <Landmark size={12} /> Tài sản đang sử dụng ({employeeAssets.length})
+                                <h4 className="text-[10px] font-black text-rose-500 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-lg bg-rose-500/10 flex items-center justify-center">
+                                        <Landmark size={11} />
+                                    </div>
+                                    Tài sản đang sử dụng ({employeeAssets.length})
                                 </h4>
                                 {employeeAssets.length === 0 ? (
-                                    <div className="text-center py-10 text-slate-300 dark:text-slate-600">
-                                        <Landmark size={40} className="mx-auto mb-3 opacity-30" />
-                                        <p className="text-sm font-bold">Chưa được cấp phát tài sản nào</p>
+                                    <div className="text-center py-12 rounded-2xl bg-slate-50/50 dark:bg-slate-800/30 border border-dashed border-slate-200/50 dark:border-slate-700/30">
+                                        <Landmark size={36} className="mx-auto mb-3 text-slate-300/50" />
+                                        <p className="text-sm font-bold text-slate-300 dark:text-slate-600">Chưa được cấp phát tài sản nào</p>
                                     </div>
                                 ) : (
-                                    <div className="space-y-2">
+                                    <div className="space-y-2.5">
                                         {employeeAssets.map(asset => (
-                                            <div key={asset.id} className="flex items-center gap-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 hover:shadow-md transition-shadow">
-                                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-pink-500 flex items-center justify-center text-white shrink-0 shadow-sm">
-                                                    <Landmark size={16} />
+                                            <div key={asset.id}
+                                                className="flex items-center gap-4 p-4 rounded-2xl transition-all duration-300 hover:shadow-lg group cursor-default"
+                                                style={{
+                                                    background: 'rgba(255,255,255,0.5)',
+                                                    border: '1px solid rgba(0,0,0,0.04)',
+                                                    backdropFilter: 'blur(10px)',
+                                                }}
+                                            >
+                                                <div className="w-11 h-11 rounded-xl flex items-center justify-center text-white shrink-0 shadow-lg shadow-rose-500/20 group-hover:scale-105 transition-transform"
+                                                    style={{ background: 'linear-gradient(135deg, #f43f5e, #e11d48)' }}
+                                                >
+                                                    <Landmark size={17} />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <div className="text-sm font-black text-slate-800 dark:text-white truncate">{asset.name}</div>
-                                                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
-                                                        <span className="font-mono font-bold">{asset.code}</span>
+                                                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 flex-wrap">
+                                                        <span className="font-mono font-bold bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">{asset.code}</span>
                                                         <span>•</span>
                                                         <span>{getCategoryName(asset.categoryId)}</span>
                                                         {asset.brand && <><span>•</span><span>{asset.brand} {asset.model || ''}</span></>}
@@ -375,7 +439,7 @@ const MyProfile: React.FC = () => {
                                                 </div>
                                             </div>
                                         ))}
-                                        <div className="text-right text-xs font-black text-rose-600 dark:text-rose-400 pt-2 pr-1">
+                                        <div className="text-right text-xs font-black text-rose-500 pt-2 pr-1">
                                             Tổng giá trị: {employeeAssets.reduce((s, a) => s + a.originalValue, 0).toLocaleString('vi-VN')}đ
                                         </div>
                                     </div>
@@ -385,14 +449,16 @@ const MyProfile: React.FC = () => {
                             {/* History */}
                             {employeeAssetHistory.length > 0 && (
                                 <div>
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">Lịch sử cấp phát / thu hồi</h4>
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+                                        <Activity size={11} /> Lịch sử cấp phát / thu hồi
+                                    </h4>
                                     <div className="space-y-1">
                                         {employeeAssetHistory.map(record => {
                                             const asset = assets.find(a => a.id === record.assetId);
                                             const isAssign = record.type === 'assign';
                                             return (
-                                                <div key={record.id} className="flex items-center gap-2 py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
-                                                    <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${isAssign ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400'}`}>
+                                                <div key={record.id} className="flex items-center gap-2.5 py-3 border-b border-white/5 dark:border-white/[0.03] last:border-0">
+                                                    <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-md border ${isAssign ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-amber-500/10 text-amber-500 border-amber-500/20'}`}>
                                                         {isAssign ? 'Nhận' : 'Trả'}
                                                     </span>
                                                     <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">{asset?.name || record.assetId}</span>
