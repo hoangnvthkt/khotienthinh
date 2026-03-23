@@ -13,8 +13,7 @@ const Reports: React.FC = () => {
   const { items, transactions, warehouses, user, appSettings } = useApp();
 
   const isAdmin = user.role === Role.ADMIN;
-  const isAccountant = user.role === Role.ACCOUNTANT;
-  const isKeeper = user.role === Role.KEEPER;
+  const hasAssignedWh = !!user.assignedWarehouseId;
   const assignedWarehouse = warehouses.find(w => w.id === user.assignedWarehouseId);
 
   // State filter
@@ -38,7 +37,7 @@ const Reports: React.FC = () => {
     return items
       .filter(item => {
         // Thủ kho chỉ thấy vật tư có trong kho mình
-        if (isKeeper && user.assignedWarehouseId) {
+        if (hasAssignedWh && user.assignedWarehouseId) {
           return user.assignedWarehouseId in item.stockByWarehouse;
         }
         return true;
@@ -172,7 +171,7 @@ const Reports: React.FC = () => {
         <div>
           <h1 className="text-2xl font-black text-slate-800 tracking-tight">Báo cáo Xuất - Nhập - Tồn</h1>
           <p className="text-sm text-slate-500 font-medium">Thống kê chi tiết biến động vật tư theo thời gian.</p>
-          {isKeeper && assignedWarehouse && (
+          {hasAssignedWh && assignedWarehouse && (
             <div className="flex items-center gap-2 mt-2 bg-blue-50 text-accent px-2 py-1 rounded-lg border border-blue-100 text-[10px] font-black uppercase tracking-widest w-fit">
               <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
               Phạm vi: {assignedWarehouse.name}
@@ -219,14 +218,14 @@ const Reports: React.FC = () => {
             <Building size={12} className="mr-1" /> Kho lưu trữ
           </label>
           <select
-            disabled={isKeeper || (!isAdmin && !isAccountant)}
+            disabled={hasAssignedWh || !isAdmin}
             value={selectedWh} onChange={e => setSelectedWh(e.target.value)}
             className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:ring-2 focus:ring-accent disabled:opacity-60"
           >
-            {(isAdmin || isAccountant) && <option value="ALL">Tất cả kho (Toàn công ty)</option>}
+            {isAdmin && <option value="ALL">Tất cả kho (Toàn công ty)</option>}
             {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
-          {isKeeper && (
+          {hasAssignedWh && (
             <p className="text-[10px] text-blue-500 font-bold">Bạn chỉ xem được kho được giao</p>
           )}
         </div>

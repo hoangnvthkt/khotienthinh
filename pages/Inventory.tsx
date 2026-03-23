@@ -17,7 +17,7 @@ const Inventory: React.FC = () => {
   const toast = useToast();
   const [searchTerm, setSearchTerm] = useState('');
 
-  const isKeeper = user.role === Role.KEEPER;
+  const hasAssignedWh = !!user.assignedWarehouseId;
   const isAdmin = user.role === Role.ADMIN;
 
   // Khởi tạo filter kho
@@ -25,7 +25,7 @@ const Inventory: React.FC = () => {
   const [showLowStockOnly, setShowLowStockOnly] = useState(false);
 
   useEffect(() => {
-    if (isKeeper && user.assignedWarehouseId) {
+    if (hasAssignedWh && user.assignedWarehouseId) {
       setFilterWarehouse(user.assignedWarehouseId);
     }
 
@@ -33,7 +33,7 @@ const Inventory: React.FC = () => {
     if (location.state?.filter === 'low') {
       setShowLowStockOnly(true);
     }
-  }, [isKeeper, user, location.state]);
+  }, [hasAssignedWh, user, location.state]);
 
   const [isScannerOpen, setScannerOpen] = useState(false);
   const [isAddModalOpen, setAddModalOpen] = useState(false);
@@ -51,7 +51,7 @@ const Inventory: React.FC = () => {
       // Nếu là thủ kho:
       // Thấy tất cả vật tư thuộc kho mình (có entry trong stockByWarehouse, kể cả tồn = 0)
       // Điều này đảm bảo thủ kho thấy được hết danh mục vật tư kho mình quản lý
-      if (isKeeper && user.assignedWarehouseId) {
+      if (hasAssignedWh && user.assignedWarehouseId) {
         matchesFilter = user.assignedWarehouseId in item.stockByWarehouse;
       } else if (filterWarehouse !== 'all') {
         // Nếu là Admin nhưng đang chọn lọc 1 kho cụ thể
@@ -68,7 +68,7 @@ const Inventory: React.FC = () => {
 
       return matchesSearch && matchesFilter;
     });
-  }, [items, searchTerm, isKeeper, user, filterWarehouse, showLowStockOnly]);
+  }, [items, searchTerm, hasAssignedWh, user, filterWarehouse, showLowStockOnly]);
 
   const getDisplayStock = (item: InventoryItem): number => {
     if (filterWarehouse === 'all') {
@@ -247,7 +247,7 @@ const Inventory: React.FC = () => {
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
         <div>
           <h1 className="text-2xl font-black text-slate-800 tracking-tight">Kho & Vật tư</h1>
-          {isKeeper && (
+          {hasAssignedWh && (
             <div className="flex items-center gap-2 mt-1 text-accent font-black uppercase text-[10px] tracking-widest bg-blue-50 px-2 py-1 rounded-lg border border-blue-100">
               <ShieldAlert size={12} />
               Kho quản lý: {warehouses.find(w => w.id === user.assignedWarehouseId)?.name}
@@ -272,7 +272,7 @@ const Inventory: React.FC = () => {
               <QrCode className="w-4 h-4 mr-2" /> Quét QR
             </button>
 
-            {(isAdmin || user.role === Role.KEEPER) && (
+            {(isAdmin || hasAssignedWh) && (
               <button onClick={() => setAddModalOpen(true)} className="flex-1 sm:flex-none flex items-center justify-center px-6 py-2 bg-accent text-white rounded-xl hover:bg-blue-700 transition text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20">
                 <Plus className="w-4 h-4 mr-2" /> Thêm mới
               </button>
@@ -294,11 +294,11 @@ const Inventory: React.FC = () => {
           <div className="w-full md:w-64 relative">
             <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
             <select
-              disabled={isKeeper} // Khóa nếu là thủ kho
+              disabled={hasAssignedWh} // Khóa nếu có kho phân công
               className="w-full pl-9 pr-8 py-3 text-sm border border-slate-200 rounded-xl appearance-none bg-slate-50/50 outline-none focus:ring-2 focus:ring-accent disabled:opacity-70 font-black uppercase tracking-tighter"
               value={filterWarehouse} onChange={(e) => setFilterWarehouse(e.target.value)}
             >
-              {!isKeeper && <option value="all">Tất cả kho hệ thống</option>}
+              {!hasAssignedWh && <option value="all">Tất cả kho hệ thống</option>}
               {warehouses.map(wh => <option key={wh.id} value={wh.id}>{wh.name}</option>)}
             </select>
           </div>

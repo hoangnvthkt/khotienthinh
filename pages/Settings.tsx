@@ -418,10 +418,9 @@ const Settings: React.FC = () => {
 
   const getRoleBadge = (role: Role) => {
     switch (role) {
-      case Role.ADMIN: return <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-full text-[10px] font-bold">QUẢN TRỊ VIÊN</span>;
-      case Role.ACCOUNTANT: return <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold">KẾ TOÁN</span>;
-      case Role.KEEPER: return <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-[10px] font-bold">THỦ KHO</span>;
-      default: return <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full text-[10px] font-bold">NHÂN VIÊN</span>;
+      case Role.ADMIN: return <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-[10px] font-bold">ADMIN</span>;
+      case Role.EMPLOYEE: return <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full text-[10px] font-bold">NHÂN VIÊN</span>;
+      default: return <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-[10px] font-bold">{role}</span>;
     }
   };
 

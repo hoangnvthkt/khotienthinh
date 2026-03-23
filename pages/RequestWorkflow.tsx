@@ -9,15 +9,7 @@ const RequestWorkflow: React.FC = () => {
   const { requests, warehouses, user, users } = useApp();
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
 
-  if (user.role === Role.ACCOUNTANT) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400">
-        <ShieldAlert size={48} className="mb-4 opacity-20" />
-        <h2 className="text-xl font-black uppercase tracking-widest">Truy cập bị từ chối</h2>
-        <p className="text-sm font-medium">Bạn không có quyền điều phối vật tư.</p>
-      </div>
-    );
-  }
+
   const [searchTerm, setSearchTerm] = useState('');
   
   const [isModalOpen, setModalOpen] = useState(false);
@@ -67,7 +59,7 @@ const RequestWorkflow: React.FC = () => {
             <h1 className="text-2xl font-bold text-slate-800">Điều phối vật tư</h1>
             <p className="text-sm text-slate-500">Quy trình Yêu cầu - Duyệt - Xuất - Nhận thông minh.</p>
          </div>
-         {(user.role === Role.ADMIN || user.role === Role.KEEPER || user.role === Role.EMPLOYEE) && (
+         {(
            <button onClick={handleOpenCreate} className="flex items-center px-4 py-2 bg-accent text-white rounded-lg hover:bg-blue-700 transition font-bold shadow-lg shadow-blue-500/20">
               <Plus size={18} className="mr-2" /> Tạo đề xuất mới
            </button>

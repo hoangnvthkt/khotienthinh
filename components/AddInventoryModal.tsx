@@ -33,7 +33,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
   // Khởi tạo giá trị kho mặc định cho Thủ kho
   useEffect(() => {
     if (isOpen) {
-      if (user.role === Role.KEEPER && user.assignedWarehouseId) {
+      if (user.assignedWarehouseId) {
         setFormData(prev => ({ ...prev, initialWarehouseId: user.assignedWarehouseId || '' }));
       } else {
         setFormData(prev => ({ ...prev, initialWarehouseId: '' }));
@@ -111,7 +111,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
 
   if (!isOpen) return null;
 
-  const isKeeper = user.role === Role.KEEPER;
+  const hasAssignedWarehouse = !!user.assignedWarehouseId;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -119,7 +119,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
         <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
           <div>
             <h3 className="font-bold text-lg text-slate-800">Thêm vật tư mới</h3>
-            {isKeeper && <p className="text-[10px] text-orange-600 font-bold uppercase tracking-tight">Chế độ Thủ kho: Cần Admin duyệt số lượng</p>}
+            {hasAssignedWarehouse && <p className="text-[10px] text-orange-600 font-bold uppercase tracking-tight">Bạn chỉ thêm vật tư vào kho được phân công</p>}
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
             <X size={24} />
@@ -255,7 +255,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
                 <h4 className="text-sm font-bold text-slate-800 flex items-center">
                   Nhập tồn kho khởi tạo
                 </h4>
-                {isKeeper && (
+                {hasAssignedWarehouse && (
                   <span className="text-[9px] bg-orange-50 text-orange-600 px-2 py-1 rounded-full border border-orange-100 flex items-center">
                     <ShieldAlert size={10} className="mr-1" /> Cần Admin phê duyệt
                   </span>
@@ -268,10 +268,10 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
                     name="initialWarehouseId"
                     value={formData.initialWarehouseId}
                     onChange={handleChange}
-                    disabled={isKeeper}
+                    disabled={hasAssignedWarehouse}
                     className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white disabled:bg-white disabled:text-slate-700 font-bold"
                   >
-                    {!isKeeper && <option value="">-- Chọn kho --</option>}
+                    {!hasAssignedWarehouse && <option value="">-- Chọn kho --</option>}
                     {warehouses.map(w => (
                       <option key={w.id} value={w.id}>{w.name}</option>
                     ))}
@@ -291,7 +291,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
                   />
                 </div>
               </div>
-              {isKeeper && (
+              {hasAssignedWarehouse && (
                 <p className="text-[10px] text-slate-400 mt-2 italic">
                   * Bạn chỉ được phép thêm vật tư vào kho <strong>{warehouses.find(w => w.id === user.assignedWarehouseId)?.name}</strong>.
                 </p>

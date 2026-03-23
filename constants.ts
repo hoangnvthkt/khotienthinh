@@ -23,21 +23,21 @@ export const MOCK_USERS: User[] = [
   },
   {
     id: 'u2',
-    name: 'Trần Thủ Kho A',
+    name: 'Trần Nhân Viên A',
     email: 'khoa@khoviet.com',
     username: 'khoa',
     password: '123',
-    role: Role.KEEPER,
+    role: Role.EMPLOYEE,
     avatar: 'https://i.pravatar.cc/150?u=u2',
     assignedWarehouseId: 'wh2', // Giao quản lý kho Công trình A
   },
   {
     id: 'u3',
-    name: 'Lê Thủ Kho Tổng',
+    name: 'Lê Nhân Viên B',
     email: 'khotong@khoviet.com',
     username: 'khotong',
     password: '123',
-    role: Role.KEEPER,
+    role: Role.EMPLOYEE,
     avatar: 'https://i.pravatar.cc/150?u=u3',
     assignedWarehouseId: 'wh1', // Giao quản lý kho Tổng
   }

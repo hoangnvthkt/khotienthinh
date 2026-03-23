@@ -31,7 +31,7 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request })
         if (isOpen) {
             setShowApprovalPanel(false);
             if (request) {
-                if (request.status === RequestStatus.PENDING && (user.role === Role.ADMIN || user.role === Role.ACCOUNTANT)) {
+                if (request.status === RequestStatus.PENDING && user.role === Role.ADMIN) {
                     setStep('APPROVE');
                 } else {
                     setStep('VIEW');

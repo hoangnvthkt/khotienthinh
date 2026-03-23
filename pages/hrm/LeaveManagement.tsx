@@ -37,6 +37,8 @@ const LeaveManagement: React.FC = () => {
   const [formReason, setFormReason] = useState('');
   const [formHalfDay, setFormHalfDay] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [formSubmitted, setFormSubmitted] = useState(false);
+  const [successMsg, setSuccessMsg] = useState('');
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);
   const employeeMap = useMemo(() => new Map(activeEmployees.map(e => [e.id, e])), [activeEmployees]);
@@ -102,9 +104,27 @@ const LeaveManagement: React.FC = () => {
   }, [leaveRequests, currentYear]);
 
   const handleSubmit = () => {
-    if (!formEmployee || !formStart || !formEnd || !formReason) return;
+    setFormSubmitted(true);
+    
+    // Validate required fields with feedback
+    if (!formEmployee) {
+      setSubmitError('Vui lòng chọn nhân viên.');
+      return;
+    }
+    if (!formStart || !formEnd) {
+      setSubmitError('Vui lòng chọn ngày bắt đầu và kết thúc.');
+      return;
+    }
+    if (!formReason.trim()) {
+      setSubmitError('Vui lòng nhập lý do nghỉ phép.');
+      return;
+    }
+    
     const totalDays = calcDays(formStart, formEnd, formHalfDay);
-    if (totalDays <= 0) return;
+    if (totalDays <= 0) {
+      setSubmitError('Khoảng thời gian không hợp lệ (0 ngày làm việc).');
+      return;
+    }
 
     // Kiểm tra số ngày phép còn lại nếu là phép năm
     if (formType === 'annual') {
@@ -130,7 +150,11 @@ const LeaveManagement: React.FC = () => {
     };
     addHrmItem('hrm_leave_requests', newReq);
     setShowModal(false);
-    setFormEmployee(''); setFormStart(''); setFormEnd(''); setFormReason(''); setFormHalfDay(false); setSubmitError('');
+    setFormEmployee(''); setFormStart(''); setFormEnd(''); setFormReason(''); setFormHalfDay(false); setSubmitError(''); setFormSubmitted(false);
+    // Show success toast
+    const emp = employeeMap.get(formEmployee);
+    setSuccessMsg(`Đã gửi đơn nghỉ phép ${totalDays} ngày cho ${emp?.fullName || 'NV'}!`);
+    setTimeout(() => setSuccessMsg(''), 4000);
   };
 
   const handleApprove = (req: LeaveRequest) => {
@@ -206,6 +230,12 @@ const LeaveManagement: React.FC = () => {
 
   return (
     <div className="space-y-4">
+      {/* Success Toast */}
+      {successMsg && (
+        <div className="fixed top-6 right-6 z-[60] bg-emerald-500 text-white px-5 py-3 rounded-2xl shadow-2xl shadow-emerald-500/30 text-sm font-black flex items-center gap-2 animate-fade-in">
+          <CheckCircle size={18} /> {successMsg}
+        </div>
+      )}
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div>
@@ -317,11 +347,12 @@ const LeaveManagement: React.FC = () => {
             <div className="p-6 space-y-4">
               <div>
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Nhân viên</label>
-                <select value={formEmployee} onChange={e => setFormEmployee(e.target.value)}
-                  className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none">
+                <select value={formEmployee} onChange={e => { setFormEmployee(e.target.value); setSubmitError(''); }}
+                  className={`w-full px-3 py-2.5 text-sm border rounded-xl bg-white dark:bg-slate-800 outline-none ${formSubmitted && !formEmployee ? 'border-red-400 ring-2 ring-red-200' : 'border-slate-200 dark:border-slate-700'}`}>
                   <option value="">Chọn nhân viên</option>
                   {activeEmployees.map(e => <option key={e.id} value={e.id}>{e.employeeCode} - {e.fullName}</option>)}
                 </select>
+                {formSubmitted && !formEmployee && <p className="text-[10px] text-red-500 font-bold mt-1">⚠ Bắt buộc chọn nhân viên</p>}
               </div>
               <div>
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Loại phép</label>
@@ -354,13 +385,13 @@ const LeaveManagement: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Từ ngày</label>
-                  <input type="date" value={formStart} onChange={e => setFormStart(e.target.value)}
-                    className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                  <input type="date" value={formStart} onChange={e => { setFormStart(e.target.value); setSubmitError(''); }}
+                    className={`w-full px-3 py-2.5 text-sm border rounded-xl bg-white dark:bg-slate-800 outline-none ${formSubmitted && !formStart ? 'border-red-400 ring-2 ring-red-200' : 'border-slate-200 dark:border-slate-700'}`} />
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Đến ngày</label>
-                  <input type="date" value={formEnd} onChange={e => setFormEnd(e.target.value)}
-                    className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                  <input type="date" value={formEnd} onChange={e => { setFormEnd(e.target.value); setSubmitError(''); }}
+                    className={`w-full px-3 py-2.5 text-sm border rounded-xl bg-white dark:bg-slate-800 outline-none ${formSubmitted && !formEnd ? 'border-red-400 ring-2 ring-red-200' : 'border-slate-200 dark:border-slate-700'}`} />
                 </div>
               </div>
               {formStart && formEnd && (
@@ -383,9 +414,10 @@ const LeaveManagement: React.FC = () => {
               </label>
               <div>
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Lý do</label>
-                <textarea value={formReason} onChange={e => setFormReason(e.target.value)} rows={2}
-                  className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none resize-none"
+                <textarea value={formReason} onChange={e => { setFormReason(e.target.value); setSubmitError(''); }} rows={2}
+                  className={`w-full px-3 py-2.5 text-sm border rounded-xl bg-white dark:bg-slate-800 outline-none resize-none ${formSubmitted && !formReason.trim() ? 'border-red-400 ring-2 ring-red-200' : 'border-slate-200 dark:border-slate-700'}`}
                   placeholder="Nhập lý do nghỉ..." />
+                {formSubmitted && !formReason.trim() && <p className="text-[10px] text-red-500 font-bold mt-1">⚠ Bắt buộc nhập lý do</p>}
               </div>
             </div>
             <div className="p-6 border-t border-slate-100 dark:border-slate-800 space-y-3">
@@ -395,7 +427,7 @@ const LeaveManagement: React.FC = () => {
                 </div>
               )}
               <div className="flex justify-end gap-2">
-                <button onClick={() => { setShowModal(false); setSubmitError(''); }} className="px-4 py-2.5 text-xs font-black text-slate-500 hover:text-slate-700 transition">Huỷ</button>
+                <button onClick={() => { setShowModal(false); setSubmitError(''); setFormSubmitted(false); }} className="px-4 py-2.5 text-xs font-black text-slate-500 hover:text-slate-700 transition">Huỷ</button>
                 <button onClick={handleSubmit} className="px-4 py-2.5 bg-blue-500 text-white rounded-xl text-xs font-black hover:bg-blue-600 transition">
                   Gửi đơn
                 </button>

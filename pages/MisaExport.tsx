@@ -175,8 +175,7 @@ const MisaExport: React.FC = () => {
     const [expandedTx, setExpandedTx] = useState<string | null>(null);
 
     const isAdmin = user.role === Role.ADMIN;
-    const isAccountant = user.role === Role.ACCOUNTANT;
-    const canExport = isAdmin || isAccountant;
+    const canExport = isAdmin;
 
     // Lọc giao dịch dùng để export
     const filteredTx = useMemo(() => {

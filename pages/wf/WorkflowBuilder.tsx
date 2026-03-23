@@ -506,9 +506,7 @@ const WorkflowBuilder: React.FC = () => {
                                                         className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
                                                     >
                                                         <option value="">-- Không chỉ định --</option>
-                                                        <option value={Role.ADMIN}>Admin</option>
-                                                        <option value={Role.KEEPER}>Thủ kho</option>
-                                                        <option value={Role.ACCOUNTANT}>Kế toán</option>
+                                                        <option value={Role.ADMIN}>Quản trị</option>
                                                         <option value={Role.EMPLOYEE}>Nhân viên</option>
                                                     </select>
                                                 </div>

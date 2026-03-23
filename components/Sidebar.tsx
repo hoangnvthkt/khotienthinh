@@ -77,7 +77,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   const pendingTxCount = useMemo(() => {
     if (user.role === Role.ADMIN) return transactions.filter(t => t.status === TransactionStatus.PENDING).length;
-    if (user.role === Role.KEEPER) {
+    if (user.assignedWarehouseId) {
       return transactions.filter(t => t.requesterId === user.id && t.status === TransactionStatus.PENDING).length
         + transactions.filter(t => t.targetWarehouseId === user.assignedWarehouseId && t.status === TransactionStatus.APPROVED).length;
     }
@@ -85,8 +85,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   }, [transactions, user]);
 
   const pendingReqCount = useMemo(() => {
-    if (user.role === Role.ADMIN || user.role === Role.ACCOUNTANT) return requests.filter(r => r.status === RequestStatus.PENDING).length;
-    if (user.role === Role.KEEPER) {
+    if (user.role === Role.ADMIN) return requests.filter(r => r.status === RequestStatus.PENDING).length;
+    if (user.assignedWarehouseId) {
       return requests.filter(r => r.requesterId === user.id && r.status === RequestStatus.PENDING).length
         + requests.filter(r =>
           (r.status === RequestStatus.APPROVED && r.sourceWarehouseId === user.assignedWarehouseId) ||
@@ -107,12 +107,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const moduleNavMap: Record<AppKey, any[]> = {
     WMS: [
       { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { to: '/requests', icon: FileText, label: 'Đề xuất vật tư', badge: pendingReqCount > 0 ? pendingReqCount : null, roles: [Role.ADMIN, Role.KEEPER] },
+      { to: '/requests', icon: FileText, label: 'Đề xuất vật tư', badge: pendingReqCount > 0 ? pendingReqCount : null },
       { to: '/inventory', icon: Package, label: 'Kho & Vật tư', badge: lowStockCount > 0 ? lowStockCount : null, badgeColor: 'bg-amber-500' },
-      { to: '/operations', icon: ArrowLeftRight, label: 'Nhập / Xuất', badge: pendingTxCount > 0 ? pendingTxCount : null, roles: [Role.ADMIN, Role.KEEPER] },
+      { to: '/operations', icon: ArrowLeftRight, label: 'Nhập / Xuất', badge: pendingTxCount > 0 ? pendingTxCount : null },
       { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
       { to: '/reports', icon: History, label: 'Báo cáo WMS' },
-      { to: '/misa-export', icon: FileSpreadsheet, label: 'Đồng bộ MISA', roles: [Role.ADMIN, Role.ACCOUNTANT] },
+      { to: '/misa-export', icon: FileSpreadsheet, label: 'Đồng bộ MISA', roles: [Role.ADMIN] },
     ],
     HRM: [
       { to: '/hrm/dashboard', icon: LayoutDashboard, label: 'Dashboard NS' },

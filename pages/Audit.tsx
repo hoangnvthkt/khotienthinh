@@ -69,7 +69,7 @@ const Audit: React.FC = () => {
     return null;
   };
 
-  const isAccountant = user.role === Role.ACCOUNTANT;
+  const isReadOnly = user.role !== Role.ADMIN && !user.assignedWarehouseId;
 
   const unreasonedDiscrepancies = useMemo(() => {
     let count = 0;
@@ -82,7 +82,7 @@ const Audit: React.FC = () => {
   }, [auditData, auditReasons, items, selectedWhId]);
 
   const handleSaveAudit = async () => {
-    if (!selectedWhId || Object.keys(auditData).length === 0 || isAccountant) return;
+    if (!selectedWhId || Object.keys(auditData).length === 0 || isReadOnly) return;
 
     if (unreasonedDiscrepancies > 0) {
       toast.error('Thiếu nguyên nhân', `Còn ${unreasonedDiscrepancies} vật tư chênh lệch chưa chọn nguyên nhân.`);
@@ -417,7 +417,7 @@ const Audit: React.FC = () => {
               <History size={14} className="inline mr-1.5" />Lịch sử ({auditSessions.length})
             </button>
           </div>
-          {activeView === 'audit' && !isAccountant && (
+          {activeView === 'audit' && !isReadOnly && (
             <button
               disabled={Object.keys(auditData).length === 0 || isSaving || unreasonedDiscrepancies > 0}
               onClick={handleSaveAudit}
@@ -551,7 +551,7 @@ const Audit: React.FC = () => {
                       setAuditReasons({});
                       setAuditNotes({});
                     }}
-                    disabled={user.role === 'KEEPER' && !!user.assignedWarehouseId}
+                    disabled={!!user.assignedWarehouseId}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-accent"
                   >
                     <option value="">-- Chọn kho --</option>
@@ -676,7 +676,7 @@ const Audit: React.FC = () => {
                               </td>
                               <td className="p-4 text-center font-black text-slate-500">{systemStock}</td>
                               <td className="p-4 text-center">
-                                <input type="number" min="0" placeholder={isAccountant ? "Chỉ xem" : "Nhập..."} value={actualStock === undefined ? '' : actualStock} onChange={(e) => handleUpdateActual(item.id, e.target.value)} disabled={isAccountant}
+                                <input type="number" min="0" placeholder={isReadOnly ? "Chỉ xem" : "Nhập..."} value={actualStock === undefined ? '' : actualStock} onChange={(e) => handleUpdateActual(item.id, e.target.value)} disabled={isReadOnly}
                                   className="w-24 px-3 py-2 text-center border border-slate-200 rounded-lg font-black text-slate-800 focus:ring-2 focus:ring-accent outline-none disabled:bg-slate-50 disabled:text-slate-400" />
                               </td>
                               <td className="p-4 text-center">
@@ -697,7 +697,7 @@ const Audit: React.FC = () => {
                               <td className="p-4">
                                 {hasDiscrepancy ? (
                                   <div className="space-y-1">
-                                    <select value={auditReasons[item.id] || ''} onChange={(e) => setAuditReasons(prev => ({ ...prev, [item.id]: e.target.value as LossReason }))} disabled={isAccountant}
+                                    <select value={auditReasons[item.id] || ''} onChange={(e) => setAuditReasons(prev => ({ ...prev, [item.id]: e.target.value as LossReason }))} disabled={isReadOnly}
                                       className={`w-full px-2 py-1.5 text-[11px] font-bold border rounded-lg outline-none focus:ring-2 focus:ring-accent ${auditReasons[item.id] ? 'border-slate-200 bg-white text-slate-700' : 'border-orange-300 bg-orange-50 text-orange-700 animate-pulse'}`}>
                                       <option value="">-- Chọn --</option>
                                       {Object.entries(LOSS_REASON_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}

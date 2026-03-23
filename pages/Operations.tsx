@@ -23,15 +23,7 @@ const Operations: React.FC = () => {
   const toast = useToast();
   const [activeTab, setActiveTab] = useState<string>('IMPORT');
 
-  if (user.role === Role.ACCOUNTANT) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400">
-        <ShieldAlert size={48} className="mb-4 opacity-20" />
-        <h2 className="text-xl font-black uppercase tracking-widest">Truy cập bị từ chối</h2>
-        <p className="text-sm font-medium">Bạn không có quyền thực hiện nghiệp vụ kho.</p>
-      </div>
-    );
-  }
+
 
   useEffect(() => {
     if (location.state?.tab) {
@@ -48,7 +40,7 @@ const Operations: React.FC = () => {
   const [showConfirmTransfer, setShowConfirmTransfer] = useState(false);
   const [viewingHistoryTx, setViewingHistoryTx] = useState<Transaction | null>(null);
 
-  const isKeeper = user.role === Role.KEEPER;
+  const hasAssignedWh = !!user.assignedWarehouseId;
   const isAdmin = user.role === Role.ADMIN;
 
   // State quản lý kho bãi
@@ -65,12 +57,12 @@ const Operations: React.FC = () => {
 
   // Tự động gán kho cho Thủ kho khi mount hoặc đổi tab
   useEffect(() => {
-    if (isKeeper && user.assignedWarehouseId) {
+    if (hasAssignedWh && user.assignedWarehouseId) {
       setSelectedWarehouseId(user.assignedWarehouseId);
     } else if (!selectedWarehouseId) {
       setSelectedWarehouseId(warehouses[0]?.id || '');
     }
-  }, [user, isKeeper, warehouses]);
+  }, [user, hasAssignedWh, warehouses]);
 
   // Reset item list khi chuyển tab
   const handleTabChange = (tab: string) => {
@@ -257,10 +249,10 @@ const Operations: React.FC = () => {
   // Thủ kho: Nhập kho → chọn từ toàn bộ vật tư (tìm theo mã, không cần tồn)
   //          Xuất/Chuyển/Hủy → chọn từ vật tư có trong kho mình (để biết tồn)
   const itemSelectFilterWarehouseId = useMemo(() => {
-    if (!isKeeper) return undefined; // Admin: tất cả vật tư
-    if (activeTab === TransactionType.IMPORT) return undefined; // Nhập kho: tìm theo mã vật tư, không filter kho
-    return selectedWarehouseId; // Xuất/Chuyển/Hủy: lọc theo kho của thủ kho
-  }, [isKeeper, activeTab, selectedWarehouseId]);
+    if (!hasAssignedWh) return undefined; // Admin: tất cả vật tư
+    if (activeTab === TransactionType.IMPORT) return undefined;
+    return selectedWarehouseId;
+  }, [hasAssignedWh, activeTab, selectedWarehouseId]);
 
   // Label cho kho chính
   const warehouseLabel = useMemo(() => {
@@ -308,7 +300,7 @@ const Operations: React.FC = () => {
 
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-black text-slate-800 tracking-tight">Nghiệp vụ kho</h1>
-        {isKeeper && activeWarehouse && (
+        {hasAssignedWh && activeWarehouse && (
           <div className="flex items-center gap-2 bg-blue-50 text-accent px-3 py-1.5 rounded-xl border border-blue-100">
             <ShieldAlert size={14} />
             <span className="text-[10px] font-black uppercase tracking-widest">Phạm vi: {activeWarehouse.name}</span>
@@ -506,14 +498,14 @@ const Operations: React.FC = () => {
                     {warehouseLabel}
                   </label>
                   <select
-                    disabled={isKeeper}
+                    disabled={hasAssignedWh}
                     className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:ring-2 focus:ring-accent outline-none font-black text-sm disabled:opacity-70 disabled:bg-slate-100"
                     value={selectedWarehouseId}
                     onChange={e => setSelectedWarehouseId(e.target.value)}
                   >
                     {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                   </select>
-                  {isKeeper && (
+                  {hasAssignedWh && (
                     <p className="text-[10px] text-blue-500 font-bold flex items-center gap-1">
                       <ShieldAlert size={10} /> Kho được giao quản lý của bạn
                     </p>
@@ -542,7 +534,7 @@ const Operations: React.FC = () => {
               </div>
 
               {/* Thông báo cho thủ kho: Nhập kho tìm theo mã vật tư */}
-              {isKeeper && activeTab === TransactionType.IMPORT && (
+              {hasAssignedWh && activeTab === TransactionType.IMPORT && (
                 <div className="mb-6 p-3 bg-blue-50 border border-blue-100 rounded-xl flex items-start gap-3">
                   <PackageSearch size={18} className="text-blue-500 mt-0.5 shrink-0" />
                   <div>

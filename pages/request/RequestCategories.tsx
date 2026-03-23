@@ -178,9 +178,8 @@ const RequestCategories: React.FC = () => {
                     <select value={formApproverRole} onChange={e => setFormApproverRole(e.target.value)}
                         className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm">
                         <option value="">-- Không chỉ định --</option>
-                        <option value={Role.ADMIN}>Admin</option>
-                        <option value={Role.KEEPER}>Thủ kho</option>
-                        <option value={Role.ACCOUNTANT}>Kế toán</option>
+                        <option value={Role.ADMIN}>Quản trị</option>
+                        <option value={Role.EMPLOYEE}>Nhân viên</option>
                     </select>
                 </div>
                 <div>

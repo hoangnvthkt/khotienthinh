@@ -81,14 +81,14 @@ const Dashboard: React.FC = () => {
   const [chartType, setChartType] = useState<'bar' | 'line' | 'pie'>('bar');
   const [selectedWhId, setSelectedWhId] = useState<string>(user.assignedWarehouseId || 'all');
 
-  const isKeeper = user.role === Role.KEEPER;
+  const hasAssignedWh = !!user.assignedWarehouseId;
   const isDark = theme === 'dark';
 
   // Lọc danh sách nhật ký theo quyền hạn
   const filteredActivities = useMemo(() => {
-    if (!isKeeper) return activities;
+    if (!hasAssignedWh) return activities;
     return activities.filter(act => act.warehouseId === user.assignedWarehouseId);
-  }, [activities, isKeeper, user.assignedWarehouseId]);
+  }, [activities, hasAssignedWh, user.assignedWarehouseId]);
 
   const stats = useMemo(() => {
     let totalStock = 0;
@@ -96,7 +96,7 @@ const Dashboard: React.FC = () => {
     let totalValue = 0;
 
     items.forEach(item => {
-      const currentWh = isKeeper ? user.assignedWarehouseId : (selectedWhId === 'all' ? null : selectedWhId);
+      const currentWh = hasAssignedWh ? user.assignedWarehouseId : (selectedWhId === 'all' ? null : selectedWhId);
       const stock = currentWh
         ? (item.stockByWarehouse[currentWh] || 0)
         : Object.values(item.stockByWarehouse).reduce((a, b) => (a as number) + (b as number), 0);
@@ -107,15 +107,16 @@ const Dashboard: React.FC = () => {
     });
 
     const pendingTx = transactions.filter(t => {
-      if (isKeeper) {
+      if (hasAssignedWh) {
+        // Nhân viên phụ trách kho: đếm phiếu pending + approved tại kho mình
         return (t.requesterId === user.id && t.status === TransactionStatus.PENDING) ||
-          (t.targetWarehouseId === user.assignedWarehouseId && t.status === TransactionStatus.APPROVED);
+               (t.targetWarehouseId === user.assignedWarehouseId && t.status === TransactionStatus.APPROVED);
       }
       return t.status === TransactionStatus.PENDING;
     }).length;
 
     return { totalStock, lowStock, totalValue, pendingTx };
-  }, [items, transactions, isKeeper, user, selectedWhId]);
+  }, [items, transactions, hasAssignedWh, user, selectedWhId]);
 
   const fluctuationsData = useMemo(() => {
     const data: any[] = [];
@@ -202,10 +203,10 @@ const Dashboard: React.FC = () => {
           <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Trung tâm điều khiển</h1>
           <p className="text-slate-500 dark:text-slate-400 text-sm flex items-center mt-1 uppercase tracking-tight font-bold">
             <ShieldCheck size={14} className="mr-1 text-green-500" />
-            {isKeeper ? `PHẠM VI: ${warehouses.find(w => w.id === user.assignedWarehouseId)?.name}` : 'TOÀN HỆ THỐNG'}
+            {hasAssignedWh ? `PHẠM VI: ${warehouses.find(w => w.id === user.assignedWarehouseId)?.name}` : 'TOÀN HỆ THỐNG'}
           </p>
         </div>
-        {!isKeeper && (
+        {!hasAssignedWh && (
           <select
             value={selectedWhId}
             onChange={(e) => setSelectedWhId(e.target.value)}
@@ -240,7 +241,7 @@ const Dashboard: React.FC = () => {
           color="bg-red-500"
           onClick={() => navigate('/inventory', { state: { filter: 'low' } })}
         />
-        {user.role !== Role.ACCOUNTANT && (
+        {user.role !== Role.EMPLOYEE && (
           <StatCard
             title="Chờ phê duyệt"
             value={stats.pendingTx.toString()}
@@ -256,7 +257,7 @@ const Dashboard: React.FC = () => {
           <div className="p-6 border-b border-white/20 dark:border-white/5 flex items-center justify-between">
             <h3 className="font-black text-slate-800 dark:text-white flex items-center gap-2">
               <LayoutGrid size={18} className="text-accent" />
-              {isKeeper ? 'Biến động tại kho quản lý' : 'Biến động vật tư hệ thống'}
+              {hasAssignedWh ? 'Biến động tại kho quản lý' : 'Biến động vật tư hệ thống'}
             </h3>
             <div className="bg-white/20 dark:bg-slate-800/50 p-1 rounded-xl flex items-center shadow-inner">
               <button onClick={() => setChartType('bar')} className={`p-2 rounded-lg ${chartType === 'bar' ? 'bg-white/40 dark:bg-slate-700 text-emerald-700 dark:text-accent shadow-sm' : 'text-slate-600 dark:text-slate-400'}`}><BarChart3 size={16} /></button>
@@ -290,7 +291,7 @@ const Dashboard: React.FC = () => {
         <div className="glass-panel rounded-2xl flex flex-col h-full overflow-hidden">
           <div className="p-6 border-b border-white/20 dark:border-white/5 flex items-center justify-between">
             <h3 className="font-black text-slate-800 dark:text-white text-sm uppercase tracking-widest">
-              {isKeeper ? 'Nhật ký kho này' : 'Nhật ký toàn cục'}
+              {hasAssignedWh ? 'Nhật ký kho này' : 'Nhật ký toàn cục'}
             </h3>
             <ListFilter size={18} className="text-slate-400" />
           </div>

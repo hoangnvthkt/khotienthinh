@@ -1,8 +1,6 @@
 
 export enum Role {
   ADMIN = 'ADMIN',
-  KEEPER = 'KEEPER', // Thủ kho
-  ACCOUNTANT = 'ACCOUNTANT', // Kế toán
   EMPLOYEE = 'EMPLOYEE', // Nhân viên
 }
 

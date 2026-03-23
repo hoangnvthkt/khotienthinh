@@ -113,7 +113,6 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
   if (!isOpen || !item) return null;
 
   const isAdmin = user.role === Role.ADMIN;
-  const isAccountant = user.role === Role.ACCOUNTANT;
 
   const getTxTypeBadge = (type: TransactionType) => {
     switch (type) {
@@ -244,7 +243,7 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
             )}
 
             {/* Quick Request Entry Section */}
-            {!isEditing && !isAccountant && (
+            {!isEditing && (
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
                 {!showRequestForm ? (
                   <button
@@ -444,8 +443,8 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
               </div>
             </section>
 
-            {/* Admin & Accountant: Transaction History Section */}
-            {(isAdmin || isAccountant) && (
+            {/* Transaction History Section */}
+            {isAdmin && (
               <section className="animate-in fade-in slide-in-from-bottom-2 duration-500">
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="font-bold text-slate-800 flex items-center text-sm">

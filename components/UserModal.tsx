@@ -272,8 +272,6 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                 className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-accent bg-white"
               >
                 <option value={Role.ADMIN}>Quản trị viên (Toàn quyền)</option>
-                <option value={Role.ACCOUNTANT}>Kế toán</option>
-                <option value={Role.KEEPER}>Thủ kho</option>
                 <option value={Role.EMPLOYEE}>Nhân viên</option>
               </select>
             </div>
@@ -297,7 +295,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
           </div>
 
           <p className="text-[10px] text-slate-400 italic">
-            (*) Admin có quyền xem/sửa toàn hệ thống. Thủ kho chỉ có quyền tại kho được phân công.
+            (*) Admin có quyền xem/sửa toàn hệ thống. Nhân viên được phân quyền theo module và kho làm việc.
           </p>
 
           {/* Module Permissions */}
