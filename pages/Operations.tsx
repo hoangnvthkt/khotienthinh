@@ -16,6 +16,8 @@ import WarningModal from '../components/WarningModal';
 import ConfirmTransferModal from '../components/ConfirmTransferModal';
 import TransactionDetailModal from '../components/TransactionDetailModal';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
+import Pagination from '../components/Pagination';
+import { usePagination } from '../hooks/usePagination';
 
 const Operations: React.FC = () => {
   const location = useLocation();
@@ -114,6 +116,8 @@ const Operations: React.FC = () => {
     }
     return baseHistory.filter(t => t.requesterId === user.id);
   }, [transactions, isAdmin, user]);
+
+  const { paginatedItems: paginatedHistory, currentPage: histPage, totalPages: histTotalPages, totalItems: histTotal, pageSize: histPageSize, setPage: histSetPage, setPageSize: histSetPageSize, startIndex: histStart, endIndex: histEnd } = usePagination<Transaction>(historyTransactions, 15);
 
   // Tính tồn kho hiện tại của item trong kho đang chọn (chỉ để hiển thị)
   const getStockInWarehouse = (itemId: string, warehouseId: string): number => {
@@ -444,7 +448,7 @@ const Operations: React.FC = () => {
                   <h3 className="font-bold text-slate-800 flex items-center text-sm"><History size={18} className="mr-2 text-slate-500" /> Lịch sử hoạt động</h3>
                 </div>
                 <div className="grid grid-cols-1 gap-2">
-                  {historyTransactions.slice(0, 10).map(tx => {
+                  {paginatedHistory.map(tx => {
                     const requester = users.find(u => u.id === tx.requesterId);
                     const isApproved = tx.status === TransactionStatus.COMPLETED;
                     const isLiquidation = tx.type === TransactionType.LIQUIDATION;
@@ -469,6 +473,7 @@ const Operations: React.FC = () => {
                     );
                   })}
                 </div>
+                <Pagination currentPage={histPage} totalPages={histTotalPages} totalItems={histTotal} startIndex={histStart} endIndex={histEnd} onPageChange={histSetPage} pageSize={histPageSize} onPageSizeChange={histSetPageSize} />
               </section>
             </div>
           ) : (

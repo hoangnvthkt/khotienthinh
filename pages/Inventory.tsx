@@ -8,6 +8,8 @@ import ScannerModal from '../components/ScannerModal';
 import AddInventoryModal from '../components/AddInventoryModal';
 import InventoryDetailModal from '../components/InventoryDetailModal';
 import DeleteInventoryModal from '../components/DeleteInventoryModal';
+import Pagination from '../components/Pagination';
+import { usePagination } from '../hooks/usePagination';
 import * as XLSX from 'xlsx';
 import { InventoryItem, Role, Transaction, TransactionType, TransactionStatus } from '../types';
 
@@ -69,6 +71,8 @@ const Inventory: React.FC = () => {
       return matchesSearch && matchesFilter;
     });
   }, [items, searchTerm, hasAssignedWh, user, filterWarehouse, showLowStockOnly]);
+
+  const { paginatedItems, currentPage, totalPages, totalItems, pageSize, setPage, setPageSize, startIndex, endIndex } = usePagination<InventoryItem>(filteredItems, 20);
 
   const getDisplayStock = (item: InventoryItem): number => {
     if (filterWarehouse === 'all') {
@@ -327,7 +331,7 @@ const Inventory: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
-              {filteredItems.map(item => {
+              {paginatedItems.map(item => {
                 const stock = getDisplayStock(item);
                 const isLow = stock <= item.minStock;
                 return (
@@ -368,11 +372,12 @@ const Inventory: React.FC = () => {
               })}
             </tbody>
           </table>
+          <Pagination currentPage={currentPage} totalPages={totalPages} totalItems={totalItems} startIndex={startIndex} endIndex={endIndex} onPageChange={setPage} pageSize={pageSize} onPageSizeChange={setPageSize} />
         </div>
 
         {/* Mobile Card View */}
         <div className="md:hidden divide-y divide-slate-100">
-          {filteredItems.map(item => {
+          {paginatedItems.map(item => {
             const stock = getDisplayStock(item);
             const isLow = stock <= item.minStock;
             return (

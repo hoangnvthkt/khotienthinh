@@ -11,8 +11,10 @@ import {
   ArrowLeftRight, Info, LayoutGrid, ListFilter,
   BarChart3, LineChart as LineChartIcon
 } from 'lucide-react';
-import { Role, TransactionStatus, TransactionType } from '../types';
+import { Role, TransactionStatus, TransactionType, GlobalActivity } from '../types';
 import { SkeletonCard, SkeletonRect } from '../components/Skeleton';
+import Pagination from '../components/Pagination';
+import { usePagination } from '../hooks/usePagination';
 
 const StatCard: React.FC<{
   title: string;
@@ -89,6 +91,8 @@ const Dashboard: React.FC = () => {
     if (!hasAssignedWh) return activities;
     return activities.filter(act => act.warehouseId === user.assignedWarehouseId);
   }, [activities, hasAssignedWh, user.assignedWarehouseId]);
+
+  const { paginatedItems: paginatedActivities, currentPage: actPage, totalPages: actTotalPages, totalItems: actTotal, setPage: actSetPage, startIndex: actStart, endIndex: actEnd } = usePagination<GlobalActivity>(filteredActivities, 15);
 
   const stats = useMemo(() => {
     let totalStock = 0;
@@ -296,8 +300,8 @@ const Dashboard: React.FC = () => {
             <ListFilter size={18} className="text-slate-400" />
           </div>
           <div className="p-4 flex-1 overflow-y-auto space-y-4 max-h-[450px]">
-            {filteredActivities.length > 0 ? (
-              filteredActivities.map((act) => (
+            {paginatedActivities.length > 0 ? (
+              paginatedActivities.map((act) => (
                 <div key={act.id} className="relative pl-8">
                   <div className="absolute left-[11px] top-7 bottom-[-20px] w-px bg-white/30 dark:bg-slate-700/50"></div>
                   <div className={`absolute left-0 top-0.5 w-6 h-6 rounded-lg border flex items-center justify-center z-10 ${getActivityColor(act.status)}`}>
@@ -319,6 +323,9 @@ const Dashboard: React.FC = () => {
               </div>
             )}
           </div>
+          {filteredActivities.length > 0 && (
+            <Pagination currentPage={actPage} totalPages={actTotalPages} totalItems={actTotal} startIndex={actStart} endIndex={actEnd} onPageChange={actSetPage} />
+          )}
         </div>
       </div>
     </div>

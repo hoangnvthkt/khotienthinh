@@ -4,6 +4,8 @@ import { Employee } from '../../types';
 import { Plus, Search, Edit2, Trash2 } from 'lucide-react';
 import EmployeeModal from '../../components/hrm/EmployeeModal';
 import EmployeeDetailModal from '../../components/hrm/EmployeeDetailModal';
+import Pagination from '../../components/Pagination';
+import { usePagination } from '../../hooks/usePagination';
 
 const Employees: React.FC = () => {
     const { employees, users, removeEmployee, hrmAreas, hrmOffices, hrmPositions } = useApp();
@@ -19,6 +21,8 @@ const Employees: React.FC = () => {
             (emp.phone && emp.phone.includes(searchTerm))
         );
     }, [employees, searchTerm]);
+
+    const { paginatedItems: paginatedEmployees, currentPage, totalPages, totalItems, pageSize, setPage, setPageSize, startIndex, endIndex } = usePagination<Employee>(filteredEmployees, 20);
 
     const handleEdit = (emp: Employee) => {
         setEditingEmployee(emp);
@@ -84,7 +88,7 @@ const Employees: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="text-sm">
-                            {filteredEmployees.map(emp => (
+                            {paginatedEmployees.map(emp => (
                                 <tr key={emp.id} onClick={() => handleView(emp)} className="border-b dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition cursor-pointer">
                                     <td className="p-4 font-bold text-accent">{emp.employeeCode}</td>
                                     <td className="p-4 font-bold text-slate-800 dark:text-white">{emp.fullName}</td>
@@ -138,6 +142,7 @@ const Employees: React.FC = () => {
                             )}
                         </tbody>
                     </table>
+                    <Pagination currentPage={currentPage} totalPages={totalPages} totalItems={totalItems} startIndex={startIndex} endIndex={endIndex} onPageChange={setPage} pageSize={pageSize} onPageSizeChange={setPageSize} />
                 </div>
             </div>
 
