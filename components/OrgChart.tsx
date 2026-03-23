@@ -261,8 +261,8 @@ const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, editUnit, parentId,
     };
 
     return (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
-            <div onClick={e => e.stopPropagation()}
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div
                 className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md mx-4 overflow-hidden">
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between"
@@ -447,9 +447,8 @@ const OrgChart: React.FC = () => {
                 const target = orgUnits.find(u => u.id === confirmDelete);
                 const childCount = orgUnits.filter(u => u.parentId === confirmDelete).length;
                 return (
-                    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-                        onClick={() => setConfirmDelete(null)}>
-                        <div onClick={e => e.stopPropagation()}
+                    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                        <div
                             className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border-2 border-red-200 dark:border-red-800/40 w-full max-w-sm mx-4 p-6 text-center">
                             <div className="w-14 h-14 mx-auto rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-4">
                                 <Trash2 size={28} className="text-red-500" />

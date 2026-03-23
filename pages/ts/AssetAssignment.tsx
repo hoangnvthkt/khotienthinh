@@ -440,8 +440,8 @@ const AssetAssignment: React.FC = () => {
 
             {/* ===================== ASSIGN MODAL ===================== */}
             {showAssignModal && selectedAsset && (
-                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowAssignModal(false)}>
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md">
                         <div className="p-6 border-b border-slate-100 dark:border-slate-800">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2"><UserPlus size={20} className="text-emerald-500" /> Cấp phát tài sản</h3>
@@ -482,8 +482,8 @@ const AssetAssignment: React.FC = () => {
 
             {/* ===================== RETURN MODAL ===================== */}
             {showReturnModal && selectedAsset && (
-                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowReturnModal(false)}>
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md">
                         <div className="p-6 border-b border-slate-100 dark:border-slate-800">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2"><UserMinus size={20} className="text-amber-500" /> Thu hồi tài sản</h3>
@@ -524,8 +524,8 @@ const AssetAssignment: React.FC = () => {
 
             {/* ===================== TRANSFER MODAL ===================== */}
             {showTransferModal && selectedAsset && (
-                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowTransferModal(false)}>
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg">
                         <div className="p-6 border-b border-slate-100 dark:border-slate-800">
                             <div className="flex items-center justify-between">
                                 <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">

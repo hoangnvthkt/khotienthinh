@@ -498,8 +498,8 @@ const ProjectDashboard: React.FC = () => {
         ];
 
         return (
-            <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowBudgetForm(false)}>
-                <div onClick={e => e.stopPropagation()} className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
                     <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-orange-500 to-amber-500 rounded-t-3xl flex items-center justify-between">
                         <div className="text-white">
                             <span className="font-bold text-lg block">Kế hoạch & Ngân sách</span>
@@ -575,8 +575,8 @@ const ProjectDashboard: React.FC = () => {
     const renderTxForm = () => {
         if (!showTxForm) return null;
         return (
-            <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowTxForm(false)}>
-                <div onClick={e => e.stopPropagation()} className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
+            <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
                     <div className={`px-6 py-4 border-b border-slate-100 rounded-t-3xl flex items-center justify-between ${editingTx ? 'bg-gradient-to-r from-amber-500 to-orange-500' : 'bg-gradient-to-r from-blue-500 to-cyan-500'}`}>
                         <span className="font-bold text-lg text-white flex items-center gap-2">{editingTx ? <><Edit2 size={20} /> Chỉnh sửa giao dịch</> : <><Plus size={20} /> Thêm giao dịch</>}</span>
                         <button onClick={resetTxForm} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><X size={18} /></button>
@@ -1112,7 +1112,7 @@ const ProjectDashboard: React.FC = () => {
 
             {/* Lightbox Preview */}
             {previewUrl && (
-                <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setPreviewUrl(null)}>
+                <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-sm">
                     <div className="relative max-w-4xl max-h-[90vh] mx-4">
                         <button onClick={() => setPreviewUrl(null)} className="absolute -top-3 -right-3 z-10 w-8 h-8 rounded-full bg-white shadow-lg flex items-center justify-center text-slate-600 hover:text-red-500"><X size={16} /></button>
                         {previewUrl.match(/\.(jpg|jpeg|png|gif|webp|bmp)/i) ? (

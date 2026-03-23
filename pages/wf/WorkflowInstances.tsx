@@ -185,8 +185,8 @@ const FilePreviewModal: React.FC<{
     const isExcel = /\.(xlsx|xls|csv)$/i.test(file.fileName || '');
 
     return (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-[90vw] max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-[90vw] max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
                 {/* Header */}
                 <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
                     <Paperclip size={16} className="text-rose-400" />
@@ -950,13 +950,12 @@ const WorkflowInstances: React.FC = () => {
                 const running = isRunning(instance);
 
                 return (
-                    <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setBoardDetailInstanceId(null)}>
+                    <div className="fixed inset-0 z-50 flex justify-end">
                         {/* Backdrop */}
                         <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
                         {/* Panel */}
                         <div
                             className="relative bg-white dark:bg-slate-900 w-full max-w-2xl h-full shadow-2xl overflow-y-auto"
-                            onClick={e => e.stopPropagation()}
                             style={{ animation: 'slideInRight 0.3s ease-out' }}
                         >
                             {/* Panel Header */}
@@ -1678,8 +1677,8 @@ const WorkflowInstances: React.FC = () => {
 
             {/* Create Instance Modal */}
             {showCreateModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowCreateModal(false)}>
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
                         <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                             <Send size={20} className="text-accent" /> Tạo phiếu mới
                         </h2>
@@ -1754,8 +1753,8 @@ const WorkflowInstances: React.FC = () => {
                 const editTemplate = templates.find(t => t.id === editingInstance.templateId);
                 const editCustomFields = editTemplate?.customFields || [];
                 return (
-                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setEditingInstance(null)}>
-                        <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+                        <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
                             <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                                 <Edit2 size={20} className="text-blue-500" /> Sửa phiếu
                             </h2>
@@ -1822,8 +1821,8 @@ const WorkflowInstances: React.FC = () => {
 
             {/* Delete Confirm Modal */}
             {deleteConfirmId && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setDeleteConfirmId(null)}>
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl">
                         <h2 className="text-lg font-bold text-red-600 mb-2">Xóa phiếu?</h2>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Phiếu và tất cả lịch sử xử lý sẽ bị xóa vĩnh viễn. Hành động này không thể hoàn tác.</p>
                         <div className="flex gap-3">
@@ -1836,8 +1835,8 @@ const WorkflowInstances: React.FC = () => {
 
             {/* Cancel Confirm Modal */}
             {cancelConfirmId && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setCancelConfirmId(null)}>
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl">
                         <h2 className="text-lg font-bold text-amber-600 mb-2">Hủy phiếu?</h2>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Phiếu sẽ bị hủy và không thể tiếp tục xử lý. Bạn vẫn có thể xem lại phiếu đã hủy.</p>
                         <div className="flex gap-3">
@@ -1869,8 +1868,8 @@ const WorkflowInstances: React.FC = () => {
                 }
                 const displayNodes = orderedNodes.length > 0 ? orderedNodes : tplNodes;
                 return (
-                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setReopenInstanceId(null)}>
-                        <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+                        <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
                             <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-1 flex items-center gap-2">
                                 <Undo2 size={20} className="text-purple-500" /> Mở lại quy trình
                             </h2>

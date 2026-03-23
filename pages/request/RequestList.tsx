@@ -546,8 +546,8 @@ const RequestList: React.FC = () => {
 
             {/* Create Modal */}
             {showCreateModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowCreateModal(false)}>
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
                         <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                             <Plus size={20} className="text-accent" /> Tạo phiếu yêu cầu
                         </h2>
@@ -701,8 +701,8 @@ const RequestList: React.FC = () => {
 
             {/* Delete Confirm */}
             {deleteConfirmId && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setDeleteConfirmId(null)}>
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl">
                         <h2 className="text-lg font-bold text-red-600 mb-2">Xóa phiếu yêu cầu?</h2>
                         <p className="text-sm text-slate-500 mb-6">Hành động này không thể hoàn tác.</p>
                         <div className="flex gap-3">
@@ -715,8 +715,8 @@ const RequestList: React.FC = () => {
 
             {/* Cancel Confirm */}
             {cancelConfirmId && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setCancelConfirmId(null)}>
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl">
                         <h2 className="text-lg font-bold text-amber-600 mb-2">Hủy phiếu yêu cầu?</h2>
                         <p className="text-sm text-slate-500 mb-6">Phiếu sẽ được đánh dấu là đã hủy.</p>
                         <div className="flex gap-3">

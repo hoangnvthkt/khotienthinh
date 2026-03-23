@@ -285,8 +285,8 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, uploade
 
             {/* Upload Modal */}
             {showUploadModal && (
-                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={resetUploadForm}>
-                    <div onClick={e => e.stopPropagation()} className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-600 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-600 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
                         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-t-3xl flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2"><Upload size={18} /> Tải lên tài liệu</span>
                             <button onClick={resetUploadForm} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><X size={18} /></button>
@@ -369,8 +369,8 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, uploade
 
             {/* Preview Modal */}
             {previewDoc && (
-                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setPreviewDoc(null)}>
-                    <div onClick={e => e.stopPropagation()} className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-600 w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-600 w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
                         {/* Header */}
                         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-3 min-w-0">

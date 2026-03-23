@@ -534,8 +534,8 @@ const AssetProfile: React.FC = () => {
 
             {/* ===================== ADD MAINTENANCE MODAL ===================== */}
             {showAddMaintenance && (
-                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowAddMaintenance(false)}>
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
                         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
                             <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2"><Wrench size={20} className="text-orange-500" /> Thêm bảo trì — {asset.name}</h3>
                             <button onClick={() => setShowAddMaintenance(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
