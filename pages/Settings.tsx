@@ -77,6 +77,7 @@ const Settings: React.FC = () => {
   const [newHrmLat, setNewHrmLat] = useState('');
   const [newHrmLng, setNewHrmLng] = useState('');
   const [newHrmRadius, setNewHrmRadius] = useState('');
+  const [newHrmManager, setNewHrmManager] = useState('');
 
   // Input fields for adding
   const [newCatName, setNewCatName] = useState('');
@@ -741,6 +742,7 @@ const Settings: React.FC = () => {
                       updated.latitude = newHrmLat ? parseFloat(newHrmLat) : undefined;
                       updated.longitude = newHrmLng ? parseFloat(newHrmLng) : undefined;
                       updated.checkInRadius = newHrmRadius ? parseInt(newHrmRadius) : (activeHrmSection === 'offices' ? 100 : 200);
+                      updated.managerId = newHrmManager || undefined;
                     }
                     updateHrmItem(cfg.table, updated);
                     setEditingHrmItem(null);
@@ -753,10 +755,11 @@ const Settings: React.FC = () => {
                       newItem.latitude = newHrmLat ? parseFloat(newHrmLat) : undefined;
                       newItem.longitude = newHrmLng ? parseFloat(newHrmLng) : undefined;
                       newItem.checkInRadius = newHrmRadius ? parseInt(newHrmRadius) : (activeHrmSection === 'offices' ? 100 : 200);
+                      newItem.managerId = newHrmManager || undefined;
                     }
                     addHrmItem(cfg.table, newItem);
                   }
-                  setNewHrmName(''); setNewHrmDesc(''); setNewHrmLat(''); setNewHrmLng(''); setNewHrmRadius('');
+                  setNewHrmName(''); setNewHrmDesc(''); setNewHrmLat(''); setNewHrmLng(''); setNewHrmRadius(''); setNewHrmManager('');
                 };
 
                 const handleHrmEdit = (item: any) => {
@@ -766,6 +769,7 @@ const Settings: React.FC = () => {
                   setNewHrmLat(item.latitude ? String(item.latitude) : '');
                   setNewHrmLng(item.longitude ? String(item.longitude) : '');
                   setNewHrmRadius(item.checkInRadius ? String(item.checkInRadius) : '');
+                  setNewHrmManager(item.managerId || '');
                 };
 
                 const handleHrmDelete = (id: string) => {
@@ -784,7 +788,7 @@ const Settings: React.FC = () => {
                     <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <button
-                          onClick={() => { setActiveHrmSection(null); setEditingHrmItem(null); setNewHrmName(''); setNewHrmDesc(''); setNewHrmLat(''); setNewHrmLng(''); setNewHrmRadius(''); }}
+                          onClick={() => { setActiveHrmSection(null); setEditingHrmItem(null); setNewHrmName(''); setNewHrmDesc(''); setNewHrmLat(''); setNewHrmLng(''); setNewHrmRadius(''); setNewHrmManager(''); }}
                           className="p-2 hover:bg-white rounded-xl text-slate-400 hover:text-slate-800 transition-all border border-transparent hover:border-slate-200"
                         >
                           <X size={20} />
@@ -851,10 +855,21 @@ const Settings: React.FC = () => {
                                 <p className="text-[9px] text-blue-400 font-medium">NV check-in phải ở trong bán kính này. Để trống = không giới hạn.</p>
                               </div>
                             )}
+                            {(activeHrmSection === 'construction_sites' || activeHrmSection === 'offices') && (
+                              <div>
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">👤 Người quản lý</label>
+                                <select value={newHrmManager} onChange={e => setNewHrmManager(e.target.value)}
+                                  className="w-full bg-white border border-slate-200 rounded-2xl px-6 py-4 text-sm font-bold outline-none focus:ring-2 focus:ring-accent transition-all">
+                                  <option value="">— Chưa chọn người quản lý —</option>
+                                  {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+                                </select>
+                                <p className="text-[9px] text-slate-400 mt-1">Người quản lý có thể duyệt đề xuất chấm công tại {activeHrmSection === 'offices' ? 'văn phòng' : 'công trường'} này.</p>
+                              </div>
+                            )}
                             <div className="flex gap-3">
                               {editingHrmItem && (
                                 <button
-                                  onClick={() => { setEditingHrmItem(null); setNewHrmName(''); setNewHrmDesc(''); setNewHrmLat(''); setNewHrmLng(''); setNewHrmRadius(''); }}
+                                  onClick={() => { setEditingHrmItem(null); setNewHrmName(''); setNewHrmDesc(''); setNewHrmLat(''); setNewHrmLng(''); setNewHrmRadius(''); setNewHrmManager(''); }}
                                   className="px-6 py-3 border border-slate-200 text-slate-500 rounded-2xl font-bold text-xs uppercase hover:bg-slate-50 transition-all"
                                 >
                                   Hủy
@@ -879,6 +894,11 @@ const Settings: React.FC = () => {
                                   <span className="text-sm font-bold text-slate-700 block">{item.name}</span>
                                   {(item.description || item.address) && (
                                     <span className="text-xs text-slate-400">{item.description || item.address}</span>
+                                  )}
+                                  {item.managerId && (
+                                    <span className="text-[10px] text-blue-500 font-bold flex items-center gap-1 mt-0.5">
+                                      👤 {users.find(u => u.id === item.managerId)?.name || 'N/A'}
+                                    </span>
                                   )}
                                 </div>
                               </div>
