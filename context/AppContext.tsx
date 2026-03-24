@@ -10,7 +10,7 @@ import {
   OrgUnit, ProjectFinance, ProjectTransaction,
   Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus,
   AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract, LeaveBalance, PayrollTemplate, HrmHoliday, HrmSalaryHistory,
-  BudgetCategory, BudgetEntry, ExpenseRecord, AttendanceProposal
+  BudgetCategory, BudgetEntry, ExpenseRecord, AttendanceProposal, LeaveLog, LeaveApprover
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_ITEMS,
@@ -56,6 +56,10 @@ interface AppContextType {
   // HRM 5A — Chấm công & Lương
   attendanceRecords: AttendanceRecord[];
   leaveRequests: LeaveRequest[];
+  leaveLogs: LeaveLog[];
+  approveLeave: (id: string, userId: string, comment?: string) => void;
+  rejectLeave: (id: string, userId: string, comment?: string, reason?: string) => void;
+  addLeaveLog: (log: Omit<LeaveLog, 'id' | 'createdAt'>) => void;
   leaveBalances: LeaveBalance[];
   payrollRecords: PayrollRecord[];
   payrollTemplates: PayrollTemplate[];
@@ -169,6 +173,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // HRM 5A
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [leaveLogs, setLeaveLogs] = useState<LeaveLog[]>([]);
   const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([]);
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
   const [payrollTemplates, setPayrollTemplates] = useState<PayrollTemplate[]>([]);
@@ -381,6 +386,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ]);
         if (leaveBalData) setLeaveBalances(leaveBalData);
         if (leaveReqData) setLeaveRequests(leaveReqData);
+        // Fetch leave logs
+        const leaveLogData = await fetchTable('hrm_leave_logs');
+        if (leaveLogData) setLeaveLogs(leaveLogData);
         if (attendData) setAttendanceRecords(attendData);
         if (payrollData) setPayrollRecords(payrollData);
         if (contractData) setLaborContracts(contractData);
@@ -1268,6 +1276,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     'budget_entries': setBudgetEntries,
     'expense_records': setExpenseRecords,
     'hrm_attendance_proposals': setAttendanceProposals,
+    'hrm_leave_logs': setLeaveLogs,
   };
 
   const addHrmItem = async (table: string, item: any) => {
@@ -1514,6 +1523,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // ==================== LEAVE WORKFLOW ====================
+  const addLeaveLog = async (log: Omit<LeaveLog, 'id' | 'createdAt'>) => {
+    const newLog: LeaveLog = { ...log, id: crypto.randomUUID(), createdAt: new Date().toISOString() };
+    setLeaveLogs(prev => [...prev, newLog]);
+    if (isSupabaseConfigured) {
+      await supabase.from('hrm_leave_logs').insert({
+        id: newLog.id, leave_request_id: newLog.leaveRequestId,
+        action: newLog.action, acted_by: newLog.actedBy, comment: newLog.comment, created_at: newLog.createdAt
+      });
+    }
+  };
+
+  const approveLeave = async (id: string, userId: string, comment?: string) => {
+    const req = leaveRequests.find(r => r.id === id);
+    if (!req) return;
+    const newApprovers = (req.approvers || []).map(a =>
+      a.userId === userId && a.status === 'waiting' ? { ...a, status: 'approved' as const, comment: comment || '' } : a
+    );
+    const allApproved = newApprovers.every(a => a.status === 'approved');
+    const updated: LeaveRequest = {
+      ...req,
+      approvers: newApprovers,
+      status: allApproved ? 'approved' : 'pending',
+      approvedBy: allApproved ? userId : req.approvedBy,
+      approvedAt: allApproved ? new Date().toISOString() : req.approvedAt,
+    };
+    updateHrmItem('hrm_leave_requests', updated);
+    addLeaveLog({ leaveRequestId: id, action: 'approve', actedBy: userId, comment: comment || 'Đã duyệt' });
+  };
+
+  const rejectLeave = async (id: string, userId: string, comment?: string, reason?: string) => {
+    const req = leaveRequests.find(r => r.id === id);
+    if (!req) return;
+    const newApprovers = (req.approvers || []).map(a =>
+      a.userId === userId && a.status === 'waiting' ? { ...a, status: 'rejected' as const, comment: comment || reason || '' } : a
+    );
+    const updated: LeaveRequest = {
+      ...req,
+      approvers: newApprovers,
+      status: 'rejected',
+      rejectionReason: reason || comment || '',
+      approvedBy: userId,
+      approvedAt: new Date().toISOString(),
+    };
+    updateHrmItem('hrm_leave_requests', updated);
+    addLeaveLog({ leaveRequestId: id, action: 'reject', actedBy: userId, comment: reason || comment || 'Từ chối' });
+  };
+
   // Helper: kiểm tra user có phải QTV ứng dụng của module không
   const isModuleAdmin = (moduleKey: string): boolean => {
     if (user.role === Role.ADMIN) return true;
@@ -1565,8 +1622,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       user, users, appSettings, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
       categories, units, employees,
       hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
-      attendanceRecords, leaveRequests, leaveBalances, payrollRecords, payrollTemplates, holidays, laborContracts, salaryHistory,
-      attendanceProposals,
+      attendanceRecords, leaveRequests, leaveLogs, leaveBalances, payrollRecords, payrollTemplates, holidays, laborContracts, salaryHistory,
+      attendanceProposals, approveLeave, rejectLeave, addLeaveLog,
       budgetCategories, budgetEntries, expenseRecords,
       addHrmItem, updateHrmItem, removeHrmItem,
       orgUnits, addOrgUnit, updateOrgUnit, removeOrgUnit,

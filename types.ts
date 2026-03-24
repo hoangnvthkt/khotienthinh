@@ -973,18 +973,38 @@ export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
 
 export type LeaveRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 
+export interface LeaveApprover {
+  userId: string;
+  order: number;
+  status: 'waiting' | 'approved' | 'rejected';
+  comment?: string;
+}
+
+export interface LeaveLog {
+  id: string;
+  leaveRequestId: string;
+  action: string;
+  actedBy: string;
+  comment: string;
+  createdAt: string;
+}
+
 export interface LeaveRequest {
   id: string;
+  code: string;
   employeeId: string;
   type: LeaveType;
   startDate: string;
   endDate: string;
   totalDays: number;
   reason: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
   status: LeaveRequestStatus;
+  approvers: LeaveApprover[];
   approvedBy?: string;
   approvedAt?: string;
   rejectionReason?: string;
+  dueDate?: string;
   createdAt: string;
 }
 
