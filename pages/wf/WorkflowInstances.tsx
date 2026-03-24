@@ -534,25 +534,63 @@ const WorkflowInstances: React.FC = () => {
             const { data: fileData, error } = await supabase.storage.from('workflow-templates').download(printTemplate.storagePath);
             if (error || !fileData) { alert('Không tải được file mẫu. Vui lòng thử lại.'); return; }
 
-            // 2. Parse with PizZip + Docxtemplater
+            // 2. Prepare image module for signatures
+            let ImageModule: any = null;
+            try { ImageModule = (await import('open-docxtemplater-image-module')).default; } catch { }
+
+            const imageMap: Record<string, ArrayBuffer> = {};
+            // Collect approver signatures
+            const instanceLogs = logs.filter(l => l.instanceId === instance.id);
+            for (const log of instanceLogs) {
+                const node = nodes.find(n => n.id === log.nodeId);
+                if (!node) continue;
+                const actor = users.find(u => u.id === log.actedBy);
+                if (!actor?.signatureUrl) continue;
+                const safeLabel = node.label.replace(/\s+/g, '_').toLowerCase();
+                try {
+                    const sigRes = await fetch(actor.signatureUrl);
+                    if (sigRes.ok) imageMap[`signature_${safeLabel}`] = await sigRes.arrayBuffer();
+                } catch { }
+            }
+            // Creator signature
+            const creator = users.find(u => u.id === instance.createdBy);
+            if (creator?.signatureUrl) {
+                try {
+                    const sigRes = await fetch(creator.signatureUrl);
+                    if (sigRes.ok) imageMap['signature_creator'] = await sigRes.arrayBuffer();
+                } catch { }
+            }
+
+            // 3. Parse with PizZip + Docxtemplater
             const arrayBuffer = await fileData.arrayBuffer();
             const zip = new PizZip(arrayBuffer);
+
+            const modules: any[] = [];
+            if (ImageModule && Object.keys(imageMap).length > 0) {
+                const imgModule = new ImageModule({
+                    centered: false,
+                    getImage: (tagValue: string) => imageMap[tagValue] || new ArrayBuffer(0),
+                    getSize: () => [150, 60],
+                });
+                modules.push(imgModule);
+            }
+
             const doc = new Docxtemplater(zip, {
                 paragraphLoop: true,
                 linebreaks: true,
                 delimiters: { start: '${', end: '}' },
+                modules,
             });
 
-            // 3. Build data object
+            // 4. Build data object
             const template = templates.find(t => t.id === instance.templateId);
-            const creator = users.find(u => u.id === instance.createdBy);
             const createdDate = new Date(instance.createdAt);
             const statusLabels: Record<string, string> = {
                 RUNNING: 'Đang xử lý', COMPLETED: 'Hoàn thành',
                 REJECTED: 'Từ chối', CANCELLED: 'Đã hủy',
             };
 
-            const data: Record<string, string> = {
+            const data: Record<string, any> = {
                 code: instance.code || '',
                 title: instance.title || '',
                 creator_name: creator?.name || '',
@@ -564,6 +602,9 @@ const WorkflowInstances: React.FC = () => {
                 template_name: template?.name || '',
                 status: statusLabels[instance.status] || instance.status,
             };
+
+            // Add signature keys for image module
+            Object.keys(imageMap).forEach(key => { data[key] = key; });
 
             // Form data fields (auto-map)
             if (instance.formData) {
@@ -577,20 +618,21 @@ const WorkflowInstances: React.FC = () => {
             }
 
             // Approver fields from logs
-            const instanceLogs = logs.filter(l => l.instanceId === instance.id);
             instanceLogs.forEach(log => {
                 const node = nodes.find(n => n.id === log.nodeId);
                 if (node) {
                     const actor = users.find(u => u.id === log.actedBy);
                     const safeLabel = node.label.replace(/\s+/g, '_').toLowerCase();
                     data[`approver_${safeLabel}`] = actor?.name || '';
+                    const logDate = new Date(log.timestamp);
+                    data[`approved_date_${safeLabel}`] = logDate.toLocaleDateString('vi-VN');
                 }
             });
 
-            // 4. Replace placeholders
+            // 5. Replace placeholders
             doc.render(data);
 
-            // 5. Generate and download
+            // 6. Generate and download
             const output = doc.getZip().generate({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
             saveAs(output, `${instance.code}_${printTemplate.name}.docx`);
         } catch (err: any) {

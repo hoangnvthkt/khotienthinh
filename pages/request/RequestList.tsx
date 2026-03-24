@@ -240,16 +240,52 @@ const RequestList: React.FC = () => {
         try {
             const { data: fileData, error } = await supabase.storage.from('workflow-templates').download(pt.storagePath);
             if (error || !fileData) { alert('Không tải được file mẫu.'); return; }
+
+            // Prepare image module for signatures
+            let ImageModule: any = null;
+            try { ImageModule = (await import('open-docxtemplater-image-module')).default; } catch { }
+
+            const imageMap: Record<string, ArrayBuffer> = {};
+            // Collect approver signatures
+            if (req.approvers) {
+                for (const a of req.approvers) {
+                    const aUser = users.find(u => u.id === a.userId);
+                    if (!aUser?.signatureUrl) continue;
+                    try {
+                        const sigRes = await fetch(aUser.signatureUrl);
+                        if (sigRes.ok) imageMap[`signature_${a.order}`] = await sigRes.arrayBuffer();
+                    } catch { }
+                }
+            }
+            // Creator signature
+            const creator = users.find(u => u.id === req.createdBy);
+            if (creator?.signatureUrl) {
+                try {
+                    const sigRes = await fetch(creator.signatureUrl);
+                    if (sigRes.ok) imageMap['signature_creator'] = await sigRes.arrayBuffer();
+                } catch { }
+            }
+
             const arrayBuffer = await fileData.arrayBuffer();
             const zip = new PizZip(arrayBuffer);
-            const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, delimiters: { start: '${', end: '}' } });
+
+            const modules: any[] = [];
+            if (ImageModule && Object.keys(imageMap).length > 0) {
+                const imgModule = new ImageModule({
+                    centered: false,
+                    getImage: (tagValue: string) => imageMap[tagValue] || new ArrayBuffer(0),
+                    getSize: () => [150, 60],
+                });
+                modules.push(imgModule);
+            }
+
+            const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, delimiters: { start: '${', end: '}' }, modules });
 
             const cat = categories.find(c => c.id === req.categoryId);
-            const creator = users.find(u => u.id === req.createdBy);
             const createdDate = new Date(req.createdAt);
             const statusLabels: Record<string, string> = { DRAFT: 'Nháp', PENDING: 'Chờ duyệt', APPROVED: 'Đã duyệt', IN_PROGRESS: 'Đang xử lý', DONE: 'Hoàn thành', REJECTED: 'Từ chối', CANCELLED: 'Đã hủy' };
 
-            const data: Record<string, string> = {
+            const data: Record<string, any> = {
                 code: req.code || '', title: req.title || '', description: req.description || '',
                 creator_name: creator?.name || '', creator_email: creator?.email || '',
                 created_at_day: String(createdDate.getDate()).padStart(2, '0'),
@@ -260,6 +296,9 @@ const RequestList: React.FC = () => {
                 status: statusLabels[req.status] || req.status,
                 due_date: req.dueDate ? new Date(req.dueDate).toLocaleDateString('vi-VN') : '',
             };
+
+            // Add signature keys
+            Object.keys(imageMap).forEach(key => { data[key] = key; });
 
             // Form data
             if (req.formData) {
@@ -275,6 +314,7 @@ const RequestList: React.FC = () => {
                     const aUser = users.find(u => u.id === a.userId);
                     data[`approver_${a.order}`] = aUser?.name || '';
                     data[`approver_${a.order}_status`] = a.status === 'approved' ? 'Đã duyệt' : a.status === 'rejected' ? 'Từ chối' : 'Chờ duyệt';
+                    if ((a as any).approvedAt) data[`approved_date_${a.order}`] = new Date((a as any).approvedAt).toLocaleDateString('vi-VN');
                 });
             }
 

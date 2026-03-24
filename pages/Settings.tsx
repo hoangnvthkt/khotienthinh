@@ -1,4 +1,4 @@
-﻿
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { Warehouse, WarehouseType, Supplier, ItemCategory, ItemUnit, LossReason, LOSS_REASON_LABELS, MaterialLossNorm } from '../types';
@@ -6,7 +6,7 @@ import {
   Building, MapPin, Plus, X, Save, Settings as SettingsIcon, Users,
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
-  Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown
+  Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { Role, User } from '../types';
@@ -16,6 +16,7 @@ import SettingsWarehouses from './settings/SettingsWarehouses';
 import SettingsUsers from './settings/SettingsUsers';
 import SettingsAccount from './settings/SettingsAccount';
 import SettingsMaintenance from './settings/SettingsMaintenance';
+import SignaturePad from '../components/SignaturePad';
 
 const Settings: React.FC = () => {
   const {
@@ -27,10 +28,12 @@ const Settings: React.FC = () => {
     users, addUser, updateUser, removeUser, user: currentUser, logout,
     hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
     addHrmItem, updateHrmItem, removeHrmItem,
-    items, lossNorms, addLossNorm, updateLossNorm, removeLossNorm
+    items, lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
+    saveSignature, deleteSignature
   } = useApp();
 
   const [activeTab, setActiveTab] = useState('general');
+  const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [isWhModalOpen, setIsWhModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -916,13 +919,61 @@ const Settings: React.FC = () => {
           )}
 
           {activeTab === 'account' && (
-            <SettingsAccount
-              currentUser={currentUser}
-              updateUser={updateUser}
-              logout={logout}
-              avatarInputRef={avatarInputRef}
-              handleAvatarUpload={handleAvatarUpload}
-            />
+            <div className="space-y-6">
+              <SettingsAccount
+                currentUser={currentUser}
+                updateUser={updateUser}
+                logout={logout}
+                avatarInputRef={avatarInputRef}
+                handleAvatarUpload={handleAvatarUpload}
+              />
+
+              {/* Digital Signature Section */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                <div className="p-6 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white shadow-lg">
+                      <PenTool size={20} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-800">Chữ ký số</h3>
+                      <p className="text-xs text-slate-400">Tạo chữ ký để sử dụng khi duyệt văn bản và xuất Word</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-6">
+                  {currentUser.signatureUrl ? (
+                    <div className="flex items-center gap-6">
+                      <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 bg-slate-50 flex items-center justify-center w-64 h-32">
+                        <img src={currentUser.signatureUrl} alt="Chữ ký" className="max-h-full max-w-full object-contain" />
+                      </div>
+                      <div className="space-y-2">
+                        <button onClick={() => setShowSignaturePad(true)}
+                          className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white rounded-xl font-bold text-sm hover:opacity-90 transition shadow-lg shadow-violet-500/20">
+                          <PenTool size={14} /> Thay đổi
+                        </button>
+                        <p className="text-[10px] text-slate-400">Click để vẽ lại chữ ký</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setShowSignaturePad(true)}
+                      className="flex items-center gap-3 px-6 py-4 border-2 border-dashed border-violet-300 rounded-xl text-violet-500 hover:bg-violet-50 transition w-full justify-center">
+                      <PenTool size={20} />
+                      <span className="font-bold">Tạo chữ ký số</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {showSignaturePad && (
+                <SignaturePad
+                  currentSignatureUrl={currentUser.signatureUrl}
+                  onSave={async (dataUrl) => { await saveSignature(currentUser.id, dataUrl); setShowSignaturePad(false); }}
+                  onDelete={async () => { await deleteSignature(currentUser.id); setShowSignaturePad(false); }}
+                  onClose={() => setShowSignaturePad(false)}
+                />
+              )}
+            </div>
           )}
 
           {activeTab === 'loss-norms' && (

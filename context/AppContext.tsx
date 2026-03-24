@@ -100,6 +100,9 @@ interface AppContextType {
   updateAppSettings: (settings: AppSettings) => void;
   approvePartialTransaction: (id: string, selectedItemIds: string[], approverId: string) => void;
   clearAllData: () => void;
+  // Digital Signature
+  saveSignature: (userId: string, dataUrl: string) => Promise<boolean>;
+  deleteSignature: (userId: string) => Promise<boolean>;
   // Loss Management
   lossNorms: MaterialLossNorm[];
   addLossNorm: (norm: MaterialLossNorm) => void;
@@ -265,6 +268,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         if (usersData && usersData.length > 0) {
           const mappedUsers = usersData.map((u: any) => ({ ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined }));
+          // Fetch signatures and merge
+          const { data: sigData } = await supabase.from('user_signatures').select('*');
+          if (sigData && sigData.length > 0) {
+            const sigMap = new Map<string, string>();
+            for (const sig of sigData) {
+              const { data: urlData } = supabase.storage.from('workflow-templates').getPublicUrl(sig.image_path);
+              if (urlData?.publicUrl) sigMap.set(sig.user_id, urlData.publicUrl);
+            }
+            mappedUsers.forEach((u: any) => { if (sigMap.has(u.id)) u.signatureUrl = sigMap.get(u.id); });
+          }
           setUsers(mappedUsers);
           const currentInList = mappedUsers.find((u: any) => u.email === user.email);
           if (currentInList) setUser(currentInList);
@@ -1507,6 +1520,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return (user.adminModules || []).includes(moduleKey);
   };
 
+  // ==================== DIGITAL SIGNATURE ====================
+  const saveSignature = async (userId: string, dataUrl: string): Promise<boolean> => {
+    try {
+      // Ensure auth session is active for storage upload
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session) {
+        console.warn('No active auth session, attempting to refresh...');
+        await supabase.auth.refreshSession();
+      }
+
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      const path = `signatures/${userId}.png`;
+      // Upload with upsert
+      const { error: upErr } = await supabase.storage.from('workflow-templates').upload(path, blob, { contentType: 'image/png', upsert: true });
+      if (upErr) { console.error('Signature upload error:', upErr); return false; }
+      // Upsert DB
+      const { error: dbErr } = await supabase.from('user_signatures').upsert({ user_id: userId, image_path: path }, { onConflict: 'user_id' });
+      if (dbErr) { console.error('Signature DB error:', dbErr); return false; }
+      // Update local state
+      const { data: urlData } = supabase.storage.from('workflow-templates').getPublicUrl(path);
+      const publicUrl = urlData?.publicUrl ? `${urlData.publicUrl}?t=${Date.now()}` : '';
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, signatureUrl: publicUrl } : u));
+      if (user.id === userId) setUser(prev => ({ ...prev, signatureUrl: publicUrl }));
+      return true;
+    } catch (err) { console.error('Save signature error:', err); return false; }
+  };
+
+  const deleteSignature = async (userId: string): Promise<boolean> => {
+    try {
+      const path = `signatures/${userId}.png`;
+      await supabase.storage.from('workflow-templates').remove([path]);
+      const { error } = await supabase.from('user_signatures').delete().eq('user_id', userId);
+      if (error) { console.error('Delete signature error:', error); return false; }
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, signatureUrl: undefined } : u));
+      if (user.id === userId) setUser(prev => ({ ...prev, signatureUrl: undefined }));
+      return true;
+    } catch (err) { console.error('Delete signature error:', err); return false; }
+  };
+
   return (
     <AppContext.Provider value={{
       user, users, appSettings, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
@@ -1528,6 +1581,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addAsset, updateAsset, removeAsset, addAssetCategory, updateAssetCategory, removeAssetCategory,
       addAssetAssignment, addAssetMaintenance, updateAssetMaintenance,
       isModuleAdmin,
+      saveSignature, deleteSignature,
       login, logout, isLoading, isRefreshing, connectionError
     }}>
       {children}
