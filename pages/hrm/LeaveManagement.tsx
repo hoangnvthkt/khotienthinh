@@ -83,6 +83,7 @@ const LeaveManagement: React.FC = () => {
   const [selectedReq, setSelectedReq] = useState<LeaveRequest | null>(null);
   const [approveComment, setApproveComment] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [revokeConfirmId, setRevokeConfirmId] = useState<string | null>(null);
 
   // Form state
   const [formEmployee, setFormEmployee] = useState('');
@@ -262,15 +263,23 @@ const LeaveManagement: React.FC = () => {
     }
   };
 
-  const handleRevoke = (req: LeaveRequest) => {
-    if (!confirm('Thu hồi đơn nghỉ phép? Sẽ hoàn lại ngày phép.')) return;
-    updateHrmItem('hrm_leave_requests', { ...req, status: 'cancelled' as any });
+  const handleRevoke = async (req: LeaveRequest) => {
+    // Update status to cancelled
+    const updatedReq = { ...req, status: 'cancelled' as const };
+    await updateHrmItem('hrm_leave_requests', updatedReq);
     addLeaveLog({ leaveRequestId: req.id, action: 'revoke', actedBy: user.id, comment: 'Thu hồi đơn' });
+    
+    // Restore leave balance
     const bal = leaveBalances.find(b => b.employeeId === req.employeeId && b.year === currentYear);
     if (bal) {
-      if (req.type === 'unpaid') updateHrmItem('hrm_leave_balances', { ...bal, usedUnpaidDays: Math.max(0, bal.usedUnpaidDays - req.totalDays) });
-      else updateHrmItem('hrm_leave_balances', { ...bal, usedPaidDays: Math.max(0, bal.usedPaidDays - req.totalDays) });
+      if (req.type === 'unpaid') {
+        await updateHrmItem('hrm_leave_balances', { ...bal, usedUnpaidDays: Math.max(0, bal.usedUnpaidDays - req.totalDays) });
+      } else {
+        await updateHrmItem('hrm_leave_balances', { ...bal, usedPaidDays: Math.max(0, bal.usedPaidDays - req.totalDays) });
+      }
     }
+    
+    // Remove attendance records
     const start = new Date(req.startDate); const end = new Date(req.endDate);
     const cur = new Date(start);
     while (cur <= end) {
@@ -279,6 +288,10 @@ const LeaveManagement: React.FC = () => {
       if (rec) removeHrmItem('hrm_attendance', rec.id);
       cur.setDate(cur.getDate() + 1);
     }
+    setRevokeConfirmId(null);
+    setSelectedReq(null);
+    setSuccessMsg(`Đã thu hồi đơn nghỉ phép ${req.totalDays} ngày — đã hoàn lại phép!`);
+    setTimeout(() => setSuccessMsg(''), 4000);
   };
 
   // ==================== RENDER ====================
@@ -576,11 +589,27 @@ const LeaveManagement: React.FC = () => {
                     </div>
                   </div>
                 )}
-                {req.status === 'approved' && (
-                  <button onClick={() => { handleRevoke(req); setSelectedReq(null); }}
+                {req.status === 'approved' && revokeConfirmId !== req.id && (
+                  <button onClick={() => setRevokeConfirmId(req.id)}
                     className="w-full px-4 py-2.5 bg-amber-100 text-amber-700 rounded-xl text-xs font-black hover:bg-amber-200 transition flex items-center justify-center gap-1.5">
                     <RotateCcw size={14} /> Thu hồi đơn
                   </button>
+                )}
+                {req.status === 'approved' && revokeConfirmId === req.id && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-2xl space-y-3">
+                    <div className="flex items-center gap-2 text-sm font-bold text-red-600">
+                      <AlertTriangle size={16} /> Xác nhận thu hồi?
+                    </div>
+                    <p className="text-xs text-red-500">Đơn sẽ bị huỷ và <strong>{req.totalDays} ngày phép</strong> sẽ được hoàn lại.</p>
+                    <div className="flex gap-2">
+                      <button onClick={() => setRevokeConfirmId(null)}
+                        className="flex-1 px-3 py-2 text-xs font-black text-slate-500 hover:bg-slate-100 rounded-xl transition">Huỷ</button>
+                      <button onClick={() => handleRevoke(req)}
+                        className="flex-1 px-3 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl text-xs font-black hover:opacity-90 transition flex items-center justify-center gap-1.5">
+                        <RotateCcw size={14} /> Xác nhận thu hồi
+                      </button>
+                    </div>
+                  </div>
                 )}
 
                 {/* Activity Log */}
