@@ -11,9 +11,8 @@ const TABS = [
     textColor: 'text-blue-600',
     url: 'https://drive.google.com/embeddedfolderview?id=1MmKkQOL_9XyUaIhJtcgRsGp6vmdFv9Bt#list',
     directUrl: 'https://drive.google.com/drive/folders/1MmKkQOL_9XyUaIhJtcgRsGp6vmdFv9Bt?usp=sharing',
-    // No allow-popups: clicks stay within iframe instead of opening new tabs
-    sandbox: 'allow-same-origin allow-scripts allow-forms',
-    note: 'Google Drive giới hạn: click file sẽ mở xem trước. Dùng nút ↗️ để mở Drive đầy đủ.',
+    sandbox: 'allow-same-origin allow-scripts allow-popups allow-forms allow-popups-to-escape-sandbox',
+    note: 'Do hạn chế bảo mật từ Google, click file/folder sẽ mở trong tab mới.',
   },
   {
     key: 'synology',
