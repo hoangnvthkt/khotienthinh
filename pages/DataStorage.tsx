@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HardDrive, Cloud, Server, Maximize2, Minimize2, ExternalLink, RefreshCw } from 'lucide-react';
+import { HardDrive, Cloud, Server, Maximize2, Minimize2, ExternalLink, RefreshCw, AlertTriangle } from 'lucide-react';
 
 const TABS = [
   {
@@ -9,7 +9,11 @@ const TABS = [
     color: 'from-blue-500 to-cyan-500',
     bg: 'bg-blue-50',
     textColor: 'text-blue-600',
-    url: 'https://drive.google.com/embeddedfolderview?id=1MmKkQOL_9XyUaIhJtcgRsGp6vmdFv9Bt#grid',
+    url: 'https://drive.google.com/embeddedfolderview?id=1MmKkQOL_9XyUaIhJtcgRsGp6vmdFv9Bt#list',
+    directUrl: 'https://drive.google.com/drive/folders/1MmKkQOL_9XyUaIhJtcgRsGp6vmdFv9Bt?usp=sharing',
+    // No allow-popups: clicks stay within iframe instead of opening new tabs
+    sandbox: 'allow-same-origin allow-scripts allow-forms',
+    note: 'Google Drive giới hạn: click file sẽ mở xem trước. Dùng nút ↗️ để mở Drive đầy đủ.',
   },
   {
     key: 'synology',
@@ -19,6 +23,9 @@ const TABS = [
     bg: 'bg-emerald-50',
     textColor: 'text-emerald-600',
     url: 'https://hoangnv.synology.me:5001/d/s/17YLz88s6btopuQpnKdRBWh1bYX9DuDQ/H-SFFgvAm07EatvjtHKpgMsM1eCuGYfD-LrDgYNcXEQ0',
+    directUrl: 'https://hoangnv.synology.me:5001/d/s/17YLz88s6btopuQpnKdRBWh1bYX9DuDQ/H-SFFgvAm07EatvjtHKpgMsM1eCuGYfD-LrDgYNcXEQ0',
+    sandbox: 'allow-same-origin allow-scripts allow-popups allow-forms allow-popups-to-escape-sandbox',
+    note: '',
   },
 ] as const;
 
@@ -44,7 +51,6 @@ const DataStorage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Refresh */}
           <button
             onClick={() => setRefreshKey(k => k + 1)}
             className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
@@ -52,10 +58,8 @@ const DataStorage: React.FC = () => {
           >
             <RefreshCw size={16} />
           </button>
-
-          {/* Open in new tab */}
           <a
-            href={currentTab.url.replace('#grid', '')}
+            href={currentTab.directUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
@@ -63,8 +67,6 @@ const DataStorage: React.FC = () => {
           >
             <ExternalLink size={16} />
           </a>
-
-          {/* Fullscreen toggle */}
           <button
             onClick={() => setIsFullscreen(f => !f)}
             className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
@@ -97,6 +99,14 @@ const DataStorage: React.FC = () => {
         })}
       </div>
 
+      {/* Info note for Google Drive */}
+      {currentTab.note && (
+        <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 ${isFullscreen ? 'mx-4 mb-2' : 'mb-2'}`}>
+          <AlertTriangle size={14} className="shrink-0" />
+          {currentTab.note}
+        </div>
+      )}
+
       {/* iframe container */}
       <div className={`flex-1 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 ${isFullscreen ? 'mx-4 mb-4' : ''}`}>
         <iframe
@@ -105,7 +115,7 @@ const DataStorage: React.FC = () => {
           className="w-full h-full border-0"
           style={{ minHeight: isFullscreen ? undefined : '70vh' }}
           allow="autoplay; encrypted-media"
-          sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-popups-to-escape-sandbox"
+          sandbox={currentTab.sandbox}
           title={currentTab.label}
         />
       </div>
