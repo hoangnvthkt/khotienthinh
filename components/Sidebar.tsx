@@ -6,7 +6,7 @@ import {
   History, Settings, LogOut, FileText, Sun, Moon,
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
-  Calendar, CalendarOff, DollarSign, FileSignature, MapPin
+  Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -368,6 +368,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
                 <Settings className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
                 {!collapsed && <span className="font-bold text-sm">Cài đặt</span>}
+              </NavLink>
+
+              {/* Trợ lý AI */}
+              <NavLink to="/ai" title={collapsed ? 'Trợ lý AI' : undefined}
+                className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                  ? 'bg-gradient-to-r from-violet-500 to-fuchsia-600 text-white shadow-lg shadow-violet-500/20 border border-white/20'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                <Bot className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                {!collapsed && <span className="font-bold text-sm">Trợ lý AI</span>}
               </NavLink>
 
               {/* Kho dữ liệu */}
