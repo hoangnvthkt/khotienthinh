@@ -48,6 +48,9 @@ const WorkflowDashboard = React.lazy(() => import('./pages/wf/WorkflowDashboard'
 // Chat
 const Chat = React.lazy(() => import('./pages/Chat'));
 
+// Data Storage
+const DataStorage = React.lazy(() => import('./pages/DataStorage'));
+
 // Request pages
 const RequestCategories = React.lazy(() => import('./pages/request/RequestCategories'));
 const RequestList = React.lazy(() => import('./pages/request/RequestList'));
@@ -102,6 +105,7 @@ const AppRoutes: React.FC = () => {
           <Route path="da" element={<ProjectDashboard />} />
           <Route path="da/portfolio" element={<PortfolioDashboard />} />
           <Route path="chat" element={<Chat />} />
+          <Route path="storage" element={<DataStorage />} />
           <Route path="rq" element={<RequestList />} />
           <Route path="rq/dashboard" element={<RequestDashboard />} />
           <Route path="rq/categories" element={<RequestCategories />} />
