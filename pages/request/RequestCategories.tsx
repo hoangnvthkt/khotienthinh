@@ -2,12 +2,12 @@
 import React, { useState } from 'react';
 import { useRequest } from '../../context/RequestContext';
 import { useApp } from '../../context/AppContext';
-import { Role, WorkflowCustomField, CustomFieldType } from '../../types';
+import { Role, WorkflowCustomField, CustomFieldType, RequestPrintTemplate } from '../../types';
 import {
     Plus, FileText, Search, Trash2, Edit2, ToggleLeft, ToggleRight,
     ShieldAlert, X, ChevronDown, ChevronUp, GripVertical, Settings2,
     Type, AlignLeft, Hash, Calendar, List, Paperclip, Layers,
-    Clock, User, Inbox
+    Clock, User, Inbox, Upload, Printer
 } from 'lucide-react';
 
 const FIELD_TYPE_CONFIG: Record<CustomFieldType, { label: string; icon: any; color: string }> = {
@@ -30,7 +30,8 @@ const COLOR_OPTIONS = [
 ];
 
 const RequestCategories: React.FC = () => {
-    const { categories, requests, createCategory, updateCategory, deleteCategory } = useRequest();
+    const { categories, requests, createCategory, updateCategory, deleteCategory,
+        uploadRQPrintTemplate, deleteRQPrintTemplate, getRQPrintTemplates } = useRequest();
     const { user, users } = useApp();
 
     const [searchTerm, setSearchTerm] = useState('');
@@ -54,6 +55,12 @@ const RequestCategories: React.FC = () => {
     const [newFieldType, setNewFieldType] = useState<CustomFieldType>('text');
     const [newFieldRequired, setNewFieldRequired] = useState(false);
     const [newFieldOptions, setNewFieldOptions] = useState('');
+
+    // Print template state
+    const [ptExpandedCatId, setPtExpandedCatId] = useState<string | null>(null);
+    const [ptName, setPtName] = useState('');
+    const [ptFile, setPtFile] = useState<File | null>(null);
+    const [ptUploading, setPtUploading] = useState(false);
 
     if (user.role !== Role.ADMIN) {
         return (
@@ -332,6 +339,56 @@ const RequestCategories: React.FC = () => {
                                         <Trash2 size={14} />
                                     </button>
                                 </div>
+                            </div>
+
+                            {/* Print Templates Section */}
+                            <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                                <button onClick={() => setPtExpandedCatId(ptExpandedCatId === cat.id ? null : cat.id)}
+                                    className="flex items-center gap-1.5 text-[10px] font-bold text-violet-500 hover:text-violet-600 transition uppercase tracking-wider">
+                                    <Printer size={12} /> Mẫu in Word ({getRQPrintTemplates(cat.id).length})
+                                    {ptExpandedCatId === cat.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                </button>
+                                {ptExpandedCatId === cat.id && (
+                                    <div className="mt-2 space-y-2">
+                                        {/* Template list */}
+                                        {getRQPrintTemplates(cat.id).map(pt => (
+                                            <div key={pt.id} className="flex items-center justify-between px-3 py-2 bg-violet-50 dark:bg-violet-900/10 rounded-lg">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <Printer size={12} className="text-violet-500 shrink-0" />
+                                                    <div className="min-w-0">
+                                                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{pt.name}</p>
+                                                        <p className="text-[9px] text-slate-400 truncate">{pt.fileName}</p>
+                                                    </div>
+                                                </div>
+                                                <button onClick={() => deleteRQPrintTemplate(pt.id, pt.storagePath)}
+                                                    className="p-1 text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition shrink-0">
+                                                    <Trash2 size={12} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        {/* Upload form */}
+                                        <div className="space-y-1.5">
+                                            <input type="text" value={ptName} onChange={e => setPtName(e.target.value)} placeholder="Tên mẫu in..."
+                                                className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-violet-300" />
+                                            <div className="flex gap-2">
+                                                <label className="flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-violet-300 dark:border-violet-700 text-violet-500 text-xs font-bold cursor-pointer hover:bg-violet-50 dark:hover:bg-violet-900/20 transition">
+                                                    <Upload size={12} /> {ptFile ? ptFile.name : 'Chọn file .docx'}
+                                                    <input type="file" accept=".docx" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) setPtFile(f); }} />
+                                                </label>
+                                                <button disabled={!ptName.trim() || !ptFile || ptUploading}
+                                                    onClick={async () => {
+                                                        if (!ptName.trim() || !ptFile) return;
+                                                        setPtUploading(true);
+                                                        await uploadRQPrintTemplate(cat.id, ptName.trim(), ptFile);
+                                                        setPtName(''); setPtFile(null); setPtUploading(false);
+                                                    }}
+                                                    className="px-3 py-1.5 bg-violet-500 text-white rounded-lg text-xs font-bold hover:bg-violet-600 transition disabled:opacity-50">
+                                                    {ptUploading ? '...' : 'Tải lên'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     );

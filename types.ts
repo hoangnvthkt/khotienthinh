@@ -76,6 +76,7 @@ export interface HrmOffice {
   latitude?: number;
   longitude?: number;
   checkInRadius?: number;   // mét — bán kính check-in (default 100m)
+  managerId?: string;       // User ID của người quản lý (duyệt đề xuất CC)
   createdAt?: string;
 }
 
@@ -114,6 +115,7 @@ export interface HrmConstructionSite {
   latitude?: number;
   longitude?: number;
   checkInRadius?: number;   // mét — bán kính check-in (default 200m)
+  managerId?: string;       // User ID của người quản lý (duyệt đề xuất CC)
   createdAt?: string;
 }
 
@@ -643,6 +645,15 @@ export interface WorkflowInstanceLog {
   createdAt: string;
 }
 
+export interface WorkflowPrintTemplate {
+  id: string;
+  templateId: string;
+  name: string;
+  fileName: string;
+  storagePath: string;
+  createdAt: string;
+}
+
 // ==================== REQUEST MODULE ====================
 
 export enum RQStatus {
@@ -706,6 +717,16 @@ export interface RequestLog {
   actedBy: string;
   comment: string;
   createdAt: string;
+}
+
+export interface RequestPrintTemplate {
+  id: string;
+  categoryId: string;
+  name: string;
+  fileName: string;
+  storagePath: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ==================== CHAT ====================
@@ -900,6 +921,40 @@ export interface AttendanceRecord {
   locationType?: 'construction_site' | 'office';
   isOutOfRange?: boolean;   // NV ngoài phạm vi khi check-in
   createdAt?: string;
+}
+
+// ===== ĐỀ XUẤT CHẤM CÔNG =====
+
+export type AttendanceProposalStatus = 'pending' | 'approved' | 'rejected';
+
+export const PROPOSAL_STATUS_LABELS: Record<AttendanceProposalStatus, string> = {
+  pending: 'Chờ duyệt',
+  approved: 'Đã duyệt',
+  rejected: 'Từ chối',
+};
+
+export const PROPOSAL_STATUS_COLORS: Record<AttendanceProposalStatus, string> = {
+  pending: 'bg-amber-100 text-amber-700',
+  approved: 'bg-emerald-100 text-emerald-700',
+  rejected: 'bg-red-100 text-red-700',
+};
+
+export interface AttendanceProposal {
+  id: string;
+  proposerEmployeeId: string;   // Người đề xuất
+  targetEmployeeId: string;     // Người cần bù công (có thể = proposer)
+  date: string;                 // YYYY-MM-DD
+  checkIn?: string;             // HH:mm
+  checkOut?: string;            // HH:mm
+  status: AttendanceStatus;     // present / half_day / business_trip
+  reason: string;               // Lý do đề xuất
+  locationId?: string;          // ID Công trường / Văn phòng
+  locationType?: 'construction_site' | 'office';
+  proposalStatus: AttendanceProposalStatus;
+  approvedBy?: string;          // User ID người duyệt
+  approvedAt?: string;
+  rejectionReason?: string;
+  createdAt: string;
 }
 
 // ===== NGHỈ PHÉP =====

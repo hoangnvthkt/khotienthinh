@@ -3,11 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
-import { WorkflowNode, WorkflowEdge, WorkflowNodeType, WorkflowCustomField, CustomFieldType, Role } from '../../types';
+import { WorkflowNode, WorkflowEdge, WorkflowNodeType, WorkflowCustomField, CustomFieldType, WorkflowPrintTemplate, Role } from '../../types';
 import {
     ArrowLeft, Save, Plus, Trash2, GripVertical, ChevronUp, ChevronDown,
     UserCheck, Settings2, X, Layers, FileText, ToggleLeft, ToggleRight,
-    Zap, Play, Flag, Clock, Type, AlignLeft, Hash, Calendar, List, Paperclip
+    Zap, Play, Flag, Clock, Type, AlignLeft, Hash, Calendar, List, Paperclip, Printer, Upload, Download, Eye
 } from 'lucide-react';
 
 const FIELD_TYPE_CONFIG: Record<CustomFieldType, { label: string; icon: any; color: string }> = {
@@ -22,12 +22,12 @@ const FIELD_TYPE_CONFIG: Record<CustomFieldType, { label: string; icon: any; col
 const WorkflowBuilder: React.FC = () => {
     const { id: templateId } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { templates, getTemplateNodes, getTemplateEdges, saveNodesAndEdges, updateTemplate } = useWorkflow();
+    const { templates, getTemplateNodes, getTemplateEdges, saveNodesAndEdges, updateTemplate, uploadPrintTemplate, deletePrintTemplate, getPrintTemplates } = useWorkflow();
     const { users } = useApp();
 
     const template = templates.find(t => t.id === templateId);
 
-    const [activeTab, setActiveTab] = useState<'steps' | 'fields'>('steps');
+    const [activeTab, setActiveTab] = useState<'steps' | 'fields' | 'print'>('steps');
     const [localNodes, setLocalNodes] = useState<WorkflowNode[]>([]);
     const [localEdges, setLocalEdges] = useState<WorkflowEdge[]>([]);
     const [customFields, setCustomFields] = useState<WorkflowCustomField[]>([]);
@@ -368,6 +368,15 @@ const WorkflowBuilder: React.FC = () => {
                         }`}
                 >
                     <FileText size={15} /> Trường tùy chỉnh ({customFields.length})
+                </button>
+                <button
+                    onClick={() => setActiveTab('print')}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition ${activeTab === 'print'
+                        ? 'bg-rose-600 text-white shadow-md'
+                        : 'bg-white/50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-700'
+                        }`}
+                >
+                    <Printer size={15} /> Mẫu in ({templateId ? getPrintTemplates(templateId).length : 0})
                 </button>
             </div>
 
@@ -761,6 +770,136 @@ const WorkflowBuilder: React.FC = () => {
                     )}
                 </div>
             )}
+
+            {/* ==================== TAB: PRINT TEMPLATES ==================== */}
+            {activeTab === 'print' && templateId && (
+                <PrintTemplateTab templateId={templateId} customFields={customFields} />
+            )}
+        </div>
+    );
+};
+
+// ==================== Print Template Tab Component ====================
+const PrintTemplateTab: React.FC<{ templateId: string; customFields: WorkflowCustomField[] }> = ({ templateId, customFields }) => {
+    const { uploadPrintTemplate, deletePrintTemplate, getPrintTemplates } = useWorkflow();
+    const [uploading, setUploading] = useState(false);
+    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+    const printTemplates = getPrintTemplates(templateId);
+
+    const handleUpload = async () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        input.onchange = async (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (!file) return;
+            const name = prompt('Nhập tên mẫu in:', file.name.replace(/\.docx$/i, ''));
+            if (!name) return;
+            setUploading(true);
+            await uploadPrintTemplate(templateId, name.trim(), file);
+            setUploading(false);
+        };
+        input.click();
+    };
+
+    const handleDelete = async (pt: WorkflowPrintTemplate) => {
+        await deletePrintTemplate(pt.id, pt.storagePath);
+        setDeleteConfirmId(null);
+    };
+
+    const systemPlaceholders = [
+        { key: 'code', desc: 'Mã phiếu (VD: WF-2026-001)' },
+        { key: 'title', desc: 'Tiêu đề phiếu' },
+        { key: 'creator_name', desc: 'Tên người tạo' },
+        { key: 'creator_email', desc: 'Email người tạo' },
+        { key: 'created_at_day', desc: 'Ngày tạo (số)' },
+        { key: 'created_at_month', desc: 'Tháng tạo (số)' },
+        { key: 'created_at_year', desc: 'Năm tạo' },
+        { key: 'created_at_full', desc: 'Ngày tạo đầy đủ' },
+        { key: 'template_name', desc: 'Tên mẫu quy trình' },
+        { key: 'status', desc: 'Trạng thái phiếu' },
+    ];
+
+    return (
+        <div className="space-y-4">
+            {/* Upload button */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <h3 className="font-bold text-sm text-slate-700 dark:text-white">Mẫu in (.docx)</h3>
+                    <p className="text-xs text-slate-400">Upload file Word với placeholder {'${tên_trường}'} để tự động điền dữ liệu khi xuất.</p>
+                </div>
+                <button onClick={handleUpload} disabled={uploading}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-rose-500 text-white rounded-xl text-xs font-bold hover:bg-rose-600 transition shadow-lg shadow-rose-500/20 disabled:opacity-50">
+                    <Upload size={14} /> {uploading ? 'Đang tải...' : 'Thêm mẫu in'}
+                </button>
+            </div>
+
+            {/* List */}
+            {printTemplates.length === 0 ? (
+                <div className="text-center py-16 glass-card rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                    <Printer className="w-12 h-12 text-slate-200 dark:text-slate-700 mx-auto mb-3" />
+                    <p className="text-slate-400 font-bold text-sm">Chưa có mẫu in nào.</p>
+                    <p className="text-xs text-slate-300 dark:text-slate-500 mt-1">Tạo file Word (.docx), chèn placeholder {'${...}'} rồi upload.</p>
+                </div>
+            ) : (
+                <div className="space-y-2">
+                    {printTemplates.map(pt => (
+                        <div key={pt.id} className="glass-card rounded-xl p-4 flex items-center gap-3 group">
+                            <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-500 flex items-center justify-center shrink-0">
+                                <FileText size={18} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="font-bold text-sm text-slate-700 dark:text-white truncate">{pt.name}</p>
+                                <p className="text-[10px] text-slate-400">{pt.fileName} · {new Date(pt.createdAt).toLocaleDateString('vi-VN')}</p>
+                            </div>
+                            {deleteConfirmId === pt.id ? (
+                                <div className="flex items-center gap-1">
+                                    <button onClick={() => handleDelete(pt)} className="px-2.5 py-1 bg-red-500 text-white rounded-lg text-[10px] font-bold">Xóa</button>
+                                    <button onClick={() => setDeleteConfirmId(null)} className="px-2.5 py-1 bg-slate-200 dark:bg-slate-700 rounded-lg text-[10px] font-bold">Hủy</button>
+                                </div>
+                            ) : (
+                                <button onClick={() => setDeleteConfirmId(pt.id)}
+                                    className="p-2 rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition opacity-0 group-hover:opacity-100">
+                                    <Trash2 size={14} />
+                                </button>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Placeholder reference */}
+            <div className="glass-card rounded-2xl p-4">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Danh sách Placeholder có sẵn</h4>
+                <p className="text-[10px] text-slate-400 mb-3">Chèn các placeholder dưới đây vào file Word. Khi xuất, hệ thống sẽ tự thay thế bằng dữ liệu thực.</p>
+
+                <div className="mb-3">
+                    <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1.5">Trường hệ thống</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
+                        {systemPlaceholders.map(p => (
+                            <div key={p.key} className="flex items-center gap-2 px-2 py-1 rounded bg-blue-50 dark:bg-blue-900/10">
+                                <code className="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400">${'{' + p.key + '}'}</code>
+                                <span className="text-[10px] text-slate-400">— {p.desc}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {customFields.length > 0 && (
+                    <div>
+                        <p className="text-[10px] font-bold text-violet-500 uppercase tracking-wider mb-1.5">Trường tùy chỉnh (Form Data)</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
+                            {customFields.map(f => (
+                                <div key={f.id} className="flex items-center gap-2 px-2 py-1 rounded bg-violet-50 dark:bg-violet-900/10">
+                                    <code className="text-[10px] font-mono font-bold text-violet-600 dark:text-violet-400">${'{' + f.name + '}'}</code>
+                                    <span className="text-[10px] text-slate-400">— {f.label}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

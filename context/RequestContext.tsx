@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { RequestCategory, RequestInstance, RequestLog, RQStatus, RequestApprover } from '../types';
+import { RequestCategory, RequestInstance, RequestLog, RQStatus, RequestApprover, RequestPrintTemplate } from '../types';
 
 interface RequestContextType {
     categories: RequestCategory[];
@@ -38,6 +38,12 @@ interface RequestContextType {
     getRequestLogs: (requestId: string) => RequestLog[];
     getCurrentApproverStep: (req: RequestInstance) => RequestApprover | null;
     refreshData: () => Promise<void>;
+
+    // Print templates
+    printTemplates: RequestPrintTemplate[];
+    uploadRQPrintTemplate: (categoryId: string, name: string, file: File) => Promise<boolean>;
+    deleteRQPrintTemplate: (id: string, storagePath: string) => Promise<boolean>;
+    getRQPrintTemplates: (categoryId: string) => RequestPrintTemplate[];
 }
 
 const RequestContext = createContext<RequestContextType | undefined>(undefined);
@@ -90,20 +96,26 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const [categories, setCategories] = useState<RequestCategory[]>([]);
     const [requests, setRequests] = useState<RequestInstance[]>([]);
     const [logs, setLogs] = useState<RequestLog[]>([]);
+    const [printTemplates, setPrintTemplates] = useState<RequestPrintTemplate[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const refreshData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const [catRes, reqRes, logRes] = await Promise.all([
+            const [catRes, reqRes, logRes, ptRes] = await Promise.all([
                 supabase.from('request_categories').select('*').order('created_at', { ascending: false }),
                 supabase.from('request_instances').select('*').order('created_at', { ascending: false }),
                 supabase.from('request_logs').select('*').order('created_at', { ascending: true }),
+                supabase.from('request_print_templates').select('*').order('created_at', { ascending: false }),
             ]);
             if (catRes.data) setCategories(catRes.data.map(mapCategoryFromDB));
             if (reqRes.data) setRequests(reqRes.data.map(mapRequestFromDB));
             if (logRes.data) setLogs(logRes.data.map(mapLogFromDB));
+            if (ptRes.data) setPrintTemplates(ptRes.data.map((r: any): RequestPrintTemplate => ({
+                id: r.id, categoryId: r.category_id, name: r.name, fileName: r.file_name,
+                storagePath: r.storage_path, createdAt: r.created_at, updatedAt: r.updated_at,
+            })));
         } catch (err) {
             console.error('RequestContext fetch error:', err);
         } finally {
@@ -373,6 +385,30 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const getRequestLogs = (requestId: string) => logs.filter(l => l.requestId === requestId);
 
+    // ---- Print template CRUD ----
+
+    const uploadRQPrintTemplate = async (categoryId: string, name: string, file: File): Promise<boolean> => {
+        const path = `rq/${categoryId}/${Date.now()}_${file.name}`;
+        const { error: upErr } = await supabase.storage.from('workflow-templates').upload(path, file);
+        if (upErr) { console.error(upErr); return false; }
+        const { error: dbErr } = await supabase.from('request_print_templates').insert({
+            category_id: categoryId, name, file_name: file.name, storage_path: path,
+        });
+        if (dbErr) { console.error(dbErr); return false; }
+        await refreshData();
+        return true;
+    };
+
+    const deleteRQPrintTemplate = async (id: string, storagePath: string): Promise<boolean> => {
+        await supabase.storage.from('workflow-templates').remove([storagePath]);
+        const { error } = await supabase.from('request_print_templates').delete().eq('id', id);
+        if (error) { console.error(error); return false; }
+        setPrintTemplates(prev => prev.filter(p => p.id !== id));
+        return true;
+    };
+
+    const getRQPrintTemplates = (categoryId: string) => printTemplates.filter(p => p.categoryId === categoryId);
+
     const value: RequestContextType = {
         categories, requests, logs, isLoading,
         createCategory, updateCategory, deleteCategory,
@@ -380,6 +416,7 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
         submitRequest, approveRequest, rejectRequest,
         completeRequest, cancelRequest,
         getRequestLogs, getCurrentApproverStep, refreshData,
+        printTemplates, uploadRQPrintTemplate, deleteRQPrintTemplate, getRQPrintTemplates,
     };
 
     return <RequestContext.Provider value={value}>{children}</RequestContext.Provider>;

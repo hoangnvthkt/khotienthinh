@@ -4,17 +4,21 @@ import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
 import {
     WorkflowInstance, WorkflowInstanceStatus, WorkflowInstanceAction,
-    WorkflowNodeType, Role, WorkflowCustomField
+    WorkflowNodeType, Role, WorkflowCustomField, WorkflowPrintTemplate
 } from '../../types';
 import {
     GitBranch, Plus, Search, Clock, CheckCircle, XCircle, Circle,
     ArrowRight, User, MessageSquare, FileText, Send, RotateCcw,
     ChevronDown, ChevronUp, Filter, Inbox, AlertCircle, X,
     Edit2, Trash2, Ban, Save, Upload, Paperclip, Table2, FileSpreadsheet, Eye, Download, Undo2,
-    LayoutGrid, List
+    LayoutGrid, List, Printer
 } from 'lucide-react';
 import KanbanBoard from '../../components/KanbanBoard';
 import * as XLSX from 'xlsx';
+import PizZip from 'pizzip';
+import Docxtemplater from 'docxtemplater';
+import { saveAs } from 'file-saver';
+import { supabase } from '../../lib/supabase';
 
 const STATUS_MAP: Record<WorkflowInstanceStatus, { label: string; color: string; icon: any }> = {
     RUNNING: { label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300', icon: Clock },
@@ -403,7 +407,7 @@ const FileFieldInput: React.FC<{
 };
 
 const WorkflowInstances: React.FC = () => {
-    const { templates, instances, nodes, edges, logs, createInstance, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs } = useWorkflow();
+    const { templates, instances, nodes, edges, logs, createInstance, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates } = useWorkflow();
     const { user, users } = useApp();
     const [activeTab, setActiveTab] = useState<'mine' | 'pending'>('mine');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
@@ -521,6 +525,78 @@ const WorkflowInstances: React.FC = () => {
     const handleSelectTemplate = (tid: string) => {
         setSelectedTemplateId(tid);
         setCustomFormData({});
+    };
+
+    // ==================== WORD EXPORT ====================
+    const handleExportWord = async (instance: WorkflowInstance, printTemplate: WorkflowPrintTemplate) => {
+        try {
+            // 1. Download .docx from Supabase Storage
+            const { data: fileData, error } = await supabase.storage.from('workflow-templates').download(printTemplate.storagePath);
+            if (error || !fileData) { alert('Không tải được file mẫu. Vui lòng thử lại.'); return; }
+
+            // 2. Parse with PizZip + Docxtemplater
+            const arrayBuffer = await fileData.arrayBuffer();
+            const zip = new PizZip(arrayBuffer);
+            const doc = new Docxtemplater(zip, {
+                paragraphLoop: true,
+                linebreaks: true,
+                delimiters: { start: '${', end: '}' },
+            });
+
+            // 3. Build data object
+            const template = templates.find(t => t.id === instance.templateId);
+            const creator = users.find(u => u.id === instance.createdBy);
+            const createdDate = new Date(instance.createdAt);
+            const statusLabels: Record<string, string> = {
+                RUNNING: 'Đang xử lý', COMPLETED: 'Hoàn thành',
+                REJECTED: 'Từ chối', CANCELLED: 'Đã hủy',
+            };
+
+            const data: Record<string, string> = {
+                code: instance.code || '',
+                title: instance.title || '',
+                creator_name: creator?.name || '',
+                creator_email: creator?.email || '',
+                created_at_day: String(createdDate.getDate()).padStart(2, '0'),
+                created_at_month: String(createdDate.getMonth() + 1).padStart(2, '0'),
+                created_at_year: String(createdDate.getFullYear()),
+                created_at_full: createdDate.toLocaleDateString('vi-VN'),
+                template_name: template?.name || '',
+                status: statusLabels[instance.status] || instance.status,
+            };
+
+            // Form data fields (auto-map)
+            if (instance.formData) {
+                Object.entries(instance.formData).forEach(([key, value]) => {
+                    if (typeof value === 'object' && value !== null) {
+                        if ((value as any).fileName) data[key] = (value as any).fileName;
+                    } else {
+                        data[key] = String(value ?? '');
+                    }
+                });
+            }
+
+            // Approver fields from logs
+            const instanceLogs = logs.filter(l => l.instanceId === instance.id);
+            instanceLogs.forEach(log => {
+                const node = nodes.find(n => n.id === log.nodeId);
+                if (node) {
+                    const actor = users.find(u => u.id === log.actedBy);
+                    const safeLabel = node.label.replace(/\s+/g, '_').toLowerCase();
+                    data[`approver_${safeLabel}`] = actor?.name || '';
+                }
+            });
+
+            // 4. Replace placeholders
+            doc.render(data);
+
+            // 5. Generate and download
+            const output = doc.getZip().generate({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+            saveAs(output, `${instance.code}_${printTemplate.name}.docx`);
+        } catch (err: any) {
+            console.error('Export Word error:', err);
+            alert('Lỗi khi xuất Word: ' + (err.message || 'Không xác định'));
+        }
     };
 
     const handleAction = async (instanceId: string, action: WorkflowInstanceAction) => {
@@ -990,6 +1066,31 @@ const WorkflowInstances: React.FC = () => {
                                         {isOwner && (
                                             <button onClick={() => setDeleteConfirmId(instance.id)} className="p-2 rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition" title="Xóa phiếu"><Trash2 size={16} /></button>
                                         )}
+                                        {/* Export Word */}
+                                        {(() => {
+                                            const pts = getPrintTemplates(instance.templateId);
+                                            if (pts.length === 0) return null;
+                                            if (pts.length === 1) return (
+                                                <button onClick={() => handleExportWord(instance, pts[0])} className="p-2 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition" title="Xuất Word">
+                                                    <Printer size={16} />
+                                                </button>
+                                            );
+                                            return (
+                                                <div className="relative group/exp">
+                                                    <button className="p-2 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition" title="Xuất Word">
+                                                        <Printer size={16} />
+                                                    </button>
+                                                    <div className="absolute right-0 top-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 py-1 min-w-[180px] z-50 hidden group-hover/exp:block">
+                                                        {pts.map(pt => (
+                                                            <button key={pt.id} onClick={() => handleExportWord(instance, pt)}
+                                                                className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2">
+                                                                <FileText size={12} className="text-rose-400" /> {pt.name}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
                                         {user.role === Role.ADMIN && (instance.status === WorkflowInstanceStatus.COMPLETED || instance.status === WorkflowInstanceStatus.REJECTED) && (
                                             <button onClick={() => { setReopenInstanceId(instance.id); setReopenTargetNodeId(''); setReopenComment(''); }} className="p-2 rounded-lg text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition" title="Mở lại"><Undo2 size={16} /></button>
                                         )}
@@ -1289,6 +1390,35 @@ const WorkflowInstances: React.FC = () => {
                                                 </button>
                                             </div>
                                         )}
+                                        {/* Export Word */}
+                                        {(() => {
+                                            const pts = getPrintTemplates(instance.templateId);
+                                            if (pts.length === 0) return null;
+                                            return (
+                                                <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                                                    {pts.length === 1 ? (
+                                                        <button onClick={() => handleExportWord(instance, pts[0])}
+                                                            className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition" title="Xuất Word">
+                                                            <Printer size={14} />
+                                                        </button>
+                                                    ) : (
+                                                        <div className="relative group/exp2">
+                                                            <button className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition" title="Xuất Word">
+                                                                <Printer size={14} />
+                                                            </button>
+                                                            <div className="absolute right-0 top-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 py-1 min-w-[180px] z-50 hidden group-hover/exp2:block">
+                                                                {pts.map(pt => (
+                                                                    <button key={pt.id} onClick={() => handleExportWord(instance, pt)}
+                                                                        className="w-full px-3 py-2 text-left text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2">
+                                                                        <FileText size={12} className="text-rose-400" /> {pt.name}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                         {/* Admin revert button for COMPLETED/REJECTED */}
                                         {user.role === Role.ADMIN && (instance.status === WorkflowInstanceStatus.COMPLETED || instance.status === WorkflowInstanceStatus.REJECTED) && (
                                             <div onClick={e => e.stopPropagation()}>

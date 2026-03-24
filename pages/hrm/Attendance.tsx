@@ -10,7 +10,9 @@ import * as XLSX from 'xlsx';
 import {
   AttendanceStatus, AttendanceRecord,
   ATTENDANCE_STATUS_LABELS, ATTENDANCE_STATUS_COLORS,
-  Role, HrmHoliday
+  Role, HrmHoliday,
+  AttendanceProposal, AttendanceProposalStatus,
+  PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_COLORS
 } from '../../types';
 
 const STATUS_CYCLE: AttendanceStatus[] = ['present', 'absent', 'half_day', 'leave', 'holiday', 'business_trip'];
@@ -20,7 +22,7 @@ const STATUS_SHORT: Record<AttendanceStatus, string> = {
 };
 
 const Attendance: React.FC = () => {
-  const { employees, attendanceRecords, hrmConstructionSites, holidays, addHrmItem, updateHrmItem, removeHrmItem, user } = useApp();
+  const { employees, attendanceRecords, hrmConstructionSites, hrmOffices, holidays, attendanceProposals, addHrmItem, updateHrmItem, removeHrmItem, user, users } = useApp();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -43,6 +45,22 @@ const Attendance: React.FC = () => {
   const [showHolidayModal, setShowHolidayModal] = useState(false);
   const [holidayName, setHolidayName] = useState('');
   const [holidayDate, setHolidayDate] = useState('');
+
+  // Tab: 'timesheet' | 'proposals'
+  const [activeTab, setActiveTab] = useState<'timesheet' | 'proposals'>('timesheet');
+
+  // Proposal state
+  const [showProposalForm, setShowProposalForm] = useState(false);
+  const [pTargetEmployeeId, setPTargetEmployeeId] = useState('');
+  const [pDate, setPDate] = useState('');
+  const [pCheckIn, setPCheckIn] = useState('');
+  const [pCheckOut, setPCheckOut] = useState('');
+  const [pStatus, setPStatus] = useState<AttendanceStatus>('present');
+  const [pReason, setPReason] = useState('');
+  const [pLocationId, setPLocationId] = useState('');
+  const [pLocationType, setPLocationType] = useState<'construction_site' | 'office'>('construction_site');
+  const [rejectId, setRejectId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   // Standard work times for late/early tracking
   const [stdStartTime, setStdStartTime] = useState('08:00');
@@ -389,6 +407,135 @@ const Attendance: React.FC = () => {
     alert(`Đã import ${imported} bản ghi chấm công thành công!`);
   };
 
+  // ==================== ĐỀ XUẤT CHẤM CÔNG ====================
+
+  const currentEmployee = useMemo(() => employees.find(e => e.userId === user.id), [employees, user.id]);
+
+  // Location options for proposal form
+  const locationOptions = useMemo(() => {
+    const sites = hrmConstructionSites.map(s => ({ id: s.id, name: `🏗️ ${s.name}`, type: 'construction_site' as const }));
+    const offices = hrmOffices.map(o => ({ id: o.id, name: `🏢 ${o.name}`, type: 'office' as const }));
+    return [...sites, ...offices];
+  }, [hrmConstructionSites, hrmOffices]);
+
+  // Manager check: is current user a manager of any site/office?
+  const managedSiteIds = useMemo(() => hrmConstructionSites.filter(s => s.managerId === user.id).map(s => s.id), [hrmConstructionSites, user.id]);
+  const managedOfficeIds = useMemo(() => hrmOffices.filter(o => o.managerId === user.id).map(o => o.id), [hrmOffices, user.id]);
+  const isManager = isAdmin || managedSiteIds.length > 0 || managedOfficeIds.length > 0;
+
+  // Filter proposals: admin sees all, managers see proposals for their sites/offices, others see their own
+  const filteredProposals = useMemo(() => {
+    if (isAdmin) return attendanceProposals;
+    const myEmpId = currentEmployee?.id;
+    return attendanceProposals.filter(p => {
+      if (p.proposerEmployeeId === myEmpId || p.targetEmployeeId === myEmpId) return true;
+      if (p.locationType === 'construction_site' && p.locationId && managedSiteIds.includes(p.locationId)) return true;
+      if (p.locationType === 'office' && p.locationId && managedOfficeIds.includes(p.locationId)) return true;
+      return false;
+    });
+  }, [attendanceProposals, currentEmployee, isAdmin, managedSiteIds, managedOfficeIds]);
+
+  const pendingCount = useMemo(() => filteredProposals.filter(p => p.proposalStatus === 'pending').length, [filteredProposals]);
+
+  const resetProposalForm = () => {
+    setShowProposalForm(false);
+    setPTargetEmployeeId(currentEmployee?.id || '');
+    setPDate('');
+    setPCheckIn('');
+    setPCheckOut('');
+    setPStatus('present');
+    setPReason('');
+    setPLocationId('');
+    setPLocationType('construction_site');
+  };
+
+  const handleCreateProposal = () => {
+    if (!currentEmployee || !pTargetEmployeeId || !pDate || !pReason) return;
+    const proposal: AttendanceProposal = {
+      id: crypto.randomUUID(),
+      proposerEmployeeId: currentEmployee.id,
+      targetEmployeeId: pTargetEmployeeId,
+      date: pDate,
+      checkIn: pCheckIn || undefined,
+      checkOut: pCheckOut || undefined,
+      status: pStatus,
+      reason: pReason,
+      locationId: pLocationId || undefined,
+      locationType: pLocationId ? pLocationType : undefined,
+      proposalStatus: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+    addHrmItem('hrm_attendance_proposals', proposal);
+    resetProposalForm();
+  };
+
+  const handleApprove = (proposal: AttendanceProposal) => {
+    const updated: AttendanceProposal = {
+      ...proposal,
+      proposalStatus: 'approved',
+      approvedBy: user.id,
+      approvedAt: new Date().toISOString(),
+    };
+    updateHrmItem('hrm_attendance_proposals', updated);
+
+    // Create/update attendance record
+    const key = `${proposal.targetEmployeeId}_${proposal.date}`;
+    const existing = recordMap.get(key);
+    const locationName = proposal.locationId ? (
+      proposal.locationType === 'construction_site'
+        ? hrmConstructionSites.find(s => s.id === proposal.locationId)?.name
+        : hrmOffices.find(o => o.id === proposal.locationId)?.name
+    ) : undefined;
+
+    if (existing) {
+      updateHrmItem('hrm_attendance', {
+        ...existing,
+        status: proposal.status,
+        checkIn: proposal.checkIn || existing.checkIn,
+        checkOut: proposal.checkOut || existing.checkOut,
+        constructionSiteId: proposal.locationType === 'construction_site' ? proposal.locationId : existing.constructionSiteId,
+        locationName: locationName || existing.locationName,
+        locationType: proposal.locationType || existing.locationType,
+        note: `Bù công (đề xuất bởi ${employees.find(e => e.id === proposal.proposerEmployeeId)?.fullName || 'N/A'})`,
+      });
+    } else {
+      addHrmItem('hrm_attendance', {
+        id: crypto.randomUUID(),
+        employeeId: proposal.targetEmployeeId,
+        date: proposal.date,
+        status: proposal.status,
+        checkIn: proposal.checkIn || undefined,
+        checkOut: proposal.checkOut || undefined,
+        constructionSiteId: proposal.locationType === 'construction_site' ? proposal.locationId : undefined,
+        locationName,
+        locationType: proposal.locationType,
+        note: `Bù công (đề xuất bởi ${employees.find(e => e.id === proposal.proposerEmployeeId)?.fullName || 'N/A'})`,
+        createdAt: new Date().toISOString(),
+      } as AttendanceRecord);
+    }
+  };
+
+  const handleReject = (proposalId: string) => {
+    const proposal = attendanceProposals.find(p => p.id === proposalId);
+    if (!proposal) return;
+    updateHrmItem('hrm_attendance_proposals', {
+      ...proposal,
+      proposalStatus: 'rejected',
+      approvedBy: user.id,
+      approvedAt: new Date().toISOString(),
+      rejectionReason: rejectReason || 'Từ chối',
+    });
+    setRejectId(null);
+    setRejectReason('');
+  };
+
+  const canApprove = (proposal: AttendanceProposal): boolean => {
+    if (isAdmin) return true;
+    if (proposal.locationType === 'construction_site' && proposal.locationId && managedSiteIds.includes(proposal.locationId)) return true;
+    if (proposal.locationType === 'office' && proposal.locationId && managedOfficeIds.includes(proposal.locationId)) return true;
+    return false;
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -418,6 +565,9 @@ const Attendance: React.FC = () => {
           <button onClick={() => setShowHolidayModal(true)} className="px-3 py-2 bg-amber-500 text-white rounded-xl text-xs font-black hover:bg-amber-600 transition flex items-center gap-1.5">
             <Star size={14} /> Ngày lễ
           </button>
+          <button onClick={() => { resetProposalForm(); setPTargetEmployeeId(currentEmployee?.id || ''); setShowProposalForm(true); }} className="px-3 py-2 bg-violet-500 text-white rounded-xl text-xs font-black hover:bg-violet-600 transition flex items-center gap-1.5">
+            <Plus size={14} /> Đề xuất CC
+          </button>
         </div>
       </div>
 
@@ -445,7 +595,24 @@ const Attendance: React.FC = () => {
         </div>
       </div>
 
+      {/* Tab Switcher */}
+      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-2xl p-1">
+        <button onClick={() => setActiveTab('timesheet')}
+          className={`px-4 py-2 rounded-xl text-xs font-black transition ${activeTab === 'timesheet' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          <Calendar size={14} className="inline mr-1.5" />Bảng Công
+        </button>
+        <button onClick={() => setActiveTab('proposals')}
+          className={`px-4 py-2 rounded-xl text-xs font-black transition relative ${activeTab === 'proposals' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          <Plus size={14} className="inline mr-1.5" />Đề Xuất CC
+          {pendingCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">{pendingCount}</span>
+          )}
+        </button>
+      </div>
+
       {/* Standard time config */}
+      {activeTab === 'timesheet' && (
+      <>
       <div className="glass-panel rounded-2xl p-3 flex items-center gap-4 flex-wrap">
         <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Giờ chuẩn:</span>
         <div className="flex items-center gap-1">
@@ -501,8 +668,11 @@ const Attendance: React.FC = () => {
           </div>
         </div>
       </div>
+      </>
+      )}
 
       {/* Legend */}
+      {activeTab === 'timesheet' && (
       <div className="flex flex-wrap items-center gap-2 px-1">
         {STATUS_CYCLE.map(s => (
           <div key={s} className="flex items-center gap-1">
@@ -515,8 +685,10 @@ const Attendance: React.FC = () => {
         <span className="text-[10px] text-slate-400 font-bold ml-2">• Click ô để chuyển trạng thái</span>
         {isAdmin && <span className="text-[10px] text-red-400 font-bold ml-1">• Chuột phải để xóa</span>}
       </div>
+      )}
 
       {/* Timesheet Grid */}
+      {activeTab === 'timesheet' && (
       <div className="glass-panel rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full border-collapse" style={{ display: 'table' }}>
@@ -621,6 +793,7 @@ const Attendance: React.FC = () => {
           </table>
         </div>
       </div>
+      )}
 
       {/* Import Preview Modal */}
       {showImportModal && (
@@ -798,6 +971,201 @@ const Attendance: React.FC = () => {
                   <CheckCircle size={16} /> Áp dụng tất cả ngày lễ vào chấm công
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== PROPOSALS TAB ==================== */}
+      {activeTab === 'proposals' && (
+        <div className="space-y-4">
+          {/* Proposals List */}
+          <div className="glass-panel rounded-2xl overflow-hidden">
+            {filteredProposals.length === 0 ? (
+              <div className="py-12 text-center">
+                <Plus size={40} className="mx-auto text-slate-300 mb-3" />
+                <p className="text-sm font-black text-slate-400">Chưa có đề xuất chấm công</p>
+                <p className="text-xs text-slate-400 mt-1">Bấm nút "Đề xuất CC" để tạo đề xuất mới</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {[...filteredProposals].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(p => {
+                  const proposer = employees.find(e => e.id === p.proposerEmployeeId);
+                  const target = employees.find(e => e.id === p.targetEmployeeId);
+                  const loc = p.locationId ? (
+                    p.locationType === 'construction_site'
+                      ? hrmConstructionSites.find(s => s.id === p.locationId)?.name
+                      : hrmOffices.find(o => o.id === p.locationId)?.name
+                  ) : null;
+                  const isSelf = p.proposerEmployeeId === p.targetEmployeeId;
+
+                  return (
+                    <div key={p.id} className="p-4 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black ${PROPOSAL_STATUS_COLORS[p.proposalStatus]}`}>
+                              {PROPOSAL_STATUS_LABELS[p.proposalStatus]}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-black ${ATTENDANCE_STATUS_COLORS[p.status]}`}>
+                              {ATTENDANCE_STATUS_LABELS[p.status]}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {new Date(p.date).toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                            </span>
+                          </div>
+                          <div className="text-xs font-black text-slate-700 dark:text-slate-300">
+                            {isSelf ? (
+                              <>{target?.fullName || 'N/A'} <span className="text-slate-400 font-bold">(tự đề xuất)</span></>
+                            ) : (
+                              <>{proposer?.fullName || 'N/A'} <span className="text-slate-400">→</span> {target?.fullName || 'N/A'}</>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-500">
+                            {p.checkIn && <span className="text-emerald-600 font-bold">Vào: {p.checkIn}</span>}
+                            {p.checkOut && <span className="text-orange-600 font-bold">Ra: {p.checkOut}</span>}
+                            {loc && <span>📍 {loc}</span>}
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-1 italic">💬 {p.reason}</p>
+                          {p.proposalStatus === 'rejected' && p.rejectionReason && (
+                            <p className="text-[10px] text-red-500 mt-1 font-bold">❌ Lý do từ chối: {p.rejectionReason}</p>
+                          )}
+                          {p.approvedBy && (
+                            <p className="text-[9px] text-slate-400 mt-0.5">
+                              {p.proposalStatus === 'approved' ? '✅' : '❌'} Bởi: {users.find(u => u.id === p.approvedBy)?.name || 'N/A'}
+                              {p.approvedAt && ` • ${new Date(p.approvedAt).toLocaleString('vi-VN')}`}
+                            </p>
+                          )}
+                        </div>
+                        {/* Actions for managers */}
+                        {p.proposalStatus === 'pending' && canApprove(p) && (
+                          <div className="flex gap-1.5 shrink-0">
+                            <button onClick={() => handleApprove(p)}
+                              className="px-3 py-1.5 bg-emerald-500 text-white rounded-xl text-[10px] font-black hover:bg-emerald-600 transition flex items-center gap-1">
+                              <CheckCircle size={12} /> Duyệt
+                            </button>
+                            <button onClick={() => { setRejectId(p.id); setRejectReason(''); }}
+                              className="px-3 py-1.5 bg-red-500 text-white rounded-xl text-[10px] font-black hover:bg-red-600 transition flex items-center gap-1">
+                              <XCircle size={12} /> Từ chối
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ==================== REJECT REASON MODAL ==================== */}
+      {rejectId && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md mx-4">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-red-500 to-rose-500 rounded-t-3xl flex items-center justify-between">
+              <span className="font-bold text-lg text-white flex items-center gap-2"><XCircle size={18} /> Từ chối đề xuất</span>
+              <button onClick={() => setRejectId(null)} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><XCircle size={18} /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Lý do từ chối</label>
+                <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3}
+                  placeholder="Nhập lý do từ chối..."
+                  className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-red-300" />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setRejectId(null)} className="px-4 py-2.5 text-xs font-black text-slate-500 hover:text-slate-700 transition">Huỷ</button>
+                <button onClick={() => handleReject(rejectId)} className="px-4 py-2.5 bg-red-500 text-white rounded-xl text-xs font-black hover:bg-red-600 transition">Xác nhận từ chối</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== PROPOSAL FORM MODAL ==================== */}
+      {showProposalForm && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-violet-500 to-purple-500 rounded-t-3xl flex items-center justify-between">
+              <span className="font-bold text-lg text-white flex items-center gap-2"><Plus size={18} /> Đề xuất chấm công</span>
+              <button onClick={resetProposalForm} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><XCircle size={18} /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              {/* Target employee */}
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Chấm công cho *</label>
+                <select value={pTargetEmployeeId} onChange={e => setPTargetEmployeeId(e.target.value)}
+                  className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300">
+                  <option value="">— Chọn nhân viên —</option>
+                  {activeEmployees.map(e => (
+                    <option key={e.id} value={e.id}>{e.fullName} ({e.employeeCode}){e.id === currentEmployee?.id ? ' ← Tôi' : ''}</option>
+                  ))}
+                </select>
+              </div>
+              {/* Date */}
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Ngày cần bù công *</label>
+                <input type="date" value={pDate} onChange={e => setPDate(e.target.value)}
+                  className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300" />
+              </div>
+              {/* Time */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Giờ vào</label>
+                  <input type="time" value={pCheckIn} onChange={e => setPCheckIn(e.target.value)}
+                    className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Giờ ra</label>
+                  <input type="time" value={pCheckOut} onChange={e => setPCheckOut(e.target.value)}
+                    className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300" />
+                </div>
+              </div>
+              {/* Status */}
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Trạng thái</label>
+                <select value={pStatus} onChange={e => setPStatus(e.target.value as AttendanceStatus)}
+                  className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300">
+                  <option value="present">Đi làm (✓)</option>
+                  <option value="half_day">Nửa ngày (½)</option>
+                  <option value="business_trip">Công tác (CT)</option>
+                </select>
+              </div>
+              {/* Location */}
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Địa điểm</label>
+                <select value={pLocationId ? `${pLocationType}:${pLocationId}` : ''}
+                  onChange={e => {
+                    if (!e.target.value) { setPLocationId(''); return; }
+                    const [type, id] = e.target.value.split(':');
+                    setPLocationType(type as 'construction_site' | 'office');
+                    setPLocationId(id);
+                  }}
+                  className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300">
+                  <option value="">— Không chọn —</option>
+                  {locationOptions.map(l => (
+                    <option key={l.id} value={`${l.type}:${l.id}`}>{l.name}</option>
+                  ))}
+                </select>
+              </div>
+              {/* Reason */}
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Lý do đề xuất *</label>
+                <textarea value={pReason} onChange={e => setPReason(e.target.value)} rows={3}
+                  placeholder="VD: Quên chấm công, hỏng máy chấm công, sự cố khẩn cấp..."
+                  className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300" />
+              </div>
+              {/* Actions */}
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={resetProposalForm} className="px-4 py-2.5 text-xs font-black text-slate-500 hover:text-slate-700 transition">Huỷ</button>
+                <button onClick={handleCreateProposal}
+                  disabled={!pTargetEmployeeId || !pDate || !pReason}
+                  className="px-4 py-2.5 bg-violet-500 text-white rounded-xl text-xs font-black hover:bg-violet-600 transition disabled:opacity-50 flex items-center gap-1.5">
+                  <Plus size={14} /> Gửi đề xuất
+                </button>
+              </div>
             </div>
           </div>
         </div>

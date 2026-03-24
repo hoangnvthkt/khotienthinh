@@ -43,6 +43,7 @@ const BudgetDashboard = React.lazy(() => import('./pages/expense/BudgetDashboard
 const WorkflowInstances = React.lazy(() => import('./pages/wf/WorkflowInstances'));
 const WorkflowTemplates = React.lazy(() => import('./pages/wf/WorkflowTemplates'));
 const WorkflowBuilder = React.lazy(() => import('./pages/wf/WorkflowBuilder'));
+const WorkflowDashboard = React.lazy(() => import('./pages/wf/WorkflowDashboard'));
 
 // Chat
 const Chat = React.lazy(() => import('./pages/Chat'));
@@ -50,6 +51,7 @@ const Chat = React.lazy(() => import('./pages/Chat'));
 // Request pages
 const RequestCategories = React.lazy(() => import('./pages/request/RequestCategories'));
 const RequestList = React.lazy(() => import('./pages/request/RequestList'));
+const RequestDashboard = React.lazy(() => import('./pages/request/RequestDashboard'));
 
 // Asset management pages
 const AssetCatalog = React.lazy(() => import('./pages/ts/AssetCatalog'));
@@ -82,6 +84,7 @@ const AppRoutes: React.FC = () => {
           <Route path="audit" element={<Audit />} />
           <Route path="reports" element={<Reports />} />
           <Route path="wf" element={<WorkflowInstances />} />
+          <Route path="wf/dashboard" element={<WorkflowDashboard />} />
           <Route path="wf/templates" element={<WorkflowTemplates />} />
           <Route path="wf/builder/:id" element={<WorkflowBuilder />} />
           <Route path="users" element={<Navigate to="/settings" replace />} />
@@ -100,6 +103,7 @@ const AppRoutes: React.FC = () => {
           <Route path="da/portfolio" element={<PortfolioDashboard />} />
           <Route path="chat" element={<Chat />} />
           <Route path="rq" element={<RequestList />} />
+          <Route path="rq/dashboard" element={<RequestDashboard />} />
           <Route path="rq/categories" element={<RequestCategories />} />
           <Route path="ts/dashboard" element={<AssetDashboard />} />
           <Route path="ts/catalog" element={<AssetCatalog />} />

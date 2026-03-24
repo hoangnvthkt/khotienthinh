@@ -10,7 +10,7 @@ import {
   OrgUnit, ProjectFinance, ProjectTransaction,
   Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus,
   AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract, LeaveBalance, PayrollTemplate, HrmHoliday, HrmSalaryHistory,
-  BudgetCategory, BudgetEntry, ExpenseRecord
+  BudgetCategory, BudgetEntry, ExpenseRecord, AttendanceProposal
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_ITEMS,
@@ -61,6 +61,7 @@ interface AppContextType {
   payrollTemplates: PayrollTemplate[];
   holidays: HrmHoliday[];
   salaryHistory: HrmSalaryHistory[];
+  attendanceProposals: AttendanceProposal[];
   // Budget
   budgetCategories: BudgetCategory[];
   budgetEntries: BudgetEntry[];
@@ -170,6 +171,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [payrollTemplates, setPayrollTemplates] = useState<PayrollTemplate[]>([]);
   const [holidays, setHolidays] = useState<HrmHoliday[]>([]);
   const [salaryHistory, setSalaryHistory] = useState<HrmSalaryHistory[]>([]);
+  const [attendanceProposals, setAttendanceProposals] = useState<AttendanceProposal[]>([]);
   const [budgetCategories, setBudgetCategories] = useState<BudgetCategory[]>([]);
   const [budgetEntries, setBudgetEntries] = useState<BudgetEntry[]>([]);
   const [expenseRecords, setExpenseRecords] = useState<ExpenseRecord[]>([]);
@@ -372,6 +374,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (payrollTplData) setPayrollTemplates(payrollTplData);
         if (holidayData) setHolidays(holidayData);
         if (salaryHistData) setSalaryHistory(salaryHistData);
+
+        // Attendance Proposals
+        const proposalData = await fetchTable('hrm_attendance_proposals');
+        if (proposalData) setAttendanceProposals(proposalData);
 
         // Budget
         const [budgetCatData, budgetEntData, expRecData] = await Promise.all([
@@ -1248,6 +1254,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     'budget_categories': setBudgetCategories,
     'budget_entries': setBudgetEntries,
     'expense_records': setExpenseRecords,
+    'hrm_attendance_proposals': setAttendanceProposals,
   };
 
   const addHrmItem = async (table: string, item: any) => {
@@ -1506,6 +1513,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       categories, units, employees,
       hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
       attendanceRecords, leaveRequests, leaveBalances, payrollRecords, payrollTemplates, holidays, laborContracts, salaryHistory,
+      attendanceProposals,
       budgetCategories, budgetEntries, expenseRecords,
       addHrmItem, updateHrmItem, removeHrmItem,
       orgUnits, addOrgUnit, updateOrgUnit, removeOrgUnit,

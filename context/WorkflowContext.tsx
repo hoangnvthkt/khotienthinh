@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { supabase } from '../lib/supabase';
 import {
     WorkflowTemplate, WorkflowNode, WorkflowEdge,
-    WorkflowInstance, WorkflowInstanceLog,
+    WorkflowInstance, WorkflowInstanceLog, WorkflowPrintTemplate,
     WorkflowInstanceStatus, WorkflowInstanceAction, WorkflowNodeType,
     WorkflowCustomField
 } from '../types';
@@ -14,6 +14,7 @@ interface WorkflowContextType {
     edges: WorkflowEdge[];
     instances: WorkflowInstance[];
     logs: WorkflowInstanceLog[];
+    printTemplates: WorkflowPrintTemplate[];
     isLoading: boolean;
 
     // Template CRUD
@@ -34,6 +35,11 @@ interface WorkflowContextType {
     processInstance: (instanceId: string, action: WorkflowInstanceAction, userId: string, comment?: string) => Promise<void>;
     reopenInstance: (instanceId: string, targetNodeId: string, userId: string, comment?: string) => Promise<boolean>;
     getInstanceLogs: (instanceId: string) => WorkflowInstanceLog[];
+
+    // Print Templates
+    uploadPrintTemplate: (templateId: string, name: string, file: File) => Promise<WorkflowPrintTemplate | null>;
+    deletePrintTemplate: (id: string, storagePath: string) => Promise<boolean>;
+    getPrintTemplates: (templateId: string) => WorkflowPrintTemplate[];
 
     refreshData: () => Promise<void>;
 }
@@ -93,29 +99,41 @@ const mapLogFromDB = (row: any): WorkflowInstanceLog => ({
     createdAt: row.created_at,
 });
 
+const mapPrintTemplateFromDB = (row: any): WorkflowPrintTemplate => ({
+    id: row.id,
+    templateId: row.template_id,
+    name: row.name,
+    fileName: row.file_name,
+    storagePath: row.storage_path,
+    createdAt: row.created_at,
+});
+
 export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
     const [nodes, setNodes] = useState<WorkflowNode[]>([]);
     const [edges, setEdges] = useState<WorkflowEdge[]>([]);
     const [instances, setInstances] = useState<WorkflowInstance[]>([]);
     const [logs, setLogs] = useState<WorkflowInstanceLog[]>([]);
+    const [printTemplates, setPrintTemplates] = useState<WorkflowPrintTemplate[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     const refreshData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const [tRes, nRes, eRes, iRes, lRes] = await Promise.all([
+            const [tRes, nRes, eRes, iRes, lRes, ptRes] = await Promise.all([
                 supabase.from('workflow_templates').select('*').order('created_at', { ascending: false }),
                 supabase.from('workflow_nodes').select('*'),
                 supabase.from('workflow_edges').select('*'),
                 supabase.from('workflow_instances').select('*').order('created_at', { ascending: false }),
                 supabase.from('workflow_instance_logs').select('*').order('created_at', { ascending: true }),
+                supabase.from('workflow_print_templates').select('*').order('created_at', { ascending: false }),
             ]);
             if (tRes.data) setTemplates(tRes.data.map(mapTemplateFromDB));
             if (nRes.data) setNodes(nRes.data.map(mapNodeFromDB));
             if (eRes.data) setEdges(eRes.data.map(mapEdgeFromDB));
             if (iRes.data) setInstances(iRes.data.map(mapInstanceFromDB));
             if (lRes.data) setLogs(lRes.data.map(mapLogFromDB));
+            if (ptRes.data) setPrintTemplates(ptRes.data.map(mapPrintTemplateFromDB));
         } catch (err) {
             console.error('WorkflowContext fetch error:', err);
         } finally {
@@ -388,11 +406,44 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return true;
     };
 
+    // ==================== PRINT TEMPLATES ====================
+    const uploadPrintTemplate = async (templateId: string, name: string, file: File): Promise<WorkflowPrintTemplate | null> => {
+        const ext = file.name.split('.').pop() || 'docx';
+        const storagePath = `${templateId}/${Date.now()}_${file.name}`;
+        const { error: uploadErr } = await supabase.storage.from('workflow-templates').upload(storagePath, file, {
+            contentType: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
+        if (uploadErr) { console.error('Upload error:', uploadErr); return null; }
+        const { data, error } = await supabase.from('workflow_print_templates').insert({
+            template_id: templateId,
+            name,
+            file_name: file.name,
+            storage_path: storagePath,
+        }).select().single();
+        if (error || !data) { console.error('Insert error:', error); return null; }
+        const pt = mapPrintTemplateFromDB(data);
+        setPrintTemplates(prev => [pt, ...prev]);
+        return pt;
+    };
+
+    const deletePrintTemplate = async (id: string, storagePath: string): Promise<boolean> => {
+        await supabase.storage.from('workflow-templates').remove([storagePath]);
+        const { error } = await supabase.from('workflow_print_templates').delete().eq('id', id);
+        if (error) { console.error('Delete print template error:', error); return false; }
+        setPrintTemplates(prev => prev.filter(pt => pt.id !== id));
+        return true;
+    };
+
+    const getPrintTemplates = (templateId: string): WorkflowPrintTemplate[] => {
+        return printTemplates.filter(pt => pt.templateId === templateId);
+    };
+
     const value: WorkflowContextType = {
-        templates, nodes, edges, instances, logs, isLoading,
+        templates, nodes, edges, instances, logs, printTemplates, isLoading,
         createTemplate, updateTemplate, deleteTemplate,
         saveNodesAndEdges, getTemplateNodes, getTemplateEdges,
         createInstance, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs,
+        uploadPrintTemplate, deletePrintTemplate, getPrintTemplates,
         refreshData,
     };
 

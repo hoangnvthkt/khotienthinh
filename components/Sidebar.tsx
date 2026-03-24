@@ -125,6 +125,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/hrm/reports', icon: BarChart3, label: 'Báo cáo NS' },
     ],
     WF: [
+      { to: '/wf/dashboard', icon: LayoutDashboard, label: 'Dashboard QT' },
       { to: '/wf', icon: GitBranch, label: 'Quy trình' },
       { to: '/wf/templates', icon: Workflow, label: 'Mẫu quy trình', roles: [Role.ADMIN] },
     ],
@@ -141,6 +142,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/ts/reports', icon: History, label: 'Báo cáo TS' },
     ],
     RQ: [
+      { to: '/rq/dashboard', icon: BarChart3, label: 'Dashboard RQ' },
       { to: '/rq', icon: Inbox, label: 'Phiếu yêu cầu' },
       { to: '/rq/categories', icon: Settings, label: 'Danh mục yêu cầu', roles: [Role.ADMIN] },
     ],

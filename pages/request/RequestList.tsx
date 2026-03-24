@@ -2,13 +2,18 @@
 import React, { useState, useMemo } from 'react';
 import { useRequest } from '../../context/RequestContext';
 import { useApp } from '../../context/AppContext';
-import { RQStatus, RQPriority, Role, RequestInstance, WorkflowCustomField, RequestApprover } from '../../types';
+import { RQStatus, RQPriority, Role, RequestInstance, WorkflowCustomField, RequestApprover, RequestPrintTemplate } from '../../types';
 import {
     Inbox, Plus, Search, Clock, CheckCircle, XCircle, AlertCircle,
     ArrowRight, User, FileText, Filter, X, ChevronDown, ChevronUp,
     Send, Eye, Trash2, Ban, MessageSquare, PlayCircle, Edit2, Save,
-    Upload, Paperclip, Download, Table2, FileSpreadsheet, Zap, AlertTriangle, Shield
+    Upload, Paperclip, Download, Table2, FileSpreadsheet, Zap, AlertTriangle, Shield,
+    LayoutGrid, List as ListIcon, GripVertical, Printer
 } from 'lucide-react';
+import PizZip from 'pizzip';
+import Docxtemplater from 'docxtemplater';
+import { saveAs } from 'file-saver';
+import { supabase } from '../../lib/supabase';
 
 const STATUS_MAP: Record<RQStatus, { label: string; color: string; icon: any }> = {
     DRAFT: { label: 'Nháp', color: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400', icon: FileText },
@@ -112,13 +117,15 @@ const ApprovalProgress: React.FC<{ approvers: RequestApprover[]; users: any[] }>
 const RequestList: React.FC = () => {
     const { categories, requests, createRequest, updateRequest, deleteRequest,
         approveRequest, rejectRequest, completeRequest, cancelRequest,
-        getRequestLogs, getCurrentApproverStep } = useRequest();
+        getRequestLogs, getCurrentApproverStep, getRQPrintTemplates } = useRequest();
     const { user, users } = useApp();
 
     const [activeTab, setActiveTab] = useState<'mine' | 'pending' | 'all'>('mine');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
+    const [boardSelectedId, setBoardSelectedId] = useState<string | null>(null);
 
     // Create form
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -228,6 +235,58 @@ const RequestList: React.FC = () => {
         setApproverList(prev => prev.filter((_, i) => i !== idx));
     };
 
+    // ==================== WORD EXPORT ====================
+    const handleRQExportWord = async (req: RequestInstance, pt: RequestPrintTemplate) => {
+        try {
+            const { data: fileData, error } = await supabase.storage.from('workflow-templates').download(pt.storagePath);
+            if (error || !fileData) { alert('Không tải được file mẫu.'); return; }
+            const arrayBuffer = await fileData.arrayBuffer();
+            const zip = new PizZip(arrayBuffer);
+            const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, delimiters: { start: '${', end: '}' } });
+
+            const cat = categories.find(c => c.id === req.categoryId);
+            const creator = users.find(u => u.id === req.createdBy);
+            const createdDate = new Date(req.createdAt);
+            const statusLabels: Record<string, string> = { DRAFT: 'Nháp', PENDING: 'Chờ duyệt', APPROVED: 'Đã duyệt', IN_PROGRESS: 'Đang xử lý', DONE: 'Hoàn thành', REJECTED: 'Từ chối', CANCELLED: 'Đã hủy' };
+
+            const data: Record<string, string> = {
+                code: req.code || '', title: req.title || '', description: req.description || '',
+                creator_name: creator?.name || '', creator_email: creator?.email || '',
+                created_at_day: String(createdDate.getDate()).padStart(2, '0'),
+                created_at_month: String(createdDate.getMonth() + 1).padStart(2, '0'),
+                created_at_year: String(createdDate.getFullYear()),
+                created_at_full: createdDate.toLocaleDateString('vi-VN'),
+                category_name: cat?.name || '', priority: req.priority || '',
+                status: statusLabels[req.status] || req.status,
+                due_date: req.dueDate ? new Date(req.dueDate).toLocaleDateString('vi-VN') : '',
+            };
+
+            // Form data
+            if (req.formData) {
+                Object.entries(req.formData).forEach(([key, value]) => {
+                    if (typeof value === 'object' && value !== null) { if ((value as any).fileName) data[key] = (value as any).fileName; }
+                    else data[key] = String(value ?? '');
+                });
+            }
+
+            // Approvers
+            if (req.approvers) {
+                req.approvers.forEach(a => {
+                    const aUser = users.find(u => u.id === a.userId);
+                    data[`approver_${a.order}`] = aUser?.name || '';
+                    data[`approver_${a.order}_status`] = a.status === 'approved' ? 'Đã duyệt' : a.status === 'rejected' ? 'Từ chối' : 'Chờ duyệt';
+                });
+            }
+
+            doc.render(data);
+            const output = doc.getZip().generate({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+            saveAs(output, `${req.code}_${pt.name}.docx`);
+        } catch (err: any) {
+            console.error('RQ Export Word error:', err);
+            alert('Lỗi khi xuất Word: ' + (err.message || 'Không xác định'));
+        }
+    };
+
     const renderCustomFieldValue = (field: WorkflowCustomField, value: any) => {
         if (!value) return <span className="text-slate-400 italic text-xs">—</span>;
         if (field.type === 'file' && typeof value === 'object' && value.fileName) {
@@ -259,10 +318,22 @@ const RequestList: React.FC = () => {
                     </h1>
                     <p className="text-sm text-slate-500 dark:text-slate-400">Tạo và theo dõi các phiếu yêu cầu.</p>
                 </div>
-                <button onClick={() => setShowCreateModal(true)} disabled={activeCategories.length === 0}
-                    className="flex items-center px-4 py-2.5 bg-accent text-white rounded-xl hover:bg-emerald-600 transition font-bold shadow-lg shadow-emerald-500/20 disabled:opacity-50">
-                    <Plus size={18} className="mr-2" /> Tạo phiếu mới
-                </button>
+                <div className="flex items-center gap-2">
+                    <div className="flex bg-white/50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                        <button onClick={() => setViewMode('list')}
+                            className={`px-3 py-2 flex items-center gap-1.5 text-xs font-bold transition ${viewMode === 'list' ? 'bg-accent text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
+                            <ListIcon size={14} /> Danh sách
+                        </button>
+                        <button onClick={() => setViewMode('board')}
+                            className={`px-3 py-2 flex items-center gap-1.5 text-xs font-bold transition ${viewMode === 'board' ? 'bg-accent text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
+                            <LayoutGrid size={14} /> Bảng
+                        </button>
+                    </div>
+                    <button onClick={() => setShowCreateModal(true)} disabled={activeCategories.length === 0}
+                        className="flex items-center px-4 py-2.5 bg-accent text-white rounded-xl hover:bg-emerald-600 transition font-bold shadow-lg shadow-emerald-500/20 disabled:opacity-50">
+                        <Plus size={18} className="mr-2" /> Tạo phiếu mới
+                    </button>
+                </div>
             </div>
 
             {/* Tabs & Filters */}
@@ -306,8 +377,203 @@ const RequestList: React.FC = () => {
                 </div>
             </div>
 
-            {/* Request Cards */}
-            <div className="space-y-3">
+            {/* ==================== BOARD VIEW ==================== */}
+            {viewMode === 'board' && (() => {
+                const BOARD_COLUMNS: { status: RQStatus; label: string; color: string; headerBg: string }[] = [
+                    { status: RQStatus.DRAFT, label: 'Nháp', color: 'border-slate-300', headerBg: 'from-slate-500 to-slate-600' },
+                    { status: RQStatus.PENDING, label: 'Chờ duyệt', color: 'border-amber-300', headerBg: 'from-amber-500 to-orange-500' },
+                    { status: RQStatus.APPROVED, label: 'Đã duyệt', color: 'border-blue-300', headerBg: 'from-blue-500 to-blue-600' },
+                    { status: RQStatus.IN_PROGRESS, label: 'Đang xử lý', color: 'border-purple-300', headerBg: 'from-purple-500 to-violet-500' },
+                    { status: RQStatus.DONE, label: 'Hoàn thành', color: 'border-emerald-300', headerBg: 'from-emerald-500 to-emerald-600' },
+                    { status: RQStatus.REJECTED, label: 'Từ chối', color: 'border-red-300', headerBg: 'from-red-500 to-red-600' },
+                ];
+
+                const boardSelected = boardSelectedId ? requests.find(r => r.id === boardSelectedId) : null;
+
+                return (
+                    <div className="relative">
+                        <div className="flex gap-4 overflow-x-auto pb-4 px-1" style={{ minHeight: '60vh' }}>
+                            {BOARD_COLUMNS.map(col => {
+                                const colReqs = filteredRequests.filter(r => r.status === col.status);
+                                return (
+                                    <div key={col.status} className={`flex flex-col rounded-2xl overflow-hidden border ${col.color} dark:border-slate-700 shrink-0`}
+                                        style={{ width: '300px', maxHeight: 'calc(100vh - 280px)' }}>
+                                        {/* Column Header */}
+                                        <div className={`px-4 py-3 bg-gradient-to-r ${col.headerBg} text-white`}>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs font-black uppercase tracking-wider">{col.label}</span>
+                                                <span className="text-[10px] font-bold bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded-full">{colReqs.length}</span>
+                                            </div>
+                                        </div>
+                                        {/* Cards */}
+                                        <div className="flex-1 overflow-y-auto p-2.5 space-y-2.5 bg-slate-50/50 dark:bg-slate-900/40">
+                                            {colReqs.length === 0 && (
+                                                <div className="flex flex-col items-center justify-center py-10 text-slate-300 dark:text-slate-600 opacity-50">
+                                                    <FileText size={28} className="mb-2" />
+                                                    <p className="text-[10px] font-bold uppercase tracking-wider">Không có phiếu</p>
+                                                </div>
+                                            )}
+                                            {colReqs.map(req => {
+                                                const cat = categories.find(c => c.id === req.categoryId);
+                                                const creator = users.find(u => u.id === req.createdBy);
+                                                const priority = PRIORITY_MAP[req.priority] || PRIORITY_MAP.medium;
+                                                const isSelected = boardSelectedId === req.id;
+                                                return (
+                                                    <div key={req.id} onClick={() => setBoardSelectedId(isSelected ? null : req.id)}
+                                                        className={`group rounded-xl border-l-4 bg-white dark:bg-slate-800 shadow-sm hover:shadow-lg cursor-pointer transition-all duration-200 hover:-translate-y-0.5 ${col.color} ${isSelected ? 'ring-2 ring-accent ring-offset-1' : ''}`}>
+                                                        <div className="p-3.5">
+                                                            <div className="flex items-start gap-2 mb-2">
+                                                                <div className="flex-1 min-w-0">
+                                                                    <h4 className="text-[13px] font-bold text-slate-800 dark:text-white leading-tight line-clamp-2">{req.title}</h4>
+                                                                    <span className="font-mono text-[9px] font-bold text-slate-400 mt-0.5 block">{req.code}</span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-3 text-[10px] text-slate-400">
+                                                                <span className="flex items-center gap-1"><User size={9} /><span className="truncate max-w-[80px]">{creator?.name || 'N/A'}</span></span>
+                                                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${priority.color}`}>{priority.label}</span>
+                                                                {cat && <span className="truncate max-w-[70px]">{cat.name}</span>}
+                                                            </div>
+                                                            {req.dueDate && (() => {
+                                                                const now = new Date(); const due = new Date(req.dueDate!);
+                                                                const isOverdue = now > due && !['DONE','CANCELLED','REJECTED'].includes(req.status);
+                                                                return isOverdue ? (
+                                                                    <div className="mt-2 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-500">
+                                                                        <AlertTriangle size={10} /> Quá hạn SLA
+                                                                    </div>
+                                                                ) : null;
+                                                            })()}
+                                                            {req.formData && (
+                                                                <div className="mt-2 flex flex-wrap gap-1">
+                                                                    {Object.entries(req.formData).filter(([k, v]) => typeof v === 'string' && v.length > 0 && v.length < 50).slice(0, 2).map(([k, v]) => (
+                                                                        <span key={k} className="text-[9px] bg-cyan-50 dark:bg-cyan-900/20 text-cyan-500 px-1.5 py-0.5 rounded font-medium truncate max-w-[120px]">{v as string}</span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        {/* Footer */}
+                                        <div className={`px-4 py-2 border-t ${col.color} dark:border-slate-700 bg-white/60 dark:bg-slate-800/60`}>
+                                            <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{colReqs.length} phiếu</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Board Detail Slide-in Panel */}
+                        {boardSelected && (() => {
+                            const cat = categories.find(c => c.id === boardSelected.categoryId);
+                            const creator = users.find(u => u.id === boardSelected.createdBy);
+                            const status = STATUS_MAP[boardSelected.status] || STATUS_MAP.PENDING;
+                            const priority = PRIORITY_MAP[boardSelected.priority] || PRIORITY_MAP.medium;
+                            const reqLogs = getRequestLogs(boardSelected.id);
+                            const isPending = canApprove(boardSelected);
+                            const isOwner = boardSelected.createdBy === user.id;
+
+                            return (
+                                <div className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-sm" onClick={() => setBoardSelectedId(null)}>
+                                    <div className="w-full max-w-lg bg-white dark:bg-slate-900 shadow-2xl overflow-y-auto animate-slide-in-right" onClick={e => e.stopPropagation()}>
+                                        {/* Panel Header */}
+                                        <div className="sticky top-0 z-10 px-6 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 text-white flex items-center justify-between">
+                                            <div>
+                                                <p className="font-mono text-[10px] font-bold opacity-80">{boardSelected.code}</p>
+                                                <h3 className="font-bold text-lg">{boardSelected.title}</h3>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {isPending && (
+                                                    <>
+                                                        <button onClick={() => handleAction(boardSelected.id, approveRequest, 'Đã duyệt!')}
+                                                            className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold flex items-center gap-1 transition"><CheckCircle size={14} /> Duyệt</button>
+                                                        <button onClick={() => handleAction(boardSelected.id, rejectRequest, 'Đã từ chối!')}
+                                                            className="px-3 py-1.5 bg-red-500/60 hover:bg-red-500/80 rounded-lg text-xs font-bold flex items-center gap-1 transition"><XCircle size={14} /> Từ chối</button>
+                                                    </>
+                                                )}
+                                                {isOwner && boardSelected.status === RQStatus.PENDING && (
+                                                    <button onClick={() => setCancelConfirmId(boardSelected.id)}
+                                                        className="px-3 py-1.5 bg-amber-500/60 hover:bg-amber-500/80 rounded-lg text-xs font-bold flex items-center gap-1 transition"><Ban size={14} /> Hủy</button>
+                                                )}
+                                                <button onClick={() => setBoardSelectedId(null)} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center transition"><X size={18} /></button>
+                                            </div>
+                                        </div>
+                                        {/* Panel Body */}
+                                        <div className="p-6 space-y-4">
+                                            <div className="flex flex-wrap gap-2">
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${status.color} flex items-center gap-1`}><status.icon size={10} /> {status.label}</span>
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${priority.color}`}>{priority.label}</span>
+                                                {cat && <span className="text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded font-bold">{cat.name}</span>}
+                                            </div>
+                                            {boardSelected.description && <p className="text-sm text-slate-600 dark:text-slate-400">{boardSelected.description}</p>}
+                                            <div className="grid grid-cols-2 gap-3 text-xs">
+                                                <div><span className="text-slate-400 font-bold block mb-0.5">Người tạo</span><span className="font-bold text-slate-700 dark:text-slate-200">{creator?.name || 'N/A'}</span></div>
+                                                <div><span className="text-slate-400 font-bold block mb-0.5">Ngày tạo</span><span className="font-bold text-slate-700 dark:text-slate-200">{new Date(boardSelected.createdAt).toLocaleString('vi-VN')}</span></div>
+                                                {boardSelected.dueDate && <div><span className="text-slate-400 font-bold block mb-0.5">SLA</span><span className="font-bold text-slate-700 dark:text-slate-200">{new Date(boardSelected.dueDate).toLocaleString('vi-VN')}</span></div>}
+                                            </div>
+                                            {/* Word Export */}
+                                            {(() => {
+                                                const pts = getRQPrintTemplates(boardSelected.categoryId);
+                                                if (pts.length === 0) return null;
+                                                return (
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {pts.map(pt => (
+                                                            <button key={pt.id} onClick={() => handleRQExportWord(boardSelected, pt)}
+                                                                className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 rounded-xl font-bold text-xs hover:bg-violet-100 dark:hover:bg-violet-900/40 transition border border-violet-200 dark:border-violet-800">
+                                                                <Printer size={13} /> {pt.name}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            })()}
+                                            {/* Approval Progress */}
+                                            {boardSelected.approvers?.length > 0 && (
+                                                <div><h4 className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Tiến trình duyệt</h4><ApprovalProgress approvers={boardSelected.approvers} users={users} /></div>
+                                            )}
+                                            {/* Form Data */}
+                                            {cat?.customFields && cat.customFields.length > 0 && (
+                                                <div>
+                                                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Thông tin chi tiết</h4>
+                                                    <div className="space-y-2">
+                                                        {cat.customFields.map(f => (
+                                                            <div key={f.name} className="flex justify-between items-center px-3 py-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                                                <span className="text-xs font-bold text-slate-500">{f.label}</span>
+                                                                {renderCustomFieldValue(f, boardSelected.formData[f.name])}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {/* Logs */}
+                                            {reqLogs.length > 0 && (
+                                                <div>
+                                                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Lịch sử</h4>
+                                                    <div className="space-y-2">
+                                                        {reqLogs.map(log => (
+                                                            <div key={log.id} className="flex items-start gap-2 text-xs px-3 py-2 bg-slate-50 dark:bg-slate-800/30 rounded-lg">
+                                                                <MessageSquare size={12} className="text-slate-400 mt-0.5 shrink-0" />
+                                                                <div>
+                                                                    <span className="font-bold text-slate-600 dark:text-slate-300">{users.find(u => u.id === log.actedBy)?.name || 'N/A'}</span>
+                                                                    <span className="text-slate-400 mx-1">—</span>
+                                                                    <span className="text-slate-500">{log.comment}</span>
+                                                                    <span className="text-[10px] text-slate-400 block mt-0.5">{new Date(log.createdAt).toLocaleString('vi-VN')}</span>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                    </div>
+                );
+            })()}
+
+            {/* Request Cards (List View) */}
+            {viewMode === 'list' && <div className="space-y-3">
                 {filteredRequests.map(req => {
                     const cat = categories.find(c => c.id === req.categoryId);
                     const creator = users.find(u => u.id === req.createdBy);
@@ -480,6 +746,22 @@ const RequestList: React.FC = () => {
                                         </div>
                                     )}
 
+                                    {/* Word Export */}
+                                    {(() => {
+                                        const templates = getRQPrintTemplates(req.categoryId);
+                                        if (templates.length === 0) return null;
+                                        return (
+                                            <div className="flex flex-wrap gap-2">
+                                                {templates.map(pt => (
+                                                    <button key={pt.id} onClick={() => handleRQExportWord(req, pt)}
+                                                        className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 rounded-xl font-bold text-xs hover:bg-violet-100 dark:hover:bg-violet-900/40 transition border border-violet-200 dark:border-violet-800">
+                                                        <Printer size={13} /> {pt.name}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        );
+                                    })()}
+
                                     {/* Action Area */}
                                     <div className="border-t border-slate-100 dark:border-slate-700 pt-3 space-y-3">
                                         {/* Comment input for actions */}
@@ -542,7 +824,7 @@ const RequestList: React.FC = () => {
                         <p className="text-sm text-slate-300 dark:text-slate-500">Bấm "Tạo phiếu mới" để bắt đầu.</p>
                     </div>
                 )}
-            </div>
+            </div>}
 
             {/* Create Modal */}
             {showCreateModal && (
