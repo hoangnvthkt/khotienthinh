@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Employee, AssetStatus, ASSET_STATUS_LABELS, Asset } from '../../types';
-import { X, User as UserIcon, Briefcase, Phone, Edit2, Calendar, MapPin, Building, Heart, Landmark } from 'lucide-react';
+import { X, User as UserIcon, Briefcase, Phone, Edit2, Calendar, MapPin, Building, Heart, Landmark, FolderOpen, FileText, Download, Eye, Upload, ExternalLink } from 'lucide-react';
+import { hrmDocumentService, HrmDocument, DocCategory } from '../../lib/hrmDocumentService';
 
 interface EmployeeDetailModalProps {
     employee: Employee;
@@ -9,7 +10,7 @@ interface EmployeeDetailModalProps {
     onEdit: (emp: Employee) => void;
 }
 
-type TabKey = 'personal' | 'work' | 'contact' | 'assets';
+type TabKey = 'personal' | 'work' | 'contact' | 'assets' | 'documents';
 
 const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onClose, onEdit }) => {
     const { users, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, assets, assetAssignments, assetCategories } = useApp();
@@ -31,7 +32,38 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
         { key: 'work', label: 'Công Việc', icon: <Briefcase size={15} /> },
         { key: 'contact', label: 'Liên Hệ', icon: <Phone size={15} /> },
         { key: 'assets', label: 'Tài Sản', icon: <Landmark size={15} /> },
+        { key: 'documents', label: 'Hồ Sơ', icon: <FolderOpen size={15} /> },
     ];
+
+    // Documents linked to this employee
+    const [empDocs, setEmpDocs] = useState<HrmDocument[]>([]);
+    const [docCategories, setDocCategories] = useState<DocCategory[]>([]);
+    const [loadingDocs, setLoadingDocs] = useState(false);
+
+    const loadEmpDocs = useCallback(async () => {
+        setLoadingDocs(true);
+        const [docs, cats] = await Promise.all([
+            hrmDocumentService.listByEmployee(employee.id),
+            hrmDocumentService.listCategories('employee_record'),
+        ]);
+        setEmpDocs(docs);
+        setDocCategories(cats);
+        setLoadingDocs(false);
+    }, [employee.id]);
+
+    useEffect(() => {
+        if (activeTab === 'documents') loadEmpDocs();
+    }, [activeTab, loadEmpDocs]);
+
+    const getCatLabel = (key: string) => {
+        const cat = docCategories.find(c => c.key === key);
+        return cat ? `${cat.icon} ${cat.label}` : key;
+    };
+
+    const handleDocPreview = async (doc: HrmDocument) => {
+        const url = await hrmDocumentService.getSignedUrl(doc.storagePath);
+        window.open(url, '_blank');
+    };
 
     // Assets assigned to this employee (match via userId)
     const employeeAssets = useMemo(() => {
@@ -197,6 +229,58 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
                                             );
                                         })}
                                     </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === 'documents' && (
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <h4 className="text-[10px] font-black text-indigo-500 uppercase tracking-wider flex items-center gap-1.5">
+                                    <FolderOpen size={12} /> Hồ sơ nhân viên ({empDocs.length})
+                                </h4>
+                                <a href={`/#/hrm/documents`}
+                                    className="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1">
+                                    Mở trang hồ sơ <ExternalLink size={10} />
+                                </a>
+                            </div>
+                            {loadingDocs ? (
+                                <div className="text-center py-8 text-slate-400 text-sm">Đang tải...</div>
+                            ) : empDocs.length === 0 ? (
+                                <div className="text-center py-8">
+                                    <FolderOpen size={32} className="mx-auto mb-2 text-slate-200" />
+                                    <p className="text-sm text-slate-400 italic">Chưa có hồ sơ nào</p>
+                                    <p className="text-[10px] text-slate-300 mt-1">Upload tại trang Hồ sơ & Công văn → chọn nhân viên này</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {empDocs.map(doc => (
+                                        <div key={doc.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 group hover:border-indigo-200 transition cursor-pointer"
+                                            onClick={() => handleDocPreview(doc)}>
+                                            <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                                                hrmDocumentService.isPdf(doc.fileType) ? 'bg-red-50 text-red-500'
+                                                : hrmDocumentService.isImage(doc.fileType) ? 'bg-blue-50 text-blue-500'
+                                                : 'bg-indigo-50 text-indigo-500'}`}>
+                                                <FileText size={16} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-xs font-bold text-slate-700 dark:text-white truncate">{doc.title}</div>
+                                                <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                                                    <span className="font-bold">{getCatLabel(doc.docCategory)}</span>
+                                                    <span>•</span>
+                                                    <span>{hrmDocumentService.formatSize(doc.fileSize)}</span>
+                                                    <span>•</span>
+                                                    <span>{new Date(doc.createdAt).toLocaleDateString('vi-VN')}</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                                <button className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400 hover:text-blue-500" title="Xem">
+                                                    <Eye size={13} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
                             )}
                         </div>

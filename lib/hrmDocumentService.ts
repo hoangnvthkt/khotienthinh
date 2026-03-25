@@ -219,8 +219,10 @@ export const hrmDocumentService = {
   },
 
   async listByEmployee(employeeId: string): Promise<HrmDocument[]> {
-    const { data } = await supabase.from('hrm_documents').select('*')
-      .eq('employee_id', employeeId).order('created_at', { ascending: false });
+    const { data } = await supabase.from('hrm_documents')
+      .select('*')
+      .eq('employee_id', employeeId)
+      .order('created_at', { ascending: false });
     return (data || []).map(toCamel);
   },
 
