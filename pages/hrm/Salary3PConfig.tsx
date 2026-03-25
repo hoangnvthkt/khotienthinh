@@ -5,7 +5,7 @@ import {
   DollarSign, Plus, Settings, Users, Award, Edit3, Trash2, Save, X,
   ChevronDown, ChevronUp, Target, TrendingUp, Search, CheckCircle, AlertCircle
 } from 'lucide-react';
-import { SalaryGrade, KpiPeriod, KpiScore, KPI_RATINGS, BASE_SALARY_COEFFICIENT } from '../../types';
+import { SalaryGrade, KpiPeriod, KpiScore, KpiRatingConfig, Salary3PSetting, KPI_RATINGS_DEFAULT, BASE_SALARY_COEFFICIENT } from '../../types';
 
 const fmtMoney = (v: number) => v.toLocaleString('vi-VN') + 'đ';
 
@@ -25,10 +25,26 @@ const GRADE_GROUP_COLORS: Record<string, string> = {
 };
 
 const Salary3PConfig: React.FC = () => {
-  const { salaryGrades, kpiPeriods, kpiScores, employees, addHrmItem, updateHrmItem, removeHrmItem } = useApp();
+  const { salaryGrades, kpiPeriods, kpiScores, kpiRatingConfigs, salary3PSettings, employees, addHrmItem, updateHrmItem, removeHrmItem } = useApp();
   const { theme } = useTheme();
 
-  const [activeTab, setActiveTab] = useState<'grades' | 'kpi' | 'overview'>('grades');
+  const [activeTab, setActiveTab] = useState<'grades' | 'kpi' | 'settings' | 'overview'>('grades');
+
+  // ==================== DYNAMIC KPI RATINGS ====================
+  const kpiRatings = useMemo(() => {
+    if (kpiRatingConfigs.length > 0) {
+      return [...kpiRatingConfigs].sort((a, b) => a.sortOrder - b.sortOrder).map(r => ({
+        code: r.code, label: r.label, coefficient: r.coefficient, group: r.kpiGroup,
+      }));
+    }
+    return KPI_RATINGS_DEFAULT;
+  }, [kpiRatingConfigs]);
+
+  // ==================== DYNAMIC BASE SALARY ====================
+  const baseSalary = useMemo(() => {
+    const setting = salary3PSettings.find(s => s.key === 'base_salary_coefficient');
+    return setting ? setting.value : BASE_SALARY_COEFFICIENT;
+  }, [salary3PSettings]);
 
   // ==================== GRADES STATE ====================
   const [editingGrade, setEditingGrade] = useState<SalaryGrade | null>(null);
@@ -41,11 +57,18 @@ const Salary3PConfig: React.FC = () => {
   const [kpiSearch, setKpiSearch] = useState('');
   const [showNewPeriod, setShowNewPeriod] = useState(false);
 
+  // ==================== SETTINGS STATE ====================
+  const [editingRating, setEditingRating] = useState<KpiRatingConfig | null>(null);
+  const [ratingForm, setRatingForm] = useState({ code: '', label: '', coefficient: 1.0, kpiGroup: 'B', sortOrder: 0 });
+  const [editingBaseSalary, setEditingBaseSalary] = useState(false);
+  const [baseSalaryForm, setBaseSalaryForm] = useState(0);
+
   // ==================== COMPUTED ====================
   const sortedGrades = useMemo(() => [...salaryGrades].sort((a, b) => a.level - b.level), [salaryGrades]);
   const activeEmployees = useMemo(() => employees.filter((e: any) => e.status === 'Đang làm việc'), [employees]);
   const selectedPeriod = useMemo(() => kpiPeriods.find(p => p.id === selectedPeriodId), [kpiPeriods, selectedPeriodId]);
   const periodScores = useMemo(() => kpiScores.filter(s => s.periodId === selectedPeriodId), [kpiScores, selectedPeriodId]);
+  const sortedRatingConfigs = useMemo(() => [...kpiRatingConfigs].sort((a, b) => a.sortOrder - b.sortOrder), [kpiRatingConfigs]);
 
   const filteredEmployees = useMemo(() => {
     if (!kpiSearch) return activeEmployees;
@@ -107,7 +130,7 @@ const Salary3PConfig: React.FC = () => {
 
   // ==================== KPI SCORE CRUD ====================
   const setScore = (employeeId: string, rating: string) => {
-    const ratingObj = KPI_RATINGS.find(r => r.code === rating);
+    const ratingObj = kpiRatings.find(r => r.code === rating);
     if (!ratingObj || !selectedPeriodId) return;
     const existing = periodScores.find(s => s.employeeId === employeeId);
     if (existing) {
@@ -128,6 +151,53 @@ const Salary3PConfig: React.FC = () => {
     }
   };
 
+  // ==================== KPI RATING CONFIG CRUD ====================
+  const openNewRating = () => {
+    const maxSort = sortedRatingConfigs.length > 0 ? Math.max(...sortedRatingConfigs.map(r => r.sortOrder)) + 1 : 1;
+    setEditingRating({ id: '', code: '', label: '', coefficient: 1.0, kpiGroup: 'B', sortOrder: maxSort } as KpiRatingConfig);
+    setRatingForm({ code: '', label: '', coefficient: 1.0, kpiGroup: 'B', sortOrder: maxSort });
+  };
+
+  const openEditRating = (r: KpiRatingConfig) => {
+    setEditingRating(r);
+    setRatingForm({ code: r.code, label: r.label, coefficient: r.coefficient, kpiGroup: r.kpiGroup, sortOrder: r.sortOrder });
+  };
+
+  const saveRating = () => {
+    if (!ratingForm.code || !ratingForm.label) return;
+    const item: any = {
+      code: ratingForm.code, label: ratingForm.label,
+      coefficient: ratingForm.coefficient, kpi_group: ratingForm.kpiGroup,
+      sort_order: ratingForm.sortOrder,
+    };
+    if (editingRating?.id) {
+      updateHrmItem('kpi_rating_configs', { id: editingRating.id, ...item });
+    } else {
+      addHrmItem('kpi_rating_configs', { id: crypto.randomUUID(), ...item, created_at: new Date().toISOString() });
+    }
+    setEditingRating(null);
+  };
+
+  const deleteRating = (id: string) => {
+    if (confirm('Xóa hệ số KPI này?')) removeHrmItem('kpi_rating_configs', id);
+  };
+
+  // ==================== BASE SALARY CRUD ====================
+  const openEditBaseSalary = () => {
+    setBaseSalaryForm(baseSalary);
+    setEditingBaseSalary(true);
+  };
+
+  const saveBaseSalary = () => {
+    const existing = salary3PSettings.find(s => s.key === 'base_salary_coefficient');
+    if (existing) {
+      updateHrmItem('salary_3p_settings', { id: existing.id, key: 'base_salary_coefficient', value: baseSalaryForm, label: 'Lương cơ sở nhà nước', updated_at: new Date().toISOString() });
+    } else {
+      addHrmItem('salary_3p_settings', { id: crypto.randomUUID(), key: 'base_salary_coefficient', value: baseSalaryForm, label: 'Lương cơ sở nhà nước', updated_at: new Date().toISOString() });
+    }
+    setEditingBaseSalary(false);
+  };
+
   // ==================== KPI STATS ====================
   const kpiStats = useMemo(() => {
     const scored = periodScores.length;
@@ -135,11 +205,11 @@ const Salary3PConfig: React.FC = () => {
     const avgCoeff = scored > 0 ? periodScores.reduce((s, sc) => s + (sc.kpiCoefficient || 0), 0) / scored : 0;
     const byGroup: Record<string, number> = {};
     periodScores.forEach(sc => {
-      const r = KPI_RATINGS.find(k => k.code === (sc.kpiRating || ''));
+      const r = kpiRatings.find(k => k.code === (sc.kpiRating || ''));
       if (r) byGroup[r.group] = (byGroup[r.group] || 0) + 1;
     });
     return { scored, total, avgCoeff, byGroup };
-  }, [periodScores, activeEmployees]);
+  }, [periodScores, activeEmployees, kpiRatings]);
 
   // ==================== RENDER ====================
   return (
@@ -163,6 +233,10 @@ const Salary3PConfig: React.FC = () => {
             className={`px-4 py-2 text-xs font-black transition flex items-center gap-1.5 ${activeTab === 'kpi' ? 'bg-indigo-500 text-white' : 'bg-white dark:bg-slate-800 text-slate-500 hover:bg-slate-50'}`}>
             <Award size={14} /> Đánh giá KPI
           </button>
+          <button onClick={() => setActiveTab('settings')}
+            className={`px-4 py-2 text-xs font-black transition flex items-center gap-1.5 ${activeTab === 'settings' ? 'bg-indigo-500 text-white' : 'bg-white dark:bg-slate-800 text-slate-500 hover:bg-slate-50'}`}>
+            <DollarSign size={14} /> Cài đặt
+          </button>
           <button onClick={() => setActiveTab('overview')}
             className={`px-4 py-2 text-xs font-black transition flex items-center gap-1.5 ${activeTab === 'overview' ? 'bg-indigo-500 text-white' : 'bg-white dark:bg-slate-800 text-slate-500 hover:bg-slate-50'}`}>
             <Target size={14} /> Tổng quan
@@ -178,7 +252,7 @@ const Salary3PConfig: React.FC = () => {
               <Plus size={14} /> Thêm bậc lương
             </button>
             <div className="ml-auto text-xs font-bold text-slate-400">
-              Lương cơ sở: <span className="text-indigo-600 font-black">{fmtMoney(BASE_SALARY_COEFFICIENT)}</span>
+              Lương cơ sở: <span className="text-indigo-600 font-black">{fmtMoney(baseSalary)}</span>
             </div>
           </div>
 
@@ -207,7 +281,7 @@ const Salary3PConfig: React.FC = () => {
                     </td></tr>
                   ) : (
                     sortedGrades.map((g, idx) => {
-                      const p1 = Math.round(g.bhxhCoefficient * BASE_SALARY_COEFFICIENT);
+                      const p1 = Math.round(g.bhxhCoefficient * baseSalary);
                       return (
                         <tr key={g.id} className={`${idx % 2 === 0 ? '' : 'bg-slate-50/50 dark:bg-slate-800/20'} hover:bg-indigo-50/50 dark:hover:bg-indigo-950/10 transition`}>
                           <td className="px-4 py-3">
@@ -238,28 +312,6 @@ const Salary3PConfig: React.FC = () => {
                   )}
                 </tbody>
               </table>
-            </div>
-          </div>
-
-          {/* KPI Reference */}
-          <div className="glass-panel rounded-2xl p-5">
-            <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
-              <Award size={14} className="text-indigo-500" /> Bảng hệ số KPI tham chiếu
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {['A', 'B', 'C', 'D'].map(group => (
-                <div key={group} className="space-y-1">
-                  <div className={`px-2 py-1 rounded-lg text-[10px] font-black text-center ${GROUP_COLORS[group]}`}>
-                    Hạng {group}
-                  </div>
-                  {KPI_RATINGS.filter(r => r.group === group).map(r => (
-                    <div key={r.code} className="flex justify-between px-2 py-1 text-xs">
-                      <span className="font-bold text-slate-600 dark:text-slate-400">{r.code}</span>
-                      <span className="font-black text-slate-800 dark:text-white">{r.coefficient.toFixed(2)}</span>
-                    </div>
-                  ))}
-                </div>
-              ))}
             </div>
           </div>
 
@@ -305,7 +357,7 @@ const Salary3PConfig: React.FC = () => {
                       <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Hệ số BHXH *</label>
                       <input type="number" step="0.1" value={gradeForm.bhxhCoefficient} onChange={e => setGradeForm(p => ({ ...p, bhxhCoefficient: Number(e.target.value) }))}
                         className="w-full px-3 py-2.5 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
-                      <p className="text-[10px] text-slate-400 mt-1">P1 = {fmtMoney(Math.round(gradeForm.bhxhCoefficient * BASE_SALARY_COEFFICIENT))}</p>
+                      <p className="text-[10px] text-slate-400 mt-1">P1 = {fmtMoney(Math.round(gradeForm.bhxhCoefficient * baseSalary))}</p>
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Bậc lương QĐ (B-)</label>
@@ -431,7 +483,7 @@ const Salary3PConfig: React.FC = () => {
                               } disabled:opacity-50`}
                             >
                               <option value="">— Chọn —</option>
-                              {KPI_RATINGS.map(r => (
+                              {kpiRatings.map(r => (
                                 <option key={r.code} value={r.code}>{r.label} ({r.coefficient.toFixed(2)})</option>
                               ))}
                             </select>
@@ -495,6 +547,147 @@ const Salary3PConfig: React.FC = () => {
         </>
       )}
 
+      {/* ==================== TAB: SETTINGS (CÀI ĐẶT) ==================== */}
+      {activeTab === 'settings' && (
+        <>
+          {/* Base Salary Setting */}
+          <div className="glass-panel rounded-2xl p-6">
+            <h3 className="text-sm font-black text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+              <DollarSign size={16} className="text-emerald-500" /> Lương cơ sở nhà nước
+            </h3>
+            <div className="flex items-center gap-4">
+              {editingBaseSalary ? (
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    value={baseSalaryForm}
+                    onChange={e => setBaseSalaryForm(Number(e.target.value))}
+                    className="px-4 py-3 text-lg font-black border border-emerald-300 dark:border-emerald-700 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 outline-none w-60"
+                  />
+                  <span className="text-sm text-slate-400">đ</span>
+                  <button onClick={saveBaseSalary} className="p-2.5 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition">
+                    <Save size={16} />
+                  </button>
+                  <button onClick={() => setEditingBaseSalary(false)} className="p-2.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition">
+                    <X size={16} />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl font-black text-emerald-600">{fmtMoney(baseSalary)}</span>
+                  <button onClick={openEditBaseSalary} className="p-2 rounded-xl bg-emerald-100 text-emerald-600 hover:bg-emerald-200 transition">
+                    <Edit3 size={16} />
+                  </button>
+                </div>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-400 mt-2">Áp dụng cho tính P1 = Hệ số BHXH × Lương cơ sở. Cập nhật theo quy định nhà nước.</p>
+          </div>
+
+          {/* KPI Rating Configs */}
+          <div className="glass-panel rounded-2xl overflow-hidden">
+            <div className="p-5 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <h3 className="text-sm font-black text-slate-800 dark:text-white flex items-center gap-2">
+                <Award size={16} className="text-indigo-500" /> Bảng hệ số KPI tham chiếu
+              </h3>
+              <button onClick={openNewRating} className="px-3 py-2 bg-indigo-500 text-white rounded-xl text-xs font-black hover:bg-indigo-600 transition flex items-center gap-1.5">
+                <Plus size={14} /> Thêm hệ số
+              </button>
+            </div>
+
+            {/* Grid by group */}
+            <div className="p-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {['A', 'B', 'C', 'D'].map(group => {
+                  const groupRatings = sortedRatingConfigs.filter(r => r.kpiGroup === group);
+                  return (
+                    <div key={group} className="space-y-2">
+                      <div className={`px-3 py-2 rounded-xl text-xs font-black text-center ${GROUP_COLORS[group]}`}>
+                        Hạng {group} {group === 'A' ? '(Xuất sắc)' : group === 'B' ? '(Trung bình)' : group === 'C' ? '(Yếu)' : '(Kém)'}
+                      </div>
+                      {groupRatings.map(r => (
+                        <div key={r.id} className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 group hover:border-indigo-200 dark:hover:border-indigo-800/50 transition">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-xs font-black text-slate-700 dark:text-slate-300">{r.code}</span>
+                            <span className="text-[10px] text-slate-400 truncate">{r.label.replace(r.code + ' - ', '').replace(r.code, '')}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-sm font-black text-indigo-600 dark:text-indigo-400 tabular-nums">{r.coefficient.toFixed(2)}</span>
+                            <button onClick={() => openEditRating(r)} className="p-1 rounded-lg text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 opacity-0 group-hover:opacity-100 transition">
+                              <Edit3 size={12} />
+                            </button>
+                            <button onClick={() => deleteRating(r.id)} className="p-1 rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 opacity-0 group-hover:opacity-100 transition">
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {groupRatings.length === 0 && (
+                        <div className="text-center py-4 text-[10px] text-slate-400">Chưa có hệ số</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Rating Edit Modal */}
+          {editingRating && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md">
+                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <h3 className="text-lg font-black text-slate-800 dark:text-white">{editingRating.id ? 'Sửa hệ số KPI' : 'Thêm hệ số KPI'}</h3>
+                  <button onClick={() => setEditingRating(null)} className="p-2 rounded-xl hover:bg-slate-100 transition"><X size={18} /></button>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Mã *</label>
+                      <input type="text" value={ratingForm.code} onChange={e => setRatingForm(p => ({ ...p, code: e.target.value }))} placeholder="A1"
+                        className="w-full px-3 py-2.5 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Nhóm *</label>
+                      <select value={ratingForm.kpiGroup} onChange={e => setRatingForm(p => ({ ...p, kpiGroup: e.target.value }))}
+                        className="w-full px-3 py-2.5 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none">
+                        <option value="A">A - Xuất sắc</option>
+                        <option value="B">B - Trung bình</option>
+                        <option value="C">C - Yếu</option>
+                        <option value="D">D - Kém</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Nhãn hiển thị *</label>
+                    <input type="text" value={ratingForm.label} onChange={e => setRatingForm(p => ({ ...p, label: e.target.value }))} placeholder="A1 - Xuất sắc"
+                      className="w-full px-3 py-2.5 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Hệ số *</label>
+                      <input type="number" step="0.01" value={ratingForm.coefficient} onChange={e => setRatingForm(p => ({ ...p, coefficient: Number(e.target.value) }))}
+                        className="w-full px-3 py-2.5 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Thứ tự sắp xếp</label>
+                      <input type="number" value={ratingForm.sortOrder} onChange={e => setRatingForm(p => ({ ...p, sortOrder: Number(e.target.value) }))}
+                        className="w-full px-3 py-2.5 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                    </div>
+                  </div>
+                </div>
+                <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
+                  <button onClick={() => setEditingRating(null)} className="px-4 py-2.5 text-xs font-black text-slate-500">Huỷ</button>
+                  <button onClick={saveRating} className="px-5 py-2.5 bg-indigo-500 text-white rounded-xl text-xs font-black hover:bg-indigo-600 transition flex items-center gap-1.5">
+                    <Save size={14} /> Lưu
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
       {/* ==================== TAB: OVERVIEW ==================== */}
       {activeTab === 'overview' && (
         <>
@@ -506,7 +699,7 @@ const Salary3PConfig: React.FC = () => {
             <div className="bg-indigo-50 dark:bg-indigo-950/30 p-5 rounded-2xl font-mono text-sm text-indigo-800 dark:text-indigo-300 space-y-2">
               <p className="font-black text-base">Tổng thu nhập 3P = P1 + P2 + P3</p>
               <div className="border-t border-indigo-200 dark:border-indigo-800 pt-3 mt-3 space-y-1.5">
-                <p><span className="font-black text-indigo-600">P1</span> = Hệ số BHXH × {fmtMoney(BASE_SALARY_COEFFICIENT)} (lương cơ sở)</p>
+                <p><span className="font-black text-indigo-600">P1</span> = Hệ số BHXH × {fmtMoney(baseSalary)} (lương cơ sở)</p>
                 <p><span className="font-black text-indigo-600">P2</span> = PC Chức danh + PC Thù lao + PC Liên lạc</p>
                 <p><span className="font-black text-indigo-600">P3</span> = (Bậc lương QĐ − P1) × Hệ số KPI</p>
               </div>
@@ -533,7 +726,7 @@ const Salary3PConfig: React.FC = () => {
                 </thead>
                 <tbody>
                   {sortedGrades.map((g, idx) => {
-                    const p1 = Math.round(g.bhxhCoefficient * BASE_SALARY_COEFFICIENT);
+                    const p1 = Math.round(g.bhxhCoefficient * baseSalary);
                     const pc1 = Math.round(g.pc1ChucDanh * 1000000);
                     const pc3 = Math.round(g.pc3LienLac * 1000000);
                     const p2 = pc1 + pc3;

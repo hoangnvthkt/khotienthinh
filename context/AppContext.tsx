@@ -11,7 +11,7 @@ import {
   Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus,
   AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract, LeaveBalance, PayrollTemplate, HrmHoliday, HrmSalaryHistory,
   BudgetCategory, BudgetEntry, ExpenseRecord, AttendanceProposal, LeaveLog, LeaveApprover,
-  SalaryGrade, KpiPeriod, KpiScore
+  SalaryGrade, KpiPeriod, KpiScore, KpiRatingConfig, Salary3PSetting
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_ITEMS,
@@ -71,6 +71,8 @@ interface AppContextType {
   salaryGrades: SalaryGrade[];
   kpiPeriods: KpiPeriod[];
   kpiScores: KpiScore[];
+  kpiRatingConfigs: KpiRatingConfig[];
+  salary3PSettings: Salary3PSetting[];
   // Budget
   budgetCategories: BudgetCategory[];
   budgetEntries: BudgetEntry[];
@@ -189,6 +191,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [salaryGrades, setSalaryGrades] = useState<SalaryGrade[]>([]);
   const [kpiPeriods, setKpiPeriods] = useState<KpiPeriod[]>([]);
   const [kpiScores, setKpiScores] = useState<KpiScore[]>([]);
+  const [kpiRatingConfigs, setKpiRatingConfigs] = useState<KpiRatingConfig[]>([]);
+  const [salary3PSettings, setSalary3PSettings] = useState<Salary3PSetting[]>([]);
   const [budgetCategories, setBudgetCategories] = useState<BudgetCategory[]>([]);
   const [budgetEntries, setBudgetEntries] = useState<BudgetEntry[]>([]);
   const [expenseRecords, setExpenseRecords] = useState<ExpenseRecord[]>([]);
@@ -426,6 +430,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: s.id, periodId: s.period_id, employeeId: s.employee_id,
           kpiRating: s.kpi_rating, kpiCoefficient: s.kpi_coefficient,
           note: s.note, scoredBy: s.scored_by, createdAt: s.created_at,
+        })));
+
+        // KPI Rating Configs & 3P Settings
+        const [ratingConfigsData, settings3PData] = await Promise.all([
+          fetchTable('kpi_rating_configs'),
+          fetchTable('salary_3p_settings'),
+        ]);
+        if (ratingConfigsData) setKpiRatingConfigs(ratingConfigsData.map((r: any) => ({
+          id: r.id, code: r.code, label: r.label, coefficient: Number(r.coefficient),
+          kpiGroup: r.kpi_group, sortOrder: r.sort_order, createdAt: r.created_at,
+        })));
+        if (settings3PData) setSalary3PSettings(settings3PData.map((s: any) => ({
+          id: s.id, key: s.key, value: Number(s.value), label: s.label, updatedAt: s.updated_at,
         })));
 
         // Attendance Proposals
@@ -1314,6 +1331,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     'salary_grades': setSalaryGrades,
     'kpi_periods': setKpiPeriods,
     'kpi_scores': setKpiScores,
+    'kpi_rating_configs': setKpiRatingConfigs,
+    'salary_3p_settings': setSalary3PSettings,
   };
 
   const addHrmItem = async (table: string, item: any) => {
@@ -1660,7 +1679,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       categories, units, employees,
       hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
       attendanceRecords, leaveRequests, leaveLogs, leaveBalances, payrollRecords, payrollTemplates, holidays, laborContracts, salaryHistory,
-      salaryGrades, kpiPeriods, kpiScores,
+      salaryGrades, kpiPeriods, kpiScores, kpiRatingConfigs, salary3PSettings,
       attendanceProposals, approveLeave, rejectLeave, addLeaveLog,
       budgetCategories, budgetEntries, expenseRecords,
       addHrmItem, updateHrmItem, removeHrmItem,

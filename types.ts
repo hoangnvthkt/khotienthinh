@@ -1223,7 +1223,28 @@ export interface KpiScore {
   createdAt?: string;
 }
 
-export const KPI_RATINGS: { code: string; label: string; coefficient: number; group: string }[] = [
+// ====== KPI Rating Config (editable from DB) ======
+export interface KpiRatingConfig {
+  id: string;
+  code: string;
+  label: string;
+  coefficient: number;
+  kpiGroup: string;
+  sortOrder: number;
+  createdAt?: string;
+}
+
+// ====== Salary 3P Settings (editable from DB) ======
+export interface Salary3PSetting {
+  id: string;
+  key: string;
+  value: number;
+  label?: string;
+  updatedAt?: string;
+}
+
+// Fallback defaults (used when DB data not yet loaded)
+export const KPI_RATINGS_DEFAULT: { code: string; label: string; coefficient: number; group: string }[] = [
   { code: 'A1', label: 'A1 - Xuất sắc', coefficient: 1.20, group: 'A' },
   { code: 'A2', label: 'A2 - Giỏi', coefficient: 1.15, group: 'A' },
   { code: 'A3', label: 'A3 - Khá giỏi', coefficient: 1.10, group: 'A' },
@@ -1242,5 +1263,7 @@ export const KPI_RATINGS: { code: string; label: string; coefficient: number; gr
   { code: 'D4', label: 'D4 - Rất kém', coefficient: 0.60, group: 'D' },
 ];
 
-// Lương cơ sở nhà nước (2024)
+// Keep these as backward-compatible aliases
+export const KPI_RATINGS = KPI_RATINGS_DEFAULT;
 export const BASE_SALARY_COEFFICIENT = 2340000;
+
