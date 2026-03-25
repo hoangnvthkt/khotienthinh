@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
 import {
   CalendarOff, Plus, CheckCircle, XCircle, Clock, Search, Timer,
@@ -74,6 +75,7 @@ const LeaveManagement: React.FC = () => {
     addHrmItem, updateHrmItem, removeHrmItem,
     approveLeave, rejectLeave, addLeaveLog, user
   } = useApp();
+  useModuleData('hrm');
   const { theme } = useTheme();
 
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');

@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { useToast } from '../../context/ToastContext';
 import {
     ArrowLeft, Landmark, User, Calendar, DollarSign, Shield, Wrench,
@@ -22,6 +23,7 @@ const AssetProfile: React.FC = () => {
         assets, assetAssignments, assetMaintenances, assetCategories, warehouses, users, user,
         addAssetMaintenance,
     } = useApp();
+  useModuleData('ts');
     const toast = useToast();
 
     const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'maintenance' | 'costs'>('overview');

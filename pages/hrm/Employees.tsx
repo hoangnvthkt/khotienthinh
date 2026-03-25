@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { Employee } from '../../types';
 import { Plus, Search, Edit2, Trash2, Phone, Mail, MapPin, Building, Briefcase } from 'lucide-react';
 import EmployeeModal from '../../components/hrm/EmployeeModal';
@@ -9,6 +10,7 @@ import { usePagination } from '../../hooks/usePagination';
 
 const Employees: React.FC = () => {
     const { employees, users, removeEmployee, hrmAreas, hrmOffices, hrmPositions } = useApp();
+  useModuleData('hrm');
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);

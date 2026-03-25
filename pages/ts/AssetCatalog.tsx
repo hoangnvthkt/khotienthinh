@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { useToast } from '../../context/ToastContext';
 import {
     Search, Plus, Filter, Trash2, Edit3, MoreHorizontal, QrCode,
@@ -19,6 +20,7 @@ const AssetCatalog: React.FC = () => {
         addAsset, updateAsset, removeAsset,
         addAssetCategory, updateAssetCategory, removeAssetCategory,
     } = useApp();
+  useModuleData('ts');
     const toast = useToast();
 
     const [searchTerm, setSearchTerm] = useState('');

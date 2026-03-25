@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { useToast } from '../../context/ToastContext';
 import {
     ClipboardCheck, Search, Save, CheckCircle2, History,
@@ -49,6 +50,7 @@ interface AssetAuditSession {
 
 const AssetAudit: React.FC = () => {
     const { assets, assetCategories, users, user } = useApp();
+  useModuleData('ts');
     const toast = useToast();
     const [activeView, setActiveView] = useState<'audit' | 'history'>('audit');
     const [searchTerm, setSearchTerm] = useState('');

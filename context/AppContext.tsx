@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   InventoryItem, Transaction, User, Warehouse, Supplier,
@@ -141,6 +141,7 @@ interface AppContextType {
   addAssetMaintenance: (m: AssetMaintenance) => void;
   updateAssetMaintenance: (m: AssetMaintenance) => void;
   isModuleAdmin: (moduleKey: string) => boolean;
+  loadModuleData: (module: 'hrm' | 'da' | 'ts' | 'ex') => Promise<void>;
   isLoading: boolean;
   isRefreshing: boolean;
   connectionError: string | null;
@@ -215,6 +216,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isLoading, setIsLoading] = useState(isSupabaseConfigured);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const loadedModulesRef = useRef<Set<string>>(new Set());
 
   // Load data from Supabase on mount
   useEffect(() => {
@@ -373,100 +375,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Project Transactions
         if (projectTxData) setProjectTransactions(projectTxData);
 
-        // HRM 5A — Leave Balances + Auto-accrual
-        const [leaveBalData, leaveReqData, attendData, payrollData, contractData, payrollTplData, holidayData, salaryHistData] = await Promise.all([
-          fetchTable('hrm_leave_balances'),
-          fetchTable('hrm_leave_requests'),
-          fetchTable('hrm_attendance'),
-          fetchTable('hrm_payrolls'),
-          fetchTable('hrm_labor_contracts'),
-          fetchTable('hrm_payroll_templates'),
-          fetchTable('hrm_holidays'),
-          fetchTable('hrm_salary_history'),
-        ]);
-        if (leaveBalData) setLeaveBalances(leaveBalData);
-        if (leaveReqData) setLeaveRequests(leaveReqData);
-        // Fetch leave logs
-        const leaveLogData = await fetchTable('hrm_leave_logs');
-        if (leaveLogData) setLeaveLogs(leaveLogData);
-        if (attendData) setAttendanceRecords(attendData);
-        if (payrollData) setPayrollRecords(payrollData);
-        if (contractData) setLaborContracts(contractData);
-        if (payrollTplData) setPayrollTemplates(payrollTplData);
-        if (holidayData) setHolidays(holidayData);
-        if (salaryHistData) setSalaryHistory(salaryHistData);
-
-        // Attendance Proposals
-        const proposalData = await fetchTable('hrm_attendance_proposals');
-        if (proposalData) setAttendanceProposals(proposalData);
-
-        // Budget
-        const [budgetCatData, budgetEntData, expRecData] = await Promise.all([
-          fetchTable('budget_categories'),
-          fetchTable('budget_entries'),
-          fetchTable('expense_records'),
-        ]);
-        if (budgetCatData) setBudgetCategories(budgetCatData);
-        if (budgetEntData) setBudgetEntries(budgetEntData);
-        if (expRecData) setExpenseRecords(expRecData);
-
-        // Auto-accrual + Reset sau tháng 3 năm kế tiếp
-        if (leaveBalData && leaveBalData.length > 0) {
-          const now = new Date();
-          const currentMonth = now.getMonth() + 1; // 1-12
-          const currentYear = now.getFullYear();
-          for (const bal of leaveBalData) {
-            // Reset: nếu đã qua tháng 3 năm sau năm của balance → reset về 0 cho năm mới
-            const shouldReset = (bal.year < currentYear && (currentYear - bal.year > 1 || currentMonth > 3));
-            if (shouldReset) {
-              const newAccrued = currentMonth; // Cộng dồn cho các tháng đã qua của năm mới
-              const updated = { ...bal, year: currentYear, accruedDays: newAccrued, usedPaidDays: 0, usedUnpaidDays: 0, lastAccrualMonth: currentMonth };
-              setLeaveBalances(prev => prev.map(b => b.id === bal.id ? updated : b));
-              supabase.from('hrm_leave_balances').update({ year: currentYear, accruedDays: newAccrued, usedPaidDays: 0, usedUnpaidDays: 0, lastAccrualMonth: currentMonth }).eq('id', bal.id).then();
-            } else if (bal.year === currentYear && bal.lastAccrualMonth < currentMonth) {
-              // Accrual bình thường cho năm hiện tại
-              const monthsMissing = currentMonth - bal.lastAccrualMonth;
-              const newAccrued = bal.accruedDays + bal.monthlyAccrual * monthsMissing;
-              const updated = { ...bal, accruedDays: newAccrued, lastAccrualMonth: currentMonth };
-              setLeaveBalances(prev => prev.map(b => b.id === bal.id ? updated : b));
-              supabase.from('hrm_leave_balances').update({ accruedDays: newAccrued, lastAccrualMonth: currentMonth }).eq('id', bal.id).then();
-            }
-          }
-        }
-
-        // Assets
-        const [assetsData, assetCatData, assetAssignData, assetMaintData] = await Promise.all([
-          fetchTable('assets'),
-          fetchTable('asset_categories'),
-          fetchTable('asset_assignments', supabase.from('asset_assignments').select('*').order('date', { ascending: false })),
-          fetchTable('asset_maintenances', supabase.from('asset_maintenances').select('*').order('start_date', { ascending: false })),
-        ]);
-        if (assetsData) setAssets(assetsData.map((a: any) => ({
-          ...a, categoryId: a.category_id, serialNumber: a.serial_number,
-          originalValue: a.original_value, purchaseDate: a.purchase_date,
-          depreciationYears: a.depreciation_years, warrantyMonths: a.warranty_months,
-          residualValue: a.residual_value,
-          warehouseId: a.warehouse_id, locationNote: a.location_note,
-          assignedToUserId: a.assigned_to_user_id, assignedToName: a.assigned_to_name,
-          assignedDate: a.assigned_date, disposalDate: a.disposal_date,
-          disposalValue: a.disposal_value, disposalNote: a.disposal_note,
-          imageUrl: a.image_url, createdAt: a.created_at, updatedAt: a.updated_at
-        })));
-        if (assetCatData && assetCatData.length > 0) setAssetCategories(assetCatData.map((c: any) => ({
-          ...c, depreciationYears: c.depreciation_years
-        })));
-        if (assetAssignData) setAssetAssignments(assetAssignData.map((a: any) => ({
-          ...a, assetId: a.asset_id, userId: a.user_id, userName: a.user_name,
-          fromUserId: a.from_user_id, fromUserName: a.from_user_name,
-          performedBy: a.performed_by, performedByName: a.performed_by_name
-        })));
-        if (assetMaintData) setAssetMaintenances(assetMaintData.map((m: any) => ({
-          ...m, assetId: m.asset_id, startDate: m.start_date, endDate: m.end_date,
-          performedBy: m.performed_by, performedByName: m.performed_by_name,
-          invoiceNumber: m.invoice_number, estimatedCost: m.estimated_cost,
-          actualCost: m.actual_cost,
-          attachments: typeof m.attachments === 'string' ? JSON.parse(m.attachments) : (m.attachments || [])
-        })));
+        // Module-specific data (HRM 5A, Budget, Assets) is loaded lazily via loadModuleData()
       } catch (error: any) {
         console.error('Error fetching data from Supabase:', error);
         setConnectionError(error.message);
@@ -666,6 +575,114 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       channels.forEach(channel => supabase.removeChannel(channel));
     };
+  }, []);
+
+  // ==================== LAZY MODULE DATA LOADING ====================
+  const fetchTableHelper = async (table: string, query: any = supabase.from(table).select('*')) => {
+    try {
+      const { data, error } = await query;
+      if (error) { console.warn(`Error fetching ${table}:`, error.message); return null; }
+      return data;
+    } catch (e) { console.warn(`Exception fetching ${table}:`, e); return null; }
+  };
+
+  const loadModuleData = useCallback(async (module: 'hrm' | 'da' | 'ts' | 'ex') => {
+    if (!isSupabaseConfigured || loadedModulesRef.current.has(module)) return;
+    loadedModulesRef.current.add(module);
+
+    try {
+      if (module === 'hrm') {
+        const [leaveBalData, leaveReqData, attendData, payrollData, contractData, payrollTplData, holidayData, salaryHistData] = await Promise.all([
+          fetchTableHelper('hrm_leave_balances'),
+          fetchTableHelper('hrm_leave_requests'),
+          fetchTableHelper('hrm_attendance'),
+          fetchTableHelper('hrm_payrolls'),
+          fetchTableHelper('hrm_labor_contracts'),
+          fetchTableHelper('hrm_payroll_templates'),
+          fetchTableHelper('hrm_holidays'),
+          fetchTableHelper('hrm_salary_history'),
+        ]);
+        if (leaveBalData) setLeaveBalances(leaveBalData);
+        if (leaveReqData) setLeaveRequests(leaveReqData);
+        const leaveLogData = await fetchTableHelper('hrm_leave_logs');
+        if (leaveLogData) setLeaveLogs(leaveLogData);
+        if (attendData) setAttendanceRecords(attendData);
+        if (payrollData) setPayrollRecords(payrollData);
+        if (contractData) setLaborContracts(contractData);
+        if (payrollTplData) setPayrollTemplates(payrollTplData);
+        if (holidayData) setHolidays(holidayData);
+        if (salaryHistData) setSalaryHistory(salaryHistData);
+        const proposalData = await fetchTableHelper('hrm_attendance_proposals');
+        if (proposalData) setAttendanceProposals(proposalData);
+
+        // Auto-accrual leave balances
+        if (leaveBalData && leaveBalData.length > 0) {
+          const now = new Date();
+          const currentMonth = now.getMonth() + 1;
+          const currentYear = now.getFullYear();
+          for (const bal of leaveBalData) {
+            const shouldReset = (bal.year < currentYear && (currentYear - bal.year > 1 || currentMonth > 3));
+            if (shouldReset) {
+              const newAccrued = currentMonth;
+              const updated = { ...bal, year: currentYear, accruedDays: newAccrued, usedPaidDays: 0, usedUnpaidDays: 0, lastAccrualMonth: currentMonth };
+              setLeaveBalances(prev => prev.map(b => b.id === bal.id ? updated : b));
+              supabase.from('hrm_leave_balances').update({ year: currentYear, accruedDays: newAccrued, usedPaidDays: 0, usedUnpaidDays: 0, lastAccrualMonth: currentMonth }).eq('id', bal.id).then();
+            } else if (bal.year === currentYear && bal.lastAccrualMonth < currentMonth) {
+              const monthsMissing = currentMonth - bal.lastAccrualMonth;
+              const newAccrued = bal.accruedDays + bal.monthlyAccrual * monthsMissing;
+              const updated = { ...bal, accruedDays: newAccrued, lastAccrualMonth: currentMonth };
+              setLeaveBalances(prev => prev.map(b => b.id === bal.id ? updated : b));
+              supabase.from('hrm_leave_balances').update({ accruedDays: newAccrued, lastAccrualMonth: currentMonth }).eq('id', bal.id).then();
+            }
+          }
+        }
+      } else if (module === 'ts') {
+        const [assetsData, assetCatData, assetAssignData, assetMaintData] = await Promise.all([
+          fetchTableHelper('assets'),
+          fetchTableHelper('asset_categories'),
+          fetchTableHelper('asset_assignments', supabase.from('asset_assignments').select('*').order('date', { ascending: false })),
+          fetchTableHelper('asset_maintenances', supabase.from('asset_maintenances').select('*').order('start_date', { ascending: false })),
+        ]);
+        if (assetsData) setAssets(assetsData.map((a: any) => ({
+          ...a, categoryId: a.category_id, serialNumber: a.serial_number,
+          originalValue: a.original_value, purchaseDate: a.purchase_date,
+          depreciationYears: a.depreciation_years, warrantyMonths: a.warranty_months,
+          residualValue: a.residual_value,
+          warehouseId: a.warehouse_id, locationNote: a.location_note,
+          assignedToUserId: a.assigned_to_user_id, assignedToName: a.assigned_to_name,
+          assignedDate: a.assigned_date, disposalDate: a.disposal_date,
+          disposalValue: a.disposal_value, disposalNote: a.disposal_note,
+          imageUrl: a.image_url, createdAt: a.created_at, updatedAt: a.updated_at
+        })));
+        if (assetCatData && assetCatData.length > 0) setAssetCategories(assetCatData.map((c: any) => ({
+          ...c, depreciationYears: c.depreciation_years
+        })));
+        if (assetAssignData) setAssetAssignments(assetAssignData.map((a: any) => ({
+          ...a, assetId: a.asset_id, userId: a.user_id, userName: a.user_name,
+          fromUserId: a.from_user_id, fromUserName: a.from_user_name,
+          performedBy: a.performed_by, performedByName: a.performed_by_name
+        })));
+        if (assetMaintData) setAssetMaintenances(assetMaintData.map((m: any) => ({
+          ...m, assetId: m.asset_id, startDate: m.start_date, endDate: m.end_date,
+          performedBy: m.performed_by, performedByName: m.performed_by_name,
+          invoiceNumber: m.invoice_number, estimatedCost: m.estimated_cost,
+          actualCost: m.actual_cost,
+          attachments: typeof m.attachments === 'string' ? JSON.parse(m.attachments) : (m.attachments || [])
+        })));
+      } else if (module === 'ex') {
+        const [budgetCatData, budgetEntData, expRecData] = await Promise.all([
+          fetchTableHelper('budget_categories'),
+          fetchTableHelper('budget_entries'),
+          fetchTableHelper('expense_records'),
+        ]);
+        if (budgetCatData) setBudgetCategories(budgetCatData);
+        if (budgetEntData) setBudgetEntries(budgetEntData);
+        if (expRecData) setExpenseRecords(expRecData);
+      }
+    } catch (error) {
+      console.error(`Error lazy-loading module "${module}":`, error);
+      loadedModulesRef.current.delete(module); // Allow retry on error
+    }
   }, []);
 
   // Helper to sync a single table to Supabase
@@ -1637,7 +1654,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       assets, assetCategories, assetAssignments, assetMaintenances,
       addAsset, updateAsset, removeAsset, addAssetCategory, updateAssetCategory, removeAssetCategory,
       addAssetAssignment, addAssetMaintenance, updateAssetMaintenance,
-      isModuleAdmin,
+      isModuleAdmin, loadModuleData,
       saveSignature, deleteSignature,
       login, logout, isLoading, isRefreshing, connectionError
     }}>

@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -14,6 +15,7 @@ const HrmDashboard: React.FC = () => {
     payrollRecords, laborContracts, salaryHistory, holidays,
     hrmPositions
   } = useApp();
+  useModuleData('hrm');
   const { theme } = useTheme();
   const navigate = useNavigate();
 

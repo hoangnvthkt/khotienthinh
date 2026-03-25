@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
 import {
   MapPin, Camera, CameraOff, Clock, CheckCircle, LogIn, LogOut,
@@ -18,6 +19,7 @@ const haversineDistance = (lat1: number, lng1: number, lat2: number, lng2: numbe
 
 const CheckIn: React.FC = () => {
   const { user, employees, attendanceRecords, hrmConstructionSites, hrmOffices, addHrmItem, updateHrmItem } = useApp();
+  useModuleData('hrm');
   const { theme } = useTheme();
 
   // Find current employee

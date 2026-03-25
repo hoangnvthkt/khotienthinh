@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { useToast } from '../../context/ToastContext';
 import {
     FileText, Download, Calendar, Search, Filter,
@@ -11,6 +12,7 @@ import * as XLSX from 'xlsx';
 
 const AssetReports: React.FC = () => {
     const { assets, assetCategories, assetAssignments } = useApp();
+  useModuleData('ts');
     const toast = useToast();
 
     const [startDate, setStartDate] = useState(() => {

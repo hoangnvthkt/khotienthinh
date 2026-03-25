@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
 import {
   BarChart3, Users, Calendar, DollarSign, Clock, Download,
@@ -13,6 +14,7 @@ const HrmReports: React.FC = () => {
     employees, attendanceRecords, leaveRequests, leaveBalances,
     payrollRecords, laborContracts, holidays
   } = useApp();
+  useModuleData('hrm');
   const { theme } = useTheme();
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);

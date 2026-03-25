@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { useToast } from '../../context/ToastContext';
 import {
     Search, Repeat, UserPlus, UserMinus, Calendar, User, X,
@@ -13,6 +14,7 @@ const AssetAssignment: React.FC = () => {
         assets, assetAssignments, assetCategories, users, user, orgUnits,
         addAssetAssignment, updateAsset,
     } = useApp();
+  useModuleData('ts');
     const toast = useToast();
 
     const [activeTab, setActiveTab] = useState<'assign' | 'transfer' | 'history'>('assign');

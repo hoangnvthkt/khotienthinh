@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
 import {
   DollarSign, Plus, Download, Search, Calculator,
@@ -83,6 +84,7 @@ const Payroll: React.FC = () => {
     employees, payrollRecords, payrollTemplates, attendanceRecords, laborContracts,
     hrmSalaryPolicies, addHrmItem, updateHrmItem, removeHrmItem
   } = useApp();
+  useModuleData('hrm');
   const { theme } = useTheme();
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);

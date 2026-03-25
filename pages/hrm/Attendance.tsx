@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
 import {
   Calendar, ChevronLeft, ChevronRight, Clock, Users, Download,
@@ -23,6 +24,7 @@ const STATUS_SHORT: Record<AttendanceStatus, string> = {
 
 const Attendance: React.FC = () => {
   const { employees, attendanceRecords, hrmConstructionSites, hrmOffices, holidays, attendanceProposals, addHrmItem, updateHrmItem, removeHrmItem, user, users } = useApp();
+  useModuleData('hrm');
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 

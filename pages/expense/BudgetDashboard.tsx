@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
 import {
   BarChart3, Plus, ChevronDown, ChevronRight, Download,
@@ -26,6 +27,7 @@ const BudgetDashboard: React.FC = () => {
     payrollRecords, transactions, items,
     addHrmItem, updateHrmItem, removeHrmItem, user
   } = useApp();
+  useModuleData('ex');
   const { theme } = useTheme();
 
   const currentYear = new Date().getFullYear();

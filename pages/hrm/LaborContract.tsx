@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
 import {
   FileText, Plus, Search, AlertTriangle, CheckCircle, Clock, XCircle, History
@@ -21,6 +22,7 @@ const STATUS_COLORS: Record<LaborContractStatus, string> = {
 
 const LaborContractPage: React.FC = () => {
   const { employees, laborContracts, salaryHistory, addHrmItem, updateHrmItem } = useApp();
+  useModuleData('hrm');
   const { theme } = useTheme();
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);

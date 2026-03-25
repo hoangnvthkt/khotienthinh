@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, Legend, LineChart, Line, Area, AreaChart
@@ -18,6 +19,7 @@ const COLORS = ['#6366f1', '#f43f5e', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4'
 const AssetDashboard: React.FC = () => {
     const navigate = useNavigate();
     const { assets, assetCategories, assetAssignments, assetMaintenances } = useApp();
+  useModuleData('ts');
     const { theme } = useTheme();
     const isDark = theme === 'dark';
     const [chartType, setChartType] = useState<'bar' | 'pie'>('bar');

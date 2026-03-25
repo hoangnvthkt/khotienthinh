@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { useToast } from '../../context/ToastContext';
 import {
     Wrench, Plus, Search, Filter, Calendar, DollarSign, X, FileText,
@@ -18,6 +19,7 @@ const getEstimatedCost = (m: MaintenanceType) => m.estimatedCost ?? m.cost ?? 0;
 
 const AssetMaintenancePage: React.FC = () => {
     const { assets, assetMaintenances, users, user, addAssetMaintenance, updateAssetMaintenance } = useApp();
+  useModuleData('ts');
     const toast = useToast();
 
     const [activeTab, setActiveTab] = useState<'list' | 'create'>('list');
