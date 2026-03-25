@@ -51,7 +51,7 @@ export const NOTIFICATION_CATEGORIES = {
 } as const;
 
 // ── Throttle: only allow alert checks once per 15min across all tabs ──
-const ALERT_CHECK_KEY = 'khoviet_last_alert_check';
+const ALERT_CHECK_KEY = 'vioo_last_alert_check';
 const ALERT_CHECK_INTERVAL = 15 * 60 * 1000; // 15 minutes
 
 function shouldRunAlertCheck(): boolean {
@@ -147,7 +147,7 @@ export const notificationService = {
     // Fetch only needed columns
     const { data: finances } = await supabase
       .from('project_finances')
-      .select('construction_site_id, contract_value, actual_materials, actual_labor, actual_subcontract, actual_machinery, actual_overhead, revenue_received, progress_percent, status');
+      .select('"constructionSiteId", "contractValue", "actualMaterials", "actualLabor", "actualSubcontract", "actualMachinery", "actualOverhead", "revenueReceived", "progressPercent", status');
     const { data: sites } = await supabase
       .from('hrm_construction_sites').select('id, name');
     const { data: payments } = await supabase
@@ -171,25 +171,25 @@ export const notificationService = {
 
     // 1. Budget overrun alerts
     for (const f of (finances || [])) {
-      const totalExpense = (f.actual_materials || 0) + (f.actual_labor || 0) +
-        (f.actual_subcontract || 0) + (f.actual_machinery || 0) + (f.actual_overhead || 0);
-      const contractValue = f.contract_value || 0;
+      const totalExpense = (f.actualMaterials || 0) + (f.actualLabor || 0) +
+        (f.actualSubcontract || 0) + (f.actualMachinery || 0) + (f.actualOverhead || 0);
+      const contractValue = f.contractValue || 0;
       if (contractValue > 0 && totalExpense > contractValue * 0.9) {
         const pct = Math.round((totalExpense / contractValue) * 100);
-        const alertId = `budget_${f.construction_site_id}`;
+        const alertId = `budget_${f.constructionSiteId}`;
         if (isNew('budget', alertId)) {
           const isCritical = totalExpense > contractValue;
           await createNotification({
             type: isCritical ? 'error' : 'warning',
             category: 'budget',
             title: isCritical ? '🚨 Vượt ngân sách!' : '⚠️ Sắp vượt ngân sách',
-            message: `${getSiteName(f.construction_site_id)}: Chi phí đạt ${pct}% giá trị HĐ`,
+            message: `${getSiteName(f.constructionSiteId)}: Chi phí đạt ${pct}% giá trị HĐ`,
             severity: isCritical ? 'critical' : 'warning',
             icon: '💰',
             link: '/da',
             sourceType: 'budget',
             sourceId: alertId,
-            constructionSiteId: f.construction_site_id,
+            constructionSiteId: f.constructionSiteId,
             metadata: { percent: pct, expense: totalExpense, contract: contractValue },
           });
           alertCount++;
@@ -249,21 +249,21 @@ export const notificationService = {
 
     // 4. Slow progress alerts
     for (const f of (finances || [])) {
-      if (f.status === 'active' && f.progress_percent < 30) {
-        const alertId = `progress_${f.construction_site_id}`;
+      if (f.status === 'active' && f.progressPercent < 30) {
+        const alertId = `progress_${f.constructionSiteId}`;
         if (isNew('progress', alertId)) {
           await createNotification({
             type: 'info',
             category: 'progress',
             title: '📐 Tiến độ chậm',
-            message: `${getSiteName(f.construction_site_id)}: mới đạt ${f.progress_percent}% (đang thi công)`,
+            message: `${getSiteName(f.constructionSiteId)}: mới đạt ${f.progressPercent}% (đang thi công)`,
             severity: 'info',
             icon: '📐',
             link: '/da',
             sourceType: 'progress',
             sourceId: alertId,
-            constructionSiteId: f.construction_site_id,
-            metadata: { progress: f.progress_percent },
+            constructionSiteId: f.constructionSiteId,
+            metadata: { progress: f.progressPercent },
           });
           alertCount++;
         }

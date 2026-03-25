@@ -13,7 +13,7 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [theme, setTheme] = useState<Theme>(() => {
-        const saved = localStorage.getItem('khoviet_theme');
+        const saved = localStorage.getItem('vioo_theme');
         return (saved as Theme) || 'light';
     });
 
@@ -26,7 +26,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         } else {
             root.classList.remove('dark');
         }
-        localStorage.setItem('khoviet_theme', theme);
+        localStorage.setItem('vioo_theme', theme);
     }, [theme, isDark]);
 
     const toggleTheme = () => {

@@ -85,7 +85,7 @@ const PWAInstallPrompt: React.FC = () => {
                                 <Smartphone size={24} className="text-white" />
                             </div>
                             <div className="flex-1 min-w-0">
-                                <div className="text-sm font-black text-white">Cài KhoViet lên thiết bị</div>
+                                <div className="text-sm font-black text-white">Cài Vioo lên thiết bị</div>
                                 <div className="text-[10px] text-emerald-100">Truy cập nhanh, hoạt động offline</div>
                             </div>
                             <button onClick={handleDismiss}

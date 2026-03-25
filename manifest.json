@@ -1,6 +1,6 @@
 {
-  "name": "KhoViet - Quản Lý Xây Dựng",
-  "short_name": "KhoViet",
+  "name": "Vioo - Phần mềm quản lý doanh nghiệp",
+  "short_name": "Vioo",
   "description": "Hệ thống quản lý kho, dự án xây dựng thông minh",
   "start_url": "/",
   "display": "standalone",

@@ -69,7 +69,7 @@ const AssetMaintenancePage = React.lazy(() => import('./pages/ts/AssetMaintenanc
 const AssetProfile = React.lazy(() => import('./pages/ts/AssetProfile'));
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const isAuthenticated = !!localStorage.getItem('khoviet_user');
+  const isAuthenticated = !!localStorage.getItem('vioo_user');
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }

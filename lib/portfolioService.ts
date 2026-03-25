@@ -59,7 +59,7 @@ async function fetchProjectSummaries(): Promise<ProjectSummary[]> {
     { data: payments },
   ] = await Promise.all([
     supabase.from('hrm_construction_sites').select('id, name, address'),
-    supabase.from('project_finances').select('construction_site_id, contract_value, actual_materials, actual_labor, actual_subcontract, actual_machinery, actual_overhead, revenue_received, progress_percent, status'),
+    supabase.from('project_finances').select('"constructionSiteId", "contractValue", "actualMaterials", "actualLabor", "actualSubcontract", "actualMachinery", "actualOverhead", "revenueReceived", "progressPercent", status'),
     supabase.from('project_contracts').select('id, construction_site_id, type, value'),
     supabase.from('project_tasks').select('id, construction_site_id, progress, start_date, end_date'),
     supabase.from('acceptance_records').select('id, construction_site_id, approved_value, payable_amount, status'),
@@ -73,15 +73,15 @@ async function fetchProjectSummaries(): Promise<ProjectSummary[]> {
   if (!sites || sites.length === 0) return [];
 
   // Pre-group by construction_site_id for O(n) lookup instead of O(n²)
-  const group = (items: any[] | null): Record<string, any[]> => {
+  const group = (items: any[] | null, siteKey = 'construction_site_id'): Record<string, any[]> => {
     const map: Record<string, any[]> = {};
     for (const item of (items || [])) {
-      (map[item.construction_site_id] ||= []).push(item);
+      (map[item[siteKey]] ||= []).push(item);
     }
     return map;
   };
 
-  const financeMap = group(finances as any);
+  const financeMap = group(finances as any, 'constructionSiteId');
   const contractMap = group(contracts as any);
   const taskMap = group(tasks as any);
   const acceptanceMap = group(acceptances as any);
@@ -106,11 +106,11 @@ async function fetchProjectSummaries(): Promise<ProjectSummary[]> {
     const siteLogs = logMap[siteId] || [];
     const sitePayments = paymentMap[siteId] || [];
 
-    const contractValue = finance?.contract_value || siteContracts.filter((c: any) => c.type === 'main').reduce((s: number, c: any) => s + (c.value || 0), 0);
+    const contractValue = finance?.contractValue || siteContracts.filter((c: any) => c.type === 'main').reduce((s: number, c: any) => s + (c.value || 0), 0);
     const totalExpense = finance
-      ? (finance.actual_materials || 0) + (finance.actual_labor || 0) + (finance.actual_subcontract || 0) + (finance.actual_machinery || 0) + (finance.actual_overhead || 0)
+      ? (finance.actualMaterials || 0) + (finance.actualLabor || 0) + (finance.actualSubcontract || 0) + (finance.actualMachinery || 0) + (finance.actualOverhead || 0)
       : 0;
-    const totalRevenue = finance?.revenue_received || 0;
+    const totalRevenue = finance?.revenueReceived || 0;
 
     // ✅ Fixed: include accepted (approved) value for accurate profit calculation
     const acceptedValue = siteAcceptances
@@ -123,7 +123,7 @@ async function fetchProjectSummaries(): Promise<ProjectSummary[]> {
 
     const avgProgress = siteTasks.length > 0
       ? Math.round(siteTasks.reduce((s: number, t: any) => s + (t.progress || 0), 0) / siteTasks.length)
-      : (finance?.progress_percent || 0);
+      : (finance?.progressPercent || 0);
 
     // Dates from tasks
     const taskStartDates = siteTasks.filter((t: any) => t.start_date).map((t: any) => t.start_date);

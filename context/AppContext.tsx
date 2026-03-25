@@ -150,11 +150,11 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User>(() => {
-    const saved = localStorage.getItem('khoviet_user');
+    const saved = localStorage.getItem('vioo_user');
     return saved ? JSON.parse(saved) : MOCK_USERS[0];
   });
   const [users, setUsers] = useState<User[]>(MOCK_USERS);
-  const [appSettings, setAppSettings] = useState<AppSettings>({ name: 'KhoViet', logo: '' });
+  const [appSettings, setAppSettings] = useState<AppSettings>({ name: 'Vioo', logo: '' });
   const [items, setItems] = useState<InventoryItem[]>(MOCK_ITEMS);
   const [warehouses, setWarehouses] = useState<Warehouse[]>(MOCK_WAREHOUSES);
   const [suppliers, setSuppliers] = useState<Supplier[]>(MOCK_SUPPLIERS);
@@ -820,7 +820,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Here we map username to an email format for supabase auth if no actual email string was provided
         // Since Supabase requires an email for signInWithPassword by default, we'll try querying the user first, or logging in by email.
         // Assuming the `username` field might actually be an email, or if it's strictly a username, they must login with email under the hood
-        // For KhoViet we can fetch the user by username to get the email, then login.
+        // For Vioo we can fetch the user by username to get the email, then login.
 
         let loginEmail = username;
         if (!username.includes('@')) {
@@ -843,7 +843,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const mappedUser = { ...userData, assignedWarehouseId: userData.assigned_warehouse_id, allowedModules: userData.allowed_modules || undefined, adminModules: userData.admin_modules || undefined };
         setUser(mappedUser);
         const { avatar, ...userForStorage } = mappedUser;
-        localStorage.setItem('khoviet_user', JSON.stringify(userForStorage));
+        localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
         return mappedUser;
 
       } catch (err: any) {
@@ -856,7 +856,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (foundUser) {
         setUser(foundUser);
         const { avatar, ...userForStorage } = foundUser;
-        localStorage.setItem('khoviet_user', JSON.stringify(userForStorage));
+        localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
         return foundUser;
       }
       return null;
@@ -864,7 +864,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logout = () => {
-    localStorage.removeItem('khoviet_user');
+    localStorage.removeItem('vioo_user');
     supabase.auth.signOut();
     // We don't set user to null because the app expects a user object. 
     // We'll handle redirection in App.tsx

@@ -258,7 +258,7 @@ const AiAssistant: React.FC = () => {
             <Bot size={18} className="text-white" />
           </div>
           <div>
-            <h3 className="text-sm font-black text-slate-800 dark:text-white">Trợ lý AI KhoTienThinh</h3>
+            <h3 className="text-sm font-black text-slate-800 dark:text-white">Trợ lý AI Vioo</h3>
             <p className="text-[10px] text-slate-400 flex items-center gap-1">
               <Database size={9} />
               Truy vấn dữ liệu thời gian thực · Powered by Gemini

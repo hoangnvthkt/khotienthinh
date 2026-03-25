@@ -101,7 +101,7 @@ const Inventory: React.FC = () => {
     const ws = XLSX.utils.aoa_to_sheet(headers);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Template");
-    XLSX.writeFile(wb, "KhoViet_Template.xlsx");
+    XLSX.writeFile(wb, "Vioo_Template.xlsx");
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

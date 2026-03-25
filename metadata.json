@@ -1,5 +1,5 @@
 {
-  "name": "KhoViet - Smart Inventory System",
+  "name": "Vioo - Phần mềm quản lý doanh nghiệp",
   "description": "Hệ thống quản lý kho thông minh cho doanh nghiệp xây dựng và sản xuất. Tính năng: Quét QR, quản lý đa kho, quy trình điều phối vật tư, kiểm kê kho và báo cáo XNT chi tiết.",
   "requestFramePermissions": [
     "camera"

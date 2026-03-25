@@ -4,7 +4,7 @@ import { InventoryItem, Role, Supplier, Transaction, TransactionStatus, Transact
 export const CURRENT_USER: User = {
   id: 'u1',
   name: 'Nguyễn Văn A',
-  email: 'admin@khoviet.com',
+  email: 'admin@vioo.vn',
   username: 'admin',
   password: '123',
   role: Role.ADMIN,
@@ -15,7 +15,7 @@ export const MOCK_USERS: User[] = [
   {
     id: 'u1',
     name: 'Nguyễn Văn Admin',
-    email: 'admin@khoviet.com',
+    email: 'admin@vioo.vn',
     username: 'admin',
     password: '123',
     role: Role.ADMIN,
@@ -24,7 +24,7 @@ export const MOCK_USERS: User[] = [
   {
     id: 'u2',
     name: 'Trần Nhân Viên A',
-    email: 'khoa@khoviet.com',
+    email: 'khoa@vioo.vn',
     username: 'khoa',
     password: '123',
     role: Role.EMPLOYEE,
@@ -34,7 +34,7 @@ export const MOCK_USERS: User[] = [
   {
     id: 'u3',
     name: 'Lê Nhân Viên B',
-    email: 'khotong@khoviet.com',
+    email: 'khotong@vioo.vn',
     username: 'khotong',
     password: '123',
     role: Role.EMPLOYEE,

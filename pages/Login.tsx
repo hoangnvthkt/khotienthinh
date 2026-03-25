@@ -1,8 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { Shield, Lock, User as UserIcon, AlertCircle, Info } from 'lucide-react';
+import { Lock, User as UserIcon, AlertCircle, Info, Eye, EyeOff, Zap } from 'lucide-react';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -11,10 +11,18 @@ const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [showForgotMsg, setShowForgotMsg] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsLoading(true);
 
     try {
       const loggedUser = await login(username, password);
@@ -24,108 +32,633 @@ const Login: React.FC = () => {
         setError('Tên đăng nhập hoặc mật khẩu không chính xác.');
       }
     } catch (err: any) {
-      setError(err.message || 'Tập tín đăng nhập không hợp lệ hoặc lỗi kết nối.');
+      setError(err.message || 'Thông tin đăng nhập không hợp lệ hoặc lỗi kết nối.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
-        <div className="p-8 bg-slate-900 text-white text-center relative">
-          <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
-            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-accent rounded-full blur-3xl"></div>
-            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500 rounded-full blur-3xl"></div>
-          </div>
+    <div className="login-page">
+      {/* Animated background */}
+      <div className="login-bg">
+        <div className="login-bg-orb login-bg-orb--1" />
+        <div className="login-bg-orb login-bg-orb--2" />
+        <div className="login-bg-orb login-bg-orb--3" />
+        <div className="login-bg-grid" />
+      </div>
 
-          <div className="w-16 h-16 bg-accent rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20 relative z-10">
-            <Shield className="text-white w-8 h-8" />
+      {/* Login card */}
+      <div className={`login-card ${mounted ? 'login-card--visible' : ''}`}>
+        {/* Brand header */}
+        <div className="login-brand">
+          <div className="login-logo">
+            <div className="login-logo-icon">
+              <Zap size={28} strokeWidth={2.5} />
+            </div>
+            <div className="login-logo-glow" />
           </div>
-          <h1 className="text-2xl font-black tracking-tight relative z-10">SMART INVENTORY</h1>
-          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1 relative z-10">Hệ thống quản lý kho thông minh</p>
+          <h1 className="login-title">VIOO</h1>
+          <p className="login-subtitle">Phần mềm quản lý doanh nghiệp</p>
         </div>
 
-        <div className="p-8">
-          <form onSubmit={handleLogin} className="space-y-6">
-            {error && (
-              <div className="bg-red-50 border border-red-100 p-4 rounded-xl flex items-center gap-3 text-red-600 animate-in fade-in slide-in-from-top-2">
-                <AlertCircle size={20} className="shrink-0" />
-                <p className="text-xs font-bold">{error}</p>
-              </div>
-            )}
+        {/* Separator */}
+        <div className="login-separator">
+          <div className="login-separator-line" />
+          <span className="login-separator-text">Đăng nhập</span>
+          <div className="login-separator-line" />
+        </div>
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tên đăng nhập</label>
-              <div className="relative">
-                <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-                <input
-                  type="text"
-                  required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-accent font-medium transition-all"
-                  placeholder="Nhập tên đăng nhập..."
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mật khẩu</label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-accent font-medium transition-all"
-                  placeholder="••••••••"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <input id="remember" type="checkbox" className="w-4 h-4 text-accent border-slate-300 rounded focus:ring-accent" />
-                <label htmlFor="remember" className="ml-2 text-xs font-bold text-slate-500">Ghi nhớ đăng nhập</label>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowForgotMsg(true)}
-                className="text-xs font-bold text-accent hover:text-blue-700 transition-colors"
-              >
-                Quên mật khẩu?
-              </button>
-            </div>
-
-            <button
-              type="submit"
-              className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg shadow-slate-200 active:scale-[0.98]"
-            >
-              Đăng nhập hệ thống
-            </button>
-          </form>
-
-          {showForgotMsg && (
-            <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-2xl flex items-start gap-3 text-blue-700 animate-in fade-in zoom-in-95">
-              <Info size={20} className="shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <p className="text-xs font-bold">Hỗ trợ khôi phục mật khẩu</p>
-                <p className="text-[11px] font-medium opacity-80">Vui lòng liên hệ với Quản trị viên (Admin) của hệ thống để được cấp lại mật khẩu mới.</p>
-                <button
-                  onClick={() => setShowForgotMsg(false)}
-                  className="text-[10px] font-black uppercase tracking-widest mt-2 hover:underline"
-                >
-                  Đã hiểu
-                </button>
-              </div>
+        {/* Form */}
+        <form onSubmit={handleLogin} className="login-form">
+          {error && (
+            <div className="login-error">
+              <AlertCircle size={16} />
+              <p>{error}</p>
             </div>
           )}
-        </div>
 
-        <div className="p-6 bg-slate-50 border-t border-slate-100 text-center">
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">© 2024 KhoViet Smart Inventory System</p>
+          <div className="login-field">
+            <label className="login-label">Tên đăng nhập</label>
+            <div className="login-input-wrapper">
+              <UserIcon className="login-input-icon" size={18} />
+              <input
+                type="text"
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="login-input"
+                placeholder="Nhập tên đăng nhập..."
+                autoComplete="username"
+              />
+            </div>
+          </div>
+
+          <div className="login-field">
+            <label className="login-label">Mật khẩu</label>
+            <div className="login-input-wrapper">
+              <Lock className="login-input-icon" size={18} />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="login-input login-input--password"
+                placeholder="••••••••"
+                autoComplete="current-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="login-password-toggle"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+
+          <div className="login-options">
+            <label className="login-remember">
+              <input type="checkbox" />
+              <span>Ghi nhớ đăng nhập</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowForgotMsg(true)}
+              className="login-forgot"
+            >
+              Quên mật khẩu?
+            </button>
+          </div>
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className={`login-submit ${isLoading ? 'login-submit--loading' : ''}`}
+          >
+            {isLoading ? (
+              <div className="login-spinner" />
+            ) : (
+              <>
+                <span>Đăng nhập</span>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <polyline points="12 5 19 12 12 19" />
+                </svg>
+              </>
+            )}
+          </button>
+        </form>
+
+        {showForgotMsg && (
+          <div className="login-forgot-msg">
+            <Info size={16} />
+            <div>
+              <p className="login-forgot-title">Hỗ trợ khôi phục mật khẩu</p>
+              <p className="login-forgot-desc">Vui lòng liên hệ Quản trị viên (Admin) để được cấp lại mật khẩu mới.</p>
+              <button onClick={() => setShowForgotMsg(false)} className="login-forgot-dismiss">
+                Đã hiểu
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="login-footer">
+          <p>© 2024 Vioo. Phần mềm quản lý doanh nghiệp</p>
         </div>
       </div>
+
+      <style>{`
+        .login-page {
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 1rem;
+          position: relative;
+          overflow: hidden;
+          background: #0a0a1a;
+        }
+
+        /* === Animated Background === */
+        .login-bg {
+          position: fixed;
+          inset: 0;
+          z-index: 0;
+        }
+
+        .login-bg-orb {
+          position: absolute;
+          border-radius: 50%;
+          filter: blur(80px);
+          opacity: 0.4;
+          animation: orbFloat 12s ease-in-out infinite;
+        }
+
+        .login-bg-orb--1 {
+          width: 400px;
+          height: 400px;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          top: -10%;
+          left: -5%;
+          animation-delay: 0s;
+        }
+
+        .login-bg-orb--2 {
+          width: 350px;
+          height: 350px;
+          background: linear-gradient(135deg, #06b6d4, #3b82f6);
+          bottom: -10%;
+          right: -5%;
+          animation-delay: -4s;
+        }
+
+        .login-bg-orb--3 {
+          width: 250px;
+          height: 250px;
+          background: linear-gradient(135deg, #ec4899, #f43f5e);
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          opacity: 0.15;
+          animation-delay: -8s;
+        }
+
+        @keyframes orbFloat {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          33% { transform: translate(30px, -30px) scale(1.05); }
+          66% { transform: translate(-20px, 20px) scale(0.95); }
+        }
+
+        .login-bg-grid {
+          position: absolute;
+          inset: 0;
+          background-image:
+            linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+          background-size: 60px 60px;
+        }
+
+        /* === Login Card === */
+        .login-card {
+          position: relative;
+          z-index: 1;
+          width: 100%;
+          max-width: 420px;
+          background: rgba(255, 255, 255, 0.05);
+          backdrop-filter: blur(40px);
+          -webkit-backdrop-filter: blur(40px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 24px;
+          padding: 2.5rem;
+          opacity: 0;
+          transform: translateY(20px) scale(0.98);
+          transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .login-card--visible {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+
+        /* === Brand === */
+        .login-brand {
+          text-align: center;
+          margin-bottom: 1.75rem;
+        }
+
+        .login-logo {
+          position: relative;
+          display: inline-flex;
+          margin-bottom: 1rem;
+        }
+
+        .login-logo-icon {
+          width: 56px;
+          height: 56px;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa);
+          border-radius: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          position: relative;
+          z-index: 1;
+          box-shadow: 0 8px 32px rgba(99, 102, 241, 0.4);
+        }
+
+        .login-logo-glow {
+          position: absolute;
+          inset: -4px;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa);
+          border-radius: 20px;
+          opacity: 0.3;
+          filter: blur(12px);
+          animation: logoPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes logoPulse {
+          0%, 100% { opacity: 0.3; transform: scale(1); }
+          50% { opacity: 0.5; transform: scale(1.1); }
+        }
+
+        .login-title {
+          font-size: 1.75rem;
+          font-weight: 900;
+          color: white;
+          letter-spacing: 0.15em;
+          margin: 0;
+        }
+
+        .login-subtitle {
+          font-size: 0.7rem;
+          font-weight: 600;
+          color: rgba(255, 255, 255, 0.4);
+          text-transform: uppercase;
+          letter-spacing: 0.2em;
+          margin-top: 4px;
+        }
+
+        /* === Separator === */
+        .login-separator {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 1.5rem;
+        }
+
+        .login-separator-line {
+          flex: 1;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+        }
+
+        .login-separator-text {
+          font-size: 0.65rem;
+          font-weight: 700;
+          color: rgba(255, 255, 255, 0.35);
+          text-transform: uppercase;
+          letter-spacing: 0.15em;
+          white-space: nowrap;
+        }
+
+        /* === Form === */
+        .login-form {
+          display: flex;
+          flex-direction: column;
+          gap: 1.25rem;
+        }
+
+        .login-error {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 12px 16px;
+          background: rgba(239, 68, 68, 0.1);
+          border: 1px solid rgba(239, 68, 68, 0.2);
+          border-radius: 12px;
+          color: #fca5a5;
+          font-size: 0.78rem;
+          font-weight: 600;
+          animation: shakeX 0.5s ease;
+        }
+
+        @keyframes shakeX {
+          0%, 100% { transform: translateX(0); }
+          20% { transform: translateX(-8px); }
+          40% { transform: translateX(8px); }
+          60% { transform: translateX(-4px); }
+          80% { transform: translateX(4px); }
+        }
+
+        .login-field {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .login-label {
+          font-size: 0.68rem;
+          font-weight: 700;
+          color: rgba(255, 255, 255, 0.5);
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          padding-left: 2px;
+        }
+
+        .login-input-wrapper {
+          position: relative;
+          display: flex;
+          align-items: center;
+        }
+
+        .login-input-icon {
+          position: absolute;
+          left: 14px;
+          color: rgba(255, 255, 255, 0.3);
+          pointer-events: none;
+          transition: color 0.2s;
+        }
+
+        .login-input {
+          width: 100%;
+          padding: 12px 16px 12px 44px;
+          background: rgba(255, 255, 255, 0.06);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 14px;
+          color: white;
+          font-size: 0.9rem;
+          font-weight: 500;
+          outline: none;
+          transition: all 0.25s ease;
+        }
+
+        .login-input--password {
+          padding-right: 44px;
+        }
+
+        .login-input::placeholder {
+          color: rgba(255, 255, 255, 0.2);
+        }
+
+        .login-input:focus {
+          border-color: rgba(99, 102, 241, 0.5);
+          background: rgba(255, 255, 255, 0.08);
+          box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+
+        .login-input:focus ~ .login-input-icon,
+        .login-input-wrapper:focus-within .login-input-icon {
+          color: rgba(99, 102, 241, 0.8);
+        }
+
+        .login-password-toggle {
+          position: absolute;
+          right: 14px;
+          background: none;
+          border: none;
+          color: rgba(255, 255, 255, 0.3);
+          cursor: pointer;
+          padding: 4px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: color 0.2s;
+        }
+
+        .login-password-toggle:hover {
+          color: rgba(255, 255, 255, 0.6);
+        }
+
+        /* === Options === */
+        .login-options {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+
+        .login-remember {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          cursor: pointer;
+        }
+
+        .login-remember input[type="checkbox"] {
+          width: 16px;
+          height: 16px;
+          border-radius: 5px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          background: rgba(255, 255, 255, 0.06);
+          appearance: none;
+          -webkit-appearance: none;
+          cursor: pointer;
+          transition: all 0.2s;
+          position: relative;
+        }
+
+        .login-remember input[type="checkbox"]:checked {
+          background: #6366f1;
+          border-color: #6366f1;
+        }
+
+        .login-remember input[type="checkbox"]:checked::after {
+          content: '';
+          position: absolute;
+          left: 4.5px;
+          top: 1.5px;
+          width: 5px;
+          height: 9px;
+          border: solid white;
+          border-width: 0 2px 2px 0;
+          transform: rotate(45deg);
+        }
+
+        .login-remember span {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: rgba(255, 255, 255, 0.45);
+        }
+
+        .login-forgot {
+          background: none;
+          border: none;
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #818cf8;
+          cursor: pointer;
+          transition: color 0.2s;
+        }
+
+        .login-forgot:hover {
+          color: #a5b4fc;
+        }
+
+        /* === Submit Button === */
+        .login-submit {
+          width: 100%;
+          padding: 14px;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          border: none;
+          border-radius: 14px;
+          color: white;
+          font-size: 0.9rem;
+          font-weight: 700;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          transition: all 0.3s ease;
+          position: relative;
+          overflow: hidden;
+          margin-top: 0.25rem;
+        }
+
+        .login-submit::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(135deg, #818cf8, #a78bfa);
+          opacity: 0;
+          transition: opacity 0.3s;
+        }
+
+        .login-submit:hover::before {
+          opacity: 1;
+        }
+
+        .login-submit:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 8px 32px rgba(99, 102, 241, 0.4);
+        }
+
+        .login-submit:active {
+          transform: translateY(0) scale(0.98);
+        }
+
+        .login-submit span,
+        .login-submit svg {
+          position: relative;
+          z-index: 1;
+        }
+
+        .login-submit--loading {
+          pointer-events: none;
+          opacity: 0.7;
+        }
+
+        .login-spinner {
+          width: 22px;
+          height: 22px;
+          border: 2.5px solid rgba(255, 255, 255, 0.3);
+          border-top-color: white;
+          border-radius: 50%;
+          animation: spin 0.7s linear infinite;
+        }
+
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+
+        /* === Forgot Message === */
+        .login-forgot-msg {
+          display: flex;
+          gap: 10px;
+          padding: 14px 16px;
+          margin-top: 1.25rem;
+          background: rgba(99, 102, 241, 0.08);
+          border: 1px solid rgba(99, 102, 241, 0.15);
+          border-radius: 14px;
+          color: #c7d2fe;
+          font-size: 0.78rem;
+          animation: fadeSlideIn 0.3s ease;
+        }
+
+        @keyframes fadeSlideIn {
+          from { opacity: 0; transform: translateY(-6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .login-forgot-title {
+          font-weight: 700;
+          font-size: 0.78rem;
+          margin: 0 0 4px;
+        }
+
+        .login-forgot-desc {
+          font-size: 0.72rem;
+          font-weight: 500;
+          opacity: 0.7;
+          margin: 0;
+          line-height: 1.5;
+        }
+
+        .login-forgot-dismiss {
+          background: none;
+          border: none;
+          font-size: 0.65rem;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          color: #818cf8;
+          cursor: pointer;
+          margin-top: 8px;
+          padding: 0;
+          transition: opacity 0.2s;
+        }
+
+        .login-forgot-dismiss:hover {
+          opacity: 0.7;
+        }
+
+        /* === Footer === */
+        .login-footer {
+          margin-top: 1.75rem;
+          text-align: center;
+        }
+
+        .login-footer p {
+          font-size: 0.62rem;
+          font-weight: 600;
+          color: rgba(255, 255, 255, 0.2);
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          margin: 0;
+        }
+
+        /* === Responsive === */
+        @media (max-width: 480px) {
+          .login-card {
+            padding: 2rem 1.5rem;
+            border-radius: 20px;
+          }
+          .login-bg-orb--1 { width: 250px; height: 250px; }
+          .login-bg-orb--2 { width: 200px; height: 200px; }
+        }
+      `}</style>
     </div>
   );
 };

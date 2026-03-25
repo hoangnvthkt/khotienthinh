@@ -205,7 +205,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                 value={formData.email}
                 onChange={e => setFormData({ ...formData, email: e.target.value })}
                 className={`w-full p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-accent ${errors.email ? 'border-red-500' : 'border-slate-200'}`}
-                placeholder="example@khoviet.com"
+                placeholder="example@vioo.vn"
               />
               {errors.email && <p className="text-[10px] text-red-500 font-bold">{errors.email}</p>}
             </div>
