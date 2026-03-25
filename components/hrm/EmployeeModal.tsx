@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Employee, LeaveBalance } from '../../types';
-import { X, Save, User as UserIcon, MapPinned, Building, Layers, HardHat, DollarSign, Calendar, Factory, FolderTree, CalendarDays } from 'lucide-react';
+import { X, Save, User as UserIcon, MapPinned, Building, Layers, HardHat, DollarSign, Calendar, Factory, FolderTree, CalendarDays, TrendingUp } from 'lucide-react';
 
 interface EmployeeModalProps {
     employee: Employee | null;
@@ -9,7 +9,7 @@ interface EmployeeModalProps {
 }
 
 const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
-    const { addEmployee, updateEmployee, users, employees, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, leaveBalances, addHrmItem, updateHrmItem } = useApp();
+    const { addEmployee, updateEmployee, users, employees, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, leaveBalances, addHrmItem, updateHrmItem, salaryGrades } = useApp();
     const [formData, setFormData] = useState<Partial<Employee>>({
         fullName: '',
         title: '',
@@ -333,6 +333,23 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                                         <option value="">-- Vui lòng chọn --</option>
                                         {hrmSalaryPolicies.map(s => (<option key={s.id} value={s.id}>{s.name}</option>))}
                                     </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                        <TrendingUp size={12} /> Bậc lương 3P
+                                    </label>
+                                    <select
+                                        name="salaryGradeId"
+                                        value={formData.salaryGradeId || ''}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-3 rounded-xl border border-indigo-200 dark:border-indigo-800/30 bg-indigo-50 dark:bg-indigo-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 font-bold"
+                                    >
+                                        <option value="">-- Chưa gán bậc --</option>
+                                        {[...salaryGrades].sort((a, b) => a.level - b.level).map(g => (
+                                            <option key={g.id} value={g.id}>{g.code} — {g.name} (HS: {g.bhxhCoefficient})</option>
+                                        ))}
+                                    </select>
+                                    <p className="text-[10px] text-slate-400">Gán bậc lương theo mô hình 3P (Position - Person - Performance)</p>
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
