@@ -29,34 +29,28 @@ export interface HrmDocument {
 const BUCKET = 'hr-documents';
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
-// ==================== CATEGORIES ====================
-export const HR_DOC_CATEGORIES = {
-  employee_record: [
-    { key: 'contract', label: '📋 Hợp đồng LĐ', color: 'bg-indigo-50 text-indigo-600 border-indigo-200' },
-    { key: 'id_card', label: '🪪 CMND/CCCD', color: 'bg-blue-50 text-blue-600 border-blue-200' },
-    { key: 'certificate', label: '🎓 Bằng cấp/Chứng chỉ', color: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
-    { key: 'cv', label: '📝 CV / Đơn xin việc', color: 'bg-violet-50 text-violet-600 border-violet-200' },
-    { key: 'decision', label: '📜 Quyết định', color: 'bg-amber-50 text-amber-600 border-amber-200' },
-    { key: 'insurance', label: '🏥 BHXH / BHYT', color: 'bg-pink-50 text-pink-600 border-pink-200' },
-    { key: 'health', label: '💊 Giấy khám SK', color: 'bg-teal-50 text-teal-600 border-teal-200' },
-    { key: 'other', label: '📁 Khác', color: 'bg-slate-50 text-slate-600 border-slate-200' },
-  ],
-  incoming: [
-    { key: 'correspondence', label: '📨 Công văn', color: 'bg-blue-50 text-blue-600 border-blue-200' },
-    { key: 'notice', label: '📢 Thông báo', color: 'bg-amber-50 text-amber-600 border-amber-200' },
-    { key: 'contract', label: '📋 Hợp đồng', color: 'bg-indigo-50 text-indigo-600 border-indigo-200' },
-    { key: 'invoice', label: '🧾 Hoá đơn', color: 'bg-orange-50 text-orange-600 border-orange-200' },
-    { key: 'permit', label: '📜 Giấy phép', color: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
-    { key: 'other', label: '📁 Khác', color: 'bg-slate-50 text-slate-600 border-slate-200' },
-  ],
-  outgoing: [
-    { key: 'correspondence', label: '📤 Công văn', color: 'bg-blue-50 text-blue-600 border-blue-200' },
-    { key: 'report', label: '📊 Báo cáo', color: 'bg-violet-50 text-violet-600 border-violet-200' },
-    { key: 'contract', label: '📋 Hợp đồng', color: 'bg-indigo-50 text-indigo-600 border-indigo-200' },
-    { key: 'proposal', label: '💡 Đề xuất', color: 'bg-teal-50 text-teal-600 border-teal-200' },
-    { key: 'other', label: '📁 Khác', color: 'bg-slate-50 text-slate-600 border-slate-200' },
-  ],
-};
+// ==================== DYNAMIC CATEGORIES ====================
+export interface DocCategory {
+  id: string;
+  docType: 'employee_record' | 'incoming' | 'outgoing';
+  key: string;
+  label: string;
+  icon: string;
+  color: string;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+const catToCamel = (row: any): DocCategory => ({
+  id: row.id,
+  docType: row.doc_type,
+  key: row.key,
+  label: row.label,
+  icon: row.icon || '📁',
+  color: row.color || 'bg-slate-50 text-slate-600 border-slate-200',
+  sortOrder: row.sort_order || 0,
+  isActive: row.is_active !== false,
+});
 
 export const DOC_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   active: { label: 'Hiệu lực', color: 'bg-emerald-100 text-emerald-700' },
@@ -95,6 +89,41 @@ const toCamel = (row: any): HrmDocument => ({
 
 // ==================== SERVICE ====================
 export const hrmDocumentService = {
+  // ---- Category CRUD ----
+  async listCategories(docType?: string): Promise<DocCategory[]> {
+    let query = supabase.from('hrm_doc_categories').select('*').eq('is_active', true).order('sort_order');
+    if (docType) query = query.eq('doc_type', docType);
+    const { data } = await query;
+    return (data || []).map(catToCamel);
+  },
+
+  async addCategory(cat: { docType: string; key: string; label: string; icon?: string; color?: string; sortOrder?: number }): Promise<DocCategory | null> {
+    const { data, error } = await supabase.from('hrm_doc_categories').insert({
+      doc_type: cat.docType,
+      key: cat.key,
+      label: cat.label,
+      icon: cat.icon || '📁',
+      color: cat.color || 'bg-slate-50 text-slate-600 border-slate-200',
+      sort_order: cat.sortOrder || 50,
+    }).select().single();
+    if (error) { console.error('Add category error:', error); return null; }
+    return catToCamel(data);
+  },
+
+  async updateCategory(id: string, updates: Partial<{ label: string; icon: string; color: string; sortOrder: number; isActive: boolean }>): Promise<void> {
+    const dbUpdates: any = {};
+    if (updates.label !== undefined) dbUpdates.label = updates.label;
+    if (updates.icon !== undefined) dbUpdates.icon = updates.icon;
+    if (updates.color !== undefined) dbUpdates.color = updates.color;
+    if (updates.sortOrder !== undefined) dbUpdates.sort_order = updates.sortOrder;
+    if (updates.isActive !== undefined) dbUpdates.is_active = updates.isActive;
+    await supabase.from('hrm_doc_categories').update(dbUpdates).eq('id', id);
+  },
+
+  async deleteCategory(id: string): Promise<void> {
+    await supabase.from('hrm_doc_categories').delete().eq('id', id);
+  },
+
   validateFile(file: File): { valid: boolean; error?: string } {
     if (file.size > MAX_FILE_SIZE) {
       return { valid: false, error: `File quá lớn (${this.formatSize(file.size)}). Tối đa 50MB.` };

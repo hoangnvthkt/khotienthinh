@@ -5,10 +5,10 @@ import { useTheme } from '../../context/ThemeContext';
 import {
   Search, Upload, FileText, Image, File as FileIcon, Trash2, Download, Eye, X, Plus,
   Filter, Tag, FolderOpen, Paperclip, Clock, ChevronDown, Mail, MailOpen, Send,
-  User, Calendar, AlertTriangle, CheckCircle2, Archive, Hash, Building2
+  User, Calendar, AlertTriangle, CheckCircle2, Archive, Hash, Building2, Settings, Pencil, GripVertical
 } from 'lucide-react';
 import {
-  hrmDocumentService, HrmDocument, HR_DOC_CATEGORIES, DOC_STATUS_CONFIG
+  hrmDocumentService, HrmDocument, DocCategory, DOC_STATUS_CONFIG
 } from '../../lib/hrmDocumentService';
 
 type DocTab = 'employee_record' | 'incoming' | 'outgoing';
@@ -47,6 +47,12 @@ const HrmDocuments: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
+  // Dynamic categories
+  const [allCategories, setAllCategories] = useState<DocCategory[]>([]);
+  const [showCatManager, setShowCatManager] = useState(false);
+  const [editingCat, setEditingCat] = useState<DocCategory | null>(null);
+  const [catForm, setCatForm] = useState({ label: '', icon: '📁', key: '' });
+
   // Upload form
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadTitle, setUploadTitle] = useState('');
@@ -65,6 +71,15 @@ const HrmDocuments: React.FC = () => {
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);
   const employeeMap = useMemo(() => new Map(employees.map(e => [e.id, e])), [employees]);
+
+  // Load categories from DB
+  const loadCategories = useCallback(async () => {
+    const cats = await hrmDocumentService.listCategories();
+    setAllCategories(cats);
+  }, []);
+  useEffect(() => { loadCategories(); }, [loadCategories]);
+
+  const categories = useMemo(() => allCategories.filter(c => c.docType === activeTab), [allCategories, activeTab]);
 
   // Load documents
   const loadDocs = useCallback(async () => {
@@ -189,8 +204,32 @@ const HrmDocuments: React.FC = () => {
     };
   }, [documents]);
 
-  const categories = HR_DOC_CATEGORIES[activeTab] || [];
   const currentTabConfig = TAB_CONFIG.find(t => t.key === activeTab)!;
+
+  // ---- Category CRUD handlers ----
+  const handleAddCategory = async () => {
+    if (!catForm.label.trim()) return;
+    const key = catForm.key.trim() || catForm.label.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    await hrmDocumentService.addCategory({
+      docType: activeTab, key, label: catForm.label, icon: catForm.icon,
+      sortOrder: categories.length + 1,
+    });
+    setCatForm({ label: '', icon: '📁', key: '' });
+    await loadCategories();
+  };
+
+  const handleUpdateCategory = async () => {
+    if (!editingCat || !catForm.label.trim()) return;
+    await hrmDocumentService.updateCategory(editingCat.id, { label: catForm.label, icon: catForm.icon });
+    setEditingCat(null); setCatForm({ label: '', icon: '📁', key: '' });
+    await loadCategories();
+  };
+
+  const handleDeleteCategory = async (cat: DocCategory) => {
+    if (!confirm(`Xoá danh mục "${cat.icon} ${cat.label}"?`)) return;
+    await hrmDocumentService.deleteCategory(cat.id);
+    await loadCategories();
+  };
 
   return (
     <div className="space-y-4">
@@ -271,8 +310,12 @@ const HrmDocuments: React.FC = () => {
           <button key={c.key} onClick={() => setFilterCategory(c.key)}
             className={`px-3 py-1.5 rounded-lg text-[10px] font-black border transition-all ${
               filterCategory === c.key ? c.color + ' ring-1 ring-indigo-300' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
-            }`}>{c.label}</button>
+            }`}>{c.icon} {c.label}</button>
         ))}
+        <button onClick={() => { setShowCatManager(true); setEditingCat(null); setCatForm({ label: '', icon: '📁', key: '' }); }}
+          className="px-2 py-1.5 rounded-lg text-[10px] font-bold border border-dashed border-slate-300 dark:border-slate-600 text-slate-400 hover:text-indigo-500 hover:border-indigo-300 transition-all flex items-center gap-1">
+          <Settings size={10} /> Quản lý
+        </button>
       </div>
 
       {/* Document List */}
@@ -492,7 +535,7 @@ const HrmDocuments: React.FC = () => {
                     <button key={c.key} onClick={() => setUploadCategory(c.key)}
                       className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
                         uploadCategory === c.key ? c.color + ' ring-2 ring-offset-1 ring-indigo-300' : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-400'
-                      }`}>{c.label}</button>
+                      }`}>{c.icon} {c.label}</button>
                   ))}
                 </div>
               </div>
@@ -588,6 +631,72 @@ const HrmDocuments: React.FC = () => {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ CATEGORY MANAGER MODAL ============ */}
+      {showCatManager && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-600 w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col">
+            <div className={`px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-gradient-to-r ${currentTabConfig.color} rounded-t-3xl flex items-center justify-between`}>
+              <span className="font-bold text-white flex items-center gap-2"><Settings size={18} /> Quản lý danh mục — {currentTabConfig.label}</span>
+              <button onClick={() => setShowCatManager(false)} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><X size={18} /></button>
+            </div>
+
+            {/* Existing categories */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {categories.length === 0 && (
+                <p className="text-center text-sm text-slate-400 py-6">Chưa có danh mục nào</p>
+              )}
+              {categories.map(cat => (
+                <div key={cat.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-700 border border-slate-100 dark:border-slate-600 group">
+                  <span className="text-lg shrink-0">{cat.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{cat.label}</span>
+                    <span className="text-[9px] text-slate-400 ml-2 font-mono">{cat.key}</span>
+                  </div>
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => { setEditingCat(cat); setCatForm({ label: cat.label, icon: cat.icon, key: cat.key }); }}
+                      className="w-7 h-7 rounded-lg bg-white dark:bg-slate-600 border border-slate-200 dark:border-slate-500 flex items-center justify-center text-indigo-500 hover:bg-indigo-50" title="Sửa">
+                      <Pencil size={12} />
+                    </button>
+                    <button onClick={() => handleDeleteCategory(cat)}
+                      className="w-7 h-7 rounded-lg bg-white dark:bg-slate-600 border border-slate-200 dark:border-slate-500 flex items-center justify-center text-red-400 hover:bg-red-50" title="Xoá">
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Add/Edit form */}
+            <div className="p-4 border-t border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-700/50">
+              <div className="text-[10px] font-bold text-slate-500 uppercase mb-2">
+                {editingCat ? '✏️ Sửa danh mục' : '➕ Thêm danh mục mới'}
+              </div>
+              <div className="flex gap-2">
+                <input value={catForm.icon} onChange={e => setCatForm({ ...catForm, icon: e.target.value })}
+                  placeholder="📁" maxLength={2}
+                  className="w-12 px-2 py-2 rounded-lg border border-slate-200 dark:border-slate-600 text-center text-lg outline-none dark:bg-slate-700" />
+                <input value={catForm.label} onChange={e => setCatForm({ ...catForm, label: e.target.value })}
+                  placeholder="Tên danh mục (VD: Thư mời, Biên bản...)"
+                  className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-400 dark:bg-slate-700 dark:text-white" />
+                {editingCat ? (
+                  <div className="flex gap-1">
+                    <button onClick={handleUpdateCategory}
+                      className="px-4 py-2 rounded-lg text-xs font-bold bg-indigo-500 text-white hover:bg-indigo-600">Lưu</button>
+                    <button onClick={() => { setEditingCat(null); setCatForm({ label: '', icon: '📁', key: '' }); }}
+                      className="px-3 py-2 rounded-lg text-xs font-bold text-slate-400 hover:bg-slate-100">Huỷ</button>
+                  </div>
+                ) : (
+                  <button onClick={handleAddCategory} disabled={!catForm.label.trim()}
+                    className="px-4 py-2 rounded-lg text-xs font-bold bg-indigo-500 text-white hover:bg-indigo-600 disabled:opacity-40 flex items-center gap-1">
+                    <Plus size={12} /> Thêm
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
