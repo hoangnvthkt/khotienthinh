@@ -158,10 +158,17 @@ export const hrmDocumentService = {
     const folder = meta.docType === 'employee_record' ? `employees/${meta.employeeId || 'unknown'}` : meta.docType;
     const storagePath = `${folder}/${uuid}_${file.name}`;
 
+    // Step 1: Upload to storage
     const { error: uploadError } = await supabase.storage.from(BUCKET).upload(storagePath, file, { upsert: false });
-    if (uploadError) { console.error('Upload error:', uploadError); return null; }
+    if (uploadError) {
+      console.error('Storage upload error:', uploadError);
+      alert('Lỗi tải file lên storage: ' + uploadError.message);
+      return null;
+    }
 
+    // Step 2: Insert metadata record (match proven documentService pattern)
     const doc = {
+      id: crypto.randomUUID(),
       doc_type: meta.docType,
       doc_category: meta.docCategory,
       employee_id: meta.employeeId || null,
@@ -185,7 +192,8 @@ export const hrmDocumentService = {
 
     const { data, error } = await supabase.from('hrm_documents').insert(doc).select().single();
     if (error) {
-      console.error('Insert error:', error);
+      console.error('DB insert error:', error);
+      alert('Lỗi lưu thông tin tài liệu: ' + error.message);
       await supabase.storage.from(BUCKET).remove([storagePath]);
       return null;
     }

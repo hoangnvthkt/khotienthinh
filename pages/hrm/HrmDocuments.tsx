@@ -146,10 +146,11 @@ const HrmDocuments: React.FC = () => {
       if ((activeTab === 'incoming' || activeTab === 'outgoing') && !docNumber) {
         docNumber = await hrmDocumentService.getNextDocNumber(activeTab);
       }
+      let successCount = 0;
       for (const file of uploadFiles) {
         const v = hrmDocumentService.validateFile(file);
         if (!v.valid) { alert(v.error); continue; }
-        await hrmDocumentService.upload(file, {
+        const result = await hrmDocumentService.upload(file, {
           docType: activeTab,
           docCategory: uploadCategory,
           title: uploadFiles.length === 1 ? uploadTitle : file.name.replace(/\.[^.]+$/, ''),
@@ -163,11 +164,15 @@ const HrmDocuments: React.FC = () => {
           deadline: uploadDeadline || undefined,
           tags, uploadedBy: user?.name,
         });
+        if (result) successCount++;
       }
-      await loadDocs();
-      resetUploadForm();
-    } catch (err) {
+      if (successCount > 0) {
+        await loadDocs();
+        resetUploadForm();
+      }
+    } catch (err: any) {
       console.error('Upload failed:', err);
+      alert('Lỗi upload: ' + (err?.message || 'Không xác định'));
     } finally {
       setUploading(false);
     }
