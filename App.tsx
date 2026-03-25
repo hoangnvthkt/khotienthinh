@@ -35,6 +35,7 @@ const LaborContractPage = React.lazy(() => import('./pages/hrm/LaborContract'));
 const CheckIn = React.lazy(() => import('./pages/hrm/CheckIn'));
 const HrmReports = React.lazy(() => import('./pages/hrm/HrmReports'));
 const HrmDashboard = React.lazy(() => import('./pages/hrm/HrmDashboard'));
+const HrmDocuments = React.lazy(() => import('./pages/hrm/HrmDocuments'));
 
 // Expense pages
 const BudgetDashboard = React.lazy(() => import('./pages/expense/BudgetDashboard'));
@@ -105,6 +106,7 @@ const AppRoutes: React.FC = () => {
           <Route path="hrm/contracts" element={<LaborContractPage />} />
           <Route path="hrm/checkin" element={<CheckIn />} />
           <Route path="hrm/reports" element={<HrmReports />} />
+          <Route path="hrm/documents" element={<HrmDocuments />} />
           <Route path="da" element={<ProjectDashboard />} />
           <Route path="da/portfolio" element={<PortfolioDashboard />} />
           <Route path="chat" element={<Chat />} />
