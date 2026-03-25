@@ -6,7 +6,7 @@ import {
   History, Settings, LogOut, FileText, Sun, Moon,
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
-  Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot
+  Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, TrendingUp
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -122,6 +122,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/hrm/attendance', icon: Calendar, label: 'Chấm công' },
       { to: '/hrm/leave', icon: CalendarOff, label: 'Nghỉ phép' },
       { to: '/hrm/payroll', icon: DollarSign, label: 'Bảng lương' },
+      { to: '/hrm/salary-3p', icon: TrendingUp, label: 'Lương 3P' },
       { to: '/hrm/contracts', icon: FileSignature, label: 'Hợp đồng LĐ' },
       { to: '/hrm/reports', icon: BarChart3, label: 'Báo cáo NS' },
     ],

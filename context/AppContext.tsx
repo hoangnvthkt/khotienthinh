@@ -10,7 +10,8 @@ import {
   OrgUnit, ProjectFinance, ProjectTransaction,
   Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus,
   AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract, LeaveBalance, PayrollTemplate, HrmHoliday, HrmSalaryHistory,
-  BudgetCategory, BudgetEntry, ExpenseRecord, AttendanceProposal, LeaveLog, LeaveApprover
+  BudgetCategory, BudgetEntry, ExpenseRecord, AttendanceProposal, LeaveLog, LeaveApprover,
+  SalaryGrade, KpiPeriod, KpiScore
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_ITEMS,
@@ -66,6 +67,10 @@ interface AppContextType {
   holidays: HrmHoliday[];
   salaryHistory: HrmSalaryHistory[];
   attendanceProposals: AttendanceProposal[];
+  // 3P Salary
+  salaryGrades: SalaryGrade[];
+  kpiPeriods: KpiPeriod[];
+  kpiScores: KpiScore[];
   // Budget
   budgetCategories: BudgetCategory[];
   budgetEntries: BudgetEntry[];
@@ -180,6 +185,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [holidays, setHolidays] = useState<HrmHoliday[]>([]);
   const [salaryHistory, setSalaryHistory] = useState<HrmSalaryHistory[]>([]);
   const [attendanceProposals, setAttendanceProposals] = useState<AttendanceProposal[]>([]);
+  // 3P Salary
+  const [salaryGrades, setSalaryGrades] = useState<SalaryGrade[]>([]);
+  const [kpiPeriods, setKpiPeriods] = useState<KpiPeriod[]>([]);
+  const [kpiScores, setKpiScores] = useState<KpiScore[]>([]);
   const [budgetCategories, setBudgetCategories] = useState<BudgetCategory[]>([]);
   const [budgetEntries, setBudgetEntries] = useState<BudgetEntry[]>([]);
   const [expenseRecords, setExpenseRecords] = useState<ExpenseRecord[]>([]);
@@ -395,6 +404,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (payrollTplData) setPayrollTemplates(payrollTplData);
         if (holidayData) setHolidays(holidayData);
         if (salaryHistData) setSalaryHistory(salaryHistData);
+
+        // 3P Salary
+        const [gradesData, kpiPeriodsData, kpiScoresData] = await Promise.all([
+          fetchTable('salary_grades'),
+          fetchTable('kpi_periods'),
+          fetchTable('kpi_scores'),
+        ]);
+        if (gradesData) setSalaryGrades(gradesData.map((g: any) => ({
+          id: g.id, code: g.code, name: g.name, groupName: g.group_name, level: g.level,
+          bhxhCoefficient: g.bhxh_coefficient, regulatedSalary: g.regulated_salary,
+          pc1ChucDanh: g.pc1_chuc_danh, pc2ThuLao: g.pc2_thu_lao, pc3LienLac: g.pc3_lien_lac,
+          createdAt: g.created_at,
+        })));
+        if (kpiPeriodsData) setKpiPeriods(kpiPeriodsData.map((p: any) => ({
+          id: p.id, name: p.name, startDate: p.start_date, endDate: p.end_date, status: p.status,
+          createdAt: p.created_at,
+        })));
+        if (kpiScoresData) setKpiScores(kpiScoresData.map((s: any) => ({
+          id: s.id, periodId: s.period_id, employeeId: s.employee_id,
+          kpiRating: s.kpi_rating, kpiCoefficient: s.kpi_coefficient,
+          note: s.note, scoredBy: s.scored_by, createdAt: s.created_at,
+        })));
 
         // Attendance Proposals
         const proposalData = await fetchTable('hrm_attendance_proposals');
@@ -1277,6 +1308,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     'expense_records': setExpenseRecords,
     'hrm_attendance_proposals': setAttendanceProposals,
     'hrm_leave_logs': setLeaveLogs,
+    // 3P Salary
+    'salary_grades': setSalaryGrades,
+    'kpi_periods': setKpiPeriods,
+    'kpi_scores': setKpiScores,
   };
 
   const addHrmItem = async (table: string, item: any) => {
@@ -1623,6 +1658,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       categories, units, employees,
       hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
       attendanceRecords, leaveRequests, leaveLogs, leaveBalances, payrollRecords, payrollTemplates, holidays, laborContracts, salaryHistory,
+      salaryGrades, kpiPeriods, kpiScores,
       attendanceProposals, approveLeave, rejectLeave, addLeaveLog,
       budgetCategories, budgetEntries, expenseRecords,
       addHrmItem, updateHrmItem, removeHrmItem,

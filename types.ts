@@ -1186,3 +1186,61 @@ export interface ExpenseRecord {
   createdBy?: string;
   createdAt?: string;
 }
+
+// ==================== LƯƠNG 3P ====================
+
+export interface SalaryGrade {
+  id: string;
+  code: string;              // E1–E11
+  name: string;              // Tên chức danh mẫu
+  groupName?: string;        // BQĐ, Quản lý, Nhân viên, Công nhân
+  level: number;             // Thứ tự 1–11
+  bhxhCoefficient: number;   // Hệ số BHXH (2.2 – 5.1)
+  regulatedSalary: number;   // Bậc lương quy định (B-)
+  pc1ChucDanh: number;       // HS PC Chức danh
+  pc2ThuLao: number;         // HS PC Thù lao
+  pc3LienLac: number;        // HS PC Liên lạc
+  createdAt?: string;
+}
+
+export interface KpiPeriod {
+  id: string;
+  name: string;              // VD: Q1/2026
+  startDate: string;
+  endDate: string;
+  status: 'draft' | 'active' | 'closed';
+  createdAt?: string;
+}
+
+export interface KpiScore {
+  id: string;
+  periodId: string;
+  employeeId: string;
+  kpiRating: string;         // A1, A2, B1... D4
+  kpiCoefficient: number;    // 1.20, 1.15... 0.60
+  note?: string;
+  scoredBy?: string;
+  createdAt?: string;
+}
+
+export const KPI_RATINGS: { code: string; label: string; coefficient: number; group: string }[] = [
+  { code: 'A1', label: 'A1 - Xuất sắc', coefficient: 1.20, group: 'A' },
+  { code: 'A2', label: 'A2 - Giỏi', coefficient: 1.15, group: 'A' },
+  { code: 'A3', label: 'A3 - Khá giỏi', coefficient: 1.10, group: 'A' },
+  { code: 'A4', label: 'A4 - Khá', coefficient: 1.06, group: 'A' },
+  { code: 'B1', label: 'B1 - Trên TB', coefficient: 1.05, group: 'B' },
+  { code: 'B2', label: 'B2 - Trung bình', coefficient: 1.00, group: 'B' },
+  { code: 'B3', label: 'B3 - Dưới TB', coefficient: 0.95, group: 'B' },
+  { code: 'B4', label: 'B4 - Yếu nhẹ', coefficient: 0.90, group: 'B' },
+  { code: 'C1', label: 'C1 - Yếu', coefficient: 0.89, group: 'C' },
+  { code: 'C2', label: 'C2', coefficient: 0.85, group: 'C' },
+  { code: 'C3', label: 'C3', coefficient: 0.80, group: 'C' },
+  { code: 'C4', label: 'C4', coefficient: 0.75, group: 'C' },
+  { code: 'D1', label: 'D1 - Kém', coefficient: 0.74, group: 'D' },
+  { code: 'D2', label: 'D2', coefficient: 0.70, group: 'D' },
+  { code: 'D3', label: 'D3', coefficient: 0.65, group: 'D' },
+  { code: 'D4', label: 'D4 - Rất kém', coefficient: 0.60, group: 'D' },
+];
+
+// Lương cơ sở nhà nước (2024)
+export const BASE_SALARY_COEFFICIENT = 2340000;
