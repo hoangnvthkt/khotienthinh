@@ -155,8 +155,9 @@ export const hrmDocumentService = {
     if (!validation.valid) { alert(validation.error); return null; }
 
     const uuid = crypto.randomUUID();
+    const ext = file.name.split('.').pop() || 'bin';
     const folder = meta.docType === 'employee_record' ? `employees/${meta.employeeId || 'unknown'}` : meta.docType;
-    const storagePath = `${folder}/${uuid}_${file.name}`;
+    const storagePath = `${folder}/${uuid}.${ext}`;
 
     // Step 1: Upload to storage
     const { error: uploadError } = await supabase.storage.from(BUCKET).upload(storagePath, file, { upsert: false });
