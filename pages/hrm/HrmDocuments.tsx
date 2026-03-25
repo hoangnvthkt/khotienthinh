@@ -442,7 +442,7 @@ const HrmDocuments: React.FC = () => {
             </div>
             <div className="p-6 space-y-4">
               {/* Files */}
-              {uploadFiles.length > 0 && (
+              {uploadFiles.length > 0 ? (
                 <div className="space-y-2">
                   {uploadFiles.map((f, i) => (
                     <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-700 border border-slate-100 dark:border-slate-600">
@@ -460,6 +460,15 @@ const HrmDocuments: React.FC = () => {
                     className="w-full py-2 rounded-xl border border-dashed border-slate-200 text-[10px] font-bold text-slate-400 hover:text-indigo-500 flex items-center justify-center gap-1">
                     <Plus size={10} /> Thêm file
                   </button>
+                </div>
+              ) : (
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="cursor-pointer border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-indigo-400 rounded-xl p-6 text-center transition-all hover:bg-indigo-50/30"
+                >
+                  <Upload size={28} className="mx-auto mb-2 text-slate-300" />
+                  <p className="text-xs font-bold text-slate-500">Nhấn để chọn file hoặc kéo thả vào đây</p>
+                  <p className="text-[10px] text-slate-400 mt-1">PDF, ảnh, Word, Excel — tối đa 50MB</p>
                 </div>
               )}
 
