@@ -596,6 +596,8 @@ export interface WorkflowTemplate {
   createdBy: string; // user id
   isActive: boolean;
   customFields: WorkflowCustomField[];
+  managers: string[];         // user IDs — admin-like except delete
+  defaultWatchers: string[];  // user IDs — view-only on all instances
   createdAt: string;
   updatedAt: string;
 }
@@ -632,6 +634,7 @@ export interface WorkflowInstance {
   currentNodeId: string | null;
   status: WorkflowInstanceStatus;
   formData: Record<string, any>;
+  watchers: string[];  // user IDs — view + comment only
   createdAt: string;
   updatedAt: string;
 }

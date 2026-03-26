@@ -35,6 +35,7 @@ interface WorkflowContextType {
     processInstance: (instanceId: string, action: WorkflowInstanceAction, userId: string, comment?: string) => Promise<void>;
     reopenInstance: (instanceId: string, targetNodeId: string, userId: string, comment?: string) => Promise<boolean>;
     getInstanceLogs: (instanceId: string) => WorkflowInstanceLog[];
+    updateInstanceWatchers: (instanceId: string, watchers: string[]) => Promise<boolean>;
 
     // Print Templates
     uploadPrintTemplate: (templateId: string, name: string, file: File) => Promise<WorkflowPrintTemplate | null>;
@@ -54,6 +55,8 @@ const mapTemplateFromDB = (row: any): WorkflowTemplate => ({
     createdBy: row.created_by,
     isActive: row.is_active,
     customFields: row.custom_fields || [],
+    managers: row.managers || [],
+    defaultWatchers: row.default_watchers || [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
 });
@@ -85,6 +88,7 @@ const mapInstanceFromDB = (row: any): WorkflowInstance => ({
     currentNodeId: row.current_node_id,
     status: row.status,
     formData: row.form_data || {},
+    watchers: row.watchers || [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
 });
@@ -154,6 +158,8 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             created_by: userId,
             is_active: true,
             custom_fields: [],
+            managers: [],
+            default_watchers: [],
         }).select().single();
         if (error || !data) { console.error(error); return null; }
         const t = mapTemplateFromDB(data);
@@ -167,6 +173,8 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             description: template.description,
             is_active: template.isActive,
             custom_fields: template.customFields || [],
+            managers: template.managers || [],
+            default_watchers: template.defaultWatchers || [],
             updated_at: new Date().toISOString(),
         }).eq('id', template.id);
         setTemplates(prev => prev.map(t => t.id === template.id ? template : t));
@@ -245,6 +253,9 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const startEdge = templateEdges.find(e => e.sourceNodeId === startNode.id);
         const firstTaskNodeId = startEdge ? startEdge.targetNodeId : null;
 
+        // Auto-copy default watchers from template
+        const tmpl = templates.find(t => t.id === templateId);
+
         // Generate code: WF-YYYY-NNN (global sequential)
         const year = new Date().getFullYear();
         const count = instances.length + 1;
@@ -258,6 +269,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             current_node_id: firstTaskNodeId,
             status: 'RUNNING',
             form_data: formData,
+            watchers: tmpl?.defaultWatchers || [],
         }).select().single();
 
         if (error || !data) { console.error(error); return null; }
@@ -425,6 +437,17 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return true;
     };
 
+    // ---- Instance Watchers ----
+    const updateInstanceWatchers = async (instanceId: string, watchers: string[]): Promise<boolean> => {
+        const { error } = await supabase.from('workflow_instances').update({
+            watchers,
+            updated_at: new Date().toISOString(),
+        }).eq('id', instanceId);
+        if (error) { console.error(error); return false; }
+        setInstances(prev => prev.map(i => i.id === instanceId ? { ...i, watchers } : i));
+        return true;
+    };
+
     // ==================== PRINT TEMPLATES ====================
     const uploadPrintTemplate = async (templateId: string, name: string, file: File): Promise<WorkflowPrintTemplate | null> => {
         const ext = file.name.split('.').pop() || 'docx';
@@ -461,7 +484,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         templates, nodes, edges, instances, logs, printTemplates, isLoading,
         createTemplate, updateTemplate, deleteTemplate,
         saveNodesAndEdges, getTemplateNodes, getTemplateEdges,
-        createInstance, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs,
+        createInstance, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs, updateInstanceWatchers,
         uploadPrintTemplate, deletePrintTemplate, getPrintTemplates,
         refreshData,
     };

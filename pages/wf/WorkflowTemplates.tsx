@@ -6,7 +6,7 @@ import { useApp } from '../../context/AppContext';
 import { Role } from '../../types';
 import {
     Plus, GitBranch, Settings2, Trash2, ToggleLeft, ToggleRight,
-    Search, Layers, Clock, User, ShieldAlert, ChevronRight, Edit2
+    Search, Layers, Clock, User, ShieldAlert, ChevronRight, Edit2, Shield, Eye, X
 } from 'lucide-react';
 
 const WorkflowTemplates: React.FC = () => {
@@ -21,18 +21,57 @@ const WorkflowTemplates: React.FC = () => {
     const [editingTemplate, setEditingTemplate] = useState<typeof templates[0] | null>(null);
     const [editName, setEditName] = useState('');
     const [editDesc, setEditDesc] = useState('');
+    // Role pickers
+    const [newManagers, setNewManagers] = useState<string[]>([]);
+    const [newWatchers, setNewWatchers] = useState<string[]>([]);
+    const [editManagers, setEditManagers] = useState<string[]>([]);
+    const [editWatchers, setEditWatchers] = useState<string[]>([]);
 
-    if (user.role !== Role.ADMIN) {
+    // Helper: User picker component
+    const UserPicker: React.FC<{ selected: string[]; onChange: (v: string[]) => void; label: string; icon: React.ReactNode; color: string }> = ({ selected, onChange, label, icon, color }) => (
+        <div>
+            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                {icon} {label}
+            </label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+                {selected.map(uid => {
+                    const u = users.find(x => x.id === uid);
+                    return (
+                        <span key={uid} className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold ${color}`}>
+                            {u?.name || uid}
+                            <button type="button" onClick={() => onChange(selected.filter(x => x !== uid))} className="hover:opacity-70"><X size={12} /></button>
+                        </span>
+                    );
+                })}
+            </div>
+            <select
+                className="w-full px-3 py-2 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm"
+                value=""
+                onChange={e => { if (e.target.value && !selected.includes(e.target.value)) onChange([...selected, e.target.value]); }}
+            >
+                <option value="">-- Chọn nhân viên --</option>
+                {users.filter(u => !selected.includes(u.id)).map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+            </select>
+        </div>
+    );
+
+    if (user.role !== Role.ADMIN && !templates.some(t => t.managers?.includes(user.id))) {
         return (
             <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400">
                 <ShieldAlert size={48} className="mb-4 opacity-20" />
                 <h2 className="text-xl font-black uppercase tracking-widest">Truy cập bị từ chối</h2>
-                <p className="text-sm font-medium">Chỉ Admin mới có quyền quản lý quy trình.</p>
+                <p className="text-sm font-medium">Chỉ Admin hoặc Quản trị viên mới có quyền quản lý quy trình.</p>
             </div>
         );
     }
 
-    const filtered = templates.filter(t =>
+    const isAdmin = user.role === Role.ADMIN;
+    // Manager can see templates they manage
+    const visibleTemplates = isAdmin ? templates : templates.filter(t => t.managers?.includes(user.id));
+
+    const filtered = visibleTemplates.filter(t =>
         t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         t.description.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -41,9 +80,13 @@ const WorkflowTemplates: React.FC = () => {
         if (!newName.trim()) return;
         const t = await createTemplate(newName.trim(), newDesc.trim(), user.id);
         if (t) {
+            // Save managers + default watchers
+            await updateTemplate({ ...t, managers: newManagers, defaultWatchers: newWatchers });
             setShowCreateModal(false);
             setNewName('');
             setNewDesc('');
+            setNewManagers([]);
+            setNewWatchers([]);
             navigate(`/wf/builder/${t.id}`);
         }
     };
@@ -61,11 +104,13 @@ const WorkflowTemplates: React.FC = () => {
         setEditingTemplate(t);
         setEditName(t.name);
         setEditDesc(t.description);
+        setEditManagers(t.managers || []);
+        setEditWatchers(t.defaultWatchers || []);
     };
 
     const handleEdit = async () => {
         if (!editingTemplate || !editName.trim()) return;
-        await updateTemplate({ ...editingTemplate, name: editName.trim(), description: editDesc.trim() });
+        await updateTemplate({ ...editingTemplate, name: editName.trim(), description: editDesc.trim(), managers: editManagers, defaultWatchers: editWatchers });
         setEditingTemplate(null);
     };
 
@@ -139,6 +184,16 @@ const WorkflowTemplates: React.FC = () => {
                                 {(t.customFields?.length || 0) > 0 && (
                                     <span className="flex items-center gap-1 text-violet-500">📋 {t.customFields.length} trường</span>
                                 )}
+                                {(t.managers?.length || 0) > 0 && (
+                                    <span className="flex items-center gap-1 text-amber-500" title={`Quản trị: ${t.managers.map(uid => users.find(u => u.id === uid)?.name || uid).join(', ')}`}>
+                                        <Shield size={10} /> {t.managers.length}
+                                    </span>
+                                )}
+                                {(t.defaultWatchers?.length || 0) > 0 && (
+                                    <span className="flex items-center gap-1 text-blue-500" title={`Theo dõi: ${t.defaultWatchers.map(uid => users.find(u => u.id === uid)?.name || uid).join(', ')}`}>
+                                        <Eye size={10} /> {t.defaultWatchers.length}
+                                    </span>
+                                )}
                                 <span className="flex items-center gap-1"><Clock size={10} /> {new Date(t.createdAt).toLocaleDateString('vi-VN')}</span>
                             </div>
 
@@ -155,13 +210,15 @@ const WorkflowTemplates: React.FC = () => {
                                     >
                                         {t.isActive ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
                                     </button>
-                                    <button
-                                        onClick={() => setDeleteConfirmId(t.id)}
-                                        className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition"
-                                        title="Xóa quy trình"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
+                                    {isAdmin && (
+                                        <button
+                                            onClick={() => setDeleteConfirmId(t.id)}
+                                            className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition"
+                                            title="Xóa quy trình"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => openEditModal(t)}
                                         className="p-1.5 rounded-lg text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition"
@@ -213,6 +270,8 @@ const WorkflowTemplates: React.FC = () => {
                                     rows={3}
                                 />
                             </div>
+                            <UserPicker selected={newManagers} onChange={setNewManagers} label="Quản trị viên" icon={<Shield size={12} className="text-amber-500" />} color="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" />
+                            <UserPicker selected={newWatchers} onChange={setNewWatchers} label="Người theo dõi mặc định" icon={<Eye size={12} className="text-blue-500" />} color="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" />
                         </div>
                         <div className="flex gap-3 mt-6">
                             <button onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
@@ -263,6 +322,8 @@ const WorkflowTemplates: React.FC = () => {
                                     rows={3}
                                 />
                             </div>
+                            <UserPicker selected={editManagers} onChange={setEditManagers} label="Quản trị viên" icon={<Shield size={12} className="text-amber-500" />} color="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" />
+                            <UserPicker selected={editWatchers} onChange={setEditWatchers} label="Người theo dõi mặc định" icon={<Eye size={12} className="text-blue-500" />} color="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" />
                         </div>
                         <div className="flex gap-3 mt-6">
                             <button onClick={() => setEditingTemplate(null)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>

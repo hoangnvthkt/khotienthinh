@@ -11,7 +11,7 @@ import {
     ArrowRight, User, MessageSquare, FileText, Send, RotateCcw,
     ChevronDown, ChevronUp, Filter, Inbox, AlertCircle, X,
     Edit2, Trash2, Ban, Save, Upload, Paperclip, Table2, FileSpreadsheet, Eye, Download, Undo2,
-    LayoutGrid, List, Printer
+    LayoutGrid, List, Printer, Shield, UserPlus
 } from 'lucide-react';
 import KanbanBoard from '../../components/KanbanBoard';
 import * as XLSX from 'xlsx';
@@ -407,9 +407,9 @@ const FileFieldInput: React.FC<{
 };
 
 const WorkflowInstances: React.FC = () => {
-    const { templates, instances, nodes, edges, logs, createInstance, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates } = useWorkflow();
+    const { templates, instances, nodes, edges, logs, createInstance, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates, updateInstanceWatchers } = useWorkflow();
     const { user, users } = useApp();
-    const [activeTab, setActiveTab] = useState<'mine' | 'pending'>('mine');
+    const [activeTab, setActiveTab] = useState<'mine' | 'pending' | 'watching'>('mine');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
     const [searchTerm, setSearchTerm] = useState('');
     const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
@@ -460,6 +460,14 @@ const WorkflowInstances: React.FC = () => {
 
         if (activeTab === 'mine') {
             list = list.filter(i => i.createdBy === user.id);
+        } else if (activeTab === 'watching') {
+            // Show instances where user is a watcher (instance-level or default template-level)
+            list = list.filter(i => {
+                if (i.watchers?.includes(user.id)) return true;
+                const tmpl = templates.find(t => t.id === i.templateId);
+                if (tmpl?.defaultWatchers?.includes(user.id)) return true;
+                return false;
+            });
         } else {
             // "Chờ tôi duyệt": instances where current node is assigned to this user (by role or by userId)
             list = list.filter(i => {
@@ -469,6 +477,9 @@ const WorkflowInstances: React.FC = () => {
                 if (currentNode.config.assigneeUserId === user.id) return true;
                 if (currentNode.config.assigneeRole === user.role) return true;
                 if (user.role === Role.ADMIN) return true; // admin sees all
+                // Managers can also see pending instances for their templates
+                const tmpl = templates.find(t => t.id === i.templateId);
+                if (tmpl?.managers?.includes(user.id)) return true;
                 return false;
             });
         }
@@ -483,7 +494,7 @@ const WorkflowInstances: React.FC = () => {
         }
 
         return list;
-    }, [instances, activeTab, filterStatus, searchTerm, user, nodes]);
+    }, [instances, activeTab, filterStatus, searchTerm, user, nodes, templates]);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -778,6 +789,9 @@ const WorkflowInstances: React.FC = () => {
         if (!currentNode) return false;
         if (currentNode.type === WorkflowNodeType.START || currentNode.type === WorkflowNodeType.END) return false;
         if (user.role === Role.ADMIN) return true;
+        // Managers can act on all instances of their templates
+        const tmpl = templates.find(t => t.id === instance.templateId);
+        if (tmpl?.managers?.includes(user.id)) return true;
         if (currentNode.config.assigneeUserId === user.id) return true;
         if (currentNode.config.assigneeRole === user.role) return true;
         // Allow creator to act on first step after REVISION_REQUESTED
@@ -952,17 +966,39 @@ const WorkflowInstances: React.FC = () => {
                             if (i.status !== WorkflowInstanceStatus.RUNNING || !i.currentNodeId) return false;
                             const cn = nodes.find(n => n.id === i.currentNodeId);
                             if (!cn) return false;
-                            return user.role === Role.ADMIN || cn.config.assigneeUserId === user.id || cn.config.assigneeRole === user.role;
+                            if (user.role === Role.ADMIN || cn.config.assigneeUserId === user.id || cn.config.assigneeRole === user.role) return true;
+                            const tmpl = templates.find(t => t.id === i.templateId);
+                            if (tmpl?.managers?.includes(user.id)) return true;
+                            return false;
                         }).length > 0 && (
                                 <span className="bg-white/30 px-1.5 py-0.5 rounded-full text-[10px]">
                                     {instances.filter(i => {
                                         if (i.status !== WorkflowInstanceStatus.RUNNING || !i.currentNodeId) return false;
                                         const cn = nodes.find(n => n.id === i.currentNodeId);
                                         if (!cn) return false;
-                                        return user.role === Role.ADMIN || cn.config.assigneeUserId === user.id || cn.config.assigneeRole === user.role;
+                                        if (user.role === Role.ADMIN || cn.config.assigneeUserId === user.id || cn.config.assigneeRole === user.role) return true;
+                                        const tmpl = templates.find(t => t.id === i.templateId);
+                                        if (tmpl?.managers?.includes(user.id)) return true;
+                                        return false;
                                     }).length}
                                 </span>
                             )}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('watching')}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${activeTab === 'watching' ? 'bg-blue-500 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}
+                    >
+                        <Eye size={13} /> Theo dõi
+                        {(() => {
+                            const count = instances.filter(i => {
+                                if (i.watchers?.includes(user.id)) return true;
+                                const tmpl = templates.find(t => t.id === i.templateId);
+                                return tmpl?.defaultWatchers?.includes(user.id) || false;
+                            }).length;
+                            return count > 0 ? (
+                                <span className="bg-white/30 px-1.5 py-0.5 rounded-full text-[10px]">{count}</span>
+                            ) : null;
+                        })()}
                     </button>
                 </div>
 
@@ -1097,6 +1133,49 @@ const WorkflowInstances: React.FC = () => {
                                             <span className="flex items-center gap-1"><GitBranch size={9} /> {template?.name || 'N/A'}</span>
                                             <span className="flex items-center gap-1"><Clock size={9} /> {new Date(instance.createdAt).toLocaleString('vi-VN')}</span>
                                         </div>
+                                        {/* Watchers section */}
+                                        {(instance.watchers?.length > 0) && (
+                                            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                                                <Eye size={10} className="text-blue-400" />
+                                                {instance.watchers.map(uid => {
+                                                    const wu = users.find(u => u.id === uid);
+                                                    return (
+                                                        <span key={uid} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                                                            {wu?.name || uid}
+                                                            {(isOwner || user.role === Role.ADMIN || template?.managers?.includes(user.id)) && (
+                                                                <button onClick={() => { const nw = (instance.watchers || []).filter(w => w !== uid); updateInstanceWatchers(instance.id, nw); }} className="hover:text-red-500"><X size={9} /></button>
+                                                            )}
+                                                        </span>
+                                                    );
+                                                })}
+                                                {(isOwner || user.role === Role.ADMIN || template?.managers?.includes(user.id)) && (
+                                                    <select
+                                                        className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 font-bold outline-none"
+                                                        value=""
+                                                        onChange={e => { if (e.target.value) updateInstanceWatchers(instance.id, [...(instance.watchers || []), e.target.value]); }}
+                                                    >
+                                                        <option value="">+ Thêm</option>
+                                                        {users.filter(u => !(instance.watchers || []).includes(u.id)).map(u => (
+                                                            <option key={u.id} value={u.id}>{u.name}</option>
+                                                        ))}
+                                                    </select>
+                                                )}
+                                            </div>
+                                        )}
+                                        {(!instance.watchers || instance.watchers.length === 0) && (isOwner || user.role === Role.ADMIN || template?.managers?.includes(user.id)) && (
+                                            <div className="mt-2">
+                                                <select
+                                                    className="text-[10px] px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 font-bold outline-none"
+                                                    value=""
+                                                    onChange={e => { if (e.target.value) updateInstanceWatchers(instance.id, [e.target.value]); }}
+                                                >
+                                                    <option value=""><Eye size={9} className="inline" /> + Thêm người theo dõi</option>
+                                                    {users.map(u => (
+                                                        <option key={u.id} value={u.id}>{u.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="flex items-center gap-1 shrink-0">
                                         {isOwner && running && (
@@ -1537,6 +1616,70 @@ const WorkflowInstances: React.FC = () => {
                                         </div>
                                     </div>
 
+                                    {/* Watchers Section */}
+                                    <div className="bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/30 rounded-xl p-3">
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-blue-500 mb-2 flex items-center gap-1.5">
+                                            <Eye size={11} /> Người theo dõi
+                                        </p>
+                                        {/* Default watchers from template */}
+                                        {(() => {
+                                            const tmpl = templates.find(t => t.id === instance.templateId);
+                                            const defaultWatcherIds = tmpl?.defaultWatchers || [];
+                                            if (defaultWatcherIds.length === 0) return null;
+                                            return (
+                                                <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Mặc định:</span>
+                                                    {defaultWatcherIds.map(uid => {
+                                                        const wu = users.find(u => u.id === uid);
+                                                        return (
+                                                            <span key={uid} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400">
+                                                                <Eye size={9} /> {wu?.name || uid}
+                                                            </span>
+                                                        );
+                                                    })}
+                                                </div>
+                                            );
+                                        })()}
+                                        {/* Instance-level watchers */}
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            {(instance.watchers || []).length > 0 && (
+                                                <>
+                                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Đã tag:</span>
+                                                    {(instance.watchers || []).map(uid => {
+                                                        const wu = users.find(u => u.id === uid);
+                                                        return (
+                                                            <span key={uid} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400">
+                                                                {wu?.name || uid}
+                                                                {(isOwner || user.role === Role.ADMIN || (() => { const t = templates.find(tt => tt.id === instance.templateId); return t?.managers?.includes(user.id); })()) && (
+                                                                    <button
+                                                                        onClick={e => { e.stopPropagation(); const nw = (instance.watchers || []).filter(w => w !== uid); updateInstanceWatchers(instance.id, nw); }}
+                                                                        className="hover:text-red-500 transition-colors"
+                                                                    >
+                                                                        <X size={9} />
+                                                                    </button>
+                                                                )}
+                                                            </span>
+                                                        );
+                                                    })}
+                                                </>
+                                            )}
+                                            {/* Add watcher dropdown */}
+                                            {(isOwner || user.role === Role.ADMIN || (() => { const t = templates.find(tt => tt.id === instance.templateId); return t?.managers?.includes(user.id); })()) && (
+                                                <select
+                                                    className="text-[10px] px-2 py-1 rounded-lg bg-blue-100 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 font-bold outline-none cursor-pointer"
+                                                    value=""
+                                                    onClick={e => e.stopPropagation()}
+                                                    onChange={e => { if (e.target.value) updateInstanceWatchers(instance.id, [...(instance.watchers || []), e.target.value]); }}
+                                                >
+                                                    <option value="">+ Thêm người theo dõi</option>
+                                                    {users.filter(u => !(instance.watchers || []).includes(u.id)).map(u => (
+                                                        <option key={u.id} value={u.id}>{u.name}</option>
+                                                    ))}
+                                                </select>
+                                            )}
+                                        </div>
+                                    </div>
+
                                     {/* Form Data */}
                                     {instance.formData && Object.keys(instance.formData).filter(k => !k.startsWith('step_') && (k !== 'note' || instance.formData[k])).length > 0 && (
                                         <div>
@@ -1841,7 +1984,7 @@ const WorkflowInstances: React.FC = () => {
                     <div className="text-center py-20 glass-card rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
                         <FileText className="w-16 h-16 text-slate-200 dark:text-slate-700 mx-auto mb-4" />
                         <p className="text-slate-400 font-bold">
-                            {activeTab === 'mine' ? 'Bạn chưa có phiếu nào.' : 'Không có phiếu nào chờ bạn duyệt.'}
+                            {activeTab === 'mine' ? 'Bạn chưa có phiếu nào.' : activeTab === 'watching' ? 'Bạn chưa theo dõi phiếu nào.' : 'Không có phiếu nào chờ bạn duyệt.'}
                         </p>
                     </div>
                 )}
