@@ -145,7 +145,25 @@
       }
     }
 
-    /* Các Utility Classes tĩnh dùng chung cho Theme Glassmorphism */
+    /* ========================================
+       DESIGN SYSTEM — "Vũ trụ dữ liệu êm dịu"
+       Deep Tech Dark Mode with Elevation
+       ======================================== */
+
+    /* Neon Accent CSS Variables */
+    :root {
+      --neon-blue: #38BDF8;
+      --neon-green: #34D399;
+      --neon-amber: #FBBF24;
+      --neon-red: #FB7185;
+      --neon-purple: #A78BFA;
+      --layer-0: #101214;
+      --layer-1: #1C1F22;
+      --layer-2: #23272C;
+      --border-subtle: #2D3135;
+    }
+
+    /* === GLASS PANEL (Layer 1 — Sidebar, Headers, Panels) === */
     .glass-panel {
       background: rgba(255, 255, 255, 0.7);
       backdrop-filter: blur(16px);
@@ -155,30 +173,173 @@
     }
 
     .dark .glass-panel {
-      background: rgba(15, 23, 42, 0.6);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+      background: rgba(28, 31, 34, 0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(45, 49, 53, 0.6);
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 0 1px rgba(255,255,255,0.03);
     }
 
+    /* === GLASS CARD (Layer 2 — Content Cards, Elevated Elements) === */
     .glass-card {
       background: rgba(255, 255, 255, 0.5);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border: 1px solid rgba(255, 255, 255, 0.4);
       box-shadow: 0 8px 32px 0 rgba(16, 185, 129, 0.05);
-      /* Bóng xanh nhẹ */
     }
 
     .dark .glass-card {
-      background: rgba(30, 41, 59, 0.5);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+      background: rgba(35, 39, 44, 0.9);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(45, 49, 53, 0.8);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), 0 0 1px rgba(255,255,255,0.04);
+    }
+    .dark .glass-card:hover {
+      border-color: rgba(56, 189, 248, 0.15);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(56, 189, 248, 0.04);
+    }
+
+    /* === GLOW UTILITIES === */
+    .dark .glow-blue {
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.25), 0 0 4px rgba(56, 189, 248, 0.15);
+    }
+    .dark .glow-green {
+      box-shadow: 0 0 16px rgba(52, 211, 153, 0.25), 0 0 4px rgba(52, 211, 153, 0.15);
+    }
+    .dark .glow-amber {
+      box-shadow: 0 0 16px rgba(251, 191, 36, 0.2), 0 0 4px rgba(251, 191, 36, 0.1);
+    }
+    .dark .glow-red {
+      box-shadow: 0 0 16px rgba(251, 113, 133, 0.2), 0 0 4px rgba(251, 113, 133, 0.1);
+    }
+
+    /* === BUTTON HALO — Neon glow on press === */
+    .dark button:active:not(:disabled),
+    .dark [role="button"]:active:not(:disabled) {
+      transition: box-shadow 0.15s ease;
+    }
+    .dark .bg-emerald-500:active, .dark .bg-accent:active {
+      box-shadow: 0 0 24px rgba(52, 211, 153, 0.4), 0 0 8px rgba(52, 211, 153, 0.3);
+    }
+    .dark .bg-blue-500:active {
+      box-shadow: 0 0 24px rgba(56, 189, 248, 0.4), 0 0 8px rgba(56, 189, 248, 0.3);
+    }
+    .dark .bg-red-500:active {
+      box-shadow: 0 0 24px rgba(251, 113, 133, 0.35), 0 0 8px rgba(251, 113, 133, 0.25);
+    }
+    .dark .bg-amber-500:active {
+      box-shadow: 0 0 24px rgba(251, 191, 36, 0.35), 0 0 8px rgba(251, 191, 36, 0.2);
+    }
+
+    /* === SUBTLE GRADIENTS for Buttons (Dark Mode) === */
+    .dark .bg-emerald-500 {
+      background: linear-gradient(135deg, #059669, #34D399) !important;
+    }
+    .dark .bg-blue-500 {
+      background: linear-gradient(135deg, #2563EB, #38BDF8) !important;
+    }
+    .dark .bg-red-500 {
+      background: linear-gradient(135deg, #DC2626, #FB7185) !important;
+    }
+    .dark .bg-amber-500 {
+      background: linear-gradient(135deg, #D97706, #FBBF24) !important;
+    }
+    .dark .bg-purple-500 {
+      background: linear-gradient(135deg, #7C3AED, #A78BFA) !important;
+    }
+
+    /* === SIDEBAR Active Indicator Glow === */
+    .dark .sidebar-active-indicator {
+      box-shadow: -2px 0 12px rgba(56, 189, 248, 0.3);
+    }
+
+    /* === DARK TYPOGRAPHY REFINEMENT === */
+    .dark h1, .dark h2, .dark h3, .dark h4 {
+      color: #F1F5F9 !important;
+    }
+    .dark body {
+      color: #CBD5E1;
+    }
+    .dark .text-slate-500 {
+      color: #64748B !important;
+    }
+
+    /* === SCROLLBAR styling for dark mode === */
+    .dark ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .dark ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .dark ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 3px;
+    }
+    .dark ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    /* === MODAL / DIALOG overlay === */
+    .dark .bg-black\/50 {
+      background: rgba(0, 0, 0, 0.6) !important;
+      backdrop-filter: blur(4px);
+    }
+
+    /* === INPUT FIELDS Dark Mode === */
+    .dark input, .dark select, .dark textarea {
+      background-color: rgba(16, 18, 20, 0.6) !important;
+      border-color: var(--border-subtle) !important;
+      color: #E2E8F0;
+    }
+    .dark input:focus, .dark select:focus, .dark textarea:focus {
+      border-color: var(--neon-blue) !important;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15);
+    }
+    .dark input::placeholder, .dark textarea::placeholder {
+      color: #475569;
+    }
+
+    /* === STATUS TAG Neon Glow (Dark) === */
+    .dark .bg-emerald-100, .dark .bg-green-100 {
+      background: rgba(52, 211, 153, 0.12) !important;
+      color: #34D399 !important;
+    }
+    .dark .bg-amber-100, .dark .bg-yellow-100, .dark .bg-orange-100 {
+      background: rgba(251, 191, 36, 0.12) !important;
+      color: #FBBF24 !important;
+    }
+    .dark .bg-red-100, .dark .bg-rose-100 {
+      background: rgba(251, 113, 133, 0.12) !important;
+      color: #FB7185 !important;
+    }
+    .dark .bg-blue-100 {
+      background: rgba(56, 189, 248, 0.12) !important;
+      color: #38BDF8 !important;
+    }
+    .dark .bg-purple-100, .dark .bg-violet-100 {
+      background: rgba(167, 139, 250, 0.12) !important;
+      color: #A78BFA !important;
+    }
+
+    /* === TABLE Dark Mode === */
+    .dark table thead th {
+      background: rgba(28, 31, 34, 0.95) !important;
+      border-bottom-color: var(--border-subtle) !important;
+    }
+    .dark table tbody tr {
+      border-bottom-color: rgba(45, 49, 53, 0.4) !important;
+    }
+    .dark table tbody tr:hover {
+      background: rgba(56, 189, 248, 0.04) !important;
     }
   </style>
 </head>
 
 <body
-  class="bg-gradient-to-br from-emerald-50 via-slate-50 to-teal-50 dark:from-slate-950 dark:via-emerald-950/20 dark:to-slate-900 text-slate-900 dark:text-slate-100 font-sans antialiased min-h-screen bg-fixed transition-colors duration-500">
+  class="bg-gradient-to-br from-emerald-50 via-slate-50 to-teal-50 dark:from-[#101214] dark:via-[#0e1117] dark:to-[#101214] text-slate-900 dark:text-[#CBD5E1] font-sans antialiased min-h-screen bg-fixed transition-colors duration-500">
   <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
   <script>

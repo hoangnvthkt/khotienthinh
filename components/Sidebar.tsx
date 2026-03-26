@@ -157,7 +157,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const filteredNavItems = currentNavItems.filter((item: any) => !item.roles || item.roles.includes(user.role));
   const assignedWh = warehouses.find(w => w.id === user.assignedWarehouseId);
 
-  const sidebarBg = isDark ? 'glass-panel border-r border-white/10' : 'glass-panel border-r border-white/20';
+  const sidebarBg = isDark ? 'border-r border-[#2D3135]/60 bg-[#101214]/95 backdrop-blur-xl' : 'glass-panel border-r border-white/20';
   const sidebarWidth = collapsed ? 'w-[72px]' : 'w-64';
 
   const handleModuleClick = (mod: typeof MODULE_CONFIG[number]) => {

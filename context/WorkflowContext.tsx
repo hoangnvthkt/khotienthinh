@@ -276,16 +276,33 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     const processInstance = async (instanceId: string, action: WorkflowInstanceAction, userId: string, comment: string = '') => {
-        const instance = instances.find(i => i.id === instanceId);
-        if (!instance || !instance.currentNodeId) return;
+        // IMPORTANT: Fetch fresh data from DB to avoid stale React state closure issues
+        const { data: freshInstance } = await supabase
+            .from('workflow_instances')
+            .select('*')
+            .eq('id', instanceId)
+            .single();
+        
+        if (!freshInstance || !freshInstance.current_node_id) {
+            console.error('processInstance: instance not found or no current_node_id', instanceId);
+            return;
+        }
 
-        const templateNodes = nodes.filter(n => n.templateId === instance.templateId);
-        const templateEdges = edges.filter(e => e.templateId === instance.templateId);
+        const currentNodeId = freshInstance.current_node_id;
+        const templateId = freshInstance.template_id;
+
+        // Fetch fresh nodes and edges from DB
+        const [nodesRes, edgesRes] = await Promise.all([
+            supabase.from('workflow_nodes').select('*').eq('template_id', templateId),
+            supabase.from('workflow_edges').select('*').eq('template_id', templateId),
+        ]);
+        const templateNodes = (nodesRes.data || []).map(mapNodeFromDB);
+        const templateEdges = (edgesRes.data || []).map(mapEdgeFromDB);
 
         // Log the action at current node
         await supabase.from('workflow_instance_logs').insert({
             instance_id: instanceId,
-            node_id: instance.currentNodeId,
+            node_id: currentNodeId,
             action,
             acted_by: userId,
             comment,
@@ -293,7 +310,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
         if (action === WorkflowInstanceAction.APPROVED) {
             // Move to next node
-            const nextEdge = templateEdges.find(e => e.sourceNodeId === instance.currentNodeId);
+            const nextEdge = templateEdges.find(e => e.sourceNodeId === currentNodeId);
             if (nextEdge) {
                 const nextNode = templateNodes.find(n => n.id === nextEdge.targetNodeId);
                 if (nextNode && nextNode.type === WorkflowNodeType.END) {
@@ -309,6 +326,8 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                         updated_at: new Date().toISOString(),
                     }).eq('id', instanceId);
                 }
+            } else {
+                console.error('processInstance: No next edge found from node', currentNodeId);
             }
         } else if (action === WorkflowInstanceAction.REJECTED) {
             await supabase.from('workflow_instances').update({
@@ -317,7 +336,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             }).eq('id', instanceId);
         } else if (action === WorkflowInstanceAction.REVISION_REQUESTED) {
             // Send back to previous step (find edge where target = current)
-            const prevEdge = templateEdges.find(e => e.targetNodeId === instance.currentNodeId);
+            const prevEdge = templateEdges.find(e => e.targetNodeId === currentNodeId);
             if (prevEdge) {
                 const prevNode = templateNodes.find(n => n.id === prevEdge.sourceNodeId);
                 if (prevNode && prevNode.type === WorkflowNodeType.START) {

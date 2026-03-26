@@ -213,3 +213,21 @@ h1, h2, h3, h4, h5, h6, p, span, div, td, th {
   from { transform: translateX(100%); opacity: 0.8; }
   to { transform: translateX(0); opacity: 1; }
 }
+
+/* ============================
+   DARK MODE — CHART GLOW EFFECTS
+   ============================ */
+.dark .recharts-line .recharts-curve {
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.4));
+}
+.dark .recharts-area .recharts-curve {
+  filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.3));
+}
+.dark .recharts-bar .recharts-rectangle {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+
+/* Smooth theme transition */
+body, .glass-panel, .glass-card, input, select, textarea, button, a {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+}
