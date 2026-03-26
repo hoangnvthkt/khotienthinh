@@ -1,12 +1,12 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon,
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
-  Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen
+  Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -63,13 +63,61 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   const [view, setView] = useState<SidebarView>(initialView());
 
-  // Filter modules by user permissions
+  // Drag-and-drop reorder state
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
+  const getSavedOrder = (): string[] => {
+    try { return JSON.parse(localStorage.getItem('sidebar_module_order') || '[]'); } catch { return []; }
+  };
+
+  // Filter modules by user permissions, then sort by saved order
   const userModules = useMemo(() => {
-    if (user.role === Role.ADMIN || !user.allowedModules || user.allowedModules.length === 0) {
-      return [...MODULE_CONFIG];
+    let mods = (user.role === Role.ADMIN || !user.allowedModules || user.allowedModules.length === 0)
+      ? [...MODULE_CONFIG]
+      : MODULE_CONFIG.filter(m => user.allowedModules!.includes(m.key));
+    const order = getSavedOrder();
+    if (order.length > 0) {
+      mods = [...mods].sort((a, b) => {
+        const ai = order.indexOf(a.key);
+        const bi = order.indexOf(b.key);
+        if (ai === -1 && bi === -1) return 0;
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      });
     }
-    return MODULE_CONFIG.filter(m => user.allowedModules!.includes(m.key));
+    return mods;
   }, [user.role, user.allowedModules]);
+
+  const [orderedModules, setOrderedModules] = useState(userModules);
+  // Sync when userModules changes
+  useMemo(() => { setOrderedModules(userModules); }, [userModules]);
+
+  const handleDragStart = useCallback((idx: number) => {
+    setDragIdx(idx);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    setDragOverIdx(idx);
+  }, []);
+
+  const handleDrop = useCallback((idx: number) => {
+    if (dragIdx === null || dragIdx === idx) { setDragIdx(null); setDragOverIdx(null); return; }
+    const items = [...orderedModules];
+    const [moved] = items.splice(dragIdx, 1);
+    items.splice(idx, 0, moved);
+    setOrderedModules(items);
+    localStorage.setItem('sidebar_module_order', JSON.stringify(items.map(m => m.key)));
+    setDragIdx(null);
+    setDragOverIdx(null);
+  }, [dragIdx, orderedModules]);
+
+  const handleDragEnd = useCallback(() => {
+    setDragIdx(null);
+    setDragOverIdx(null);
+  }, []);
 
   // Validate the current view
   const isModuleView = view !== 'home' && view !== 'apps';
@@ -241,16 +289,21 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
               <>
                 {/* Module Grid on mobile */}
                 <div className="px-2 pb-2">
-                  <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 px-1">Ứng dụng</p>
+                  <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 px-1">Ứng dụng <span className="text-slate-300 dark:text-slate-600 normal-case">(giữ kéo để sắp xếp)</span></p>
                   <div className="grid grid-cols-4 gap-2">
-                    {userModules.map(mod => {
+                    {orderedModules.map((mod, idx) => {
                       const ModIcon = mod.icon;
                       const isActiveModule = detectAppFromUrl() === mod.key;
                       return (
                         <button
                           key={mod.key}
+                          draggable
+                          onDragStart={() => handleDragStart(idx)}
+                          onDragOver={(e) => handleDragOver(e, idx)}
+                          onDrop={() => handleDrop(idx)}
+                          onDragEnd={handleDragEnd}
                           onClick={() => { handleModuleClick(mod); toggle(); }}
-                          className={`flex flex-col items-center gap-1.5 py-3 px-1 rounded-xl transition-all ${isActiveModule ? `bg-gradient-to-br ${mod.gradient} text-white shadow-lg ${mod.shadow}` : `${mod.bg} border ${mod.border} hover:shadow-md`}`}
+                          className={`flex flex-col items-center gap-1.5 py-3 px-1 rounded-xl transition-all ${dragOverIdx === idx ? 'ring-2 ring-accent scale-105' : ''} ${dragIdx === idx ? 'opacity-40' : ''} ${isActiveModule ? `bg-gradient-to-br ${mod.gradient} text-white shadow-lg ${mod.shadow}` : `${mod.bg} border ${mod.border} hover:shadow-md`}`}
                         >
                           <ModIcon size={20} className={isActiveModule ? '' : mod.color.split(' ')[0]} />
                           <span className={`text-[9px] font-bold leading-tight text-center ${isActiveModule ? 'text-white' : 'text-slate-600 dark:text-slate-400'}`}>{mod.shortLabel}</span>
@@ -431,26 +484,34 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
               )}
 
               {/* Module list */}
-              {userModules.length === 0 ? (
+              {orderedModules.length === 0 ? (
                 <div className="text-center py-6 text-[10px] text-slate-400 italic px-4">
                   Chưa được phân quyền module nào. Liên hệ Admin.
                 </div>
               ) : (
                 <div className="space-y-1 mt-1">
-                  {userModules.map(mod => {
+                  {orderedModules.map((mod, idx) => {
                     const ModIcon = mod.icon;
                     return (
                       <button
                         key={mod.key}
+                        draggable
+                        onDragStart={() => handleDragStart(idx)}
+                        onDragOver={(e) => handleDragOver(e, idx)}
+                        onDrop={() => handleDrop(idx)}
+                        onDragEnd={handleDragEnd}
                         onClick={() => handleModuleClick(mod)}
                         title={collapsed ? mod.label : undefined}
-                        className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${collapsed ? 'px-2' : 'px-4'} py-3 rounded-xl transition-all group hover:shadow-md ${mod.bg} border ${mod.border} hover:scale-[1.01]`}
+                        className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${collapsed ? 'px-2' : 'px-4'} py-3 rounded-xl transition-all group hover:shadow-md ${mod.bg} border ${mod.border} ${dragOverIdx === idx ? 'ring-2 ring-accent scale-[1.03] shadow-lg' : 'hover:scale-[1.01]'} ${dragIdx === idx ? 'opacity-40' : ''}`}
                       >
+                        {!collapsed && (
+                          <GripVertical size={14} className="text-slate-300 dark:text-slate-600 shrink-0 cursor-grab active:cursor-grabbing" />
+                        )}
                         <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${mod.gradient} flex items-center justify-center text-white shadow-sm ${mod.shadow} shrink-0`}>
                           <ModIcon size={16} />
                         </div>
                         {!collapsed && (
-                          <div className="text-left min-w-0">
+                          <div className="text-left min-w-0 flex-1">
                             <span className={`text-sm font-bold ${mod.color} block truncate`}>{mod.label}</span>
                           </div>
                         )}
