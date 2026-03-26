@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import CommandPalette from './CommandPalette';
 import BottomNav from './BottomNav';
 import NotificationCenter from './NotificationCenter';
 import PWAInstallPrompt from './PWAInstallPrompt';
@@ -131,6 +132,7 @@ const Layout: React.FC = () => {
 
   return (
     <div className={`flex h-screen overflow-hidden relative transparent`}>
+      <CommandPalette />
       {/* Session Warning Modal */}
       {sessionWarning && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
