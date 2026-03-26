@@ -30,7 +30,7 @@ const ICON_MAP: Record<string, React.FC<{ size?: number; strokeWidth?: number }>
 
 const ALL_NAV_ITEMS: NavItem[] = [
   { key: 'HOME', to: '/dashboard', iconName: 'LayoutDashboard', label: 'Tổng quan', shortLabel: 'Home', matchPrefix: '/dashboard', color: 'text-indigo-500' },
-  { key: 'WMS', to: '/inventory', iconName: 'Package', label: 'Kho vật tư', shortLabel: 'Kho', matchPrefix: '/inventory|/operations|/audit|/requests|/misa-export', color: 'text-emerald-500' },
+  { key: 'WMS', to: '/inventory', iconName: 'Package', label: 'Vật tư', shortLabel: 'VT', matchPrefix: '/inventory|/operations|/audit|/requests|/misa-export', color: 'text-emerald-500' },
   { key: 'HRM', to: '/hrm/employees', iconName: 'Users', label: 'Nhân sự', shortLabel: 'NS', matchPrefix: '/hrm', color: 'text-teal-500' },
   { key: 'DA', to: '/da', iconName: 'BarChart3', label: 'Dự án', shortLabel: 'DA', matchPrefix: '/da|/portfolio', color: 'text-orange-500' },
   { key: 'TS', to: '/ts/dashboard', iconName: 'Landmark', label: 'Tài sản', shortLabel: 'TS', matchPrefix: '/ts', color: 'text-rose-500' },
