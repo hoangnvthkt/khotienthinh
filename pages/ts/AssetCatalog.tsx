@@ -151,7 +151,16 @@ const AssetCatalog: React.FC = () => {
         ws['!cols'] = EXCEL_COLUMNS.map(() => ({ wch: 18 }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Mẫu nhập tài sản');
-        XLSX.writeFile(wb, 'Mau_nhap_tai_san.xlsx');
+        const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'Mau_nhap_tai_san.xlsx';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
         toast.success('Tải mẫu', 'File mẫu Excel đã được tải về');
     };
 

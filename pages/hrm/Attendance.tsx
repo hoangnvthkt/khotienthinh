@@ -265,7 +265,17 @@ const Attendance: React.FC = () => {
     ], { origin: `A${sampleRows.length + 3}` });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Chấm công');
-    XLSX.writeFile(wb, `mau_chamcong_T${currentMonth}_${currentYear}.xlsx`);
+    // Use Blob + anchor for reliable filename on mobile
+    const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `mau_chamcong_T${currentMonth}_${currentYear}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const STATUS_MAP: Record<string, AttendanceStatus> = {

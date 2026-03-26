@@ -124,7 +124,16 @@ const AssetReports: React.FC = () => {
             { wch: 10 }, { wch: 14 }, { wch: 18 }
         ];
         XLSX.utils.book_append_sheet(wb, ws, 'Báo cáo TS');
-        XLSX.writeFile(wb, `BaoCao_TaiSan_${startDate}_to_${endDate}.xlsx`);
+        const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `BaoCao_TaiSan_${startDate}_to_${endDate}.xlsx`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
         toast.success('Xuất Excel', 'Đã tải file báo cáo tài sản.');
     };
 

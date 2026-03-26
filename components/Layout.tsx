@@ -201,12 +201,122 @@ const Layout: React.FC = () => {
 
         <main className="flex-1 overflow-auto p-2 sm:p-4 md:p-8 pb-20 lg:pb-8 transparent">
           {isLoading || isRefreshing ? (
-            <div className="h-full w-full flex flex-col items-center justify-center bg-white/50 backdrop-blur-sm">
-              <RefreshCw size={48} className="text-accent animate-spin mb-4" />
-              <h3 className={`text-xl font-black ${isDark ? 'text-white' : 'text-slate-800'}`}>
-                {isLoading ? "Đang kết nối Supabase..." : "Đang đồng bộ dữ liệu..."}
+            <div className="h-full w-full flex flex-col items-center justify-center relative overflow-hidden">
+              {/* Background animated particles */}
+              <div className="absolute inset-0 pointer-events-none">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="loading-particle" style={{
+                    left: `${15 + Math.random() * 70}%`,
+                    top: `${10 + Math.random() * 80}%`,
+                    animationDelay: `${i * 0.7}s`,
+                    animationDuration: `${3 + Math.random() * 2}s`,
+                  }} />
+                ))}
+              </div>
+
+              {/* Orbital loader */}
+              <div className="relative mb-8">
+                {/* Outer ring */}
+                <div className="w-24 h-24 rounded-full border-2 border-dashed animate-spin" style={{
+                  borderColor: isDark ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.15)',
+                  animationDuration: '8s',
+                }} />
+                {/* Middle ring */}
+                <div className="absolute inset-2 rounded-full border-2 animate-spin" style={{
+                  borderColor: 'transparent',
+                  borderTopColor: '#6366f1',
+                  borderRightColor: '#3b82f6',
+                  animationDuration: '1.5s',
+                }} />
+                {/* Inner pulse */}
+                <div className="absolute inset-4 rounded-full flex items-center justify-center">
+                  <div className="loading-core-pulse" />
+                  <span className="absolute text-2xl" style={{ animation: 'coreEmoji 4s ease-in-out infinite' }}>
+                    {isLoading ? '🔗' : '🔄'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Text */}
+              <h3 className={`text-xl font-black mb-1 ${isDark ? 'text-white' : 'text-slate-800'}`}>
+                {isLoading ? '🚀 Khởi động hệ thống...' : '🔄 Đồng bộ dữ liệu...'}
               </h3>
-              <p className="text-slate-500 font-medium mt-1">Hệ thống đang thiết lập môi trường vận hành an toàn.</p>
+              <p className={`text-sm font-medium mb-6 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                {isLoading ? 'Thiết lập kết nối bảo mật với máy chủ' : 'Cập nhật dữ liệu mới nhất từ Supabase'}
+              </p>
+
+              {/* Animated progress bar */}
+              <div className="w-48 h-1.5 rounded-full overflow-hidden" style={{ background: isDark ? '#1e293b' : '#e2e8f0' }}>
+                <div className="h-full rounded-full loading-progress-bar" />
+              </div>
+
+              {/* Fun status messages */}
+              <div className="mt-6 flex items-center gap-2 px-4 py-2 rounded-xl" style={{
+                background: isDark ? 'rgba(30,41,59,0.5)' : 'rgba(248,250,252,0.8)',
+                border: `1px solid ${isDark ? 'rgba(51,65,85,0.5)' : 'rgba(226,232,240,0.8)'}`,
+              }}>
+                <span className="loading-status-dot" />
+                <span className={`text-xs font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`} style={{ animation: 'statusFade 6s ease-in-out infinite' }}>
+                  {isLoading ? 'Đang xác thực bảo mật...' : 'Đang cập nhật module...'}
+                </span>
+              </div>
+
+              <style>{`
+                .loading-particle {
+                  position: absolute;
+                  width: 6px;
+                  height: 6px;
+                  border-radius: 50%;
+                  background: linear-gradient(135deg, #6366f1, #3b82f6);
+                  opacity: 0;
+                  animation: particleFloat 4s ease-in-out infinite;
+                }
+                @keyframes particleFloat {
+                  0%, 100% { opacity: 0; transform: translateY(0) scale(0.5); }
+                  50% { opacity: 0.6; transform: translateY(-30px) scale(1); }
+                }
+                .loading-core-pulse {
+                  width: 32px;
+                  height: 32px;
+                  border-radius: 50%;
+                  background: linear-gradient(135deg, #6366f1, #3b82f6);
+                  animation: corePulse 2s ease-in-out infinite;
+                }
+                @keyframes corePulse {
+                  0%, 100% { transform: scale(0.8); opacity: 0.4; }
+                  50% { transform: scale(1.1); opacity: 0.7; }
+                }
+                @keyframes coreEmoji {
+                  0%, 100% { transform: scale(1) rotate(0deg); }
+                  25% { transform: scale(1.15) rotate(5deg); }
+                  75% { transform: scale(0.95) rotate(-5deg); }
+                }
+                .loading-progress-bar {
+                  background: linear-gradient(90deg, #6366f1, #3b82f6, #06b6d4, #3b82f6, #6366f1);
+                  background-size: 200% 100%;
+                  animation: progressShimmer 2s linear infinite;
+                  width: 70%;
+                }
+                @keyframes progressShimmer {
+                  0% { background-position: -200% 0; }
+                  100% { background-position: 200% 0; }
+                }
+                .loading-status-dot {
+                  width: 6px;
+                  height: 6px;
+                  border-radius: 50%;
+                  background: #22c55e;
+                  animation: statusBlink 1.5s ease-in-out infinite;
+                }
+                @keyframes statusBlink {
+                  0%, 100% { opacity: 1; }
+                  50% { opacity: 0.3; }
+                }
+                @keyframes statusFade {
+                  0%, 100% { opacity: 0.7; }
+                  50% { opacity: 1; }
+                }
+              `}</style>
             </div>
           ) : (
             <div className="max-w-7xl mx-auto w-full">

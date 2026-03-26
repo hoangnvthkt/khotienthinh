@@ -394,7 +394,16 @@ const BudgetDashboard: React.FC = () => {
     ws['!cols'] = headers.map((_, i) => ({ wch: i <= 2 ? 22 : 12 }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, `KHCP_${selectedYear}`);
-    XLSX.writeFile(wb, `ke_hoach_chi_phi_${selectedYear}.xlsx`);
+    const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ke_hoach_chi_phi_${selectedYear}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // ==================== FORMAT ====================

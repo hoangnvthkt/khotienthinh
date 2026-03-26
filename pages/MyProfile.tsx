@@ -104,19 +104,19 @@ const MyProfile: React.FC = () => {
 
     // Glass info row
     const InfoRow: React.FC<{ label: string; value?: string | null; icon?: React.ReactNode; badge?: boolean; badgeColor?: string }> = ({ label, value, icon, badge, badgeColor }) => (
-        <div className="group flex items-center py-4 border-b border-white/5 dark:border-white/[0.03] last:border-0 hover:bg-white/[0.03] -mx-3 px-3 rounded-xl transition-all duration-300">
+        <div className="group flex items-center py-4 border-b border-slate-100 dark:border-slate-700/50 last:border-0 hover:bg-slate-50 dark:hover:bg-white/[0.03] -mx-3 px-3 rounded-xl transition-all duration-300">
             {icon && (
-                <span className="w-8 h-8 rounded-lg bg-white/[0.06] dark:bg-white/[0.04] flex items-center justify-center mr-3 shrink-0 text-indigo-400 group-hover:bg-indigo-500/10 group-hover:text-indigo-300 transition-all duration-300">
+                <span className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center mr-3 shrink-0 text-indigo-500 dark:text-indigo-400 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-500/20 group-hover:text-indigo-600 dark:group-hover:text-indigo-300 transition-all duration-300">
                     {icon}
                 </span>
             )}
-            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400/80 dark:text-slate-500 w-36 shrink-0">{label}</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 w-36 shrink-0">{label}</span>
             {badge && value ? (
-                <span className={`text-[11px] font-bold px-3 py-1 rounded-lg backdrop-blur-sm ${badgeColor || 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}>
+                <span className={`text-[11px] font-bold px-3 py-1 rounded-lg ${badgeColor || 'bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 border border-indigo-500/20'}`}>
                     {value}
                 </span>
             ) : (
-                <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{value || <span className="text-slate-300/50 dark:text-slate-600 italic text-xs">Chưa cập nhật</span>}</span>
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{value || <span className="text-slate-300 dark:text-slate-600 italic text-xs">Chưa cập nhật</span>}</span>
             )}
         </div>
     );
@@ -272,29 +272,18 @@ const MyProfile: React.FC = () => {
             {/* ═══════════════════════════════════════════════
                 TAB CONTENT — Frosted Glass Panel
                ═══════════════════════════════════════════════ */}
-            <div className="rounded-3xl overflow-hidden"
-                style={{
-                    background: 'rgba(255,255,255,0.5)',
-                    backdropFilter: 'blur(20px)',
-                    WebkitBackdropFilter: 'blur(20px)',
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.6)',
-                    border: '1px solid rgba(255,255,255,0.4)',
-                }}
+            <div className="rounded-3xl overflow-hidden bg-white dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/60 shadow-lg dark:shadow-slate-900/40 backdrop-blur-xl"
             >
                 {/* Tab Bar */}
-                <div className="flex overflow-x-auto px-2 sm:px-4 pt-2 gap-1"
-                    style={{
-                        background: 'rgba(248,250,252,0.6)',
-                        borderBottom: '1px solid rgba(0,0,0,0.04)',
-                    }}
+                <div className="flex overflow-x-auto px-2 sm:px-4 pt-2 gap-1 bg-slate-50/80 dark:bg-slate-900/50 border-b border-slate-200/60 dark:border-slate-700/40"
                 >
                     {tabs.map(tab => (
                         <button
                             key={tab.key}
                             onClick={() => { setActiveTab(tab.key); setIsEditing(false); }}
                             className={`flex items-center gap-2 px-4 sm:px-5 py-3 text-[11px] font-bold uppercase tracking-wider transition-all duration-300 rounded-t-xl whitespace-nowrap ${activeTab === tab.key
-                                ? 'bg-white/80 dark:bg-slate-800/80 text-indigo-600 dark:text-indigo-400 shadow-sm border border-white/60 dark:border-slate-700 border-b-transparent -mb-px'
-                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-white/30'
+                                ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm border border-slate-200 dark:border-slate-700 border-b-transparent -mb-px'
+                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100/60 dark:hover:bg-slate-800/40'
                             }`}
                         >
                             {tab.icon}
@@ -404,20 +393,15 @@ const MyProfile: React.FC = () => {
                                     Tài sản đang sử dụng ({employeeAssets.length})
                                 </h4>
                                 {employeeAssets.length === 0 ? (
-                                    <div className="text-center py-12 rounded-2xl bg-slate-50/50 dark:bg-slate-800/30 border border-dashed border-slate-200/50 dark:border-slate-700/30">
-                                        <Landmark size={36} className="mx-auto mb-3 text-slate-300/50" />
-                                        <p className="text-sm font-bold text-slate-300 dark:text-slate-600">Chưa được cấp phát tài sản nào</p>
+                                    <div className="text-center py-12 rounded-2xl bg-slate-50 dark:bg-slate-700/20 border border-dashed border-slate-200 dark:border-slate-700/50">
+                                        <Landmark size={36} className="mx-auto mb-3 text-slate-300 dark:text-slate-600" />
+                                        <p className="text-sm font-bold text-slate-400 dark:text-slate-500">Chưa được cấp phát tài sản nào</p>
                                     </div>
                                 ) : (
                                     <div className="space-y-2.5">
                                         {employeeAssets.map(asset => (
                                             <div key={asset.id}
-                                                className="flex items-center gap-4 p-4 rounded-2xl transition-all duration-300 hover:shadow-lg group cursor-default"
-                                                style={{
-                                                    background: 'rgba(255,255,255,0.5)',
-                                                    border: '1px solid rgba(0,0,0,0.04)',
-                                                    backdropFilter: 'blur(10px)',
-                                                }}
+                                                className="flex items-center gap-4 p-4 rounded-2xl transition-all duration-300 hover:shadow-lg group cursor-default bg-white/70 dark:bg-slate-700/30 border border-slate-100 dark:border-slate-700/50"
                                             >
                                                 <div className="w-11 h-11 rounded-xl flex items-center justify-center text-white shrink-0 shadow-lg shadow-rose-500/20 group-hover:scale-105 transition-transform"
                                                     style={{ background: 'linear-gradient(135deg, #f43f5e, #e11d48)' }}

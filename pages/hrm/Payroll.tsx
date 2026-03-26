@@ -405,7 +405,16 @@ const Payroll: React.FC = () => {
     ws['!cols'] = header.map((_, i) => ({ wch: i <= 1 ? 16 : 12 }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, `T${selectedMonth}_${selectedYear}`);
-    XLSX.writeFile(wb, `bangluong_T${selectedMonth}_${selectedYear}.xlsx`);
+    const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `bangluong_T${selectedMonth}_${selectedYear}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const fmtMoney = (v: number) => v.toLocaleString('vi-VN') + 'đ';
