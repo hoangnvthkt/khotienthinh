@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import CommandPalette from './CommandPalette';
+import QuickActionFab from './QuickActionFab';
 import BottomNav from './BottomNav';
 import NotificationCenter from './NotificationCenter';
 import PWAInstallPrompt from './PWAInstallPrompt';
@@ -216,6 +217,7 @@ const Layout: React.FC = () => {
         <BottomNav />
         <PWAInstallPrompt />
       </div>
+      <QuickActionFab />
     </div>
   );
 };
