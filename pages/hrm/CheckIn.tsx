@@ -58,7 +58,10 @@ const CheckIn: React.FC = () => {
   const [lastAction, setLastAction] = useState<string | null>(null);
 
   // Today's records for current employee
-  const today = new Date().toISOString().split('T')[0];
+  const today = useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }, []);
   const todayRecord = useMemo(() => {
     if (!currentEmployee) return null;
     return attendanceRecords.find(r => r.employeeId === currentEmployee.id && r.date === today);
@@ -148,7 +151,7 @@ const CheckIn: React.FC = () => {
     const now = new Date();
     ctx.fillText(`${now.toLocaleDateString('vi-VN')} ${now.toLocaleTimeString('vi-VN')}`, 10, canvas.height - 30);
     if (selectedLocation) ctx.fillText(`📍 ${selectedLocation.name}`, 10, canvas.height - 10);
-    return canvas.toDataURL('image/jpeg', 0.6);
+    return canvas.toDataURL('image/jpeg', 0.35); // Lower quality to reduce payload size for Supabase
   };
 
   // Check-in
@@ -161,37 +164,46 @@ const CheckIn: React.FC = () => {
 
     if (todayRecord) {
       // Already have record — update check-in
-      updateHrmItem('hrm_attendance', {
-        ...todayRecord,
-        checkIn: todayRecord.checkIn || timeStr,
-        status: 'present' as AttendanceStatus,
-        checkInPhoto: photo || todayRecord.checkInPhoto,
-        checkInLat: gpsLat ?? todayRecord.checkInLat,
-        checkInLng: gpsLng ?? todayRecord.checkInLng,
-        constructionSiteId: selectedLocation.type === 'construction_site' ? selectedLocation.id : todayRecord.constructionSiteId,
-        locationName: selectedLocation.name.replace(/^[🏗️🏢]\s*/, ''),
-        locationType: selectedLocation.type,
-        isOutOfRange: isInRange === false,
-      });
+      try {
+        await updateHrmItem('hrm_attendance', {
+          ...todayRecord,
+          checkIn: todayRecord.checkIn || timeStr,
+          status: 'present' as AttendanceStatus,
+          checkInPhoto: photo || todayRecord.checkInPhoto,
+          checkInLat: gpsLat ?? todayRecord.checkInLat,
+          checkInLng: gpsLng ?? todayRecord.checkInLng,
+          constructionSiteId: selectedLocation.type === 'construction_site' ? selectedLocation.id : todayRecord.constructionSiteId,
+          locationName: selectedLocation.name.replace(/^[🏗️🏢]\s*/, ''),
+          locationType: selectedLocation.type,
+          isOutOfRange: isInRange === false,
+        });
+        setLastAction(`✅ Check-in lúc ${timeStr}`);
+      } catch (err) {
+        setLastAction(`⚠️ Check-in cục bộ OK, nhưng lỗi đồng bộ Supabase`);
+      }
     } else {
-      addHrmItem('hrm_attendance', {
-        id: crypto.randomUUID(),
-        employeeId: currentEmployee.id,
-        date: today,
-        status: 'present' as AttendanceStatus,
-        checkIn: timeStr,
-        checkInPhoto: photo || undefined,
-        checkInLat: gpsLat ?? undefined,
-        checkInLng: gpsLng ?? undefined,
-        constructionSiteId: selectedLocation.type === 'construction_site' ? selectedLocation.id : undefined,
-        locationName: selectedLocation.name.replace(/^[🏗️🏢]\s*/, ''),
-        locationType: selectedLocation.type,
-        isOutOfRange: isInRange === false,
-        createdAt: new Date().toISOString(),
-      } as AttendanceRecord);
+      try {
+        await addHrmItem('hrm_attendance', {
+          id: crypto.randomUUID(),
+          employeeId: currentEmployee.id,
+          date: today,
+          status: 'present' as AttendanceStatus,
+          checkIn: timeStr,
+          checkInPhoto: photo || undefined,
+          checkInLat: gpsLat ?? undefined,
+          checkInLng: gpsLng ?? undefined,
+          constructionSiteId: selectedLocation.type === 'construction_site' ? selectedLocation.id : undefined,
+          locationName: selectedLocation.name.replace(/^[🏗️🏢]\s*/, ''),
+          locationType: selectedLocation.type,
+          isOutOfRange: isInRange === false,
+          createdAt: new Date().toISOString(),
+        } as AttendanceRecord);
+        setLastAction(`✅ Check-in lúc ${timeStr}`);
+      } catch (err) {
+        setLastAction(`⚠️ Check-in cục bộ OK, nhưng lỗi đồng bộ Supabase`);
+      }
     }
 
-    setLastAction(`Check-in lúc ${timeStr}`);
     setProcessing(false);
   };
 
@@ -203,15 +215,19 @@ const CheckIn: React.FC = () => {
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-    updateHrmItem('hrm_attendance', {
-      ...todayRecord,
-      checkOut: timeStr,
-      checkOutPhoto: photo || undefined,
-      checkOutLat: gpsLat ?? undefined,
-      checkOutLng: gpsLng ?? undefined,
-    });
+    try {
+      await updateHrmItem('hrm_attendance', {
+        ...todayRecord,
+        checkOut: timeStr,
+        checkOutPhoto: photo || undefined,
+        checkOutLat: gpsLat ?? undefined,
+        checkOutLng: gpsLng ?? undefined,
+      });
+      setLastAction(`✅ Check-out lúc ${timeStr}`);
+    } catch (err) {
+      setLastAction(`⚠️ Check-out cục bộ OK, nhưng lỗi đồng bộ`);
+    }
 
-    setLastAction(`Check-out lúc ${timeStr}`);
     setProcessing(false);
   };
 
