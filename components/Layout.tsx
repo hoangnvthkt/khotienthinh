@@ -319,7 +319,7 @@ const Layout: React.FC = () => {
               `}</style>
             </div>
           ) : (
-            <div className="max-w-7xl mx-auto w-full">
+            <div className="max-w-[1600px] mx-auto w-full">
               <Outlet />
             </div>
           )}
