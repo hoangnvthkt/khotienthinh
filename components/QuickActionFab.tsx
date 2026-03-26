@@ -158,7 +158,7 @@ const QuickActionFab: React.FC = () => {
   };
 
   return (
-    <div ref={fabRef} className="fixed bottom-6 right-6 z-[90] hidden lg:block">
+    <div ref={fabRef} className="fixed bottom-20 right-4 lg:bottom-6 lg:right-6 z-[90]">
       {/* Backdrop */}
       {(isOpen || showSettings) && (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-[2px] -z-10" onClick={() => { setIsOpen(false); setShowSettings(false); }} />
