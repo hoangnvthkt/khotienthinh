@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Employee, LeaveBalance } from '../../types';
-import { X, Save, User as UserIcon, MapPinned, Building, Layers, HardHat, DollarSign, Calendar, Factory, FolderTree, CalendarDays } from 'lucide-react';
+import { X, Save, User as UserIcon, MapPinned, Building, Layers, HardHat, DollarSign, Calendar, Factory, FolderTree, CalendarDays, Camera, Loader2 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
 interface EmployeeModalProps {
     employee: Employee | null;
@@ -30,14 +31,40 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
         constructionSiteId: undefined,
         departmentId: undefined,
         factoryId: undefined,
-        maritalStatus: ''
+        maritalStatus: '',
+        avatarUrl: ''
     });
+    const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+    const [uploadingAvatar, setUploadingAvatar] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (employee) {
             setFormData(employee);
+            setAvatarPreview(employee.avatarUrl || null);
         }
     }, [employee]);
+
+    const handleAvatarUpload = async (file: File) => {
+        if (file.size > 2 * 1024 * 1024) { alert('Ảnh quá lớn! Tối đa 2MB.'); return; }
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { alert('Chỉ chấp nhận JPG, PNG, WEBP.'); return; }
+        setUploadingAvatar(true);
+        try {
+            const ext = file.name.split('.').pop();
+            const path = `employees/${formData.id || crypto.randomUUID()}_${Date.now()}.${ext}`;
+            const { error } = await supabase.storage.from('avatars').upload(path, file, { cacheControl: '3600', upsert: true });
+            if (error) throw error;
+            const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+            const url = urlData.publicUrl;
+            setAvatarPreview(url);
+            setFormData(prev => ({ ...prev, avatarUrl: url }));
+        } catch (err: any) {
+            console.error('Upload avatar error:', err);
+            alert('Lỗi upload ảnh: ' + (err.message || 'Unknown'));
+        } finally {
+            setUploadingAvatar(false);
+        }
+    };
 
     // Leave balance state
     const currentYear = new Date().getFullYear();
@@ -140,6 +167,26 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
 
                 <div className="flex-1 overflow-y-auto p-6">
                     <form id="employee-form" onSubmit={handleSubmit} className="space-y-6">
+                        {/* ===== AVATAR UPLOAD ===== */}
+                        <div className="flex flex-col items-center gap-3">
+                            <div
+                                onClick={() => fileInputRef.current?.click()}
+                                className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-indigo-400 dark:hover:border-indigo-500 cursor-pointer transition-all group bg-slate-100 dark:bg-slate-800"
+                            >
+                                {avatarPreview ? (
+                                    <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover" />
+                                ) : (
+                                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
+                                        <UserIcon size={32} />
+                                    </div>
+                                )}
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    {uploadingAvatar ? <Loader2 size={20} className="text-white animate-spin" /> : <Camera size={20} className="text-white" />}
+                                </div>
+                            </div>
+                            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleAvatarUpload(f); }} />
+                            <p className="text-[10px] text-slate-400">Click để tải ảnh đại diện (JPG, PNG, WEBP ≤ 2MB)</p>
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-2">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Mã Nhân Sự</label>

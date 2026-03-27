@@ -314,6 +314,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             departmentId: e.department_id,
             factoryId: e.factory_id,
             maritalStatus: e.marital_status,
+            avatarUrl: e.avatar_url,
             createdAt: e.created_at,
             updatedAt: e.updated_at
           })));
@@ -514,6 +515,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             departmentId: e.department_id,
             factoryId: e.factory_id,
             maritalStatus: e.marital_status,
+            avatarUrl: e.avatar_url,
             createdAt: e.created_at,
             updatedAt: e.updated_at
           };
@@ -743,7 +745,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           position_id: data.positionId || null, salary_policy_id: data.salaryPolicyId || null,
           work_schedule_id: data.workScheduleId || null, construction_site_id: data.constructionSiteId || null,
           department_id: data.departmentId || null, factory_id: data.factoryId || null,
-          marital_status: data.maritalStatus || ''
+          marital_status: data.maritalStatus || '',
+          avatar_url: data.avatarUrl || null
         };
       } else if (table === 'org_units') {
         payload = {

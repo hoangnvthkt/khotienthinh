@@ -385,6 +385,7 @@ export interface Employee {
   departmentId?: string;
   factoryId?: string;
   maritalStatus?: string;
+  avatarUrl?: string; // URL ảnh đại diện nhân sự (Supabase Storage)
   createdAt?: string;
   updatedAt?: string;
 }

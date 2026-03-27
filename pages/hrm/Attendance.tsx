@@ -5,7 +5,8 @@ import { useTheme } from '../../context/ThemeContext';
 import {
   Calendar, ChevronLeft, ChevronRight, Clock, Users, Download,
   CheckCircle, XCircle, Sun, Coffee, Plane, Filter, Search,
-  Upload, FileSpreadsheet, Loader2, CheckCircle2, AlertTriangle, Trash2, Star, Plus
+  Upload, FileSpreadsheet, Loader2, CheckCircle2, AlertTriangle, Trash2, Star, Plus,
+  MapPin, Eye, Save, X, Edit3
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -63,6 +64,14 @@ const Attendance: React.FC = () => {
   const [pLocationType, setPLocationType] = useState<'construction_site' | 'office'>('construction_site');
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+
+  // Detail panel state
+  const [detailCell, setDetailCell] = useState<{ employeeId: string; day: number } | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editCheckIn, setEditCheckIn] = useState('');
+  const [editCheckOut, setEditCheckOut] = useState('');
+  const [editNote, setEditNote] = useState('');
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
 
   // Standard work times for late/early tracking
   const [stdStartTime, setStdStartTime] = useState('08:00');
@@ -122,6 +131,67 @@ const Attendance: React.FC = () => {
       });
     }
   }, [recordMap, addHrmItem, updateHrmItem, currentYear, currentMonth]);
+
+  // Open detail panel
+  const handleOpenDetail = useCallback((employeeId: string, day: number) => {
+    const dateStr = getDateKey(day);
+    const key = `${employeeId}_${dateStr}`;
+    const rec = recordMap.get(key);
+    setDetailCell({ employeeId, day });
+    setEditMode(false);
+    setEditCheckIn(rec?.checkIn || '');
+    setEditCheckOut(rec?.checkOut || '');
+    setEditNote(rec?.note || '');
+    setShowSaveConfirm(false);
+  }, [recordMap, currentYear, currentMonth]);
+
+  // Save edited attendance with confirmation
+  const handleSaveEdit = useCallback(() => {
+    if (!detailCell) return;
+    const dateStr = getDateKey(detailCell.day);
+    const key = `${detailCell.employeeId}_${dateStr}`;
+    const existing = recordMap.get(key);
+    if (existing) {
+      updateHrmItem('hrm_attendance', {
+        ...existing,
+        checkIn: editCheckIn || undefined,
+        checkOut: editCheckOut || undefined,
+        note: editNote || undefined,
+      });
+    } else {
+      addHrmItem('hrm_attendance', {
+        id: crypto.randomUUID(),
+        employeeId: detailCell.employeeId,
+        date: dateStr,
+        status: 'present' as AttendanceStatus,
+        checkIn: editCheckIn || undefined,
+        checkOut: editCheckOut || undefined,
+        note: editNote || undefined,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    setShowSaveConfirm(false);
+    setEditMode(false);
+    // Keep detail panel open to see updated data
+  }, [detailCell, editCheckIn, editCheckOut, editNote, recordMap, updateHrmItem, addHrmItem, currentYear, currentMonth]);
+
+  // Determine cell color for past days
+  const getCellIndicator = useCallback((rec: AttendanceRecord | undefined, dayNum: number): 'green' | 'yellow' | 'red' | null => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const cellDate = new Date(currentYear, currentMonth - 1, dayNum);
+    if (cellDate >= today) return null; // Only past days
+
+    if (!rec || rec.status === 'absent') return 'red';
+    if (rec.status === 'leave' || rec.status === 'holiday') return null; // Phép/Lễ không cần indicator
+
+    if (rec.checkIn) {
+      const [sh, sm] = stdStartTime.split(':').map(Number);
+      const [ch, cm] = rec.checkIn.split(':').map(Number);
+      if (ch * 60 + cm > sh * 60 + sm) return 'yellow'; // Muộn
+    }
+    return 'green'; // Đúng giờ
+  }, [currentYear, currentMonth, stdStartTime]);
 
   // Admin: right-click để xóa ngày công
   const isAdmin = user.role === Role.ADMIN;
@@ -751,17 +821,19 @@ const Attendance: React.FC = () => {
                       {dayHeaders.map(d => {
                         const key = `${emp.id}_${getDateKey(d.dayNum)}`;
                         const rec = recordMap.get(key);
+                        const indicator = getCellIndicator(rec, d.dayNum);
+                        const indicatorBorder = indicator === 'green' ? 'ring-2 ring-emerald-400' : indicator === 'yellow' ? 'ring-2 ring-amber-400' : indicator === 'red' ? 'ring-2 ring-red-400' : '';
                         return (
                           <td key={d.dayNum}
-                            onClick={() => handleCellClick(emp.id, d.dayNum)}
+                            onClick={() => handleOpenDetail(emp.id, d.dayNum)}
                             onContextMenu={(e) => handleCellDelete(e, emp.id, d.dayNum)}
                             className={`px-0 py-0.5 text-center border-b border-slate-100 dark:border-slate-800 cursor-pointer transition-all hover:scale-110 hover:z-10 ${
                               d.isWeekend ? 'bg-rose-50/30 dark:bg-rose-950/10' : ''
                             }`}>
                             {rec ? (
                             <div className="relative inline-flex">
-                              <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-black ${ATTENDANCE_STATUS_COLORS[rec.status]}`}
-                                title={`${rec.checkIn ? 'Vào: '+rec.checkIn : ''} ${rec.checkOut ? ' Ra: '+rec.checkOut : ''}${rec.note ? ' | '+rec.note : ''}`}>
+                              <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-black ${ATTENDANCE_STATUS_COLORS[rec.status]} ${indicatorBorder}`}
+                                title={`Click để xem chi tiết`}>
                                 {STATUS_SHORT[rec.status]}
                               </span>
                               {/* Late/early dot */}
@@ -778,7 +850,8 @@ const Attendance: React.FC = () => {
                               })()}
                             </div>
                             ) : (
-                              <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] text-slate-300 dark:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700">
+                              <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-[9px] text-slate-300 dark:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 ${indicatorBorder}`}
+                                title="Click để xem chi tiết">
                                 ·
                               </span>
                             )}
@@ -1182,6 +1255,227 @@ const Attendance: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ═══════ DETAIL PANEL MODAL ═══════ */}
+      {detailCell && (() => {
+        const dateStr = getDateKey(detailCell.day);
+        const recKey = `${detailCell.employeeId}_${dateStr}`;
+        const rec = recordMap.get(recKey);
+        const emp = employees.find(e => e.id === detailCell.employeeId);
+        const dayInfo = dayHeaders.find(d => d.dayNum === detailCell.day);
+        const indicator = getCellIndicator(rec, detailCell.day);
+
+        // Location info
+        let locationDisplay = rec?.locationName || '';
+        if (!locationDisplay && rec?.constructionSiteId) {
+          locationDisplay = hrmConstructionSites.find(s => s.id === rec.constructionSiteId)?.name || '';
+        }
+        if (!locationDisplay && rec?.locationType === 'office') {
+          locationDisplay = 'Văn phòng';
+        }
+
+        const hasGPS = rec?.checkInLat != null && rec?.checkInLng != null;
+        const mapsUrl = hasGPS ? `https://maps.google.com/?q=${rec!.checkInLat},${rec!.checkInLng}` : null;
+
+        // Formatted date
+        const dateParts = dateStr.split('-');
+        const formattedDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => { setDetailCell(null); setEditMode(false); setShowSaveConfirm(false); }}>
+            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+              {/* Header — purple gradient giống mockup */}
+              <div className="bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-5 text-white text-center relative">
+                <button onClick={() => { setDetailCell(null); setEditMode(false); setShowSaveConfirm(false); }} className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-white/20 transition">
+                  <X size={18} />
+                </button>
+                <div className="flex items-center gap-2 text-xs text-white/70 mb-3 justify-center">
+                  <ChevronLeft size={14} />
+                  <span className="font-bold">Dữ liệu chấm công</span>
+                </div>
+                <div className="w-14 h-14 rounded-full bg-white/20 border-2 border-white/40 flex items-center justify-center mx-auto mb-3">
+                  <Clock size={28} className="text-white" />
+                </div>
+                <h3 className="text-lg font-black">{emp?.fullName || 'N/A'}</h3>
+                <p className="text-sm text-white/80 mt-0.5">{emp?.title || emp?.employeeCode || ''}</p>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4">
+                {/* Date + Status indicator */}
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-black text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                    <Calendar size={15} className="text-violet-500" />
+                    Dữ liệu chấm công — {dayInfo?.dayOfWeek} {formattedDate}
+                  </h4>
+                  {indicator && (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                      indicator === 'green' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400'
+                      : indicator === 'yellow' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
+                      : 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
+                    }`}>
+                      {indicator === 'green' ? '✅ Đúng giờ' : indicator === 'yellow' ? '⚠️ Đi muộn' : '❌ Vắng mặt'}
+                    </span>
+                  )}
+                </div>
+
+                {rec ? (
+                  <div className="space-y-3">
+                    {/* Check-in time */}
+                    <div className="flex items-start gap-3">
+                      <span className={`mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${rec.checkIn ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                      <div className="flex-1">
+                        {editMode ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase w-12">Vào:</span>
+                            <input type="time" value={editCheckIn} onChange={e => setEditCheckIn(e.target.value)}
+                              className="px-2 py-1 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300 w-28" />
+                          </div>
+                        ) : (
+                          <>
+                            <p className="text-base font-black text-slate-800 dark:text-white">{rec.checkIn || '—'}</p>
+                            {locationDisplay && (
+                              <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                                <MapPin size={10} className="shrink-0" />
+                                {rec.locationType === 'construction_site' ? '🏗️' : '🏢'} {locationDisplay}
+                              </p>
+                            )}
+                            {hasGPS && (
+                              <a href={mapsUrl!} target="_blank" rel="noopener noreferrer" className="text-[10px] text-violet-500 hover:underline mt-0.5 inline-block">
+                                📍 Vị trí chấm công ({rec.checkInLat?.toFixed(4)}, {rec.checkInLng?.toFixed(4)})
+                              </a>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Check-out time */}
+                    <div className="flex items-start gap-3">
+                      <span className={`mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${rec.checkOut ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                      <div className="flex-1">
+                        {editMode ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase w-12">Ra:</span>
+                            <input type="time" value={editCheckOut} onChange={e => setEditCheckOut(e.target.value)}
+                              className="px-2 py-1 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300 w-28" />
+                          </div>
+                        ) : (
+                          <>
+                            <p className="text-base font-black text-slate-800 dark:text-white">{rec.checkOut || '—'}</p>
+                            {rec.checkOutLat != null && rec.checkOutLng != null && (
+                              <a href={`https://maps.google.com/?q=${rec.checkOutLat},${rec.checkOutLng}`} target="_blank" rel="noopener noreferrer" className="text-[10px] text-violet-500 hover:underline mt-0.5 inline-block">
+                                📍 Vị trí ra ({rec.checkOutLat?.toFixed(4)}, {rec.checkOutLng?.toFixed(4)})
+                              </a>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Status */}
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Trạng thái:</span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-black ${ATTENDANCE_STATUS_COLORS[rec.status]}`}>
+                        {ATTENDANCE_STATUS_LABELS[rec.status]}
+                      </span>
+                      {rec.overtimeHours && rec.overtimeHours > 0 && (
+                        <span className="text-[10px] text-amber-500 font-bold">+{rec.overtimeHours}h OT</span>
+                      )}
+                    </div>
+
+                    {/* Note */}
+                    {editMode ? (
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Ghi chú:</span>
+                        <textarea value={editNote} onChange={e => setEditNote(e.target.value)}
+                          rows={2}
+                          className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300 resize-none"
+                          placeholder="Ghi chú..." />
+                      </div>
+                    ) : rec.note ? (
+                      <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Ghi chú</span>
+                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{rec.note}</p>
+                      </div>
+                    ) : null}
+
+                    {/* Out of range warning */}
+                    {rec.isOutOfRange && (
+                      <div className="flex items-center gap-2 text-amber-600 bg-amber-50 dark:bg-amber-500/10 rounded-xl p-2.5">
+                        <AlertTriangle size={14} />
+                        <span className="text-xs font-bold">Nhân viên ngoài phạm vi khi chấm công</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-6">
+                    <Clock size={32} className="text-slate-300 mx-auto mb-2" />
+                    <p className="text-sm text-slate-400 font-bold">Chưa có dữ liệu chấm công</p>
+                    <p className="text-xs text-slate-300 mt-1">Ngày này chưa được chấm công</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer — Admin actions */}
+              <div className="border-t border-slate-100 dark:border-slate-800 px-6 py-4 flex items-center justify-between gap-2">
+                {/* Left: cycle status */}
+                <button
+                  onClick={() => handleCellClick(detailCell.employeeId, detailCell.day)}
+                  className="px-3 py-2 text-xs font-black text-slate-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-500/10 rounded-xl transition flex items-center gap-1.5"
+                >
+                  <CheckCircle2 size={14} /> Chuyển trạng thái
+                </button>
+
+                {/* Right: admin edit */}
+                {isAdmin && (
+                  <div className="flex items-center gap-2">
+                    {editMode ? (
+                      <>
+                        <button onClick={() => setEditMode(false)} className="px-3 py-2 text-xs font-black text-slate-400 hover:text-slate-600 transition">Huỷ</button>
+                        <button onClick={() => setShowSaveConfirm(true)}
+                          className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black hover:bg-emerald-600 transition flex items-center gap-1.5">
+                          <Save size={13} /> Xác nhận sửa
+                        </button>
+                      </>
+                    ) : (
+                      <button onClick={() => { setEditMode(true); setEditCheckIn(rec?.checkIn || ''); setEditCheckOut(rec?.checkOut || ''); setEditNote(rec?.note || ''); }}
+                        className="px-3 py-2 bg-violet-500 text-white rounded-xl text-xs font-black hover:bg-violet-600 transition flex items-center gap-1.5">
+                        <Edit3 size={13} /> Sửa giờ
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Confirm Dialog */}
+            {showSaveConfirm && (
+              <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={e => e.stopPropagation()}>
+                <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-6 max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
+                  <div className="text-center">
+                    <div className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-500/20 flex items-center justify-center mx-auto mb-3">
+                      <AlertTriangle size={24} className="text-amber-500" />
+                    </div>
+                    <h4 className="text-base font-black text-slate-800 dark:text-white">Xác nhận sửa chấm công</h4>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                      Bạn có chắc muốn sửa giờ chấm công của <strong>{emp?.fullName}</strong> ngày <strong>{formattedDate}</strong>?
+                    </p>
+                    {editCheckIn && <p className="text-xs text-slate-500 mt-1">Giờ vào: <strong>{editCheckIn}</strong></p>}
+                    {editCheckOut && <p className="text-xs text-slate-500">Giờ ra: <strong>{editCheckOut}</strong></p>}
+                  </div>
+                  <div className="flex items-center gap-2 mt-5">
+                    <button onClick={() => setShowSaveConfirm(false)} className="flex-1 px-4 py-2.5 text-xs font-black text-slate-500 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition">Huỷ</button>
+                    <button onClick={handleSaveEdit} className="flex-1 px-4 py-2.5 bg-emerald-500 text-white rounded-xl text-xs font-black hover:bg-emerald-600 transition flex items-center justify-center gap-1.5">
+                      <CheckCircle size={14} /> Xác nhận
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 };
