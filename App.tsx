@@ -55,6 +55,9 @@ const DataStorage = React.lazy(() => import('./pages/DataStorage'));
 // AI Assistant
 const AiAssistant = React.lazy(() => import('./pages/AiAssistant'));
 
+// Knowledge Base
+const KnowledgeBase = React.lazy(() => import('./pages/KnowledgeBase'));
+
 // Request pages
 const RequestCategories = React.lazy(() => import('./pages/request/RequestCategories'));
 const RequestList = React.lazy(() => import('./pages/request/RequestList'));
@@ -112,6 +115,7 @@ const AppRoutes: React.FC = () => {
           <Route path="chat" element={<Chat />} />
           <Route path="storage" element={<DataStorage />} />
           <Route path="ai" element={<AiAssistant />} />
+          <Route path="knowledge-base" element={<KnowledgeBase />} />
           <Route path="rq" element={<RequestList />} />
           <Route path="rq/dashboard" element={<RequestDashboard />} />
           <Route path="rq/categories" element={<RequestCategories />} />

@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
 import {
   Bot, Send, MessageCircle, Sparkles, Trash2, Plus, ChevronLeft,
-  Database, Clock, Loader2, X, Code2
+  Database, Clock, Loader2, X, Code2, FileText, BookOpen
 } from 'lucide-react';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
@@ -13,6 +13,8 @@ interface AiMessage {
   role: 'user' | 'assistant';
   content: string;
   sqlQuery?: string;
+  mode?: 'sql' | 'rag' | 'general';
+  sources?: { title: string; fileName: string; similarity: number; fileUrl?: string }[];
   createdAt: string;
 }
 
@@ -136,6 +138,8 @@ const AiAssistant: React.FC = () => {
           role: 'assistant',
           content: data.answer,
           sqlQuery: data.sqlQuery,
+          mode: data.mode,
+          sources: data.sources,
           createdAt: new Date().toISOString(),
         }]);
       }
@@ -322,6 +326,36 @@ const AiAssistant: React.FC = () => {
                       </pre>
                     )}
                   </div>
+                )}
+                {msg.sources && msg.sources.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+                      <BookOpen size={10} /> Nguồn tham khảo:
+                    </span>
+                    {msg.sources.map((src, i) => (
+                      src.fileUrl ? (
+                        <a key={i} href={src.fileUrl} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300 text-[10px] font-medium hover:bg-amber-500/20 hover:underline cursor-pointer transition-colors">
+                          <FileText size={9} /> {src.title || src.fileName}
+                        </a>
+                      ) : (
+                        <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300 text-[10px] font-medium">
+                          <FileText size={9} /> {src.title || src.fileName}
+                        </span>
+                      )
+                    ))}
+                  </div>
+                )}
+                {msg.mode && msg.role === 'assistant' && (
+                  <span className={`inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                    msg.mode === 'rag' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' :
+                    msg.mode === 'sql' ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400' :
+                    'bg-slate-500/10 text-slate-500'
+                  }`}>
+                    {msg.mode === 'rag' ? <><BookOpen size={9} /> Từ tài liệu</> :
+                     msg.mode === 'sql' ? <><Database size={9} /> Từ database</> :
+                     <><Sparkles size={9} /> Chung</>}
+                  </span>
                 )}
                 <p className={`text-[9px] text-slate-300 mt-1 ${msg.role === 'user' ? 'text-right' : ''}`}>
                   {new Date(msg.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
