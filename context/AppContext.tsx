@@ -738,15 +738,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       } else if (table === 'employees') {
         payload = {
-          id: data.id, employee_code: data.employeeCode, full_name: data.fullName, title: data.title,
-          gender: data.gender, phone: data.phone, email: data.email, date_of_birth: data.dateOfBirth,
-          start_date: data.startDate, official_date: data.officialDate, status: data.status, user_id: data.userId,
+          id: data.id,
+          employee_code: data.employeeCode || null,  // null = trigger auto-generates TT00x
+          full_name: data.fullName, title: data.title || null,
+          gender: data.gender || null, phone: data.phone || null, email: data.email || null,
+          date_of_birth: data.dateOfBirth || null,   // empty string → null for date column
+          start_date: data.startDate || null,         // empty string → null for date column
+          official_date: data.officialDate || null,   // empty string → null for date column
+          status: data.status || 'Đang làm việc',
+          user_id: data.userId || null,               // empty string → null for uuid FK
           area_id: data.areaId || null, office_id: data.officeId || null, employee_type_id: data.employeeTypeId || null,
           position_id: data.positionId || null, salary_policy_id: data.salaryPolicyId || null,
           work_schedule_id: data.workScheduleId || null, construction_site_id: data.constructionSiteId || null,
           department_id: data.departmentId || null, factory_id: data.factoryId || null,
-          marital_status: data.maritalStatus || '',
-          avatar_url: data.avatarUrl || null
+          marital_status: data.maritalStatus || null,
+          avatar_url: data.avatarUrl || null,
+          salary_grade_id: data.salaryGradeId || null
         };
       } else if (table === 'org_units') {
         payload = {
