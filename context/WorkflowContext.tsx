@@ -168,7 +168,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     const updateTemplate = async (template: WorkflowTemplate) => {
-        await supabase.from('workflow_templates').update({
+        const { error } = await supabase.from('workflow_templates').update({
             name: template.name,
             description: template.description,
             is_active: template.isActive,
@@ -177,6 +177,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             default_watchers: template.defaultWatchers || [],
             updated_at: new Date().toISOString(),
         }).eq('id', template.id);
+        if (error) console.error('[WF] updateTemplate ERROR:', error);
         setTemplates(prev => prev.map(t => t.id === template.id ? template : t));
     };
 

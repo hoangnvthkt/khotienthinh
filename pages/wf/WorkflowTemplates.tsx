@@ -28,7 +28,9 @@ const WorkflowTemplates: React.FC = () => {
     const [editWatchers, setEditWatchers] = useState<string[]>([]);
 
     // Helper: User picker component
-    const UserPicker: React.FC<{ selected: string[]; onChange: (v: string[]) => void; label: string; icon: React.ReactNode; color: string }> = ({ selected, onChange, label, icon, color }) => (
+    const UserPicker: React.FC<{ selected: string[]; onChange: (v: string[]) => void; label: string; icon: React.ReactNode; color: string }> = ({ selected, onChange, label, icon, color }) => {
+        const availableUsers = users.filter(u => !selected.includes(u.id));
+        return (
         <div>
             <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
                 {icon} {label}
@@ -50,12 +52,13 @@ const WorkflowTemplates: React.FC = () => {
                 onChange={e => { if (e.target.value && !selected.includes(e.target.value)) onChange([...selected, e.target.value]); }}
             >
                 <option value="">-- Chọn nhân viên --</option>
-                {users.filter(u => !selected.includes(u.id)).map(u => (
+                {availableUsers.map(u => (
                     <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
             </select>
         </div>
     );
+    };
 
     if (user.role !== Role.ADMIN && !templates.some(t => t.managers?.includes(user.id))) {
         return (
