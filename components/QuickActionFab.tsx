@@ -73,6 +73,9 @@ const QuickActionFab: React.FC = () => {
 
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Detect if we're on the AI chat page to shrink the FAB
+  const isAiPage = location.pathname.startsWith('/ai');
   const fabRef = useRef<HTMLDivElement>(null);
 
   // Persist to localStorage
@@ -158,7 +161,7 @@ const QuickActionFab: React.FC = () => {
   };
 
   return (
-    <div ref={fabRef} className="fixed bottom-20 right-4 lg:bottom-6 lg:right-6 z-[90]">
+    <div ref={fabRef} className={`fixed z-[90] transition-all duration-300 ${isAiPage ? 'bottom-[72px] right-3 lg:bottom-6 lg:right-6' : 'bottom-20 right-4 lg:bottom-6 lg:right-6'}`}>
       {/* Backdrop */}
       {(isOpen || showSettings) && (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-[2px] -z-10" onClick={() => { setIsOpen(false); setShowSettings(false); }} />
@@ -305,18 +308,20 @@ const QuickActionFab: React.FC = () => {
             setIsOpen(prev => !prev);
           }
         }}
-        className={`w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-xl transition-all duration-300 hover:scale-110 active:scale-95 ${
+        className={`flex items-center justify-center text-white shadow-xl transition-all duration-300 hover:scale-110 active:scale-95 ${
+          isAiPage ? 'w-10 h-10 rounded-xl' : 'w-14 h-14 rounded-2xl'
+        } ${
           isOpen || showSettings
             ? 'bg-slate-800 dark:bg-slate-700 rotate-45 shadow-slate-800/40'
             : 'bg-indigo-500 hover:bg-indigo-600 shadow-indigo-500/40'
         }`}
         title="Hành động nhanh"
       >
-        <Plus size={24} strokeWidth={2.5} className="transition-transform duration-300" />
+        <Plus size={isAiPage ? 18 : 24} strokeWidth={2.5} className="transition-transform duration-300" />
       </button>
 
-      {/* Pulse ring when closed */}
-      {!isOpen && !showSettings && (
+      {/* Pulse ring when closed (hidden on AI page) */}
+      {!isOpen && !showSettings && !isAiPage && (
         <div className="absolute inset-0 rounded-2xl bg-indigo-500/30 animate-ping pointer-events-none" style={{ animationDuration: '3s' }} />
       )}
 
