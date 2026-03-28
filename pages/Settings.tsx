@@ -78,6 +78,11 @@ const Settings: React.FC = () => {
   const [newHrmLng, setNewHrmLng] = useState('');
   const [newHrmRadius, setNewHrmRadius] = useState('');
   const [newHrmManager, setNewHrmManager] = useState('');
+  // Work schedule time states
+  const [wsMorningStart, setWsMorningStart] = useState('08:00');
+  const [wsMorningEnd, setWsMorningEnd] = useState('12:00');
+  const [wsAfternoonStart, setWsAfternoonStart] = useState('13:00');
+  const [wsAfternoonEnd, setWsAfternoonEnd] = useState('17:00');
 
   // Input fields for adding
   const [newCatName, setNewCatName] = useState('');
@@ -744,6 +749,12 @@ const Settings: React.FC = () => {
                       updated.checkInRadius = newHrmRadius ? parseInt(newHrmRadius) : (activeHrmSection === 'offices' ? 100 : 200);
                       updated.managerId = newHrmManager || undefined;
                     }
+                    if (activeHrmSection === 'work_schedules') {
+                      updated.morningStart = wsMorningStart;
+                      updated.morningEnd = wsMorningEnd;
+                      updated.afternoonStart = wsAfternoonStart;
+                      updated.afternoonEnd = wsAfternoonEnd;
+                    }
                     updateHrmItem(cfg.table, updated);
                     setEditingHrmItem(null);
                   } else {
@@ -757,9 +768,16 @@ const Settings: React.FC = () => {
                       newItem.checkInRadius = newHrmRadius ? parseInt(newHrmRadius) : (activeHrmSection === 'offices' ? 100 : 200);
                       newItem.managerId = newHrmManager || undefined;
                     }
+                    if (activeHrmSection === 'work_schedules') {
+                      newItem.morningStart = wsMorningStart;
+                      newItem.morningEnd = wsMorningEnd;
+                      newItem.afternoonStart = wsAfternoonStart;
+                      newItem.afternoonEnd = wsAfternoonEnd;
+                    }
                     addHrmItem(cfg.table, newItem);
                   }
                   setNewHrmName(''); setNewHrmDesc(''); setNewHrmLat(''); setNewHrmLng(''); setNewHrmRadius(''); setNewHrmManager('');
+                  setWsMorningStart('08:00'); setWsMorningEnd('12:00'); setWsAfternoonStart('13:00'); setWsAfternoonEnd('17:00');
                 };
 
                 const handleHrmEdit = (item: any) => {
@@ -770,6 +788,11 @@ const Settings: React.FC = () => {
                   setNewHrmLng(item.longitude ? String(item.longitude) : '');
                   setNewHrmRadius(item.checkInRadius ? String(item.checkInRadius) : '');
                   setNewHrmManager(item.managerId || '');
+                  // Work schedule time fields
+                  setWsMorningStart(item.morningStart || '08:00');
+                  setWsMorningEnd(item.morningEnd || '12:00');
+                  setWsAfternoonStart(item.afternoonStart || '13:00');
+                  setWsAfternoonEnd(item.afternoonEnd || '17:00');
                 };
 
                 const handleHrmDelete = (id: string) => {
@@ -866,6 +889,34 @@ const Settings: React.FC = () => {
                                 <p className="text-[9px] text-slate-400 mt-1">Người quản lý có thể duyệt đề xuất chấm công tại {activeHrmSection === 'offices' ? 'văn phòng' : 'công trường'} này.</p>
                               </div>
                             )}
+                            {activeHrmSection === 'work_schedules' && (
+                              <div className="space-y-3 bg-cyan-50 p-4 rounded-2xl border border-cyan-200">
+                                <h4 className="text-[10px] font-black text-cyan-600 uppercase tracking-widest">🕐 Giờ làm việc</h4>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="text-[9px] font-bold text-cyan-500 uppercase block mb-1">Ca sáng bắt đầu</label>
+                                    <input type="time" value={wsMorningStart} onChange={e => setWsMorningStart(e.target.value)}
+                                      className="w-full bg-white border border-cyan-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-cyan-400" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] font-bold text-cyan-500 uppercase block mb-1">Ca sáng kết thúc</label>
+                                    <input type="time" value={wsMorningEnd} onChange={e => setWsMorningEnd(e.target.value)}
+                                      className="w-full bg-white border border-cyan-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-cyan-400" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] font-bold text-cyan-500 uppercase block mb-1">Ca chiều bắt đầu</label>
+                                    <input type="time" value={wsAfternoonStart} onChange={e => setWsAfternoonStart(e.target.value)}
+                                      className="w-full bg-white border border-cyan-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-cyan-400" />
+                                  </div>
+                                  <div>
+                                    <label className="text-[9px] font-bold text-cyan-500 uppercase block mb-1">Ca chiều kết thúc</label>
+                                    <input type="time" value={wsAfternoonEnd} onChange={e => setWsAfternoonEnd(e.target.value)}
+                                      className="w-full bg-white border border-cyan-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-cyan-400" />
+                                  </div>
+                                </div>
+                                <p className="text-[9px] text-cyan-400 font-medium">CheckIn trước giờ bắt đầu ca sáng = đúng giờ. CheckOut sau giờ kết thúc ca chiều = đủ ngày.</p>
+                              </div>
+                            )}
                             <div className="flex gap-3">
                               {editingHrmItem && (
                                 <button
@@ -894,6 +945,11 @@ const Settings: React.FC = () => {
                                   <span className="text-sm font-bold text-slate-700 block">{item.name}</span>
                                   {(item.description || item.address) && (
                                     <span className="text-xs text-slate-400">{item.description || item.address}</span>
+                                  )}
+                                  {item.morningStart && (
+                                    <span className="text-[10px] text-cyan-600 font-bold mt-0.5 block">
+                                      🕐 Sáng: {item.morningStart}–{item.morningEnd || '12:00'} | Chiều: {item.afternoonStart || '13:00'}–{item.afternoonEnd || '17:00'}
+                                    </span>
                                   )}
                                   {item.managerId && (
                                     <span className="text-[10px] text-blue-500 font-bold flex items-center gap-1 mt-0.5">

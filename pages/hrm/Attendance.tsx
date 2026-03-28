@@ -24,7 +24,7 @@ const STATUS_SHORT: Record<AttendanceStatus, string> = {
 };
 
 const Attendance: React.FC = () => {
-  const { employees, attendanceRecords, hrmConstructionSites, hrmOffices, holidays, attendanceProposals, addHrmItem, updateHrmItem, removeHrmItem, user, users } = useApp();
+  const { employees, attendanceRecords, hrmConstructionSites, hrmOffices, hrmWorkSchedules, holidays, attendanceProposals, addHrmItem, updateHrmItem, removeHrmItem, user, users, shiftTypes, employeeShifts } = useApp();
   useModuleData('hrm');
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -73,9 +73,55 @@ const Attendance: React.FC = () => {
   const [editNote, setEditNote] = useState('');
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
 
-  // Standard work times for late/early tracking
-  const [stdStartTime, setStdStartTime] = useState('08:00');
-  const [stdEndTime, setStdEndTime] = useState('17:00');
+  // Build schedule lookup: employeeId + date -> shift info
+  // Priority: employeeShifts (specific date) -> employeeShifts (default, no date) -> hrmWorkSchedules fallback
+  const getEmployeeShiftForDate = useCallback((employeeId: string, dateStr?: string) => {
+    const defaultResult = { startTime: '08:00', endTime: '17:00', graceLateMins: 15, graceEarlyMins: 15, standardWorkingHours: 8, shiftName: '', shiftColor: '#3b82f6' };
+
+    // 1. Check specific date assignment
+    let assignment = dateStr ? employeeShifts.find(s => s.employeeId === employeeId && s.shiftDate === dateStr) : undefined;
+    // 2. Fallback to default assignment (no date)
+    if (!assignment) assignment = employeeShifts.find(s => s.employeeId === employeeId && !s.shiftDate);
+    // 3. If assignment found, look up shift type
+    if (assignment) {
+      const shift = shiftTypes.find(s => s.id === assignment!.shiftTypeId);
+      if (shift) {
+        return {
+          startTime: shift.startTime?.slice(0, 5) || '08:00',
+          endTime: shift.endTime?.slice(0, 5) || '17:00',
+          graceLateMins: shift.graceLateMins || 15,
+          graceEarlyMins: shift.graceEarlyMins || 15,
+          standardWorkingHours: shift.standardWorkingHours || 8,
+          shiftName: shift.name,
+          shiftColor: shift.color,
+        };
+      }
+    }
+    // 4. Fallback to old HrmWorkSchedule
+    const emp = employees.find(e => e.id === employeeId);
+    if (emp?.workScheduleId) {
+      const schedule = hrmWorkSchedules.find(s => s.id === emp.workScheduleId);
+      if (schedule) {
+        return {
+          ...defaultResult,
+          startTime: schedule.morningStart?.slice(0, 5) || '08:00',
+          endTime: schedule.afternoonEnd?.slice(0, 5) || '17:00',
+        };
+      }
+    }
+    return defaultResult;
+  }, [employees, hrmWorkSchedules, shiftTypes, employeeShifts]);
+
+  // Legacy wrapper for backward compat
+  const getEmployeeSchedule = useCallback((employeeId: string) => {
+    const shift = getEmployeeShiftForDate(employeeId);
+    return {
+      morningStart: shift.startTime,
+      morningEnd: '12:00',
+      afternoonStart: '13:00',
+      afternoonEnd: shift.endTime,
+    };
+  }, [getEmployeeShiftForDate]);
 
   const daysInMonth = useMemo(() => new Date(currentYear, currentMonth, 0).getDate(), [currentYear, currentMonth]);
   const dayHeaders = useMemo(() => {
@@ -175,23 +221,55 @@ const Attendance: React.FC = () => {
     // Keep detail panel open to see updated data
   }, [detailCell, editCheckIn, editCheckOut, editNote, recordMap, updateHrmItem, addHrmItem, currentYear, currentMonth]);
 
-  // Determine cell color for past days
-  const getCellIndicator = useCallback((rec: AttendanceRecord | undefined, dayNum: number): 'green' | 'yellow' | 'red' | null => {
+  // Determine cell color for past days (shift-aware with grace period)
+  // 🟢 green = đúng giờ (within grace period)
+  // 🟡 yellow = đi muộn (beyond grace period)
+  // 🟠 orange = nửa ngày (checkOut quá sớm, < 50% standard hours)
+  // 🔴 red = vắng (không chấm hoặc absent)
+  const getCellIndicator = useCallback((rec: AttendanceRecord | undefined, dayNum: number, employeeId: string): 'green' | 'yellow' | 'orange' | 'red' | null => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const cellDate = new Date(currentYear, currentMonth - 1, dayNum);
     if (cellDate >= today) return null; // Only past days
 
     if (!rec || rec.status === 'absent') return 'red';
-    if (rec.status === 'leave' || rec.status === 'holiday') return null; // Phép/Lễ không cần indicator
+    if (rec.status === 'leave' || rec.status === 'holiday') return null;
 
-    if (rec.checkIn) {
-      const [sh, sm] = stdStartTime.split(':').map(Number);
-      const [ch, cm] = rec.checkIn.split(':').map(Number);
-      if (ch * 60 + cm > sh * 60 + sm) return 'yellow'; // Muộn
+    const dateStr = getDateKey(dayNum);
+    const shift = getEmployeeShiftForDate(employeeId, dateStr);
+    const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    const shiftStart = toMin(shift.startTime);
+    const shiftEnd = toMin(shift.endTime);
+    const halfShiftMins = (shift.standardWorkingHours * 60) / 2;
+
+    const hasCheckIn = !!rec.checkIn;
+    const hasCheckOut = !!rec.checkOut;
+
+    if (!hasCheckIn && !hasCheckOut) return 'red';
+
+    if (hasCheckIn && !hasCheckOut) {
+      const ciMin = toMin(rec.checkIn!);
+      if (ciMin <= shiftStart + shift.graceLateMins) return 'orange';
+      return 'red';
     }
-    return 'green'; // Đúng giờ
-  }, [currentYear, currentMonth, stdStartTime]);
+    if (!hasCheckIn && hasCheckOut) return 'orange';
+
+    const ciMin = toMin(rec.checkIn!);
+    const coMin = toMin(rec.checkOut!);
+    const workedMins = coMin - ciMin;
+
+    // Worked less than half shift -> orange (nửa ngày)
+    if (workedMins < halfShiftMins) {
+      return ciMin <= shiftStart + shift.graceLateMins ? 'orange' : 'red';
+    }
+
+    // Full day: check grace period for on-time vs late
+    const isLate = ciMin > shiftStart + shift.graceLateMins;
+    const isEarly = coMin < shiftEnd - shift.graceEarlyMins;
+
+    if (isLate || isEarly) return 'yellow';
+    return 'green';
+  }, [currentYear, currentMonth, getEmployeeShiftForDate]);
 
   // Admin: right-click để xóa ngày công
   const isAdmin = user.role === Role.ADMIN;
@@ -223,30 +301,31 @@ const Attendance: React.FC = () => {
       }
     }
     const workDays = present + halfDay * 0.5 + trip;
-    // Late / early tracking
+    // Late / early tracking (shift-aware with grace period)
     let lateCount = 0, earlyCount = 0, totalLateMin = 0, totalEarlyMin = 0;
-    const [stdH, stdM] = stdStartTime.split(':').map(Number);
-    const [endH, endM] = stdEndTime.split(':').map(Number);
-    const stdStart = stdH * 60 + stdM;
-    const stdEnd = endH * 60 + endM;
+    const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
     for (let d = 1; d <= daysInMonth; d++) {
-      const key = `${employeeId}_${getDateKey(d)}`;
+      const dateStr = getDateKey(d);
+      const key = `${employeeId}_${dateStr}`;
       const rec = recordMap.get(key);
       if (rec && (rec.status === 'present' || rec.status === 'half_day' || rec.status === 'business_trip')) {
+        const shift = getEmployeeShiftForDate(employeeId, dateStr);
+        const stdStart = toMin(shift.startTime);
+        const stdEnd = toMin(shift.endTime);
         if (rec.checkIn) {
-          const [ch, cm] = rec.checkIn.split(':').map(Number);
-          const ciMin = ch * 60 + cm;
-          if (ciMin > stdStart) { lateCount++; totalLateMin += ciMin - stdStart; }
+          const ciMin = toMin(rec.checkIn);
+          // Only count as late if beyond grace period
+          if (ciMin > stdStart + shift.graceLateMins) { lateCount++; totalLateMin += ciMin - stdStart; }
         }
         if (rec.checkOut) {
-          const [ch, cm] = rec.checkOut.split(':').map(Number);
-          const coMin = ch * 60 + cm;
-          if (coMin < stdEnd) { earlyCount++; totalEarlyMin += stdEnd - coMin; }
+          const coMin = toMin(rec.checkOut);
+          // Only count as early if beyond grace period
+          if (coMin < stdEnd - shift.graceEarlyMins) { earlyCount++; totalEarlyMin += stdEnd - coMin; }
         }
       }
     }
     return { present, absent, halfDay, leave, holiday, trip, overtime, workDays, lateCount, earlyCount, totalLateMin, totalEarlyMin };
-  }, [recordMap, daysInMonth, currentYear, currentMonth, stdStartTime, stdEndTime]);
+  }, [recordMap, daysInMonth, currentYear, currentMonth, getEmployeeShiftForDate]);
 
   // Month nav
   const prevMonth = () => {
@@ -692,23 +771,8 @@ const Attendance: React.FC = () => {
         </button>
       </div>
 
-      {/* Standard time config */}
       {activeTab === 'timesheet' && (
       <>
-      <div className="glass-panel rounded-2xl p-3 flex items-center gap-4 flex-wrap">
-        <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Giờ chuẩn:</span>
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-slate-400">Vào</span>
-          <input type="time" value={stdStartTime} onChange={e => setStdStartTime(e.target.value)}
-            className="px-2 py-1 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 outline-none w-24" />
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-slate-400">Ra</span>
-          <input type="time" value={stdEndTime} onChange={e => setStdEndTime(e.target.value)}
-            className="px-2 py-1 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 outline-none w-24" />
-        </div>
-        <span className="text-[9px] text-slate-400">Dùng so sánh checkIn/checkOut để phát hiện đi muộn, về sớm</span>
-      </div>
 
       {/* Month Navigator + Filters */}
       <div className="glass-panel rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
@@ -764,7 +828,12 @@ const Attendance: React.FC = () => {
             <span className="text-[10px] font-bold text-slate-500">{ATTENDANCE_STATUS_LABELS[s]}</span>
           </div>
         ))}
-        <span className="text-[10px] text-slate-400 font-bold ml-2">• Click ô để chuyển trạng thái</span>
+        <span className="mx-2 text-slate-300">|</span>
+        <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm ring-2 ring-emerald-400"></span><span className="text-[9px] font-bold text-slate-400">Đúng giờ</span></div>
+        <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm ring-2 ring-amber-400"></span><span className="text-[9px] font-bold text-slate-400">Muộn</span></div>
+        <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm ring-2 ring-orange-400"></span><span className="text-[9px] font-bold text-slate-400">½ ngày</span></div>
+        <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm ring-2 ring-red-400"></span><span className="text-[9px] font-bold text-slate-400">Vắng</span></div>
+        <span className="text-[10px] text-slate-400 font-bold ml-2">• Click ô để xem chi tiết</span>
         {isAdmin && <span className="text-[10px] text-red-400 font-bold ml-1">• Chuột phải để xóa</span>}
       </div>
       )}
@@ -821,8 +890,8 @@ const Attendance: React.FC = () => {
                       {dayHeaders.map(d => {
                         const key = `${emp.id}_${getDateKey(d.dayNum)}`;
                         const rec = recordMap.get(key);
-                        const indicator = getCellIndicator(rec, d.dayNum);
-                        const indicatorBorder = indicator === 'green' ? 'ring-2 ring-emerald-400' : indicator === 'yellow' ? 'ring-2 ring-amber-400' : indicator === 'red' ? 'ring-2 ring-red-400' : '';
+                        const indicator = getCellIndicator(rec, d.dayNum, emp.id);
+                        const indicatorBorder = indicator === 'green' ? 'ring-2 ring-emerald-400' : indicator === 'yellow' ? 'ring-2 ring-amber-400' : indicator === 'orange' ? 'ring-2 ring-orange-400' : indicator === 'red' ? 'ring-2 ring-red-400' : '';
                         return (
                           <td key={d.dayNum}
                             onClick={() => handleOpenDetail(emp.id, d.dayNum)}
@@ -838,13 +907,14 @@ const Attendance: React.FC = () => {
                               </span>
                               {/* Late/early dot */}
                               {(rec.status === 'present' || rec.status === 'half_day' || rec.status === 'business_trip') && (() => {
-                                const [sh, sm] = stdStartTime.split(':').map(Number);
-                                const [eh, em2] = stdEndTime.split(':').map(Number);
-                                const stdS = sh * 60 + sm;
-                                const stdE = eh * 60 + em2;
+                                const dateStr = getDateKey(d.dayNum);
+                                const shift = getEmployeeShiftForDate(emp.id, dateStr);
+                                const toM = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+                                const stdS = toM(shift.startTime);
+                                const stdE = toM(shift.endTime);
                                 let isLate = false, isEarly = false;
-                                if (rec.checkIn) { const [h, m] = rec.checkIn.split(':').map(Number); if (h*60+m > stdS) isLate = true; }
-                                if (rec.checkOut) { const [h, m] = rec.checkOut.split(':').map(Number); if (h*60+m < stdE) isEarly = true; }
+                                if (rec.checkIn) { const ciM = toM(rec.checkIn); if (ciM > stdS + shift.graceLateMins) isLate = true; }
+                                if (rec.checkOut) { const coM = toM(rec.checkOut); if (coM < stdE - shift.graceEarlyMins) isEarly = true; }
                                 if (isLate || isEarly) return <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-orange-500 border border-white dark:border-slate-900"></span>;
                                 return null;
                               })()}

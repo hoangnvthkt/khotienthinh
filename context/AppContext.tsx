@@ -10,7 +10,8 @@ import {
   OrgUnit, ProjectFinance, ProjectTransaction,
   Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus,
   AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract, LeaveBalance, PayrollTemplate, HrmHoliday, HrmSalaryHistory,
-  BudgetCategory, BudgetEntry, ExpenseRecord, AttendanceProposal, LeaveLog, LeaveApprover
+  BudgetCategory, BudgetEntry, ExpenseRecord, AttendanceProposal, LeaveLog, LeaveApprover,
+  HrmShiftType, HrmEmployeeShift
 } from '../types';
 import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_ITEMS,
@@ -50,6 +51,8 @@ interface AppContextType {
   hrmSalaryPolicies: HrmSalaryPolicy[];
   hrmWorkSchedules: HrmWorkSchedule[];
   hrmConstructionSites: HrmConstructionSite[];
+  shiftTypes: HrmShiftType[];
+  employeeShifts: HrmEmployeeShift[];
   addHrmItem: (table: string, item: any) => void;
   updateHrmItem: (table: string, item: any) => void;
   removeHrmItem: (table: string, id: string) => void;
@@ -171,6 +174,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [hrmSalaryPolicies, setHrmSalaryPolicies] = useState<HrmSalaryPolicy[]>([]);
   const [hrmWorkSchedules, setHrmWorkSchedules] = useState<HrmWorkSchedule[]>([]);
   const [hrmConstructionSites, setHrmConstructionSites] = useState<HrmConstructionSite[]>([]);
+  const [shiftTypes, setShiftTypes] = useState<HrmShiftType[]>([]);
+  const [employeeShifts, setEmployeeShifts] = useState<HrmEmployeeShift[]>([]);
   // HRM 5A
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
@@ -351,7 +356,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (empTypesData) setHrmEmployeeTypes(empTypesData);
         if (positionsData) setHrmPositions(positionsData);
         if (salaryData) setHrmSalaryPolicies(salaryData);
-        if (schedulesData) setHrmWorkSchedules(schedulesData);
+        if (schedulesData) setHrmWorkSchedules(schedulesData.map((s: any) => ({
+          id: s.id, name: s.name, description: s.description,
+          morningStart: s.morning_start, morningEnd: s.morning_end,
+          afternoonStart: s.afternoon_start, afternoonEnd: s.afternoon_end,
+          createdAt: s.created_at,
+        })));
         if (constructionSitesData) setHrmConstructionSites(constructionSitesData);
 
         // Org Units
@@ -594,7 +604,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       if (module === 'hrm') {
-        const [leaveBalData, leaveReqData, attendData, payrollData, contractData, payrollTplData, holidayData, salaryHistData] = await Promise.all([
+        const [leaveBalData, leaveReqData, attendData, payrollData, contractData, payrollTplData, holidayData, salaryHistData, shiftTypesData, empShiftsData] = await Promise.all([
           fetchTableHelper('hrm_leave_balances'),
           fetchTableHelper('hrm_leave_requests'),
           fetchTableHelper('hrm_attendance'),
@@ -603,6 +613,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTableHelper('hrm_payroll_templates'),
           fetchTableHelper('hrm_holidays'),
           fetchTableHelper('hrm_salary_history'),
+          fetchTableHelper('hrm_shift_types'),
+          fetchTableHelper('hrm_employee_shifts'),
         ]);
         if (leaveBalData) setLeaveBalances(leaveBalData);
         if (leaveReqData) setLeaveRequests(leaveReqData);
@@ -614,6 +626,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (payrollTplData) setPayrollTemplates(payrollTplData);
         if (holidayData) setHolidays(holidayData);
         if (salaryHistData) setSalaryHistory(salaryHistData);
+        if (shiftTypesData) setShiftTypes(shiftTypesData.map((s: any) => ({
+          id: s.id, name: s.name,
+          startTime: s.start_time, endTime: s.end_time,
+          breakMinutes: s.break_minutes, graceLateMins: s.grace_late_minutes,
+          graceEarlyMins: s.grace_early_minutes, standardWorkingHours: s.standard_working_hours,
+          otMultiplierNormal: s.ot_multiplier_normal, otMultiplierWeekend: s.ot_multiplier_weekend,
+          otMultiplierHoliday: s.ot_multiplier_holiday, nightShiftPremium: s.night_shift_premium,
+          isNightShift: s.is_night_shift, color: s.color, isActive: s.is_active,
+          createdAt: s.created_at,
+        })));
+        if (empShiftsData) setEmployeeShifts(empShiftsData.map((s: any) => ({
+          id: s.id, employeeId: s.employee_id, shiftTypeId: s.shift_type_id,
+          shiftDate: s.shift_date, isDayOff: s.is_day_off, note: s.note,
+          createdAt: s.created_at,
+        })));
         const proposalData = await fetchTableHelper('hrm_attendance_proposals');
         if (proposalData) setAttendanceProposals(proposalData);
 
@@ -1304,6 +1331,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     'expense_records': setExpenseRecords,
     'hrm_attendance_proposals': setAttendanceProposals,
     'hrm_leave_logs': setLeaveLogs,
+    'hrm_shift_types': setShiftTypes,
+    'hrm_employee_shifts': setEmployeeShifts,
+  };
+
+  // Convert camelCase → snake_case for specific tables
+  const toDbItem = (table: string, item: any): any => {
+    if (table === 'hrm_work_schedules') {
+      return {
+        id: item.id, name: item.name, description: item.description,
+        morning_start: item.morningStart || null, morning_end: item.morningEnd || null,
+        afternoon_start: item.afternoonStart || null, afternoon_end: item.afternoonEnd || null,
+        created_at: item.createdAt,
+      };
+    }
+    if (table === 'hrm_shift_types') {
+      return {
+        id: item.id, name: item.name,
+        start_time: item.startTime, end_time: item.endTime,
+        break_minutes: item.breakMinutes, grace_late_minutes: item.graceLateMins,
+        grace_early_minutes: item.graceEarlyMins, standard_working_hours: item.standardWorkingHours,
+        ot_multiplier_normal: item.otMultiplierNormal, ot_multiplier_weekend: item.otMultiplierWeekend,
+        ot_multiplier_holiday: item.otMultiplierHoliday, night_shift_premium: item.nightShiftPremium,
+        is_night_shift: item.isNightShift, color: item.color, is_active: item.isActive,
+        created_at: item.createdAt,
+      };
+    }
+    if (table === 'hrm_employee_shifts') {
+      return {
+        id: item.id, employee_id: item.employeeId, shift_type_id: item.shiftTypeId,
+        shift_date: item.shiftDate || null, is_day_off: item.isDayOff,
+        note: item.note || null, created_at: item.createdAt,
+      };
+    }
+    return item;
   };
 
   const addHrmItem = async (table: string, item: any) => {
@@ -1311,7 +1372,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!setter) return;
     setter((prev: any[]) => [...prev, item]);
     if (isSupabaseConfigured) {
-      const { error } = await supabase.from(table).insert(item);
+      const { error } = await supabase.from(table).insert(toDbItem(table, item));
       if (error) console.error(`Error adding to ${table}:`, error);
     }
   };
@@ -1321,7 +1382,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!setter) return;
     setter((prev: any[]) => prev.map((i: any) => i.id === item.id ? item : i));
     if (isSupabaseConfigured) {
-      const { error } = await supabase.from(table).update(item).eq('id', item.id);
+      const { error } = await supabase.from(table).update(toDbItem(table, item)).eq('id', item.id);
       if (error) console.error(`Error updating ${table}:`, error);
     }
   };
@@ -1649,6 +1710,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       user, users, appSettings, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
       categories, units, employees,
       hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
+      shiftTypes, employeeShifts,
       attendanceRecords, leaveRequests, leaveLogs, leaveBalances, payrollRecords, payrollTemplates, holidays, laborContracts, salaryHistory,
       attendanceProposals, approveLeave, rejectLeave, addLeaveLog,
       budgetCategories, budgetEntries, expenseRecords,

@@ -105,6 +105,39 @@ export interface HrmWorkSchedule {
   id: string;
   name: string;
   description?: string;
+  morningStart?: string;    // "08:00" — giờ bắt đầu ca sáng
+  morningEnd?: string;      // "12:00" — giờ kết thúc ca sáng
+  afternoonStart?: string;  // "13:00" — giờ bắt đầu ca chiều
+  afternoonEnd?: string;    // "17:00" — giờ kết thúc ca chiều
+  createdAt?: string;
+}
+
+export interface HrmShiftType {
+  id: string;
+  name: string;
+  startTime: string;          // "08:00"
+  endTime: string;            // "17:00"
+  breakMinutes: number;       // Phút nghỉ trưa (default 60)
+  graceLateMins: number;      // Grace period đi muộn (phút, default 15)
+  graceEarlyMins: number;     // Grace period về sớm (phút, default 15)
+  standardWorkingHours: number; // Giờ làm chuẩn (default 8)
+  otMultiplierNormal: number;   // Hệ số OT ngày thường (default 1.5)
+  otMultiplierWeekend: number;  // Hệ số OT cuối tuần (default 2.0)
+  otMultiplierHoliday: number;  // Hệ số OT ngày lễ (default 3.0)
+  nightShiftPremium: number;    // Phụ cấp ca đêm % (default 0.3)
+  isNightShift: boolean;
+  color: string;
+  isActive: boolean;
+  createdAt?: string;
+}
+
+export interface HrmEmployeeShift {
+  id: string;
+  employeeId: string;
+  shiftTypeId: string;
+  shiftDate?: string;         // YYYY-MM-DD (null = ca mặc định)
+  isDayOff: boolean;
+  note?: string;
   createdAt?: string;
 }
 
