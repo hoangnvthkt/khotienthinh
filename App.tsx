@@ -24,7 +24,6 @@ const MisaExport = React.lazy(() => import('./pages/MisaExport'));
 const ProjectDashboard = React.lazy(() => import('./pages/ProjectDashboard'));
 const PortfolioDashboard = React.lazy(() => import('./pages/PortfolioDashboard'));
 const MyProfile = React.lazy(() => import('./pages/MyProfile'));
-const EmployeeDashboard = React.lazy(() => import('./pages/EmployeeDashboard'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
 
 // HRM pages
@@ -81,20 +80,13 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
-// Landing page: Always show EmployeeDashboard after login
-const LandingPage: React.FC = () => {
-  return <EmployeeDashboard />;
-};
-
 const AppRoutes: React.FC = () => {
   return (
     <Suspense fallback={<LoadingSpinner />}>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-          <Route index element={<LandingPage />} />
-          <Route path="my-profile" element={<MyProfile />} />
-          <Route path="employee-dashboard" element={<EmployeeDashboard />} />
+          <Route index element={<MyProfile />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="requests" element={<RequestWorkflow />} />
           <Route path="inventory" element={<Inventory />} />
