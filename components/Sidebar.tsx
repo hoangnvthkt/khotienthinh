@@ -28,9 +28,6 @@ const MODULE_CONFIG = [
   { key: 'TS' as const, icon: Landmark, label: 'Tài sản', shortLabel: 'TS', gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/30', color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-900/30', border: 'border-rose-200 dark:border-rose-700', route: '/ts/dashboard' },
   { key: 'RQ' as const, icon: Inbox, label: 'Yêu cầu', shortLabel: 'RQ', gradient: 'from-cyan-500 to-blue-600', shadow: 'shadow-cyan-500/30', color: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-50 dark:bg-cyan-900/30', border: 'border-cyan-200 dark:border-cyan-700', route: '/rq' },
   { key: 'EX' as const, icon: BarChart3, label: 'Chi phí', shortLabel: 'CP', gradient: 'from-indigo-500 to-blue-600', shadow: 'shadow-indigo-500/30', color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-900/30', border: 'border-indigo-200 dark:border-indigo-700', route: '/expense' },
-  { key: 'STORAGE' as const, icon: HardDrive, label: 'Kho dữ liệu', shortLabel: 'DL', gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/30', color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/30', border: 'border-violet-200 dark:border-violet-700', route: '/storage' },
-  { key: 'KB' as const, icon: BookOpen, label: 'Kho Kiến Thức', shortLabel: 'KT', gradient: 'from-amber-500 to-orange-600', shadow: 'shadow-amber-500/30', color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/30', border: 'border-amber-200 dark:border-amber-700', route: '/knowledge-base' },
-  { key: 'AI' as const, icon: Bot, label: 'Trợ lý AI', shortLabel: 'AI', gradient: 'from-fuchsia-500 to-purple-600', shadow: 'shadow-fuchsia-500/30', color: 'text-fuchsia-600 dark:text-fuchsia-400', bg: 'bg-fuchsia-50 dark:bg-fuchsia-900/30', border: 'border-fuchsia-200 dark:border-fuchsia-700', route: '/ai' },
 ] as const;
 
 type AppKey = typeof MODULE_CONFIG[number]['key'];
@@ -54,10 +51,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p.startsWith('/ts')) return 'TS';
     if (p.startsWith('/rq')) return 'RQ';
     if (p.startsWith('/expense')) return 'EX';
-    if (p.startsWith('/storage')) return 'STORAGE';
-    if (p.startsWith('/knowledge-base')) return 'KB';
-    if (p.startsWith('/ai')) return 'AI';
     if (['/inventory', '/operations', '/audit', '/reports', '/requests', '/misa-export'].includes(p)) return 'WMS';
+    if (p.startsWith('/storage')) return null;
     return null;
   };
 
@@ -203,15 +198,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     ],
     EX: [
       { to: '/expense', icon: BarChart3, label: 'Kế hoạch chi phí' },
-    ],
-    STORAGE: [
-      { to: '/storage', icon: HardDrive, label: 'Kho dữ liệu' },
-    ],
-    KB: [
-      { to: '/knowledge-base', icon: BookOpen, label: 'Kho Kiến Thức' },
-    ],
-    AI: [
-      { to: '/ai', icon: Bot, label: 'Trợ lý AI' },
     ],
   };
 
@@ -436,6 +422,33 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
                 <Settings className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
                 {!collapsed && <span className="font-bold text-sm">Cài đặt</span>}
+              </NavLink>
+
+              {/* Trợ lý AI */}
+              <NavLink to="/ai" title={collapsed ? 'Trợ lý AI' : undefined}
+                className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                  ? 'bg-gradient-to-r from-violet-500 to-fuchsia-600 text-white shadow-lg shadow-violet-500/20 border border-white/20'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                <Bot className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                {!collapsed && <span className="font-bold text-sm">Trợ lý AI</span>}
+              </NavLink>
+
+              {/* Kho Kiến Thức */}
+              <NavLink to="/knowledge-base" title={collapsed ? 'Kho Kiến Thức' : undefined}
+                className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-500/20 border border-white/20'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                <BookOpen className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                {!collapsed && <span className="font-bold text-sm">Kho Kiến Thức</span>}
+              </NavLink>
+
+              {/* Kho dữ liệu */}
+              <NavLink to="/storage" title={collapsed ? 'Kho dữ liệu' : undefined}
+                className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                  ? 'bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-500/20 border border-white/20'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                <HardDrive className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                {!collapsed && <span className="font-bold text-sm">Kho dữ liệu</span>}
               </NavLink>
 
               {/* Tin nhắn */}
