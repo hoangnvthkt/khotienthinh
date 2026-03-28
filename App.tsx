@@ -95,7 +95,7 @@ const AppRoutes: React.FC = () => {
           <Route index element={<LandingPage />} />
           <Route path="my-profile" element={<MyProfile />} />
           <Route path="employee-dashboard" element={<EmployeeDashboard />} />
-          <Route path="dashboard" element={<EmployeeDashboard />} />
+          <Route path="dashboard" element={<Dashboard />} />
           <Route path="requests" element={<RequestWorkflow />} />
           <Route path="inventory" element={<Inventory />} />
           <Route path="operations" element={<Operations />} />

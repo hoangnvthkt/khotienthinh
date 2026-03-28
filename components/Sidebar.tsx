@@ -21,7 +21,7 @@ interface SidebarProps {
 }
 
 const MODULE_CONFIG = [
-  { key: 'WMS' as const, icon: Package, label: 'Vật tư', shortLabel: 'KHO', gradient: 'from-emerald-500 to-emerald-600', shadow: 'shadow-emerald-500/30', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/30', border: 'border-emerald-200 dark:border-emerald-700', route: '/inventory' },
+  { key: 'WMS' as const, icon: Package, label: 'Vật tư', shortLabel: 'KHO', gradient: 'from-emerald-500 to-emerald-600', shadow: 'shadow-emerald-500/30', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/30', border: 'border-emerald-200 dark:border-emerald-700', route: '/dashboard' },
   { key: 'HRM' as const, icon: Briefcase, label: 'Nhân sự', shortLabel: 'NS', gradient: 'from-teal-500 to-cyan-600', shadow: 'shadow-teal-500/30', color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-900/30', border: 'border-teal-200 dark:border-teal-700', route: '/hrm/employees' },
   { key: 'WF' as const, icon: GitBranch, label: 'Quy trình', shortLabel: 'QT', gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/30', color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/30', border: 'border-violet-200 dark:border-violet-700', route: '/wf' },
   { key: 'DA' as const, icon: BarChart3, label: 'Dự án', shortLabel: 'DA', gradient: 'from-orange-500 to-amber-500', shadow: 'shadow-orange-500/30', color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-900/30', border: 'border-orange-200 dark:border-orange-700', route: '/da' },
@@ -51,7 +51,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p.startsWith('/ts')) return 'TS';
     if (p.startsWith('/rq')) return 'RQ';
     if (p.startsWith('/expense')) return 'EX';
-    if (['/inventory', '/operations', '/audit', '/reports', '/requests', '/misa-export'].includes(p)) return 'WMS';
+    if (['/dashboard', '/inventory', '/operations', '/audit', '/reports', '/requests', '/misa-export'].includes(p)) return 'WMS';
     if (p.startsWith('/storage')) return null;
     return null;
   };
