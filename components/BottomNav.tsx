@@ -6,7 +6,7 @@ import {
   GitBranch, Inbox, MoreHorizontal, Settings, Plus, X,
   GripVertical, EyeOff, RotateCcw, Users, DollarSign,
   ArrowLeftRight, Calendar, FileText, MessageCircle, Bot,
-  CheckCircle
+  CheckCircle, HardDrive, BookOpen, MapPin
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Role } from '../types';
@@ -26,6 +26,7 @@ const ICON_MAP: Record<string, React.FC<{ size?: number; strokeWidth?: number }>
   LayoutDashboard, Package, BarChart3, Landmark, Briefcase,
   GitBranch, Inbox, MoreHorizontal, Users, DollarSign,
   ArrowLeftRight, Calendar, FileText, MessageCircle, Bot, Settings,
+  HardDrive, BookOpen, MapPin,
 };
 
 const ALL_NAV_ITEMS: NavItem[] = [
@@ -39,9 +40,12 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { key: 'EX', to: '/expense', iconName: 'DollarSign', label: 'Chi phí', shortLabel: 'CP', matchPrefix: '/expense', color: 'text-blue-500' },
   { key: 'OPS', to: '/operations', iconName: 'ArrowLeftRight', label: 'Phiếu kho', shortLabel: 'PK', matchPrefix: '/operations', color: 'text-sky-500' },
   { key: 'PAY', to: '/hrm/payroll', iconName: 'DollarSign', label: 'Bảng lương', shortLabel: 'BL', matchPrefix: '/hrm/payroll', color: 'text-green-500' },
-  { key: 'ATT', to: '/hrm/attendance', iconName: 'Calendar', label: 'Chấm công', shortLabel: 'CC', matchPrefix: '/hrm/attendance', color: 'text-amber-500' },
+  { key: 'CHECKIN', to: '/hrm/checkin', iconName: 'MapPin', label: 'Chấm công', shortLabel: 'CC', matchPrefix: '/hrm/checkin', color: 'text-emerald-500' },
   { key: 'CHAT', to: '/chat', iconName: 'MessageCircle', label: 'Tin nhắn', shortLabel: 'Chat', matchPrefix: '/chat', color: 'text-pink-500' },
   { key: 'SET', to: '/settings', iconName: 'Settings', label: 'Cài đặt', shortLabel: 'CĐ', matchPrefix: '/settings', color: 'text-slate-500' },
+  { key: 'STORAGE', to: '/storage', iconName: 'HardDrive', label: 'Kho dữ liệu', shortLabel: 'DL', matchPrefix: '/storage', color: 'text-violet-500' },
+  { key: 'KB', to: '/knowledge-base', iconName: 'BookOpen', label: 'Kho Kiến Thức', shortLabel: 'KT', matchPrefix: '/knowledge-base', color: 'text-amber-500' },
+  { key: 'AI', to: '/ai', iconName: 'Bot', label: 'Trợ lý AI', shortLabel: 'AI', matchPrefix: '/ai', color: 'text-fuchsia-500' },
 ];
 
 const DEFAULT_KEYS = ['HOME', 'WMS', 'HRM', 'DA', 'TS'];
