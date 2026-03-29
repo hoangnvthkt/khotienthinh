@@ -217,7 +217,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   };
 
   const currentNavItems = (isModuleView && isModuleAllowed && activeModule) ? moduleNavMap[activeModule.key] || [] : [];
-  const filteredNavItems = currentNavItems.filter((item: any) => !item.roles || item.roles.includes(user.role));
+  const filteredNavItems = currentNavItems.filter((item: any) => {
+    // Role filter (e.g., Admin-only items)
+    if (item.roles && !item.roles.includes(user.role)) return false;
+    // Sub-module filter: if allowedSubModules is configured for this module, only show allowed routes
+    if (user.role !== Role.ADMIN && activeModule) {
+      const subModules = user.allowedSubModules?.[activeModule.key];
+      if (subModules && subModules.length > 0 && !subModules.includes(item.to)) return false;
+    }
+    return true;
+  });
   const assignedWh = warehouses.find(w => w.id === user.assignedWarehouseId);
 
   const sidebarBg = isDark ? 'border-r border-[#2D3135]/60 bg-[#101214]/95 backdrop-blur-xl' : 'glass-panel border-r border-white/20';

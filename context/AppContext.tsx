@@ -279,7 +279,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ]);
 
         if (usersData && usersData.length > 0) {
-          const mappedUsers = usersData.map((u: any) => ({ ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined }));
+          const mappedUsers = usersData.map((u: any) => ({ ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined, allowedSubModules: u.allowed_sub_modules || undefined }));
           // Fetch signatures and merge
           const { data: sigData } = await supabase.from('user_signatures').select('*');
           if (sigData && sigData.length > 0) {
@@ -488,7 +488,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       supabase.channel('public:users').on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, payload => {
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const u = payload.new as any;
-          const mappedUser = { ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined };
+          const mappedUser = { ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined, allowedSubModules: u.allowed_sub_modules || undefined };
           setUsers(prev => {
             const exists = prev.find(user => user.id === mappedUser.id);
             if (exists) return prev.map(user => user.id === mappedUser.id ? mappedUser : user);
@@ -761,7 +761,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           phone: data.phone, role: data.role, avatar: data.avatar,
           assigned_warehouse_id: data.assignedWarehouseId,
           allowed_modules: data.allowedModules || null,
-          admin_modules: data.adminModules || null
+          admin_modules: data.adminModules || null,
+          allowed_sub_modules: data.allowedSubModules || null
         };
       } else if (table === 'employees') {
         payload = {
@@ -894,7 +895,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const { data: userData, error: userError } = await supabase.from('users').select('*').eq('email', loginEmail).single();
         if (userError || !userData) throw new Error('Lỗi lấy thông tin người dùng');
 
-        const mappedUser = { ...userData, assignedWarehouseId: userData.assigned_warehouse_id, allowedModules: userData.allowed_modules || undefined, adminModules: userData.admin_modules || undefined };
+        const mappedUser = { ...userData, assignedWarehouseId: userData.assigned_warehouse_id, allowedModules: userData.allowed_modules || undefined, adminModules: userData.admin_modules || undefined, allowedSubModules: userData.allowed_sub_modules || undefined };
         setUser(mappedUser);
         const { avatar, ...userForStorage } = mappedUser;
         localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
@@ -1296,10 +1297,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const e = employees.find(emp => emp.id === id);
     setEmployees(prev => prev.filter(emp => emp.id !== id));
     try {
-      if (isSupabaseConfigured) await supabase.from('employees').delete().eq('id', id);
+      if (isSupabaseConfigured) {
+        const { error } = await supabase.from('employees').delete().eq('id', id);
+        if (error) {
+          // Restore employee back to state if delete failed
+          if (e) setEmployees(prev => [...prev, e]);
+          console.error('Error deleting employee from Supabase:', error.message);
+          alert(`Xoá nhân sự thất bại: ${error.message}`);
+          return;
+        }
+      }
       if (e) logActivity('SYSTEM', 'Xóa nhân sự', `Đã xóa hồ sơ nhân sự: ${e.fullName}`, 'DANGER');
-    } catch (error) {
+    } catch (error: any) {
+      // Restore employee back to state on exception
+      if (e) setEmployees(prev => [...prev, e]);
       console.error('Error deleting employee from Supabase:', error);
+      alert(`Xoá nhân sự thất bại: ${error.message || 'Lỗi không xác định'}`);
     }
   };
 

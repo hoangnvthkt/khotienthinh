@@ -839,18 +839,23 @@ const RequestList: React.FC = () => {
                                         )}
 
                                         {/* Creator actions */}
-                                        {req.createdBy === user.id && req.status === RQStatus.PENDING && (
-                                            <div className="flex gap-2">
-                                                <button onClick={() => setCancelConfirmId(req.id)}
-                                                    className="flex items-center gap-1.5 px-3 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl font-bold text-xs transition">
-                                                    <Ban size={13} /> Hủy phiếu
-                                                </button>
-                                                <button onClick={() => setDeleteConfirmId(req.id)}
-                                                    className="flex items-center gap-1.5 px-3 py-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl font-bold text-xs transition">
-                                                    <Trash2 size={13} /> Xóa
-                                                </button>
-                                            </div>
-                                        )}
+                                        {req.createdBy === user.id && req.status === RQStatus.PENDING && (() => {
+                                            const hasApprovals = req.approvers?.some(a => a.status === 'approved');
+                                            return (
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => setCancelConfirmId(req.id)}
+                                                        className="flex items-center gap-1.5 px-3 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl font-bold text-xs transition">
+                                                        <Ban size={13} /> Hủy phiếu
+                                                    </button>
+                                                    {(user.role === Role.ADMIN || !hasApprovals) && (
+                                                        <button onClick={() => setDeleteConfirmId(req.id)}
+                                                            className="flex items-center gap-1.5 px-3 py-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl font-bold text-xs transition">
+                                                            <Trash2 size={13} /> Xóa
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             )}

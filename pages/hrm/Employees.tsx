@@ -1,20 +1,23 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
-import { Employee } from '../../types';
+import { Employee, Role } from '../../types';
 import { Plus, Search, Edit2, Trash2, Phone, Mail, MapPin, Building, Briefcase, Users, LayoutGrid, List, User as UserIcon } from 'lucide-react';
 import EmployeeModal from '../../components/hrm/EmployeeModal';
 import EmployeeDetailModal from '../../components/hrm/EmployeeDetailModal';
+import ConfirmDeleteModal from '../../components/ConfirmDeleteModal';
 import Pagination from '../../components/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 
 const Employees: React.FC = () => {
-    const { employees, users, removeEmployee, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits } = useApp();
+    const { employees, users, removeEmployee, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user } = useApp();
+    const isAdmin = user.role === Role.ADMIN;
     useModuleData('hrm');
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
     const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
+    const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null);
     const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => {
         return (localStorage.getItem('emp_view_mode') as 'grid' | 'table') || 'grid';
     });
@@ -32,8 +35,14 @@ const Employees: React.FC = () => {
     const handleEdit = (emp: Employee) => { setEditingEmployee(emp); setIsModalOpen(true); };
     const handleAdd = () => { setEditingEmployee(null); setIsModalOpen(true); };
     const handleView = (emp: Employee) => { setViewingEmployee(emp); };
-    const handleDelete = (id: string) => {
-        if (window.confirm('Bạn có chắc chắn muốn xóa nhân sự này?')) removeEmployee(id);
+    const handleDelete = (emp: Employee) => {
+        setDeletingEmployee(emp);
+    };
+    const handleConfirmDelete = () => {
+        if (deletingEmployee) {
+            removeEmployee(deletingEmployee.id);
+            setDeletingEmployee(null);
+        }
     };
     const toggleView = (mode: 'grid' | 'table') => {
         setViewMode(mode);
@@ -83,10 +92,12 @@ const Employees: React.FC = () => {
                             <List size={16} />
                         </button>
                     </div>
-                    <button onClick={handleAdd} className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg hover:shadow-indigo-500/30 text-sm font-bold flex-1 sm:flex-initial justify-center">
-                        <Plus size={18} />
-                        <span>Thêm Mới</span>
-                    </button>
+                    {isAdmin && (
+                        <button onClick={handleAdd} className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg hover:shadow-indigo-500/30 text-sm font-bold flex-1 sm:flex-initial justify-center">
+                            <Plus size={18} />
+                            <span>Thêm Mới</span>
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -157,11 +168,13 @@ const Employees: React.FC = () => {
                                             </span>
                                         </div>
 
-                                        {/* Actions hover */}
-                                        <div className="absolute top-1 right-1 flex gap-px opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button onClick={(e) => { e.stopPropagation(); handleEdit(emp); }} className="p-0.5 text-slate-300 hover:text-indigo-500 rounded transition-all" title="Sửa"><Edit2 size={9} /></button>
-                                            <button onClick={(e) => { e.stopPropagation(); handleDelete(emp.id); }} className="p-0.5 text-slate-300 hover:text-red-500 rounded transition-all" title="Xóa"><Trash2 size={9} /></button>
-                                        </div>
+                                        {/* Actions hover — Admin only */}
+                                        {isAdmin && (
+                                            <div className="absolute top-1 right-1 flex gap-px opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button onClick={(e) => { e.stopPropagation(); handleEdit(emp); }} className="p-0.5 text-slate-300 hover:text-indigo-500 rounded transition-all" title="Sửa"><Edit2 size={9} /></button>
+                                                <button onClick={(e) => { e.stopPropagation(); handleDelete(emp); }} className="p-0.5 text-slate-300 hover:text-red-500 rounded transition-all" title="Xóa"><Trash2 size={9} /></button>
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}
@@ -217,7 +230,7 @@ const Employees: React.FC = () => {
                                     <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50">Văn Phòng</th>
                                     <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50 min-w-[150px]">Liên Hệ</th>
                                     <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50 text-center w-[100px]">Trạng Thái</th>
-                                    <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50 text-center w-[80px]">Thao Tác</th>
+                                    {isAdmin && <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50 text-center w-[80px]">Thao Tác</th>}
                                 </tr>
                             </thead>
                             <tbody>
@@ -252,12 +265,14 @@ const Employees: React.FC = () => {
                                                     <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />{emp.status}
                                                 </span>
                                             </td>
-                                            <td className="py-2.5 px-4 text-center">
-                                                <div className="flex items-center justify-center gap-0.5">
-                                                    <button onClick={(e) => { e.stopPropagation(); handleEdit(emp); }} className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all" title="Sửa"><Edit2 size={14} /></button>
-                                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(emp.id); }} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all" title="Xóa"><Trash2 size={14} /></button>
-                                                </div>
-                                            </td>
+                                            {isAdmin && (
+                                                <td className="py-2.5 px-4 text-center">
+                                                    <div className="flex items-center justify-center gap-0.5">
+                                                        <button onClick={(e) => { e.stopPropagation(); handleEdit(emp); }} className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all" title="Sửa"><Edit2 size={14} /></button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(emp); }} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all" title="Xóa"><Trash2 size={14} /></button>
+                                                    </div>
+                                                </td>
+                                            )}
                                         </tr>
                                     );
                                 })}
@@ -277,6 +292,17 @@ const Employees: React.FC = () => {
 
             {isModalOpen && <EmployeeModal employee={editingEmployee} onClose={() => setIsModalOpen(false)} />}
             {viewingEmployee && <EmployeeDetailModal employee={viewingEmployee} onClose={() => setViewingEmployee(null)} onEdit={(emp) => { setViewingEmployee(null); handleEdit(emp); }} />}
+
+            <ConfirmDeleteModal
+                isOpen={!!deletingEmployee}
+                onClose={() => setDeletingEmployee(null)}
+                onConfirm={handleConfirmDelete}
+                title="Xác nhận xoá nhân sự"
+                targetName={deletingEmployee?.fullName || ''}
+                subtitle={deletingEmployee ? `Mã NV: ${deletingEmployee.employeeCode}` : undefined}
+                warningText="Hành động này không thể hoàn tác. Toàn bộ dữ liệu liên quan (chấm công, phép, lương...) cũng sẽ bị xoá."
+                countdownSeconds={3}
+            />
         </div>
     );
 };

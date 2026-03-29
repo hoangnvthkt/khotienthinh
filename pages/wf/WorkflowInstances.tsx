@@ -782,6 +782,19 @@ const WorkflowInstances: React.FC = () => {
     const isCreator = (instance: WorkflowInstance): boolean => instance.createdBy === user.id;
     const isRunning = (instance: WorkflowInstance): boolean => instance.status === WorkflowInstanceStatus.RUNNING;
 
+    // Check if instance has any approval actions (approved by someone other than creator)
+    const hasBeenApproved = (instance: WorkflowInstance): boolean => {
+        const instanceLogs = getInstanceLogs(instance.id);
+        return instanceLogs.some(l => l.action === 'APPROVED');
+    };
+
+    // Non-admin: can only delete own instances that have NOT been approved by anyone
+    // Admin: can always delete
+    const canDeleteInstance = (instance: WorkflowInstance): boolean => {
+        if (user.role === Role.ADMIN) return true;
+        return isCreator(instance) && !hasBeenApproved(instance);
+    };
+
     // Check if user can approve current node
     const canActOnInstance = (instance: WorkflowInstance): boolean => {
         if (instance.status !== WorkflowInstanceStatus.RUNNING || !instance.currentNodeId) return false;
@@ -1184,7 +1197,7 @@ const WorkflowInstances: React.FC = () => {
                                                 <button onClick={() => setCancelConfirmId(instance.id)} className="p-2 rounded-lg text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition" title="Hủy phiếu"><Ban size={16} /></button>
                                             </>
                                         )}
-                                        {isOwner && (
+                                        {canDeleteInstance(instance) && (
                                             <button onClick={() => setDeleteConfirmId(instance.id)} className="p-2 rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition" title="Xóa phiếu"><Trash2 size={16} /></button>
                                         )}
                                         {/* Export Word */}
@@ -1502,13 +1515,15 @@ const WorkflowInstances: React.FC = () => {
                                                         <Ban size={14} />
                                                     </button>
                                                 )}
-                                                <button
-                                                    onClick={() => setDeleteConfirmId(instance.id)}
-                                                    className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition"
-                                                    title="Xóa phiếu"
-                                                >
-                                                    <Trash2 size={14} />
-                                                </button>
+                                                {canDeleteInstance(instance) && (
+                                                    <button
+                                                        onClick={() => setDeleteConfirmId(instance.id)}
+                                                        className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition"
+                                                        title="Xóa phiếu"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                )}
                                             </div>
                                         )}
                                         {/* Export Word */}

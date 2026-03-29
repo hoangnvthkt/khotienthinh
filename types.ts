@@ -42,6 +42,7 @@ export interface User {
   assignedWarehouseId?: string; // ID kho được giao quản lý (null = Toàn quyền)
   allowedModules?: string[]; // Danh sách module được phép sử dụng (VD: ['WMS', 'TS'])
   adminModules?: string[]; // Danh sách module mà user là Quản trị viên ứng dụng
+  allowedSubModules?: Record<string, string[]>; // Module key -> danh sách route sub-app được phép (VD: { "HRM": ["/hrm/attendance", "/hrm/leave"] })
   signatureUrl?: string; // URL ảnh chữ ký số
 }
 

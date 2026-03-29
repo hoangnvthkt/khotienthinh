@@ -1,16 +1,17 @@
 
 import React, { Suspense } from 'react';
-import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import LoadingSpinner from './components/LoadingSpinner';
 import Login from './pages/Login';
-import { AppProvider } from './context/AppContext';
+import { AppProvider, useApp } from './context/AppContext';
 import { ToastProvider } from './context/ToastContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { WorkflowProvider } from './context/WorkflowContext';
 import { ChatProvider } from './context/ChatContext';
 import { RequestProvider } from './context/RequestContext';
 import ErrorBoundary from './components/ErrorBoundary';
+import { Role } from './types';
 
 // Lazy load all page components for code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -82,6 +83,45 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
+// Route path → module key mapping
+const ROUTE_TO_MODULE: Record<string, string> = {
+  '/dashboard': 'WMS', '/requests': 'WMS', '/inventory': 'WMS', '/operations': 'WMS',
+  '/audit': 'WMS', '/reports': 'WMS', '/misa-export': 'WMS',
+  '/hrm/dashboard': 'HRM', '/hrm/checkin': 'HRM', '/hrm/employees': 'HRM',
+  '/hrm/attendance': 'HRM', '/hrm/shifts': 'HRM', '/hrm/leave': 'HRM',
+  '/hrm/payroll': 'HRM', '/hrm/contracts': 'HRM', '/hrm/documents': 'HRM', '/hrm/reports': 'HRM',
+  '/wf/dashboard': 'WF', '/wf': 'WF', '/wf/templates': 'WF',
+  '/da': 'DA', '/da/portfolio': 'DA',
+  '/ts/dashboard': 'TS', '/ts/catalog': 'TS', '/ts/assignment': 'TS',
+  '/ts/maintenance': 'TS', '/ts/audit': 'TS', '/ts/reports': 'TS',
+  '/rq/dashboard': 'RQ', '/rq': 'RQ', '/rq/categories': 'RQ',
+  '/expense': 'EX',
+};
+
+// Guard that checks sub-module permissions
+const SubModuleGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useApp();
+  const location = useLocation();
+  
+  // Admin always has access
+  if (user.role === Role.ADMIN) return <>{children}</>;
+  
+  const pathname = location.pathname.replace(/^\/#/, ''); // Clean hash prefix if any
+  const moduleKey = ROUTE_TO_MODULE[pathname];
+  
+  // If route doesn't map to a module, allow access (e.g., /settings, /chat)
+  if (!moduleKey) return <>{children}</>;
+  
+  // Check sub-module restriction
+  const allowedSubs = user.allowedSubModules?.[moduleKey];
+  if (allowedSubs && allowedSubs.length > 0 && !allowedSubs.includes(pathname)) {
+    // Redirect to the first allowed sub-module in this module, or home
+    return <Navigate to={allowedSubs[0] || '/'} replace />;
+  }
+  
+  return <>{children}</>;
+};
+
 // Landing page: Always show EmployeeDashboard after login
 const LandingPage: React.FC = () => {
   return <EmployeeDashboard />;
@@ -92,7 +132,7 @@ const AppRoutes: React.FC = () => {
     <Suspense fallback={<LoadingSpinner />}>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        <Route path="/" element={<ProtectedRoute><SubModuleGuard><Layout /></SubModuleGuard></ProtectedRoute>}>
           <Route index element={<LandingPage />} />
           <Route path="my-profile" element={<MyProfile />} />
           <Route path="employee-dashboard" element={<EmployeeDashboard />} />

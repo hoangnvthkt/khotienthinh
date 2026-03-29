@@ -1,8 +1,58 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, CheckCircle2, XCircle, Crown, Inbox } from 'lucide-react';
+import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, CheckCircle2, XCircle, Crown, Inbox, ChevronDown, ChevronRight, HardDrive, BookOpen, Bot, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench } from 'lucide-react';
 import { Role, User, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+
+// Sub-app definitions per module (matches Sidebar's moduleNavMap)
+const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }[]> = {
+  WMS: [
+    { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/requests', icon: FileText, label: 'Đề xuất vật tư' },
+    { to: '/inventory', icon: Package, label: 'Kho & Vật tư' },
+    { to: '/operations', icon: ArrowLeftRight, label: 'Nhập / Xuất' },
+    { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
+    { to: '/reports', icon: History, label: 'Báo cáo WMS' },
+    { to: '/misa-export', icon: FileSpreadsheet, label: 'Đồng bộ MISA' },
+  ],
+  HRM: [
+    { to: '/hrm/dashboard', icon: LayoutDashboard, label: 'Dashboard NS' },
+    { to: '/hrm/checkin', icon: MapPin, label: 'Check-in' },
+    { to: '/hrm/employees', icon: Users, label: 'Hồ sơ nhân sự' },
+    { to: '/hrm/attendance', icon: Calendar, label: 'Chấm công' },
+    { to: '/hrm/shifts', icon: Clock, label: 'Ca làm việc' },
+    { to: '/hrm/leave', icon: CalendarOff, label: 'Nghỉ phép' },
+    { to: '/hrm/payroll', icon: DollarSign, label: 'Bảng lương' },
+    { to: '/hrm/contracts', icon: FileSignature, label: 'Hợp đồng LĐ' },
+    { to: '/hrm/documents', icon: FolderOpen, label: 'Hồ sơ & Công văn' },
+    { to: '/hrm/reports', icon: BarChart3, label: 'Báo cáo NS' },
+  ],
+  WF: [
+    { to: '/wf/dashboard', icon: LayoutDashboard, label: 'Dashboard QT' },
+    { to: '/wf', icon: GitBranch, label: 'Quy trình' },
+    { to: '/wf/templates', icon: Workflow, label: 'Mẫu quy trình' },
+  ],
+  DA: [
+    { to: '/da', icon: BarChart3, label: 'Tổng quan DA' },
+    { to: '/da/portfolio', icon: Layers, label: 'Đa dự án' },
+  ],
+  TS: [
+    { to: '/ts/dashboard', icon: LayoutDashboard, label: 'Dashboard TS' },
+    { to: '/ts/catalog', icon: Landmark, label: 'Danh mục tài sản' },
+    { to: '/ts/assignment', icon: Repeat, label: 'Cấp phát / Thu hồi' },
+    { to: '/ts/maintenance', icon: Wrench, label: 'Bảo trì / Sửa chữa' },
+    { to: '/ts/audit', icon: ClipboardCheck, label: 'Kiểm kê TS' },
+    { to: '/ts/reports', icon: History, label: 'Báo cáo TS' },
+  ],
+  RQ: [
+    { to: '/rq/dashboard', icon: BarChart3, label: 'Dashboard RQ' },
+    { to: '/rq', icon: Inbox, label: 'Phiếu yêu cầu' },
+    { to: '/rq/categories', icon: Shield, label: 'Danh mục yêu cầu' },
+  ],
+  EX: [
+    { to: '/expense', icon: BarChart3, label: 'Kế hoạch chi phí' },
+  ],
+};
 
 interface UserModalProps {
   isOpen: boolean;
@@ -32,6 +82,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     role: Role.EMPLOYEE,
     assignedWarehouseId: '',
     allowedModules: ALL_MODULES.map(m => m.key),
+    allowedSubModules: {},
     adminModules: [],
   });
 
@@ -41,7 +92,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
 
   useEffect(() => {
     if (userToEdit) {
-      setFormData({ ...userToEdit, password: '', allowedModules: userToEdit.allowedModules || ALL_MODULES.map(m => m.key), adminModules: userToEdit.adminModules || [] });
+      setFormData({ ...userToEdit, password: '', allowedModules: userToEdit.allowedModules || ALL_MODULES.map(m => m.key), allowedSubModules: userToEdit.allowedSubModules || {}, adminModules: userToEdit.adminModules || [] });
     } else {
       setFormData({
         name: '',
@@ -52,6 +103,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
         role: Role.EMPLOYEE,
         assignedWarehouseId: '',
         allowedModules: ALL_MODULES.map(m => m.key),
+        allowedSubModules: {},
         adminModules: [],
       });
     }
@@ -94,7 +146,37 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     try {
       const hasPasswordChange = formData.password && formData.password.trim().length > 0;
 
-      // If editing user and password is being changed, update Supabase Auth first
+      // === NEW USER: Create Supabase Auth account first ===
+      if (!userToEdit && isSupabaseConfigured && hasPasswordChange) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) throw new Error('Phiên đăng nhập hết hạn, vui lòng đăng nhập lại');
+
+          const response = await supabase.functions.invoke('create-user', {
+            body: {
+              email: formData.email,
+              password: formData.password,
+            },
+          });
+
+          if (response.error) {
+            throw new Error(response.error.message || 'Lỗi gọi Edge Function create-user');
+          }
+
+          const result = response.data;
+          if (result.error) {
+            throw new Error(result.error);
+          }
+
+          console.log('✅ Supabase Auth user created:', result);
+        } catch (authErr: any) {
+          setSaving(false);
+          setToast({ type: 'error', message: `❌ Tạo tài khoản Auth thất bại: ${authErr.message}` });
+          return; // Don't save user if Auth creation failed
+        }
+      }
+
+      // === EDIT USER: Update password in Supabase Auth ===
       if (userToEdit && hasPasswordChange && isSupabaseConfigured) {
         try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -135,19 +217,24 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
         avatar: formData.avatar || `https://i.pravatar.cc/150?u=${formData.email}`,
         assignedWarehouseId: formData.assignedWarehouseId || undefined,
         allowedModules: formData.role === Role.ADMIN ? ALL_MODULES.map(m => m.key) : (formData.allowedModules || []),
+        allowedSubModules: formData.role === Role.ADMIN ? {} : (formData.allowedSubModules || {}),
         adminModules: formData.role === Role.ADMIN ? [] : (formData.adminModules || []),
       };
 
       onSave(finalUser);
       setSaving(false);
 
-      if (hasPasswordChange && userToEdit) {
+      if (!userToEdit) {
+        // New user created with Auth account
+        setToast({ type: 'success', message: `✅ Thêm nhân sự thành công! Tài khoản đăng nhập đã được tạo tự động.` });
+        setTimeout(() => onClose(), 2500);
+      } else if (hasPasswordChange) {
         // Password was changed — show success toast and keep modal open for 3 seconds
         setToast({ type: 'success', message: `✅ Đổi mật khẩu thành công cho ${formData.name}! Mật khẩu mới đã cập nhật trên Supabase Auth.` });
         setTimeout(() => onClose(), 3000);
       } else {
         // No password change — close after brief toast
-        setToast({ type: 'success', message: userToEdit ? '✅ Cập nhật thông tin thành công!' : '✅ Thêm nhân sự thành công!' });
+        setToast({ type: 'success', message: '✅ Cập nhật thông tin thành công!' });
         setTimeout(() => onClose(), 1500);
       }
     } catch (err: any) {
@@ -286,7 +373,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                 onChange={e => setFormData({ ...formData, assignedWarehouseId: e.target.value })}
                 className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-accent bg-white"
               >
-                <option value="">Toàn hệ thống (Admin/General)</option>
+                <option value="">Toàn hệ thống (Tất cả các kho)</option>
                 {warehouses.map(w => (
                   <option key={w.id} value={w.id}>{w.name}</option>
                 ))}
@@ -295,7 +382,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
           </div>
 
           <p className="text-[10px] text-slate-400 italic">
-            (*) Admin có quyền xem/sửa toàn hệ thống. Nhân viên được phân quyền theo module và kho làm việc.
+            (*) Admin có toàn quyền quản trị. Nhân viên được phân quyền theo module và kho làm việc do Admin chỉ định.
           </p>
 
           {/* Module Permissions */}
@@ -306,31 +393,98 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
             {formData.role === Role.ADMIN ? (
               <p className="text-[10px] text-emerald-600 font-bold bg-emerald-50 p-2 rounded-lg border border-emerald-100">✅ Admin được phép truy cập tất cả module</p>
             ) : (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
                 {ALL_MODULES.map(mod => {
                   const ModIcon = mod.icon;
                   const isChecked = (formData.allowedModules || []).includes(mod.key);
+                  const subApps = SUB_MODULE_CONFIG[mod.key] || [];
+                  const currentSubModules = formData.allowedSubModules?.[mod.key] || [];
+                  const allSubRoutes = subApps.map(s => s.to);
+                  const isAllSubSelected = currentSubModules.length === 0 || currentSubModules.length === allSubRoutes.length;
+                  const hasPartialSub = isChecked && currentSubModules.length > 0 && currentSubModules.length < allSubRoutes.length;
                   return (
-                    <label
-                      key={mod.key}
-                      className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all ${isChecked ? mod.color + ' shadow-sm' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={(e) => {
-                          const modules = formData.allowedModules || [];
-                          if (e.target.checked) {
-                            setFormData({ ...formData, allowedModules: [...modules, mod.key] });
-                          } else {
-                            setFormData({ ...formData, allowedModules: modules.filter(m => m !== mod.key) });
-                          }
-                        }}
-                        className="w-4 h-4 rounded accent-blue-600"
-                      />
-                      <ModIcon size={14} />
-                      <span className="text-xs font-bold">{mod.label}</span>
-                    </label>
+                    <div key={mod.key}>
+                      <label
+                        className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all ${isChecked ? mod.color + ' shadow-sm' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            const modules = formData.allowedModules || [];
+                            const subMods = { ...(formData.allowedSubModules || {}) };
+                            if (e.target.checked) {
+                              setFormData({ ...formData, allowedModules: [...modules, mod.key], allowedSubModules: subMods });
+                            } else {
+                              delete subMods[mod.key];
+                              setFormData({ ...formData, allowedModules: modules.filter(m => m !== mod.key), allowedSubModules: subMods });
+                            }
+                          }}
+                          className="w-4 h-4 rounded accent-blue-600"
+                        />
+                        <ModIcon size={14} />
+                        <span className="text-xs font-bold flex-1">{mod.label}</span>
+                        {isChecked && subApps.length > 1 && (
+                          <span className="text-[9px] font-bold text-slate-400">
+                            {hasPartialSub ? `${currentSubModules.length}/${allSubRoutes.length}` : 'Tất cả'}
+                          </span>
+                        )}
+                      </label>
+                      {/* Sub-app checkboxes */}
+                      {isChecked && subApps.length > 1 && (
+                        <div className="ml-6 mt-1 mb-1 space-y-0.5 pl-2 border-l-2 border-slate-200 dark:border-slate-700">
+                          {/* Select All toggle */}
+                          <label className="flex items-center gap-2 px-2 py-1 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                            <input
+                              type="checkbox"
+                              checked={isAllSubSelected}
+                              onChange={(e) => {
+                                const subMods = { ...(formData.allowedSubModules || {}) };
+                                if (e.target.checked) {
+                                  delete subMods[mod.key]; // empty = all allowed
+                                } else {
+                                  subMods[mod.key] = []; // empty array = none selected
+                                }
+                                setFormData({ ...formData, allowedSubModules: subMods });
+                              }}
+                              className="w-3.5 h-3.5 rounded accent-blue-600"
+                            />
+                            <span className="text-[10px] font-bold text-slate-500 italic">Chọn tất cả</span>
+                          </label>
+                          {subApps.map(sub => {
+                            const SubIcon = sub.icon;
+                            const isSubChecked = currentSubModules.length === 0 || currentSubModules.includes(sub.to);
+                            return (
+                              <label key={sub.to} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition ${isSubChecked ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400' : 'text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={isSubChecked}
+                                  onChange={(e) => {
+                                    const subMods = { ...(formData.allowedSubModules || {}) };
+                                    let list = subMods[mod.key] && subMods[mod.key].length > 0 ? [...subMods[mod.key]] : [...allSubRoutes];
+                                    if (e.target.checked) {
+                                      if (!list.includes(sub.to)) list.push(sub.to);
+                                    } else {
+                                      list = list.filter(r => r !== sub.to);
+                                    }
+                                    // If all selected, remove key (= allow all)
+                                    if (list.length === allSubRoutes.length) {
+                                      delete subMods[mod.key];
+                                    } else {
+                                      subMods[mod.key] = list;
+                                    }
+                                    setFormData({ ...formData, allowedSubModules: subMods });
+                                  }}
+                                  className="w-3.5 h-3.5 rounded accent-blue-600"
+                                />
+                                <SubIcon size={12} />
+                                <span className="text-[10px] font-bold">{sub.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
