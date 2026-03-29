@@ -16,6 +16,7 @@ import {
   AttendanceProposal, AttendanceProposalStatus,
   PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_COLORS
 } from '../../types';
+import { usePermission } from '../../hooks/usePermission';
 
 const STATUS_CYCLE: AttendanceStatus[] = ['present', 'absent', 'half_day', 'leave', 'holiday', 'business_trip'];
 
@@ -28,6 +29,8 @@ const Attendance: React.FC = () => {
   useModuleData('hrm');
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+  const { canManage, isAdmin } = usePermission();
+  const canCRUD = canManage('/hrm/attendance');
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);
 
@@ -272,17 +275,16 @@ const Attendance: React.FC = () => {
   }, [currentYear, currentMonth, getEmployeeShiftForDate]);
 
   // Admin: right-click để xóa ngày công
-  const isAdmin = user.role === Role.ADMIN;
   const handleCellDelete = useCallback((e: React.MouseEvent, employeeId: string, day: number) => {
     e.preventDefault();
-    if (!isAdmin) return;
+    if (!canCRUD) return;
     const dateStr = getDateKey(day);
     const key = `${employeeId}_${dateStr}`;
     const existing = recordMap.get(key);
     if (existing) {
       removeHrmItem('hrm_attendance', existing.id);
     }
-  }, [isAdmin, recordMap, removeHrmItem, currentYear, currentMonth]);
+  }, [canCRUD, recordMap, removeHrmItem, currentYear, currentMonth]);
 
   // Stats per employee
   const getStats = useCallback((employeeId: string) => {
@@ -710,21 +712,25 @@ const Attendance: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={quickFillToday} className="px-3 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black hover:bg-emerald-600 transition flex items-center gap-1.5">
-            <CheckCircle size={14} /> Chấm hôm nay
-          </button>
-          <button onClick={downloadTemplate} className="px-3 py-2 bg-teal-500 text-white rounded-xl text-xs font-black hover:bg-teal-600 transition flex items-center gap-1.5">
-            <FileSpreadsheet size={14} /> Tải mẫu
-          </button>
-          <button onClick={() => fileInputRef.current?.click()} className="px-3 py-2 bg-blue-500 text-white rounded-xl text-xs font-black hover:bg-blue-600 transition flex items-center gap-1.5">
-            <Upload size={14} /> Nhập máy CC
-          </button>
-          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} className="hidden" />
+          {canCRUD && (
+            <>
+              <button onClick={quickFillToday} className="px-3 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black hover:bg-emerald-600 transition flex items-center gap-1.5">
+                <CheckCircle size={14} /> Chấm hôm nay
+              </button>
+              <button onClick={downloadTemplate} className="px-3 py-2 bg-teal-500 text-white rounded-xl text-xs font-black hover:bg-teal-600 transition flex items-center gap-1.5">
+                <FileSpreadsheet size={14} /> Tải mẫu
+              </button>
+              <button onClick={() => fileInputRef.current?.click()} className="px-3 py-2 bg-blue-500 text-white rounded-xl text-xs font-black hover:bg-blue-600 transition flex items-center gap-1.5">
+                <Upload size={14} /> Nhập máy CC
+              </button>
+              <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} className="hidden" />
+              <button onClick={() => setShowHolidayModal(true)} className="px-3 py-2 bg-amber-500 text-white rounded-xl text-xs font-black hover:bg-amber-600 transition flex items-center gap-1.5">
+                <Star size={14} /> Ngày lễ
+              </button>
+            </>
+          )}
           <button onClick={exportCSV} className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-black hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-1.5">
             <Download size={14} /> Xuất CSV
-          </button>
-          <button onClick={() => setShowHolidayModal(true)} className="px-3 py-2 bg-amber-500 text-white rounded-xl text-xs font-black hover:bg-amber-600 transition flex items-center gap-1.5">
-            <Star size={14} /> Ngày lễ
           </button>
           <button onClick={() => { resetProposalForm(); setPTargetEmployeeId(currentEmployee?.id || ''); setShowProposalForm(true); }} className="px-3 py-2 bg-violet-500 text-white rounded-xl text-xs font-black hover:bg-violet-600 transition flex items-center gap-1.5">
             <Plus size={14} /> Đề xuất CC
@@ -1091,9 +1097,11 @@ const Attendance: React.FC = () => {
                       <span className="text-xs font-black text-slate-800 dark:text-white">{h.name}</span>
                       <span className="text-[10px] text-slate-400 ml-2">{new Date(h.date).toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' })}</span>
                     </div>
-                    <button onClick={() => removeHrmItem('hrm_holidays', h.id)} className="p-1 rounded text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">
-                      <Trash2 size={14} />
-                    </button>
+                    {canCRUD && (
+                      <button onClick={() => removeHrmItem('hrm_holidays', h.id)} className="p-1 rounded text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
                 ))}
                 {holidays.filter(h => h.year === currentYear).length === 0 && (

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
+import { usePermission } from '../../hooks/usePermission';
 import {
   CalendarOff, Plus, CheckCircle, XCircle, Clock, Search, Timer,
   Calendar, AlertTriangle, RotateCcw, LayoutGrid, List as ListIcon,
@@ -9,7 +10,7 @@ import {
 } from 'lucide-react';
 import {
   LeaveType, LeaveRequest, LeaveRequestStatus, LeaveApprover,
-  LEAVE_TYPE_LABELS
+  LEAVE_TYPE_LABELS, Role
 } from '../../types';
 
 const STATUS_LABELS: Record<LeaveRequestStatus, string> = {
@@ -77,6 +78,7 @@ const LeaveManagement: React.FC = () => {
   } = useApp();
   useModuleData('hrm');
   const { theme } = useTheme();
+  const { isAdmin } = usePermission();
 
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
   const [showModal, setShowModal] = useState(false);
@@ -574,24 +576,29 @@ const LeaveManagement: React.FC = () => {
                   </div>
                 )}
 
-                {/* Actions */}
-                {req.status === 'pending' && (
-                  <div className="space-y-3 p-4 bg-gradient-to-br from-slate-50 to-blue-50 rounded-2xl border border-slate-100">
-                    <textarea value={approveComment} onChange={e => setApproveComment(e.target.value)} rows={2}
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white outline-none resize-none" placeholder="Ghi chú (không bắt buộc)..." />
-                    <div className="flex gap-2">
-                      <button onClick={() => { handleApprove(req); setSelectedReq(null); }}
-                        className="flex-1 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl text-xs font-black hover:opacity-90 transition flex items-center justify-center gap-1.5">
-                        <CheckCircle size={14} /> Duyệt
-                      </button>
-                      <button onClick={() => { handleReject(req); setSelectedReq(null); }}
-                        className="flex-1 px-4 py-2.5 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl text-xs font-black hover:opacity-90 transition flex items-center justify-center gap-1.5">
-                        <XCircle size={14} /> Từ chối
-                      </button>
+                {/* Actions — only show to correct approver step or Admin */}
+                {req.status === 'pending' && (() => {
+                  const currentStep = getCurrentStep(req);
+                  const canApproveThis = isAdmin || (currentStep && currentStep.userId === user.id);
+                  if (!canApproveThis) return null;
+                  return (
+                    <div className="space-y-3 p-4 bg-gradient-to-br from-slate-50 to-blue-50 rounded-2xl border border-slate-100">
+                      <textarea value={approveComment} onChange={e => setApproveComment(e.target.value)} rows={2}
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white outline-none resize-none" placeholder="Ghi chú (không bắt buộc)..." />
+                      <div className="flex gap-2">
+                        <button onClick={() => { handleApprove(req); setSelectedReq(null); }}
+                          className="flex-1 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl text-xs font-black hover:opacity-90 transition flex items-center justify-center gap-1.5">
+                          <CheckCircle size={14} /> Duyệt
+                        </button>
+                        <button onClick={() => { handleReject(req); setSelectedReq(null); }}
+                          className="flex-1 px-4 py-2.5 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl text-xs font-black hover:opacity-90 transition flex items-center justify-center gap-1.5">
+                          <XCircle size={14} /> Từ chối
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
-                {req.status === 'approved' && revokeConfirmId !== req.id && (
+                  );
+                })()}
+                {req.status === 'approved' && revokeConfirmId !== req.id && isAdmin && (
                   <button onClick={() => setRevokeConfirmId(req.id)}
                     className="w-full px-4 py-2.5 bg-amber-100 text-amber-700 rounded-xl text-xs font-black hover:bg-amber-200 transition flex items-center justify-center gap-1.5">
                     <RotateCcw size={14} /> Thu hồi đơn

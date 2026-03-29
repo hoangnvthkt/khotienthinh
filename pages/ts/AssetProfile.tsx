@@ -10,6 +10,7 @@ import {
     AlertTriangle, Package, Building2, Download, Printer
 } from 'lucide-react';
 import { AssetStatus, ASSET_STATUS_LABELS, AssetMaintenance, MaintenanceAttachment } from '../../types';
+import { usePermission } from '../../hooks/usePermission';
 
 const TYPE_LABELS: Record<string, string> = { scheduled: 'Bảo trì định kỳ', repair: 'Sửa chữa', inspection: 'Kiểm tra', warranty: 'Bảo hành' };
 const STATUS_LABELS: Record<string, string> = { planned: 'Lên kế hoạch', in_progress: 'Đang thực hiện', completed: 'Hoàn thành' };
@@ -25,6 +26,8 @@ const AssetProfile: React.FC = () => {
     } = useApp();
   useModuleData('ts');
     const toast = useToast();
+    const { canManage } = usePermission();
+    const canCRUD = canManage('/ts/catalog');
 
     const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'maintenance' | 'costs'>('overview');
     const [showAddMaintenance, setShowAddMaintenance] = useState(false);
@@ -391,10 +394,12 @@ const AssetProfile: React.FC = () => {
             {activeTab === 'maintenance' && (
                 <div className="space-y-4">
                     <div className="flex justify-end">
+                        {canCRUD && (
                         <button onClick={() => setShowAddMaintenance(true)}
                             className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-black uppercase flex items-center gap-1.5 shadow-lg shadow-orange-500/20">
                             <Plus size={14} /> Thêm bảo trì
                         </button>
+                        )}
                     </div>
                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
                         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">

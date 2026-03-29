@@ -31,7 +31,7 @@ interface AppContextType {
   switchUser: (user: User) => void;
   login: (username: string, password: string) => Promise<User | null>;
   logout: () => void;
-  addUser: (user: User) => void;
+  addUser: (user: User) => Promise<void>;
   updateUser: (user: User) => void;
   removeUser: (userId: string) => void;
   items: InventoryItem[];
@@ -279,7 +279,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ]);
 
         if (usersData && usersData.length > 0) {
-          const mappedUsers = usersData.map((u: any) => ({ ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined, allowedSubModules: u.allowed_sub_modules || undefined }));
+          const mappedUsers = usersData.map((u: any) => ({ ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined, allowedSubModules: u.allowed_sub_modules || undefined, adminSubModules: u.admin_sub_modules || undefined }));
           // Fetch signatures and merge
           const { data: sigData } = await supabase.from('user_signatures').select('*');
           if (sigData && sigData.length > 0) {
@@ -488,7 +488,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       supabase.channel('public:users').on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, payload => {
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const u = payload.new as any;
-          const mappedUser = { ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined, allowedSubModules: u.allowed_sub_modules || undefined };
+          const mappedUser = { ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined, allowedSubModules: u.allowed_sub_modules || undefined, adminSubModules: u.admin_sub_modules || undefined };
           setUsers(prev => {
             const exists = prev.find(user => user.id === mappedUser.id);
             if (exists) return prev.map(user => user.id === mappedUser.id ? mappedUser : user);
@@ -762,7 +762,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           assigned_warehouse_id: data.assignedWarehouseId,
           allowed_modules: data.allowedModules || null,
           admin_modules: data.adminModules || null,
-          allowed_sub_modules: data.allowedSubModules || null
+          allowed_sub_modules: data.allowedSubModules || null,
+          admin_sub_modules: data.adminSubModules || null
         };
       } else if (table === 'employees') {
         payload = {
@@ -895,7 +896,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const { data: userData, error: userError } = await supabase.from('users').select('*').eq('email', loginEmail).single();
         if (userError || !userData) throw new Error('Lỗi lấy thông tin người dùng');
 
-        const mappedUser = { ...userData, assignedWarehouseId: userData.assigned_warehouse_id, allowedModules: userData.allowed_modules || undefined, adminModules: userData.admin_modules || undefined, allowedSubModules: userData.allowed_sub_modules || undefined };
+        const mappedUser = { ...userData, assignedWarehouseId: userData.assigned_warehouse_id, allowedModules: userData.allowed_modules || undefined, adminModules: userData.admin_modules || undefined, allowedSubModules: userData.allowed_sub_modules || undefined, adminSubModules: userData.admin_sub_modules || undefined };
         setUser(mappedUser);
         const { avatar, ...userForStorage } = mappedUser;
         localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
@@ -933,7 +934,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, 500);
   };
 
-  const addUser = (u: User) => {
+  const addUser = async (u: User) => {
     setUsers(prev => [...prev, u]);
     syncToSupabase('users', u);
     logActivity('SYSTEM', 'Thêm người dùng', `Đã thêm người dùng mới: ${u.name}`, 'SUCCESS');
@@ -941,8 +942,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Auto-sync: tạo hồ sơ nhân sự từ thông tin người dùng (Họ tên, Email, SĐT)
     const existingEmployee = employees.find(e => e.userId === u.id || e.email === u.email);
     if (!existingEmployee) {
-      const empCount = employees.length + 1;
-      const employeeCode = `TT${String(empCount).padStart(3, '0')}`;
+      // Lấy mã nhân viên từ PostgreSQL sequence (mã duy nhất vĩnh viễn, không bao giờ tái sử dụng)
+      let employeeCode = `TT${String(employees.length + 1).padStart(3, '0')}`; // fallback
+      if (isSupabaseConfigured) {
+        try {
+          const { data, error } = await supabase.rpc('get_next_employee_code');
+          if (!error && data) employeeCode = data;
+        } catch (err) {
+          console.warn('⚠️ Fallback employee code (RPC failed):', err);
+        }
+      }
       const newEmployee: Employee = {
         id: crypto.randomUUID(),
         employeeCode,

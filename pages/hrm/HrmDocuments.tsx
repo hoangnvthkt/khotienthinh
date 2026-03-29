@@ -31,10 +31,14 @@ const TAB_CONFIG: { key: DocTab; label: string; icon: React.ReactNode; color: st
   { key: 'outgoing', label: 'Công văn đi', icon: <Send size={16} />, color: 'from-violet-500 to-purple-500' },
 ];
 
+import { usePermission } from '../../hooks/usePermission';
+
 const HrmDocuments: React.FC = () => {
   useModuleData('hrm');
   const { employees, user } = useApp();
   const { theme } = useTheme();
+  const { canManage } = usePermission();
+  const canCRUD = canManage('/hrm/documents');
 
   const [activeTab, setActiveTab] = useState<DocTab>('employee_record');
   const [documents, setDocuments] = useState<HrmDocument[]>([]);
@@ -246,10 +250,12 @@ const HrmDocuments: React.FC = () => {
           </h1>
           <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mt-1">Lưu trữ tập trung, tìm kiếm thông minh</p>
         </div>
+        {canCRUD && (
         <button onClick={() => { resetUploadForm(); setShowUploadModal(true); }}
           className="px-4 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl text-xs font-black hover:shadow-lg transition flex items-center gap-1.5 shadow-md">
           <Upload size={16} /> Tải lên
         </button>
+        )}
       </div>
 
       {/* 🔍 SMART SEARCH BAR */}
@@ -418,10 +424,12 @@ const HrmDocuments: React.FC = () => {
                           className="w-7 h-7 rounded-lg bg-white shadow border border-slate-200 flex items-center justify-center text-slate-400 hover:text-blue-500" title="Tải xuống">
                           <Download size={13} />
                         </button>
+                        {canCRUD && (
                         <button onClick={e => { e.stopPropagation(); handleDelete(doc); }}
                           className="w-7 h-7 rounded-lg bg-white shadow border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-500" title="Xoá">
                           <Trash2 size={13} />
                         </button>
+                        )}
                       </div>
                     </div>
                   </div>

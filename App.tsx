@@ -75,6 +75,10 @@ const AssetReports = React.lazy(() => import('./pages/ts/AssetReports'));
 const AssetMaintenancePage = React.lazy(() => import('./pages/ts/AssetMaintenance'));
 const AssetProfile = React.lazy(() => import('./pages/ts/AssetProfile'));
 
+// Employee Profile pages
+const EmployeeDirectory = React.lazy(() => import('./pages/ep/EmployeeDirectory'));
+const EmployeeProfilePage = React.lazy(() => import('./pages/ep/EmployeeProfile'));
+
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isAuthenticated = !!localStorage.getItem('vioo_user');
   if (!isAuthenticated) {
@@ -96,6 +100,7 @@ const ROUTE_TO_MODULE: Record<string, string> = {
   '/ts/maintenance': 'TS', '/ts/audit': 'TS', '/ts/reports': 'TS',
   '/rq/dashboard': 'RQ', '/rq': 'RQ', '/rq/categories': 'RQ',
   '/expense': 'EX',
+  '/ep': 'EP',
 };
 
 // Guard that checks sub-module permissions
@@ -176,6 +181,8 @@ const AppRoutes: React.FC = () => {
           <Route path="ts/reports" element={<AssetReports />} />
           <Route path="ts/maintenance" element={<AssetMaintenancePage />} />
           <Route path="ts/asset/:id" element={<AssetProfile />} />
+          <Route path="ep" element={<EmployeeDirectory />} />
+          <Route path="ep/:employeeId" element={<EmployeeProfilePage />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>

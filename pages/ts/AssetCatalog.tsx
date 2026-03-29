@@ -12,6 +12,7 @@ import {
 import { Asset, AssetStatus, ASSET_STATUS_LABELS, ASSET_CATEGORY_LABELS, AssetCategoryType } from '../../types';
 import ScannerModal from '../../components/ScannerModal';
 import * as XLSX from 'xlsx';
+import { usePermission } from '../../hooks/usePermission';
 
 const AssetCatalog: React.FC = () => {
     const navigate = useNavigate();
@@ -22,6 +23,8 @@ const AssetCatalog: React.FC = () => {
     } = useApp();
   useModuleData('ts');
     const toast = useToast();
+    const { canManage } = usePermission();
+    const canCRUD = canManage('/ts/catalog');
 
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState('all');
@@ -371,6 +374,8 @@ const AssetCatalog: React.FC = () => {
                     <button onClick={() => setScannerOpen(true)} className="flex items-center px-4 py-2 bg-slate-800 dark:bg-slate-700 text-white rounded-xl hover:bg-slate-700 transition text-[10px] font-black uppercase tracking-widest">
                         <QrCode className="w-4 h-4 mr-2" /> Quét QR
                     </button>
+                    {canCRUD && (
+                    <>
                     <button onClick={downloadTemplate} className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 transition text-[10px] font-black uppercase tracking-widest">
                         <Download className="w-4 h-4 mr-2" /> Tải mẫu
                     </button>
@@ -381,6 +386,8 @@ const AssetCatalog: React.FC = () => {
                     <button onClick={openAdd} className="flex items-center px-6 py-2 bg-gradient-to-r from-rose-500 to-pink-600 text-white rounded-xl hover:shadow-lg transition text-[10px] font-black uppercase tracking-widest shadow-lg shadow-rose-500/20">
                         <Plus className="w-4 h-4 mr-2" /> Thêm tài sản
                     </button>
+                    </>
+                    )}
                 </div>
             </div>
 
@@ -496,22 +503,22 @@ const AssetCatalog: React.FC = () => {
                                         <td className="p-4 text-xs text-slate-500">{asset.assignedToName || <span className="text-slate-300 italic">—</span>}</td>
                                         <td className="p-4 text-right">
                                             <div className="flex items-center justify-end gap-1">
-                                                {asset.status !== AssetStatus.DISPOSED && (
+                                                {asset.status !== AssetStatus.DISPOSED && canCRUD && (
                                                     <button onClick={() => openEdit(asset)} className="p-2 text-slate-300 hover:text-blue-600 transition-colors" title="Sửa"><Edit3 size={14} /></button>
                                                 )}
-                                                {asset.status !== AssetStatus.DISPOSED && asset.status !== AssetStatus.IN_USE && (
+                                                {asset.status !== AssetStatus.DISPOSED && asset.status !== AssetStatus.IN_USE && canCRUD && (
                                                     <button onClick={() => { setDisposeConfirm(asset); setDisposeReason(''); }} className="p-2 text-slate-300 hover:text-orange-600 transition-colors" title="Xuất huỷ">
                                                         <XCircle size={14} />
                                                     </button>
                                                 )}
-                                                {deleteConfirm === asset.id ? (
+                                                {canCRUD && (deleteConfirm === asset.id ? (
                                                     <div className="flex gap-1">
                                                         <button onClick={() => handleDelete(asset.id)} className="p-1.5 bg-red-500 text-white rounded-lg text-[9px] font-bold">Xóa</button>
                                                         <button onClick={() => setDeleteConfirm(null)} className="p-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg text-[9px] font-bold">Hủy</button>
                                                     </div>
                                                 ) : (
                                                     <button onClick={() => setDeleteConfirm(asset.id)} className="p-2 text-slate-300 hover:text-red-600 transition-colors" title="Xoá vĩnh viễn"><Trash2 size={14} /></button>
-                                                )}
+                                                ))}
                                             </div>
                                         </td>
                                     </tr>

@@ -12,6 +12,7 @@ import Pagination from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
 import * as XLSX from 'xlsx';
 import { InventoryItem, Role, Transaction, TransactionType, TransactionStatus } from '../types';
+import { usePermission } from '../hooks/usePermission';
 
 const Inventory: React.FC = () => {
   const location = useLocation();
@@ -21,6 +22,8 @@ const Inventory: React.FC = () => {
 
   const hasAssignedWh = !!user.assignedWarehouseId;
   const isAdmin = user.role === Role.ADMIN;
+  const { canManage } = usePermission();
+  const canCRUD = canManage('/inventory');
 
   // Khởi tạo filter kho
   const [filterWarehouse, setFilterWarehouse] = useState('all');
@@ -269,7 +272,7 @@ const Inventory: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap gap-2 w-full xl:w-auto">
-          {isAdmin && (
+          {canCRUD && (
             <div className="flex gap-2 w-full sm:w-auto">
               <button onClick={handleDownloadTemplate} className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition text-[10px] font-black uppercase tracking-widest">
                 <FileSpreadsheet className="w-4 h-4 mr-2 text-green-600" /> Mẫu
@@ -285,7 +288,7 @@ const Inventory: React.FC = () => {
               <QrCode className="w-4 h-4 mr-2" /> Quét QR
             </button>
 
-            {(isAdmin || hasAssignedWh) && (
+            {(canCRUD || hasAssignedWh) && (
               <button onClick={() => setAddModalOpen(true)} className="flex-1 sm:flex-none flex items-center justify-center px-6 py-2 bg-accent text-white rounded-xl hover:bg-blue-700 transition text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20">
                 <Plus className="w-4 h-4 mr-2" /> Thêm mới
               </button>
@@ -363,7 +366,7 @@ const Inventory: React.FC = () => {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {isAdmin && (
+                        {canCRUD && (
                           <button
                             onClick={(e) => { e.stopPropagation(); setItemToDelete(item); }}
                             className="p-2 text-slate-300 hover:text-red-600 transition-colors"

@@ -8,10 +8,12 @@ import EmployeeDetailModal from '../../components/hrm/EmployeeDetailModal';
 import ConfirmDeleteModal from '../../components/ConfirmDeleteModal';
 import Pagination from '../../components/Pagination';
 import { usePagination } from '../../hooks/usePagination';
+import { usePermission } from '../../hooks/usePermission';
 
 const Employees: React.FC = () => {
     const { employees, users, removeEmployee, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user } = useApp();
-    const isAdmin = user.role === Role.ADMIN;
+    const { canManage } = usePermission();
+    const canCRUD = canManage('/hrm/employees');
     useModuleData('hrm');
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -92,7 +94,7 @@ const Employees: React.FC = () => {
                             <List size={16} />
                         </button>
                     </div>
-                    {isAdmin && (
+                    {canCRUD && (
                         <button onClick={handleAdd} className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg hover:shadow-indigo-500/30 text-sm font-bold flex-1 sm:flex-initial justify-center">
                             <Plus size={18} />
                             <span>Thêm Mới</span>
@@ -169,7 +171,7 @@ const Employees: React.FC = () => {
                                         </div>
 
                                         {/* Actions hover — Admin only */}
-                                        {isAdmin && (
+                                        {canCRUD && (
                                             <div className="absolute top-1 right-1 flex gap-px opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button onClick={(e) => { e.stopPropagation(); handleEdit(emp); }} className="p-0.5 text-slate-300 hover:text-indigo-500 rounded transition-all" title="Sửa"><Edit2 size={9} /></button>
                                                 <button onClick={(e) => { e.stopPropagation(); handleDelete(emp); }} className="p-0.5 text-slate-300 hover:text-red-500 rounded transition-all" title="Xóa"><Trash2 size={9} /></button>
@@ -230,7 +232,7 @@ const Employees: React.FC = () => {
                                     <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50">Văn Phòng</th>
                                     <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50 min-w-[150px]">Liên Hệ</th>
                                     <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50 text-center w-[100px]">Trạng Thái</th>
-                                    {isAdmin && <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50 text-center w-[80px]">Thao Tác</th>}
+                                    {canCRUD && <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50 text-center w-[80px]">Thao Tác</th>}
                                 </tr>
                             </thead>
                             <tbody>
@@ -265,7 +267,7 @@ const Employees: React.FC = () => {
                                                     <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />{emp.status}
                                                 </span>
                                             </td>
-                                            {isAdmin && (
+                                            {canCRUD && (
                                                 <td className="py-2.5 px-4 text-center">
                                                     <div className="flex items-center justify-center gap-0.5">
                                                         <button onClick={(e) => { e.stopPropagation(); handleEdit(emp); }} className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all" title="Sửa"><Edit2 size={14} /></button>

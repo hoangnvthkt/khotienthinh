@@ -7,6 +7,7 @@ import {
   ChevronLeft, ChevronRight, Users, Calendar, Settings, Check
 } from 'lucide-react';
 import { HrmShiftType, HrmEmployeeShift } from '../../types';
+import { usePermission } from '../../hooks/usePermission';
 
 const SHIFT_COLORS = [
   '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444',
@@ -17,6 +18,8 @@ const ShiftManagement: React.FC = () => {
   const { employees, shiftTypes, employeeShifts, addHrmItem, updateHrmItem, removeHrmItem } = useApp();
   useModuleData('hrm');
   const { isDark } = useTheme();
+  const { canManage } = usePermission();
+  const canCRUD = canManage('/hrm/shifts');
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);
 
@@ -237,10 +240,12 @@ const ShiftManagement: React.FC = () => {
       {activeTab === 'types' && (
         <div className="space-y-4">
           <div className="flex justify-end">
+            {canCRUD && (
             <button onClick={() => { resetForm(); setShowForm(true); }}
               className="px-4 py-2 bg-teal-500 text-white rounded-xl text-xs font-black hover:bg-teal-600 transition flex items-center gap-1.5">
               <Plus size={14} /> Tạo ca mới
             </button>
+            )}
           </div>
 
           {/* Shift Type Cards */}
@@ -257,12 +262,14 @@ const ShiftManagement: React.FC = () => {
                     {!shift.isActive && <span className="text-[9px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Tắt</span>}
                   </div>
                   <div className="flex items-center gap-1">
+                    {canCRUD && <>
                     <button onClick={() => openEdit(shift)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition">
                       <Edit3 size={14} className="text-slate-400" />
                     </button>
                     <button onClick={() => handleDeleteShift(shift.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 transition">
                       <Trash2 size={14} className="text-red-400" />
                     </button>
+                    </>}
                   </div>
                 </div>
 

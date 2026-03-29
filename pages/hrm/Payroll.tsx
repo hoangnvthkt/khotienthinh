@@ -14,6 +14,7 @@ import {
   PAYROLL_FIELD_SOURCE_LABELS, PAYROLL_FIELD_TYPE_LABELS,
   AttendanceStatus
 } from '../../types';
+import { usePermission } from '../../hooks/usePermission';
 
 const PAYROLL_STATUS_LABELS: Record<string, string> = { draft: 'Nháp', confirmed: 'Xác nhận', paid: 'Đã trả' };
 const PAYROLL_STATUS_COLORS: Record<string, string> = {
@@ -86,6 +87,8 @@ const Payroll: React.FC = () => {
   } = useApp();
   useModuleData('hrm');
   const { theme } = useTheme();
+  const { canManage } = usePermission();
+  const canCRUD = canManage('/hrm/payroll');
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);
   const employeeMap = useMemo(() => new Map(activeEmployees.map(e => [e.id, e])), [activeEmployees]);
@@ -451,9 +454,11 @@ const Payroll: React.FC = () => {
         <>
           {/* Action bar */}
           <div className="flex items-center gap-2 flex-wrap">
+            {canCRUD && (
             <button onClick={() => setShowGenModal(true)} className="px-3 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black hover:bg-emerald-600 transition flex items-center gap-1.5">
               <Calculator size={14} /> Tính lương
             </button>
+            )}
             <button onClick={exportCSV} className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-black hover:bg-slate-50 transition flex items-center gap-1.5">
               <Download size={14} /> Xuất CSV
             </button>
@@ -561,7 +566,7 @@ const Payroll: React.FC = () => {
                             </td>
                             <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                               <div className="flex items-center justify-center gap-1">
-                                {p.status === 'draft' && (
+                                {p.status === 'draft' && canCRUD && (
                                   <>
                                     <button onClick={() => confirmPayroll(p)} className="p-1.5 rounded-lg bg-amber-100 text-amber-600 hover:bg-amber-200 transition" title="Xác nhận">
                                       <CheckCircle size={14} />

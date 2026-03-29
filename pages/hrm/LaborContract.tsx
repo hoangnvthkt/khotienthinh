@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
+import { usePermission } from '../../hooks/usePermission';
 import {
   FileText, Plus, Search, AlertTriangle, CheckCircle, Clock, XCircle, History
 } from 'lucide-react';
@@ -24,6 +25,8 @@ const LaborContractPage: React.FC = () => {
   const { employees, laborContracts, salaryHistory, addHrmItem, updateHrmItem } = useApp();
   useModuleData('hrm');
   const { theme } = useTheme();
+  const { canManage } = usePermission();
+  const canCRUD = canManage('/hrm/contracts');
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);
   const employeeMap = useMemo(() => new Map(activeEmployees.map(e => [e.id, e])), [activeEmployees]);
@@ -150,9 +153,11 @@ const LaborContractPage: React.FC = () => {
           </h1>
           <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mt-1">Quản lý hợp đồng, gia hạn, chấm dứt</p>
         </div>
+        {canCRUD && (
         <button onClick={() => { resetForm(); setShowModal(true); }} className="px-4 py-2.5 bg-violet-500 text-white rounded-xl text-xs font-black hover:bg-violet-600 transition flex items-center gap-1.5">
           <Plus size={16} /> Thêm HĐ
         </button>
+        )}
       </div>
 
       {/* KPIs */}
@@ -249,7 +254,7 @@ const LaborContractPage: React.FC = () => {
                   <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${STATUS_COLORS[c.status]}`}>
                     {STATUS_LABELS[c.status]}
                   </span>
-                  {c.status === 'active' && (
+                  {c.status === 'active' && canCRUD && (
                     <div className="flex items-center gap-1">
                       <button onClick={() => handleEdit(c)} className="p-1.5 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition" title="Sửa">
                         <FileText size={14} />

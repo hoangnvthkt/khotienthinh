@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Employee, AssetStatus, ASSET_STATUS_LABELS, Asset } from '../../types';
+import { Employee, AssetStatus, ASSET_STATUS_LABELS, Asset, Role } from '../../types';
 import { X, User as UserIcon, Briefcase, Phone, Edit2, Calendar, MapPin, Building, Heart, Landmark, FolderOpen, FileText, Download, Eye, Upload, ExternalLink } from 'lucide-react';
 import { hrmDocumentService, HrmDocument, DocCategory } from '../../lib/hrmDocumentService';
+import { usePermission } from '../../hooks/usePermission';
 
 interface EmployeeDetailModalProps {
     employee: Employee;
@@ -13,7 +14,9 @@ interface EmployeeDetailModalProps {
 type TabKey = 'personal' | 'work' | 'contact' | 'assets' | 'documents';
 
 const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onClose, onEdit }) => {
-    const { users, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, assets, assetAssignments, assetCategories } = useApp();
+    const { user, users, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, assets, assetAssignments, assetCategories } = useApp();
+    const { canManage } = usePermission();
+    const canCRUD = canManage('/hrm/employees');
     const [activeTab, setActiveTab] = useState<TabKey>('personal');
 
     const linkedUser = users.find(u => u.id === employee.userId);
@@ -295,13 +298,15 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
                     >
                         Đóng
                     </button>
-                    <button
-                        onClick={() => { onClose(); onEdit(employee); }}
-                        className="flex items-center space-x-2 px-5 py-2 rounded-xl bg-accent hover:bg-blue-700 text-white text-sm font-bold transition shadow-lg hover:shadow-blue-500/30"
-                    >
-                        <Edit2 size={15} />
-                        <span>Sửa</span>
-                    </button>
+                    {canCRUD && (
+                        <button
+                            onClick={() => { onClose(); onEdit(employee); }}
+                            className="flex items-center space-x-2 px-5 py-2 rounded-xl bg-accent hover:bg-blue-700 text-white text-sm font-bold transition shadow-lg hover:shadow-blue-500/30"
+                        >
+                            <Edit2 size={15} />
+                            <span>Sửa</span>
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

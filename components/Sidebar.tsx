@@ -6,7 +6,8 @@ import {
   History, Settings, LogOut, FileText, Sun, Moon,
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
-  Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock
+  Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
+  IdCard
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -31,6 +32,7 @@ const MODULE_CONFIG = [
   { key: 'STORAGE' as const, icon: HardDrive, label: 'Kho dữ liệu', shortLabel: 'DL', gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/30', color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-900/30', border: 'border-violet-200 dark:border-violet-700', route: '/storage' },
   { key: 'KB' as const, icon: BookOpen, label: 'Kho Kiến Thức', shortLabel: 'KT', gradient: 'from-amber-500 to-orange-600', shadow: 'shadow-amber-500/30', color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/30', border: 'border-amber-200 dark:border-amber-700', route: '/knowledge-base' },
   { key: 'AI' as const, icon: Bot, label: 'Trợ lý AI', shortLabel: 'AI', gradient: 'from-fuchsia-500 to-purple-600', shadow: 'shadow-fuchsia-500/30', color: 'text-fuchsia-600 dark:text-fuchsia-400', bg: 'bg-fuchsia-50 dark:bg-fuchsia-900/30', border: 'border-fuchsia-200 dark:border-fuchsia-700', route: '/ai' },
+  { key: 'EP' as const, icon: IdCard, label: 'Hồ sơ NV', shortLabel: 'EP', gradient: 'from-sky-500 to-blue-600', shadow: 'shadow-sky-500/30', color: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50 dark:bg-sky-900/30', border: 'border-sky-200 dark:border-sky-700', route: '/ep' },
 ] as const;
 
 type AppKey = typeof MODULE_CONFIG[number]['key'];
@@ -57,6 +59,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p.startsWith('/storage')) return 'STORAGE';
     if (p.startsWith('/knowledge-base')) return 'KB';
     if (p.startsWith('/ai')) return 'AI';
+    if (p.startsWith('/ep')) return 'EP';
     if (['/inventory', '/operations', '/audit', '/reports', '/requests', '/misa-export'].includes(p)) return 'WMS';
     return null;
   };
@@ -213,6 +216,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     ],
     AI: [
       { to: '/ai', icon: Bot, label: 'Trợ lý AI' },
+    ],
+    EP: [
+      { to: '/ep', icon: IdCard, label: 'Tra cứu nhân viên' },
     ],
   };
 

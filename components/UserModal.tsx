@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, CheckCircle2, XCircle, Crown, Inbox, ChevronDown, ChevronRight, HardDrive, BookOpen, Bot, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench } from 'lucide-react';
+import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, CheckCircle2, XCircle, Crown, Inbox, ChevronDown, ChevronRight, HardDrive, BookOpen, Bot, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard } from 'lucide-react';
 import { Role, User, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
@@ -52,6 +52,9 @@ const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }
   EX: [
     { to: '/expense', icon: BarChart3, label: 'Kế hoạch chi phí' },
   ],
+  EP: [
+    { to: '/ep', icon: IdCard, label: 'Tra cứu nhân viên' },
+  ],
 };
 
 interface UserModalProps {
@@ -71,6 +74,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     { key: 'TS', label: 'TS - Tài sản', icon: Landmark, color: 'text-rose-600 bg-rose-50 border-rose-200 dark:bg-rose-900/30 dark:border-rose-700' },
     { key: 'RQ', label: 'RQ - Yêu cầu', icon: Inbox, color: 'text-cyan-600 bg-cyan-50 border-cyan-200 dark:bg-cyan-900/30 dark:border-cyan-700' },
     { key: 'EX', label: 'CP - Chi phí', icon: BarChart3, color: 'text-indigo-600 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-700' },
+    { key: 'EP', label: 'EP - Hồ sơ NV', icon: IdCard, color: 'text-sky-600 bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-700' },
   ];
 
   const [formData, setFormData] = useState<Partial<User>>({
@@ -84,6 +88,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     allowedModules: ALL_MODULES.map(m => m.key),
     allowedSubModules: {},
     adminModules: [],
+    adminSubModules: {},
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -92,7 +97,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
 
   useEffect(() => {
     if (userToEdit) {
-      setFormData({ ...userToEdit, password: '', allowedModules: userToEdit.allowedModules || ALL_MODULES.map(m => m.key), allowedSubModules: userToEdit.allowedSubModules || {}, adminModules: userToEdit.adminModules || [] });
+      setFormData({ ...userToEdit, password: '', allowedModules: userToEdit.allowedModules || ALL_MODULES.map(m => m.key), allowedSubModules: userToEdit.allowedSubModules || {}, adminModules: userToEdit.adminModules || [], adminSubModules: userToEdit.adminSubModules || {} });
     } else {
       setFormData({
         name: '',
@@ -219,6 +224,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
         allowedModules: formData.role === Role.ADMIN ? ALL_MODULES.map(m => m.key) : (formData.allowedModules || []),
         allowedSubModules: formData.role === Role.ADMIN ? {} : (formData.allowedSubModules || {}),
         adminModules: formData.role === Role.ADMIN ? [] : (formData.adminModules || []),
+        adminSubModules: formData.role === Role.ADMIN ? {} : (formData.adminSubModules || {}),
       };
 
       onSave(finalUser);
@@ -491,44 +497,89 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
             )}
           </div>
 
-          {/* App Admin Permissions — only for non-ADMIN users */}
+          {/* App Admin Permissions — sub-module level */}
           {formData.role !== Role.ADMIN && (
             <div className="space-y-2">
               <label className="text-xs font-bold text-amber-600 uppercase flex items-center">
-                <Crown size={12} className="mr-1" /> Quản trị viên ứng dụng
+                <Crown size={12} className="mr-1" /> Quản trị Sub-module
               </label>
-              <p className="text-[9px] text-slate-400 italic -mt-1">QTV ứng dụng có quyền chỉnh sửa toàn bộ dữ liệu trong module được chỉ định.</p>
-              <div className="grid grid-cols-2 gap-2">
+              <p className="text-[9px] text-slate-400 italic -mt-1">Chọn sub-module mà nhân viên có quyền Thêm / Sửa / Xoá dữ liệu. Các sub-module không được chọn → chỉ XEM.</p>
+              <div className="space-y-1.5">
                 {ALL_MODULES.map(mod => {
                   const ModIcon = mod.icon;
-                  const isChecked = (formData.adminModules || []).includes(mod.key);
                   const isModuleAllowed = (formData.allowedModules || []).includes(mod.key);
+                  if (!isModuleAllowed) return null;
+                  const subApps = SUB_MODULE_CONFIG[mod.key] || [];
+                  if (subApps.length === 0) return null;
+                  const currentAdminSubs = formData.adminSubModules?.[mod.key] || [];
+                  const allSubRoutes = subApps.map(s => s.to);
+                  const isAllAdminSelected = currentAdminSubs.length === allSubRoutes.length;
+                  const hasPartialAdmin = currentAdminSubs.length > 0 && currentAdminSubs.length < allSubRoutes.length;
+                  // Also check old adminModules for backward compat display
+                  const isOldModuleAdmin = (formData.adminModules || []).includes(mod.key);
                   return (
-                    <label
-                      key={mod.key}
-                      className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all ${
-                        !isModuleAllowed ? 'opacity-40 cursor-not-allowed bg-slate-50 border-slate-200' :
-                        isChecked ? 'bg-amber-50 border-amber-300 text-amber-700 shadow-sm dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-400' : 'bg-slate-50 border-slate-200 text-slate-400'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        disabled={!isModuleAllowed}
-                        onChange={(e) => {
-                          const modules = formData.adminModules || [];
-                          if (e.target.checked) {
-                            setFormData({ ...formData, adminModules: [...modules, mod.key] });
-                          } else {
-                            setFormData({ ...formData, adminModules: modules.filter(m => m !== mod.key) });
-                          }
-                        }}
-                        className="w-4 h-4 rounded accent-amber-600"
-                      />
-                      <Crown size={12} />
-                      <ModIcon size={14} />
-                      <span className="text-xs font-bold">QTV {mod.label}</span>
-                    </label>
+                    <div key={mod.key} className="rounded-xl border border-amber-200 dark:border-amber-800 overflow-hidden">
+                      <div className="flex items-center gap-2 p-2.5 bg-amber-50 dark:bg-amber-900/20">
+                        <Crown size={12} className="text-amber-500" />
+                        <ModIcon size={14} className="text-amber-600" />
+                        <span className="text-xs font-bold text-amber-700 dark:text-amber-400 flex-1">{mod.label}</span>
+                        {/* Select All toggle */}
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <span className="text-[9px] font-bold text-amber-500">
+                            {isOldModuleAdmin || isAllAdminSelected ? 'Tất cả' : hasPartialAdmin ? `${currentAdminSubs.length}/${allSubRoutes.length}` : 'Không'}
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={isOldModuleAdmin || isAllAdminSelected}
+                            onChange={(e) => {
+                              const adminSubs = { ...(formData.adminSubModules || {}) };
+                              const oldMods = formData.adminModules || [];
+                              if (e.target.checked) {
+                                adminSubs[mod.key] = [...allSubRoutes];
+                              } else {
+                                delete adminSubs[mod.key];
+                              }
+                              setFormData({ ...formData, adminSubModules: adminSubs, adminModules: oldMods.filter(m => m !== mod.key) });
+                            }}
+                            className="w-3.5 h-3.5 rounded accent-amber-600"
+                          />
+                        </label>
+                      </div>
+                      <div className="p-2 space-y-0.5 bg-white dark:bg-slate-900">
+                        {subApps.map(sub => {
+                          const SubIcon = sub.icon;
+                          const isSubAdmin = isOldModuleAdmin || currentAdminSubs.includes(sub.to);
+                          return (
+                            <label key={sub.to} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition ${isSubAdmin ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400' : 'text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'}`}>
+                              <input
+                                type="checkbox"
+                                checked={isSubAdmin}
+                                onChange={(e) => {
+                                  const adminSubs = { ...(formData.adminSubModules || {}) };
+                                  // If old module admin, migrate to sub-module admin first
+                                  let list = isOldModuleAdmin ? [...allSubRoutes] : [...(adminSubs[mod.key] || [])];
+                                  const oldMods = formData.adminModules || [];
+                                  if (e.target.checked) {
+                                    if (!list.includes(sub.to)) list.push(sub.to);
+                                  } else {
+                                    list = list.filter(r => r !== sub.to);
+                                  }
+                                  if (list.length === 0) {
+                                    delete adminSubs[mod.key];
+                                  } else {
+                                    adminSubs[mod.key] = list;
+                                  }
+                                  setFormData({ ...formData, adminSubModules: adminSubs, adminModules: oldMods.filter(m => m !== mod.key) });
+                                }}
+                                className="w-3.5 h-3.5 rounded accent-amber-600"
+                              />
+                              <SubIcon size={12} />
+                              <span className="text-[10px] font-bold">{sub.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
                   );
                 })}
               </div>
