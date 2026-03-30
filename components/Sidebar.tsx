@@ -10,6 +10,7 @@ import {
   IdCard, Award
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import NotificationCenter from './NotificationCenter';
 import { useTheme } from '../context/ThemeContext';
 import { useChat } from '../context/ChatContext';
 import { Role, TransactionStatus, RequestStatus } from '../types';
@@ -218,6 +219,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     AI: [
       { to: '/ai', icon: Bot, label: 'Trợ lý AI' },
       { to: '/ai/executive', icon: BarChart3, label: 'Ban Giám Đốc' },
+      { to: '/ai/reports', icon: FileText, label: 'Báo cáo AI' },
     ],
     EP: [
       { to: '/ep', icon: IdCard, label: 'Tra cứu nhân viên' },
@@ -288,6 +290,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
               >
                 {isDark ? <Sun size={15} /> : <Moon size={15} />}
               </button>
+              <div className={`flex-none flex items-center justify-center w-9 h-9 rounded-lg border transition-all ${isDark ? 'bg-slate-800/50 border-white/10 hover:bg-slate-700/50' : 'bg-white/50 border-white/60 hover:bg-white'}`}>
+                <NotificationCenter userId={user?.id} />
+              </div>
               <button
                 onClick={() => { logout(); navigate('/login'); }}
                 className="flex-1 flex items-center justify-center gap-2 py-2 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-[11px] font-black uppercase tracking-wider hover:bg-red-500 hover:text-white hover:border-red-500 transition-all whitespace-nowrap"
@@ -305,6 +310,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
               title={isDark ? 'Light Mode' : 'Dark Mode'}>
               {isDark ? <Sun size={14} /> : <Moon size={14} />}
             </button>
+            <div className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-all ${isDark ? 'bg-slate-800/50 border-white/10' : 'bg-white/50 border-white/60'}`}>
+              <NotificationCenter userId={user?.id} />
+            </div>
             <button onClick={() => { logout(); navigate('/login'); }}
               className="flex items-center justify-center w-9 h-9 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500 hover:text-white transition-all" title="Đăng xuất">
               <LogOut size={14} />

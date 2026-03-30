@@ -59,6 +59,7 @@ const DataStorage = React.lazy(() => import('./pages/DataStorage'));
 // AI Assistant
 const AiAssistant = React.lazy(() => import('./pages/AiAssistant'));
 const ExecutiveAI = React.lazy(() => import('./pages/ExecutiveAI'));
+const AiReports = React.lazy(() => import('./pages/AiReports'));
 
 // Knowledge Base
 const KnowledgeBase = React.lazy(() => import('./pages/KnowledgeBase'));
@@ -174,6 +175,7 @@ const AppRoutes: React.FC = () => {
           <Route path="storage" element={<DataStorage />} />
           <Route path="ai" element={<AiAssistant />} />
           <Route path="ai/executive" element={<ExecutiveAI />} />
+          <Route path="ai/reports" element={<AiReports />} />
           <Route path="knowledge-base" element={<KnowledgeBase />} />
           <Route path="rq" element={<RequestList />} />
           <Route path="rq/dashboard" element={<RequestDashboard />} />

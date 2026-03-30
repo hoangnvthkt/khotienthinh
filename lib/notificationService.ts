@@ -41,18 +41,20 @@ const toCamel = (row: any): AppNotification => ({
 });
 
 export const NOTIFICATION_CATEGORIES = {
+  attendance: { label: 'Chấm công', icon: '⏰', color: 'text-teal-600 bg-teal-50' },
   budget: { label: 'Ngân sách', icon: '💰', color: 'text-orange-600 bg-orange-50' },
   payment: { label: 'Thanh toán', icon: '🧾', color: 'text-red-600 bg-red-50' },
   progress: { label: 'Tiến độ', icon: '📐', color: 'text-blue-600 bg-blue-50' },
   material: { label: 'Vật tư', icon: '📦', color: 'text-amber-600 bg-amber-50' },
   inventory: { label: 'Tồn kho', icon: '📋', color: 'text-cyan-600 bg-cyan-50' },
   contract: { label: 'Hợp đồng', icon: '📝', color: 'text-violet-600 bg-violet-50' },
+  hrm: { label: 'Nhân sự', icon: '👤', color: 'text-indigo-600 bg-indigo-50' },
   system: { label: 'Hệ thống', icon: '⚙️', color: 'text-slate-600 bg-slate-50' },
 } as const;
 
 // ── Throttle: only allow alert checks once per 15min across all tabs ──
 const ALERT_CHECK_KEY = 'vioo_last_alert_check';
-const ALERT_CHECK_INTERVAL = 15 * 60 * 1000; // 15 minutes
+const ALERT_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes (match attendance reminder window)
 
 function shouldRunAlertCheck(): boolean {
   const last = localStorage.getItem(ALERT_CHECK_KEY);
@@ -268,6 +270,291 @@ export const notificationService = {
           alertCount++;
         }
       }
+    }
+
+    // 5. ⏰ Attendance reminder — 5 min before check-in time
+    try {
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMin = now.getMinutes();
+      const currentTimeMin = currentHour * 60 + currentMin; // total minutes since midnight
+
+      // Get offices with check-in times
+      const { data: offices } = await supabase
+        .from('hrm_offices')
+        .select('id, name, "checkInTime"');
+      const { data: constSites } = await supabase
+        .from('hrm_construction_sites')
+        .select('id, name, "checkInTime"');
+
+      // Combine all locations with their check-in times
+      const locations = [
+        ...(offices || []).map((o: any) => ({ id: o.id, name: o.name, checkInTime: o.checkInTime || '08:00', type: 'office' })),
+        ...(constSites || []).map((s: any) => ({ id: s.id, name: s.name, checkInTime: s.checkInTime || '07:30', type: 'site' })),
+      ];
+
+      for (const loc of locations) {
+        // Parse check-in time "HH:MM"
+        const [h, m] = loc.checkInTime.split(':').map(Number);
+        const checkInMin = h * 60 + m;
+        const reminderMin = checkInMin - 5; // 5 minutes before
+
+        // Only trigger if we're within the reminder window (reminderMin to checkInMin)
+        if (currentTimeMin >= reminderMin && currentTimeMin <= checkInMin) {
+          // Find employees assigned to this location who haven't checked in today
+          const locFilter = loc.type === 'office' ? 'office_id' : 'construction_site_id';
+          const { data: employees } = await supabase
+            .from('employees')
+            .select('id, full_name, user_id')
+            .eq('status', 'Đang làm việc')
+            .eq(locFilter, loc.id);
+
+          if (!employees || employees.length === 0) continue;
+
+          // Check who has already checked in today
+          const empIds = employees.map((e: any) => e.id);
+          const { data: checkedIn } = await supabase
+            .from('hrm_attendance')
+            .select('"employeeId"')
+            .eq('date', today)
+            .in('"employeeId"', empIds);
+          const checkedInIds = new Set((checkedIn || []).map((a: any) => a.employeeId));
+
+          // Check who has leave today
+          const { data: onLeave } = await supabase
+            .from('hrm_leave_requests')
+            .select('"employeeId"')
+            .eq('status', 'approved')
+            .lte('"startDate"', today)
+            .gte('"endDate"', today);
+          const leaveIds = new Set((onLeave || []).map((l: any) => l.employeeId));
+
+          // Send reminder to employees who haven't checked in and aren't on leave
+          for (const emp of employees) {
+            if (checkedInIds.has(emp.id) || leaveIds.has(emp.id)) continue;
+            const alertId = `attendance_${emp.id}_${today}`;
+            if (!isNew('attendance', alertId)) continue;
+            if (!emp.user_id) continue;
+
+            await createNotification({
+              userId: emp.user_id,
+              type: 'warning',
+              category: 'attendance',
+              title: '⏰ Nhắc nhở chấm công',
+              message: `Còn ${checkInMin - currentTimeMin} phút nữa là đến giờ chấm công (${loc.checkInTime}) tại ${loc.name}. Hãy chấm công đúng giờ nhé!`,
+              severity: 'warning',
+              icon: '⏰',
+              link: '/hrm/attendance',
+              sourceType: 'attendance',
+              sourceId: alertId,
+              metadata: { employeeId: emp.id, location: loc.name, checkInTime: loc.checkInTime },
+            });
+            alertCount++;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Attendance reminder check error:', err);
+    }
+
+    // 6. 📝 Labor contract expiring within 30 days
+    try {
+      const in30Days = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const { data: contracts } = await supabase
+        .from('hrm_labor_contracts')
+        .select('id, "employeeId", "contractNumber", "endDate", type')
+        .eq('status', 'active')
+        .lte('"endDate"', in30Days)
+        .gte('"endDate"', today);
+
+      if (contracts && contracts.length > 0) {
+        const empIds = contracts.map((c: any) => c.employeeId);
+        const { data: emps } = await supabase.from('employees').select('id, full_name').in('id', empIds);
+        const empMap = new Map((emps || []).map((e: any) => [e.id, e.full_name]));
+
+        for (const c of contracts) {
+          const alertId = `contract_expiry_${c.id}`;
+          if (!isNew('hrm', alertId)) continue;
+          const daysLeft = Math.ceil((new Date(c.endDate).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+          const empName = empMap.get(c.employeeId) || 'N/A';
+          await createNotification({
+            type: daysLeft <= 7 ? 'error' : 'warning',
+            category: 'hrm',
+            title: daysLeft <= 7 ? '🚨 Hợp đồng LĐ sắp hết hạn!' : '📝 Hợp đồng LĐ cần gia hạn',
+            message: `${empName} — HĐ ${c.contractNumber || c.type}: còn ${daysLeft} ngày (hết hạn ${c.endDate})`,
+            severity: daysLeft <= 7 ? 'critical' : 'warning',
+            icon: '📝',
+            link: '/hrm/labor-contracts',
+            sourceType: 'hrm',
+            sourceId: alertId,
+            metadata: { contractId: c.id, employeeId: c.employeeId, daysLeft, endDate: c.endDate },
+          });
+          alertCount++;
+        }
+      }
+    } catch (err) {
+      console.error('Contract expiry check error:', err);
+    }
+
+    // 7. 📦 Inventory low stock — items below min_stock threshold
+    try {
+      const { data: allItems } = await supabase
+        .from('items')
+        .select('id, name, min_stock, unit');
+      if (allItems) {
+        // Get current stock per item across all warehouses
+        const { data: stockData } = await supabase
+          .from('transactions')
+          .select('item_id, type, quantity')
+          .eq('status', 'completed');
+        
+        // Calculate total stock per item
+        const stockMap = new Map<string, number>();
+        for (const tx of (stockData || [])) {
+          const current = stockMap.get(tx.item_id) || 0;
+          if (tx.type === 'in' || tx.type === 'return') {
+            stockMap.set(tx.item_id, current + (tx.quantity || 0));
+          } else if (tx.type === 'out') {
+            stockMap.set(tx.item_id, current - (tx.quantity || 0));
+          }
+        }
+
+        for (const item of allItems) {
+          const minStock = item.min_stock || 0;
+          if (minStock <= 0) continue;
+          const currentStock = stockMap.get(item.id) || 0;
+          if (currentStock <= minStock) {
+            const alertId = `inventory_low_${item.id}`;
+            if (!isNew('inventory', alertId)) continue;
+            const isCritical = currentStock <= 0;
+            await createNotification({
+              type: isCritical ? 'error' : 'warning',
+              category: 'inventory',
+              title: isCritical ? '🚨 Hết hàng!' : '📦 Tồn kho thấp',
+              message: `${item.name}: còn ${currentStock} ${item.unit || ''} (tối thiểu ${minStock})`,
+              severity: isCritical ? 'critical' : 'warning',
+              icon: '📦',
+              link: '/kho',
+              sourceType: 'inventory',
+              sourceId: alertId,
+              metadata: { itemId: item.id, currentStock, minStock },
+            });
+            alertCount++;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Inventory alert error:', err);
+    }
+
+    // 8. ⚠️ Overdue requests — request_instances past due_date
+    try {
+      const { data: overdueReqs } = await supabase
+        .from('request_instances')
+        .select('id, code, title, due_date, status')
+        .in('status', ['pending', 'in_progress', 'draft'])
+        .not('due_date', 'is', null)
+        .lt('due_date', today);
+
+      for (const req of (overdueReqs || [])) {
+        const alertId = `request_overdue_${req.id}`;
+        if (!isNew('system', alertId)) continue;
+        const daysOverdue = Math.ceil((Date.now() - new Date(req.due_date).getTime()) / (24 * 60 * 60 * 1000));
+        await createNotification({
+          type: daysOverdue > 7 ? 'error' : 'warning',
+          category: 'system',
+          title: '⚠️ Yêu cầu quá hạn',
+          message: `${req.code || 'YC'} — ${req.title || 'Không tiêu đề'}: quá hạn ${daysOverdue} ngày`,
+          severity: daysOverdue > 7 ? 'critical' : 'warning',
+          icon: '⚠️',
+          link: '/yeu-cau',
+          sourceType: 'system',
+          sourceId: alertId,
+          metadata: { requestId: req.id, daysOverdue, dueDate: req.due_date },
+        });
+        alertCount++;
+      }
+    } catch (err) {
+      console.error('Overdue request alert error:', err);
+    }
+
+    // 9. 🎂 Employee birthday today
+    try {
+      const now = new Date();
+      const monthDay = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const { data: allEmployees } = await supabase
+        .from('employees')
+        .select('id, full_name, date_of_birth')
+        .eq('status', 'Đang làm việc')
+        .not('date_of_birth', 'is', null);
+
+      for (const emp of (allEmployees || [])) {
+        if (!emp.date_of_birth) continue;
+        const dob = emp.date_of_birth.slice(5); // MM-DD
+        if (dob === monthDay) {
+          const alertId = `birthday_${emp.id}_${today}`;
+          if (!isNew('hrm', alertId)) continue;
+          await createNotification({
+            type: 'info',
+            category: 'hrm',
+            title: '🎂 Sinh nhật nhân viên',
+            message: `Hôm nay là sinh nhật ${emp.full_name}! Hãy gửi lời chúc mừng nhé 🎉`,
+            severity: 'info',
+            icon: '🎂',
+            link: '/hrm/employees',
+            sourceType: 'hrm',
+            sourceId: alertId,
+            metadata: { employeeId: emp.id, birthday: emp.date_of_birth },
+          });
+          alertCount++;
+        }
+      }
+    } catch (err) {
+      console.error('Birthday alert error:', err);
+    }
+
+    // 10. 💰 Missing payroll for current month
+    try {
+      const now = new Date();
+      const currentMonth = now.getMonth() + 1;
+      const currentYear = now.getFullYear();
+      // Only check after the 25th of the month (payroll should be ready)
+      if (now.getDate() >= 25) {
+        const { data: activeEmps } = await supabase
+          .from('employees')
+          .select('id, full_name')
+          .eq('status', 'Đang làm việc');
+        const { data: payrolls } = await supabase
+          .from('hrm_payrolls')
+          .select('"employeeId"')
+          .eq('month', currentMonth)
+          .eq('year', currentYear);
+        const paidEmpIds = new Set((payrolls || []).map((p: any) => p.employeeId));
+        const missingPayroll = (activeEmps || []).filter((e: any) => !paidEmpIds.has(e.id));
+
+        if (missingPayroll.length > 0) {
+          const alertId = `payroll_missing_${currentYear}_${currentMonth}`;
+          if (isNew('hrm', alertId)) {
+            const names = missingPayroll.slice(0, 3).map((e: any) => e.full_name).join(', ');
+            const extra = missingPayroll.length > 3 ? ` và ${missingPayroll.length - 3} NV khác` : '';
+            await createNotification({
+              type: 'warning',
+              category: 'hrm',
+              title: '💰 Chưa tính lương tháng này',
+              message: `${missingPayroll.length} nhân viên chưa có bảng lương T${currentMonth}/${currentYear}: ${names}${extra}`,
+              severity: 'warning',
+              icon: '💰',
+              link: '/hrm/payroll',
+              sourceType: 'hrm',
+              sourceId: alertId,
+              metadata: { month: currentMonth, year: currentYear, count: missingPayroll.length },
+            });
+            alertCount++;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Payroll alert error:', err);
     }
 
     return alertCount;

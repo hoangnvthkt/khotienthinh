@@ -28,7 +28,9 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [checking, setChecking] = useState(false);
     const [filterCategory, setFilterCategory] = useState<string>('all');
+    const bellRef = useRef<HTMLButtonElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
+    const [panelPos, setPanelPos] = useState({ top: 0, left: 0 });
 
     // Load notifications
     const load = useCallback(async () => {
@@ -51,7 +53,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
         return () => { notificationService.unsubscribe(); };
     }, []);
 
-    // Auto-check alerts on mount + every 10 minutes
+    // Auto-check alerts on mount + every 5 minutes
     useEffect(() => {
         notificationService.runAlertChecks().then((count) => {
             if (count > 0) load();
@@ -60,20 +62,40 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
             notificationService.runAlertChecks().then((count) => {
                 if (count > 0) load();
             });
-        }, 10 * 60 * 1000);
+        }, 5 * 60 * 1000);
         return () => clearInterval(interval);
     }, [load]);
 
     // Click outside to close
     useEffect(() => {
         const handler = (e: MouseEvent) => {
-            if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+            if (
+                panelRef.current && !panelRef.current.contains(e.target as Node) &&
+                bellRef.current && !bellRef.current.contains(e.target as Node)
+            ) {
                 setIsOpen(false);
             }
         };
         if (isOpen) document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
     }, [isOpen]);
+
+    // Calculate panel position from bell button
+    const toggleOpen = () => {
+        if (!isOpen && bellRef.current) {
+            const rect = bellRef.current.getBoundingClientRect();
+            // Position panel below bell, aligned to bell's left edge
+            // If too close to right edge, shift left
+            const panelWidth = 384; // w-96 = 24rem = 384px
+            let left = rect.left;
+            if (left + panelWidth > window.innerWidth - 16) {
+                left = window.innerWidth - panelWidth - 16;
+            }
+            if (left < 8) left = 8;
+            setPanelPos({ top: rect.bottom + 8, left });
+        }
+        setIsOpen(!isOpen);
+    };
 
     const handleMarkRead = async (id: string) => {
         await notificationService.markRead(id);
@@ -123,10 +145,11 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
     };
 
     return (
-        <div className="relative" ref={panelRef}>
+        <>
             {/* Bell button */}
             <button
-                onClick={() => setIsOpen(!isOpen)}
+                ref={bellRef}
+                onClick={toggleOpen}
                 className={`relative p-2 rounded-xl transition-all ${isOpen ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600' : 'hover:bg-slate-200/50 dark:hover:bg-slate-700/50'}`}
             >
                 <Bell size={18} />
@@ -137,9 +160,13 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
                 )}
             </button>
 
-            {/* Dropdown Panel */}
+            {/* Fixed-position Dropdown Panel (portal-like) */}
             {isOpen && (
-                <div className="absolute top-12 right-0 w-96 max-h-[80vh] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 z-50 flex flex-col overflow-hidden">
+                <div
+                    ref={panelRef}
+                    className="fixed w-96 max-h-[70vh] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 z-[9999] flex flex-col overflow-hidden"
+                    style={{ top: panelPos.top, left: panelPos.left }}
+                >
                     {/* Header */}
                     <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 shrink-0">
                         <div className="flex items-center justify-between mb-2">
@@ -166,6 +193,10 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
                                         <Trash2 size={12} />
                                     </button>
                                 )}
+                                <button onClick={() => setIsOpen(false)}
+                                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-slate-400 hover:text-slate-600" title="Đóng">
+                                    <X size={12} />
+                                </button>
                             </div>
                         </div>
                         {/* Category filter chips */}
@@ -255,7 +286,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
                     </div>
                 </div>
             )}
-        </div>
+        </>
     );
 };
 
