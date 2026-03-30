@@ -39,6 +39,7 @@ const HrmReports = React.lazy(() => import('./pages/hrm/HrmReports'));
 const HrmDashboard = React.lazy(() => import('./pages/hrm/HrmDashboard'));
 const HrmDocuments = React.lazy(() => import('./pages/hrm/HrmDocuments'));
 const ShiftManagement = React.lazy(() => import('./pages/hrm/ShiftManagement'));
+const EmployeeRanking = React.lazy(() => import('./pages/hrm/EmployeeRanking'));
 
 // Expense pages
 const BudgetDashboard = React.lazy(() => import('./pages/expense/BudgetDashboard'));
@@ -57,6 +58,7 @@ const DataStorage = React.lazy(() => import('./pages/DataStorage'));
 
 // AI Assistant
 const AiAssistant = React.lazy(() => import('./pages/AiAssistant'));
+const ExecutiveAI = React.lazy(() => import('./pages/ExecutiveAI'));
 
 // Knowledge Base
 const KnowledgeBase = React.lazy(() => import('./pages/KnowledgeBase'));
@@ -93,7 +95,7 @@ const ROUTE_TO_MODULE: Record<string, string> = {
   '/audit': 'WMS', '/reports': 'WMS', '/misa-export': 'WMS',
   '/hrm/dashboard': 'HRM', '/hrm/checkin': 'HRM', '/hrm/employees': 'HRM',
   '/hrm/attendance': 'HRM', '/hrm/shifts': 'HRM', '/hrm/leave': 'HRM',
-  '/hrm/payroll': 'HRM', '/hrm/contracts': 'HRM', '/hrm/documents': 'HRM', '/hrm/reports': 'HRM',
+  '/hrm/payroll': 'HRM', '/hrm/contracts': 'HRM', '/hrm/documents': 'HRM', '/hrm/reports': 'HRM', '/hrm/ranking': 'HRM',
   '/wf/dashboard': 'WF', '/wf': 'WF', '/wf/templates': 'WF',
   '/da': 'DA', '/da/portfolio': 'DA',
   '/ts/dashboard': 'TS', '/ts/catalog': 'TS', '/ts/assignment': 'TS',
@@ -165,11 +167,13 @@ const AppRoutes: React.FC = () => {
           <Route path="hrm/checkin" element={<CheckIn />} />
           <Route path="hrm/reports" element={<HrmReports />} />
           <Route path="hrm/documents" element={<HrmDocuments />} />
+          <Route path="hrm/ranking" element={<EmployeeRanking />} />
           <Route path="da" element={<ProjectDashboard />} />
           <Route path="da/portfolio" element={<PortfolioDashboard />} />
           <Route path="chat" element={<Chat />} />
           <Route path="storage" element={<DataStorage />} />
           <Route path="ai" element={<AiAssistant />} />
+          <Route path="ai/executive" element={<ExecutiveAI />} />
           <Route path="knowledge-base" element={<KnowledgeBase />} />
           <Route path="rq" element={<RequestList />} />
           <Route path="rq/dashboard" element={<RequestDashboard />} />

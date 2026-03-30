@@ -7,7 +7,7 @@ import {
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
   Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
-  IdCard
+  IdCard, Award
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -182,6 +182,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/hrm/contracts', icon: FileSignature, label: 'Hợp đồng LĐ' },
       { to: '/hrm/documents', icon: FolderOpen, label: 'Hồ sơ & Công văn' },
       { to: '/hrm/reports', icon: BarChart3, label: 'Báo cáo NS' },
+      { to: '/hrm/ranking', icon: Award, label: 'Xếp hạng NV' },
     ],
     WF: [
       { to: '/wf/dashboard', icon: LayoutDashboard, label: 'Dashboard QT' },
@@ -216,6 +217,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     ],
     AI: [
       { to: '/ai', icon: Bot, label: 'Trợ lý AI' },
+      { to: '/ai/executive', icon: BarChart3, label: 'Ban Giám Đốc' },
     ],
     EP: [
       { to: '/ep', icon: IdCard, label: 'Tra cứu nhân viên' },
