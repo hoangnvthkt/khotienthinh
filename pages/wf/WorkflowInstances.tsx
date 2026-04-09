@@ -19,6 +19,7 @@ import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { saveAs } from 'file-saver';
 import { supabase } from '../../lib/supabase';
+import { useCelebration } from '../../components/Celebration';
 
 const STATUS_MAP: Record<WorkflowInstanceStatus, { label: string; color: string; icon: any }> = {
     RUNNING: { label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300', icon: Clock },
@@ -409,6 +410,7 @@ const FileFieldInput: React.FC<{
 const WorkflowInstances: React.FC = () => {
     const { templates, instances, nodes, edges, logs, createInstance, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates, updateInstanceWatchers } = useWorkflow();
     const { user, users } = useApp();
+    const { celebrate, showToast: celebrationToast } = useCelebration();
     const [activeTab, setActiveTab] = useState<'mine' | 'pending' | 'watching'>('mine');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
     const [searchTerm, setSearchTerm] = useState('');
@@ -500,8 +502,7 @@ const WorkflowInstances: React.FC = () => {
     const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
     const showToast = (type: 'success' | 'error', text: string) => {
-        setSubmitMessage({ type, text });
-        setTimeout(() => setSubmitMessage(null), 4000);
+        celebrationToast({ type, title: text });
     };
 
     const handleCreate = async () => {
@@ -680,6 +681,21 @@ const WorkflowInstances: React.FC = () => {
             }
         }
         await processInstance(instanceId, action, user.id, actionComment);
+
+        // 🎉 Celebration!
+        if (action === WorkflowInstanceAction.APPROVED) {
+            celebrate({
+                variant: 'approve',
+                title: '✅ Đã Duyệt Thành Công!',
+                subtitle: instance?.title || '',
+                confetti: true,
+            });
+        } else if (action === WorkflowInstanceAction.REJECTED) {
+            celebrationToast({ type: 'warning', title: 'Phiếu đã bị từ chối', message: instance?.title || '' });
+        } else if (action === WorkflowInstanceAction.REVISION_REQUESTED) {
+            celebrationToast({ type: 'info', title: 'Yêu cầu chỉnh sửa đã gửi', message: instance?.title || '' });
+        }
+
         setActionComment('');
         setStepFormData({});
         setStepExcelData(null);

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Role } from '../types';
+import { xpService, UserXP, LEVELS } from '../lib/xpService';
 
 // === Master catalog of all available taskbar items ===
 interface NavItem {
@@ -56,6 +57,14 @@ const BottomNav: React.FC = () => {
   const { user } = useApp();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // XP state
+  const [xpProfile, setXpProfile] = useState<UserXP | null>(null);
+  const [showXpSheet, setShowXpSheet] = useState(false);
+
+  useEffect(() => {
+    if (user?.id) xpService.getProfile(user.id).then(setXpProfile).catch(() => {});
+  }, [user?.id, location.pathname]); // refresh on navigation
 
   // Load persisted order from localStorage
   const [enabledKeys, setEnabledKeys] = useState<string[]>(() => {
@@ -347,14 +356,107 @@ const BottomNav: React.FC = () => {
               </span>
             </button>
           </div>
+
+          {/* XP Mini Bar */}
+          {xpProfile && (
+            <button
+              onClick={() => setShowXpSheet(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1 mx-3 mb-1 rounded-full bg-gradient-to-r from-indigo-500/10 to-violet-500/10 border border-indigo-200/50 dark:border-indigo-700/50 active:scale-95 transition-all"
+            >
+              <span className="text-xs">{LEVELS.find(l => l.level === xpProfile.level)?.icon || '🌱'}</span>
+              <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400">
+                Lv.{xpProfile.level}
+              </span>
+              <div className="flex-1 h-1 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden min-w-[40px]">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500"
+                  style={{ width: `${xpService.getProgress(xpProfile.totalXp, xpProfile.level)}%` }}
+                />
+              </div>
+              <span className="text-[8px] font-bold text-slate-400">{xpProfile.totalXp} XP</span>
+            </button>
+          )}
         </div>
       </nav>
+
+      {/* XP Bottom Sheet */}
+      {showXpSheet && xpProfile && (
+        <div className="lg:hidden fixed inset-0 z-[120] flex items-end" onClick={() => setShowXpSheet(false)}>
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+          <div
+            className="relative w-full bg-white dark:bg-slate-900 rounded-t-3xl shadow-2xl pb-8 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+            style={{ animation: 'slideUp 0.25s ease-out' }}
+          >
+            <div className="flex justify-center py-3">
+              <div className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-600" />
+            </div>
+            <div className="px-5 pb-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="text-4xl">{LEVELS.find(l => l.level === xpProfile.level)?.icon}</div>
+                <div>
+                  <div className="text-sm font-black text-slate-800 dark:text-white">
+                    {LEVELS.find(l => l.level === xpProfile.level)?.title}
+                  </div>
+                  <div className="text-xs text-slate-400">Level {xpProfile.level} • {xpProfile.totalXp} XP</div>
+                </div>
+              </div>
+              {/* Progress */}
+              <div className="mb-4">
+                <div className="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-500"
+                    style={{ width: `${xpService.getProgress(xpProfile.totalXp, xpProfile.level)}%` }}
+                  />
+                </div>
+                <div className="flex justify-between mt-1">
+                  <span className="text-[9px] text-slate-400">
+                    {LEVELS.find(l => l.level === xpProfile.level)?.minXp} XP
+                  </span>
+                  <span className="text-[9px] text-slate-400">
+                    {LEVELS.find(l => l.level === xpProfile.level + 1)?.minXp || 'MAX'} XP
+                  </span>
+                </div>
+              </div>
+              {/* Stats */}
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                <div className="text-center p-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/20">
+                  <div className="text-lg font-black text-indigo-600 dark:text-indigo-400">{xpProfile.totalXp}</div>
+                  <div className="text-[8px] text-slate-400 uppercase font-bold">Tổng XP</div>
+                </div>
+                <div className="text-center p-2 rounded-xl bg-orange-50 dark:bg-orange-900/20">
+                  <div className="text-lg font-black text-orange-600 dark:text-orange-400 flex items-center justify-center gap-0.5">
+                    {xpProfile.streakDays} 🔥
+                  </div>
+                  <div className="text-[8px] text-slate-400 uppercase font-bold">Streak</div>
+                </div>
+                <div className="text-center p-2 rounded-xl bg-amber-50 dark:bg-amber-900/20">
+                  <div className="text-lg font-black text-amber-600 dark:text-amber-400">{(xpProfile.badges || []).length}</div>
+                  <div className="text-[8px] text-slate-400 uppercase font-bold">Huy hiệu</div>
+                </div>
+              </div>
+              {/* Badges */}
+              {(xpProfile.badges || []).length > 0 && (
+                <div className="mb-3">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Huy hiệu</div>
+                  <div className="flex flex-wrap gap-2">
+                    {(xpProfile.badges || []).map((badge, i) => (
+                      <span key={i} className="text-xl" title={badge.name}>{badge.icon}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes slideUp {
           from { transform: translateY(100%); }
           to { transform: translateY(0); }
         }
+        .btm-nav-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
       `}</style>
     </>
   );

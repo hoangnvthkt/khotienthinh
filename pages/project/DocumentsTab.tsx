@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import AiInsightPanel from '../../components/AiInsightPanel';
 import {
     Upload, FileText, Image, File as FileIcon, Trash2, Download, Eye, X, Plus,
     Search, Filter, Tag, Edit2, Save, FolderOpen, Paperclip, Clock,
@@ -145,6 +146,11 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, uploade
 
     return (
         <div className="space-y-5">
+            {/* AI Analysis */}
+            <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-slate-700 dark:text-white">Tài liệu dự án</h3>
+                <AiInsightPanel module="documents" siteId={constructionSiteId} />
+            </div>
             {/* KPI Strip */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[

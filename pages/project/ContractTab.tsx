@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import AiInsightPanel from '../../components/AiInsightPanel';
 import {
     Plus, Edit2, Trash2, X, Save, FileText, Paperclip,
     CheckCircle2, AlertCircle, Clock, Ban
@@ -112,6 +113,11 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
 
     return (
         <div className="space-y-6">
+            {/* AI Analysis */}
+            <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-slate-700 dark:text-white">Hợp đồng</h3>
+                <AiInsightPanel module="contract" siteId={constructionSiteId} />
+            </div>
             {/* Summary Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">

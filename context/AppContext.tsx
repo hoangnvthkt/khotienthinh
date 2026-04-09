@@ -17,6 +17,7 @@ import {
   MOCK_USERS, MOCK_WAREHOUSES, MOCK_ITEMS,
   MOCK_SUPPLIERS, MOCK_TRANSACTIONS
 } from '../constants';
+import { auditService } from '../lib/auditService';
 
 interface AppSettings {
   name: string;
@@ -991,6 +992,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setItems(prev => [...prev, item]);
     syncToSupabase('items', item);
     logActivity('INVENTORY', 'Thêm vật tư', `Vật tư "${item.name}" được tạo mới`, 'SUCCESS');
+    auditService.log({ tableName: 'items', recordId: item.id, action: 'INSERT', newData: item as any, userId: user.id, userName: user.name || user.username });
   };
 
   const addItems = (newItems: InventoryItem[]) => {
@@ -1003,15 +1005,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateItem = (item: InventoryItem) => {
+    const oldItem = items.find(i => i.id === item.id);
     setItems(prev => prev.map(i => i.id === item.id ? item : i));
     syncToSupabase('items', item);
+    auditService.log({ tableName: 'items', recordId: item.id, action: 'UPDATE', oldData: oldItem as any, newData: item as any, userId: user.id, userName: user.name || user.username });
   };
 
   const removeItem = async (id: string) => {
+    const oldItem = items.find(i => i.id === id);
     setItems(prev => prev.filter(i => i.id !== id));
     if (isSupabaseConfigured) {
       await supabase.from('items').delete().eq('id', id);
     }
+    if (oldItem) auditService.log({ tableName: 'items', recordId: id, action: 'DELETE', oldData: oldItem as any, userId: user.id, userName: user.name || user.username });
   };
 
   const applyStockChange = (tx: Transaction) => {
@@ -1158,12 +1164,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setWarehouses(prev => [...prev, w]);
     syncToSupabase('warehouses', w);
     logActivity('SYSTEM', 'Thêm kho bãi', `Đã thêm kho mới: ${w.name}`, 'SUCCESS');
+    auditService.log({ tableName: 'warehouses', recordId: w.id, action: 'INSERT', newData: w as any, userId: user.id, userName: user.name || user.username });
   };
 
   const updateWarehouse = (w: Warehouse) => {
+    const oldWh = warehouses.find(item => item.id === w.id);
     setWarehouses(prev => prev.map(item => item.id === w.id ? w : item));
     syncToSupabase('warehouses', w);
     logActivity('SYSTEM', 'Cập nhật kho bãi', `Đã cập nhật thông tin kho: ${w.name}`, 'INFO');
+    auditService.log({ tableName: 'warehouses', recordId: w.id, action: 'UPDATE', oldData: oldWh as any, newData: w as any, userId: user.id, userName: user.name || user.username });
   };
 
   const removeWarehouse = async (id: string) => {
@@ -1177,10 +1186,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setWarehouses(prev => prev.map(w => w.id === id ? updatedWh : w));
       syncToSupabase('warehouses', updatedWh);
       logActivity('SYSTEM', 'Lưu trữ kho bãi', `Kho ${warehouse.name} vẫn còn tồn kho nên đã được chuyển vào trạng thái Lưu trữ.`, 'WARNING');
+      auditService.log({ tableName: 'warehouses', recordId: id, action: 'UPDATE', oldData: warehouse as any, newData: updatedWh as any, userId: user.id, userName: user.name || user.username, description: `Lưu trữ kho: ${warehouse.name} (còn tồn kho)` });
     } else {
       setWarehouses(prev => prev.filter(w => w.id !== id));
       if (isSupabaseConfigured) await supabase.from('warehouses').delete().eq('id', id);
       logActivity('SYSTEM', 'Xóa kho bãi', `Đã xóa hoàn toàn kho: ${warehouse.name}`, 'DANGER');
+      auditService.log({ tableName: 'warehouses', recordId: id, action: 'DELETE', oldData: warehouse as any, userId: user.id, userName: user.name || user.username });
     }
   };
 
@@ -1278,28 +1289,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addSupplier = (s: Supplier) => {
     setSuppliers(prev => [...prev, s]);
     syncToSupabase('suppliers', s);
+    auditService.log({ tableName: 'suppliers', recordId: s.id, action: 'INSERT', newData: s as any, userId: user.id, userName: user.name || user.username });
   };
 
   const updateSupplier = (s: Supplier) => {
+    const oldSup = suppliers.find(item => item.id === s.id);
     setSuppliers(prev => prev.map(item => item.id === s.id ? s : item));
     syncToSupabase('suppliers', s);
+    auditService.log({ tableName: 'suppliers', recordId: s.id, action: 'UPDATE', oldData: oldSup as any, newData: s as any, userId: user.id, userName: user.name || user.username });
   };
 
   const removeSupplier = async (id: string) => {
+    const oldSup = suppliers.find(s => s.id === id);
     setSuppliers(prev => prev.filter(s => s.id !== id));
     if (isSupabaseConfigured) await supabase.from('suppliers').delete().eq('id', id);
+    if (oldSup) auditService.log({ tableName: 'suppliers', recordId: id, action: 'DELETE', oldData: oldSup as any, userId: user.id, userName: user.name || user.username });
   };
 
   const addEmployee = (e: Employee) => {
     setEmployees(prev => [...prev, e]);
     syncToSupabase('employees', e);
     logActivity('SYSTEM', 'Thêm nhân sự', `Đã thêm hồ sơ nhân sự mới: ${e.fullName}`, 'SUCCESS');
+    auditService.log({ tableName: 'employees', recordId: e.id, action: 'INSERT', newData: e as any, userId: user.id, userName: user.name || user.username });
   };
 
   const updateEmployee = (e: Employee) => {
+    const oldEmp = employees.find(emp => emp.id === e.id);
     setEmployees(prev => prev.map(item => item.id === e.id ? e : item));
     syncToSupabase('employees', e);
     logActivity('SYSTEM', 'Cập nhật nhân sự', `Đã cập nhật thông tin nhân sự: ${e.fullName}`, 'INFO');
+    auditService.log({ tableName: 'employees', recordId: e.id, action: 'UPDATE', oldData: oldEmp as any, newData: e as any, userId: user.id, userName: user.name || user.username });
   };
 
   const removeEmployee = async (id: string) => {
@@ -1489,22 +1508,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       supabase.from('project_finances').upsert(pf)
         .then(({ error }) => { if (error) console.error('Error saving project_finance:', error); });
     }
+    auditService.log({ tableName: 'project_finances', recordId: pf.id, action: 'INSERT', newData: pf as any, userId: user.id, userName: user.name || user.username });
   };
 
   const updateProjectFinance = (pf: ProjectFinance) => {
+    const oldPf = projectFinances.find(p => p.id === pf.id);
     setProjectFinances(prev => prev.map(p => p.id === pf.id ? pf : p));
     if (isSupabaseConfigured) {
       supabase.from('project_finances').upsert(pf)
         .then(({ error }) => { if (error) console.error('Error updating project_finance:', error); });
     }
+    auditService.log({ tableName: 'project_finances', recordId: pf.id, action: 'UPDATE', oldData: oldPf as any, newData: pf as any, userId: user.id, userName: user.name || user.username });
   };
 
   const removeProjectFinance = (id: string) => {
+    const oldPf = projectFinances.find(p => p.id === id);
     setProjectFinances(prev => prev.filter(p => p.id !== id));
     if (isSupabaseConfigured) {
       supabase.from('project_finances').delete().eq('id', id)
         .then(({ error }) => { if (error) console.error('Error deleting project_finance:', error); });
     }
+    if (oldPf) auditService.log({ tableName: 'project_finances', recordId: id, action: 'DELETE', oldData: oldPf as any, userId: user.id, userName: user.name || user.username });
   };
 
   // ==================== PROJECT TRANSACTIONS CRUD ====================
@@ -1548,13 +1572,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       syncToSupabase('assets', { ...asset, category_id: asset.categoryId, serial_number: asset.serialNumber, original_value: asset.originalValue, purchase_date: asset.purchaseDate, depreciation_years: asset.depreciationYears, warranty_months: asset.warrantyMonths || 0, residual_value: asset.residualValue, warehouse_id: asset.warehouseId, location_note: asset.locationNote, assigned_to_user_id: asset.assignedToUserId, assigned_to_name: asset.assignedToName, assigned_date: asset.assignedDate, disposal_date: asset.disposalDate, disposal_value: asset.disposalValue, disposal_note: asset.disposalNote, image_url: asset.imageUrl, created_at: asset.createdAt, updated_at: asset.updatedAt });
     }
     logActivity('SYSTEM', 'Thêm tài sản', `Thêm tài sản ${asset.name} (${asset.code})`, 'SUCCESS');
+    auditService.log({ tableName: 'assets', recordId: asset.id, action: 'INSERT', newData: asset as any, userId: user.id, userName: user.name || user.username });
   };
 
   const updateAsset = (asset: Asset) => {
+    const oldAsset = assets.find(a => a.id === asset.id);
     setAssets(prev => prev.map(a => a.id === asset.id ? asset : a));
     if (isSupabaseConfigured) {
       syncToSupabase('assets', { ...asset, category_id: asset.categoryId, serial_number: asset.serialNumber, original_value: asset.originalValue, purchase_date: asset.purchaseDate, depreciation_years: asset.depreciationYears, warranty_months: asset.warrantyMonths || 0, residual_value: asset.residualValue, warehouse_id: asset.warehouseId, location_note: asset.locationNote, assigned_to_user_id: asset.assignedToUserId, assigned_to_name: asset.assignedToName, assigned_date: asset.assignedDate, disposal_date: asset.disposalDate, disposal_value: asset.disposalValue, disposal_note: asset.disposalNote, image_url: asset.imageUrl, created_at: asset.createdAt, updated_at: asset.updatedAt });
     }
+    auditService.log({ tableName: 'assets', recordId: asset.id, action: 'UPDATE', oldData: oldAsset as any, newData: asset as any, userId: user.id, userName: user.name || user.username });
   };
 
   const removeAsset = (id: string) => {
@@ -1564,6 +1591,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       supabase.from('assets').delete().eq('id', id).then();
     }
     logActivity('SYSTEM', 'Xóa tài sản', `Xóa tài sản ${asset?.name || id}`, 'WARNING');
+    if (asset) auditService.log({ tableName: 'assets', recordId: id, action: 'DELETE', oldData: asset as any, userId: user.id, userName: user.name || user.username });
   };
 
   const addAssetCategory = (cat: AssetCategory) => {

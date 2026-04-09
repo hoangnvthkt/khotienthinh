@@ -2,6 +2,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { RequestCategory, RequestInstance, RequestLog, RQStatus, RequestApprover, RequestPrintTemplate } from '../types';
+import { notificationService } from '../lib/notificationService';
+import { auditService } from '../lib/auditService';
+import { xpService } from '../lib/xpService';
 
 interface RequestContextType {
     categories: RequestCategory[];
@@ -251,6 +254,42 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
 
         await refreshData();
+
+        // 📝 Audit trail: new request created
+        auditService.log({
+            tableName: 'request_instances',
+            recordId: row.id,
+            action: 'INSERT',
+            newData: { id: row.id, code, title: data.title, status: 'PENDING', priority: data.priority },
+            userId: data.userId,
+            userName: data.userId,
+            description: `Tạo phiếu yêu cầu: ${data.title} (${code})`,
+        });
+
+        // 🎮 XP: Award for creating request
+        xpService.awardXP(data.userId, 'create_rq').catch(() => {});
+
+        // 🔔 Notify first approver when new request is created
+        try {
+            const approversList = data?.approvers as RequestApprover[] || [];
+            const firstApprover = approversList.sort((a: RequestApprover, b: RequestApprover) => a.order - b.order)[0];
+            if (firstApprover && firstApprover.userId !== data.userId) {
+                notificationService.create({
+                    userId: firstApprover.userId,
+                    type: 'info',
+                    category: 'system',
+                    title: '📋 Yêu cầu mới cần duyệt',
+                    message: `"${data.title}" (${code}) — Bạn cần duyệt yêu cầu này`,
+                    severity: 'info',
+                    icon: '📋',
+                    link: '/yeu-cau',
+                    sourceType: 'request',
+                    sourceId: `rq_new_${row.id}`,
+                    metadata: { requestId: row.id },
+                });
+            }
+        } catch (err) { console.error('RQ notification error:', err); }
+
         return mapRequestFromDB(row);
     };
 
@@ -325,6 +364,58 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
 
         await refreshData();
+
+        // 📝 Audit trail: request approved
+        auditService.log({
+            tableName: 'request_instances',
+            recordId: id,
+            action: 'UPDATE',
+            oldData: { status: req.status, approvers: req.approvers },
+            newData: { status: newStatus, approvers: updatedApprovers },
+            userId,
+            userName: userId,
+            description: `${allApproved ? 'Duyệt hoàn tất' : `Duyệt bước ${stepOrder}`} phiếu "${req.title}" (${req.code})`,
+        });
+
+        // 🎮 XP: Award for approving request
+        xpService.awardXP(userId, 'approve_rq').catch(() => {});
+
+        // 🔔 Notify: creator + next approver
+        try {
+            // Notify creator
+            if (req.createdBy && req.createdBy !== userId) {
+                notificationService.create({
+                    userId: req.createdBy,
+                    type: allApproved ? 'success' : 'info',
+                    category: 'system',
+                    title: allApproved ? '✅ Yêu cầu được duyệt hoàn tất!' : `✅ Bước ${stepOrder} đã duyệt`,
+                    message: `"${req.title}" (${req.code})${allApproved ? ' — Tất cả các bước đã được duyệt' : ` — Đang chờ bước ${stepOrder + 1}`}`,
+                    severity: 'info',
+                    icon: '✅',
+                    link: '/yeu-cau',
+                    sourceType: 'request',
+                    sourceId: `rq_approved_${id}_${Date.now()}`,
+                    metadata: { requestId: id },
+                });
+            }
+            // Notify next approver
+            if (nextStep && nextStep.userId !== userId) {
+                notificationService.create({
+                    userId: nextStep.userId,
+                    type: 'info',
+                    category: 'system',
+                    title: '📋 Yêu cầu cần duyệt',
+                    message: `"${req.title}" (${req.code}) — Bạn cần duyệt bước ${nextStep.order}`,
+                    severity: 'info',
+                    icon: '📋',
+                    link: '/yeu-cau',
+                    sourceType: 'request',
+                    sourceId: `rq_next_${id}_${Date.now()}`,
+                    metadata: { requestId: id },
+                });
+            }
+        } catch (err) { console.error('RQ approval notification error:', err); }
+
         return true;
     };
 
@@ -356,6 +447,38 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
 
         await refreshData();
+
+        // 📝 Audit trail: request rejected
+        auditService.log({
+            tableName: 'request_instances',
+            recordId: id,
+            action: 'UPDATE',
+            oldData: { status: req.status },
+            newData: { status: 'REJECTED', comment },
+            userId,
+            userName: userId,
+            description: `Từ chối phiếu "${req.title}" (${req.code})${comment ? ': ' + comment : ''}`,
+        });
+
+        // 🔔 Notify creator of rejection
+        try {
+            if (req.createdBy && req.createdBy !== userId) {
+                notificationService.create({
+                    userId: req.createdBy,
+                    type: 'error',
+                    category: 'system',
+                    title: '❌ Yêu cầu bị từ chối',
+                    message: `"${req.title}" (${req.code}) bị từ chối ở bước ${stepOrder}${comment ? ': ' + comment : ''}`,
+                    severity: 'warning',
+                    icon: '❌',
+                    link: '/yeu-cau',
+                    sourceType: 'request',
+                    sourceId: `rq_rejected_${id}_${Date.now()}`,
+                    metadata: { requestId: id },
+                });
+            }
+        } catch (err) { console.error('RQ rejection notification error:', err); }
+
         return true;
     };
 
@@ -368,6 +491,19 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
             request_id: id, action: 'COMPLETED', acted_by: userId, comment: comment || 'Hoàn thành yêu cầu',
         });
         await refreshData();
+
+        // 📝 Audit trail: request completed
+        const compReq = requests.find(r => r.id === id);
+        auditService.log({
+            tableName: 'request_instances',
+            recordId: id,
+            action: 'UPDATE',
+            oldData: { status: compReq?.status || 'APPROVED' },
+            newData: { status: 'DONE' },
+            userId,
+            userName: userId,
+            description: `Hoàn thành phiếu "${compReq?.title || ''}" (${compReq?.code || ''})`,
+        });
         return true;
     };
 
@@ -380,6 +516,19 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
             request_id: id, action: 'CANCELLED', acted_by: userId, comment: comment || 'Hủy phiếu yêu cầu',
         });
         await refreshData();
+
+        // 📝 Audit trail: request cancelled
+        const canReq = requests.find(r => r.id === id);
+        auditService.log({
+            tableName: 'request_instances',
+            recordId: id,
+            action: 'UPDATE',
+            oldData: { status: canReq?.status || 'PENDING' },
+            newData: { status: 'CANCELLED' },
+            userId,
+            userName: userId,
+            description: `Hủy phiếu "${canReq?.title || ''}" (${canReq?.code || ''})`,
+        });
         return true;
     };
 

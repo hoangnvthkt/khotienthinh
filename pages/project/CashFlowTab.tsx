@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import AiInsightPanel from '../../components/AiInsightPanel';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
@@ -177,7 +178,11 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
 
     return (
         <div className="space-y-6">
-            {/* KPI Cards */}
+            {/* AI Analysis Button + KPI Cards */}
+            <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-slate-700 dark:text-white">Tổng quan dòng tiền</h3>
+                <AiInsightPanel module="cashflow" siteId={constructionSiteId} />
+            </div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><TrendingUp size={11} /> Tổng thu</div>

@@ -14,6 +14,7 @@ import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { saveAs } from 'file-saver';
 import { supabase } from '../../lib/supabase';
+import { useCelebration } from '../../components/Celebration';
 
 const STATUS_MAP: Record<RQStatus, { label: string; color: string; icon: any }> = {
     DRAFT: { label: 'Nháp', color: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400', icon: FileText },
@@ -119,6 +120,7 @@ const RequestList: React.FC = () => {
         approveRequest, rejectRequest, completeRequest, cancelRequest,
         getRequestLogs, getCurrentApproverStep, getRQPrintTemplates } = useRequest();
     const { user, users } = useApp();
+    const { celebrate, showToast: celebrationToast } = useCelebration();
 
     const [activeTab, setActiveTab] = useState<'mine' | 'pending' | 'all'>('mine');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
@@ -144,7 +146,7 @@ const RequestList: React.FC = () => {
     // Toast
     const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const showToast = (type: 'success' | 'error', text: string) => {
-        setToast({ type, text }); setTimeout(() => setToast(null), 4000);
+        celebrationToast({ type, title: text });
     };
 
     // Delete/cancel confirm
@@ -208,8 +210,23 @@ const RequestList: React.FC = () => {
         const ok = await actionFn(id, user.id, actionComment || undefined);
         setProcessingId(null);
         setActionComment('');
-        if (ok) showToast('success', label);
-        else showToast('error', 'Thao tác thất bại');
+        if (ok) {
+            // 🎉 Celebration for approval!
+            if (label.includes('duyệt')) {
+                celebrate({
+                    variant: 'approve',
+                    title: '✅ Đã Duyệt Thành Công!',
+                    subtitle: requests.find(r => r.id === id)?.title || '',
+                    confetti: true,
+                });
+            } else if (label.includes('từ chối')) {
+                celebrationToast({ type: 'warning', title: label });
+            } else {
+                showToast('success', label);
+            }
+        } else {
+            showToast('error', 'Thao tác thất bại');
+        }
     };
 
     const handleDelete = async (id: string) => {

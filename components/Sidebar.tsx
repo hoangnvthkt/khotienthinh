@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import NotificationCenter from './NotificationCenter';
+import { XPProgressBar } from './XPProgress';
 import { useTheme } from '../context/ThemeContext';
 import { useChat } from '../context/ChatContext';
 import { Role, TransactionStatus, RequestStatus } from '../types';
@@ -61,7 +62,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p.startsWith('/knowledge-base')) return 'KB';
     if (p.startsWith('/ai')) return 'AI';
     if (p.startsWith('/ep')) return 'EP';
-    if (['/inventory', '/operations', '/audit', '/reports', '/requests', '/misa-export'].includes(p)) return 'WMS';
+    if (['/dashboard', '/inventory', '/operations', '/audit', '/reports', '/requests', '/misa-export'].includes(p)) return 'WMS';
     return null;
   };
 
@@ -464,6 +465,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                 {!collapsed && <span className="font-bold text-sm">Cài đặt</span>}
               </NavLink>
 
+              {/* Nhật ký thay đổi — chỉ Admin */}
+              {user.role === Role.ADMIN && (
+                <NavLink to="/audit-trail" title={collapsed ? 'Nhật ký thay đổi' : undefined}
+                  className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                    ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                  <History className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                  {!collapsed && <span className="font-bold text-sm">Nhật ký thay đổi</span>}
+                </NavLink>
+              )}
+
               {/* Tin nhắn */}
               <NavLink to="/chat" title={collapsed ? 'Tin nhắn' : undefined}
                 className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : 'justify-between'} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
@@ -625,6 +637,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
           )}
           </div>
         </nav>
+
+        {/* XP Progress Bar */}
+        {!collapsed && (
+          <div className="hidden lg:block px-1 py-1 shrink-0">
+            <XPProgressBar userId={user?.id} />
+          </div>
+        )}
 
         {/* Collapse Toggle */}
         <div className="hidden lg:flex px-2 py-2 border-t border-white/10 dark:border-white/5 shrink-0">

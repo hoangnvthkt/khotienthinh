@@ -1,15 +1,19 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import AiInsightPanel from '../../components/AiInsightPanel';
 import {
     Plus, Edit2, Trash2, X, Save, Package, AlertTriangle, TrendingUp,
     CheckCircle2, Clock, Ban, FileCheck, ChevronDown, ChevronUp,
-    BarChart3
+    BarChart3, Search, Truck, ArrowRight
 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import { MaterialBudgetItem, ProjectMaterialRequest, MaterialRequestStatus } from '../../types';
-import { boqService, matRequestService } from '../../lib/projectService';
+import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus } from '../../types';
+import { boqService } from '../../lib/projectService';
+import { useApp } from '../../context/AppContext';
+import RequestModal from '../../components/RequestModal';
 
 interface MaterialTabProps {
     constructionSiteId: string;
+    siteWarehouseId?: string; // ID kho công trường
 }
 
 const fmt = (n: number) => {
@@ -18,82 +22,150 @@ const fmt = (n: number) => {
     return n.toLocaleString('vi-VN');
 };
 
-const REQ_STATUS: Record<MaterialRequestStatus, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
-    pending: { label: 'Chờ duyệt', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', icon: <Clock size={12} /> },
-    approved: { label: 'Đã duyệt', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', icon: <CheckCircle2 size={12} /> },
-    rejected: { label: 'Từ chối', color: 'text-red-600', bg: 'bg-red-50 border-red-200', icon: <Ban size={12} /> },
-    fulfilled: { label: 'Đã cấp', color: 'text-violet-600', bg: 'bg-violet-50 border-violet-200', icon: <FileCheck size={12} /> },
+const REQ_STATUS_MAP: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
+    PENDING:    { label: 'Chờ duyệt', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', icon: <Clock size={12} /> },
+    APPROVED:   { label: 'Chờ xuất kho', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', icon: <CheckCircle2 size={12} /> },
+    IN_TRANSIT: { label: 'Đang giao', color: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-200', icon: <Truck size={12} /> },
+    COMPLETED:  { label: 'Đã nhận', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', icon: <FileCheck size={12} /> },
+    REJECTED:   { label: 'Từ chối', color: 'text-red-600', bg: 'bg-red-50 border-red-200', icon: <Ban size={12} /> },
 };
 
-const CATEGORIES = ['Xi măng', 'Thép', 'Cát', 'Đá', 'Gạch', 'Gỗ', 'Sơn', 'Ống nước', 'Dây điện', 'Khác'];
-
-const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
-    const [activeSubTab, setActiveSubTab] = useState<'boq' | 'request' | 'waste'>('boq');
+const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, siteWarehouseId }) => {
+    const { items: inventoryItems, requests: allRequests, warehouses, users } = useApp();
+    const [activeSubTab, setActiveSubTab] = useState<'summary' | 'boq' | 'request' | 'waste' | 'dashboard'>('summary');
 
     // BOQ Data
     const [boqItems, setBoqItems] = useState<MaterialBudgetItem[]>([]);
 
-    // Material Requests
-    const [requests, setRequests] = useState<ProjectMaterialRequest[]>([]);
+    // Resolve siteWarehouseId: use prop or find warehouse named 'RICO'
+    const resolvedWhId = useMemo(() => {
+        if (siteWarehouseId) return siteWarehouseId;
+        const ricoWh = warehouses.find(w => w.name.toUpperCase().includes('RICO'));
+        return ricoWh?.id || 'wh-1';
+    }, [siteWarehouseId, warehouses]);
+
+    // Material Requests — filtered to this site's warehouse
+    const requests = useMemo(() => {
+        return allRequests.filter(r => r.siteWarehouseId === resolvedWhId);
+    }, [allRequests, resolvedWhId]);
+
+    // Request Modal state
+    const [isReqModalOpen, setReqModalOpen] = useState(false);
+    const [selectedRequest, setSelectedRequest] = useState<MaterialRequest | undefined>(undefined);
 
     useEffect(() => {
         boqService.list(constructionSiteId).then(setBoqItems).catch(console.error);
-        matRequestService.list(constructionSiteId).then(setRequests).catch(console.error);
     }, [constructionSiteId]);
 
     const [showBoqForm, setShowBoqForm] = useState(false);
     const [editingBoq, setEditingBoq] = useState<MaterialBudgetItem | null>(null);
-    const [showReqForm, setShowReqForm] = useState(false);
-    const [editingReq, setEditingReq] = useState<ProjectMaterialRequest | null>(null);
+    // Unused old state removed — now using RequestModal from inventory module
 
     // BOQ Form
-    const [bCat, setBCat] = useState('Xi măng');
+    const [bCat, setBCat] = useState('Vật liệu xây dựng');
     const [bName, setBName] = useState('');
     const [bUnit, setBUnit] = useState('');
     const [bBudgetQty, setBBudgetQty] = useState('');
     const [bPrice, setBPrice] = useState('');
-    const [bActualQty, setBActualQty] = useState('0');
     const [bThreshold, setBThreshold] = useState('5');
     const [bNotes, setBNotes] = useState('');
+    const [bInventoryItemId, setBInventoryItemId] = useState('');
+    const [bMaterialCode, setBMaterialCode] = useState('');
 
-    // Request Form
-    const [rNum, setRNum] = useState('');
-    const [rBy, setRBy] = useState('');
-    const [rDate, setRDate] = useState(new Date().toISOString().split('T')[0]);
-    const [rItems, setRItems] = useState<{ itemName: string; unit: string; qty: number; note?: string }[]>([{ itemName: '', unit: '', qty: 0 }]);
-    const [rNote, setRNote] = useState('');
+    // Autocomplete state
+    const [acQuery, setAcQuery] = useState('');
+    const [acOpen, setAcOpen] = useState(false);
+    const acRef = useRef<HTMLDivElement>(null);
+    const acSuggestions = useMemo(() => {
+        if (!acQuery || acQuery.length < 1) return [];
+        const q = acQuery.toLowerCase();
+        return inventoryItems.filter(i =>
+            i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q)
+        ).slice(0, 8);
+    }, [acQuery, inventoryItems]);
+
+    const selectInventoryItem = (item: InventoryItem) => {
+        setBInventoryItemId(item.id);
+        setBMaterialCode(item.sku);
+        setBName(item.name);
+        setBCat(item.category);
+        setBUnit(item.unit);
+        setBPrice(String(item.priceIn));
+        setAcQuery(item.name);
+        setAcOpen(false);
+    };
 
     const resetBoqForm = () => {
         setEditingBoq(null); setShowBoqForm(false);
-        setBCat('Xi măng'); setBName(''); setBUnit(''); setBBudgetQty('');
-        setBPrice(''); setBActualQty('0'); setBThreshold('5'); setBNotes('');
+        setBCat('Vật liệu xây dựng'); setBName(''); setBUnit(''); setBBudgetQty('');
+        setBPrice(''); setBThreshold('5'); setBNotes('');
+        setBInventoryItemId(''); setBMaterialCode(''); setAcQuery('');
     };
 
     const openEditBoq = (item: MaterialBudgetItem) => {
         setEditingBoq(item);
         setBCat(item.category); setBName(item.itemName); setBUnit(item.unit);
         setBBudgetQty(String(item.budgetQty)); setBPrice(String(item.budgetUnitPrice));
-        setBActualQty(String(item.actualQty)); setBThreshold(String(item.wasteThreshold));
+        setBThreshold(String(item.wasteThreshold));
         setBNotes(item.notes || '');
+        setBInventoryItemId(item.inventoryItemId || '');
+        setBMaterialCode(item.materialCode || '');
+        setAcQuery(item.itemName);
         setShowBoqForm(true);
     };
+
+    // Compute actualQty from MaterialRequests (COMPLETED + IN_TRANSIT)
+    const computedBoqItems = useMemo(() => {
+        return boqItems.map(b => {
+            if (!b.inventoryItemId) return b;
+            // Sum approvedQty from completed/in_transit requests
+            let totalApproved = 0;
+            let totalRequested = 0;
+            requests.forEach(r => {
+                const rItems = r.items || [];
+                rItems.forEach((ri: any) => {
+                    if (ri.itemId === b.inventoryItemId) {
+                        totalRequested += (ri.requestQty || 0);
+                        if (r.status === RequestStatus.COMPLETED || r.status === RequestStatus.IN_TRANSIT) {
+                            totalApproved += (ri.approvedQty || 0);
+                        }
+                    }
+                });
+            });
+            const actualQty = totalApproved;
+            const wasteQty = actualQty - b.budgetQty;
+            const wastePercent = b.budgetQty > 0 ? Math.round((wasteQty / b.budgetQty) * 1000) / 10 : 0;
+            const budgetOverPercent = b.budgetQty > 0 ? Math.round(((totalRequested - b.budgetQty) / b.budgetQty) * 1000) / 10 : 0;
+            return {
+                ...b,
+                actualQty,
+                actualTotal: actualQty * b.budgetUnitPrice,
+                wasteQty,
+                wastePercent,
+                wasteValue: wasteQty * b.budgetUnitPrice,
+                cumulativeRequested: totalRequested,
+                cumulativeExported: actualQty,
+                budgetOverPercent: Math.max(0, budgetOverPercent),
+                stockBalance: (b.cumulativeImported || 0) - actualQty,
+                autoAlert: budgetOverPercent > 0 ? 'Vượt ngân sách' : wastePercent > b.wasteThreshold ? 'Vượt định mức hao hụt' : undefined,
+            };
+        });
+    }, [boqItems, requests]);
 
     const handleSaveBoq = async () => {
         if (!bName || !bUnit || !bBudgetQty || !bPrice) return;
         const budgetQty = Number(bBudgetQty);
-        const actualQty = Number(bActualQty);
         const budgetUnitPrice = Number(bPrice);
-        const wasteQty = actualQty - budgetQty;
-        const wastePercent = budgetQty > 0 ? Math.round((wasteQty / budgetQty) * 1000) / 10 : 0;
 
         const item: MaterialBudgetItem = {
             id: editingBoq?.id || crypto.randomUUID(),
             constructionSiteId,
+            inventoryItemId: bInventoryItemId || undefined,
+            materialCode: bMaterialCode || undefined,
             category: bCat, itemName: bName, unit: bUnit,
             budgetQty, budgetUnitPrice,
             budgetTotal: budgetQty * budgetUnitPrice,
-            actualQty, actualTotal: actualQty * budgetUnitPrice,
-            wasteQty, wastePercent,
+            actualQty: 0,
             wasteThreshold: Number(bThreshold),
             notes: bNotes || undefined,
         };
@@ -103,62 +175,21 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
         resetBoqForm();
     };
 
-    const resetReqForm = () => {
-        setEditingReq(null); setShowReqForm(false);
-        setRNum(''); setRBy(''); setRDate(new Date().toISOString().split('T')[0]);
-        setRItems([{ itemName: '', unit: '', qty: 0 }]); setRNote('');
-    };
-
-    const openEditReq = (req: ProjectMaterialRequest) => {
-        setEditingReq(req);
-        setRNum(req.requestNumber); setRBy(req.requestedBy);
-        setRDate(req.requestDate); setRItems([...req.items]); setRNote(req.note || '');
-        setShowReqForm(true);
-    };
-
-    const handleSaveReq = async () => {
-        if (!rNum || !rBy || rItems.every(i => !i.itemName)) return;
-        const validItems = rItems.filter(i => i.itemName);
-        const reqItem: ProjectMaterialRequest = editingReq ? {
-            ...editingReq, requestNumber: rNum, requestedBy: rBy,
-            requestDate: rDate, items: validItems, totalItems: validItems.length,
-            note: rNote || undefined,
-        } : {
-            id: crypto.randomUUID(), constructionSiteId,
-            requestNumber: rNum, requestedBy: rBy, requestDate: rDate,
-            items: validItems, totalItems: validItems.length,
-            status: 'pending' as const, note: rNote || undefined,
-            createdAt: new Date().toISOString(),
-        };
-        await matRequestService.upsert(reqItem);
-        setRequests(await matRequestService.list(constructionSiteId));
-        resetReqForm();
-    };
-
-    const updateReqStatus = async (id: string, status: MaterialRequestStatus) => {
-        const req = requests.find(r => r.id === id);
-        if (!req) return;
-        const updated = {
-            ...req, status,
-            approvedAt: status === 'approved' ? new Date().toISOString() : req.approvedAt,
-            fulfilledAt: status === 'fulfilled' ? new Date().toISOString() : req.fulfilledAt,
-        };
-        await matRequestService.upsert(updated);
-        setRequests(await matRequestService.list(constructionSiteId));
-    };
-
-    // Stats
+    // Stats using computed data
     const stats = useMemo(() => {
-        const totalBudget = boqItems.reduce((s, b) => s + (b.budgetTotal || 0), 0);
-        const totalActual = boqItems.reduce((s, b) => s + (b.actualTotal || 0), 0);
-        const overWaste = boqItems.filter(b => (b.wastePercent || 0) > b.wasteThreshold);
-        const pending = requests.filter(r => r.status === 'pending').length;
-        return { totalBudget, totalActual, diff: totalActual - totalBudget, overWaste: overWaste.length, pendingReq: pending, boqCount: boqItems.length };
-    }, [boqItems, requests]);
+        const totalBudget = computedBoqItems.reduce((s, b) => s + (b.budgetTotal || 0), 0);
+        const totalActual = computedBoqItems.reduce((s, b) => s + (b.actualTotal || 0), 0);
+        const overWaste = computedBoqItems.filter(b => (b.wastePercent || 0) > b.wasteThreshold);
+        const overBudget = computedBoqItems.filter(b => (b.budgetOverPercent || 0) > 0);
+        const totalWasteValue = computedBoqItems.reduce((s, b) => s + Math.abs(b.wasteValue || 0), 0);
+        const totalRequested = computedBoqItems.reduce((s, b) => s + (b.cumulativeRequested || 0) * (b.budgetUnitPrice || 0), 0);
+        const pending = requests.filter(r => r.status === RequestStatus.PENDING).length;
+        return { totalBudget, totalActual, diff: totalActual - totalBudget, overWaste: overWaste.length, overBudget: overBudget.length, totalWasteValue, totalRequested, pendingReq: pending, boqCount: computedBoqItems.length };
+    }, [computedBoqItems, requests]);
 
     // Chart data for waste comparison
     const wasteChartData = useMemo(() => {
-        return boqItems.map(b => ({
+        return computedBoqItems.map(b => ({
             name: b.itemName.length > 8 ? b.itemName.slice(0, 8) + '…' : b.itemName,
             'Dự toán': b.budgetQty,
             'Thực tế': b.actualQty,
@@ -166,50 +197,124 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
             threshold: b.wasteThreshold,
             isOver: (b.wastePercent || 0) > b.wasteThreshold,
         }));
-    }, [boqItems]);
+    }, [computedBoqItems]);
 
     return (
         <div className="space-y-6">
+            {/* AI Analysis */}
+            <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-slate-700 dark:text-white">Quản lý vật tư</h3>
+                <AiInsightPanel module="material" siteId={constructionSiteId} />
+            </div>
             {/* KPI Summary */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Package size={10} /> Hạng mục BOQ</div>
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Package size={10} /> Hạng mục</div>
                     <div className="text-2xl font-black text-slate-800">{stats.boqCount}</div>
-                    <div className="text-[10px] text-slate-400 mt-1">DT: {fmt(stats.totalBudget)} đ</div>
+                    <div className="text-[10px] text-slate-400">DT: {fmt(stats.totalBudget)} đ</div>
                 </div>
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><TrendingUp size={10} /> Chi phí thực tế</div>
+                <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><TrendingUp size={10} /> Chi phí TT</div>
                     <div className={`text-xl font-black ${stats.diff > 0 ? 'text-red-500' : 'text-emerald-600'}`}>{fmt(stats.totalActual)} đ</div>
-                    <div className={`text-[10px] font-bold mt-1 ${stats.diff > 0 ? 'text-red-400' : 'text-emerald-500'}`}>
-                        {stats.diff > 0 ? '+' : ''}{fmt(stats.diff)} đ
-                    </div>
+                    <div className={`text-[10px] font-bold ${stats.diff > 0 ? 'text-red-400' : 'text-emerald-500'}`}>{stats.diff > 0 ? '+' : ''}{fmt(stats.diff)} đ</div>
                 </div>
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><AlertTriangle size={10} /> Vượt hao hụt</div>
+                <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><AlertTriangle size={10} /> Vượt hao hụt</div>
                     <div className={`text-2xl font-black ${stats.overWaste > 0 ? 'text-red-500' : 'text-emerald-600'}`}>{stats.overWaste}</div>
-                    <div className="text-[10px] text-slate-400 mt-1">hạng mục vượt ngưỡng</div>
+                    <div className="text-[10px] text-slate-400">/ {stats.overBudget} vượt NS</div>
                 </div>
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Clock size={10} /> Yêu cầu chờ</div>
+                <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">💰 GT Hao hụt</div>
+                    <div className={`text-xl font-black ${stats.totalWasteValue > 0 ? 'text-red-500' : 'text-emerald-600'}`}>{fmt(stats.totalWasteValue)} đ</div>
+                </div>
+                <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Clock size={10} /> YC chờ duyệt</div>
                     <div className="text-2xl font-black text-amber-600">{stats.pendingReq}</div>
+                    <div className="text-[10px] text-slate-400">{requests.length} phiếu tổng</div>
                 </div>
             </div>
 
             {/* Sub-tabs */}
             <div className="flex gap-1 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm">
                 {[
-                    { key: 'boq' as const, label: '📋 Định mức (BOQ)', count: boqItems.length },
-                    { key: 'request' as const, label: '📦 Yêu cầu vật tư', count: requests.length },
+                    { key: 'summary' as const, label: '🔗 Tổng hợp', count: computedBoqItems.length },
+                    { key: 'boq' as const, label: '📋 BOQ', count: computedBoqItems.length },
+                    { key: 'request' as const, label: '📦 Yêu cầu', count: requests.length },
                     { key: 'waste' as const, label: '📊 Hao hụt', count: stats.overWaste },
+                    { key: 'dashboard' as const, label: '📈 Dashboard', count: 0 },
                 ].map(t => (
                     <button key={t.key} onClick={() => setActiveSubTab(t.key)}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-xs font-bold transition-all ${
                             activeSubTab === t.key ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'
                         }`}>
                         {t.label} {t.count > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] ${activeSubTab === t.key ? 'bg-white/20' : 'bg-slate-100'}`}>{t.count}</span>}
                     </button>
                 ))}
             </div>
+
+            {/* ===== SUMMARY TAB - Bảng tổng hợp 1 dòng ===== */}
+            {activeSubTab === 'summary' && (
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                        <div><h4 className="text-sm font-black text-slate-800">📊 Bảng tổng hợp vật tư</h4><p className="text-[10px] text-slate-400">Toàn bộ chỉ số trên 1 dòng — liên kết BOQ↔YC↔PO↔Kho</p></div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left min-w-[1200px]">
+                            <thead>
+                                <tr className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase tracking-wider">
+                                    <th className="p-2.5 sticky left-0 bg-slate-50 z-10">Mã VT</th>
+                                    <th className="p-2.5">Vật tư</th>
+                                    <th className="p-2.5">ĐVT</th>
+                                    <th className="p-2.5 text-right">Ngân sách</th>
+                                    <th className="p-2.5 text-right">LK Yêu cầu</th>
+                                    <th className="p-2.5 text-right text-amber-600">% Vượt NS</th>
+                                    <th className="p-2.5 text-right">LK Nhập</th>
+                                    <th className="p-2.5 text-right">LK Xuất</th>
+                                    <th className="p-2.5 text-right">Tồn kho</th>
+                                    <th className="p-2.5 text-right">HH (%)</th>
+                                    <th className="p-2.5 text-right">Định mức</th>
+                                    <th className="p-2.5 text-right text-red-500">GT Hao hụt</th>
+                                    <th className="p-2.5">Cảnh báo</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50 text-xs">
+                                {computedBoqItems.map(b => {
+                                    const overBudget = (b.budgetOverPercent || 0) > 0;
+                                    const overWaste = (b.wastePercent || 0) > b.wasteThreshold;
+                                    const negStock = (b.stockBalance || 0) < 0;
+                                    return (
+                                        <tr key={b.id} className={`hover:bg-slate-50 ${overWaste ? 'bg-red-50/40' : overBudget ? 'bg-amber-50/40' : ''}`}>
+                                            <td className="p-2.5 font-mono text-[10px] text-indigo-500 font-bold sticky left-0 bg-white z-10">{b.materialCode || '—'}</td>
+                                            <td className="p-2.5 font-bold text-slate-800 max-w-[140px] truncate">{b.itemName}</td>
+                                            <td className="p-2.5 text-slate-400">{b.unit}</td>
+                                            <td className="p-2.5 text-right font-bold">{b.budgetQty.toLocaleString()}</td>
+                                            <td className="p-2.5 text-right font-bold">{(b.cumulativeRequested || 0).toLocaleString()}</td>
+                                            <td className={`p-2.5 text-right font-black ${overBudget ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                {(b.budgetOverPercent || 0) > 0 ? '+' : ''}{(b.budgetOverPercent || 0).toFixed(1)}%
+                                            </td>
+                                            <td className="p-2.5 text-right">{(b.cumulativeImported || 0).toLocaleString()}</td>
+                                            <td className="p-2.5 text-right">{(b.cumulativeExported || 0).toLocaleString()}</td>
+                                            <td className={`p-2.5 text-right font-bold ${negStock ? 'text-red-600' : 'text-emerald-600'}`}>{(b.stockBalance || 0).toLocaleString()}</td>
+                                            <td className={`p-2.5 text-right font-bold ${overWaste ? 'text-red-600' : 'text-slate-600'}`}>{(b.wastePercent || 0).toFixed(1)}%</td>
+                                            <td className="p-2.5 text-right text-slate-400">{b.wasteThreshold}%</td>
+                                            <td className={`p-2.5 text-right font-bold ${(b.wasteValue || 0) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmt(Math.abs(b.wasteValue || 0))}</td>
+                                            <td className="p-2.5">
+                                                {b.autoAlert ? (
+                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                                        b.autoAlert.includes('Vượt') ? 'bg-red-100 text-red-700' : b.autoAlert.includes('Cận') ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                                                    }`}>
+                                                        <AlertTriangle size={9} /> {b.autoAlert}
+                                                    </span>
+                                                ) : <span className="text-[9px] text-emerald-500 font-bold">✓ OK</span>}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
 
             {/* BOQ Tab */}
             {activeSubTab === 'boq' && (
@@ -221,7 +326,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
                             <Plus size={12} /> Thêm
                         </button>
                     </div>
-                    {boqItems.length === 0 ? (
+                    {computedBoqItems.length === 0 ? (
                         <div className="p-12 text-center">
                             <Package size={36} className="mx-auto mb-2 text-slate-200" />
                             <p className="text-sm font-bold text-slate-400">Chưa có dữ liệu BOQ</p>
@@ -243,7 +348,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-50">
-                                    {boqItems.map(item => {
+                                    {computedBoqItems.map(item => {
                                         const isOver = (item.wastePercent || 0) > item.wasteThreshold;
                                         return (
                                             <tr key={item.id} className="hover:bg-slate-50/50 group">
@@ -292,74 +397,79 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
                 </div>
             )}
 
-            {/* Material Request Tab */}
+            {/* Material Request Tab — using MaterialRequest from Inventory module */}
             {activeSubTab === 'request' && (
                 <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                     <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-                        <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><Package size={16} className="text-purple-500" /> Phiếu yêu cầu vật tư</h3>
-                        <button onClick={() => { resetReqForm(); setRNum(`YC-${String(requests.length + 1).padStart(3, '0')}`); setShowReqForm(true); }}
+                        <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><Package size={16} className="text-purple-500" /> Đề xuất vật tư ({requests.length})</h3>
+                        <button onClick={() => { setSelectedRequest(undefined); setReqModalOpen(true); }}
                             className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-purple-600 bg-purple-50 border border-purple-200 hover:bg-purple-100">
-                            <Plus size={12} /> Tạo phiếu
+                            <Plus size={12} /> Tạo đề xuất
                         </button>
                     </div>
                     {requests.length === 0 ? (
                         <div className="p-12 text-center">
                             <Package size={36} className="mx-auto mb-2 text-slate-200" />
-                            <p className="text-sm font-bold text-slate-400">Chưa có phiếu yêu cầu</p>
+                            <p className="text-sm font-bold text-slate-400">Chưa có phiếu đề xuất vật tư</p>
+                            <p className="text-[10px] text-slate-300 mt-1">Tạo đề xuất mới để yêu cầu vật tư từ Kho Tổng</p>
                         </div>
                     ) : (
-                        <div className="divide-y divide-slate-50">
-                            {requests.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(req => {
-                                const stCfg = REQ_STATUS[req.status];
-                                return (
-                                    <div key={req.id} className="px-5 py-4 hover:bg-slate-50/30 group">
-                                        <div className="flex items-center justify-between gap-3">
-                                            <div className="flex items-center gap-3 flex-1 min-w-0">
-                                                <div className="w-9 h-9 rounded-lg bg-purple-50 border border-purple-100 flex items-center justify-center shrink-0">
-                                                    <span className="text-[9px] font-black text-purple-600">📦</span>
-                                                </div>
-                                                <div className="min-w-0 flex-1">
-                                                    <div className="text-xs font-bold text-slate-700 flex items-center gap-2">
-                                                        {req.requestNumber}
-                                                        <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold border ${stCfg.bg} ${stCfg.color}`}>
-                                                            {stCfg.icon} {stCfg.label}
-                                                        </span>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                                <thead className="bg-slate-50/80">
+                                    <tr className="text-[10px] font-bold text-slate-400 uppercase">
+                                        <th className="text-left px-4 py-3">Mã phiếu</th>
+                                        <th className="text-left px-4 py-3">Ngày tạo</th>
+                                        <th className="text-left px-4 py-3">Vật tư</th>
+                                        <th className="text-center px-4 py-3">Trạng thái</th>
+                                        <th className="text-left px-4 py-3">Ghi chú</th>
+                                        <th className="text-center px-4 py-3"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50">
+                                    {requests.sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || '')).map(req => {
+                                        const stCfg = REQ_STATUS_MAP[req.status] || REQ_STATUS_MAP.PENDING;
+                                        const reqUser = users.find(u => u.id === req.requesterId);
+                                        const reqItems = (req.items || []) as any[];
+                                        return (
+                                            <tr key={req.id} className="hover:bg-slate-50/50 group">
+                                                <td className="px-4 py-3">
+                                                    <span className="font-mono font-bold text-indigo-600">{req.code}</span>
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-500">
+                                                    {req.createdDate ? new Date(req.createdDate).toLocaleDateString('vi-VN') : '—'}
+                                                    <div className="text-[10px] text-slate-300 mt-0.5">{reqUser?.name || 'N/A'}</div>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {reqItems.slice(0, 3).map((ri: any, idx: number) => {
+                                                            const inv = inventoryItems.find(i => i.id === ri.itemId);
+                                                            return (
+                                                                <span key={idx} className="px-1.5 py-0.5 rounded text-[9px] bg-slate-50 border border-slate-100 text-slate-600 font-medium">
+                                                                    {inv?.name || ri.itemId} ({ri.requestQty})
+                                                                </span>
+                                                            );
+                                                        })}
+                                                        {reqItems.length > 3 && <span className="text-[9px] text-slate-400">+{reqItems.length - 3}</span>}
                                                     </div>
-                                                    <div className="text-[10px] text-slate-400 mt-0.5">
-                                                        Người yêu cầu: {req.requestedBy} • {new Date(req.requestDate).toLocaleDateString('vi-VN')} • {req.totalItems} mục
-                                                    </div>
-                                                    {req.items.length > 0 && (
-                                                        <div className="flex flex-wrap gap-1 mt-1">
-                                                            {req.items.slice(0, 3).map((item, i) => (
-                                                                <span key={i} className="px-1.5 py-0.5 rounded text-[9px] bg-slate-50 border border-slate-100 text-slate-500">{item.itemName} ({item.qty} {item.unit})</span>
-                                                            ))}
-                                                            {req.items.length > 3 && <span className="text-[9px] text-slate-400">+{req.items.length - 3} mục</span>}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2 shrink-0">
-                                                {req.status === 'pending' && (
-                                                    <>
-                                                        <button onClick={() => updateReqStatus(req.id, 'approved')} title="Duyệt"
-                                                            className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50 border border-transparent hover:border-emerald-200"><CheckCircle2 size={13} /></button>
-                                                        <button onClick={() => updateReqStatus(req.id, 'rejected')} title="Từ chối"
-                                                            className="w-7 h-7 rounded-lg flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200"><Ban size={13} /></button>
-                                                    </>
-                                                )}
-                                                {req.status === 'approved' && (
-                                                    <button onClick={() => updateReqStatus(req.id, 'fulfilled')} title="Đã cấp"
-                                                        className="w-7 h-7 rounded-lg flex items-center justify-center text-violet-400 hover:text-violet-600 hover:bg-violet-50 border border-transparent hover:border-violet-200"><FileCheck size={13} /></button>
-                                                )}
-                                                <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
-                                                    <button onClick={() => openEditReq(req)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
-                                                    <button onClick={async () => { if(confirm('Xoá?')) { await matRequestService.remove(req.id); setRequests(await matRequestService.list(constructionSiteId)); } }} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                                                </td>
+                                                <td className="px-4 py-3 text-center">
+                                                    <span className={`inline-flex items-center gap-0.5 px-2 py-1 rounded-full text-[9px] font-bold border ${stCfg.bg} ${stCfg.color}`}>
+                                                        {stCfg.icon} {stCfg.label}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-400 max-w-[200px] truncate">{req.note || '—'}</td>
+                                                <td className="px-4 py-3 text-center">
+                                                    <button onClick={() => { setSelectedRequest(req); setReqModalOpen(true); }}
+                                                        className="text-slate-300 hover:text-indigo-500 opacity-0 group-hover:opacity-100 transition">
+                                                        <ArrowRight size={14} />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         </div>
                     )}
                 </div>
@@ -368,7 +478,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
             {/* Waste Comparison Tab */}
             {activeSubTab === 'waste' && (
                 <div className="space-y-4">
-                    {boqItems.length === 0 ? (
+                    {computedBoqItems.length === 0 ? (
                         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 text-center">
                             <BarChart3 size={36} className="mx-auto mb-2 text-slate-200" />
                             <p className="text-sm font-bold text-slate-400">Thêm dữ liệu BOQ để so sánh hao hụt</p>
@@ -415,7 +525,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-50">
-                                            {boqItems.sort((a, b) => (b.wastePercent || 0) - (a.wastePercent || 0)).map(item => {
+                                            {computedBoqItems.sort((a, b) => (b.wastePercent || 0) - (a.wastePercent || 0)).map(item => {
                                                 const isOver = (item.wastePercent || 0) > item.wasteThreshold;
                                                 const isNeg = (item.wastePercent || 0) <= 0;
                                                 return (
@@ -463,59 +573,79 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
                             <button onClick={resetBoqForm} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><X size={18} /></button>
                         </div>
                         <div className="p-6 space-y-4">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nhóm vật tư</label>
-                                    <select value={bCat} onChange={e => setBCat(e.target.value)}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none">
-                                        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
+                            {/* Autocomplete: Chọn vật tư từ Kho */}
+                            <div ref={acRef} className="relative">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">🔍 Tìm vật tư từ Kho (gõ mã SKU hoặc tên)</label>
+                                <div className="relative">
+                                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                                    <input value={acQuery}
+                                        onChange={e => { setAcQuery(e.target.value); setAcOpen(true); }}
+                                        onFocus={() => acQuery && setAcOpen(true)}
+                                        placeholder="VD: VT00040 hoặc Thép phi 22..."
+                                        className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-indigo-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none bg-indigo-50/30" />
                                 </div>
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Tên vật tư</label>
-                                    <input value={bName} onChange={e => setBName(e.target.value)} placeholder="VD: Xi măng PCB40"
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
-                                </div>
+                                {acOpen && acSuggestions.length > 0 && (
+                                    <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                                        {acSuggestions.map(item => (
+                                            <button key={item.id} onClick={() => selectInventoryItem(item)}
+                                                className="w-full text-left px-4 py-2.5 hover:bg-indigo-50 flex items-center justify-between gap-2 border-b border-slate-50 last:border-b-0">
+                                                <div>
+                                                    <span className="text-xs font-bold text-slate-800">{item.name}</span>
+                                                    <span className="text-[10px] text-slate-400 ml-2">({item.sku})</span>
+                                                </div>
+                                                <div className="text-[10px] text-right shrink-0">
+                                                    <span className="text-slate-400">{item.unit}</span>
+                                                    <span className="text-indigo-500 font-bold ml-2">{fmt(item.priceIn)} đ</span>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
+
+                            {bInventoryItemId && (
+                                <div className="px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-xs flex items-center gap-2">
+                                    <CheckCircle2 size={12} className="text-emerald-500" />
+                                    <span className="font-bold text-emerald-700">Đã chọn: {bName}</span>
+                                    <span className="text-emerald-500">({bMaterialCode})</span>
+                                    <span className="text-emerald-400 ml-auto">{bCat} • {bUnit} • {fmt(Number(bPrice))} đ</span>
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-3 gap-3">
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Đơn vị</label>
-                                    <input value={bUnit} onChange={e => setBUnit(e.target.value)} placeholder="kg, m3, tấn..."
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                    <input value={bUnit} onChange={e => setBUnit(e.target.value)} placeholder="kg, m3..."
+                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" readOnly={!!bInventoryItemId} />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">KL Dự toán</label>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">KL Dự toán *</label>
                                     <input type="number" value={bBudgetQty} onChange={e => setBBudgetQty(e.target.value)} placeholder="0"
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                        className="w-full px-3 py-2.5 rounded-xl border border-indigo-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none bg-white" />
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Đơn giá (VNĐ)</label>
                                     <input type="number" value={bPrice} onChange={e => setBPrice(e.target.value)} placeholder="0"
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" readOnly={!!bInventoryItemId} />
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">KL Thực xuất</label>
-                                    <input type="number" value={bActualQty} onChange={e => setBActualQty(e.target.value)} placeholder="0"
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
-                                </div>
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ngưỡng hao hụt (%)</label>
                                     <input type="number" value={bThreshold} onChange={e => setBThreshold(e.target.value)} placeholder="5"
                                         className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
                                 </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-blue-400">KL Thực xuất (tự động)</label>
+                                    <div className="px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm font-bold text-slate-400">
+                                        Tự tính từ phiếu đề xuất đã duyệt
+                                    </div>
+                                </div>
                             </div>
                             {bBudgetQty && bPrice && (
-                                <div className="px-3 py-2.5 rounded-xl bg-indigo-50 border border-indigo-100 text-xs grid grid-cols-3 gap-2">
-                                    <div><span className="text-indigo-400 block">Dự toán</span><span className="font-black text-indigo-700">{fmt(Number(bBudgetQty) * Number(bPrice))} đ</span></div>
-                                    <div><span className="text-slate-400 block">Thực tế</span><span className="font-black text-slate-700">{fmt(Number(bActualQty) * Number(bPrice))} đ</span></div>
-                                    <div>
-                                        <span className="text-slate-400 block">Hao hụt</span>
-                                        <span className={`font-black ${Number(bActualQty) > Number(bBudgetQty) ? 'text-red-500' : 'text-emerald-600'}`}>
-                                            {Number(bBudgetQty) > 0 ? (Math.round((Number(bActualQty) - Number(bBudgetQty)) / Number(bBudgetQty) * 1000) / 10) : 0}%
-                                        </span>
-                                    </div>
+                                <div className="px-3 py-2.5 rounded-xl bg-indigo-50 border border-indigo-100 text-xs">
+                                    <span className="text-indigo-400">Dự toán:</span>
+                                    <span className="font-black text-indigo-700 ml-1">{fmt(Number(bBudgetQty) * Number(bPrice))} đ</span>
                                 </div>
                             )}
                             <div>
@@ -535,72 +665,106 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId }) => {
                 </div>
             )}
 
-            {/* Request Form Modal */}
-            {showReqForm && (
-                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-                        <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-purple-500 to-pink-500 rounded-t-3xl flex items-center justify-between">
-                            <span className="font-bold text-lg text-white flex items-center gap-2">
-                                {editingReq ? <><Edit2 size={18} /> Sửa phiếu</> : <><Plus size={18} /> Tạo phiếu YC</>}
-                            </span>
-                            <button onClick={resetReqForm} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><X size={18} /></button>
+            {/* ===== DASHBOARD TAB ===== */}
+            {activeSubTab === 'dashboard' && (
+                <div className="space-y-6">
+                    {/* Row 1: Pie + Bar */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Pie Chart - Budget by Category */}
+                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+                            <h4 className="text-sm font-black text-slate-800 mb-4">🥧 Ngân sách theo nhóm VT</h4>
+                            <ResponsiveContainer width="100%" height={280}>
+                                <PieChart>
+                                    <Pie data={(() => {
+                                        const catMap: Record<string, number> = {};
+                                        computedBoqItems.forEach(b => { catMap[b.category] = (catMap[b.category] || 0) + (b.budgetTotal || 0); });
+                                        return Object.entries(catMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+                                    })()} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                                        {['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316', '#64748b'].map((c, i) => <Cell key={i} fill={c} />)}
+                                    </Pie>
+                                    <Tooltip formatter={(v: number) => fmt(v) + ' đ'} />
+                                </PieChart>
+                            </ResponsiveContainer>
                         </div>
-                        <div className="p-6 space-y-4">
-                            <div className="grid grid-cols-3 gap-3">
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Số phiếu</label>
-                                    <input value={rNum} onChange={e => setRNum(e.target.value)} placeholder="YC-001"
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-purple-500 outline-none" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Người yêu cầu</label>
-                                    <input value={rBy} onChange={e => setRBy(e.target.value)} placeholder="Tên"
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-purple-500 outline-none" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ngày</label>
-                                    <input type="date" value={rDate} onChange={e => setRDate(e.target.value)}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-purple-500 outline-none" />
-                                </div>
-                            </div>
+                        {/* Bar Chart - Top 10 Value */}
+                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+                            <h4 className="text-sm font-black text-slate-800 mb-4">📊 Top giá trị DT cao nhất</h4>
+                            <ResponsiveContainer width="100%" height={280}>
+                                <BarChart data={[...computedBoqItems].sort((a, b) => (b.budgetTotal || 0) - (a.budgetTotal || 0)).slice(0, 8).map(b => ({
+                                    name: b.itemName.length > 10 ? b.itemName.slice(0, 10) + '…' : b.itemName,
+                                    'Dự toán': (b.budgetTotal || 0) / 1e6,
+                                    'Thực tế': (b.actualTotal || 0) / 1e6,
+                                }))} layout="vertical">
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis type="number" tickFormatter={v => v + 'tr'} />
+                                    <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 10 }} />
+                                    <Tooltip formatter={(v: number) => v.toFixed(0) + ' triệu'} />
+                                    <Legend />
+                                    <Bar dataKey="Dự toán" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                                    <Bar dataKey="Thực tế" fill="#ec4899" radius={[0, 4, 4, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
 
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
-                                    <span>Danh sách vật tư</span>
-                                    <button onClick={() => setRItems([...rItems, { itemName: '', unit: '', qty: 0 }])}
-                                        className="text-purple-500 hover:text-purple-700 flex items-center gap-0.5"><Plus size={10} /> Thêm dòng</button>
-                                </label>
-                                <div className="space-y-2 mt-2">
-                                    {rItems.map((item, i) => (
-                                        <div key={i} className="flex gap-2 items-center">
-                                            <input value={item.itemName} onChange={e => { const n = [...rItems]; n[i].itemName = e.target.value; setRItems(n); }}
-                                                placeholder="Tên vật tư" className="flex-1 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-purple-500 outline-none" />
-                                            <input value={item.unit} onChange={e => { const n = [...rItems]; n[i].unit = e.target.value; setRItems(n); }}
-                                                placeholder="ĐVT" className="w-16 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-purple-500 outline-none" />
-                                            <input type="number" value={item.qty || ''} onChange={e => { const n = [...rItems]; n[i].qty = Number(e.target.value); setRItems(n); }}
-                                                placeholder="SL" className="w-16 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-purple-500 outline-none" />
-                                            {rItems.length > 1 && (
-                                                <button onClick={() => setRItems(rItems.filter((_, j) => j !== i))} className="text-red-300 hover:text-red-500"><X size={14} /></button>
-                                            )}
-                                        </div>
+                    {/* Row 2: Budget Overrun Ranking + Waste Alert Table */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Budget Overrun */}
+                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div className="p-4 border-b border-slate-100"><h4 className="text-sm font-black text-slate-800">🔴 Vật tư VƯỢT ngân sách</h4></div>
+                            <table className="w-full text-xs">
+                                <thead><tr className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase">
+                                    <th className="p-2.5 text-left">Vật tư</th><th className="p-2.5 text-right">NS</th><th className="p-2.5 text-right">LK YC</th><th className="p-2.5 text-right">% Vượt</th>
+                                </tr></thead>
+                                <tbody className="divide-y divide-slate-50">
+                                    {computedBoqItems.filter(b => (b.budgetOverPercent || 0) > 0).sort((a, b) => (b.budgetOverPercent || 0) - (a.budgetOverPercent || 0)).map(b => (
+                                        <tr key={b.id} className="hover:bg-red-50/50">
+                                            <td className="p-2.5 font-bold text-slate-800">{b.itemName}</td>
+                                            <td className="p-2.5 text-right">{b.budgetQty.toLocaleString()}</td>
+                                            <td className="p-2.5 text-right font-bold">{(b.cumulativeRequested || 0).toLocaleString()}</td>
+                                            <td className="p-2.5 text-right font-black text-red-600">+{(b.budgetOverPercent || 0).toFixed(1)}%</td>
+                                        </tr>
                                     ))}
-                                </div>
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ghi chú</label>
-                                <textarea value={rNote} onChange={e => setRNote(e.target.value)} rows={2} placeholder="Ghi chú..."
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-purple-500 outline-none resize-none" />
-                            </div>
+                                    {computedBoqItems.filter(b => (b.budgetOverPercent || 0) > 0).length === 0 && (
+                                        <tr><td colSpan={4} className="p-6 text-center text-slate-300 text-[10px] font-bold uppercase">Không có vật tư vượt NS</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
-                        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
-                            <button onClick={resetReqForm} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Huỷ</button>
-                            <button onClick={handleSaveReq} disabled={!rNum || !rBy}
-                                className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-purple-500 to-pink-500 shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50">
-                                <Save size={16} /> {editingReq ? 'Lưu' : 'Tạo'}
-                            </button>
+                        {/* Waste Alert */}
+                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div className="p-4 border-b border-slate-100"><h4 className="text-sm font-black text-slate-800">⚠️ Vật tư VƯỢT hao hụt</h4></div>
+                            <table className="w-full text-xs">
+                                <thead><tr className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase">
+                                    <th className="p-2.5 text-left">Vật tư</th><th className="p-2.5 text-right">HH%</th><th className="p-2.5 text-right">Định mức</th><th className="p-2.5 text-right">GT Hao hụt</th>
+                                </tr></thead>
+                                <tbody className="divide-y divide-slate-50">
+                                    {computedBoqItems.filter(b => (b.wastePercent || 0) > b.wasteThreshold).sort((a, b) => (b.wastePercent || 0) - (a.wastePercent || 0)).map(b => (
+                                        <tr key={b.id} className="hover:bg-amber-50/50">
+                                            <td className="p-2.5 font-bold text-slate-800">{b.itemName}</td>
+                                            <td className="p-2.5 text-right font-black text-red-600">{(b.wastePercent || 0).toFixed(1)}%</td>
+                                            <td className="p-2.5 text-right text-slate-400">{b.wasteThreshold}%</td>
+                                            <td className="p-2.5 text-right font-bold text-red-600">{fmt(Math.abs(b.wasteValue || 0))} đ</td>
+                                        </tr>
+                                    ))}
+                                    {computedBoqItems.filter(b => (b.wastePercent || 0) > b.wasteThreshold).length === 0 && (
+                                        <tr><td colSpan={4} className="p-6 text-center text-slate-300 text-[10px] font-bold uppercase">Tất cả trong định mức</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Request Modal — Integrated from Inventory Module */}
+            {isReqModalOpen && (
+                <RequestModal
+                    isOpen={isReqModalOpen}
+                    onClose={() => { setReqModalOpen(false); setSelectedRequest(undefined); }}
+                    request={selectedRequest}
+                    defaultSiteWarehouseId={resolvedWhId}
+                />
             )}
         </div>
     );

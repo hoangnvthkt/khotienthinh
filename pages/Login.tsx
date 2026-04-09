@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { Lock, User as UserIcon, AlertCircle, Info, Eye, EyeOff, Zap } from 'lucide-react';
+import { xpService } from '../lib/xpService';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -27,6 +28,8 @@ const Login: React.FC = () => {
     try {
       const loggedUser = await login(username, password);
       if (loggedUser) {
+        // Award daily login XP (fire-and-forget)
+        xpService.awardXP(loggedUser.id, 'daily_login').catch(() => {});
         navigate('/');
       } else {
         setError('Tên đăng nhập hoặc mật khẩu không chính xác.');

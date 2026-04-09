@@ -315,6 +315,8 @@ export type MaterialRequestStatus = 'pending' | 'approved' | 'rejected' | 'fulfi
 export interface MaterialBudgetItem {
   id: string;
   constructionSiteId: string;
+  inventoryItemId?: string;       // Link tới InventoryItem.id trong module Kho
+  materialCode?: string;        // Mã vật tư chuẩn: VT_CT_1-Thep_phi22
   category: string;             // Nhóm: Xi măng, Thép, Cát...
   itemName: string;             // Tên vật tư cụ thể
   unit: string;                 // Đơn vị: kg, m3, tấn, bao...
@@ -325,7 +327,14 @@ export interface MaterialBudgetItem {
   actualTotal?: number;         // Auto: actualQty * budgetUnitPrice
   wasteQty?: number;            // Auto: actualQty - budgetQty
   wastePercent?: number;        // Auto: (actualQty - budgetQty)/budgetQty * 100
+  wasteValue?: number;          // Giá trị hao hụt (VNĐ) = wasteQty * unitPrice
   wasteThreshold: number;       // Ngưỡng cảnh báo hao hụt (%) — mặc định 5
+  cumulativeRequested?: number; // LK yêu cầu cấp
+  cumulativeImported?: number;  // LK nhập kho (từ PO)
+  cumulativeExported?: number;  // LK xuất kho (= actualQty)
+  stockBalance?: number;        // Tồn kho = Nhập - Xuất
+  budgetOverPercent?: number;   // % vượt ngân sách = (LK_YC - NS) / NS * 100
+  autoAlert?: string;           // Cảnh báo tự động
   notes?: string;
 }
 
@@ -335,7 +344,7 @@ export interface ProjectMaterialRequest {
   requestNumber: string;        // Số phiếu: YC-001
   requestedBy: string;
   requestDate: string;
-  items: { itemName: string; unit: string; qty: number; note?: string }[];
+  items: { itemName: string; unit: string; qty: number; boqItemId?: string; note?: string }[];
   totalItems: number;
   status: MaterialRequestStatus;
   approvedBy?: string;

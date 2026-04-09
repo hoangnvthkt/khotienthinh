@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import AiInsightPanel from '../../components/AiInsightPanel';
 import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle } from 'lucide-react';
 import { DailyLog, WeatherType } from '../../types';
 import { dailyLogService } from '../../lib/projectService';
@@ -92,6 +93,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
 
     return (
         <div className="space-y-6">
+            {/* AI Analysis */}
+            <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-slate-700 dark:text-white">Nhật ký công trường</h3>
+                <AiInsightPanel module="dailylog" siteId={constructionSiteId} />
+            </div>
             {/* Summary */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">

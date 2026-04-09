@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { useWorkflow } from '../context/WorkflowContext';
+import { useRequest } from '../context/RequestContext';
 import {
   Search, X, Users, Package, ArrowLeftRight, ClipboardCheck, Briefcase,
   FileText, Hash, ArrowRight, Command, CornerDownLeft, ChevronUp, User,
-  Warehouse, DollarSign, Calendar, Settings
+  Warehouse, DollarSign, Calendar, Settings, HardHat, Box, GitBranch
 } from 'lucide-react';
 
 interface SearchResult {
@@ -24,6 +26,9 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string; icon: React.Re
   'Yêu cầu': { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-600 dark:text-amber-400', icon: <ClipboardCheck size={12} /> },
   'Người dùng': { bg: 'bg-violet-100 dark:bg-violet-900/30', text: 'text-violet-600 dark:text-violet-400', icon: <User size={12} /> },
   'Kho': { bg: 'bg-rose-100 dark:bg-rose-900/30', text: 'text-rose-600 dark:text-rose-400', icon: <Warehouse size={12} /> },
+  'Dự án': { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-600 dark:text-orange-400', icon: <HardHat size={12} /> },
+  'Tài sản': { bg: 'bg-pink-100 dark:bg-pink-900/30', text: 'text-pink-600 dark:text-pink-400', icon: <Box size={12} /> },
+  'Quy trình': { bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-600 dark:text-indigo-400', icon: <GitBranch size={12} /> },
   'Trang': { bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-600 dark:text-slate-400', icon: <FileText size={12} /> },
 };
 
@@ -54,7 +59,9 @@ const CommandPalette: React.FC = () => {
   const listRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
-  const { employees, items, transactions, requests, users, warehouses, suppliers } = useApp();
+  const { employees, items, transactions, requests: appRequests, users, warehouses, suppliers, hrmConstructionSites, assets } = useApp();
+  const { instances: wfInstances } = useWorkflow();
+  const { requests: rqRequests, categories: rqCategories } = useRequest();
 
   // Build search index
   const allResults = useMemo<SearchResult[]>(() => {
@@ -101,7 +108,7 @@ const CommandPalette: React.FC = () => {
     });
 
     // Requests
-    requests.forEach((req: any) => {
+    appRequests.forEach((req: any) => {
       results.push({
         id: `req-${req.id}`,
         title: `Yêu cầu ${req.code}`,
@@ -139,8 +146,62 @@ const CommandPalette: React.FC = () => {
       });
     });
 
+    // Construction Sites (Dự án)
+    hrmConstructionSites.forEach((site: any) => {
+      results.push({
+        id: `site-${site.id}`,
+        title: site.name,
+        subtitle: `${site.address || 'Công trình'} • ${site.status || ''}`,
+        category: 'Dự án',
+        icon: <HardHat size={16} />,
+        route: '/da',
+        keywords: `${site.name} ${site.address || ''} ${site.status || ''} du an cong trinh`,
+      });
+    });
+
+    // Assets (Tài sản)
+    assets.forEach((asset: any) => {
+      results.push({
+        id: `asset-${asset.id}`,
+        title: asset.name,
+        subtitle: `${asset.code || asset.serialNumber || ''} • ${asset.status || ''}`,
+        category: 'Tài sản',
+        icon: <Box size={16} />,
+        route: '/ts/catalog',
+        keywords: `${asset.name} ${asset.code || ''} ${asset.serialNumber || ''} ${asset.status || ''} tai san`,
+      });
+    });
+
+    // Workflow Instances
+    wfInstances.forEach((wf: any) => {
+      const statusMap: Record<string, string> = { RUNNING: 'Đang xử lý', COMPLETED: 'Hoàn thành', REJECTED: 'Từ chối', CANCELLED: 'Đã hủy' };
+      results.push({
+        id: `wf-${wf.id}`,
+        title: `${wf.code} — ${wf.title}`,
+        subtitle: statusMap[wf.status] || wf.status,
+        category: 'Quy trình',
+        icon: <GitBranch size={16} />,
+        route: '/wf',
+        keywords: `${wf.code} ${wf.title} ${wf.status} quy trinh workflow phieu`,
+      });
+    });
+
+    // Request Instances
+    rqRequests.forEach((rq: any) => {
+      const cat = rqCategories.find(c => c.id === rq.categoryId);
+      results.push({
+        id: `rq-${rq.id}`,
+        title: `${rq.code} — ${rq.title}`,
+        subtitle: `${cat?.name || 'Yêu cầu'} • ${rq.status}`,
+        category: 'Yêu cầu',
+        icon: <ClipboardCheck size={16} />,
+        route: '/yeu-cau',
+        keywords: `${rq.code} ${rq.title} ${rq.status} ${cat?.name || ''} yeu cau phieu`,
+      });
+    });
+
     return results;
-  }, [employees, items, transactions, requests, users, warehouses]);
+  }, [employees, items, transactions, appRequests, users, warehouses, hrmConstructionSites, assets, wfInstances, rqRequests, rqCategories]);
 
   // Filter results
   const filteredResults = useMemo(() => {

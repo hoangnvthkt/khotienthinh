@@ -4,6 +4,7 @@ import {
     MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor,
     PurchaseOrder, PaymentSchedule
 } from '../types';
+import { auditService } from './auditService';
 
 // ==================== HELPER ====================
 // snake_case ↔ camelCase mapping
@@ -31,18 +32,38 @@ export const contractService = {
         if (error) throw error;
         return (data || []).map(fromDb);
     },
-    async upsert(item: ProjectContract): Promise<void> {
+    async upsert(item: ProjectContract, audit?: { userId: string; userName: string; isNew?: boolean }): Promise<void> {
         const { error } = await supabase
             .from('project_contracts')
             .upsert(toDb(item), { onConflict: 'id' });
         if (error) throw error;
+        if (audit) {
+            auditService.log({
+                tableName: 'project_contracts',
+                recordId: item.id,
+                action: audit.isNew ? 'INSERT' : 'UPDATE',
+                newData: item as any,
+                userId: audit.userId,
+                userName: audit.userName,
+            });
+        }
     },
-    async remove(id: string): Promise<void> {
+    async remove(id: string, audit?: { userId: string; userName: string; oldData?: any }): Promise<void> {
         const { error } = await supabase
             .from('project_contracts')
             .delete()
             .eq('id', id);
         if (error) throw error;
+        if (audit) {
+            auditService.log({
+                tableName: 'project_contracts',
+                recordId: id,
+                action: 'DELETE',
+                oldData: audit.oldData,
+                userId: audit.userId,
+                userName: audit.userName,
+            });
+        }
     },
 };
 

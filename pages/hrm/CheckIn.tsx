@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
+import { useCelebration } from '../../components/Celebration';
 import {
   MapPin, Camera, CameraOff, Clock, CheckCircle, LogIn, LogOut,
-  AlertTriangle, Navigation, RefreshCw, Building2, HardHat
+  AlertTriangle, Navigation, RefreshCw, Building2, HardHat, Flame, Trophy, Star, Zap
 } from 'lucide-react';
 import { AttendanceStatus, AttendanceRecord } from '../../types';
+import { xpService } from '../../lib/xpService';
 
 // Haversine formula — khoảng cách 2 toạ độ (mét)
 const haversineDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -17,10 +19,168 @@ const haversineDistance = (lat1: number, lng1: number, lat2: number, lng2: numbe
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
+// ── Streak Calculator ──
+const calculateStreak = (records: AttendanceRecord[], employeeId: string): { currentStreak: number; longestStreak: number; totalDays: number; isMilestone: boolean } => {
+  // Get unique check-in dates for this employee, sorted descending
+  const dates = records
+    .filter(r => r.employeeId === employeeId && r.status === 'present' && r.checkIn)
+    .map(r => r.date)
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .sort((a, b) => b.localeCompare(a)); // newest first
+
+  if (dates.length === 0) return { currentStreak: 0, longestStreak: 0, totalDays: 0, isMilestone: false };
+
+  const totalDays = dates.length;
+
+  // Calculate current streak (consecutive days from today backwards)
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  
+  let currentStreak = 0;
+  let checkDate = new Date(today);
+  
+  // Start from today or yesterday
+  const hasTodayRecord = dates.includes(todayStr);
+  if (!hasTodayRecord) {
+    // Check if yesterday had a record
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+
+  while (true) {
+    const dateStr = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
+    // Skip weekends (Sat=6, Sun=0)
+    const day = checkDate.getDay();
+    if (day === 0 || day === 6) {
+      checkDate.setDate(checkDate.getDate() - 1);
+      continue;
+    }
+    if (dates.includes(dateStr)) {
+      currentStreak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+
+  // If we just checked in today, add it to the streak
+  if (hasTodayRecord && currentStreak === 0) currentStreak = 1;
+
+  // Calculate longest streak
+  let longestStreak = 0;
+  let tempStreak = 0;
+  const sortedAsc = [...dates].sort();
+  for (let i = 0; i < sortedAsc.length; i++) {
+    if (i === 0) { tempStreak = 1; }
+    else {
+      const prev = new Date(sortedAsc[i - 1]);
+      const curr = new Date(sortedAsc[i]);
+      const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
+      // Account for weekends (gap of 3 = Friday to Monday)
+      if (diffDays === 1 || diffDays === 3) tempStreak++;
+      else tempStreak = 1;
+    }
+    longestStreak = Math.max(longestStreak, tempStreak);
+  }
+
+  const MILESTONES = [3, 5, 7, 10, 14, 21, 30, 50, 60, 90, 100];
+  const isMilestone = MILESTONES.includes(currentStreak);
+
+  return { currentStreak, longestStreak, totalDays, isMilestone };
+};
+
+// ── Streak Badge Component ──
+const StreakBadge: React.FC<{ streak: number; longestStreak: number; totalDays: number; isMilestone: boolean }> = ({ streak, longestStreak, totalDays, isMilestone }) => {
+  if (streak === 0 && totalDays === 0) return null;
+
+  const getStreakTier = (s: number): { label: string; color: string; gradient: string; icon: React.ReactNode; emoji: string } => {
+    if (s >= 30) return { label: 'Huyền thoại', color: 'text-yellow-500', gradient: 'from-yellow-500 via-amber-500 to-orange-500', icon: <Trophy size={20} />, emoji: '👑' };
+    if (s >= 14) return { label: 'Siêu sao', color: 'text-purple-500', gradient: 'from-purple-500 via-pink-500 to-rose-500', icon: <Star size={20} />, emoji: '⭐' };
+    if (s >= 7)  return { label: 'Xuất sắc', color: 'text-orange-500', gradient: 'from-orange-500 to-red-500', icon: <Flame size={20} />, emoji: '🔥' };
+    if (s >= 3)  return { label: 'Tốt lắm!', color: 'text-emerald-500', gradient: 'from-emerald-500 to-teal-500', icon: <Zap size={20} />, emoji: '⚡' };
+    return { label: 'Bắt đầu', color: 'text-blue-500', gradient: 'from-blue-500 to-cyan-500', icon: <CheckCircle size={20} />, emoji: '✅' };
+  };
+
+  const tier = getStreakTier(streak);
+  const nextMilestones = [3, 5, 7, 10, 14, 21, 30, 50].filter(m => m > streak);
+  const nextMilestone = nextMilestones[0];
+  const progress = nextMilestone ? (streak / nextMilestone) * 100 : 100;
+
+  return (
+    <div className="glass-card rounded-2xl overflow-hidden">
+      {/* Streak Header */}
+      <div className={`relative bg-gradient-to-r ${tier.gradient} p-4 text-white`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center"
+              style={{ animation: streak >= 7 ? 'streakPulse 2s ease-in-out infinite' : undefined }}>
+              {tier.icon}
+            </div>
+            <div>
+              <p className="text-xs font-bold opacity-80 uppercase tracking-wider">Chuỗi Check-in</p>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-black">{streak}</span>
+                <span className="text-sm font-bold opacity-80">ngày</span>
+                <span className="text-lg">{tier.emoji}</span>
+              </div>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-xs font-bold opacity-70">{tier.label}</p>
+            {isMilestone && (
+              <span className="inline-block px-2 py-0.5 bg-white/25 rounded-full text-[10px] font-black mt-1"
+                style={{ animation: 'celebrationBounce 0.6s ease-out' }}>
+                🎉 MILESTONE!
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Progress to next milestone */}
+        {nextMilestone && (
+          <div className="mt-3">
+            <div className="flex justify-between text-[10px] font-bold opacity-70 mb-1">
+              <span>Tiến trình → {nextMilestone} ngày</span>
+              <span>{streak}/{nextMilestone}</span>
+            </div>
+            <div className="h-2 bg-white/20 rounded-full overflow-hidden">
+              <div className="h-full bg-white/60 rounded-full transition-all duration-700"
+                style={{ width: `${Math.min(progress, 100)}%` }} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-px bg-slate-100 dark:bg-slate-700">
+        <div className="bg-white dark:bg-slate-800 px-3 py-3 text-center">
+          <p className="text-lg font-black text-slate-800 dark:text-white">{streak}</p>
+          <p className="text-[9px] font-bold text-slate-400 uppercase">Hiện tại</p>
+        </div>
+        <div className="bg-white dark:bg-slate-800 px-3 py-3 text-center">
+          <p className="text-lg font-black text-amber-500">{longestStreak}</p>
+          <p className="text-[9px] font-bold text-slate-400 uppercase">Kỷ lục</p>
+        </div>
+        <div className="bg-white dark:bg-slate-800 px-3 py-3 text-center">
+          <p className="text-lg font-black text-blue-500">{totalDays}</p>
+          <p className="text-[9px] font-bold text-slate-400 uppercase">Tổng ngày</p>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes streakPulse {
+          0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,255,255,0.4); }
+          50% { transform: scale(1.05); box-shadow: 0 0 20px 5px rgba(255,255,255,0.2); }
+        }
+      `}</style>
+    </div>
+  );
+};
+
 const CheckIn: React.FC = () => {
   const { user, employees, attendanceRecords, hrmConstructionSites, hrmOffices, addHrmItem, updateHrmItem } = useApp();
   useModuleData('hrm');
   const { theme } = useTheme();
+  const { celebrate, showToast: celebrationToast } = useCelebration();
 
   // Find current employee
   const currentEmployee = useMemo(() => employees.find(e => e.userId === user.id), [employees, user.id]);
@@ -154,6 +314,12 @@ const CheckIn: React.FC = () => {
     return canvas.toDataURL('image/jpeg', 0.35); // Lower quality to reduce payload size for Supabase
   };
 
+  // ── Streak Calculation ──
+  const streakData = useMemo(() => {
+    if (!currentEmployee) return { currentStreak: 0, longestStreak: 0, totalDays: 0, isMilestone: false };
+    return calculateStreak(attendanceRecords, currentEmployee.id);
+  }, [attendanceRecords, currentEmployee]);
+
   // Check-in
   const handleCheckIn = async () => {
     if (!currentEmployee || !selectedLocation) return;
@@ -162,6 +328,7 @@ const CheckIn: React.FC = () => {
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
+    let success = false;
     if (todayRecord) {
       // Already have record — update check-in
       try {
@@ -177,7 +344,7 @@ const CheckIn: React.FC = () => {
           locationType: selectedLocation.type,
           isOutOfRange: isInRange === false,
         });
-        setLastAction(`✅ Check-in lúc ${timeStr}`);
+        success = true;
       } catch (err) {
         setLastAction(`⚠️ Check-in cục bộ OK, nhưng lỗi đồng bộ Supabase`);
       }
@@ -198,9 +365,45 @@ const CheckIn: React.FC = () => {
           isOutOfRange: isInRange === false,
           createdAt: new Date().toISOString(),
         } as AttendanceRecord);
-        setLastAction(`✅ Check-in lúc ${timeStr}`);
+        success = true;
       } catch (err) {
         setLastAction(`⚠️ Check-in cục bộ OK, nhưng lỗi đồng bộ Supabase`);
+      }
+    }
+
+    if (success) {
+      setLastAction(`✅ Check-in lúc ${timeStr}`);
+      // 🎮 XP: Award for daily check-in
+      if (currentEmployee?.id) xpService.awardXP(currentEmployee.id, 'daily_checkin').catch(() => {});
+      const newStreak = streakData.currentStreak + (todayRecord ? 0 : 1);
+      const MILESTONES = [3, 5, 7, 10, 14, 21, 30, 50, 60, 90, 100];
+      const hitMilestone = MILESTONES.includes(newStreak);
+
+      if (hitMilestone) {
+        // 🏆 Milestone celebration with confetti!
+        celebrate({
+          variant: newStreak >= 30 ? 'milestone' : 'streak',
+          title: `🔥 Chuỗi ${newStreak} ngày liên tiếp!`,
+          subtitle: newStreak >= 30 ? '👑 Bạn là Huyền thoại!' : newStreak >= 7 ? '⭐ Xuất sắc! Tiếp tục nhé!' : '⚡ Tốt lắm! Giữ vững nhé!',
+          confetti: true,
+          duration: 3000,
+        });
+      } else if (newStreak >= 2) {
+        // 🔥 Streak toast
+        celebrationToast({
+          type: 'success',
+          title: `🔥 Chuỗi ${newStreak} ngày!`,
+          message: `Check-in thành công lúc ${timeStr}`,
+        });
+      } else {
+        // ✅ Normal check-in celebration
+        celebrate({
+          variant: 'checkin',
+          title: '📍 Check-in Thành Công!',
+          subtitle: `${timeStr} • ${selectedLocation.name.replace(/^[🏗️🏢]\s*/, '')}`,
+          confetti: false,
+          duration: 1800,
+        });
       }
     }
 
@@ -224,6 +427,20 @@ const CheckIn: React.FC = () => {
         checkOutLng: gpsLng ?? undefined,
       });
       setLastAction(`✅ Check-out lúc ${timeStr}`);
+
+      // Calculate working hours
+      if (todayRecord.checkIn) {
+        const [inH, inM] = todayRecord.checkIn.split(':').map(Number);
+        const [outH, outM] = timeStr.split(':').map(Number);
+        const totalMinutes = (outH * 60 + outM) - (inH * 60 + inM);
+        const hours = Math.floor(totalMinutes / 60);
+        const mins = totalMinutes % 60;
+        celebrationToast({
+          type: 'success',
+          title: '✅ Check-out Thành Công!',
+          message: `Hôm nay: ${hours}h${mins > 0 ? ` ${mins}p` : ''} làm việc. Nghỉ ngơi nhé! 🌙`,
+        });
+      }
     } catch (err) {
       setLastAction(`⚠️ Check-out cục bộ OK, nhưng lỗi đồng bộ`);
     }
@@ -262,6 +479,14 @@ const CheckIn: React.FC = () => {
         </div>
         <p className="text-xs text-slate-400">{currentTime.toLocaleDateString('vi-VN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
       </div>
+
+      {/* 🔥 Streak Badge */}
+      <StreakBadge 
+        streak={streakData.currentStreak} 
+        longestStreak={streakData.longestStreak}
+        totalDays={streakData.totalDays}
+        isMilestone={streakData.isMilestone}
+      />
 
       {/* Location Selector */}
       <div className="glass-card p-4 rounded-2xl">

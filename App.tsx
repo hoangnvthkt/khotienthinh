@@ -10,6 +10,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { WorkflowProvider } from './context/WorkflowContext';
 import { ChatProvider } from './context/ChatContext';
 import { RequestProvider } from './context/RequestContext';
+import { CelebrationProvider } from './components/Celebration';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Role } from './types';
 
@@ -63,6 +64,12 @@ const AiReports = React.lazy(() => import('./pages/AiReports'));
 
 // Knowledge Base
 const KnowledgeBase = React.lazy(() => import('./pages/KnowledgeBase'));
+
+// Audit Trail
+const AuditTrail = React.lazy(() => import('./pages/AuditTrail'));
+
+// Custom Dashboard
+const CustomDashboard = React.lazy(() => import('./pages/CustomDashboard'));
 
 // Request pages
 const RequestCategories = React.lazy(() => import('./pages/request/RequestCategories'));
@@ -141,10 +148,11 @@ const AppRoutes: React.FC = () => {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<ProtectedRoute><SubModuleGuard><Layout /></SubModuleGuard></ProtectedRoute>}>
-          <Route index element={<LandingPage />} />
+          <Route index element={<CustomDashboard />} />
           <Route path="my-profile" element={<MyProfile />} />
           <Route path="employee-dashboard" element={<EmployeeDashboard />} />
-          <Route path="dashboard" element={<EmployeeDashboard />} />
+          <Route path="custom-dashboard" element={<CustomDashboard />} />
+          <Route path="dashboard" element={<Dashboard />} />
           <Route path="requests" element={<RequestWorkflow />} />
           <Route path="inventory" element={<Inventory />} />
           <Route path="operations" element={<Operations />} />
@@ -177,6 +185,7 @@ const AppRoutes: React.FC = () => {
           <Route path="ai/executive" element={<ExecutiveAI />} />
           <Route path="ai/reports" element={<AiReports />} />
           <Route path="knowledge-base" element={<KnowledgeBase />} />
+          <Route path="audit-trail" element={<AuditTrail />} />
           <Route path="rq" element={<RequestList />} />
           <Route path="rq/dashboard" element={<RequestDashboard />} />
           <Route path="rq/categories" element={<RequestCategories />} />
@@ -205,9 +214,11 @@ const App: React.FC = () => {
             <WorkflowProvider>
               <RequestProvider>
                 <ChatProvider>
-                  <Router>
-                    <AppRoutes />
-                  </Router>
+                  <CelebrationProvider>
+                    <Router>
+                      <AppRoutes />
+                    </Router>
+                  </CelebrationProvider>
                 </ChatProvider>
               </RequestProvider>
             </WorkflowProvider>

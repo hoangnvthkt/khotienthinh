@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import AiInsightPanel from '../../components/AiInsightPanel';
 import {
     Plus, Edit2, Trash2, X, Save, Truck, Star, Phone, Mail, MapPin,
     FileText, CheckCircle2, Clock, Ban, Send, Package, ChevronDown,
@@ -149,6 +150,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
 
     return (
         <div className="space-y-6">
+            {/* AI Analysis */}
+            <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-slate-700 dark:text-white">Cung ứng vật tư</h3>
+                <AiInsightPanel module="supplychain" siteId={constructionSiteId} />
+            </div>
             {/* KPI */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">

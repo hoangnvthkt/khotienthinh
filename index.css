@@ -231,3 +231,172 @@ h1, h2, h3, h4, h5, h6, p, span, div, td, th {
 body, .glass-panel, .glass-card, input, select, textarea, button, a {
   transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
 }
+
+/* ============================
+   MICRO-INTERACTIONS SYSTEM
+   ============================ */
+
+/* Button press effect — all buttons get subtle scale-down on active */
+button:not(:disabled),
+[role="button"]:not(:disabled) {
+  transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1), 
+              box-shadow 0.2s ease,
+              background-color 0.2s ease,
+              color 0.2s ease,
+              border-color 0.2s ease,
+              opacity 0.2s ease;
+}
+
+button:not(:disabled):active,
+[role="button"]:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+/* Card hover lift — interactive cards get subtle elevation on hover */
+.hover-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px -5px rgba(0,0,0,0.1), 0 4px 10px -5px rgba(0,0,0,0.04);
+}
+
+/* Glow on hover for primary action buttons */
+.glow-hover {
+  transition: box-shadow 0.3s ease, transform 0.15s ease;
+}
+.glow-hover:hover {
+  box-shadow: 0 0 20px -4px currentColor;
+}
+
+/* Smooth fade-in for content sections */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.35s ease-out both;
+}
+
+/* Staggered fade for list items */
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }
+
+/* Pulse ring for notification badges */
+@keyframes pulseRing {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+  70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+.pulse-ring {
+  animation: pulseRing 2s infinite;
+}
+
+/* Success checkmark animation */
+@keyframes successPop {
+  0% { transform: scale(0) rotate(-45deg); opacity: 0; }
+  50% { transform: scale(1.2) rotate(5deg); }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+.animate-success-pop {
+  animation: successPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Row highlight animation for newly added items */
+@keyframes highlightRow {
+  0% { background-color: rgba(79, 70, 229, 0.15); }
+  100% { background-color: transparent; }
+}
+.animate-highlight-row {
+  animation: highlightRow 1.5s ease-out;
+}
+
+/* Shake animation for error states */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-4px); }
+  40%, 80% { transform: translateX(4px); }
+}
+.animate-shake {
+  animation: shake 0.4s ease;
+}
+
+/* Counter increment animation */
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-count-up {
+  animation: countUp 0.3s ease-out both;
+}
+
+/* Smooth expand/collapse for panels */
+@keyframes expandIn {
+  from { max-height: 0; opacity: 0; }
+  to { max-height: 1000px; opacity: 1; }
+}
+.animate-expand {
+  animation: expandIn 0.3s ease-out;
+  overflow: hidden;
+}
+
+/* Table row interactive states */
+table tbody tr {
+  transition: background-color 0.15s ease;
+}
+
+/* Input focus glow */
+input:focus, select:focus, textarea:focus {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+/* Skeleton loading shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+.dark .skeleton-shimmer {
+  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+  background-size: 200% 100%;
+}
+
+/* Tooltip fade */
+@keyframes tooltipFade {
+  from { opacity: 0; transform: translateY(4px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-tooltip {
+  animation: tooltipFade 0.15s ease-out;
+}
+
+/* Progress bar animation */
+@keyframes progressGrow {
+  from { width: 0%; }
+}
+.animate-progress {
+  animation: progressGrow 0.8s ease-out;
+}
+
+/* Badge bounce for new notifications */
+@keyframes badgeBounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+.animate-badge-bounce {
+  animation: badgeBounce 0.3s ease;
+}
+
+/* Disabled state */
+button:disabled, [role="button"][aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}

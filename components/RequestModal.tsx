@@ -10,9 +10,10 @@ interface RequestModalProps {
     isOpen: boolean;
     onClose: () => void;
     request?: MaterialRequest;
+    defaultSiteWarehouseId?: string; // Pre-fill when opened from Project module
 }
 
-const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request }) => {
+const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, defaultSiteWarehouseId }) => {
     const { items, warehouses, user, users, addRequest, updateRequestStatus } = useApp();
     const [step, setStep] = useState<'CREATE' | 'APPROVE' | 'VIEW'>('CREATE');
     const [showApprovalPanel, setShowApprovalPanel] = useState(false);
@@ -44,7 +45,7 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request })
                 setApprovedItems(request.items.map(i => ({ itemId: i.itemId, qty: i.approvedQty })));
             } else {
                 setStep('CREATE');
-                setSiteWarehouseId(user.assignedWarehouseId || '');
+                setSiteWarehouseId(defaultSiteWarehouseId || user.assignedWarehouseId || '');
                 setSourceWarehouseId('');
                 setNote('');
                 setReqItems([]);
@@ -154,8 +155,8 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request })
     const requester = users.find(u => u.id === (request?.requesterId || user.id));
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl flex flex-col max-h-[95vh] overflow-hidden relative">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
+            <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-full lg:max-w-5xl shadow-2xl flex flex-col max-h-[95vh] sm:max-h-[95vh] overflow-hidden relative">
 
                 {/* Decision Overlay */}
                 {showApprovalPanel && (
@@ -288,7 +289,8 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request })
                         </div>
                     </div>
 
-                    <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                    {/* Desktop table view */}
+                    <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden hidden md:block">
                         <table className="w-full text-left text-sm">
                             <thead className="bg-slate-100 text-slate-500 font-bold border-b border-slate-200">
                                 <tr>
@@ -372,6 +374,76 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request })
                         {isEditable && (
                             <button onClick={handleAddItem} className="w-full py-4 text-accent font-bold hover:bg-slate-50 transition-colors border-t border-dashed border-slate-200 flex items-center justify-center">
                                 <Plus size={16} className="mr-2" /> Thêm vật tư vào đề xuất
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Mobile card view */}
+                    <div className="md:hidden space-y-2">
+                        {(isEditable ? reqItems : (request?.items || [])).map((row, idx) => {
+                            const itemId = row.itemId;
+                            const requestQty = isEditable ? row.qty : row.requestQty;
+                            const itemInfo = items.find(i => i.id === itemId);
+                            const sourceStock = itemInfo?.stockByWarehouse[sourceWarehouseId] || 0;
+                            const isExcess = !isEditable && (approvedItems.find(ai => ai.itemId === itemId)?.qty || 0) > requestQty;
+
+                            return (
+                                <div key={idx} className={`bg-white rounded-xl p-3 border ${isExcess ? 'border-orange-200 bg-orange-50/50' : 'border-slate-200'} shadow-sm`}>
+                                    <div className="flex items-start justify-between mb-2">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="font-bold text-sm text-slate-800 truncate">{itemInfo?.name}</div>
+                                            <div className="text-[10px] font-mono text-slate-400">{itemInfo?.sku} • {itemInfo?.unit || '-'}</div>
+                                        </div>
+                                        {isEditable && (
+                                            <button onClick={() => setReqItems(reqItems.filter((_, i) => i !== idx))} className="p-1.5 text-red-400 hover:text-red-600 shrink-0">
+                                                <Trash2 size={16} />
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex-1">
+                                            <div className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">SL yêu cầu</div>
+                                            {isEditable ? (
+                                                <input
+                                                    type="number" min="1"
+                                                    value={requestQty}
+                                                    onChange={(e) => handleUpdateItem(idx, 'qty', e.target.value)}
+                                                    className="w-full text-center p-2 border border-slate-200 rounded-lg font-bold text-sm"
+                                                />
+                                            ) : (
+                                                <div className="font-bold text-slate-700 text-sm">{requestQty}</div>
+                                            )}
+                                        </div>
+                                        {!isEditable && (
+                                            <>
+                                                <div className="flex-1">
+                                                    <div className="text-[9px] uppercase font-bold text-blue-400 mb-0.5">Tồn kho</div>
+                                                    <div className="font-bold text-blue-600 text-sm">{sourceStock.toLocaleString()}</div>
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className="text-[9px] uppercase font-bold text-emerald-400 mb-0.5">Duyệt</div>
+                                                    {isApproving ? (
+                                                        <input
+                                                            type="number" min="0" max={sourceStock}
+                                                            value={approvedItems.find(i => i.itemId === itemId)?.qty || 0}
+                                                            onChange={(e) => handleUpdateApprovedItem(itemId, Number(e.target.value))}
+                                                            className={`w-full text-center p-2 border rounded-lg font-bold text-sm ${isExcess ? 'border-orange-400 text-orange-700' : 'border-emerald-200 text-emerald-700'}`}
+                                                        />
+                                                    ) : (
+                                                        <div className={`font-bold text-sm ${isExcess ? 'text-orange-600' : 'text-emerald-700'}`}>
+                                                            {row.approvedQty || 0}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {isEditable && (
+                            <button onClick={handleAddItem} className="w-full py-3 text-accent font-bold rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center active:scale-95 transition-all">
+                                <Plus size={16} className="mr-2" /> Thêm vật tư
                             </button>
                         )}
                     </div>

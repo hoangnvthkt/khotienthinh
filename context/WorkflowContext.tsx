@@ -7,6 +7,9 @@ import {
     WorkflowInstanceStatus, WorkflowInstanceAction, WorkflowNodeType,
     WorkflowCustomField
 } from '../types';
+import { notificationService } from '../lib/notificationService';
+import { auditService } from '../lib/auditService';
+import { xpService } from '../lib/xpService';
 
 interface WorkflowContextType {
     templates: WorkflowTemplate[];
@@ -285,6 +288,42 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         });
 
         await refreshData();
+
+        // 📝 Audit trail: new workflow instance created
+        auditService.log({
+            tableName: 'workflow_instances',
+            recordId: data.id,
+            action: 'INSERT',
+            newData: { id: data.id, code, title, templateId, status: 'RUNNING', formData },
+            userId,
+            userName: userId,
+            description: `Tạo phiếu quy trình: ${title} (${code})`,
+        });
+
+        // 🎮 XP: Award for creating workflow
+        xpService.awardXP(userId, 'create_workflow').catch(() => {});
+
+        // 🔔 Notify assignees when new WF instance is created
+        if (data && firstTaskNodeId) {
+            const firstNode = templateNodes.find(n => n.id === firstTaskNodeId);
+            const assigneeUserId = firstNode?.config?.assigneeUserId;
+            if (assigneeUserId && assigneeUserId !== userId) {
+                notificationService.create({
+                    userId: assigneeUserId,
+                    type: 'info',
+                    category: 'system',
+                    title: '📋 Phiếu quy trình mới cần xử lý',
+                    message: `"${title}" (${code}) — Bạn cần duyệt bước "${firstNode?.label || ''}"`,
+                    severity: 'info',
+                    icon: '📋',
+                    link: '/wf',
+                    sourceType: 'workflow',
+                    sourceId: `wf_new_${data.id}`,
+                    metadata: { instanceId: data.id, templateId },
+                });
+            }
+        }
+
         return mapInstanceFromDB(data);
     };
 
@@ -371,6 +410,90 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
 
         await refreshData();
+
+        // 📝 Audit trail: workflow status change
+        const actionLabels: Record<string, string> = {
+            APPROVED: 'Duyệt',
+            REJECTED: 'Từ chối',
+            REVISION_REQUESTED: 'Yêu cầu chỉnh sửa',
+        };
+        auditService.log({
+            tableName: 'workflow_instances',
+            recordId: instanceId,
+            action: 'UPDATE',
+            oldData: { status: freshInstance.status, current_node_id: freshInstance.current_node_id },
+            newData: { status: action === 'REJECTED' ? 'REJECTED' : freshInstance.status, action, comment },
+            userId,
+            userName: userId,
+            description: `${actionLabels[action] || action} phiếu "${freshInstance.title || ''}" (${freshInstance.code || ''})`,
+        });
+
+        // 🎮 XP: Award for approving workflow
+        if (action === 'APPROVED') {
+            xpService.awardXP(userId, 'approve_workflow').catch(() => {});
+        }
+
+        // 🔔 Push notifications for workflow actions
+        try {
+            const inst = mapInstanceFromDB(freshInstance);
+            if (action === WorkflowInstanceAction.APPROVED) {
+                // Notify the creator
+                if (inst.createdBy && inst.createdBy !== userId) {
+                    notificationService.create({
+                        userId: inst.createdBy,
+                        type: 'success',
+                        category: 'system',
+                        title: '✅ Phiếu quy trình được duyệt',
+                        message: `"${inst.title}" (${inst.code}) đã được duyệt`,
+                        severity: 'info',
+                        icon: '✅',
+                        link: '/wf',
+                        sourceType: 'workflow',
+                        sourceId: `wf_approved_${instanceId}_${Date.now()}`,
+                        metadata: { instanceId },
+                    });
+                }
+                // Notify next approver if workflow is still running
+                const nextEdge = templateEdges.find(e => e.sourceNodeId === currentNodeId);
+                if (nextEdge) {
+                    const nextNode = templateNodes.find(n => n.id === nextEdge.targetNodeId);
+                    if (nextNode && nextNode.type !== WorkflowNodeType.END) {
+                        const nextAssignee = nextNode.config?.assigneeUserId;
+                        if (nextAssignee && nextAssignee !== userId) {
+                            notificationService.create({
+                                userId: nextAssignee,
+                                type: 'info',
+                                category: 'system',
+                                title: '📋 Phiếu quy trình cần duyệt',
+                                message: `"${inst.title}" (${inst.code}) — Bạn cần duyệt bước "${nextNode.label}"`,
+                                severity: 'info',
+                                icon: '📋',
+                                link: '/wf',
+                                sourceType: 'workflow',
+                                sourceId: `wf_next_${instanceId}_${Date.now()}`,
+                                metadata: { instanceId },
+                            });
+                        }
+                    }
+                }
+            } else if (action === WorkflowInstanceAction.REJECTED) {
+                if (inst.createdBy && inst.createdBy !== userId) {
+                    notificationService.create({
+                        userId: inst.createdBy,
+                        type: 'error',
+                        category: 'system',
+                        title: '❌ Phiếu quy trình bị từ chối',
+                        message: `"${inst.title}" (${inst.code}) đã bị từ chối${comment ? ': ' + comment : ''}`,
+                        severity: 'warning',
+                        icon: '❌',
+                        link: '/wf',
+                        sourceType: 'workflow',
+                        sourceId: `wf_rejected_${instanceId}_${Date.now()}`,
+                        metadata: { instanceId },
+                    });
+                }
+            }
+        } catch (err) { console.error('WF notification error:', err); }
     };
 
     const getInstanceLogs = (instanceId: string) => logs.filter(l => l.instanceId === instanceId);
