@@ -8,7 +8,7 @@ import {
     ArrowRight, User, FileText, Filter, X, ChevronDown, ChevronUp,
     Send, Eye, Trash2, Ban, MessageSquare, PlayCircle, Edit2, Save,
     Upload, Paperclip, Download, Table2, FileSpreadsheet, Zap, AlertTriangle, Shield,
-    LayoutGrid, List as ListIcon, GripVertical, Printer
+    LayoutGrid, List as ListIcon, GripVertical, Printer, CheckSquare, Square, Loader2
 } from 'lucide-react';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
@@ -129,6 +129,11 @@ const RequestList: React.FC = () => {
     const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
     const [boardSelectedId, setBoardSelectedId] = useState<string | null>(null);
 
+    // Batch operations
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [batchProcessing, setBatchProcessing] = useState(false);
+    const [showBatchConfirm, setShowBatchConfirm] = useState<'approve' | 'reject' | null>(null);
+
     // Create form
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [selectedCategoryId, setSelectedCategoryId] = useState('');
@@ -241,6 +246,47 @@ const RequestList: React.FC = () => {
         setCancelConfirmId(null);
         if (ok) showToast('success', 'Đã hủy phiếu!');
         else showToast('error', 'Hủy phiếu thất bại');
+    };
+
+    // ==================== BATCH OPERATIONS ====================
+    const toggleSelect = (id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        const approvable = filteredRequests.filter(r => canApprove(r));
+        if (selectedIds.size === approvable.length && approvable.length > 0) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(approvable.map(r => r.id)));
+        }
+    };
+
+    const handleBatchAction = async (action: 'approve' | 'reject') => {
+        setBatchProcessing(true);
+        setShowBatchConfirm(null);
+        let success = 0, fail = 0;
+        const ids = Array.from(selectedIds);
+        for (const id of ids) {
+            const actionFn = action === 'approve' ? approveRequest : rejectRequest;
+            const ok = await actionFn(id, user.id, action === 'approve' ? 'Duyệt hàng loạt' : 'Từ chối hàng loạt');
+            if (ok) success++; else fail++;
+        }
+        setBatchProcessing(false);
+        setSelectedIds(new Set());
+        if (success > 0) {
+            celebrate({
+                variant: action === 'approve' ? 'approve' : 'complete',
+                title: action === 'approve' ? `✅ Đã duyệt ${success} phiếu!` : `❌ Đã từ chối ${success} phiếu`,
+                subtitle: fail > 0 ? `${fail} phiếu thất bại` : '',
+                confetti: action === 'approve',
+            });
+        }
+        if (fail > 0 && success === 0) showToast('error', 'Thao tác thất bại');
     };
 
     const addApprover = (userId: string) => {
@@ -629,6 +675,64 @@ const RequestList: React.FC = () => {
                 );
             })()}
 
+            {/* ==================== BATCH TOOLBAR ==================== */}
+            {activeTab === 'pending' && filteredRequests.filter(r => canApprove(r)).length > 0 && (
+                <div className="glass-card rounded-xl p-3 flex items-center gap-3 flex-wrap">
+                    <button onClick={toggleSelectAll}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition">
+                        {selectedIds.size > 0 && selectedIds.size === filteredRequests.filter(r => canApprove(r)).length
+                            ? <CheckSquare size={14} className="text-indigo-500" />
+                            : <Square size={14} />}
+                        {selectedIds.size > 0 ? `Đã chọn ${selectedIds.size}` : 'Chọn tất cả'}
+                    </button>
+                    {selectedIds.size > 0 && (
+                        <>
+                            <button onClick={() => setShowBatchConfirm('approve')} disabled={batchProcessing}
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-black bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/20 transition disabled:opacity-50">
+                                {batchProcessing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                                Duyệt {selectedIds.size} phiếu
+                            </button>
+                            <button onClick={() => setShowBatchConfirm('reject')} disabled={batchProcessing}
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-black bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-500/20 transition disabled:opacity-50">
+                                <XCircle size={14} /> Từ chối {selectedIds.size}
+                            </button>
+                            <button onClick={() => setSelectedIds(new Set())}
+                                className="px-3 py-2 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition">
+                                Bỏ chọn
+                            </button>
+                        </>
+                    )}
+                </div>
+            )}
+
+            {/* Batch Confirm Modal */}
+            {showBatchConfirm && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowBatchConfirm(null)}>
+                    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-lg font-black text-slate-800 dark:text-white mb-2">
+                            {showBatchConfirm === 'approve' ? '✅ Xác nhận duyệt hàng loạt' : '❌ Xác nhận từ chối hàng loạt'}
+                        </h3>
+                        <p className="text-sm text-slate-500 mb-4">
+                            Bạn sắp {showBatchConfirm === 'approve' ? 'duyệt' : 'từ chối'} <strong>{selectedIds.size}</strong> phiếu yêu cầu. Thao tác này không thể hoàn tác.
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <button onClick={() => setShowBatchConfirm(null)}
+                                className="px-4 py-2 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition">
+                                Hủy
+                            </button>
+                            <button onClick={() => handleBatchAction(showBatchConfirm)}
+                                className={`px-5 py-2 rounded-xl text-sm font-black text-white shadow-lg transition ${
+                                    showBatchConfirm === 'approve'
+                                        ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'
+                                        : 'bg-red-500 hover:bg-red-600 shadow-red-500/20'
+                                }`}>
+                                {showBatchConfirm === 'approve' ? 'Duyệt tất cả' : 'Từ chối tất cả'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Request Cards (List View) */}
             {viewMode === 'list' && <div className="space-y-3">
                 {filteredRequests.map(req => {
@@ -640,9 +744,18 @@ const RequestList: React.FC = () => {
                     const reqLogs = getRequestLogs(req.id);
 
                     return (
-                        <div key={req.id} className="glass-card rounded-2xl overflow-hidden transition-all hover:shadow-md">
+                        <div key={req.id} className={`glass-card rounded-2xl overflow-hidden transition-all hover:shadow-md ${selectedIds.has(req.id) ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}`}>
                             {/* Card Header */}
                             <div className="flex items-center gap-4 px-5 py-4 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : req.id)}>
+                                {/* Batch Checkbox */}
+                                {activeTab === 'pending' && canApprove(req) && (
+                                    <button onClick={(e) => { e.stopPropagation(); toggleSelect(req.id); }}
+                                        className="shrink-0 p-0.5 rounded transition hover:bg-slate-100 dark:hover:bg-slate-700">
+                                        {selectedIds.has(req.id)
+                                            ? <CheckSquare size={18} className="text-indigo-500" />
+                                            : <Square size={18} className="text-slate-300 dark:text-slate-600" />}
+                                    </button>
+                                )}
                                 <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${cat?.color || 'from-slate-400 to-slate-600'} flex items-center justify-center text-white shadow-sm shrink-0`}>
                                     <Inbox size={18} />
                                 </div>
