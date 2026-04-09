@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import AiInsightPanel from '../../components/AiInsightPanel';
-import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff } from 'lucide-react';
 import { DailyLog, WeatherType } from '../../types';
 import { dailyLogService } from '../../lib/projectService';
+import { useVoiceInput } from '../../hooks/useVoiceInput';
 
 interface DailyLogTabProps {
     constructionSiteId: string;
@@ -13,6 +14,53 @@ const WEATHER: Record<WeatherType, { label: string; icon: React.ReactNode; emoji
     cloudy: { label: 'Mây', icon: <Cloud size={14} />, emoji: '⛅' },
     rainy: { label: 'Mưa', icon: <CloudRain size={14} />, emoji: '🌧️' },
     storm: { label: 'Bão', icon: <CloudLightning size={14} />, emoji: '⛈️' },
+};
+
+// Voice-enabled Textarea component
+const VoiceTextarea: React.FC<{
+    value: string;
+    onChange: (val: string) => void;
+    rows?: number;
+    placeholder?: string;
+    className?: string;
+}> = ({ value, onChange, rows = 3, placeholder, className }) => {
+    const { isListening, isSupported, interimTranscript, toggleListening, resetTranscript } = useVoiceInput({
+        onResult: (text) => {
+            onChange((value ? value + ' ' : '') + text);
+            resetTranscript();
+        },
+    });
+
+    return (
+        <div className="relative">
+            <textarea
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                rows={rows}
+                placeholder={placeholder}
+                className={className}
+            />
+            {isListening && interimTranscript && (
+                <div className="absolute bottom-1 left-3 right-10 text-[10px] text-teal-500 italic truncate pointer-events-none">
+                    🎙️ {interimTranscript}
+                </div>
+            )}
+            {isSupported && (
+                <button
+                    type="button"
+                    onClick={toggleListening}
+                    className={`absolute top-2 right-2 w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                        isListening
+                            ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 animate-pulse'
+                            : 'bg-slate-100 text-slate-400 hover:bg-teal-50 hover:text-teal-600'
+                    }`}
+                    title={isListening ? 'Dừng ghi âm' : 'Voice input (tiếng Việt)'}
+                >
+                    {isListening ? <MicOff size={14} /> : <Mic size={14} />}
+                </button>
+            )}
+        </div>
+    );
 };
 
 const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
@@ -219,13 +267,23 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
                             </div>
                             <div>
                                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nội dung công việc</label>
-                                <textarea value={fDesc} onChange={e => setFDesc(e.target.value)} rows={3} placeholder="Mô tả công việc đã thực hiện trong ngày..."
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-teal-500 outline-none resize-none" />
+                                <VoiceTextarea
+                                    value={fDesc}
+                                    onChange={setFDesc}
+                                    rows={3}
+                                    placeholder="Mô tả công việc đã thực hiện trong ngày... (nhấn 🎤 để voice input)"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-teal-500 outline-none resize-none"
+                                />
                             </div>
                             <div>
                                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 flex items-center gap-1"><AlertTriangle size={10} className="text-red-400" /> Vấn đề / Sự cố</label>
-                                <textarea value={fIssues} onChange={e => setFIssues(e.target.value)} rows={2} placeholder="Ghi lại vấn đề, sự cố nếu có..."
-                                    className="w-full px-3 py-2.5 rounded-xl border border-red-100 bg-red-50/30 text-sm focus:ring-2 focus:ring-red-400 outline-none resize-none" />
+                                <VoiceTextarea
+                                    value={fIssues}
+                                    onChange={setFIssues}
+                                    rows={2}
+                                    placeholder="Ghi lại vấn đề, sự cố nếu có... (nhấn 🎤 để voice input)"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-red-100 bg-red-50/30 text-sm focus:ring-2 focus:ring-red-400 outline-none resize-none"
+                                />
                             </div>
                         </div>
                         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">

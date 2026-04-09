@@ -11,7 +11,8 @@ export type WidgetType =
   | 'alert_list' 
   | 'activity_feed'
   | 'ai_insight'
-  | 'xp_leaderboard';
+  | 'xp_leaderboard'
+  | 'smart_alerts';
 
 export interface WidgetConfig {
   id: string;
@@ -60,6 +61,7 @@ export const WIDGET_CATALOG: WidgetCatalogItem[] = [
   { type: 'activity_feed', label: 'Hoạt động', icon: '📰', description: 'Feed hoạt động gần đây', defaultColSpan: 1, defaultRowSpan: 2, category: 'data' },
   { type: 'ai_insight', label: 'AI Insight', icon: '🤖', description: 'Phân tích thông minh từ AI', defaultColSpan: 2, defaultRowSpan: 1, category: 'ai' },
   { type: 'xp_leaderboard', label: 'Bảng xếp hạng XP', icon: '🏆', description: 'Top nhân viên XP cao nhất', defaultColSpan: 2, defaultRowSpan: 2, category: 'data' },
+  { type: 'smart_alerts', label: 'Cảnh báo thông minh', icon: '🚨', description: 'Tự động quét & cảnh báo bất thường', defaultColSpan: 2, defaultRowSpan: 2, category: 'data' },
 ];
 
 // ═════════ KPI Metrics Catalog ═════════

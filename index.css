@@ -400,3 +400,12 @@ button:disabled, [role="button"][aria-disabled="true"] {
   cursor: not-allowed;
   transform: none !important;
 }
+
+/* Slide-up animation for banners (offline indicator) */
+@keyframes slideUp {
+  from { opacity: 0; transform: translate(-50%, 20px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out both;
+}

@@ -68,6 +68,9 @@ const KnowledgeBase = React.lazy(() => import('./pages/KnowledgeBase'));
 // Audit Trail
 const AuditTrail = React.lazy(() => import('./pages/AuditTrail'));
 
+// Predictive Analytics
+const PredictiveAnalytics = React.lazy(() => import('./pages/PredictiveAnalytics'));
+
 // Custom Dashboard
 const CustomDashboard = React.lazy(() => import('./pages/CustomDashboard'));
 
@@ -186,6 +189,7 @@ const AppRoutes: React.FC = () => {
           <Route path="ai/reports" element={<AiReports />} />
           <Route path="knowledge-base" element={<KnowledgeBase />} />
           <Route path="audit-trail" element={<AuditTrail />} />
+          <Route path="analytics" element={<PredictiveAnalytics />} />
           <Route path="rq" element={<RequestList />} />
           <Route path="rq/dashboard" element={<RequestDashboard />} />
           <Route path="rq/categories" element={<RequestCategories />} />

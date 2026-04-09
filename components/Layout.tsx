@@ -7,8 +7,10 @@ import QuickActionFab from './QuickActionFab';
 import BottomNav from './BottomNav';
 import NotificationCenter from './NotificationCenter';
 import PWAInstallPrompt from './PWAInstallPrompt';
+import OfflineIndicator from './OfflineIndicator';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
+import { useOfflineSync } from '../hooks/useOfflineSync';
 import { RefreshCw, Menu, AlertTriangle, ExternalLink, Bell, X, Moon, Sun, Package } from 'lucide-react';
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 phút
@@ -25,6 +27,7 @@ const Layout: React.FC = () => {
 
   const { isRefreshing, appSettings, isLoading, connectionError, logout, items, user } = useApp();
   const { isDark, toggleTheme } = useTheme();
+  const { isOnline, isSyncing, pendingCount, syncNow } = useOfflineSync();
   const navigate = useNavigate();
 
   const lastActivityRef = useRef<number>(Date.now());
@@ -328,6 +331,7 @@ const Layout: React.FC = () => {
         <PWAInstallPrompt />
       </div>
       <QuickActionFab />
+      <OfflineIndicator isOnline={isOnline} isSyncing={isSyncing} pendingCount={pendingCount} onSync={syncNow} />
     </div>
   );
 };

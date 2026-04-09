@@ -15,6 +15,7 @@ import {
 import { WidgetConfig, WidgetType, WIDGET_CATALOG, KPI_METRICS, CHART_DATA_SOURCES, DEFAULT_LAYOUT, DashboardLayout } from '../lib/widgetRegistry';
 import { dashboardService } from '../lib/dashboardService';
 import { xpService, UserXP, LEVELS } from '../lib/xpService';
+import { alertEngine, SmartAlert, AlertEngineSummary, ALERT_CATEGORY_INFO, SEVERITY_INFO } from '../lib/alertEngine';
 import { WorkflowInstanceStatus } from '../types';
 
 // ══════════════════════════════════════════
@@ -268,6 +269,66 @@ const XPLeaderboardWidget: React.FC<{ config: WidgetConfig; data: { leaderboard:
   );
 };
 
+// ═════════ Smart Alerts Widget ═════════
+const SmartAlertsWidget: React.FC<{ config: WidgetConfig; data: { alerts: SmartAlert[]; onDismiss: (a: SmartAlert) => void; onNavigate?: (path: string) => void } }> = ({ config, data }) => {
+  const maxShow = config.limit || 8;
+  const shown = data.alerts.slice(0, maxShow);
+  const criticalCount = data.alerts.filter(a => a.severity === 'critical').length;
+  const warningCount = data.alerts.filter(a => a.severity === 'warning').length;
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm">🚨</span>
+        <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">{config.title}</span>
+        <div className="flex-1" />
+        {criticalCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-[9px] font-bold">{criticalCount} nghiêm trọng</span>}
+        {warningCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-[9px] font-bold">{warningCount} cảnh báo</span>}
+      </div>
+      <div className="flex-1 overflow-auto space-y-1">
+        {shown.map((alert, i) => {
+          const catInfo = ALERT_CATEGORY_INFO[alert.category];
+          const sevInfo = SEVERITY_INFO[alert.severity];
+          return (
+            <div key={alert.id || i} className={`flex items-start gap-2 py-1.5 px-2 rounded-lg border transition-all ${sevInfo.bgClass}`}>
+              <span className="text-sm shrink-0 mt-0.5">{catInfo?.icon || '⚡'}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate">{alert.title}</div>
+                <div className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5 line-clamp-2">{alert.message}</div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {alert.actionLabel && alert.navigateTo && (
+                  <button
+                    onClick={() => { if (alert.navigateTo) window.location.hash = alert.navigateTo; }}
+                    className="text-[9px] px-1.5 py-0.5 rounded bg-white/80 dark:bg-slate-700/80 text-indigo-600 dark:text-indigo-300 font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition"
+                  >{alert.actionLabel}</button>
+                )}
+                <button
+                  onClick={() => data.onDismiss(alert)}
+                  className="text-slate-400 hover:text-red-500 transition p-0.5"
+                  title="Ẩn cảnh báo"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {data.alerts.length === 0 && (
+          <div className="text-center py-6">
+            <span className="text-2xl">✅</span>
+            <div className="text-xs text-slate-400 mt-2">Không có cảnh báo</div>
+          </div>
+        )}
+        {data.alerts.length > maxShow && (
+          <div className="text-center text-[10px] text-slate-400 py-1">
+            +{data.alerts.length - maxShow} cảnh báo khác
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // ═════════ ADD WIDGET PANEL ═════════
 const AddWidgetPanel: React.FC<{
@@ -351,7 +412,7 @@ const AddWidgetPanel: React.FC<{
 //  MAIN CUSTOM DASHBOARD
 // ═══════════════════════════════════════════════
 const CustomDashboard: React.FC = () => {
-  const { items, transactions, activities, user, users, categories, warehouses, employees, requests, projectFinances, assets } = useApp();
+  const { items, transactions, activities, user, users, categories, warehouses, employees, requests, projectFinances, assets, constructionSites, laborContracts, assetMaintenances } = useApp();
   const { instances: wfInstances } = useWorkflow();
   const { requests: rqRequests } = useRequest();
 
@@ -375,6 +436,30 @@ const CustomDashboard: React.FC = () => {
   const [xpLeaderboard, setXpLeaderboard] = useState<UserXP[]>([]);
   useEffect(() => {
     xpService.getLeaderboard(10).then(setXpLeaderboard).catch(() => {});
+  }, []);
+
+  // Load Smart Alerts
+  const [smartAlertSummary, setSmartAlertSummary] = useState<AlertEngineSummary>({ alerts: [], critical: 0, warning: 0, info: 0, lastScanAt: '' });
+  useEffect(() => {
+    const result = alertEngine.scan({
+      items, requests, projectFinances,
+      constructionSites: constructionSites || [],
+      laborContracts: laborContracts || [],
+      employees: employees.map(e => ({ id: e.id, name: e.name })),
+      assets: assets || [],
+      assetMaintenances: assetMaintenances || [],
+    });
+    setSmartAlertSummary(result);
+  }, [items, requests, projectFinances, constructionSites, laborContracts, employees, assets, assetMaintenances]);
+
+  const handleDismissAlert = useCallback((alert: SmartAlert) => {
+    alertEngine.dismiss(alert);
+    setSmartAlertSummary(prev => ({
+      ...prev,
+      alerts: prev.alerts.filter(a => a.id !== alert.id),
+      critical: prev.alerts.filter(a => a.id !== alert.id && a.severity === 'critical').length,
+      warning: prev.alerts.filter(a => a.id !== alert.id && a.severity === 'warning').length,
+    }));
   }, []);
 
   // ═════════ Compute KPI Data ═════════
@@ -511,9 +596,10 @@ const CustomDashboard: React.FC = () => {
       case 'activity_feed': return <ActivityFeedWidget config={config} data={activities.slice(0, config.limit || 8)} />;
       case 'ai_insight': return <AIInsightWidget config={config} data={aiInsight} />;
       case 'xp_leaderboard': return <XPLeaderboardWidget config={config} data={{ leaderboard: xpLeaderboard, users, currentUserId: user?.id }} />;
+      case 'smart_alerts': return <SmartAlertsWidget config={config} data={{ alerts: smartAlertSummary.alerts, onDismiss: handleDismissAlert }} />;
       default: return <div className="text-xs text-slate-400">Widget không xác định</div>;
     }
-  }, [kpiData, getChartData, chartData, alertData, activities, aiInsight, xpLeaderboard, users, user]);
+  }, [kpiData, getChartData, chartData, alertData, activities, aiInsight, xpLeaderboard, users, user, smartAlertSummary, handleDismissAlert]);
 
   // ═════════ Add Widget ═════════
   const handleAddWidget = useCallback((type: WidgetType, metric?: string, dataSource?: string) => {

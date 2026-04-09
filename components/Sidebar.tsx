@@ -476,6 +476,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                 </NavLink>
               )}
 
+              {/* Predictive Analytics — Admin */}
+              {user.role === Role.ADMIN && (
+                <NavLink to="/analytics" title={collapsed ? 'Dự báo & Phân tích' : undefined}
+                  className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                    ? 'bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-500/20 border border-white/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                  <BarChart3 className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                  {!collapsed && <span className="font-bold text-sm">Dự báo & Phân tích</span>}
+                </NavLink>
+              )}
+
               {/* Tin nhắn */}
               <NavLink to="/chat" title={collapsed ? 'Tin nhắn' : undefined}
                 className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : 'justify-between'} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
