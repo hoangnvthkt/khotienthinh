@@ -6,9 +6,10 @@ import {
   Building, MapPin, Plus, X, Save, Settings as SettingsIcon, Users,
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
-  Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool
+  Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
+import { RealtimeBadge } from '../components/OfflineIndicator';
 import { Role, User } from '../types';
 import OrgChart from '../components/OrgChart';
 import SettingsGeneral from './settings/SettingsGeneral';
@@ -17,6 +18,7 @@ import SettingsUsers from './settings/SettingsUsers';
 import SettingsAccount from './settings/SettingsAccount';
 import SettingsMaintenance from './settings/SettingsMaintenance';
 import SignaturePad from '../components/SignaturePad';
+import SettingsChibiBot from './settings/SettingsChibiBot';
 
 const Settings: React.FC = () => {
   const {
@@ -25,7 +27,7 @@ const Settings: React.FC = () => {
     addUnit, updateUnit, removeUnit,
     addSupplier, updateSupplier, removeSupplier,
     appSettings, updateAppSettings, clearAllData, connectionError,
-    users, addUser, updateUser, removeUser, user: currentUser, logout,
+    users, addUser, updateUser, removeUser, user: currentUser, logout, isLoading, realtimeStatus, lastRealtimeEvent,
     hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
     addHrmItem, updateHrmItem, removeHrmItem,
     items, lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
@@ -374,6 +376,7 @@ const Settings: React.FC = () => {
     { id: 'loss-norms', label: 'Định mức hao hụt', icon: TrendingDown, roles: [Role.ADMIN] },
     { id: 'hrm-master-data', label: 'Dữ liệu gốc HRM', icon: Briefcase, roles: [Role.ADMIN] },
     { id: 'users', label: 'Người dùng', icon: Users, roles: [Role.ADMIN] },
+    { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot, roles: [Role.ADMIN] },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
     { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle, roles: [Role.ADMIN] },
   ].filter(tab => !tab.roles || tab.roles.includes(currentUser.role));
@@ -396,15 +399,9 @@ const Settings: React.FC = () => {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-black text-slate-800 tracking-tight">Cấu hình hệ thống</h1>
         <div className="flex items-center gap-2">
-          {connectionError ? (
-            <div className="bg-red-50 text-red-600 px-3 py-1 rounded-full text-[10px] font-black uppercase flex items-center border border-red-100">
-              <AlertCircle size={12} className="mr-1" /> Lỗi kết nối Database
-            </div>
-          ) : (
-            <div className="bg-amber-50 text-amber-600 px-3 py-1 rounded-full text-[10px] font-black uppercase flex items-center border border-amber-100">
-              <AlertCircle size={12} className="mr-1" /> Chế độ Offline (Local)
-            </div>
-          )}
+          <div className="px-3 py-1.5 rounded-full bg-white border border-slate-100 shadow-sm">
+            <RealtimeBadge realtimeStatus={realtimeStatus} lastEventTime={lastRealtimeEvent} connectionError={connectionError} />
+          </div>
           <div className="bg-blue-50 text-accent px-3 py-1 rounded-full text-[10px] font-black uppercase flex items-center border border-blue-100">
             <AlertCircle size={12} className="mr-1" /> Toàn quyền Admin
           </div>
@@ -1224,6 +1221,10 @@ const Settings: React.FC = () => {
           </div>
         </div>
       )}
+
+          {activeTab === 'chibi-bot' && (
+            <SettingsChibiBot />
+          )}
     </div>
   );
 };

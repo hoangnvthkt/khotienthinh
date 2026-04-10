@@ -1,8 +1,10 @@
-import React from 'react';
-import { WifiOff, RefreshCw, CloudOff, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { WifiOff, RefreshCw, CloudOff, CheckCircle2, Zap, Radio, AlertTriangle } from 'lucide-react';
+import { RealtimeStatus } from '../lib/realtimeService';
 
 // ══════════════════════════════════════════
 //  OFFLINE INDICATOR — Banner + Badge
+//  Now with Realtime status integration
 // ══════════════════════════════════════════
 
 interface OfflineIndicatorProps {
@@ -60,7 +62,90 @@ const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({ isOnline, isSyncing
   );
 };
 
-// Badge for sidebar/nav
+// ══════════════════════════════════════════
+//  REALTIME STATUS BADGE — For sidebar/header
+// ══════════════════════════════════════════
+
+interface RealtimeBadgeProps {
+  realtimeStatus: RealtimeStatus;
+  lastEventTime: number;
+  connectionError: string | null;
+}
+
+export const RealtimeBadge: React.FC<RealtimeBadgeProps> = ({ realtimeStatus, lastEventTime, connectionError }) => {
+  const [pulse, setPulse] = useState(false);
+  const [timeAgo, setTimeAgo] = useState('');
+
+  // Pulse animation on new events
+  useEffect(() => {
+    if (lastEventTime > 0) {
+      setPulse(true);
+      const timer = setTimeout(() => setPulse(false), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [lastEventTime]);
+
+  // Update "time ago" display
+  useEffect(() => {
+    const update = () => {
+      if (!lastEventTime) { setTimeAgo(''); return; }
+      const diff = Math.floor((Date.now() - lastEventTime) / 1000);
+      if (diff < 5) setTimeAgo('vừa xong');
+      else if (diff < 60) setTimeAgo(`${diff}s trước`);
+      else if (diff < 3600) setTimeAgo(`${Math.floor(diff / 60)}m trước`);
+      else setTimeAgo(`${Math.floor(diff / 3600)}h trước`);
+    };
+    update();
+    const interval = setInterval(update, 5000);
+    return () => clearInterval(interval);
+  }, [lastEventTime]);
+
+  if (connectionError) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-red-500">
+        <AlertTriangle size={10} /> Lỗi kết nối
+      </span>
+    );
+  }
+
+  if (realtimeStatus === 'connected') {
+    return (
+      <span className={`inline-flex items-center gap-1 text-[9px] font-bold text-emerald-500 transition-all ${pulse ? 'scale-110' : ''}`}>
+        <span className="relative flex h-2 w-2">
+          <span className={`absolute inline-flex h-full w-full rounded-full bg-emerald-400 ${pulse ? 'animate-ping' : ''} opacity-75`}></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        </span>
+        Live
+        {timeAgo && <span className="text-emerald-400/70 ml-0.5">· {timeAgo}</span>}
+      </span>
+    );
+  }
+
+  if (realtimeStatus === 'connecting') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-blue-500">
+        <Radio size={10} className="animate-pulse" /> Đang kết nối...
+      </span>
+    );
+  }
+
+  if (realtimeStatus === 'error') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-500">
+        <AlertTriangle size={10} /> Mất kết nối RT
+      </span>
+    );
+  }
+
+  // disconnected
+  return (
+    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-slate-400">
+      <WifiOff size={10} /> Offline
+    </span>
+  );
+};
+
+// Legacy badge for sidebar
 export const OfflineBadge: React.FC<{ isOnline: boolean; pendingCount: number }> = ({ isOnline, pendingCount }) => {
   if (isOnline && pendingCount === 0) {
     return (

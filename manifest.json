@@ -64,12 +64,26 @@
   "shortcuts": [
     {
       "name": "Kho hàng",
-      "url": "/wms",
+      "short_name": "Kho",
+      "url": "/#/inventory",
+      "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Nhân sự",
+      "short_name": "HRM",
+      "url": "/#/hrm/employees",
       "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
     },
     {
       "name": "Dự án",
-      "url": "/da",
+      "short_name": "DA",
+      "url": "/#/da",
+      "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Yêu cầu",
+      "short_name": "YC",
+      "url": "/#/yeu-cau",
       "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
     }
   ]

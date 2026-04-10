@@ -15,30 +15,39 @@ import { Role, TransactionStatus, TransactionType, GlobalActivity } from '../typ
 import { SkeletonCard, SkeletonRect } from '../components/Skeleton';
 import Pagination from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
+import { AnimatedNumber, Sparkline, LastUpdated } from '../components/LiveDashboardWidgets';
 
 const StatCard: React.FC<{
   title: string;
-  value: string;
+  value: number;
+  displayValue?: string;
   icon: React.ElementType;
   color: string;
   trend?: string;
+  sparkData?: number[];
+  sparkColor?: string;
+  suffix?: string;
   onClick?: () => void;
-}> = ({ title, value, icon: Icon, color, trend, onClick }) => (
+}> = ({ title, value, displayValue, icon: Icon, color, trend, sparkData, sparkColor, suffix, onClick }) => (
   <div
     onClick={onClick}
     className={`glass-card p-4 md:p-6 rounded-2xl flex items-start justify-between hover:shadow-lg transition-all duration-300 ${onClick ? 'cursor-pointer active:scale-95' : ''}`}
   >
     <div className="min-w-0 font-sans">
       <p className="text-slate-500 dark:text-slate-400 text-[10px] md:text-[11px] uppercase font-black tracking-widest mb-1 truncate">{title}</p>
-      <h3 className="text-lg md:text-2xl font-black text-slate-800 dark:text-white truncate">{value}</h3>
-      {trend && (
-        <div className="flex items-center mt-1 md:mt-2">
+      <h3 className="text-lg md:text-2xl font-black text-slate-800 dark:text-white truncate">
+        {displayValue ? displayValue : <AnimatedNumber value={value} suffix={suffix} />}
+      </h3>
+      <div className="flex items-center gap-2 mt-1 md:mt-2">
+        {trend && (
           <span className={`text-[9px] md:text-[10px] px-1.5 py-0.5 rounded-full font-bold ${trend.startsWith('+') ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
             {trend}
           </span>
-          <span className="text-[9px] md:text-[10px] text-slate-400 ml-1 font-medium hidden xs:inline">so với kỳ trước</span>
-        </div>
-      )}
+        )}
+        {sparkData && sparkData.length >= 2 && (
+          <Sparkline data={sparkData} color={sparkColor || '#6366f1'} width={60} height={20} />
+        )}
+      </div>
     </div>
     <div className={`p-2 md:p-3 rounded-xl ${color} bg-opacity-10 shrink-0 border border-current border-opacity-10`}>
       <Icon className={`w-4 h-4 md:w-6 md:h-6 ${color.replace('bg-', 'text-')}`} />
@@ -79,7 +88,7 @@ const DashboardSkeleton = () => (
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { items, transactions, activities, isLoading, warehouses, user, theme } = useApp();
+  const { items, transactions, activities, isLoading, warehouses, user, theme, lastRealtimeEvent } = useApp();
   const [chartType, setChartType] = useState<'bar' | 'line' | 'pie'>('bar');
   const [selectedWhId, setSelectedWhId] = useState<string>(user.assignedWarehouseId || 'all');
 
@@ -205,9 +214,12 @@ const Dashboard: React.FC = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Trung tâm điều khiển</h1>
-          <p className="text-slate-500 dark:text-slate-400 text-sm flex items-center mt-1 uppercase tracking-tight font-bold">
-            <ShieldCheck size={14} className="mr-1 text-green-500" />
-            {hasAssignedWh ? `PHẠM VI: ${warehouses.find(w => w.id === user.assignedWarehouseId)?.name}` : 'TOÀN HỆ THỐNG'}
+          <p className="text-slate-500 dark:text-slate-400 text-sm flex items-center mt-1 gap-3">
+            <span className="flex items-center uppercase tracking-tight font-bold">
+              <ShieldCheck size={14} className="mr-1 text-green-500" />
+              {hasAssignedWh ? `PHẠM VI: ${warehouses.find(w => w.id === user.assignedWarehouseId)?.name}` : 'TOÀN HỆ THỐNG'}
+            </span>
+            <LastUpdated timestamp={lastRealtimeEvent} />
           </p>
         </div>
         {!hasAssignedWh && (
@@ -225,32 +237,39 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <StatCard
           title="Giá trị kho"
-          value={`${(stats.totalValue / 1000000).toLocaleString()} Tr`}
+          value={stats.totalValue / 1000000}
+          displayValue={`${(stats.totalValue / 1000000).toLocaleString()} Tr`}
           icon={TrendingUp}
           color="bg-emerald-600"
           trend="+5.2%"
+          sparkData={fluctuationsData.map(d => d.in + d.out)}
+          sparkColor="#10b981"
           onClick={() => navigate('/inventory')}
         />
         <StatCard
           title="Tổng tồn kho"
-          value={stats.totalStock.toLocaleString()}
+          value={stats.totalStock}
           icon={Package}
           color="bg-teal-600"
+          sparkData={fluctuationsData.map(d => d.in)}
+          sparkColor="#14b8a6"
           onClick={() => navigate('/inventory')}
         />
         <StatCard
           title="Cảnh báo tồn"
-          value={stats.lowStock.toString()}
+          value={stats.lowStock}
           icon={AlertTriangle}
           color="bg-red-500"
+          sparkColor="#ef4444"
           onClick={() => navigate('/inventory', { state: { filter: 'low' } })}
         />
         {user.role !== Role.EMPLOYEE && (
           <StatCard
             title="Chờ phê duyệt"
-            value={stats.pendingTx.toString()}
+            value={stats.pendingTx}
             icon={Clock}
             color="bg-orange-500"
+            sparkColor="#f97316"
             onClick={() => navigate('/operations', { state: { tab: 'PENDING' } })}
           />
         )}

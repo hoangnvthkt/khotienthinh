@@ -49,8 +49,55 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
         const channel = notificationService.subscribe((n) => {
             setNotifications(prev => [n, ...prev]);
             if (!n.isRead) setUnreadCount(c => c + 1);
+
+            // Browser Push Notification — show when tab not focused
+            if (!document.hasFocus() && Notification.permission === 'granted') {
+                const browserNotif = new Notification(n.title, {
+                    body: n.message,
+                    icon: '/vite.svg',
+                    tag: n.id, // dedup
+                    silent: n.severity !== 'critical',
+                });
+                browserNotif.onclick = () => {
+                    window.focus();
+                    if (n.link) window.location.hash = n.link;
+                    browserNotif.close();
+                };
+            }
+
+            // Sound for urgent/critical notifications
+            if (n.severity === 'critical') {
+                try {
+                    const audio = new Audio('data:audio/wav;base64,UklGRl9vT19teleQBJAGNkYXRh');
+                    // Fallback: use system beep via AudioContext
+                    const ctx = new AudioContext();
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.frequency.value = 800;
+                    gain.gain.value = 0.1;
+                    osc.start();
+                    setTimeout(() => { osc.stop(); ctx.close(); }, 200);
+                } catch {
+                    // Audio not available
+                }
+            }
         });
         return () => { notificationService.unsubscribe(); };
+    }, []);
+
+    // Request browser notification permission
+    useEffect(() => {
+        if ('Notification' in window && Notification.permission === 'default') {
+            // Don't immediately prompt — wait for user interaction
+            const requestOnInteraction = () => {
+                Notification.requestPermission();
+                document.removeEventListener('click', requestOnInteraction);
+            };
+            document.addEventListener('click', requestOnInteraction);
+            return () => document.removeEventListener('click', requestOnInteraction);
+        }
     }, []);
 
     // Auto-check alerts on mount + every 5 minutes

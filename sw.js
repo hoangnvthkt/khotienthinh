@@ -1,5 +1,5 @@
-// KhoViet Service Worker — Cache-first with Network fallback
-const CACHE_NAME = 'khoviet-v1';
+// Vioo Service Worker v2 — Enhanced cache strategy + push notifications
+const CACHE_NAME = 'vioo-v2';
 const OFFLINE_URL = '/offline.html';
 
 // Assets to pre-cache
@@ -41,7 +41,7 @@ self.addEventListener('fetch', (event) => {
   // Skip Supabase API calls (always network)
   if (url.hostname.includes('supabase')) return;
 
-  // Skip CDN imports (esm.sh, etc) - let browser handle
+  // Skip CDN imports (esm.sh, etc)
   if (url.hostname.includes('esm.sh') || url.hostname.includes('cdn.')) return;
 
   // For navigation requests: try network, fallback to cache, then offline page
@@ -49,7 +49,6 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          // Cache the page
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           return response;
@@ -87,5 +86,56 @@ self.addEventListener('fetch', (event) => {
         return response;
       })
       .catch(() => caches.match(event.request))
+  );
+});
+
+// Push Notification support
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+
+  let data;
+  try {
+    data = event.data.json();
+  } catch {
+    data = { title: 'Vioo', body: event.data.text() };
+  }
+
+  const options = {
+    body: data.body || '',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-72.png',
+    tag: data.tag || 'vioo-notification',
+    data: { url: data.url || '/' },
+    actions: data.actions || [],
+    vibrate: [100, 50, 100],
+    requireInteraction: data.priority === 'urgent',
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'Vioo', options)
+  );
+});
+
+// Notification click handler
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  const urlToOpen = event.notification.data?.url || '/';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // If a window is already open, focus it
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          client.focus();
+          if (urlToOpen !== '/') {
+            client.navigate(urlToOpen);
+          }
+          return;
+        }
+      }
+      // Otherwise open a new window
+      return self.clients.openWindow(urlToOpen);
+    })
   );
 });

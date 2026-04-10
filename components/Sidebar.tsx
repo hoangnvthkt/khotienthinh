@@ -7,12 +7,13 @@ import {
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
   Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
-  IdCard, Award
+  IdCard, Award, Trophy
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import NotificationCenter from './NotificationCenter';
 import { XPProgressBar } from './XPProgress';
 import { useTheme } from '../context/ThemeContext';
+import { RealtimeBadge } from './OfflineIndicator';
 import { useChat } from '../context/ChatContext';
 import { Role, TransactionStatus, RequestStatus } from '../types';
 
@@ -45,7 +46,7 @@ type SidebarView = 'home' | 'apps' | AppKey;
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollapsed }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout, warehouses, transactions, requests, appSettings, items } = useApp();
+  const { user, logout, warehouses, transactions, requests, appSettings, items, realtimeStatus, lastRealtimeEvent, connectionError } = useApp();
   const { isDark, toggleTheme } = useTheme();
   const { totalUnread } = useChat();
 
@@ -269,7 +270,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
         {/* User Info */}
         {!collapsed ? (
           <div className="px-4 py-3 border-b border-white/20 dark:border-white/5 shrink-0">
-            <div className="flex items-center space-x-3 mb-2 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => { setView('home'); navigate('/'); }} title="Xem hồ sơ cá nhân">
+            <div className="flex items-center space-x-3 mb-2 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => { navigate('/my-profile'); }} title="Xem hồ sơ cá nhân">
               <img src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=2563eb&color=fff`}
                 className="w-9 h-9 rounded-full border-2 border-accent shadow" alt={user.name} />
               <div className="min-w-0">
@@ -305,7 +306,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
         ) : (
           <div className="flex flex-col items-center py-3 border-b border-white/20 dark:border-white/5 shrink-0 gap-2">
             <img src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=2563eb&color=fff`}
-              className="w-9 h-9 rounded-full border-2 border-accent shadow cursor-pointer hover:opacity-80 transition-opacity" alt={user.name} title="Xem hồ sơ cá nhân" onClick={() => { setView('home'); navigate('/'); }} />
+              className="w-9 h-9 rounded-full border-2 border-accent shadow cursor-pointer hover:opacity-80 transition-opacity" alt={user.name} title="Xem hồ sơ cá nhân" onClick={() => { navigate('/my-profile'); }} />
             <button onClick={toggleTheme}
               className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-all ${isDark ? 'bg-slate-800/50 border-white/10 text-yellow-400' : 'bg-white/50 border-white/60 text-slate-600'}`}
               title={isDark ? 'Light Mode' : 'Dark Mode'}>
@@ -487,6 +488,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                 </NavLink>
               )}
 
+              {/* 🏆 Bảng xếp hạng */}
+              <NavLink to="/leaderboard" title={collapsed ? 'Bảng xếp hạng' : undefined}
+                className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                  ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-lg shadow-amber-500/20 border border-white/20'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                <Trophy className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                {!collapsed && <span className="font-bold text-sm">Bảng xếp hạng</span>}
+              </NavLink>
+
               {/* Tin nhắn */}
               <NavLink to="/chat" title={collapsed ? 'Tin nhắn' : undefined}
                 className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : 'justify-between'} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
@@ -653,6 +663,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
         {!collapsed && (
           <div className="hidden lg:block px-1 py-1 shrink-0">
             <XPProgressBar userId={user?.id} />
+          </div>
+        )}
+
+        {/* Realtime Status */}
+        {!collapsed && (
+          <div className="hidden lg:flex px-3 py-1.5 shrink-0">
+            <RealtimeBadge realtimeStatus={realtimeStatus} lastEventTime={lastRealtimeEvent} connectionError={connectionError} />
           </div>
         )}
 

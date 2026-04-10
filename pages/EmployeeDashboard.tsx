@@ -12,6 +12,9 @@ import {
     Timer, CircleDot, XCircle, CheckCheck
 } from 'lucide-react';
 import { WorkflowInstanceStatus, WorkflowNodeType, RQStatus } from '../types';
+import { AnimatedNumber, LastUpdated } from '../components/LiveDashboardWidgets';
+import DailyMissions from '../components/DailyMissions';
+import { getTimeGreeting, getRandomQuote } from '../lib/funMessages';
 
 // ═══════════════════════════════════════════════════════
 //  EMPLOYEE DASHBOARD — Mobile-First Todo-List Style
@@ -23,7 +26,7 @@ const EmployeeDashboard: React.FC = () => {
         user, employees, hrmPositions, hrmOffices, orgUnits,
         attendanceRecords, leaveRequests, leaveBalances, payrollRecords,
         laborContracts, assets, assetAssignments,
-        loadModuleData, hrmConstructionSites,
+        loadModuleData, hrmConstructionSites, lastRealtimeEvent,
     } = useApp();
     const { instances: wfInstances, templates: wfTemplates, nodes: wfNodes } = useWorkflow();
     const { requests: rqRequests, categories: rqCategories } = useRequest();
@@ -302,6 +305,10 @@ const EmployeeDashboard: React.FC = () => {
                             >
                                 {employee?.fullName || user.name}
                             </h1>
+                            {/* Time-based greeting */}
+                            <p className="text-[11px] text-purple-200/80 font-medium mt-0.5 italic">
+                                {getTimeGreeting()}
+                            </p>
                             <div className="flex flex-wrap items-center gap-1.5 mt-2">
                                 {employee?.employeeCode && (
                                     <span className="text-[9px] font-bold text-cyan-300 bg-cyan-400/10 px-2 py-0.5 rounded-md flex items-center gap-1 border border-cyan-400/20">
@@ -330,6 +337,7 @@ const EmployeeDashboard: React.FC = () => {
                                     <span className="font-bold">Thâm niên: <span className="text-white">{seniority}</span></span>
                                 </div>
                             )}
+                            <LastUpdated timestamp={lastRealtimeEvent} className="!text-slate-400" />
                         </div>
 
                         {/* Todo badge */}
@@ -356,13 +364,16 @@ const EmployeeDashboard: React.FC = () => {
                         <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${stat.gradient} flex items-center justify-center text-white shadow-lg ${stat.shadow} mb-2 group-hover:scale-110 transition-transform`}>
                             {stat.icon}
                         </div>
-                        <div className="text-2xl font-black text-slate-800 dark:text-white">{stat.value}</div>
+                        <div className="text-2xl font-black text-slate-800 dark:text-white"><AnimatedNumber value={stat.value} /></div>
                         <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{stat.label}</div>
                         <div className="text-[9px] text-slate-400/70 mt-0.5">{stat.sub}</div>
                         <ChevronRight size={14} className="absolute top-4 right-3 text-slate-300 dark:text-slate-600 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors" />
                     </button>
                 ))}
             </div>
+
+            {/* ═══════════ DAILY MISSIONS ═══════════ */}
+            <DailyMissions />
 
             {/* ═══════════ TODO: WORKFLOW TASKS ═══════════ */}
             {myWorkflowTodos.length > 0 && (

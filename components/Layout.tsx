@@ -8,6 +8,8 @@ import BottomNav from './BottomNav';
 import NotificationCenter from './NotificationCenter';
 import PWAInstallPrompt from './PWAInstallPrompt';
 import OfflineIndicator from './OfflineIndicator';
+import EasterEggs from './EasterEggs';
+import ChibiBot from './ChibiBot';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
 import { useOfflineSync } from '../hooks/useOfflineSync';
@@ -25,7 +27,7 @@ const Layout: React.FC = () => {
   const [sessionWarning, setSessionWarning] = useState(false);
   const [countdown, setCountdown] = useState(300); // 5 minutes in seconds
 
-  const { isRefreshing, appSettings, isLoading, connectionError, logout, items, user } = useApp();
+  const { isRefreshing, appSettings, isLoading, connectionError, logout, items, user, employees } = useApp();
   const { isDark, toggleTheme } = useTheme();
   const { isOnline, isSyncing, pendingCount, syncNow } = useOfflineSync();
   const navigate = useNavigate();
@@ -332,6 +334,18 @@ const Layout: React.FC = () => {
       </div>
       <QuickActionFab />
       <OfflineIndicator isOnline={isOnline} isSyncing={isSyncing} pendingCount={pendingCount} onSync={syncNow} />
+      {/* Easter Eggs & Dino Pet */}
+      {(() => {
+        const emp = employees.find(e => e.userId === user?.id);
+        const today = new Date();
+        const isBirthday = emp?.dateOfBirth ? (() => {
+          const bd = new Date(emp.dateOfBirth!);
+          return bd.getMonth() === today.getMonth() && bd.getDate() === today.getDate();
+        })() : false;
+        return <EasterEggs isBirthday={isBirthday} userName={emp?.fullName || user?.fullName} />;
+      })()}
+      {/* ChibiBot Virtual Assistant */}
+      <ChibiBot userName={user?.name || user?.fullName} userId={user?.id} />
     </div>
   );
 };

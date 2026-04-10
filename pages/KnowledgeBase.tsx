@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Upload, FileText, Trash2, RefreshCw, CheckCircle, AlertCircle, Clock, Database, Search, BookOpen, Loader2 } from 'lucide-react';
+import { Upload, FileText, Trash2, RefreshCw, CheckCircle, AlertCircle, Clock, Database, Search, BookOpen, Loader2, Filter } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useApp } from '../context/AppContext';
 
 interface RagDocument {
   id: string;
@@ -19,12 +20,17 @@ interface RagDocument {
 }
 
 const KnowledgeBase: React.FC = () => {
+  const { user } = useApp();
   const [documents, setDocuments] = useState<RagDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [docToDelete, setDocToDelete] = useState<RagDocument | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const fetchDocuments = useCallback(async () => {
     const { data, error } = await supabase
@@ -78,7 +84,7 @@ const KnowledgeBase: React.FC = () => {
           file_size: file.size,
           storage_path: storagePath,
           status: 'pending',
-          uploaded_by: 'admin',
+          uploaded_by: user.name || 'admin',
         })
         .select()
         .single();
@@ -155,7 +161,7 @@ const KnowledgeBase: React.FC = () => {
             file_size: doc.file_size,
             storage_path: doc.storage_path,
             status: 'pending',
-            uploaded_by: 'sync',
+            uploaded_by: user.name || 'sync',
           })
           .select()
           .single();
@@ -175,9 +181,11 @@ const KnowledgeBase: React.FC = () => {
     }
   };
 
-  const deleteDocument = async (doc: RagDocument) => {
-    if (!confirm(`Xóa tài liệu "${doc.title}"?`)) return;
+  const confirmDelete = async () => {
+    if (!docToDelete) return;
+    setIsDeleting(true);
     try {
+      const doc = docToDelete;
       // Delete chunks first
       await supabase.from('rag_chunks').delete().eq('document_id', doc.id);
       // Delete storage file if uploaded directly
@@ -187,8 +195,11 @@ const KnowledgeBase: React.FC = () => {
       // Delete document record
       await supabase.from('rag_documents').delete().eq('id', doc.id);
       setDocuments(prev => prev.filter(d => d.id !== doc.id));
+      setDocToDelete(null);
     } catch (err: any) {
       alert(`Lỗi xóa: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -203,12 +214,30 @@ const KnowledgeBase: React.FC = () => {
     }
   };
 
-  const filteredDocs = searchQuery
-    ? documents.filter(d =>
-        d.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.file_name?.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : documents;
+  const resetStuckDocuments = async () => {
+    setResetting(true);
+    try {
+      const { data } = await supabase.functions.invoke('process-document', {
+        body: { action: 'reset_stuck' },
+      });
+      if (data?.reset && data.reset > 0) {
+        alert(`Đã khôi phục ${data.reset} tài liệu bị kẹt về trạng thái chờ xử lý.`);
+        fetchDocuments();
+      } else {
+        alert('Không có tài liệu nào bị kẹt.');
+      }
+    } catch (err: any) {
+      alert(`Lỗi: ${err.message}`);
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const filteredDocs = documents.filter(d => {
+    const matchSearch = searchQuery ? (d.title.toLowerCase().includes(searchQuery.toLowerCase()) || d.file_name?.toLowerCase().includes(searchQuery.toLowerCase())) : true;
+    const matchStatus = statusFilter === 'all' ? true : d.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
 
   const stats = {
     total: documents.length,
@@ -245,14 +274,26 @@ const KnowledgeBase: React.FC = () => {
             <p className="text-sm text-slate-500 dark:text-slate-400">Upload tài liệu để AI trả lời câu hỏi về quy định, chính sách công ty</p>
           </div>
         </div>
-        <button
-          onClick={syncFromDocModules}
-          disabled={syncing}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all disabled:opacity-50"
-        >
-          <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
-          {syncing ? 'Đang đồng bộ...' : 'Đồng bộ từ Hồ sơ'}
-        </button>
+        <div className="flex items-center gap-2">
+          {stats.processing > 0 && (
+            <button
+              onClick={resetStuckDocuments}
+              disabled={resetting}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/30 text-sm font-bold text-orange-600 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-500/20 transition-all disabled:opacity-50"
+            >
+              <RefreshCw size={16} className={resetting ? 'animate-spin' : ''} />
+              {resetting ? 'Đang khôi phục...' : 'Khôi phục file kẹt'}
+            </button>
+          )}
+          <button
+            onClick={syncFromDocModules}
+            disabled={syncing}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 text-sm font-bold text-violet-600 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-all disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
+            {syncing ? 'Đang đồng bộ...' : 'Đồng bộ từ Hồ sơ'}
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -311,16 +352,31 @@ const KnowledgeBase: React.FC = () => {
         )}
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          placeholder="Tìm kiếm tài liệu..."
-          className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-violet-500 focus:border-transparent outline-none"
-        />
+      {/* Search & Filter */}
+      <div className="flex gap-3">
+        <div className="relative flex-1">
+          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Tìm kiếm tài liệu..."
+            className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-violet-500 focus:border-transparent outline-none"
+          />
+        </div>
+        <div className="shrink-0 flex items-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 hover:border-violet-400 dark:hover:border-violet-500 transition-colors">
+          <Filter size={18} className="text-slate-400 mr-2" />
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-300 outline-none py-3 pr-2 cursor-pointer"
+          >
+            <option value="all">Tất cả trạng thái</option>
+            <option value="ready">Sẵn sàng ({stats.ready})</option>
+            <option value="processing">Đang xử lý ({stats.processing})</option>
+            <option value="error">Bị lỗi ({stats.error})</option>
+          </select>
+        </div>
       </div>
 
       {/* Document List */}
@@ -376,7 +432,7 @@ const KnowledgeBase: React.FC = () => {
                     </button>
                   )}
                   <button
-                    onClick={() => deleteDocument(doc)}
+                    onClick={() => setDocToDelete(doc)}
                     className="p-2 rounded-lg hover:bg-red-500/10 text-red-500 transition-colors"
                     title="Xóa"
                   >
@@ -386,6 +442,41 @@ const KnowledgeBase: React.FC = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {docToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-md shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+            <div className="p-6">
+              <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-500/20 flex items-center justify-center text-red-500 mb-4 mx-auto">
+                <AlertCircle size={24} />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 dark:text-white text-center mb-2">Xác nhận xóa tài liệu</h3>
+              <p className="text-slate-600 dark:text-slate-300 text-center mb-6">
+                Bạn có chắc chắn muốn xóa tài liệu <span className="font-bold text-slate-800 dark:text-white">"{docToDelete.title}"</span>?<br />
+                Hành động này không thể hoàn tác.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDocToDelete(null)}
+                  disabled={isDeleting}
+                  className="flex-1 py-2.5 rounded-xl text-slate-600 dark:text-slate-300 font-bold bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  disabled={isDeleting}
+                  className="flex-1 py-2.5 rounded-xl text-white font-bold bg-red-500 hover:bg-red-600 transition-colors flex items-center justify-center gap-2"
+                >
+                  {isDeleting && <Loader2 size={16} className="animate-spin" />}
+                  {isDeleting ? 'Đang xóa...' : 'Xóa tài liệu'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

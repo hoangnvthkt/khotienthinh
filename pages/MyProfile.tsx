@@ -5,11 +5,12 @@ import {
     User as UserIcon, Briefcase, Phone, Calendar, MapPin, Building,
     Heart, Landmark, Mail, Shield, Clock, Award, ChevronRight,
     Settings, Package, FileText, Hash, Edit3, Save, X, Check,
-    Sparkles, Zap, TrendingUp, Activity
+    Sparkles, Zap, TrendingUp, Activity, Medal
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import AchievementWall from '../components/AchievementWall';
 
-type TabKey = 'personal' | 'work' | 'contact' | 'assets';
+type TabKey = 'personal' | 'work' | 'contact' | 'assets' | 'achievements';
 
 const MyProfile: React.FC = () => {
     const {
@@ -100,6 +101,7 @@ const MyProfile: React.FC = () => {
         { key: 'work', label: 'Công Việc', icon: <Briefcase size={15} /> },
         { key: 'contact', label: 'Liên Hệ', icon: <Phone size={15} /> },
         { key: 'assets', label: 'Tài Sản', icon: <Landmark size={15} />, count: employeeAssets.length },
+        { key: 'achievements', label: 'Thành Tích', icon: <Medal size={15} /> },
     ];
 
     // Glass info row
@@ -454,6 +456,11 @@ const MyProfile: React.FC = () => {
                                 </div>
                             )}
                         </div>
+                    )}
+
+                    {/* === THÀNH TÍCH === */}
+                    {activeTab === 'achievements' && (
+                        <AchievementWall />
                     )}
                 </div>
             </div>

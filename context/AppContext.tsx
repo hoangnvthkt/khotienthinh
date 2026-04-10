@@ -18,6 +18,7 @@ import {
   MOCK_SUPPLIERS, MOCK_TRANSACTIONS
 } from '../constants';
 import { auditService } from '../lib/auditService';
+import { realtimeService, RealtimeStatus } from '../lib/realtimeService';
 
 interface AppSettings {
   name: string;
@@ -149,6 +150,8 @@ interface AppContextType {
   isLoading: boolean;
   isRefreshing: boolean;
   connectionError: string | null;
+  realtimeStatus: RealtimeStatus;
+  lastRealtimeEvent: number;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -222,6 +225,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isLoading, setIsLoading] = useState(isSupabaseConfigured);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('disconnected');
+  const [lastRealtimeEvent, setLastRealtimeEvent] = useState<number>(0);
   const loadedModulesRef = useRef<Set<string>>(new Set());
 
   // Load data from Supabase on mount
@@ -398,195 +403,217 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     fetchData();
 
-    // Set up Realtime Subscriptions
-    const channels = [
-      supabase.channel('public:items').on('postgres_changes', { event: '*', schema: 'public', table: 'items' }, payload => {
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const i = payload.new as any;
-          const mappedItem = {
-            ...i, priceIn: i.price_in, priceOut: i.price_out, minStock: i.min_stock,
-            supplierId: i.supplier_id, imageUrl: i.image_url, stockByWarehouse: i.stock_by_warehouse,
-            purchaseUnit: i.purchase_unit ?? undefined
-          };
-          setItems(prev => {
-            const exists = prev.find(item => item.id === mappedItem.id);
-            if (exists) return prev.map(item => item.id === mappedItem.id ? mappedItem : item);
-            return [...prev, mappedItem];
-          });
-        } else if (payload.eventType === 'DELETE') {
-          setItems(prev => prev.filter(item => item.id !== payload.old.id));
-        }
-      }).subscribe(),
-
-      supabase.channel('public:transactions').on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, payload => {
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const t = payload.new as any;
-          const mappedTx = {
-            ...t, sourceWarehouseId: t.source_warehouse_id, targetWarehouseId: t.target_warehouse_id, supplierId: t.supplier_id, requesterId: t.requester_id, approverId: t.approver_id, relatedRequestId: t.related_request_id, pendingItems: t.pending_items
-          };
-          setTransactions(prev => {
-            const exists = prev.find(tx => tx.id === mappedTx.id);
-            if (exists) return prev.map(tx => tx.id === mappedTx.id ? mappedTx : tx);
-            return [mappedTx, ...prev];
-          });
-        } else if (payload.eventType === 'DELETE') {
-          setTransactions(prev => prev.filter(tx => tx.id !== payload.old.id));
-        }
-      }).subscribe(),
-
-      supabase.channel('public:warehouses').on('postgres_changes', { event: '*', schema: 'public', table: 'warehouses' }, payload => {
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const w = payload.new as any;
-          const mappedWh = { ...w, isArchived: w.is_archived };
-          setWarehouses(prev => {
-            const exists = prev.find(wh => wh.id === mappedWh.id);
-            if (exists) return prev.map(wh => wh.id === mappedWh.id ? mappedWh : wh);
-            return [...prev, mappedWh];
-          });
-        } else if (payload.eventType === 'DELETE') {
-          setWarehouses(prev => prev.filter(wh => wh.id !== payload.old.id));
-        }
-      }).subscribe(),
-
-      supabase.channel('public:suppliers').on('postgres_changes', { event: '*', schema: 'public', table: 'suppliers' }, payload => {
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const s = payload.new as any;
-          const mappedSup = { ...s, contactPerson: s.contact_person };
-          setSuppliers(prev => {
-            const exists = prev.find(sup => sup.id === mappedSup.id);
-            if (exists) return prev.map(sup => sup.id === mappedSup.id ? mappedSup : sup);
-            return [...prev, mappedSup];
-          });
-        } else if (payload.eventType === 'DELETE') {
-          setSuppliers(prev => prev.filter(sup => sup.id !== payload.old.id));
-        }
-      }).subscribe(),
-
-      supabase.channel('public:requests').on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, payload => {
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const r = payload.new as any;
-          const mappedReq = {
-            ...r, siteWarehouseId: r.site_warehouse_id, sourceWarehouseId: r.source_warehouse_id, requesterId: r.requester_id, createdDate: r.created_date, expectedDate: r.expected_date
-          };
-          setRequests(prev => {
-            const exists = prev.find(req => req.id === mappedReq.id);
-            if (exists) return prev.map(req => req.id === mappedReq.id ? mappedReq : req);
-            return [mappedReq, ...prev];
-          });
-        } else if (payload.eventType === 'DELETE') {
-          setRequests(prev => prev.filter(req => req.id !== payload.old.id));
-        }
-      }).subscribe(),
-
-      supabase.channel('public:activities').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activities' }, payload => {
-        const a = payload.new as any;
-        const mappedAct = {
-          ...a, userId: a.user_id, userName: a.user_name, userAvatar: a.user_avatar, warehouseId: a.warehouse_id
-        };
-        setActivities(prev => [mappedAct, ...prev].slice(0, 50));
-      }).subscribe(),
-
-      supabase.channel('public:users').on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, payload => {
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const u = payload.new as any;
-          const mappedUser = { ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined, allowedSubModules: u.allowed_sub_modules || undefined, adminSubModules: u.admin_sub_modules || undefined };
-          setUsers(prev => {
-            const exists = prev.find(user => user.id === mappedUser.id);
-            if (exists) return prev.map(user => user.id === mappedUser.id ? mappedUser : user);
-            return [...prev, mappedUser];
-          });
-        } else if (payload.eventType === 'DELETE') {
-          setUsers(prev => prev.filter(user => user.id !== payload.old.id));
-        }
-      }).subscribe(),
-
-      supabase.channel('public:employees').on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, payload => {
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const e = payload.new as any;
-          const mappedEmp: Employee = {
-            id: e.id,
-            employeeCode: e.employee_code,
-            fullName: e.full_name,
-            title: e.title,
-            gender: e.gender,
-            phone: e.phone,
-            email: e.email,
-            dateOfBirth: e.date_of_birth,
-            startDate: e.start_date,
-            officialDate: e.official_date,
-            status: e.status,
-            userId: e.user_id,
-            areaId: e.area_id,
-            officeId: e.office_id,
-            employeeTypeId: e.employee_type_id,
-            positionId: e.position_id,
-            salaryPolicyId: e.salary_policy_id,
-            workScheduleId: e.work_schedule_id,
-            constructionSiteId: e.construction_site_id,
-            departmentId: e.department_id,
-            factoryId: e.factory_id,
-            maritalStatus: e.marital_status,
-            avatarUrl: e.avatar_url,
-            createdAt: e.created_at,
-            updatedAt: e.updated_at
-          };
-          setEmployees(prev => {
-            const exists = prev.find(emp => emp.id === mappedEmp.id);
-            if (exists) return prev.map(emp => emp.id === mappedEmp.id ? mappedEmp : emp);
-            return [...prev, mappedEmp];
-          });
-        } else if (payload.eventType === 'DELETE') {
-          setEmployees(prev => prev.filter(emp => emp.id !== payload.old.id));
-        }
-      }).subscribe(),
-
-      supabase.channel('public:categories').on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, payload => {
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const c = payload.new as any;
-          setCategories(prev => {
-            const exists = prev.find(cat => cat.id === c.id);
-            if (exists) return prev.map(cat => cat.id === c.id ? c : cat);
-            return [...prev, c];
-          });
-        } else if (payload.eventType === 'DELETE') {
-          setCategories(prev => prev.filter(cat => cat.id !== payload.old.id));
-        }
-      }).subscribe(),
-
-      supabase.channel('public:units').on('postgres_changes', { event: '*', schema: 'public', table: 'units' }, payload => {
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const u = payload.new as any;
-          setUnits(prev => {
-            const exists = prev.find(unit => unit.id === u.id);
-            if (exists) return prev.map(unit => unit.id === u.id ? u : unit);
-            return [...prev, u];
-          });
-        } else if (payload.eventType === 'DELETE') {
-          setUnits(prev => prev.filter(unit => unit.id !== payload.old.id));
-        }
-      }).subscribe(),
-
-      supabase.channel('public:app_settings').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'app_settings' }, payload => {
-        setAppSettings(payload.new as AppSettings);
-      }).subscribe(),
-
-      supabase.channel('public:org_units').on('postgres_changes', { event: '*', schema: 'public', table: 'org_units' }, payload => {
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const u = payload.new as any;
-          const mapped: OrgUnit = { id: u.id, name: u.name, type: u.type, parentId: u.parent_id, description: u.description, orderIndex: u.order_index, createdAt: u.created_at };
-          setOrgUnits(prev => {
-            const exists = prev.find(ou => ou.id === mapped.id);
-            if (exists) return prev.map(ou => ou.id === mapped.id ? mapped : ou);
-            return [...prev, mapped];
-          });
-        } else if (payload.eventType === 'DELETE') {
-          setOrgUnits(prev => prev.filter(ou => ou.id !== payload.old.id));
-        }
-      }).subscribe()
+    // Set up Realtime via centralized service
+    const CRITICAL_TABLES = [
+      'items', 'transactions', 'warehouses', 'suppliers', 'requests',
+      'activities', 'users', 'employees', 'categories', 'units',
+      'app_settings', 'org_units', 'notifications'
     ];
 
+    // Status tracking
+    const unsubStatus = realtimeService.onStatusChange((status) => {
+      setRealtimeStatus(status);
+    });
+
+    // Event timestamp tracking
+    const unsubWildcard = realtimeService.on('*', (event) => {
+      setLastRealtimeEvent(event.timestamp);
+    });
+
+    // ── Items ──
+    const unsubItems = realtimeService.on('items', (event) => {
+      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
+        const i = event.newRecord;
+        const mapped = {
+          ...i, priceIn: i.price_in, priceOut: i.price_out, minStock: i.min_stock,
+          supplierId: i.supplier_id, imageUrl: i.image_url, stockByWarehouse: i.stock_by_warehouse,
+          purchaseUnit: i.purchase_unit ?? undefined
+        };
+        setItems(prev => {
+          const exists = prev.find(item => item.id === mapped.id);
+          if (exists) return prev.map(item => item.id === mapped.id ? mapped : item);
+          return [...prev, mapped];
+        });
+      } else if (event.eventType === 'DELETE') {
+        setItems(prev => prev.filter(item => item.id !== event.oldRecord.id));
+      }
+    });
+
+    // ── Transactions ──
+    const unsubTx = realtimeService.on('transactions', (event) => {
+      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
+        const t = event.newRecord;
+        const mapped = {
+          ...t, sourceWarehouseId: t.source_warehouse_id, targetWarehouseId: t.target_warehouse_id, supplierId: t.supplier_id, requesterId: t.requester_id, approverId: t.approver_id, relatedRequestId: t.related_request_id, pendingItems: t.pending_items
+        };
+        setTransactions(prev => {
+          const exists = prev.find(tx => tx.id === mapped.id);
+          if (exists) return prev.map(tx => tx.id === mapped.id ? mapped : tx);
+          return [mapped, ...prev];
+        });
+      } else if (event.eventType === 'DELETE') {
+        setTransactions(prev => prev.filter(tx => tx.id !== event.oldRecord.id));
+      }
+    });
+
+    // ── Warehouses ──
+    const unsubWh = realtimeService.on('warehouses', (event) => {
+      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
+        const w = event.newRecord;
+        const mapped = { ...w, isArchived: w.is_archived };
+        setWarehouses(prev => {
+          const exists = prev.find(wh => wh.id === mapped.id);
+          if (exists) return prev.map(wh => wh.id === mapped.id ? mapped : wh);
+          return [...prev, mapped];
+        });
+      } else if (event.eventType === 'DELETE') {
+        setWarehouses(prev => prev.filter(wh => wh.id !== event.oldRecord.id));
+      }
+    });
+
+    // ── Suppliers ──
+    const unsubSup = realtimeService.on('suppliers', (event) => {
+      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
+        const s = event.newRecord;
+        const mapped = { ...s, contactPerson: s.contact_person };
+        setSuppliers(prev => {
+          const exists = prev.find(sup => sup.id === mapped.id);
+          if (exists) return prev.map(sup => sup.id === mapped.id ? mapped : sup);
+          return [...prev, mapped];
+        });
+      } else if (event.eventType === 'DELETE') {
+        setSuppliers(prev => prev.filter(sup => sup.id !== event.oldRecord.id));
+      }
+    });
+
+    // ── Requests ──
+    const unsubReq = realtimeService.on('requests', (event) => {
+      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
+        const r = event.newRecord;
+        const mapped = {
+          ...r, siteWarehouseId: r.site_warehouse_id, sourceWarehouseId: r.source_warehouse_id, requesterId: r.requester_id, createdDate: r.created_date, expectedDate: r.expected_date
+        };
+        setRequests(prev => {
+          const exists = prev.find(req => req.id === mapped.id);
+          if (exists) return prev.map(req => req.id === mapped.id ? mapped : req);
+          return [mapped, ...prev];
+        });
+      } else if (event.eventType === 'DELETE') {
+        setRequests(prev => prev.filter(req => req.id !== event.oldRecord.id));
+      }
+    });
+
+    // ── Activities ──
+    const unsubAct = realtimeService.on('activities', (event) => {
+      if (event.eventType === 'INSERT') {
+        const a = event.newRecord;
+        const mapped = {
+          ...a, userId: a.user_id, userName: a.user_name, userAvatar: a.user_avatar, warehouseId: a.warehouse_id
+        };
+        setActivities(prev => [mapped, ...prev].slice(0, 50));
+      }
+    });
+
+    // ── Users ──
+    const unsubUsers = realtimeService.on('users', (event) => {
+      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
+        const u = event.newRecord;
+        const mapped = { ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined, allowedSubModules: u.allowed_sub_modules || undefined, adminSubModules: u.admin_sub_modules || undefined };
+        setUsers(prev => {
+          const exists = prev.find(user => user.id === mapped.id);
+          if (exists) return prev.map(user => user.id === mapped.id ? mapped : user);
+          return [...prev, mapped];
+        });
+      } else if (event.eventType === 'DELETE') {
+        setUsers(prev => prev.filter(user => user.id !== event.oldRecord.id));
+      }
+    });
+
+    // ── Employees ──
+    const unsubEmp = realtimeService.on('employees', (event) => {
+      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
+        const e = event.newRecord;
+        const mappedEmp: Employee = {
+          id: e.id, employeeCode: e.employee_code, fullName: e.full_name, title: e.title,
+          gender: e.gender, phone: e.phone, email: e.email, dateOfBirth: e.date_of_birth,
+          startDate: e.start_date, officialDate: e.official_date, status: e.status,
+          userId: e.user_id, areaId: e.area_id, officeId: e.office_id,
+          employeeTypeId: e.employee_type_id, positionId: e.position_id,
+          salaryPolicyId: e.salary_policy_id, workScheduleId: e.work_schedule_id,
+          constructionSiteId: e.construction_site_id, departmentId: e.department_id,
+          factoryId: e.factory_id, maritalStatus: e.marital_status,
+          avatarUrl: e.avatar_url, createdAt: e.created_at, updatedAt: e.updated_at
+        };
+        setEmployees(prev => {
+          const exists = prev.find(emp => emp.id === mappedEmp.id);
+          if (exists) return prev.map(emp => emp.id === mappedEmp.id ? mappedEmp : emp);
+          return [...prev, mappedEmp];
+        });
+      } else if (event.eventType === 'DELETE') {
+        setEmployees(prev => prev.filter(emp => emp.id !== event.oldRecord.id));
+      }
+    });
+
+    // ── Categories ──
+    const unsubCat = realtimeService.on('categories', (event) => {
+      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
+        const c = event.newRecord;
+        setCategories(prev => {
+          const exists = prev.find(cat => cat.id === c.id);
+          if (exists) return prev.map(cat => cat.id === c.id ? c : cat);
+          return [...prev, c];
+        });
+      } else if (event.eventType === 'DELETE') {
+        setCategories(prev => prev.filter(cat => cat.id !== event.oldRecord.id));
+      }
+    });
+
+    // ── Units ──
+    const unsubUnits = realtimeService.on('units', (event) => {
+      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
+        const u = event.newRecord;
+        setUnits(prev => {
+          const exists = prev.find(unit => unit.id === u.id);
+          if (exists) return prev.map(unit => unit.id === u.id ? u : unit);
+          return [...prev, u];
+        });
+      } else if (event.eventType === 'DELETE') {
+        setUnits(prev => prev.filter(unit => unit.id !== event.oldRecord.id));
+      }
+    });
+
+    // ── App Settings ──
+    const unsubSettings = realtimeService.on('app_settings', (event) => {
+      if (event.eventType === 'UPDATE') {
+        setAppSettings(event.newRecord as AppSettings);
+      }
+    });
+
+    // ── Org Units ──
+    const unsubOrg = realtimeService.on('org_units', (event) => {
+      if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
+        const u = event.newRecord;
+        const mapped: OrgUnit = { id: u.id, name: u.name, type: u.type, parentId: u.parent_id, description: u.description, orderIndex: u.order_index, createdAt: u.created_at };
+        setOrgUnits(prev => {
+          const exists = prev.find(ou => ou.id === mapped.id);
+          if (exists) return prev.map(ou => ou.id === mapped.id ? mapped : ou);
+          return [...prev, mapped];
+        });
+      } else if (event.eventType === 'DELETE') {
+        setOrgUnits(prev => prev.filter(ou => ou.id !== event.oldRecord.id));
+      }
+    });
+
+    // Connect to all critical tables
+    realtimeService.connect(CRITICAL_TABLES);
+
     return () => {
-      channels.forEach(channel => supabase.removeChannel(channel));
+      unsubStatus();
+      unsubWildcard();
+      unsubItems(); unsubTx(); unsubWh(); unsubSup(); unsubReq();
+      unsubAct(); unsubUsers(); unsubEmp(); unsubCat(); unsubUnits();
+      unsubSettings(); unsubOrg();
+      realtimeService.disconnect();
     };
   }, []);
 
@@ -1778,7 +1805,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addAssetAssignment, addAssetMaintenance, updateAssetMaintenance,
       isModuleAdmin, loadModuleData,
       saveSignature, deleteSignature,
-      login, logout, isLoading, isRefreshing, connectionError
+      login, logout, isLoading, isRefreshing, connectionError, realtimeStatus, lastRealtimeEvent
     }}>
       {children}
     </AppContext.Provider>

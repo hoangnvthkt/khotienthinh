@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getRandomLoadingMessage, LOADING_MESSAGES } from '../lib/funMessages';
 
 const FUN_TIPS = [
   { icon: '🚀', text: 'Mẹo: Nhấn phím tắt Ctrl+K để tìm kiếm nhanh!' },
@@ -9,8 +10,7 @@ const FUN_TIPS = [
   { icon: '🌙', text: 'Mẹo: Chuyển Dark Mode để bảo vệ mắt ban đêm!' },
   { icon: '⚡', text: 'Bạn biết không? Hệ thống xử lý 1000+ phiếu/giây!' },
   { icon: '🎯', text: 'Bạn biết không? Dữ liệu được mã hóa AES-256!' },
-  { icon: '☕', text: 'Đợi chút nhé... uống ngụm cafe đi! ☕' },
-  { icon: '🎉', text: 'Sắp xong rồi... chuẩn bị sẵn sàng nào!' },
+  ...LOADING_MESSAGES.map(msg => ({ icon: msg.slice(msg.length - 2), text: msg })),
 ];
 
 const LoadingSpinner: React.FC = () => {

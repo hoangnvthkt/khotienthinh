@@ -2,21 +2,23 @@
 description: Mở trình duyệt và đăng nhập vào ứng dụng KhoTienThinh
 ---
 
-## Thông tin đăng nhập
+# Browser Login Workflow
 
-- **URL**: http://localhost:3000
-- **Username**: admin
-- **Password**: 2w412342344
+**BẮT BUỘC đọc file này trước mỗi lần mở trình duyệt.**
 
-## Các bước
+## Thông tin mặc định
 
-1. Mở trình duyệt tại `http://localhost:3000`
-2. Nếu hiện trang Login:
-   - Nhập username: `admin`
-   - Nhập password: `2w412342344`
-   - Click nút "Đăng nhập"
-3. Chờ trang dashboard load xong
+| Thông số | Giá trị |
+|----------|---------|
+| **URL** | `http://localhost:3000` |
+| **Tài khoản** | `admin` |
+| **Mật khẩu** | `2w412342344` |
 
-## Lưu ý
-- App chạy bằng HashRouter nên URL sẽ có dạng `http://localhost:3000/#/path`
-- Ví dụ: `http://localhost:3000/#/knowledge-base`, `http://localhost:3000/#/ai`
+## Quy trình
+
+1. Mở trình duyệt tại `http://localhost:3000/#/login`
+2. Nhập tài khoản: `admin`
+3. Nhập mật khẩu: `2w412342344`
+4. Bấm nút đăng nhập
+5. Chờ 3-5 giây để dữ liệu load xong từ Supabase
+6. Thực hiện tác vụ cần thiết
