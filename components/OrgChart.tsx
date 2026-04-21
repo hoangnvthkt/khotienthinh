@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { useApp } from '../context/AppContext';
-import { OrgUnit, OrgUnitType } from '../types';
+import { OrgUnit, OrgUnitType, Employee, HrmPosition } from '../types';
 import {
     Building2, HardHat, Factory, FolderTree, Plus, Trash2, Edit2, X, Check,
-    ChevronDown, ChevronRight, MoreVertical, Layers, GitBranch
+    ChevronDown, ChevronRight, MoreVertical, Layers, GitBranch, Users, User as UserIcon
 } from 'lucide-react';
 
 const TYPE_CONFIG: Record<OrgUnitType, { label: string; icon: typeof Building2; color: string; bgGrad: string }> = {
@@ -76,13 +76,17 @@ interface OrgNodeProps {
     unit: OrgUnit;
     allUnits: OrgUnit[];
     depth: number;
+    employees: Employee[];
+    hrmPositions: HrmPosition[];
     onAdd: (parentId: string) => void;
     onEdit: (unit: OrgUnit) => void;
     onDelete: (id: string) => void;
 }
 
-const OrgNode: React.FC<OrgNodeProps> = ({ unit, allUnits, depth, onAdd, onEdit, onDelete }) => {
+const OrgNode: React.FC<OrgNodeProps> = ({ unit, allUnits, depth, employees, hrmPositions, onAdd, onEdit, onDelete }) => {
     const [expanded, setExpanded] = useState(true);
+    const [employeesExpanded, setEmployeesExpanded] = useState(false);
+
     const [showMenu, setShowMenu] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     const portalRef = useRef<HTMLDivElement>(null);
@@ -93,6 +97,41 @@ const OrgNode: React.FC<OrgNodeProps> = ({ unit, allUnits, depth, onAdd, onEdit,
 
     const cfg = TYPE_CONFIG[unit.type] || TYPE_CONFIG.custom;
     const Icon = cfg.icon;
+
+    // Lấy danh sách NV thuộc đơn vị
+    const unitEmployees = employees.filter(e => e.orgUnitId === unit.id);
+    const hasEmployees = unitEmployees.length > 0;
+
+    // Nhóm nhân viên theo vị trí (hrmPositions)
+    const positionGroups = React.useMemo(() => {
+        const groups: Record<string, Employee[]> = {};
+        const unassigned: Employee[] = [];
+        
+        unitEmployees.forEach(emp => {
+            if (emp.positionId) {
+                if (!groups[emp.positionId]) groups[emp.positionId] = [];
+                groups[emp.positionId].push(emp);
+            } else {
+                unassigned.push(emp);
+            }
+        });
+
+        const result = Object.entries(groups).map(([posId, emps]) => {
+            const pos = hrmPositions.find(p => p.id === posId);
+            return {
+                id: posId,
+                name: pos?.name || 'Không xác định',
+                level: pos?.level || 99,
+                emps
+            };
+        }).sort((a, b) => a.level - b.level); // Sắp xếp theo level chức vụ
+
+        if (unassigned.length > 0) {
+            result.push({ id: 'none', name: '(Chưa khai báo vị trí)', level: 999, emps: unassigned });
+        }
+        return result;
+    }, [unitEmployees, hrmPositions]);
+
 
     useEffect(() => {
         const handleClick = (e: MouseEvent) => {
@@ -136,11 +175,19 @@ const OrgNode: React.FC<OrgNodeProps> = ({ unit, allUnits, depth, onAdd, onEdit,
                 </div>
 
                 {/* Count badge */}
-                {children.length > 0 && (
-                    <div className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">
-                        {children.length}
-                    </div>
-                )}
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                    {hasEmployees && (
+                        <button onClick={(e) => { e.stopPropagation(); setEmployeesExpanded(!employeesExpanded); }}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all border ${employeesExpanded ? 'bg-indigo-50 border-indigo-200 text-indigo-600 dark:bg-indigo-500/20 dark:border-indigo-500/30 dark:text-indigo-400' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 dark:bg-slate-700 dark:border-slate-600 dark:hover:bg-indigo-500/20 dark:text-slate-300'}`}>
+                            <Users size={12} /> {unitEmployees.length}
+                        </button>
+                    )}
+                    {!hasEmployees && children.length > 0 && (
+                        <div className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-600">
+                            <FolderTree size={10} className="inline mr-1" />{children.length} nhánh
+                        </div>
+                    )}
+                </div>
 
                 {/* Actions */}
                 <div ref={menuRef} className={`org-actions-menu ${showMenu ? 'force-show' : ''}`} style={{ position: 'relative' }}>
@@ -198,6 +245,45 @@ const OrgNode: React.FC<OrgNodeProps> = ({ unit, allUnits, depth, onAdd, onEdit,
                 </div>
             </div>
 
+            {/* Employee Panel */}
+            {hasEmployees && employeesExpanded && (
+                <div className="mt-2 ml-[18px] pl-[26px] border-l-[2px] border-indigo-100 dark:border-indigo-900/40 relative before:content-[''] before:absolute before:left-[-2px] before:top-4 before:bottom-4 before:w-[2px] before:bg-indigo-500 before:rounded-full">
+                    <div className="bg-white/60 dark:bg-slate-800/40 backdrop-blur border border-indigo-100/50 dark:border-indigo-500/10 rounded-2xl p-4 shadow-sm space-y-4">
+                        {positionGroups.map(group => (
+                            <div key={group.id} className="relative">
+                                {/* Dấu gạch ngang cây (tuỳ chọn gạch ngang nhỏ) */}
+                                <div className="flex items-center gap-2 mb-2">
+                                    <div className="h-px w-3 bg-indigo-200 dark:bg-indigo-800"></div>
+                                    <div className="text-[11px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 px-2.5 py-1 rounded-lg">
+                                        {group.name} <span className="opacity-50">({group.emps.length})</span>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 ml-5 gap-2">
+                                    {group.emps.map(emp => (
+                                        <div key={emp.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-all cursor-default">
+                                            <div className="w-8 h-8 rounded-lg outline outline-1 outline-slate-200 dark:outline-slate-700 bg-slate-100 dark:bg-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
+                                                {emp.avatarUrl ? <img src={emp.avatarUrl} alt="" className="w-full h-full object-cover" /> : <UserIcon size={14} className="text-slate-400" />}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className="text-sm font-bold text-slate-800 dark:text-white truncate">{emp.fullName}</div>
+                                                <div className="flex items-center gap-1.5 mt-0.5">
+                                                    <span className="text-[8px] font-mono text-slate-500 bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded">{emp.employeeCode}</span>
+                                                    {emp.status === 'Đang làm việc' ? (
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.4)]"></div>
+                                                    ) : (
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-red-400"></div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Children */}
             {expanded && children.length > 0 && (
                 <div className="org-tree-branch mt-2">
@@ -208,7 +294,7 @@ const OrgNode: React.FC<OrgNodeProps> = ({ unit, allUnits, depth, onAdd, onEdit,
                                 style={{
                                     background: `repeating-linear-gradient(to right, ${TYPE_CONFIG[child.type]?.color || '#94a3b8'}80 0px, ${TYPE_CONFIG[child.type]?.color || '#94a3b8'}80 6px, transparent 6px, transparent 12px)`
                                 }} />
-                            <OrgNode unit={child} allUnits={allUnits} depth={depth + 1}
+                            <OrgNode unit={child} allUnits={allUnits} depth={depth + 1} employees={employees} hrmPositions={hrmPositions}
                                 onAdd={onAdd} onEdit={onEdit} onDelete={onDelete} />
                         </div>
                     ))}
@@ -217,6 +303,21 @@ const OrgNode: React.FC<OrgNodeProps> = ({ unit, allUnits, depth, onAdd, onEdit,
         </div>
     );
 };
+
+function getDepth(id: string | null, allUnits: OrgUnit[], depth = 0): number {
+    if (!id) return depth;
+    const u = allUnits.find(x => x.id === id);
+    return u ? getDepth(u.parentId ?? null, allUnits, depth + 1) : depth;
+}
+
+function getDescendantIds(id: string, allUnits: OrgUnit[]): string[] {
+    const children = allUnits.filter(u => u.parentId === id).map(u => u.id);
+    const descendants = [...children];
+    children.forEach(childId => {
+        descendants.push(...getDescendantIds(childId, allUnits));
+    });
+    return descendants;
+}
 
 // ========== ADD / EDIT MODAL ==========
 interface OrgUnitModalProps {
@@ -233,16 +334,23 @@ const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, editUnit, parentId,
     const [type, setType] = useState<OrgUnitType>('department');
     const [description, setDescription] = useState('');
     const [customTypeLabel, setCustomTypeLabel] = useState('');
+    const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
 
     useEffect(() => {
-        if (editUnit) { setName(editUnit.name); setType(editUnit.type); setDescription(editUnit.description || ''); setCustomTypeLabel(editUnit.customTypeLabel || ''); }
-        else { setName(''); setType(parentId ? 'department' : 'company'); setDescription(''); setCustomTypeLabel(''); }
+        if (editUnit) { 
+            setName(editUnit.name); setType(editUnit.type); setDescription(editUnit.description || ''); setCustomTypeLabel(editUnit.customTypeLabel || ''); 
+            setSelectedParentId(editUnit.parentId ?? null);
+        }
+        else { 
+            setName(''); setType(parentId ? 'department' : 'company'); setDescription(''); setCustomTypeLabel(''); 
+            setSelectedParentId(parentId ?? null);
+        }
     }, [editUnit, parentId, isOpen]);
 
     if (!isOpen) return null;
 
     const parentUnit = parentId ? allUnits.find(u => u.id === parentId) : null;
-    const siblings = allUnits.filter(u => u.parentId === (editUnit?.parentId ?? parentId));
+    const siblings = allUnits.filter(u => u.parentId === (editUnit ? selectedParentId : parentId));
 
     const handleSave = () => {
         if (!name.trim()) return;
@@ -251,7 +359,7 @@ const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, editUnit, parentId,
             name: name.trim(),
             type,
             customTypeLabel: type === 'custom' ? customTypeLabel.trim() || undefined : undefined,
-            parentId: editUnit ? editUnit.parentId : (parentId || null),
+            parentId: editUnit ? selectedParentId : (parentId || null),
             description: description.trim() || undefined,
             orderIndex: editUnit?.orderIndex ?? siblings.length,
             createdAt: editUnit?.createdAt || new Date().toISOString(),
@@ -259,6 +367,17 @@ const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, editUnit, parentId,
         onSave(unit);
         onClose();
     };
+
+    const descendantIds = editUnit ? getDescendantIds(editUnit.id, allUnits) : [];
+    const validParents = allUnits.filter(u => u.id !== editUnit?.id && !descendantIds.includes(u.id));
+
+    const renderIndent = (id: string) => {
+        const depth = getDepth(id, allUnits);
+        return '— '.repeat(depth);
+    };
+
+    const childCount = editUnit ? allUnits.filter(u => u.parentId === editUnit.id).length : 0;
+
 
     return (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
@@ -278,9 +397,26 @@ const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, editUnit, parentId,
 
                 <div className="p-6 space-y-5">
                     {/* Parent info */}
-                    {parentUnit && (
+                    {!editUnit && parentUnit && (
                         <div className="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-500">
                             Thuộc: <span className="font-bold text-slate-700 dark:text-white">{parentUnit.name}</span>
+                        </div>
+                    )}
+                    {editUnit && (
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">Nhánh cha</label>
+                            <select value={selectedParentId || ''} onChange={e => setSelectedParentId(e.target.value || null)}
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all">
+                                <option value="">(Không có — Đặt làm gốc)</option>
+                                {validParents.map(u => (
+                                    <option key={u.id} value={u.id}>{renderIndent(u.id)}{u.name}</option>
+                                ))}
+                            </select>
+                            {childCount > 0 && (
+                                <p className="text-xs text-emerald-600 mt-2 font-medium flex items-center gap-1">
+                                    <Check size={12} /> {childCount} nhánh con sẽ tự động di chuyển theo.
+                                </p>
+                            )}
                         </div>
                     )}
 
@@ -345,7 +481,7 @@ const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, editUnit, parentId,
 
 // ========== MAIN ORG CHART COMPONENT ==========
 const OrgChart: React.FC = () => {
-    const { orgUnits, addOrgUnit, updateOrgUnit, removeOrgUnit } = useApp();
+    const { orgUnits, addOrgUnit, updateOrgUnit, removeOrgUnit, employees, hrmPositions } = useApp();
     const [modalOpen, setModalOpen] = useState(false);
     const [editUnit, setEditUnit] = useState<OrgUnit | null>(null);
     const [addParentId, setAddParentId] = useState<string | null>(null);
@@ -432,7 +568,7 @@ const OrgChart: React.FC = () => {
             ) : (
                 <div className="bg-white/50 dark:bg-slate-800/30 backdrop-blur-sm rounded-2xl border border-slate-200/60 dark:border-slate-700/60 p-6" style={{ overflow: 'visible' }}>
                     {rootUnits.map(root => (
-                        <OrgNode key={root.id} unit={root} allUnits={orgUnits} depth={0}
+                        <OrgNode key={root.id} unit={root} allUnits={orgUnits} depth={0} employees={employees} hrmPositions={hrmPositions}
                             onAdd={(pid) => handleAdd(pid)} onEdit={handleEdit} onDelete={handleDelete} />
                     ))}
                 </div>

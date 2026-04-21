@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Employee, LeaveBalance } from '../../types';
-import { X, Save, User as UserIcon, MapPinned, Building, Layers, HardHat, DollarSign, Calendar, Factory, FolderTree, CalendarDays, Camera, Loader2 } from 'lucide-react';
+import { X, Save, User as UserIcon, MapPinned, Building, Layers, HardHat, DollarSign, Calendar, Factory, FolderTree, CalendarDays, Camera, Loader2, GitBranch } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 interface EmployeeModalProps {
@@ -22,7 +22,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
         officialDate: '',
         status: 'Đang làm việc',
         userId: undefined,
-        areaId: undefined,
+
         officeId: undefined,
         employeeTypeId: undefined,
         positionId: undefined,
@@ -31,6 +31,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
         constructionSiteId: undefined,
         departmentId: undefined,
         factoryId: undefined,
+        orgUnitId: undefined,
         maritalStatus: '',
         avatarUrl: ''
     });
@@ -313,20 +314,6 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                                        <MapPinned size={12} /> Khu vực / Chuyên môn *
-                                    </label>
-                                    <select
-                                        name="areaId"
-                                        value={formData.areaId || ''}
-                                        onChange={handleChange}
-                                        className="w-full px-4 py-3 rounded-xl border border-violet-200 dark:border-violet-800/30 bg-violet-50 dark:bg-violet-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-violet-500"
-                                    >
-                                        <option value="">-- Vui lòng chọn --</option>
-                                        {hrmAreas.map(a => (<option key={a.id} value={a.id}>{a.name}</option>))}
-                                    </select>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
                                         <Building size={12} /> Văn phòng *
                                     </label>
                                     <select
@@ -393,6 +380,21 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                                     >
                                         <option value="">-- Vui lòng chọn --</option>
                                         {hrmWorkSchedules.map(w => (<option key={w.id} value={w.id}>{w.name}</option>))}
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                        <GitBranch size={12} /> Đơn vị trực thuộc (Sơ đồ tổ chức) *
+                                    </label>
+                                    <select
+                                        name="orgUnitId"
+                                        required
+                                        value={formData.orgUnitId || ''}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-3 rounded-xl border border-indigo-200 dark:border-indigo-800/30 bg-indigo-50 dark:bg-indigo-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 font-bold"
+                                    >
+                                        <option value="">-- Chọn đơn vị --</option>
+                                        {orgUnits.map(u => (<option key={u.id} value={u.id}>{u.name}</option>))}
                                     </select>
                                 </div>
                                 <div className="space-y-2">

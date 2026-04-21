@@ -1,20 +1,7 @@
 import { useApp } from '../context/AppContext';
 import { Role } from '../types';
+import { ROUTE_TO_MODULE } from '../constants/routes';
 
-// Route → Module key mapping (shared with App.tsx)
-const ROUTE_TO_MODULE: Record<string, string> = {
-  '/dashboard': 'WMS', '/requests': 'WMS', '/inventory': 'WMS', '/operations': 'WMS',
-  '/audit': 'WMS', '/reports': 'WMS', '/misa-export': 'WMS',
-  '/hrm/dashboard': 'HRM', '/hrm/checkin': 'HRM', '/hrm/employees': 'HRM',
-  '/hrm/attendance': 'HRM', '/hrm/shifts': 'HRM', '/hrm/leave': 'HRM',
-  '/hrm/payroll': 'HRM', '/hrm/contracts': 'HRM', '/hrm/documents': 'HRM', '/hrm/reports': 'HRM',
-  '/wf/dashboard': 'WF', '/wf': 'WF', '/wf/templates': 'WF',
-  '/da': 'DA', '/da/portfolio': 'DA',
-  '/ts/dashboard': 'TS', '/ts/catalog': 'TS', '/ts/assignment': 'TS',
-  '/ts/maintenance': 'TS', '/ts/audit': 'TS', '/ts/reports': 'TS',
-  '/rq/dashboard': 'RQ', '/rq': 'RQ', '/rq/categories': 'RQ',
-  '/expense': 'EX',
-};
 
 /**
  * Hook phân quyền CRUD theo sub-module.

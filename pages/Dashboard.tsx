@@ -9,13 +9,14 @@ import {
 import {
   Package, AlertTriangle, TrendingUp, Clock, ShieldCheck, FileText, Settings,
   ArrowLeftRight, Info, LayoutGrid, ListFilter,
-  BarChart3, LineChart as LineChartIcon
+  BarChart3, LineChart as LineChartIcon, Lock
 } from 'lucide-react';
 import { Role, TransactionStatus, TransactionType, GlobalActivity } from '../types';
 import { SkeletonCard, SkeletonRect } from '../components/Skeleton';
 import Pagination from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
 import { AnimatedNumber, Sparkline, LastUpdated } from '../components/LiveDashboardWidgets';
+import { useReservedStock } from '../hooks/useReservedStock';
 
 const StatCard: React.FC<{
   title: string;
@@ -89,6 +90,7 @@ const DashboardSkeleton = () => (
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { items, transactions, activities, isLoading, warehouses, user, theme, lastRealtimeEvent } = useApp();
+  const { getStockSummary } = useReservedStock();
   const [chartType, setChartType] = useState<'bar' | 'line' | 'pie'>('bar');
   const [selectedWhId, setSelectedWhId] = useState<string>(user.assignedWarehouseId || 'all');
 
@@ -107,6 +109,7 @@ const Dashboard: React.FC = () => {
     let totalStock = 0;
     let lowStock = 0;
     let totalValue = 0;
+    let reservedItems = 0; // Số item có tồn bị chiếm chỗ
 
     items.forEach(item => {
       const currentWh = hasAssignedWh ? user.assignedWarehouseId : (selectedWhId === 'all' ? null : selectedWhId);
@@ -117,19 +120,28 @@ const Dashboard: React.FC = () => {
       totalStock += stock;
       totalValue += stock * item.priceIn;
       if (stock <= item.minStock && stock > 0) lowStock++;
+
+      // Đếm item bị chiếm chỗ trong kho đang xem
+      if (currentWh) {
+        const summary = getStockSummary(item.id, currentWh);
+        if (summary.reserved > 0) reservedItems++;
+      } else {
+        // Tất cả kho: check bất kỳ kho nào có reserved
+        const whIds = Object.keys(item.stockByWarehouse);
+        if (whIds.some(whId => getStockSummary(item.id, whId).reserved > 0)) reservedItems++;
+      }
     });
 
     const pendingTx = transactions.filter(t => {
       if (hasAssignedWh) {
-        // Nhân viên phụ trách kho: đếm phiếu pending + approved tại kho mình
         return (t.requesterId === user.id && t.status === TransactionStatus.PENDING) ||
                (t.targetWarehouseId === user.assignedWarehouseId && t.status === TransactionStatus.APPROVED);
       }
       return t.status === TransactionStatus.PENDING;
     }).length;
 
-    return { totalStock, lowStock, totalValue, pendingTx };
-  }, [items, transactions, hasAssignedWh, user, selectedWhId]);
+    return { totalStock, lowStock, totalValue, pendingTx, reservedItems };
+  }, [items, transactions, hasAssignedWh, user, selectedWhId, getStockSummary]);
 
   const fluctuationsData = useMemo(() => {
     const data: any[] = [];
@@ -234,7 +246,7 @@ const Dashboard: React.FC = () => {
         )}
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      <div className={`grid gap-3 md:gap-4 ${user.role !== Role.EMPLOYEE ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-2 lg:grid-cols-3'}`}>
         <StatCard
           title="Giá trị kho"
           value={stats.totalValue / 1000000}
@@ -274,6 +286,29 @@ const Dashboard: React.FC = () => {
           />
         )}
       </div>
+
+      {/* ── Reserved Stock Alert Banner ── */}
+      {stats.reservedItems > 0 && user.role !== Role.EMPLOYEE && (
+        <div
+          onClick={() => navigate('/operations', { state: { tab: 'PENDING' } })}
+          className="flex items-center justify-between gap-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-2xl px-5 py-3.5 cursor-pointer hover:border-amber-400 transition-all group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0">
+              <Lock size={16} className="text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <p className="text-xs font-black text-amber-800 dark:text-amber-300">
+                {stats.reservedItems} loại vật tư đang bị chiếm chỗ bởi phiếu chờ duyệt
+              </p>
+              <p className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+                Kiểm tra và duyệt phiếu để giải phóng tồn khả dụng
+              </p>
+            </div>
+          </div>
+          <ArrowLeftRight size={16} className="text-amber-500 shrink-0 group-hover:translate-x-1 transition-transform" />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 glass-panel rounded-2xl flex flex-col overflow-hidden min-h-[400px]">

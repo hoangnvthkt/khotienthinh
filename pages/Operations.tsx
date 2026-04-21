@@ -8,7 +8,7 @@ import {
   Plus, Trash2, ArrowRight, Save, Send, Clock,
   CheckCircle, XCircle, FileText, User, History,
   AlertTriangle, Flame, ShieldAlert, PackageSearch,
-  ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Inbox, Minus, Scale, Banknote
+  ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Inbox, Minus, Scale, Banknote, Lock
 } from 'lucide-react';
 import ScannerModal from '../components/ScannerModal';
 import ItemSelectionModal from '../components/ItemSelectionModal';
@@ -18,11 +18,13 @@ import TransactionDetailModal from '../components/TransactionDetailModal';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import Pagination from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
+import { useReservedStock } from '../hooks/useReservedStock';
 
 const Operations: React.FC = () => {
   const location = useLocation();
   const { items, warehouses, suppliers, users, user, transactions, addTransaction, updateTransactionStatus, clearTransactionHistory } = useApp();
   const toast = useToast();
+  const { getStockSummary, getConflictingTxs } = useReservedStock();
   const [activeTab, setActiveTab] = useState<string>('IMPORT');
 
 
@@ -119,7 +121,7 @@ const Operations: React.FC = () => {
 
   const { paginatedItems: paginatedHistory, currentPage: histPage, totalPages: histTotalPages, totalItems: histTotal, pageSize: histPageSize, setPage: histSetPage, setPageSize: histSetPageSize, startIndex: histStart, endIndex: histEnd } = usePagination<Transaction>(historyTransactions, 15);
 
-  // Tính tồn kho hiện tại của item trong kho đang chọn (chỉ để hiển thị)
+  // Tính tồn kho ON-HAND trong kho đang chọn (chỉ cho import fallback)
   const getStockInWarehouse = (itemId: string, warehouseId: string): number => {
     const item = items.find(i => i.id === itemId);
     return item?.stockByWarehouse[warehouseId] || 0;
@@ -345,16 +347,39 @@ const Operations: React.FC = () => {
                       const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
                       const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
                       const displayWh = tx.type === TransactionType.IMPORT ? targetWh : (tx.type === TransactionType.TRANSFER ? sourceWh : sourceWh);
+
+                      // ── Reserved Stock: kiểm tra conflict cho phiếu xuất/chuyển/hủy ──
+                      const isExportType = tx.type === TransactionType.EXPORT ||
+                        tx.type === TransactionType.TRANSFER ||
+                        tx.type === TransactionType.LIQUIDATION;
+                      const stockConflicts = isExportType && tx.sourceWarehouseId
+                        ? tx.items.map(ti => ({
+                            ...ti,
+                            summary: getStockSummary(ti.itemId, tx.sourceWarehouseId!),
+                            product: items.find(i => i.id === ti.itemId),
+                          })).filter(ti => ti.summary.reserved > 0 || ti.quantity > ti.summary.available)
+                        : [];
+                      const hasStockConflict = stockConflicts.length > 0;
+
                       return (
-                        <div key={tx.id} onClick={() => setViewingHistoryTx(tx)} className="bg-white border border-slate-100 rounded-2xl p-4 hover:border-orange-200 transition-all cursor-pointer group">
+                        <div key={tx.id} onClick={() => setViewingHistoryTx(tx)}
+                          className={`bg-white border rounded-2xl p-4 hover:border-orange-200 transition-all cursor-pointer group ${
+                            hasStockConflict ? 'border-amber-200 bg-amber-50/30' : 'border-slate-100'
+                          }`}>
                           <div className="flex flex-col md:flex-row justify-between gap-4">
                             <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2">
+                              <div className="flex items-center gap-2 mb-2 flex-wrap">
                                 <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider bg-orange-100 text-orange-700">CHỜ ADMIN DUYỆT</span>
                                 <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider bg-blue-50 text-blue-600 border border-blue-100">
                                   {tx.type === 'IMPORT' ? '📥 Nhập kho' : tx.type === 'EXPORT' ? '📤 Xuất kho' : tx.type === 'TRANSFER' ? '🔄 Chuyển kho' : '🗑️ Xuất hủy'}
                                 </span>
                                 <span className="text-[10px] text-slate-400 font-mono font-bold">{new Date(tx.date).toLocaleString()}</span>
+                                {/* ── Badge cảnh báo tồn khả dụng ── */}
+                                {hasStockConflict && (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white">
+                                    <Lock size={8} /> TỒN BỊ CHIẾM CHỖ
+                                  </span>
+                                )}
                               </div>
                               <div className="flex items-center gap-2 mb-3">
                                 <span className="text-sm font-black text-slate-700">{requester?.name}</span>
@@ -375,6 +400,27 @@ const Operations: React.FC = () => {
                               <div className="text-xs text-slate-500 bg-slate-50 p-2 rounded-lg group-hover:bg-orange-50/50 transition-colors">
                                 {tx.items.length} vật tư • {tx.note || 'Không có ghi chú'}
                               </div>
+                              {/* ── Chi tiết tồn khả dụng cho Admin ── */}
+                              {hasStockConflict && (
+                                <div className="mt-2 space-y-1">
+                                  {stockConflicts.map((ti, idx) => (
+                                    <div key={idx} className="flex items-center justify-between text-[10px] bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                                      <span className="font-black text-slate-700 truncate max-w-[140px]">{ti.product?.name}</span>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <span className="text-slate-400">Yêu cầu: <span className="font-black text-slate-600">{ti.quantity}</span></span>
+                                        <span className="text-amber-600 font-black flex items-center gap-0.5">
+                                          <Lock size={8} /> Giữ chỗ: {ti.summary.reserved}
+                                        </span>
+                                        <span className={`font-black ${
+                                          ti.summary.available >= ti.quantity ? 'text-emerald-600' : 'text-red-600'
+                                        }`}>
+                                          Khả dụng: {ti.summary.available}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                             {isAdmin && (
                               <div className="flex md:flex-col gap-2 min-w-[140px] pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 md:pl-4" onClick={(e) => e.stopPropagation()}>
@@ -388,6 +434,7 @@ const Operations: React.FC = () => {
                     })}
                   </div>
                 )}
+
               </section>
 
               {/* PHIẾU CHỜ KHO ĐÍCH XÁC NHẬN */}
@@ -594,15 +641,20 @@ const Operations: React.FC = () => {
                         <tbody className="divide-y divide-slate-100">
                           {txItems.map((item, idx) => {
                             const product = items.find(i => i.id === item.itemId);
-                            const currentStock = getStockInWarehouse(item.itemId, selectedWarehouseId);
-                            const isOverStock = activeTab !== TransactionType.IMPORT && item.quantity > currentStock;
+                            // ── Reserved Stock: dùng Available thay vì On-hand ──
+                            const stockSummary = getStockSummary(item.itemId, selectedWarehouseId);
+                            const currentStock = stockSummary.onHand; // Giữ để tham chiếu
+                            const isOverAvailable = activeTab !== TransactionType.IMPORT && item.quantity > stockSummary.available;
+                            const isOverOnHand = activeTab !== TransactionType.IMPORT && item.quantity > stockSummary.onHand;
                             const hasDualUnit = activeTab === TransactionType.IMPORT && product?.purchaseUnit && product.purchaseUnit !== product.unit;
                             const accData = accountingData[item.itemId] || { qty: '', price: '' };
                             const totalAccValue = hasDualUnit && accData.qty && accData.price
                               ? parseFloat(accData.qty) * parseFloat(accData.price)
                               : undefined;
                             return (
-                              <tr key={idx} className={`hover:bg-slate-50/50 ${hasDualUnit ? 'bg-amber-50/30' : ''}`}>
+                              <tr key={idx} className={`hover:bg-slate-50/50 ${
+                                hasDualUnit ? 'bg-amber-50/30' : isOverAvailable && !isOverOnHand ? 'bg-amber-50/20' : isOverOnHand ? 'bg-red-50/20' : ''
+                              }`}>
                                 <td className="p-4">
                                   <div className="font-black text-slate-800 text-sm">{product?.name}</div>
                                   <div className="text-[10px] text-slate-400 font-bold uppercase">{product?.sku}</div>
@@ -614,17 +666,43 @@ const Operations: React.FC = () => {
                                 </td>
                                 {activeTab !== TransactionType.IMPORT && (
                                   <td className="p-4 text-right">
-                                    <span className={`text-sm font-black ${currentStock === 0 ? 'text-red-500' : currentStock < item.quantity ? 'text-orange-500' : 'text-slate-600'}`}>
-                                      {currentStock.toLocaleString()}
-                                    </span>
-                                    <span className="text-[10px] text-slate-400 ml-1 uppercase font-bold">{product?.unit}</span>
-                                    {isOverStock && (
-                                      <div className="text-[9px] text-orange-500 font-black flex items-center justify-end gap-0.5 mt-0.5">
-                                        <AlertTriangle size={9} /> Vượt tồn kho
+                                    {/* ── Hiển thị 3 chỉ số tồn kho ── */}
+                                    <div className="space-y-0.5">
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        <span className="text-[9px] text-slate-400 font-bold uppercase">Thực tế</span>
+                                        <span className="text-sm font-black text-slate-600">{stockSummary.onHand.toLocaleString()}</span>
+                                        <span className="text-[10px] text-slate-400 uppercase font-bold">{product?.unit}</span>
+                                      </div>
+                                      {stockSummary.reserved > 0 && (
+                                        <div className="flex items-center justify-end gap-1.5">
+                                          <Lock size={8} className="text-amber-500" />
+                                          <span className="text-[9px] text-amber-600 font-black">Đang giữ: {stockSummary.reserved}</span>
+                                        </div>
+                                      )}
+                                      <div className={`flex items-center justify-end gap-1 px-1.5 py-0.5 rounded text-[9px] font-black ${
+                                        stockSummary.available === 0 && stockSummary.onHand > 0
+                                          ? 'bg-red-100 text-red-600'
+                                          : isOverAvailable
+                                          ? 'bg-amber-100 text-amber-700'
+                                          : 'bg-emerald-50 text-emerald-700'
+                                      }`}>
+                                        {stockSummary.available === 0 && stockSummary.onHand > 0 ? (
+                                          <><AlertTriangle size={8} /> Hết khả dụng</>
+                                        ) : isOverAvailable ? (
+                                          <><AlertTriangle size={8} /> KD: {stockSummary.available}</>
+                                        ) : (
+                                          <>KD: {stockSummary.available}</>
+                                        )}
+                                      </div>
+                                    </div>
+                                    {isOverOnHand && (
+                                      <div className="text-[9px] text-red-500 font-black flex items-center justify-end gap-0.5 mt-0.5">
+                                        <AlertTriangle size={9} /> Vượt tồn thực
                                       </div>
                                     )}
                                   </td>
                                 )}
+
                                 {/* Cột kế toán: SL mua (KG) */}
                                 {activeTab === TransactionType.IMPORT && (
                                   <td className="p-4">
@@ -683,7 +761,7 @@ const Operations: React.FC = () => {
                                       min="1"
                                       value={item.quantity}
                                       onChange={(e) => setTxItems(txItems.map(ti => ti.itemId === item.itemId ? { ...ti, quantity: parseInt(e.target.value) || 1 } : ti))}
-                                      className={`w-full border-2 rounded-lg px-2 py-1.5 text-center font-black text-accent outline-none focus:border-accent ${isOverStock ? 'border-orange-300 bg-orange-50' : 'border-slate-100'}`}
+                                      className={`w-full border-2 rounded-lg px-2 py-1.5 text-center font-black text-accent outline-none focus:border-accent ${isOverOnHand ? 'border-red-300 bg-red-50' : isOverAvailable ? 'border-amber-300 bg-amber-50' : 'border-slate-100'}`}
                                     />
                                     <span className="text-[10px] font-black text-slate-400 uppercase">{product?.unit}</span>
                                   </div>
@@ -788,13 +866,22 @@ const Operations: React.FC = () => {
                     <span className="font-black text-slate-600">{txItems.length} vật tư</span>
                   )}
                   {(activeTab !== TransactionType.IMPORT) && txItems.some(ti => {
+                    const summary = getStockSummary(ti.itemId, selectedWarehouseId);
+                    return ti.quantity > summary.available;
+                  }) && (
+                    <span className="ml-3 text-amber-600 font-black flex items-center gap-1">
+                      <Lock size={12} /> Một số mặt hàng vượt tồn khả dụng — Admin sẽ xét duyệt
+                    </span>
+                  )}
+                  {(activeTab !== TransactionType.IMPORT) && txItems.some(ti => {
                     const stock = getStockInWarehouse(ti.itemId, selectedWarehouseId);
                     return ti.quantity > stock;
                   }) && (
-                      <span className="ml-3 text-orange-500 font-black flex items-center gap-1">
-                        <AlertTriangle size={12} /> Một số mặt hàng vượt tồn — phiếu vẫn có thể gửi, Admin sẽ xét duyệt
-                      </span>
-                    )}
+                    <span className="ml-3 text-red-500 font-black flex items-center gap-1">
+                      <AlertTriangle size={12} /> Một số mặt hàng vượt tồn thực tế
+                    </span>
+                  )}
+
                 </div>
                 <button
                   onClick={handleSubmit}

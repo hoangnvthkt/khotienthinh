@@ -9,6 +9,36 @@ import {
 } from 'lucide-react';
 import { AttendanceStatus, AttendanceRecord } from '../../types';
 import { xpService } from '../../lib/xpService';
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+
+// ── T5: Upload selfie lên Supabase Storage (thay thế base64 trong DB) ──────
+// Fallback: nếu upload lỗi → trả về base64 gốc để check-in vẫn hoạt động
+const uploadSelfieToStorage = async (
+  base64: string,
+  employeeId: string,
+  type: 'checkin' | 'checkout' = 'checkin'
+): Promise<string> => {
+  if (!isSupabaseConfigured || !base64.startsWith('data:')) return base64;
+  try {
+    const res = await fetch(base64);
+    const blob = await res.blob();
+    const today = new Date().toISOString().split('T')[0];
+    const fileName = `${employeeId}/${today}_${type}_${Date.now()}.jpg`;
+    const { data, error } = await supabase.storage
+      .from('checkin-photos')
+      .upload(fileName, blob, { upsert: true, contentType: 'image/jpeg' });
+    if (error) {
+      console.warn('Selfie upload warning (fallback to base64):', error.message);
+      return base64; // fallback
+    }
+    const { data: { publicUrl } } = supabase.storage.from('checkin-photos').getPublicUrl(data.path);
+    return publicUrl;
+  } catch (err) {
+    console.warn('Selfie upload failed (fallback to base64):', err);
+    return base64; // fallback
+  }
+};
+
 
 // Haversine formula — khoảng cách 2 toạ độ (mét)
 const haversineDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
@@ -324,7 +354,9 @@ const CheckIn: React.FC = () => {
   const handleCheckIn = async () => {
     if (!currentEmployee || !selectedLocation) return;
     setProcessing(true);
-    const photo = capturePhoto();
+    const rawPhoto = capturePhoto();
+    // T5: Upload selfie lên Storage, fallback base64 nếu lỗi
+    const photo = rawPhoto ? await uploadSelfieToStorage(rawPhoto, currentEmployee.id, 'checkin') : null;
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
@@ -380,7 +412,6 @@ const CheckIn: React.FC = () => {
       const hitMilestone = MILESTONES.includes(newStreak);
 
       if (hitMilestone) {
-        // 🏆 Milestone celebration with confetti!
         celebrate({
           variant: newStreak >= 30 ? 'milestone' : 'streak',
           title: `🔥 Chuỗi ${newStreak} ngày liên tiếp!`,
@@ -389,14 +420,12 @@ const CheckIn: React.FC = () => {
           duration: 3000,
         });
       } else if (newStreak >= 2) {
-        // 🔥 Streak toast
         celebrationToast({
           type: 'success',
           title: `🔥 Chuỗi ${newStreak} ngày!`,
           message: `Check-in thành công lúc ${timeStr}`,
         });
       } else {
-        // ✅ Normal check-in celebration
         celebrate({
           variant: 'checkin',
           title: '📍 Check-in Thành Công!',
@@ -414,7 +443,9 @@ const CheckIn: React.FC = () => {
   const handleCheckOut = async () => {
     if (!currentEmployee || !todayRecord) return;
     setProcessing(true);
-    const photo = capturePhoto();
+    const rawPhoto = capturePhoto();
+    // T5: Upload checkout selfie lên Storage
+    const photo = rawPhoto ? await uploadSelfieToStorage(rawPhoto, currentEmployee.id, 'checkout') : null;
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
@@ -428,7 +459,6 @@ const CheckIn: React.FC = () => {
       });
       setLastAction(`✅ Check-out lúc ${timeStr}`);
 
-      // Calculate working hours
       if (todayRecord.checkIn) {
         const [inH, inM] = todayRecord.checkIn.split(':').map(Number);
         const [outH, outM] = timeStr.split(':').map(Number);
@@ -447,6 +477,7 @@ const CheckIn: React.FC = () => {
 
     setProcessing(false);
   };
+
 
   // Format current time
   const [currentTime, setCurrentTime] = useState(new Date());

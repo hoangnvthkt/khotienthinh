@@ -55,7 +55,7 @@ const Employees: React.FC = () => {
 
     // Helper to get position name
     const getPositionName = (positionId?: string) => positionId ? hrmPositions.find(p => p.id === positionId)?.name : null;
-    const getAreaName = (areaId?: string) => areaId ? hrmAreas.find(a => a.id === areaId)?.name : null;
+
     const getOfficeName = (officeId?: string) => officeId ? hrmOffices.find(o => o.id === officeId)?.name : null;
 
     const getConstructionSiteName = (csId?: string) => {
@@ -191,7 +191,7 @@ const Employees: React.FC = () => {
                     {/* Mobile Cards */}
                     <div className="md:hidden flex-1 overflow-y-auto p-3 space-y-2.5">
                         {paginatedEmployees.map(emp => {
-                            const area = getAreaName(emp.areaId);
+
                             const office = getOfficeName(emp.officeId);
                             const position = getPositionName(emp.positionId);
                             return (
@@ -210,7 +210,7 @@ const Employees: React.FC = () => {
                                     </div>
                                     {position && <p className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold mb-1">📍 {position}</p>}
                                     <div className="flex flex-wrap gap-1">
-                                        {area && <span className="text-[9px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded">{area}</span>}
+
                                         {office && <span className="text-[9px] font-bold text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400 px-2 py-0.5 rounded">{office}</span>}
                                     </div>
                                 </div>
@@ -228,7 +228,7 @@ const Employees: React.FC = () => {
                                     <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50 min-w-[140px]">Họ & Tên</th>
                                     <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50">Vị Trí</th>
                                     <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50">Chức Danh</th>
-                                    <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50">Khu Vực</th>
+
                                     <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50">Văn Phòng</th>
                                     <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50 min-w-[150px]">Liên Hệ</th>
                                     <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50 text-center w-[100px]">Trạng Thái</th>
@@ -238,7 +238,6 @@ const Employees: React.FC = () => {
                             <tbody>
                                 {paginatedEmployees.map((emp, idx) => {
                                     const position = getPositionName(emp.positionId);
-                                    const area = getAreaName(emp.areaId);
                                     const office = getOfficeName(emp.officeId);
                                     const isActive = emp.status === 'Đang làm việc';
                                     return (
@@ -254,7 +253,7 @@ const Employees: React.FC = () => {
                                             <td className="py-2.5 px-4"><span className="text-[13px] font-bold text-slate-800 dark:text-white">{emp.fullName}</span></td>
                                             <td className="py-2.5 px-4">{position ? <span className="text-[11px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-0.5 rounded-md whitespace-nowrap">{position}</span> : <span className="text-xs text-slate-300 dark:text-slate-600">—</span>}</td>
                                             <td className="py-2.5 px-4"><span className="text-xs text-slate-600 dark:text-slate-300">{emp.title || <span className="text-slate-300 dark:text-slate-600">—</span>}</span></td>
-                                            <td className="py-2.5 px-4">{area ? <span className="text-[11px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-md whitespace-nowrap">{area}</span> : <span className="text-xs text-slate-300 dark:text-slate-600">—</span>}</td>
+
                                             <td className="py-2.5 px-4">{office ? <span className="text-[11px] font-bold text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400 px-2 py-0.5 rounded-md whitespace-nowrap">{office}</span> : <span className="text-xs text-slate-300 dark:text-slate-600">—</span>}</td>
                                             <td className="py-2.5 px-4">
                                                 <div className="space-y-0.5">

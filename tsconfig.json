@@ -12,7 +12,8 @@
     "skipLibCheck": true,
     "types": [
       "node",
-      "vite/client"
+      "vite/client",
+      "@react-three/fiber"
     ],
     "moduleResolution": "bundler",
     "isolatedModules": true,
@@ -26,5 +27,10 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "r3f.d.ts"
+  ]
 }

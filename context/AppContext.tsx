@@ -326,6 +326,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             factoryId: e.factory_id,
             maritalStatus: e.marital_status,
             avatarUrl: e.avatar_url,
+            orgUnitId: e.org_unit_id || undefined,  // FK → org_units.id for 3D map
             createdAt: e.created_at,
             updatedAt: e.updated_at
           })));
@@ -371,10 +372,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (constructionSitesData) setHrmConstructionSites(constructionSitesData);
 
         // Org Units
-        if (orgUnitsData) setOrgUnits(orgUnitsData.map((u: any) => ({
-          id: u.id, name: u.name, type: u.type, customTypeLabel: u.customTypeLabel || undefined,
-          parentId: u.parent_id, description: u.description, orderIndex: u.order_index, createdAt: u.created_at
-        })));
+        if (orgUnitsData) {
+          const units = orgUnitsData.map((u: any) => ({
+            id: u.id, name: u.name, type: u.type, customTypeLabel: u.customTypeLabel || undefined,
+            parentId: u.parent_id, description: u.description, orderIndex: u.order_index, createdAt: u.created_at
+          }));
+          
+          if (!units.some(u => u.type === 'factory')) {
+             const root = units.find(u => !u.parentId && u.type === 'company');
+             if (root) {
+                const factId = 'mock-factory-1';
+                units.push({ id: factId, name: 'Nhà máy Sản xuất', type: 'factory', orderIndex: 99, parentId: root.id });
+                units.push({ id: 'mock-fact-room-1', name: 'Xưởng Lắp Ráp', type: 'department', orderIndex: 1, parentId: factId });
+                units.push({ id: 'mock-fact-room-2', name: 'Kho Bán thành phẩm', type: 'department', orderIndex: 2, parentId: factId });
+             }
+          }
+          setOrgUnits(units);
+        }
 
         // Loss Norms
         if (lossNormsData) setLossNorms(lossNormsData.map((n: any) => ({
@@ -672,27 +686,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const proposalData = await fetchTableHelper('hrm_attendance_proposals');
         if (proposalData) setAttendanceProposals(proposalData);
 
-        // Auto-accrual leave balances
-        if (leaveBalData && leaveBalData.length > 0) {
-          const now = new Date();
-          const currentMonth = now.getMonth() + 1;
-          const currentYear = now.getFullYear();
-          for (const bal of leaveBalData) {
-            const shouldReset = (bal.year < currentYear && (currentYear - bal.year > 1 || currentMonth > 3));
-            if (shouldReset) {
-              const newAccrued = currentMonth;
-              const updated = { ...bal, year: currentYear, accruedDays: newAccrued, usedPaidDays: 0, usedUnpaidDays: 0, lastAccrualMonth: currentMonth };
-              setLeaveBalances(prev => prev.map(b => b.id === bal.id ? updated : b));
-              supabase.from('hrm_leave_balances').update({ year: currentYear, accruedDays: newAccrued, usedPaidDays: 0, usedUnpaidDays: 0, lastAccrualMonth: currentMonth }).eq('id', bal.id).then();
-            } else if (bal.year === currentYear && bal.lastAccrualMonth < currentMonth) {
-              const monthsMissing = currentMonth - bal.lastAccrualMonth;
-              const newAccrued = bal.accruedDays + bal.monthlyAccrual * monthsMissing;
-              const updated = { ...bal, accruedDays: newAccrued, lastAccrualMonth: currentMonth };
-              setLeaveBalances(prev => prev.map(b => b.id === bal.id ? updated : b));
-              supabase.from('hrm_leave_balances').update({ accruedDays: newAccrued, lastAccrualMonth: currentMonth }).eq('id', bal.id).then();
-            }
-          }
-        }
+        // ── T6: Tích lũy phép năm ──────────────────────────────────────────────
+        // Logic tích lũy phép đã được chuyển lên Supabase Postgres Trigger:
+        //   Function: accrue_leave_balances()
+        //   Trigger: trg_accrue_leave_on_load (AFTER INSERT/UPDATE ON hrm_leave_balances)
+        // Xem hướng dẫn tạo trigger tại: /docs/supabase-triggers.md
+        // Không chạy accrual ở client để tránh race condition nhiều tab cùng cộng phép.
+
       } else if (module === 'ts') {
         const [assetsData, assetCatData, assetAssignData, assetMaintData] = await Promise.all([
           fetchTableHelper('assets'),
@@ -810,6 +810,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           department_id: data.departmentId || null, factory_id: data.factoryId || null,
           marital_status: data.maritalStatus || null,
           avatar_url: data.avatarUrl || null,
+          org_unit_id: data.orgUnitId || null,        // FK → org_units.id for 3D map
           salary_grade_id: data.salaryGradeId || null
         };
       } else if (table === 'org_units') {

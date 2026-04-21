@@ -402,6 +402,7 @@ export interface OrgUnit {
   parentId?: string | null;
   description?: string;
   orderIndex: number;
+  color?: string;           // Optional accent color for 3D scene
   createdAt?: string;
 }
 
@@ -430,6 +431,7 @@ export interface Employee {
   factoryId?: string;
   maritalStatus?: string;
   avatarUrl?: string; // URL ảnh đại diện nhân sự (Supabase Storage)
+  orgUnitId?: string; // FK → org_units.id — dùng cho 3D Org Map (phòng ban / chi nhánh)
   createdAt?: string;
   updatedAt?: string;
 }

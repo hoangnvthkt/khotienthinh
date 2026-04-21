@@ -1,5 +1,5 @@
 
-import React, { Suspense } from 'react';
+import React, { Suspense, useState, useEffect } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import LoadingSpinner from './components/LoadingSpinner';
@@ -13,6 +13,8 @@ import { RequestProvider } from './context/RequestContext';
 import { CelebrationProvider } from './components/Celebration';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Role } from './types';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
+import { ROUTE_TO_MODULE } from './constants/routes';
 
 // Lazy load all page components for code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -93,51 +95,69 @@ const AssetProfile = React.lazy(() => import('./pages/ts/AssetProfile'));
 const EmployeeDirectory = React.lazy(() => import('./pages/ep/EmployeeDirectory'));
 const EmployeeProfilePage = React.lazy(() => import('./pages/ep/EmployeeProfile'));
 
+// 3D Org Map
+const OrgMap3D = React.lazy(() => import('./pages/orgmap/OrgMap3D'));
+
+// ── T1: ProtectedRoute — verify Supabase session thực sự ─────────────────────
+// Khi Supabase được cấu hình: check session JWT từ Supabase Auth.
+// Fallback mock mode (isSupabaseConfigured = false): dùng localStorage.
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const isAuthenticated = !!localStorage.getItem('vioo_user');
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
+  const [authState, setAuthState] = useState<'loading' | 'ok' | 'no'>(
+    // Khởi tạo ngay từ localStorage để tránh flash redirect khi đã login
+    isSupabaseConfigured ? 'loading' : (!!localStorage.getItem('vioo_user') ? 'ok' : 'no')
+  );
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return; // Mock mode — đã xử lý ở initialState
+
+    // Kiểm tra session hiện tại ngay khi mount
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setAuthState(session ? 'ok' : 'no');
+    });
+
+    // Lắng nghe thay đổi: logout từ tab khác, token hết hạn
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthState(session ? 'ok' : 'no');
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (authState === 'loading') return <LoadingSpinner />;
+  if (authState === 'no') return <Navigate to="/login" replace />;
   return <>{children}</>;
 };
 
-// Route path → module key mapping
-const ROUTE_TO_MODULE: Record<string, string> = {
-  '/dashboard': 'WMS', '/requests': 'WMS', '/inventory': 'WMS', '/operations': 'WMS',
-  '/audit': 'WMS', '/reports': 'WMS', '/misa-export': 'WMS',
-  '/hrm/dashboard': 'HRM', '/hrm/checkin': 'HRM', '/hrm/employees': 'HRM',
-  '/hrm/attendance': 'HRM', '/hrm/shifts': 'HRM', '/hrm/leave': 'HRM',
-  '/hrm/payroll': 'HRM', '/hrm/contracts': 'HRM', '/hrm/documents': 'HRM', '/hrm/reports': 'HRM', '/hrm/ranking': 'HRM',
-  '/wf/dashboard': 'WF', '/wf': 'WF', '/wf/templates': 'WF',
-  '/da': 'DA', '/da/portfolio': 'DA',
-  '/ts/dashboard': 'TS', '/ts/catalog': 'TS', '/ts/assignment': 'TS',
-  '/ts/maintenance': 'TS', '/ts/audit': 'TS', '/ts/reports': 'TS',
-  '/rq/dashboard': 'RQ', '/rq': 'RQ', '/rq/categories': 'RQ',
-  '/expense': 'EX',
-  '/ep': 'EP',
-};
-
-// Guard that checks sub-module permissions
+// ── T2: SubModuleGuard — check phân quyền sub-module ─────────────────────────
+// Dùng ROUTE_TO_MODULE từ constants/routes.ts (T3).
+// Chỉ block user EMPLOYEE có allowedSubModules bị giới hạn.
 const SubModuleGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useApp();
   const location = useLocation();
-  
-  // Admin always has access
+
+  // Admin luôn có quyền truy cập
   if (user.role === Role.ADMIN) return <>{children}</>;
-  
-  const pathname = location.pathname.replace(/^\/#/, ''); // Clean hash prefix if any
+
+  // Với HashRouter, location.pathname là path thực (không có #)
+  // VD: /hrm/dashboard — không cần clean gì thêm
+  const pathname = location.pathname;
   const moduleKey = ROUTE_TO_MODULE[pathname];
-  
-  // If route doesn't map to a module, allow access (e.g., /settings, /chat)
+
+  // Route không nằm trong map → không guard (settings, chat, profile...)
   if (!moduleKey) return <>{children}</>;
-  
-  // Check sub-module restriction
+
+  // User không được phép dùng module này nói chung
+  const allowedModules = user.allowedModules;
+  if (allowedModules && allowedModules.length > 0 && !allowedModules.includes(moduleKey)) {
+    return <Navigate to="/" replace />;
+  }
+
+  // User bị giới hạn sub-route trong module
   const allowedSubs = user.allowedSubModules?.[moduleKey];
   if (allowedSubs && allowedSubs.length > 0 && !allowedSubs.includes(pathname)) {
-    // Redirect to the first allowed sub-module in this module, or home
     return <Navigate to={allowedSubs[0] || '/'} replace />;
   }
-  
+
   return <>{children}</>;
 };
 
@@ -204,6 +224,7 @@ const AppRoutes: React.FC = () => {
           <Route path="ts/asset/:id" element={<AssetProfile />} />
           <Route path="ep" element={<EmployeeDirectory />} />
           <Route path="ep/:employeeId" element={<EmployeeProfilePage />} />
+          <Route path="org-map" element={<OrgMap3D />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
