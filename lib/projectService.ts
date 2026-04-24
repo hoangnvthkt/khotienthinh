@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import {
-    ProjectContract, ProjectTask, DailyLog, AcceptanceRecord,
+    ProjectTask, DailyLog, AcceptanceRecord,
     MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor,
     PurchaseOrder, PaymentSchedule
 } from '../types';
@@ -21,51 +21,8 @@ const mapKeys = (obj: any, fn: (k: string) => string): any => {
 const toDb = (obj: any) => mapKeys(obj, toSnake);
 const fromDb = (obj: any) => mapKeys(obj, toCamel);
 
-// ==================== CONTRACTS ====================
-export const contractService = {
-    async list(siteId: string): Promise<ProjectContract[]> {
-        const { data, error } = await supabase
-            .from('project_contracts')
-            .select('*')
-            .eq('construction_site_id', siteId)
-            .order('created_at', { ascending: false });
-        if (error) throw error;
-        return (data || []).map(fromDb);
-    },
-    async upsert(item: ProjectContract, audit?: { userId: string; userName: string; isNew?: boolean }): Promise<void> {
-        const { error } = await supabase
-            .from('project_contracts')
-            .upsert(toDb(item), { onConflict: 'id' });
-        if (error) throw error;
-        if (audit) {
-            auditService.log({
-                tableName: 'project_contracts',
-                recordId: item.id,
-                action: audit.isNew ? 'INSERT' : 'UPDATE',
-                newData: item as any,
-                userId: audit.userId,
-                userName: audit.userName,
-            });
-        }
-    },
-    async remove(id: string, audit?: { userId: string; userName: string; oldData?: any }): Promise<void> {
-        const { error } = await supabase
-            .from('project_contracts')
-            .delete()
-            .eq('id', id);
-        if (error) throw error;
-        if (audit) {
-            auditService.log({
-                tableName: 'project_contracts',
-                recordId: id,
-                action: 'DELETE',
-                oldData: audit.oldData,
-                userId: audit.userId,
-                userName: audit.userName,
-            });
-        }
-    },
-};
+// NOTE: contractService đã chuyển sang lib/hdService.ts
+
 
 // ==================== TASKS (GANTT) ====================
 export const taskService = {

@@ -5,8 +5,9 @@ import {
     Send, CreditCard, ChevronDown, ChevronUp, AlertTriangle, Users,
     TrendingUp, DollarSign, Percent
 } from 'lucide-react';
-import { ProjectContract, AcceptanceRecord, AcceptanceStatus } from '../../types';
-import { contractService, acceptanceService } from '../../lib/projectService';
+import { SubcontractorContract, AcceptanceRecord, AcceptanceStatus } from '../../types';
+import { subcontractorContractService } from '../../lib/hdService';
+import { acceptanceService } from '../../lib/projectService';
 
 interface SubcontractTabProps {
     constructionSiteId: string;
@@ -26,12 +27,12 @@ const STATUS_CFG: Record<AcceptanceStatus, { label: string; color: string; bg: s
 };
 
 const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId }) => {
-    const [contracts, setContracts] = useState<ProjectContract[]>([]);
+    const [contracts, setContracts] = useState<SubcontractorContract[]>([]);
     const [acceptances, setAcceptances] = useState<AcceptanceRecord[]>([]);
 
     useEffect(() => {
-        contractService.list(constructionSiteId)
-            .then(all => setContracts(all.filter(c => c.type === 'subcontract')))
+        subcontractorContractService.listBySite(constructionSiteId)
+            .then(setContracts)
             .catch(console.error);
         acceptanceService.list(constructionSiteId).then(setAcceptances).catch(console.error);
     }, [constructionSiteId]);
@@ -218,12 +219,12 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId }) =
                                             </div>
                                             <div className="min-w-0 flex-1">
                                                 <div className="text-sm font-bold text-slate-800 truncate flex items-center gap-2">
-                                                    {contract.contractNumber}
-                                                    <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[9px] font-bold border ${contract.status === 'active' ? 'bg-emerald-50 border-emerald-200 text-emerald-600' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
-                                                        {contract.status === 'active' ? 'Hiệu lực' : contract.status}
+                                                    {contract.code}
+                                                    <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[9px] font-bold border ${contract.status === 'active' || contract.status === 'signed' ? 'bg-emerald-50 border-emerald-200 text-emerald-600' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                                                        {contract.status === 'active' ? 'Hiệu lực' : contract.status === 'signed' ? 'Đã ký' : contract.status}
                                                     </span>
                                                 </div>
-                                                <div className="text-xs text-slate-400">{contract.partyName}</div>
+                                                <div className="text-xs text-slate-400">{contract.subcontractorName}</div>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-4 shrink-0">
@@ -386,7 +387,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId }) =
                             <div className="px-3 py-2 rounded-xl bg-orange-50 border border-orange-100 text-xs">
                                 <span className="text-orange-500 font-bold">HĐ: </span>
                                 <span className="font-bold text-slate-700">
-                                    {contracts.find(c => c.id === formContractId)?.contractNumber} — {contracts.find(c => c.id === formContractId)?.partyName}
+                                    {contracts.find(c => c.id === formContractId)?.code} — {contracts.find(c => c.id === formContractId)?.subcontractorName}
                                 </span>
                             </div>
 

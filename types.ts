@@ -55,12 +55,23 @@ export interface Warehouse {
   isArchived?: boolean; // Soft delete flag
 }
 
+// ==================== NHÀ CUNG CẤP MASTER ====================
+// Đây là nguồn dữ liệu NCC duy nhất — dùng chung cho Kho (WMS) và Dự án (DA)
+// ProjectVendor trong module DA tham chiếu bảng project_vendors riêng
+// nhưng cùng cấu trúc dữ liệu để tương thích.
 export interface Supplier {
   id: string;
   name: string;
-  contactPerson: string;
+  contactPerson: string;   // Người liên hệ
   phone: string;
-  debt: number; // Công nợ
+  email?: string;
+  address?: string;
+  taxCode?: string;        // Mã số thuế
+  debt: number;            // Công nợ (VNĐ)
+  rating?: number;         // Đánh giá 1-5 sao
+  categories?: string[];   // Loại hàng/dịch vụ cung cấp
+  notes?: string;
+  createdAt?: string;
 }
 
 // ==================== HRM MASTER DATA ====================
@@ -208,7 +219,7 @@ export interface ProjectTransaction {
   date: string;
   source: ProjectTxSource;
   sourceRef?: string;
-  attachments?: { name: string; url: string; type: string }[];
+  attachments?: Attachment[];
   createdBy?: string;
   createdAt: string;
 }
@@ -243,7 +254,7 @@ export interface ProjectContract {
   startDate: string;
   endDate: string;
   paymentTerms?: string;
-  attachments?: { name: string; url: string; type: string }[];
+  attachments?: Attachment[];
   status: ContractStatus;
   note?: string;
   createdAt: string;
@@ -301,7 +312,7 @@ export interface AcceptanceRecord {
   retentionAmount?: number;     // Auto = approvedValue * retentionPercent / 100
   payableAmount?: number;       // Auto = approvedValue - retentionAmount
   status: AcceptanceStatus;
-  attachments?: { name: string; url: string; type: string }[];
+  attachments?: Attachment[];
   approvedBy?: string;
   approvedAt?: string;
   paidAt?: string;
@@ -814,10 +825,26 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+// ==================== ATTACHMENT CHUẨN ====================
+// Interface dùng chung cho tất cả các module cần đính kèm file.
+// AssetAttachment, MaintenanceAttachment, ContractAttachment kế thừa từ đây.
+export interface Attachment {
+  id?: string;
+  name: string;          // Tên hiển thị
+  fileName?: string;     // Tên file gốc
+  url: string;           // Public URL hoặc storagePath
+  fileType?: string;     // pdf, docx, jpg...
+  fileSize?: number;     // bytes
+  category?: string;     // invoice | contract | manual | other
+  uploadedAt?: string;
+  uploadedBy?: string;
+}
+
 // ==================== TÀI SẢN CỐ ĐỊNH (ASSETS) ====================
 
 export enum AssetStatus {
   AVAILABLE = 'AVAILABLE',       // Chờ cấp phát
+  PARTIAL = 'PARTIAL',           // Phân bổ một phần (cho lô)
   IN_USE = 'IN_USE',             // Đang sử dụng
   MAINTENANCE = 'MAINTENANCE',   // Đang bảo trì
   BROKEN = 'BROKEN',             // Hỏng
@@ -826,10 +853,21 @@ export enum AssetStatus {
 
 export const ASSET_STATUS_LABELS: Record<AssetStatus, string> = {
   [AssetStatus.AVAILABLE]: 'Chờ cấp phát',
+  [AssetStatus.PARTIAL]: 'Phân bổ 1 phần',
   [AssetStatus.IN_USE]: 'Đang sử dụng',
   [AssetStatus.MAINTENANCE]: 'Đang bảo trì',
   [AssetStatus.BROKEN]: 'Hỏng',
   [AssetStatus.DISPOSED]: 'Đã thanh lý',
+};
+
+export type AssetOrigin = 'purchase' | 'transfer_in' | 'donation' | 'leased' | 'other';
+
+export const ASSET_ORIGIN_LABELS: Record<AssetOrigin, string> = {
+  purchase: 'Mua mới',
+  transfer_in: 'Điều chuyển',
+  donation: 'Viện trợ / Tặng',
+  leased: 'Thuê',
+  other: 'Khác',
 };
 
 export type AssetCategoryType = 'machinery' | 'equipment' | 'vehicle' | 'it' | 'furniture' | 'other';
@@ -850,6 +888,57 @@ export interface AssetCategory {
   depreciationYears: number; // Số năm khấu hao mặc định
 }
 
+export interface AssetAttachment {
+  id: string;
+  assetId: string;
+  name: string;
+  url: string;
+  type?: string;
+  size?: number;
+  category?: 'invoice' | 'contract' | 'manual' | 'other';
+  uploadedAt: string;
+  uploadedBy?: string;
+}
+
+export interface AssetLocationStock {
+  id: string;
+  assetId: string;
+  warehouseId?: string;
+  constructionSiteId?: string;
+  deptId?: string;
+  qty: number;
+  assignedToUserId?: string;
+  assignedToName?: string;
+  note?: string;
+  updatedAt: string;
+}
+
+export interface AssetTransfer {
+  id: string;
+  code: string;
+  assetId: string;
+  assetCode?: string;
+  assetName?: string;
+  qty: number;
+  fromWarehouseId?: string;
+  fromSiteId?: string;
+  fromDeptId?: string;
+  fromLocationLabel?: string;
+  toWarehouseId?: string;
+  toSiteId?: string;
+  toDeptId?: string;
+  toLocationLabel?: string;
+  receivedByUserId?: string;
+  receivedByName?: string;
+  date: string;
+  reason?: string;
+  status: 'pending' | 'completed' | 'cancelled';
+  performedBy?: string;
+  performedByName?: string;
+  note?: string;
+  createdAt: string;
+}
+
 export interface Asset {
   id: string;
   code: string;              // Mã tài sản: TS-001
@@ -860,6 +949,39 @@ export interface Asset {
   serialNumber?: string;     // Số serial
   status: AssetStatus;
 
+  // Phân loại
+  assetType?: 'single' | 'batch' | 'bundle';
+  quantity?: number;         // Tổng SL (batch), default 1
+  unit?: string;
+
+  // Phân cấp cha/con
+  parentId?: string;         // FK → Asset.id
+  childIndex?: number;
+  isBundle?: boolean;        // Là tài sản bộ/set
+
+  // Quản lý & phân bổ
+  managedByUserId?: string;
+  managedByName?: string;
+  managingDeptId?: string;
+  managingDeptName?: string;
+  constructionSiteId?: string;
+
+  // Nguồn gốc & Loại
+  assetOrigin?: AssetOrigin;
+  isFixedAsset?: boolean;
+  isLeased?: boolean;
+  leasedFrom?: string;
+  leaseEndDate?: string;
+
+  // Mua sắm & Bảo hành
+  supplierId?: string;
+  supplierName?: string;
+  contractNumber?: string;
+  invoiceNumber?: string;
+  warrantyCondition?: string;
+  warrantyProvider?: string;
+  warrantyContact?: string;
+
   // Tài chính
   originalValue: number;     // Nguyên giá
   purchaseDate: string;      // Ngày mua
@@ -867,11 +989,11 @@ export interface Asset {
   warrantyMonths?: number;   // Thời gian bảo hành (tháng)
   residualValue: number;     // Giá trị thanh lý dự kiến
 
-  // Vị trí
+  // Vị trí (cho single asset)
   warehouseId?: string;      // Kho lưu trữ hiện tại
   locationNote?: string;     // Ghi chú vị trí
 
-  // Cấp phát hiện tại
+  // Cấp phát hiện tại (chủ yếu cho single)
   assignedToUserId?: string;
   assignedToName?: string;
   assignedDate?: string;
@@ -883,6 +1005,7 @@ export interface Asset {
 
   imageUrl?: string;
   note?: string;
+  attachments?: AssetAttachment[];
   createdAt: string;
   updatedAt: string;
 }
@@ -895,6 +1018,11 @@ export interface AssetAssignment {
   userName: string;
   fromUserId?: string;         // Người giao (khi luân chuyển)
   fromUserName?: string;       // Tên người giao (khi luân chuyển)
+  deptId?: string;             // Phòng ban cấp phát/luân chuyển
+  deptName?: string;
+  siteId?: string;             // Công trường
+  siteName?: string;
+  qty?: number;                // Số lượng (nếu là batch)
   date: string;
   note?: string;
   performedBy: string;         // Admin/Keeper thực hiện
@@ -1226,6 +1354,7 @@ export interface BudgetEntry {
   createdAt?: string;
 }
 
+
 export interface ExpenseRecord {
   id: string;
   categoryId: string;
@@ -1236,3 +1365,112 @@ export interface ExpenseRecord {
   createdBy?: string;
   createdAt?: string;
 }
+
+// ==================== HD: HỢP ĐỒNG ====================
+
+export type HdContractStatus =
+  | 'draft'         // Nháp
+  | 'negotiating'   // Đang đàm phán
+  | 'signed'        // Đã ký
+  | 'active'        // Đang thực hiện
+  | 'completed'     // Hoàn thành
+  | 'expired'       // Hết hạn
+  | 'cancelled';    // Hủy
+
+
+export interface ContractAttachment {
+  id: string;
+  name: string;           // Tên hiển thị
+  fileName: string;       // Tên file gốc
+  storagePath: string;    // Đường dẫn trong Supabase Storage
+  fileType: string;       // pdf, docx, jpg...
+  fileSize: number;
+  uploadedAt: string;
+  uploadedBy: string;
+}
+
+export interface SupplierContract {
+  id: string;
+  code: string;                   // HD-NCC-2025-001
+  name: string;
+  type: 'purchase' | 'supply' | 'service' | 'technical';
+  supplierId?: string;
+  supplierName?: string;
+  supplierRepresentative?: string;
+  value: number;
+  currency: 'VND' | 'USD';
+  paymentMethod?: 'bank_transfer' | 'cash' | 'credit';
+  paymentTerms?: string;
+  guaranteeInfo?: string;
+  purchaseOrderNumber?: string;
+  signedDate?: string;
+  effectiveDate?: string;
+  expiryDate?: string;
+  managedByUserId?: string;
+  managedByName?: string;
+  status: HdContractStatus;
+  note?: string;
+  attachments: ContractAttachment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomerContract {
+  id: string;
+  code: string;                   // HD-KH-2025-001
+  name: string;
+  type: 'construction' | 'supply' | 'design' | 'consulting' | 'implementation';
+  customerName: string;
+  customerTaxCode?: string;
+  customerAddress?: string;
+  customerRepresentative?: string;
+  customerRepresentativeTitle?: string;
+  projectId?: string;
+  constructionSiteId?: string; // FK → hrm_construction_sites.id (để ContractTab DA lọc)
+  value: number;
+  vatPercent?: number;
+  currency: 'VND' | 'USD';
+  paymentMethod?: 'bank_transfer' | 'cash' | 'credit';
+  paymentSchedule?: string;
+  warrantyMonths?: number;
+  signedDate?: string;
+  effectiveDate?: string;
+  endDate?: string;
+  managedByUserId?: string;
+  managedByName?: string;
+  status: HdContractStatus;
+  note?: string;
+  attachments: ContractAttachment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SubcontractorContract {
+  id: string;
+  code: string;                   // HD-TP-2025-001
+  name: string;
+  subcontractorName: string;
+  subcontractorTaxCode?: string;
+  scopeOfWork?: string;
+  projectId?: string;
+  constructionSiteId?: string; // FK → hrm_construction_sites.id (để SubcontractTab DA lọc)
+  parentContractId?: string;
+  value: number;
+  currency: 'VND' | 'USD';
+  paymentMethod?: 'bank_transfer' | 'cash' | 'credit';
+  paymentSchedule?: string;
+  retentionPercent?: number;
+  workLocation?: string;
+  guaranteeInfo?: string;
+  signedDate?: string;
+  effectiveDate?: string;
+  completionDate?: string;
+  managedByUserId?: string;
+  managedByName?: string;
+  status: HdContractStatus;
+  note?: string;
+  attachments: ContractAttachment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
