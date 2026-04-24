@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { ProjectVendor, PurchaseOrder, POStatus } from '../../types';
 import { vendorService, poService } from '../../lib/projectService';
+import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 interface SupplyChainTabProps {
     constructionSiteId: string;
@@ -29,6 +31,8 @@ const PO_STATUS: Record<POStatus, { label: string; color: string; bg: string; ic
 const VENDOR_CATS = ['Xi măng', 'Thép', 'Cát & Đá', 'Gạch', 'Gỗ', 'Sơn', 'Ống/Phụ kiện nước', 'Dây & TB điện', 'VLXD khác'];
 
 const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) => {
+    const toast = useToast();
+    const confirm = useConfirm();
     const [subTab, setSubTab] = useState<'vendor' | 'po'>('vendor');
 
     // Vendors
@@ -91,6 +95,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
         };
         await vendorService.upsert(v);
         setVendors(await vendorService.list(constructionSiteId));
+        toast.success(editingVendor ? 'Cập nhật NCC' : 'Thêm NCC thành công');
         resetVendorForm();
     };
 
@@ -123,6 +128,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
         };
         await poService.upsert(poItem);
         setPos(await poService.list(constructionSiteId));
+        toast.success(editingPo ? 'Cập nhật PO' : 'Tạo đơn hàng thành công');
         resetPoForm();
     };
 
@@ -135,6 +141,31 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
         };
         await poService.upsert(updated);
         setPos(await poService.list(constructionSiteId));
+        toast.success(`Cập nhật trạng thái PO`);
+    };
+
+    const handleDeleteVendor = async (v: ProjectVendor) => {
+        const ok = await confirm({ targetName: v.name, title: 'Xoá nhà cung cấp', warningText: 'Các đơn hàng liên quan cũng sẽ bị ảnh hưởng.' });
+        if (!ok) return;
+        try {
+            await vendorService.remove(v.id);
+            setVendors(await vendorService.list(constructionSiteId));
+            toast.success('Xoá NCC thành công');
+        } catch (e: any) {
+            toast.error('Lỗi xoá', e?.message);
+        }
+    };
+
+    const handleDeletePo = async (po: PurchaseOrder) => {
+        const ok = await confirm({ targetName: po.poNumber, title: 'Xoá đơn hàng' });
+        if (!ok) return;
+        try {
+            await poService.remove(po.id);
+            setPos(await poService.list(constructionSiteId));
+            toast.success('Xoá PO thành công');
+        } catch (e: any) {
+            toast.error('Lỗi xoá', e?.message);
+        }
     };
 
     // Stats
@@ -248,7 +279,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
                                                 </div>
                                                 <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
                                                     <button onClick={() => openEditVendor(v)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
-                                                    <button onClick={async () => { if(confirm('Xoá NCC?')) { await vendorService.remove(v.id); setVendors(await vendorService.list(constructionSiteId)); } }}
+                                                    <button onClick={() => handleDeleteVendor(v)}
                                                         className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
                                                 </div>
                                             </div>
@@ -332,7 +363,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
                                                     </div>
                                                     <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
                                                         <button onClick={e => { e.stopPropagation(); openEditPo(po); }} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
-                                                        <button onClick={async e => { e.stopPropagation(); if(confirm('Xoá?')) { await poService.remove(po.id); setPos(await poService.list(constructionSiteId)); } }}
+                                                        <button onClick={async e => { e.stopPropagation(); handleDeletePo(po); }}
                                                             className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
                                                     </div>
                                                     {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}

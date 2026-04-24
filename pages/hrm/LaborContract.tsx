@@ -3,6 +3,8 @@ import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
 import { usePermission } from '../../hooks/usePermission';
+import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import {
   FileText, Plus, Search, AlertTriangle, CheckCircle, Clock, XCircle, History
 } from 'lucide-react';
@@ -27,6 +29,8 @@ const LaborContractPage: React.FC = () => {
   const { theme } = useTheme();
   const { canManage } = usePermission();
   const canCRUD = canManage('/hrm/contracts');
+  const toast = useToast();
+  const confirm = useConfirm();
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);
   const employeeMap = useMemo(() => new Map(activeEmployees.map(e => [e.id, e])), [activeEmployees]);
@@ -123,6 +127,7 @@ const LaborContractPage: React.FC = () => {
     }
     setShowModal(false);
     resetForm();
+    toast.success(editId ? 'Cập nhật hợp đồng lao động' : 'Tạo hợp đồng lao động mới');
   };
 
   const handleEdit = (c: LaborContract) => {
@@ -136,9 +141,11 @@ const LaborContractPage: React.FC = () => {
     setShowModal(true);
   };
 
-  const handleTerminate = (c: LaborContract) => {
-    if (!confirm('Xác nhận chấm dứt hợp đồng?')) return;
+  const handleTerminate = async (c: LaborContract) => {
+    const ok = await confirm({ targetName: c.contractNumber, title: 'Chấm dứt hợp đồng lao động', warningText: 'Hành động này sẽ đổi trạng thái HĐ thành “Chấm dứt” không thể hoàn tác.' });
+    if (!ok) return;
     updateHrmItem('hrm_labor_contracts', { ...c, status: 'terminated' });
+    toast.success('Chấm dứt hợp đồng thành công', c.contractNumber);
   };
 
   const fmtMoney = (v: number) => v.toLocaleString('vi-VN') + 'đ';

@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { ProjectTransaction, PaymentSchedule, PaymentScheduleStatus } from '../../types';
 import { paymentService } from '../../lib/projectService';
+import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 interface CashFlowTabProps {
     constructionSiteId: string;
@@ -38,6 +40,8 @@ const STATUS_BADGES: Record<PaymentScheduleStatus, { label: string; color: strin
 };
 
 const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transactions, contractValue }) => {
+    const toast = useToast();
+    const confirm = useConfirm();
     const [range, setRange] = useState<'3m' | '6m' | '12m' | 'all'>('12m');
     const [showPaymentForm, setShowPaymentForm] = useState(false);
     const [editingPayment, setEditingPayment] = useState<PaymentSchedule | null>(null);
@@ -89,6 +93,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
         };
         await paymentService.upsert(item);
         setPaymentSchedules(await paymentService.list(constructionSiteId));
+        toast.success(editingPayment ? 'Cập nhật lịch TT' : 'Thêm đợt thanh toán thành công');
         resetPaymentForm();
     };
 
@@ -100,9 +105,16 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
     };
 
     const deletePayment = async (id: string) => {
-        if (!confirm('Xoá lịch thanh toán này?')) return;
-        await paymentService.remove(id);
-        setPaymentSchedules(await paymentService.list(constructionSiteId));
+        const p = paymentSchedules.find(x => x.id === id);
+        const ok = await confirm({ targetName: p?.description || 'đợt thanh toán này', title: 'Xoá lịch thanh toán' });
+        if (!ok) return;
+        try {
+            await paymentService.remove(id);
+            setPaymentSchedules(await paymentService.list(constructionSiteId));
+            toast.success('Xoá thành công');
+        } catch (e: any) {
+            toast.error('Lỗi xoá', e?.message);
+        }
     };
 
     // Auto-update overdue

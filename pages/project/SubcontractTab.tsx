@@ -8,6 +8,8 @@ import {
 import { SubcontractorContract, AcceptanceRecord, AcceptanceStatus } from '../../types';
 import { subcontractorContractService } from '../../lib/hdService';
 import { acceptanceService } from '../../lib/projectService';
+import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 interface SubcontractTabProps {
     constructionSiteId: string;
@@ -27,6 +29,8 @@ const STATUS_CFG: Record<AcceptanceStatus, { label: string; color: string; bg: s
 };
 
 const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId }) => {
+    const toast = useToast();
+    const confirm = useConfirm();
     const [contracts, setContracts] = useState<SubcontractorContract[]>([]);
     const [acceptances, setAcceptances] = useState<AcceptanceRecord[]>([]);
 
@@ -113,9 +117,16 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId }) =
     };
 
     const handleDeleteAcceptance = async (id: string) => {
-        if (!confirm('Xoá biên bản nghiệm thu này?')) return;
-        await acceptanceService.remove(id);
-        setAcceptances(await acceptanceService.list(constructionSiteId));
+        const a = acceptances.find(r => r.id === id);
+        const ok = await confirm({ targetName: `Biên bản NT Đợt ${a?.periodNumber || ''}`, title: 'Xoá biên bản nghiệm thu' });
+        if (!ok) return;
+        try {
+            await acceptanceService.remove(id);
+            setAcceptances(await acceptanceService.list(constructionSiteId));
+            toast.success('Xoá biên bản thành công');
+        } catch (e: any) {
+            toast.error('Lỗi xoá', e?.message);
+        }
     };
 
     const updateAcceptanceStatus = async (id: string, status: AcceptanceStatus) => {

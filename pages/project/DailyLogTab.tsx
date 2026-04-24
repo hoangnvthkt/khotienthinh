@@ -4,6 +4,8 @@ import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Us
 import { DailyLog, WeatherType } from '../../types';
 import { dailyLogService } from '../../lib/projectService';
 import { useVoiceInput } from '../../hooks/useVoiceInput';
+import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 interface DailyLogTabProps {
     constructionSiteId: string;
@@ -64,6 +66,8 @@ const VoiceTextarea: React.FC<{
 };
 
 const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
+    const toast = useToast();
+    const confirm = useConfirm();
     const [logs, setLogs] = useState<DailyLog[]>([]);
 
     useEffect(() => {
@@ -108,13 +112,21 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
         };
         await dailyLogService.upsert(item);
         setLogs(await dailyLogService.list(constructionSiteId));
+        toast.success(editing ? 'Cập nhật nhật ký' : 'Ghi nhật ký thành công');
         resetForm();
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm('Xoá nhật ký này?')) return;
-        await dailyLogService.remove(id);
-        setLogs(await dailyLogService.list(constructionSiteId));
+        const log = logs.find(l => l.id === id);
+        const ok = await confirm({ targetName: log ? new Date(log.date).toLocaleDateString('vi-VN') : 'nhật ký này', title: 'Xoá nhật ký công trường' });
+        if (!ok) return;
+        try {
+            await dailyLogService.remove(id);
+            setLogs(await dailyLogService.list(constructionSiteId));
+            toast.success('Xoá nhật ký thành công');
+        } catch (e: any) {
+            toast.error('Lỗi xoá', e?.message);
+        }
     };
 
     const filtered = useMemo(() => {

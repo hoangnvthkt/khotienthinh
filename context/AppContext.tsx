@@ -8,7 +8,7 @@ import {
   ItemCategory, ItemUnit, Employee, MaterialLossNorm, AuditSession,
   HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule, HrmConstructionSite,
   OrgUnit, ProjectFinance, ProjectTransaction,
-  Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus,
+  Asset, AssetCategory, AssetAssignment, AssetMaintenance, AssetStatus, AssetLocationStock, AssetTransfer, AssetOrigin, AssetAttachment,
   AttendanceRecord, LeaveRequest, PayrollRecord, LaborContract, LeaveBalance, PayrollTemplate, HrmHoliday, HrmSalaryHistory,
   BudgetCategory, BudgetEntry, ExpenseRecord, AttendanceProposal, LeaveLog, LeaveApprover,
   HrmShiftType, HrmEmployeeShift
@@ -136,6 +136,8 @@ interface AppContextType {
   assetCategories: AssetCategory[];
   assetAssignments: AssetAssignment[];
   assetMaintenances: AssetMaintenance[];
+  assetLocationStocks: AssetLocationStock[];
+  assetTransfers: AssetTransfer[];
   addAsset: (asset: Asset) => void;
   updateAsset: (asset: Asset) => void;
   removeAsset: (id: string) => void;
@@ -145,6 +147,7 @@ interface AppContextType {
   addAssetAssignment: (a: AssetAssignment) => void;
   addAssetMaintenance: (m: AssetMaintenance) => void;
   updateAssetMaintenance: (m: AssetMaintenance) => void;
+  addAssetTransfer: (transfer: AssetTransfer, updatedStocks: AssetLocationStock[]) => void;
   isModuleAdmin: (moduleKey: string) => boolean;
   loadModuleData: (module: 'hrm' | 'da' | 'ts' | 'ex') => Promise<void>;
   isLoading: boolean;
@@ -210,6 +213,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ]);
   const [assetAssignments, setAssetAssignments] = useState<AssetAssignment[]>([]);
   const [assetMaintenances, setAssetMaintenances] = useState<AssetMaintenance[]>([]);
+  const [assetLocationStocks, setAssetLocationStocks] = useState<AssetLocationStock[]>([]);
+  const [assetTransfers, setAssetTransfers] = useState<AssetTransfer[]>([]);
   const [categories, setCategories] = useState<ItemCategory[]>([
     { id: 'cat1', name: 'Vật liệu xây dựng' },
     { id: 'cat2', name: 'Công cụ dụng cụ' },
@@ -694,11 +699,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Không chạy accrual ở client để tránh race condition nhiều tab cùng cộng phép.
 
       } else if (module === 'ts') {
-        const [assetsData, assetCatData, assetAssignData, assetMaintData] = await Promise.all([
+        const [assetsData, assetCatData, assetAssignData, assetMaintData, assetLocationData, assetTxData] = await Promise.all([
           fetchTableHelper('assets'),
           fetchTableHelper('asset_categories'),
           fetchTableHelper('asset_assignments', supabase.from('asset_assignments').select('*').order('date', { ascending: false })),
           fetchTableHelper('asset_maintenances', supabase.from('asset_maintenances').select('*').order('start_date', { ascending: false })),
+          fetchTableHelper('asset_location_stocks'),
+          fetchTableHelper('asset_transfers', supabase.from('asset_transfers').select('*').order('date', { ascending: false })),
         ]);
         if (assetsData) setAssets(assetsData.map((a: any) => ({
           ...a, categoryId: a.category_id, serialNumber: a.serial_number,
@@ -709,7 +716,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           assignedToUserId: a.assigned_to_user_id, assignedToName: a.assigned_to_name,
           assignedDate: a.assigned_date, disposalDate: a.disposal_date,
           disposalValue: a.disposal_value, disposalNote: a.disposal_note,
-          imageUrl: a.image_url, createdAt: a.created_at, updatedAt: a.updated_at
+          imageUrl: a.image_url, createdAt: a.created_at, updatedAt: a.updated_at,
+          // New fields (Phase 4)
+          assetType: a.asset_type || 'single',
+          quantity: a.quantity || 1,
+          unit: a.unit || 'Cái',
+          parentId: a.parent_id || undefined,
+          childIndex: a.child_index || undefined,
+          isBundle: a.is_bundle || false,
+          assetOrigin: a.asset_origin || 'purchase',
+          contractNumber: a.contract_number || undefined,
+          invoiceNumber: a.invoice_number || undefined,
         })));
         if (assetCatData && assetCatData.length > 0) setAssetCategories(assetCatData.map((c: any) => ({
           ...c, depreciationYears: c.depreciation_years
@@ -725,6 +742,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           invoiceNumber: m.invoice_number, estimatedCost: m.estimated_cost,
           actualCost: m.actual_cost,
           attachments: typeof m.attachments === 'string' ? JSON.parse(m.attachments) : (m.attachments || [])
+        })));
+        if (assetLocationData) setAssetLocationStocks(assetLocationData.map((l: any) => ({
+          ...l, assetId: l.asset_id, warehouseId: l.warehouse_id,
+          constructionSiteId: l.construction_site_id, deptId: l.dept_id,
+          assignedToUserId: l.assigned_to_user_id, assignedToName: l.assigned_to_name,
+          updatedAt: l.updated_at
+        })));
+        if (assetTxData) setAssetTransfers(assetTxData.map((t: any) => ({
+          ...t, assetId: t.asset_id, assetCode: t.asset_code, assetName: t.asset_name,
+          fromWarehouseId: t.from_warehouse_id, fromSiteId: t.from_site_id, fromDeptId: t.from_dept_id,
+          fromLocationLabel: t.from_location_label, toWarehouseId: t.to_warehouse_id,
+          toSiteId: t.to_site_id, toDeptId: t.to_dept_id, toLocationLabel: t.to_location_label,
+          receivedByUserId: t.received_by_user_id, receivedByName: t.received_by_name,
+          performedBy: t.performed_by, performedByName: t.performed_by_name,
+          createdAt: t.created_at
         })));
       } else if (module === 'ex') {
         const [budgetCatData, budgetEntData, expRecData] = await Promise.all([
@@ -820,24 +852,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       } else if (table === 'assets') {
         payload = {
-          id: data.id, code: data.code, name: data.name, category_id: data.category_id || data.categoryId,
-          brand: data.brand || null, model: data.model || null, serial_number: data.serial_number || data.serialNumber || null,
-          status: data.status, original_value: data.original_value ?? data.originalValue ?? 0,
-          purchase_date: data.purchase_date || data.purchaseDate,
-          depreciation_years: data.depreciation_years ?? data.depreciationYears ?? 5,
-          warranty_months: data.warranty_months ?? data.warrantyMonths ?? 0,
-          residual_value: data.residual_value ?? data.residualValue ?? 0,
-          warehouse_id: data.warehouse_id || data.warehouseId || null,
-          location_note: data.location_note || data.locationNote || null,
-          assigned_to_user_id: data.assigned_to_user_id || data.assignedToUserId || null,
-          assigned_to_name: data.assigned_to_name || data.assignedToName || null,
-          assigned_date: data.assigned_date || data.assignedDate || null,
-          disposal_date: data.disposal_date || data.disposalDate || null,
-          disposal_value: data.disposal_value ?? data.disposalValue ?? null,
-          disposal_note: data.disposal_note || data.disposalNote || null,
-          image_url: data.image_url || data.imageUrl || null,
-          note: data.note || null,
-          created_at: data.created_at || data.createdAt, updated_at: data.updated_at || data.updatedAt
+          id: data.id, code: data.code, name: data.name, category_id: data.categoryId,
+          brand: data.brand || null, model: data.model || null, serial_number: data.serialNumber || null,
+          status: data.status,
+          asset_type: data.assetType || 'single', quantity: data.quantity ?? 1, unit: data.unit || null,
+          parent_id: data.parentId || null, child_index: data.childIndex || null, is_bundle: data.isBundle || false,
+          managed_by_user_id: data.managedByUserId || null, managing_dept_id: data.managingDeptId || null, construction_site_id: data.constructionSiteId || null,
+          supplier_id: data.supplierId || null, contract_number: data.contractNumber || null, invoice_number: data.invoiceNumber || null,
+          asset_origin: data.assetOrigin || 'purchase', is_fixed_asset: data.isFixedAsset ?? true, is_leased: data.isLeased || false, leased_from: data.leasedFrom || null, lease_end_date: data.leaseEndDate || null,
+          warranty_condition: data.warrantyCondition || null, warranty_provider: data.warrantyProvider || null, warranty_contact: data.warrantyContact || null,
+          original_value: data.originalValue ?? 0, purchase_date: data.purchaseDate,
+          depreciation_years: data.depreciationYears ?? 5, warranty_months: data.warrantyMonths ?? 0,
+          residual_value: data.residualValue ?? 0, warehouse_id: data.warehouseId || null, location_note: data.locationNote || null,
+          assigned_to_user_id: data.assignedToUserId || null, assigned_to_name: data.assignedToName || null,
+          assigned_date: data.assignedDate || null, disposal_date: data.disposalDate || null,
+          disposal_value: data.disposalValue || null, disposal_note: data.disposalNote || null,
+          image_url: data.imageUrl || null, note: data.note || null,
+          created_at: data.createdAt, updated_at: data.updatedAt
+        };
+      } else if (table === 'asset_location_stocks') {
+        payload = {
+          id: data.id, asset_id: data.assetId, warehouse_id: data.warehouseId || null,
+          construction_site_id: data.constructionSiteId || null, dept_id: data.deptId || null,
+          qty: data.qty, assigned_to_user_id: data.assignedToUserId || null,
+          assigned_to_name: data.assignedToName || null, note: data.note || null,
+          updated_at: data.updatedAt
+        };
+      } else if (table === 'asset_transfers') {
+        payload = {
+          id: data.id, code: data.code, asset_id: data.assetId, asset_code: data.assetCode || null,
+          asset_name: data.assetName || null, qty: data.qty,
+          from_warehouse_id: data.fromWarehouseId || null, from_site_id: data.fromSiteId || null,
+          from_dept_id: data.fromDeptId || null, from_location_label: data.fromLocationLabel || null,
+          to_warehouse_id: data.toWarehouseId || null, to_site_id: data.toSiteId || null,
+          to_dept_id: data.toDeptId || null, to_location_label: data.toLocationLabel || null,
+          received_by_user_id: data.receivedByUserId || null, received_by_name: data.receivedByName || null,
+          date: data.date, reason: data.reason || null, status: data.status,
+          performed_by: data.performedBy || null, performed_by_name: data.performedByName || null,
+          note: data.note || null, created_at: data.createdAt
         };
       } else if (table === 'asset_categories') {
         payload = {
@@ -1597,7 +1649,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addAsset = (asset: Asset) => {
     setAssets(prev => [...prev, asset]);
     if (isSupabaseConfigured) {
-      syncToSupabase('assets', { ...asset, category_id: asset.categoryId, serial_number: asset.serialNumber, original_value: asset.originalValue, purchase_date: asset.purchaseDate, depreciation_years: asset.depreciationYears, warranty_months: asset.warrantyMonths || 0, residual_value: asset.residualValue, warehouse_id: asset.warehouseId, location_note: asset.locationNote, assigned_to_user_id: asset.assignedToUserId, assigned_to_name: asset.assignedToName, assigned_date: asset.assignedDate, disposal_date: asset.disposalDate, disposal_value: asset.disposalValue, disposal_note: asset.disposalNote, image_url: asset.imageUrl, created_at: asset.createdAt, updated_at: asset.updatedAt });
+      syncToSupabase('assets', asset);
     }
     logActivity('SYSTEM', 'Thêm tài sản', `Thêm tài sản ${asset.name} (${asset.code})`, 'SUCCESS');
     auditService.log({ tableName: 'assets', recordId: asset.id, action: 'INSERT', newData: asset as any, userId: user.id, userName: user.name || user.username });
@@ -1607,7 +1659,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const oldAsset = assets.find(a => a.id === asset.id);
     setAssets(prev => prev.map(a => a.id === asset.id ? asset : a));
     if (isSupabaseConfigured) {
-      syncToSupabase('assets', { ...asset, category_id: asset.categoryId, serial_number: asset.serialNumber, original_value: asset.originalValue, purchase_date: asset.purchaseDate, depreciation_years: asset.depreciationYears, warranty_months: asset.warrantyMonths || 0, residual_value: asset.residualValue, warehouse_id: asset.warehouseId, location_note: asset.locationNote, assigned_to_user_id: asset.assignedToUserId, assigned_to_name: asset.assignedToName, assigned_date: asset.assignedDate, disposal_date: asset.disposalDate, disposal_value: asset.disposalValue, disposal_note: asset.disposalNote, image_url: asset.imageUrl, created_at: asset.createdAt, updated_at: asset.updatedAt });
+      syncToSupabase('assets', asset);
     }
     auditService.log({ tableName: 'assets', recordId: asset.id, action: 'UPDATE', oldData: oldAsset as any, newData: asset as any, userId: user.id, userName: user.name || user.username });
   };
@@ -1673,6 +1725,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (asset) updateAsset({ ...asset, status: AssetStatus.MAINTENANCE, updatedAt: new Date().toISOString() });
     }
     logActivity('SYSTEM', 'Bảo trì tài sản', `Ghi nhận bảo trì: ${m.description}`, 'INFO');
+  };
+
+  const addAssetTransfer = (t: AssetTransfer, updatedStocks: AssetLocationStock[]) => {
+    setAssetTransfers(prev => [t, ...prev]);
+    setAssetLocationStocks(prev => {
+      const draft = [...prev];
+      for (const stock of updatedStocks) {
+        const idx = draft.findIndex(s => s.id === stock.id);
+        if (idx !== -1) draft[idx] = stock;
+        else draft.push(stock);
+      }
+      return draft;
+    });
+
+    if (isSupabaseConfigured) {
+      syncToSupabase('asset_transfers', t);
+      updatedStocks.forEach(s => syncToSupabase('asset_location_stocks', s));
+    }
+    logActivity('SYSTEM', 'Điều chuyển lô', `Điều chuyển ${t.qty} ${t.assetCode} từ ${t.fromLocationLabel} sang ${t.toLocationLabel}`, 'INFO');
   };
 
   const updateAssetMaintenance = (m: AssetMaintenance) => {
@@ -1801,9 +1872,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       auditSessions, addAuditSession,
       projectFinances, addProjectFinance, updateProjectFinance, removeProjectFinance,
       projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction,
-      assets, assetCategories, assetAssignments, assetMaintenances,
+      assets, assetCategories, assetAssignments, assetMaintenances, assetLocationStocks, assetTransfers,
       addAsset, updateAsset, removeAsset, addAssetCategory, updateAssetCategory, removeAssetCategory,
-      addAssetAssignment, addAssetMaintenance, updateAssetMaintenance,
+      addAssetAssignment, addAssetMaintenance, updateAssetMaintenance, addAssetTransfer,
       isModuleAdmin, loadModuleData,
       saveSignature, deleteSignature,
       login, logout, isLoading, isRefreshing, connectionError, realtimeStatus, lastRealtimeEvent

@@ -55,6 +55,11 @@ const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }
   EP: [
     { to: '/ep', icon: IdCard, label: 'Tra cứu nhân viên' },
   ],
+  HD: [
+    { to: '/hd/supplier', icon: FileSignature, label: 'HĐ Nhà cung cấp' },
+    { to: '/hd/customer', icon: Users, label: 'HĐ Khách hàng' },
+    { to: '/hd/subcontractor', icon: FileSignature, label: 'HĐ Thầu phụ' },
+  ],
 };
 
 interface UserModalProps {
@@ -75,6 +80,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     { key: 'RQ', label: 'RQ - Yêu cầu', icon: Inbox, color: 'text-cyan-600 bg-cyan-50 border-cyan-200 dark:bg-cyan-900/30 dark:border-cyan-700' },
     { key: 'EX', label: 'CP - Chi phí', icon: BarChart3, color: 'text-indigo-600 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-700' },
     { key: 'EP', label: 'EP - Hồ sơ NV', icon: IdCard, color: 'text-sky-600 bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-700' },
+    { key: 'HD', label: 'HĐ - Hợp đồng', icon: FileSignature, color: 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700' },
   ];
 
   const [formData, setFormData] = useState<Partial<User>>({

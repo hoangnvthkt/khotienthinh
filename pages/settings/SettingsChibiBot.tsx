@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Bot, Plus, Edit2, Trash2, Save, X, MessageCircle, Clock, Smile, Zap, Heart, AlertCircle, ToggleLeft, ToggleRight } from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 interface ChatbotMessage {
   id: string;
@@ -20,6 +22,8 @@ const TYPE_CONFIG = {
 } as const;
 
 const SettingsChibiBot: React.FC = () => {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [messages, setMessages] = useState<ChatbotMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -69,12 +73,16 @@ const SettingsChibiBot: React.FC = () => {
     setEditingMsg(null);
     resetForm();
     fetchMessages();
+    toast.success(editingMsg ? 'Cập nhật câu nói' : 'Thêm câu nói mới');
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Xoá câu nói này?')) return;
+    const msg = messages.find(m => m.id === id);
+    const ok = await confirm({ targetName: msg?.message?.slice(0, 40) || 'câu nói này', title: 'Xoá câu nói ChibiBot' });
+    if (!ok) return;
     await supabase.from('chatbot_messages').delete().eq('id', id);
     fetchMessages();
+    toast.success('Xoá câu nói thành công');
   };
 
   const handleToggle = async (msg: ChatbotMessage) => {

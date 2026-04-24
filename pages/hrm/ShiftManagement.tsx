@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { HrmShiftType, HrmEmployeeShift } from '../../types';
 import { usePermission } from '../../hooks/usePermission';
+import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 const SHIFT_COLORS = [
   '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444',
@@ -20,6 +22,8 @@ const ShiftManagement: React.FC = () => {
   const { isDark } = useTheme();
   const { canManage } = usePermission();
   const canCRUD = canManage('/hrm/shifts');
+  const toast = useToast();
+  const confirm = useConfirm();
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);
 
@@ -73,11 +77,15 @@ const ShiftManagement: React.FC = () => {
       addHrmItem('hrm_shift_types', item);
     }
     resetForm();
+    toast.success(editId ? 'Cập nhật ca làm việc' : 'Tạo ca làm việc mới');
   };
 
-  const handleDeleteShift = (id: string) => {
-    if (!confirm('Xóa ca làm việc này?')) return;
+  const handleDeleteShift = async (id: string) => {
+    const shift = shiftTypes.find(s => s.id === id);
+    const ok = await confirm({ targetName: shift?.name || 'ca này', title: 'Xoá ca làm việc' });
+    if (!ok) return;
     removeHrmItem('hrm_shift_types', id);
+    toast.success('Xoá ca thành công');
   };
 
   // ==================== TAB 2: ASSIGN SHIFTS ====================

@@ -32,6 +32,8 @@ const TAB_CONFIG: { key: DocTab; label: string; icon: React.ReactNode; color: st
 ];
 
 import { usePermission } from '../../hooks/usePermission';
+import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 const HrmDocuments: React.FC = () => {
   useModuleData('hrm');
@@ -39,6 +41,8 @@ const HrmDocuments: React.FC = () => {
   const { theme } = useTheme();
   const { canManage } = usePermission();
   const canCRUD = canManage('/hrm/documents');
+  const toast = useToast();
+  const confirm = useConfirm();
 
   const [activeTab, setActiveTab] = useState<DocTab>('employee_record');
   const [documents, setDocuments] = useState<HrmDocument[]>([]);
@@ -71,7 +75,7 @@ const HrmDocuments: React.FC = () => {
   const [uploadDeadline, setUploadDeadline] = useState('');
   const [uploadAssignedTo, setUploadAssignedTo] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);
   const employeeMap = useMemo(() => new Map(employees.map(e => [e.id, e])), [employees]);
@@ -142,7 +146,7 @@ const HrmDocuments: React.FC = () => {
 
   const handleUpload = async () => {
     if (uploadFiles.length === 0 || !uploadTitle) return;
-    if (activeTab === 'employee_record' && !uploadEmployeeId) { alert('Vui lòng chọn nhân viên'); return; }
+    if (activeTab === 'employee_record' && !uploadEmployeeId) { toast.warning('Thiếu thông tin', 'Vui lòng chọn nhân viên'); return; }
     setUploading(true);
     try {
       const tags = uploadTags.split(',').map(t => t.trim()).filter(Boolean);
@@ -153,7 +157,7 @@ const HrmDocuments: React.FC = () => {
       let successCount = 0;
       for (const file of uploadFiles) {
         const v = hrmDocumentService.validateFile(file);
-        if (!v.valid) { alert(v.error); continue; }
+        if (!v.valid) { toast.warning('File không hợp lệ', v.error); continue; }
         const result = await hrmDocumentService.upload(file, {
           docType: activeTab,
           docCategory: uploadCategory,
@@ -173,19 +177,26 @@ const HrmDocuments: React.FC = () => {
       if (successCount > 0) {
         await loadDocs();
         resetUploadForm();
+        toast.success('Tải lên thành công', `${successCount} file đã được lưu`);
       }
     } catch (err: any) {
       console.error('Upload failed:', err);
-      alert('Lỗi upload: ' + (err?.message || 'Không xác định'));
+      toast.error('Lỗi upload', err?.message || 'Không xác định');
     } finally {
       setUploading(false);
     }
   };
 
   const handleDelete = async (doc: HrmDocument) => {
-    if (!confirm(`Xoá "${doc.title}"?`)) return;
-    await hrmDocumentService.remove(doc);
-    await loadDocs();
+    const ok = await confirm({ targetName: doc.title, title: 'Xoá tài liệu', warningText: 'File sẽ bị xóa khỏi Storage vĩnh viễn.' });
+    if (!ok) return;
+    try {
+      await hrmDocumentService.remove(doc);
+      await loadDocs();
+      toast.success('Xoá tài liệu thành công');
+    } catch (e: any) {
+      toast.error('Lỗi xoá', e?.message);
+    }
   };
 
   const handleDownload = async (doc: HrmDocument) => {
@@ -235,9 +246,11 @@ const HrmDocuments: React.FC = () => {
   };
 
   const handleDeleteCategory = async (cat: DocCategory) => {
-    if (!confirm(`Xoá danh mục "${cat.icon} ${cat.label}"?`)) return;
+    const ok = await confirm({ targetName: `${cat.icon} ${cat.label}`, title: 'Xoá danh mục' });
+    if (!ok) return;
     await hrmDocumentService.deleteCategory(cat.id);
     await loadCategories();
+    toast.success('Xoá danh mục thành công');
   };
 
   return (

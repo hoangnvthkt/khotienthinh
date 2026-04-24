@@ -64,4 +64,9 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   // ── EMPLOYEE PROFILE ──────────────────────────────────
   '/ep': 'EP',
   // /ep/:employeeId → dynamic, không guard ở đây
+
+  // ── HỢP ĐỒNG ──────────────────────────────────────────
+  '/hd/supplier':      'HD',
+  '/hd/customer':      'HD',
+  '/hd/subcontractor': 'HD',
 };

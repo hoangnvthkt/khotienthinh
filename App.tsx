@@ -6,6 +6,7 @@ import LoadingSpinner from './components/LoadingSpinner';
 import Login from './pages/Login';
 import { AppProvider, useApp } from './context/AppContext';
 import { ToastProvider } from './context/ToastContext';
+import { ConfirmProvider } from './context/ConfirmContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { WorkflowProvider } from './context/WorkflowContext';
 import { ChatProvider } from './context/ChatContext';
@@ -97,6 +98,12 @@ const EmployeeProfilePage = React.lazy(() => import('./pages/ep/EmployeeProfile'
 
 // 3D Org Map
 const OrgMap3D = React.lazy(() => import('./pages/orgmap/OrgMap3D'));
+
+// Contract management pages
+const ContractLayout = React.lazy(() => import('./pages/hd/ContractLayout'));
+const SupplierContracts = React.lazy(() => import('./pages/hd/SupplierContracts'));
+const CustomerContracts = React.lazy(() => import('./pages/hd/CustomerContracts'));
+const SubcontractorContracts = React.lazy(() => import('./pages/hd/SubcontractorContracts'));
 
 // ── T1: ProtectedRoute — verify Supabase session thực sự ─────────────────────
 // Khi Supabase được cấu hình: check session JWT từ Supabase Auth.
@@ -225,6 +232,12 @@ const AppRoutes: React.FC = () => {
           <Route path="ep" element={<EmployeeDirectory />} />
           <Route path="ep/:employeeId" element={<EmployeeProfilePage />} />
           <Route path="org-map" element={<OrgMap3D />} />
+          <Route path="hd" element={<ContractLayout />}>
+            <Route index element={<Navigate to="supplier" replace />} />
+            <Route path="supplier" element={<SupplierContracts />} />
+            <Route path="customer" element={<CustomerContracts />} />
+            <Route path="subcontractor" element={<SubcontractorContracts />} />
+          </Route>
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
@@ -237,19 +250,21 @@ const App: React.FC = () => {
     <ErrorBoundary>
       <ThemeProvider>
         <ToastProvider>
-          <AppProvider>
-            <WorkflowProvider>
-              <RequestProvider>
-                <ChatProvider>
-                  <CelebrationProvider>
-                    <Router>
-                      <AppRoutes />
-                    </Router>
-                  </CelebrationProvider>
-                </ChatProvider>
-              </RequestProvider>
-            </WorkflowProvider>
-          </AppProvider>
+          <ConfirmProvider>
+            <AppProvider>
+              <WorkflowProvider>
+                <RequestProvider>
+                  <ChatProvider>
+                    <CelebrationProvider>
+                      <Router>
+                        <AppRoutes />
+                      </Router>
+                    </CelebrationProvider>
+                  </ChatProvider>
+                </RequestProvider>
+              </WorkflowProvider>
+            </AppProvider>
+          </ConfirmProvider>
         </ToastProvider>
       </ThemeProvider>
     </ErrorBoundary>

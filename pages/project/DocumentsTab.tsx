@@ -6,6 +6,8 @@ import {
     CheckCircle2, AlertTriangle, ChevronDown
 } from 'lucide-react';
 import { documentService, ProjectDocument, DOC_CATEGORIES } from '../../lib/documentService';
+import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 interface DocumentsTabProps {
     constructionSiteId: string;
@@ -27,6 +29,8 @@ const FILE_ICONS: Record<string, { icon: React.ReactNode; color: string }> = {
 const getFileIcon = (fileType: string) => FILE_ICONS[fileType] || { icon: <FileIcon size={18} />, color: 'text-slate-500 bg-slate-50' };
 
 const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, uploadedBy }) => {
+    const toast = useToast();
+    const confirm = useConfirm();
     const [documents, setDocuments] = useState<ProjectDocument[]>([]);
     const [filterCategory, setFilterCategory] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
@@ -90,7 +94,7 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, uploade
         // Validate file sizes
         for (const file of uploadFiles) {
             const v = documentService.validateFile(file);
-            if (!v.valid) { alert(v.error); return; }
+            if (!v.valid) { toast.warning('File không hợp lệ', v.error); return; }
         }
         setUploading(true);
         try {
@@ -106,8 +110,10 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, uploade
             }
             await loadDocs();
             resetUploadForm();
-        } catch (err) {
+            toast.success('Tải lên thành công', `${uploadFiles.length} file đã được tải lên`);
+        } catch (err: any) {
             console.error('Upload failed:', err);
+            toast.error('Lỗi upload', err?.message);
         } finally {
             setUploading(false);
         }
@@ -123,9 +129,15 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, uploade
     };
 
     const handleDelete = async (doc: ProjectDocument) => {
-        if (!confirm(`Xoá "${doc.title}"?`)) return;
-        await documentService.remove(doc);
-        await loadDocs();
+        const ok = await confirm({ targetName: doc.title, title: 'Xoá tài liệu', warningText: 'File sẽ bị xóa khỏi Storage vĩnh viễn.' });
+        if (!ok) return;
+        try {
+            await documentService.remove(doc);
+            await loadDocs();
+            toast.success('Xoá tài liệu thành công');
+        } catch (e: any) {
+            toast.error('Lỗi xoá', e?.message);
+        }
     };
 
     const handleDownload = async (doc: ProjectDocument) => {

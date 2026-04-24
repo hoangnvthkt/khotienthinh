@@ -7,9 +7,9 @@ import {
     Search, Plus, Filter, Trash2, Edit3, MoreHorizontal, QrCode,
     Landmark, Tag, Calendar, DollarSign, MapPin, User, X, Check,
     AlertTriangle, CheckCircle, Wrench, Ban, Package, Shield, XCircle, FileWarning,
-    Upload, Download, FileSpreadsheet, Table2, CheckCircle2, Loader2
+    Upload, Download, FileSpreadsheet, Table2, CheckCircle2, Loader2, ChevronDown, ChevronRight, Layers, LayoutGrid, ArrowLeftRight
 } from 'lucide-react';
-import { Asset, AssetStatus, ASSET_STATUS_LABELS, ASSET_CATEGORY_LABELS, AssetCategoryType } from '../../types';
+import { Asset, AssetStatus, ASSET_STATUS_LABELS, ASSET_CATEGORY_LABELS, AssetCategoryType, AssetLocationStock, AssetTransfer } from '../../types';
 import ScannerModal from '../../components/ScannerModal';
 import * as XLSX from 'xlsx';
 import { usePermission } from '../../hooks/usePermission';
@@ -18,8 +18,11 @@ const AssetCatalog: React.FC = () => {
     const navigate = useNavigate();
     const {
         assets, assetCategories, warehouses, users, user,
+        assetLocationStocks, assetTransfers,
+        suppliers, units,
         addAsset, updateAsset, removeAsset,
-        addAssetCategory, updateAssetCategory, removeAssetCategory,
+        addAssetCategory, updateAssetCategory, removeAssetCategory, addAssetTransfer,
+        addSupplier, addUnit
     } = useApp();
   useModuleData('ts');
     const toast = useToast();
@@ -29,13 +32,27 @@ const AssetCatalog: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState('all');
     const [filterStatus, setFilterStatus] = useState('all');
+    const [filterAssetType, setFilterAssetType] = useState('all');
+    const [expandedBundles, setExpandedBundles] = useState<Set<string>>(new Set());
     const [showAddModal, setShowAddModal] = useState(false);
     const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
     const [detailAsset, setDetailAsset] = useState<Asset | null>(null);
+    const [activeTab, setActiveTab] = useState<'info'|'components'|'distribution'>('info');
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
     const [disposeConfirm, setDisposeConfirm] = useState<Asset | null>(null);
     const [disposeReason, setDisposeReason] = useState('');
     const [isScannerOpen, setScannerOpen] = useState(false);
+
+    // Batch Transfer State
+    const [showBatchTransfer, setShowBatchTransfer] = useState(false);
+    const [transferFromStock, setTransferFromStock] = useState<AssetLocationStock | null>(null);
+    const [tForm, setTForm] = useState({
+        qty: 0,
+        toWarehouseId: '',
+        userId: '',
+        reason: '',
+        date: new Date().toISOString().split('T')[0]
+    });
 
     // Excel Import state
     const [showImportModal, setShowImportModal] = useState(false);
@@ -49,6 +66,8 @@ const AssetCatalog: React.FC = () => {
         code: '', name: '', categoryId: '', brand: '', model: '', serialNumber: '',
         originalValue: 0, purchaseDate: new Date().toISOString().split('T')[0],
         depreciationYears: 5, warrantyMonths: 12, residualValue: 0, warehouseId: '', locationNote: '', note: '',
+        assetType: 'single' as 'single' | 'batch' | 'bundle', quantity: 1, unit: 'Cái', parentId: '',
+        supplierId: ''
     });
 
     const resetForm = () => {
@@ -56,6 +75,8 @@ const AssetCatalog: React.FC = () => {
             code: '', name: '', categoryId: assetCategories[0]?.id || '', brand: '', model: '', serialNumber: '',
             originalValue: 0, purchaseDate: new Date().toISOString().split('T')[0],
             depreciationYears: 5, warrantyMonths: 12, residualValue: 0, warehouseId: '', locationNote: '', note: '',
+            assetType: 'single' as 'single' | 'batch' | 'bundle', quantity: 1, unit: 'Cái', parentId: '',
+            supplierId: ''
         });
     };
 
@@ -74,6 +95,8 @@ const AssetCatalog: React.FC = () => {
             originalValue: asset.originalValue, purchaseDate: asset.purchaseDate.split('T')[0],
             depreciationYears: asset.depreciationYears, warrantyMonths: asset.warrantyMonths || 0, residualValue: asset.residualValue,
             warehouseId: asset.warehouseId || '', locationNote: asset.locationNote || '', note: asset.note || '',
+            assetType: asset.assetType || 'single', quantity: asset.quantity || 1, unit: asset.unit || 'Cái', parentId: asset.parentId || '',
+            supplierId: asset.supplierId || ''
         });
         setEditingAsset(asset);
         setShowAddModal(true);
@@ -85,6 +108,7 @@ const AssetCatalog: React.FC = () => {
             return;
         }
         const now = new Date().toISOString();
+        const resolvedSupplierName = suppliers.find(s => s.id === form.supplierId)?.name || undefined;
         if (editingAsset) {
             updateAsset({
                 ...editingAsset, ...form,
@@ -92,6 +116,8 @@ const AssetCatalog: React.FC = () => {
                 depreciationYears: Number(form.depreciationYears),
                 warrantyMonths: Number(form.warrantyMonths),
                 residualValue: Number(form.residualValue),
+                supplierId: form.supplierId || undefined,
+                supplierName: resolvedSupplierName,
                 updatedAt: now,
             });
             toast.success('Cập nhật thành công', `Tài sản ${form.name} đã được cập nhật`);
@@ -103,6 +129,8 @@ const AssetCatalog: React.FC = () => {
                 depreciationYears: Number(form.depreciationYears),
                 warrantyMonths: Number(form.warrantyMonths),
                 residualValue: Number(form.residualValue),
+                supplierId: form.supplierId || undefined,
+                supplierName: resolvedSupplierName,
                 status: AssetStatus.AVAILABLE,
                 createdAt: now,
                 updatedAt: now,
@@ -110,6 +138,31 @@ const AssetCatalog: React.FC = () => {
             toast.success('Thêm thành công', `Tài sản ${form.name} đã được thêm vào danh mục`);
         }
         setShowAddModal(false);
+    };
+
+    // Quick-add Supplier states & handler
+    const [showAddSupplier, setShowAddSupplier] = useState(false);
+    const [newSupplierForm, setNewSupplierForm] = useState({ name: '', contactPerson: '', phone: '' });
+    const handleQuickAddSupplier = () => {
+        if (!newSupplierForm.name.trim()) { toast.error('Lỗi', 'Vui lòng nhập tên nhà cung cấp'); return; }
+        const s = { id: `sup-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, name: newSupplierForm.name.trim(), contactPerson: newSupplierForm.contactPerson.trim(), phone: newSupplierForm.phone.trim(), debt: 0 };
+        addSupplier(s);
+        setForm(p => ({ ...p, supplierId: s.id }));
+        setShowAddSupplier(false);
+        setNewSupplierForm({ name: '', contactPerson: '', phone: '' });
+        toast.success('Thêm NCC thành công', `${s.name} đã được thêm vào danh sách nhà cung cấp`);
+    };
+
+    // Quick-add Unit states & handler
+    const [showAddUnit, setShowAddUnit] = useState(false);
+    const [newUnitName, setNewUnitName] = useState('');
+    const handleQuickAddUnit = () => {
+        if (!newUnitName.trim()) { toast.error('Lỗi', 'Vui lòng nhập tên đơn vị'); return; }
+        addUnit(newUnitName.trim());
+        setForm(p => ({ ...p, unit: newUnitName.trim() }));
+        setShowAddUnit(false);
+        setNewUnitName('');
+        toast.success('Thêm đơn vị thành công', `"đơn vị được thêm vào danh sách`);
     };
 
     const handleDelete = (id: string) => {
@@ -132,6 +185,72 @@ const AssetCatalog: React.FC = () => {
         toast.success('Xuất huỷ thành công', `Tài sản ${disposeConfirm.name} đã được xuất huỷ. Lịch sử vẫn được lưu lại.`);
         setDisposeConfirm(null);
         setDisposeReason('');
+    };
+
+    const handleBatchTransfer = () => {
+        if (!transferFromStock || !detailAsset) return;
+        if (tForm.qty <= 0 || tForm.qty > transferFromStock.qty) {
+            toast.error('Lỗi', 'Số lượng xuất kho không hợp lệ');
+            return;
+        }
+
+        const nowIso = new Date().toISOString();
+        const oldStock = { ...transferFromStock, qty: transferFromStock.qty - tForm.qty, updatedAt: nowIso };
+        
+        let targetStock = assetLocationStocks.find(s => 
+            s.assetId === detailAsset.id &&
+            s.warehouseId === (tForm.toWarehouseId || undefined) &&
+            s.assignedToUserId === (tForm.userId || undefined)
+        );
+
+        let newStock: AssetLocationStock;
+        if (targetStock) {
+            newStock = { ...targetStock, qty: targetStock.qty + tForm.qty, updatedAt: nowIso };
+        } else {
+            newStock = {
+                id: `stock-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                assetId: detailAsset.id,
+                warehouseId: tForm.toWarehouseId || undefined,
+                qty: tForm.qty,
+                assignedToUserId: tForm.userId || undefined,
+                assignedToName: users.find(u => u.id === tForm.userId)?.name || undefined,
+                updatedAt: nowIso
+            };
+        }
+        
+        const getWarehouseName = (wId?: string) => wId ? warehouses.find(w => w.id === wId)?.name || 'Kho khác' : 'Không xác định';
+
+        const transferLog: AssetTransfer = {
+            id: `tfr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            code: `DC-${Date.now().toString().slice(-6)}`,
+            assetId: detailAsset.id,
+            assetCode: detailAsset.code,
+            assetName: detailAsset.name,
+            qty: tForm.qty,
+            fromWarehouseId: oldStock.warehouseId,
+            fromLocationLabel: oldStock.assignedToName || getWarehouseName(oldStock.warehouseId),
+            toWarehouseId: newStock.warehouseId,
+            toLocationLabel: newStock.assignedToName || getWarehouseName(newStock.warehouseId),
+            receivedByUserId: newStock.assignedToUserId,
+            receivedByName: newStock.assignedToName,
+            date: tForm.date,
+            reason: tForm.reason,
+            status: 'completed',
+            performedBy: user.id,
+            performedByName: user.name || user.username,
+            createdAt: nowIso
+        };
+
+        addAssetTransfer(transferLog, [oldStock, newStock]);
+        toast.success('Thành công', 'Đã điều chuyển lô tài sản thành công');
+        setShowBatchTransfer(false);
+        setTransferFromStock(null);
+    };
+
+    const openBatchTransfer = (stock: AssetLocationStock) => {
+        setTransferFromStock(stock);
+        setTForm(prev => ({ ...prev, qty: stock.qty, toWarehouseId: '', userId: '', reason: '' }));
+        setShowBatchTransfer(true);
     };
 
     const handleScanResult = (code: string) => {
@@ -286,15 +405,32 @@ const AssetCatalog: React.FC = () => {
     };
 
     const filteredAssets = useMemo(() => {
-        return assets.filter(a => {
-            const matchSearch = a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        let list = assets;
+        if (searchTerm) {
+            list = list.filter(a => 
+                a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 a.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (a.serialNumber || '').toLowerCase().includes(searchTerm.toLowerCase());
+                (a.serialNumber || '').toLowerCase().includes(searchTerm.toLowerCase())
+            );
+        } else {
+             list = list.filter(a => !a.parentId);
+        }
+        
+        return list.filter(a => {
             const matchCat = filterCategory === 'all' || a.categoryId === filterCategory;
             const matchStatus = filterStatus === 'all' || a.status === filterStatus;
-            return matchSearch && matchCat && matchStatus;
+            const matchType = filterAssetType === 'all' || a.assetType === filterAssetType;
+            return matchCat && matchStatus && matchType;
         });
-    }, [assets, searchTerm, filterCategory, filterStatus]);
+    }, [assets, searchTerm, filterCategory, filterStatus, filterAssetType]);
+
+    const toggleBundle = (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        const next = new Set(expandedBundles);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        setExpandedBundles(next);
+    };
 
     const getStatusConfig = (status: AssetStatus) => {
         switch (status) {
@@ -357,6 +493,133 @@ const AssetCatalog: React.FC = () => {
     const disposedCount = assets.filter(a => a.status === AssetStatus.DISPOSED).length;
 
     const getCategoryName = (catId: string) => assetCategories.find(c => c.id === catId)?.name || 'Chưa phân loại';
+
+    const renderAssetRow = (asset: Asset, level: number = 0) => {
+        const cfg = getStatusConfig(asset.status);
+        const StatusIcon = cfg.icon;
+        const dep = getDepreciation(asset);
+        const warranty = getWarrantyInfo(asset);
+        const isBundle = asset.assetType === 'bundle';
+        const isBatch = asset.assetType === 'batch';
+        const isExpanded = expandedBundles.has(asset.id);
+        const children = assets.filter(a => a.parentId === asset.id);
+
+        return (
+            <React.Fragment key={asset.id}>
+                <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
+                    <td className="p-4 font-mono text-slate-400 font-bold text-xs">
+                        <div className="flex items-center gap-2" style={{ paddingLeft: `${level * 1.5}rem` }}>
+                            {isBundle && (
+                                <button onClick={(e) => toggleBundle(asset.id, e)} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition text-slate-400">
+                                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                </button>
+                            )}
+                            {!isBundle && level > 0 && <span className="w-5" />}
+                            {asset.code}
+                        </div>
+                    </td>
+                    <td className="p-4 cursor-pointer hover:text-rose-500" onClick={() => navigate(`/ts/asset/${asset.id}`)}>
+                        <div className="font-black text-slate-800 dark:text-white flex items-center gap-2">
+                            {isBatch && <span title="Tài sản Lô"><Layers size={14} className="text-amber-500 shrink-0" /></span>}
+                            {isBundle && <span title="Tài sản Bộ"><LayoutGrid size={14} className="text-sky-500 shrink-0" /></span>}
+                            <span className="truncate max-w-[200px]">{asset.name}</span>
+                        </div>
+                        {isBatch && <div className="text-[10px] text-amber-600 font-bold mt-0.5">SL: {asset.quantity} {asset.unit}</div>}
+                        {asset.brand && <div className="text-[10px] text-slate-400 mt-0.5">{asset.brand} {asset.model || ''}</div>}
+                    </td>
+                    <td className="p-4 text-slate-500 font-medium text-xs">{getCategoryName(asset.categoryId)}</td>
+                    <td className="p-4 text-right font-black text-slate-800 dark:text-white">{asset.originalValue.toLocaleString('vi-VN')}đ</td>
+                    <td className="p-4">
+                        <div className="w-28 mx-auto">
+                            <div className="flex items-center justify-between mb-1">
+                                <Shield size={10} className={warranty.textColor} />
+                                <span className={`text-[9px] font-black ${warranty.textColor}`}>{warranty.label}</span>
+                            </div>
+                            <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2">
+                                <div className={`h-2 rounded-full transition-all ${warranty.barColor}`} style={{ width: `${warranty.percentRemaining}%` }} />
+                            </div>
+                            {warranty.hasWarranty && <div className="text-[8px] text-slate-400 text-right mt-0.5">đến {warranty.expiryDate}</div>}
+                        </div>
+                    </td>
+                    <td className="p-4 text-center">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase border ${cfg.color}`}>
+                            <StatusIcon size={10} /> {ASSET_STATUS_LABELS[asset.status]}
+                        </span>
+                    </td>
+                    <td className="p-4 text-xs text-slate-500">
+                        {isBatch ? (
+                            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">Quản lý lô</span>
+                        ) : (
+                            asset.assignedToName || <span className="text-slate-300 italic">—</span>
+                        )}
+                    </td>
+                    <td className="p-4 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                            {asset.status !== AssetStatus.DISPOSED && canCRUD && (
+                                <button onClick={(e) => { e.stopPropagation(); openEdit(asset); }} className="p-2 text-slate-300 hover:text-blue-600 transition-colors" title="Sửa"><Edit3 size={14} /></button>
+                            )}
+                            {asset.status !== AssetStatus.DISPOSED && asset.status !== AssetStatus.IN_USE && canCRUD && (
+                                <button onClick={(e) => { e.stopPropagation(); setDisposeConfirm(asset); setDisposeReason(''); }} className="p-2 text-slate-300 hover:text-orange-600 transition-colors" title="Xuất huỷ">
+                                    <XCircle size={14} />
+                                </button>
+                            )}
+                            {canCRUD && (deleteConfirm === asset.id ? (
+                                <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                                    <button onClick={() => handleDelete(asset.id)} className="p-1.5 bg-red-500 text-white rounded-lg text-[9px] font-bold">Xóa</button>
+                                    <button onClick={() => setDeleteConfirm(null)} className="p-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg text-[9px] font-bold">Hủy</button>
+                                </div>
+                            ) : (
+                                <button onClick={(e) => { e.stopPropagation(); setDeleteConfirm(asset.id); }} className="p-2 text-slate-300 hover:text-red-600 transition-colors" title="Xoá vĩnh viễn"><Trash2 size={14} /></button>
+                            ))}
+                        </div>
+                    </td>
+                </tr>
+                {isBundle && isExpanded && children.map(child => renderAssetRow(child, level + 1))}
+            </React.Fragment>
+        );
+    };
+
+    const renderMobileCard = (asset: Asset, level: number = 0) => {
+        const cfg = getStatusConfig(asset.status);
+        const StatusIcon = cfg.icon;
+        const isBundle = asset.assetType === 'bundle';
+        const isBatch = asset.assetType === 'batch';
+        const isExpanded = expandedBundles.has(asset.id);
+        const children = assets.filter(a => a.parentId === asset.id);
+
+        return (
+            <React.Fragment key={asset.id}>
+                <div className="p-4 space-y-2 border-l-4 border-transparent" style={{ marginLeft: `${level * 1}rem`, borderLeftColor: level > 0 ? '#e2e8f0' : 'transparent' }} onClick={() => navigate(`/ts/asset/${asset.id}`)}>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <div className="text-[10px] font-mono text-slate-400 font-bold flex items-center gap-1">
+                                {isBundle && (
+                                    <button onClick={(e) => toggleBundle(asset.id, e)} className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 mr-1">
+                                        {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                                    </button>
+                                )}
+                                {asset.code}
+                            </div>
+                            <div className="font-black text-slate-800 dark:text-white text-sm flex items-center gap-1">
+                                {isBatch && <Layers size={12} className="text-amber-500" />}
+                                {isBundle && <LayoutGrid size={12} className="text-sky-500" />}
+                                {asset.name}
+                            </div>
+                            {isBatch && <div className="text-[10px] text-amber-600 font-bold">SL: {asset.quantity} {asset.unit}</div>}
+                        </div>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase border ${cfg.color}`}>
+                            <StatusIcon size={10} /> {ASSET_STATUS_LABELS[asset.status]}
+                        </span>
+                    </div>
+                    <div className="flex justify-between text-xs mt-2">
+                        <span className="text-slate-400">{getCategoryName(asset.categoryId)}</span>
+                        <span className="font-black text-slate-800 dark:text-white">{asset.originalValue.toLocaleString('vi-VN')}đ</span>
+                    </div>
+                </div>
+                {isBundle && isExpanded && children.map(child => renderMobileCard(child, level + 1))}
+            </React.Fragment>
+        );
+    };
 
     return (
         <div className="space-y-6">
@@ -440,9 +703,16 @@ const AssetCatalog: React.FC = () => {
                         className="w-full pl-10 pr-4 py-3 text-sm border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 font-medium bg-slate-50/50 dark:bg-slate-800"
                         value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                 </div>
+                <select value={filterAssetType} onChange={e => setFilterAssetType(e.target.value)}
+                    className="px-4 py-3 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 dark:bg-slate-800 font-bold uppercase tracking-tighter w-40">
+                    <option value="all">Tất cả loại TS</option>
+                    <option value="single">Tài sản đơn</option>
+                    <option value="batch">Tài sản lô</option>
+                    <option value="bundle">Tài sản bộ</option>
+                </select>
                 <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
                     className="px-4 py-3 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 dark:bg-slate-800 font-bold uppercase tracking-tighter">
-                    <option value="all">Tất cả loại</option>
+                    <option value="all">Tất cả danh mục</option>
                     {assetCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
                 <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
@@ -469,88 +739,14 @@ const AssetCatalog: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
-                            {filteredAssets.map(asset => {
-                                const cfg = getStatusConfig(asset.status);
-                                const StatusIcon = cfg.icon;
-                                const dep = getDepreciation(asset);
-                                const warranty = getWarrantyInfo(asset);
-                                return (
-                                    <tr key={asset.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
-                                        <td className="p-4 font-mono text-slate-400 font-bold text-xs">{asset.code}</td>
-                                        <td className="p-4 cursor-pointer hover:text-rose-500" onClick={() => navigate(`/ts/asset/${asset.id}`)}>
-                                            <div className="font-black text-slate-800 dark:text-white truncate max-w-[200px]">{asset.name}</div>
-                                            {asset.brand && <div className="text-[10px] text-slate-400">{asset.brand} {asset.model || ''}</div>}
-                                        </td>
-                                        <td className="p-4 text-slate-500 font-medium text-xs">{getCategoryName(asset.categoryId)}</td>
-                                        <td className="p-4 text-right font-black text-slate-800 dark:text-white">{asset.originalValue.toLocaleString('vi-VN')}đ</td>
-                                        <td className="p-4">
-                                            <div className="w-28 mx-auto">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <Shield size={10} className={warranty.textColor} />
-                                                    <span className={`text-[9px] font-black ${warranty.textColor}`}>{warranty.label}</span>
-                                                </div>
-                                                <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2">
-                                                    <div className={`h-2 rounded-full transition-all ${warranty.barColor}`} style={{ width: `${warranty.percentRemaining}%` }} />
-                                                </div>
-                                                {warranty.hasWarranty && <div className="text-[8px] text-slate-400 text-right mt-0.5">đến {warranty.expiryDate}</div>}
-                                            </div>
-                                        </td>
-                                        <td className="p-4 text-center">
-                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase border ${cfg.color}`}>
-                                                <StatusIcon size={10} /> {ASSET_STATUS_LABELS[asset.status]}
-                                            </span>
-                                        </td>
-                                        <td className="p-4 text-xs text-slate-500">{asset.assignedToName || <span className="text-slate-300 italic">—</span>}</td>
-                                        <td className="p-4 text-right">
-                                            <div className="flex items-center justify-end gap-1">
-                                                {asset.status !== AssetStatus.DISPOSED && canCRUD && (
-                                                    <button onClick={() => openEdit(asset)} className="p-2 text-slate-300 hover:text-blue-600 transition-colors" title="Sửa"><Edit3 size={14} /></button>
-                                                )}
-                                                {asset.status !== AssetStatus.DISPOSED && asset.status !== AssetStatus.IN_USE && canCRUD && (
-                                                    <button onClick={() => { setDisposeConfirm(asset); setDisposeReason(''); }} className="p-2 text-slate-300 hover:text-orange-600 transition-colors" title="Xuất huỷ">
-                                                        <XCircle size={14} />
-                                                    </button>
-                                                )}
-                                                {canCRUD && (deleteConfirm === asset.id ? (
-                                                    <div className="flex gap-1">
-                                                        <button onClick={() => handleDelete(asset.id)} className="p-1.5 bg-red-500 text-white rounded-lg text-[9px] font-bold">Xóa</button>
-                                                        <button onClick={() => setDeleteConfirm(null)} className="p-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg text-[9px] font-bold">Hủy</button>
-                                                    </div>
-                                                ) : (
-                                                    <button onClick={() => setDeleteConfirm(asset.id)} className="p-2 text-slate-300 hover:text-red-600 transition-colors" title="Xoá vĩnh viễn"><Trash2 size={14} /></button>
-                                                ))}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
+                            {filteredAssets.map(asset => renderAssetRow(asset, 0))}
                         </tbody>
                     </table>
                 </div>
 
                 {/* Mobile Cards */}
                 <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
-                    {filteredAssets.map(asset => {
-                        const cfg = getStatusConfig(asset.status);
-                        const StatusIcon = cfg.icon;
-                        return (
-                            <div key={asset.id} className="p-4 space-y-2" onClick={() => navigate(`/ts/asset/${asset.id}`)}>
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <div className="text-[10px] font-mono text-slate-400 font-bold">{asset.code}</div>
-                                        <div className="font-black text-slate-800 dark:text-white text-sm">{asset.name}</div>
-                                    </div>
-                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase border ${cfg.color}`}>
-                                        <StatusIcon size={10} /> {ASSET_STATUS_LABELS[asset.status]}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between text-xs">
-                                    <span className="text-slate-400">{getCategoryName(asset.categoryId)}</span>
-                                    <span className="font-black text-slate-800 dark:text-white">{asset.originalValue.toLocaleString('vi-VN')}đ</span>
-                                </div>
-                            </div>
-                        );
-                    })}
+                    {filteredAssets.map(asset => renderMobileCard(asset, 0))}
                 </div>
 
                 {filteredAssets.length === 0 && (
@@ -571,6 +767,14 @@ const AssetCatalog: React.FC = () => {
                             <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
                         </div>
                         <div className="p-6 space-y-4">
+                            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl gap-1 mb-4">
+                                {(['single', 'batch', 'bundle'] as const).map((type) => (
+                                    <button key={type} onClick={() => setForm(p => ({ ...p, assetType: type }))}
+                                        className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${form.assetType === type ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                                        {type === 'single' ? 'Tài sản Đơn' : type === 'batch' ? 'Tài sản Lô' : 'Tài sản Bộ (Cha)'}
+                                    </button>
+                                ))}
+                            </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Mã tài sản *</label>
@@ -591,6 +795,25 @@ const AssetCatalog: React.FC = () => {
                                     className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-rose-500"
                                     placeholder="VD: Máy xúc CAT 320D2" />
                             </div>
+                            
+                            {form.assetType === 'batch' && (
+                                <div className="bg-amber-50 dark:bg-amber-950/20 p-4 rounded-xl border border-amber-100 dark:border-amber-900/30">
+                                    <label className="text-[10px] font-black text-amber-700 dark:text-amber-500 uppercase block mb-1">Số lượng lô xuất phát</label>
+                                    <input type="number" min={1} value={form.quantity} onChange={e => setForm(p => ({...p, quantity: Math.max(1, Number(e.target.value))}))}
+                                        className="w-full px-3 py-2.5 text-sm border border-amber-200 dark:border-amber-800 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 bg-white dark:bg-slate-800" />
+                                </div>
+                            )}
+
+                            {form.assetType === 'single' && (
+                                <div className="bg-sky-50 dark:bg-sky-950/20 p-4 rounded-xl border border-sky-100 dark:border-sky-900/30">
+                                    <label className="text-[10px] font-black text-sky-700 dark:text-sky-500 uppercase block mb-1">Thuộc tài sản cha (Nếu có)</label>
+                                    <select value={form.parentId} onChange={e => setForm(p => ({...p, parentId: e.target.value}))}
+                                        className="w-full px-3 py-2.5 text-sm border border-sky-200 dark:border-sky-800 rounded-xl outline-none focus:ring-2 focus:ring-sky-500 bg-white dark:bg-slate-800">
+                                        <option value="">Không thuộc bộ nào</option>
+                                        {assets.filter(a => a.assetType === 'bundle').map(a => <option key={a.id} value={a.id}>{a.code} - {a.name}</option>)}
+                                    </select>
+                                </div>
+                            )}
                             <div className="grid grid-cols-3 gap-4">
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Nhãn hiệu</label>
@@ -682,6 +905,72 @@ const AssetCatalog: React.FC = () => {
                                         className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-rose-500" placeholder="Khu A, Bãi xe" />
                                 </div>
                             </div>
+
+                            {/* === ĐƠN VỊ TÍNH === */}
+                            <div>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase">Đơn vị tính</label>
+                                    <button type="button" onClick={() => { setShowAddUnit(v => !v); setShowAddSupplier(false); }}
+                                        className="text-[10px] font-bold text-rose-500 hover:text-rose-700 flex items-center gap-0.5 transition-colors">
+                                        <span className="text-base leading-none">+</span> Thêm mới
+                                    </button>
+                                </div>
+                                <select value={form.unit} onChange={e => setForm(p => ({ ...p, unit: e.target.value }))}
+                                    className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-rose-500">
+                                    <option value="">-- Chọn đơn vị --</option>
+                                    {units.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
+                                </select>
+                                {showAddUnit && (
+                                    <div className="mt-2 p-3 bg-rose-50 dark:bg-rose-950/20 rounded-xl border border-rose-100 dark:border-rose-900/30 flex gap-2 items-center">
+                                        <input value={newUnitName} onChange={e => setNewUnitName(e.target.value)}
+                                            onKeyDown={e => e.key === 'Enter' && handleQuickAddUnit()}
+                                            placeholder="Tên đơn vị mới..."
+                                            className="flex-1 px-3 py-2 text-sm border border-rose-200 dark:border-rose-800 rounded-lg outline-none focus:ring-2 focus:ring-rose-400 bg-white dark:bg-slate-800" />
+                                        <button type="button" onClick={handleQuickAddUnit}
+                                            className="px-3 py-2 bg-rose-500 text-white text-xs font-bold rounded-lg hover:bg-rose-600 shrink-0">Lưu</button>
+                                        <button type="button" onClick={() => { setShowAddUnit(false); setNewUnitName(''); }}
+                                            className="px-3 py-2 border border-slate-200 dark:border-slate-700 text-slate-500 text-xs font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 shrink-0">Hủy</button>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* === NHÀ CUNG CẤP === */}
+                            <div>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase">Nhà cung cấp</label>
+                                    <button type="button" onClick={() => { setShowAddSupplier(v => !v); setShowAddUnit(false); }}
+                                        className="text-[10px] font-bold text-rose-500 hover:text-rose-700 flex items-center gap-0.5 transition-colors">
+                                        <span className="text-base leading-none">+</span> Thêm mới
+                                    </button>
+                                </div>
+                                <select value={form.supplierId} onChange={e => setForm(p => ({ ...p, supplierId: e.target.value }))}
+                                    className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-rose-500">
+                                    <option value="">-- Chọn nhà cung cấp --</option>
+                                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}{s.phone ? ` — ${s.phone}` : ''}</option>)}
+                                </select>
+                                {showAddSupplier && (
+                                    <div className="mt-2 p-3 bg-sky-50 dark:bg-sky-950/20 rounded-xl border border-sky-100 dark:border-sky-900/30 space-y-2">
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <input value={newSupplierForm.name} onChange={e => setNewSupplierForm(p => ({ ...p, name: e.target.value }))}
+                                                placeholder="Tên NCC *"
+                                                className="col-span-3 sm:col-span-1 px-3 py-2 text-sm border border-sky-200 dark:border-sky-800 rounded-lg outline-none focus:ring-2 focus:ring-sky-400 bg-white dark:bg-slate-800" />
+                                            <input value={newSupplierForm.contactPerson} onChange={e => setNewSupplierForm(p => ({ ...p, contactPerson: e.target.value }))}
+                                                placeholder="Người liên hệ"
+                                                className="col-span-3 sm:col-span-1 px-3 py-2 text-sm border border-sky-200 dark:border-sky-800 rounded-lg outline-none focus:ring-2 focus:ring-sky-400 bg-white dark:bg-slate-800" />
+                                            <input value={newSupplierForm.phone} onChange={e => setNewSupplierForm(p => ({ ...p, phone: e.target.value }))}
+                                                placeholder="Số điện thoại"
+                                                className="col-span-3 sm:col-span-1 px-3 py-2 text-sm border border-sky-200 dark:border-sky-800 rounded-lg outline-none focus:ring-2 focus:ring-sky-400 bg-white dark:bg-slate-800" />
+                                        </div>
+                                        <div className="flex justify-end gap-2">
+                                            <button type="button" onClick={() => { setShowAddSupplier(false); setNewSupplierForm({ name: '', contactPerson: '', phone: '' }); }}
+                                                className="px-3 py-1.5 border border-slate-200 dark:border-slate-700 text-slate-500 text-xs font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800">Hủy</button>
+                                            <button type="button" onClick={handleQuickAddSupplier}
+                                                className="px-3 py-1.5 bg-sky-500 text-white text-xs font-bold rounded-lg hover:bg-sky-600">✓ Lưu NCC</button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
                             <div>
                                 <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Ghi chú</label>
                                 <textarea value={form.note} onChange={e => setForm(p => ({ ...p, note: e.target.value }))} rows={2}
@@ -701,24 +990,37 @@ const AssetCatalog: React.FC = () => {
             {/* ===================== DETAIL MODAL ===================== */}
             {detailAsset && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-                        <div className="p-6 border-b border-slate-100 dark:border-slate-800">
-                            <div className="flex items-center justify-between">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                            <div className="flex items-center justify-between mb-4">
                                 <div>
-                                    <span className="text-[10px] font-mono text-slate-400 font-bold">{detailAsset.code}</span>
-                                    <h3 className="text-lg font-black text-slate-800 dark:text-white">{detailAsset.name}</h3>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-mono text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">{detailAsset.code}</span>
+                                        {detailAsset.assetType === 'batch' && <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-bold">LÔ</span>}
+                                        {detailAsset.assetType === 'bundle' && <span className="text-[10px] bg-sky-100 text-sky-700 px-2 py-0.5 rounded font-bold">BỘ</span>}
+                                    </div>
+                                    <h3 className="text-xl font-black text-slate-800 dark:text-white mt-1">{detailAsset.name}</h3>
                                 </div>
-                                <button onClick={() => setDetailAsset(null)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                                <button onClick={() => { setDetailAsset(null); setActiveTab('info'); }} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                            </div>
+                            <div className="flex gap-6 -mb-6">
+                                <button onClick={() => setActiveTab('info')} className={`pb-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'info' ? 'border-rose-500 text-rose-500' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>Thông tin chung</button>
+                                {detailAsset.assetType === 'bundle' && (
+                                    <button onClick={() => setActiveTab('components')} className={`pb-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'components' ? 'border-sky-500 text-sky-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>Thành phần ({assets.filter(a => a.parentId === detailAsset.id).length})</button>
+                                )}
+                                {detailAsset.assetType === 'batch' && (
+                                    <button onClick={() => setActiveTab('distribution')} className={`pb-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'distribution' ? 'border-amber-500 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>Phân bổ ({assetLocationStocks.filter(s => s.assetId === detailAsset.id).reduce((sum,s)=>sum+s.qty,0)} {detailAsset.unit})</button>
+                                )}
                             </div>
                         </div>
-                        <div className="p-6 space-y-4">
-                            {(() => {
+                        <div className="p-6 overflow-y-auto flex-1 bg-slate-50/30 dark:bg-slate-900/50">
+                            {activeTab === 'info' && (() => {
                                 const dep = getDepreciation(detailAsset);
                                 const warranty = getWarrantyInfo(detailAsset);
                                 const cfg = getStatusConfig(detailAsset.status);
                                 const StatusIcon = cfg.icon;
                                 return (
-                                    <>
+                                    <div className="space-y-4">
                                         <div className="flex items-center gap-2 mb-2">
                                             <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-black uppercase border ${cfg.color}`}>
                                                 <StatusIcon size={12} /> {ASSET_STATUS_LABELS[detailAsset.status]}
@@ -794,14 +1096,129 @@ const AssetCatalog: React.FC = () => {
                                                 </div>
                                             </div>
                                         )}
-                                    </>
+                                    </div>
                                 );
                             })()}
+
+                            {activeTab === 'components' && detailAsset.assetType === 'bundle' && (
+                                <div className="space-y-3 mt-4 border-t border-slate-100 dark:border-slate-800 pt-4">
+                                    {assets.filter(a => a.parentId === detailAsset.id).length === 0 ? (
+                                        <p className="text-center text-sm text-slate-400 py-4">Chưa có thành phần nào</p>
+                                    ) : (
+                                        assets.filter(a => a.parentId === detailAsset.id).map(child => (
+                                            <div key={child.id} className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center cursor-pointer hover:border-sky-500 transition-colors" onClick={() => setDetailAsset(child)}>
+                                                <div>
+                                                    <span className="text-[10px] text-slate-400 font-mono font-bold mr-2">{child.code}</span>
+                                                    <span className="font-bold text-slate-800 dark:text-white text-sm">{child.name}</span>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase border border-slate-200 text-slate-500">
+                                                        {ASSET_STATUS_LABELS[child.status]}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+
+                            {activeTab === 'distribution' && detailAsset.assetType === 'batch' && (
+                                <div className="space-y-3 mt-4 border-t border-slate-100 dark:border-slate-800 pt-4">
+                                    {assetLocationStocks.filter(s => s.assetId === detailAsset.id).length === 0 ? (
+                                        <p className="text-center text-sm text-slate-400 py-4">Chưa có phân bổ kho</p>
+                                    ) : (
+                                        assetLocationStocks.filter(s => s.assetId === detailAsset.id).map(stock => {
+                                            const warehouse = warehouses.find(w => w.id === stock.warehouseId);
+                                            return (
+                                            <div key={stock.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center items-start">
+                                                <div>
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <MapPin size={14} className="text-amber-500" />
+                                                        <span className="font-bold text-slate-800 dark:text-white text-sm">{warehouse?.name || 'Vị trí khác'}</span>
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-400 pl-5">
+                                                        {stock.note || 'Không có ghi chú'}
+                                                    </div>
+                                                </div>
+                                                <div className="text-right flex flex-col items-end gap-2">
+                                                    <div>
+                                                        <span className="text-xs text-slate-500 mr-2">Tồn:</span>
+                                                        <span className="text-lg font-black text-amber-600">{stock.qty} {detailAsset.unit}</span>
+                                                    </div>
+                                                    {stock.qty > 0 && canCRUD && (
+                                                        <button onClick={() => openBatchTransfer(stock)} className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-[10px] font-bold rounded-lg transition-colors flex items-center gap-1 border border-amber-200">
+                                                            <ArrowLeftRight size={12} /> Điều chuyển / Cấp phát
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            )}
                         </div>
-                        <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                        <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end shrink-0 bg-white dark:bg-slate-900 rounded-b-2xl">
                             <button onClick={() => { setDetailAsset(null); openEdit(detailAsset); }}
-                                className="px-4 py-2 rounded-xl bg-blue-500 text-white font-bold text-xs hover:bg-blue-600 transition-colors flex items-center gap-2">
-                                <Edit3 size={13} /> Chỉnh sửa
+                                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold text-xs shadow-lg shadow-blue-500/20 hover:shadow-xl transition-all flex items-center gap-2">
+                                <Edit3 size={14} /> Chỉnh sửa
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ===================== BATCH TRANSFER MODAL ===================== */}
+            {showBatchTransfer && transferFromStock && detailAsset && (
+                <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md">
+                        <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                            <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                <ArrowLeftRight size={18} className="text-amber-500" /> Điều chuyển lô / Cấp phát
+                            </h3>
+                            <button onClick={() => setShowBatchTransfer(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div className="bg-amber-50 dark:bg-amber-950/20 p-3 rounded-xl border border-amber-100 dark:border-amber-900/30">
+                                <p className="text-[10px] uppercase font-bold text-amber-600 mb-1">Từ vị trí / Người dùng hiện tại</p>
+                                <p className="text-sm font-bold text-slate-800 dark:text-white">{transferFromStock.assignedToName || warehouses.find(w => w.id === transferFromStock.warehouseId)?.name || 'Không xác định'}</p>
+                                <p className="text-xs text-slate-500 mt-1">Tồn khả dụng: <strong className="text-amber-600">{transferFromStock.qty} {detailAsset.unit}</strong></p>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Số lượng chuyển *</label>
+                                <input type="number" min={1} max={transferFromStock.qty} value={tForm.qty} onChange={e => setTForm(p => ({ ...p, qty: Number(e.target.value) }))}
+                                    className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-amber-500 font-black" />
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Đến kho</label>
+                                <select value={tForm.toWarehouseId} onChange={e => setTForm(p => ({ ...p, toWarehouseId: e.target.value }))}
+                                    className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-amber-500">
+                                    <option value="">Không chọn kho</option>
+                                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Người nhận (nếu có)</label>
+                                <select value={tForm.userId} onChange={e => setTForm(p => ({ ...p, userId: e.target.value }))}
+                                    className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-amber-500">
+                                    <option value="">Không có người nhận</option>
+                                    {users.map(u => <option key={u.id} value={u.id}>{u.name || u.username}</option>)}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Lý do / Ghi chú</label>
+                                <input value={tForm.reason} onChange={e => setTForm(p => ({ ...p, reason: e.target.value }))}
+                                    className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-amber-500" placeholder="VD: Cấp phát công trường" />
+                            </div>
+                        </div>
+                        <div className="p-5 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
+                            <button onClick={() => setShowBatchTransfer(false)} className="px-5 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800">Hủy</button>
+                            <button onClick={handleBatchTransfer} className="px-5 py-2 rounded-xl text-sm font-bold bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 shadow-lg shadow-amber-500/30 transition-all flex items-center gap-2">
+                                <ArrowLeftRight size={14} /> Xác nhận
                             </button>
                         </div>
                     </div>

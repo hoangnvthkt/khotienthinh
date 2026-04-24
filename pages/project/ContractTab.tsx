@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { CustomerContract, SubcontractorContract, HdContractStatus } from '../../types';
 import { customerContractService, subcontractorContractService } from '../../lib/hdService';
+import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 interface ContractTabProps {
     constructionSiteId: string;
@@ -47,6 +49,8 @@ const TYPE_CFG = {
 };
 
 const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
+    const toast = useToast();
+    const confirm = useConfirm();
     const [customerContracts, setCustomerContracts] = useState<CustomerContract[]>([]);
     const [subContracts, setSubContracts] = useState<SubcontractorContract[]>([]);
     const [loading, setLoading] = useState(true);
@@ -100,10 +104,17 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
     }), [contracts, customerContracts, subContracts]);
 
     const handleDelete = async (id: string, type: 'customer' | 'subcontractor') => {
-        if (!confirm('Xoá hợp đồng này?')) return;
-        if (type === 'customer') await customerContractService.remove(id);
-        else await subcontractorContractService.remove(id);
-        await loadContracts();
+        const c = contracts.find(x => x.id === id);
+        const ok = await confirm({ targetName: c?.code || 'hợp đồng này', title: 'Xoá hợp đồng' });
+        if (!ok) return;
+        try {
+            if (type === 'customer') await customerContractService.remove(id);
+            else await subcontractorContractService.remove(id);
+            await loadContracts();
+            toast.success('Xoá hợp đồng thành công');
+        } catch (e: any) {
+            toast.error('Lỗi xoá', e?.message);
+        }
     };
 
     return (

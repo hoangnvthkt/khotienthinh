@@ -10,6 +10,8 @@ import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus } fro
 import { boqService } from '../../lib/projectService';
 import { useApp } from '../../context/AppContext';
 import RequestModal from '../../components/RequestModal';
+import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 interface MaterialTabProps {
     constructionSiteId: string;
@@ -32,6 +34,8 @@ const REQ_STATUS_MAP: Record<string, { label: string; color: string; bg: string;
 
 const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, siteWarehouseId }) => {
     const { items: inventoryItems, requests: allRequests, warehouses, users } = useApp();
+    const toast = useToast();
+    const confirm = useConfirm();
     const [activeSubTab, setActiveSubTab] = useState<'summary' | 'boq' | 'request' | 'waste' | 'dashboard'>('summary');
 
     // BOQ Data
@@ -172,7 +176,20 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, siteWareh
 
         await boqService.upsert(item);
         setBoqItems(await boqService.list(constructionSiteId));
+        toast.success(editingBoq ? 'Cập nhật BOQ' : 'Thêm mục BOQ thành công');
         resetBoqForm();
+    };
+
+    const handleDeleteBoq = async (id: string, name: string) => {
+        const ok = await confirm({ targetName: name, title: 'Xoá mục BOQ' });
+        if (!ok) return;
+        try {
+            await boqService.remove(id);
+            setBoqItems(await boqService.list(constructionSiteId));
+            toast.success('Xoá BOQ thành công');
+        } catch (e: any) {
+            toast.error('Lỗi xoá', e?.message);
+        }
     };
 
     // Stats using computed data
@@ -372,7 +389,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, siteWareh
                                                 <td className="px-4 py-2.5">
                                                     <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
                                                         <button onClick={() => openEditBoq(item)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
-                                                        <button onClick={async () => { if(confirm('Xoá?')) { await boqService.remove(item.id); setBoqItems(await boqService.list(constructionSiteId)); } }} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
+                                                        <button onClick={() => handleDeleteBoq(item.id, item.itemName)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
                                                     </div>
                                                 </td>
                                             </tr>
