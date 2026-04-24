@@ -597,17 +597,19 @@ const ChibiBot: React.FC<ChibiBotProps> = ({ userName, userId }) => {
 
   return (
     <>
-      {/* ═══ Chat Popup (Resizable) ═══ */}
+      {/* ═══ Chat Popup (Mobile: fullscreen, Desktop: floating resizable) ═══ */}
       {chatOpen && (
         <div
           ref={popupRef}
-          className="fixed z-[998] flex flex-col bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-visible"
+          className="fixed z-[998] flex flex-col bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-700 overflow-visible inset-0 rounded-none lg:inset-auto lg:rounded-2xl"
           style={{
-            bottom: 130,
-            right: 20,
-            width: popupSize.width,
-            height: popupSize.height,
-            maxHeight: 'calc(100vh - 160px)',
+            ...( typeof window !== 'undefined' && window.innerWidth >= 1024 ? {
+              bottom: 130,
+              right: 20,
+              width: popupSize.width,
+              height: popupSize.height,
+              maxHeight: 'calc(100vh - 160px)',
+            } : {}),
             animation: !isResizing ? 'chibiChatIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
           }}
         >
@@ -758,10 +760,10 @@ const ChibiBot: React.FC<ChibiBotProps> = ({ userName, userId }) => {
         </div>
       )}
 
-      {/* ═══ Random Speech Bubble ═══ */}
+      {/* ═══ Random Speech Bubble (desktop only) ═══ */}
       {showBubble && bubble && !chatOpen && (
         <div
-          className="fixed z-[997] cursor-pointer"
+          className="fixed z-[997] cursor-pointer hidden lg:block"
           style={{
             bottom: 130,
             right: 20,
@@ -784,8 +786,10 @@ const ChibiBot: React.FC<ChibiBotProps> = ({ userName, userId }) => {
         </div>
       )}
 
-      {/* ═══ ChibiBot Character ═══ */}
-      <div className="fixed z-[996] select-none" style={{ bottom: 20, right: 110 }}>
+
+      {/* ═══ ChibiBot Character — Desktop: full robot, Mobile: mini icon ═══ */}
+      {/* Desktop full robot */}
+      <div className="fixed z-[996] select-none hidden lg:block" style={{ bottom: 20, right: 110 }}>
         <div
           className={`relative transition-all duration-500 cursor-pointer ${
             isHovered ? 'scale-110' : 'scale-100'
@@ -824,6 +828,17 @@ const ChibiBot: React.FC<ChibiBotProps> = ({ userName, userId }) => {
           title="Ẩn trợ lý"
         >
           <X size={10} />
+        </button>
+      </div>
+
+      {/* Mobile mini icon */}
+      <div className="lg:hidden fixed z-[996] select-none" style={{ bottom: 48, right: 60 }}>
+        <button
+          onClick={openChat}
+          className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg flex items-center justify-center opacity-70 hover:opacity-100 active:scale-90 transition-all"
+          title="Trợ lý AI"
+        >
+          <Bot size={16} />
         </button>
       </div>
 

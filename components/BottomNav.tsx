@@ -292,10 +292,10 @@ const BottomNav: React.FC = () => {
         </div>
       )}
 
-      {/* === Actual Bottom Nav === */}
+      {/* === Actual Bottom Nav (compact) === */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 btm-nav-safe">
-        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-slate-100 dark:border-slate-800 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
-          <div ref={navContainerRef} className="flex justify-around items-center px-1 py-1">
+        <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-lg border-t border-slate-200/40 dark:border-slate-700/40">
+          <div ref={navContainerRef} className="flex justify-around items-center px-0.5 py-0.5">
             {visibleItems.map((item, idx) => {
               const active = isActive(item.matchPrefix);
               const IconComp = ICON_MAP[item.iconName] || LayoutDashboard;
@@ -312,7 +312,6 @@ const BottomNav: React.FC = () => {
                     longPressTimerRef.current = setTimeout(() => handleLongPress(idx), 500);
                   }}
                   onTouchMove={(e) => {
-                    // Cancel long press if user moves (scrolling)
                     if (dragIdx === null && longPressTimerRef.current) {
                       clearTimeout(longPressTimerRef.current);
                     }
@@ -322,23 +321,16 @@ const BottomNav: React.FC = () => {
                     clearTimeout(longPressTimerRef.current);
                     handleTouchEnd();
                   }}
-                  className={`btm-nav-item flex flex-col items-center justify-center py-1.5 px-1 min-w-0 flex-1 transition-all active:scale-90 ${
-                    active ? item.color : 'text-slate-400'
+                  className={`btm-nav-item flex flex-col items-center justify-center py-1 px-0.5 min-w-0 flex-1 transition-all active:scale-90 ${
+                    active ? item.color : 'text-slate-400/70'
                   } ${isDragging ? 'opacity-40 scale-75' : ''} ${isDragOver ? 'scale-110' : ''}`}
                 >
-                  <div className={`btm-nav-icon w-6 h-6 flex items-center justify-center rounded-lg transition-all ${
-                    active ? 'bg-current/10 scale-110' : ''
+                  <IconComp size={18} strokeWidth={active ? 2.5 : 1.5} />
+                  <span className={`btm-nav-label text-[8px] mt-px truncate max-w-full leading-none ${
+                    active ? 'font-black opacity-100' : 'font-medium opacity-60'
                   }`}>
-                    <IconComp size={20} strokeWidth={active ? 2.5 : 1.8} />
-                  </div>
-                  <span className={`btm-nav-label text-[9px] mt-0.5 truncate max-w-full leading-tight ${
-                    active ? 'font-black' : 'font-bold'
-                  }`}>
-                    {item.label}
+                    {item.shortLabel}
                   </span>
-                  {active && (
-                    <div className="w-1 h-1 rounded-full bg-current mt-0.5 btm-nav-dot" />
-                  )}
                 </NavLink>
               );
             })}
@@ -346,36 +338,14 @@ const BottomNav: React.FC = () => {
             {/* More / Edit button — always last */}
             <button
               onClick={() => setShowEditor(true)}
-              className="btm-nav-item flex flex-col items-center justify-center py-1.5 px-1 min-w-0 flex-1 text-slate-400 active:scale-90 transition-all"
+              className="btm-nav-item flex flex-col items-center justify-center py-1 px-0.5 min-w-0 flex-1 text-slate-400/70 active:scale-90 transition-all"
             >
-              <div className="btm-nav-icon w-6 h-6 flex items-center justify-center">
-                <MoreHorizontal size={20} />
-              </div>
-              <span className="btm-nav-label text-[9px] font-bold mt-0.5 truncate max-w-full leading-tight">
+              <MoreHorizontal size={18} strokeWidth={1.5} />
+              <span className="btm-nav-label text-[8px] font-medium mt-px truncate max-w-full leading-none opacity-60">
                 Thêm
               </span>
             </button>
           </div>
-
-          {/* XP Mini Bar */}
-          {xpProfile && (
-            <button
-              onClick={() => setShowXpSheet(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 mx-3 mb-1 rounded-full bg-gradient-to-r from-indigo-500/10 to-violet-500/10 border border-indigo-200/50 dark:border-indigo-700/50 active:scale-95 transition-all"
-            >
-              <span className="text-xs">{LEVELS.find(l => l.level === xpProfile.level)?.icon || '🌱'}</span>
-              <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400">
-                Lv.{xpProfile.level}
-              </span>
-              <div className="flex-1 h-1 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden min-w-[40px]">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500"
-                  style={{ width: `${xpService.getProgress(xpProfile.totalXp, xpProfile.level)}%` }}
-                />
-              </div>
-              <span className="text-[8px] font-bold text-slate-400">{xpProfile.totalXp} XP</span>
-            </button>
-          )}
         </div>
       </nav>
 
