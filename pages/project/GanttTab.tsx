@@ -7,7 +7,8 @@ import {
     ZoomIn, ZoomOut, LayoutList, BarChart3, Columns, Search,
     Filter, Calendar, User, Clock, AlertTriangle, CheckCircle2,
     Circle, PlayCircle, ArrowUpDown, ChevronUp, Copy,
-    Anchor, Link2, Shield, Wrench, Users, Zap, Lock, Bell
+    Anchor, Link2, Shield, Wrench, Users, Zap, Lock, Bell,
+    FlaskConical, Lightbulb, RotateCcw, Check
 } from 'lucide-react';
 import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus } from '../../types';
 import { taskService, baselineService, dailyLogService } from '../../lib/projectService';
@@ -110,6 +111,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
     // GĐ2: Gate State Machine
     const [gateModalTask, setGateModalTask] = useState<ProjectTask | null>(null);
     const [showGatePanel, setShowGatePanel] = useState(false);
+    // GĐ5: Sandbox + AI
+    const [isSandboxMode, setIsSandboxMode] = useState(false);
+    const [sandboxTasks, setSandboxTasks] = useState<ProjectTask[]>([]);
+    const [showAiInsights, setShowAiInsights] = useState(false);
     // GĐ2: Set of task IDs whose predecessor gate is blocking them
     const gateBlockedIds = useMemo(() => {
         const blocked = new Set<string>();
@@ -379,26 +384,32 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
         setGateModalTask(prev => prev?.id === taskId ? updated : prev);
     }, [tasks]);
 
-    // ====== GĐ2: Drag-Resize with Ripple ======
+    // ====== GĐ2: Drag-Resize with Ripple (GĐ5: sandbox-aware) ======
     const handleBarDragEnd = useCallback(async (taskId: string, newEndDate: string) => {
-        const rippled = rippleEffect(tasks, taskId, newEndDate);
-        const changedTasks = rippled.filter(t => {
-            const orig = tasks.find(o => o.id === t.id);
-            return orig && (orig.startDate !== t.startDate || orig.endDate !== t.endDate || orig.duration !== t.duration);
-        });
-        for (const t of changedTasks) {
-            await taskService.upsert(t);
+        const source = isSandboxMode ? sandboxTasks : tasks;
+        const rippled = rippleEffect(source, taskId, newEndDate);
+        if (isSandboxMode) {
+            setSandboxTasks(rippled);
+        } else {
+            const changedTasks = rippled.filter(t => {
+                const orig = tasks.find(o => o.id === t.id);
+                return orig && (orig.startDate !== t.startDate || orig.endDate !== t.endDate || orig.duration !== t.duration);
+            });
+            for (const t of changedTasks) {
+                await taskService.upsert(t);
+            }
+            setTasks(rippled);
         }
-        setTasks(rippled);
         setDraggingTaskId(null);
         setDragGhost(null);
-    }, [tasks]);
+    }, [tasks, isSandboxMode, sandboxTasks]);
 
-    // GĐ2: Live ripple preview during drag (updates successors in real-time)
+    // GĐ2: Live ripple preview during drag
     const handleBarDragMove = useCallback((taskId: string, newEndDate: string) => {
-        const rippled = rippleEffect(tasks, taskId, newEndDate);
-        setTasks(rippled);
-    }, [tasks]);
+        const source = isSandboxMode ? sandboxTasks : tasks;
+        const rippled = rippleEffect(source, taskId, newEndDate);
+        if (isSandboxMode) setSandboxTasks(rippled); else setTasks(rippled);
+    }, [tasks, isSandboxMode, sandboxTasks]);
 
     // ====== GĐ2: Weather Map (date → weather) ======
     const weatherMap = useMemo(() => {
@@ -436,6 +447,93 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
         }
         return histogram;
     }, [tasks]);
+
+    // ====== GĐ5: Sandbox helpers ======
+    const activeTasks = isSandboxMode ? sandboxTasks : tasks;
+
+    const sandboxDiff = useMemo(() => {
+        if (!isSandboxMode || sandboxTasks.length === 0) return null;
+        const origDates = tasks.flatMap(t => [t.startDate, t.endDate]).sort();
+        const sbDates = sandboxTasks.flatMap(t => [t.startDate, t.endDate]).sort();
+        if (origDates.length === 0 || sbDates.length === 0) return null;
+        const origTotal = daysBetween(origDates[0], origDates[origDates.length - 1]);
+        const sbTotal = daysBetween(sbDates[0], sbDates[sbDates.length - 1]);
+        const changed = sandboxTasks.filter(st => {
+            const orig = tasks.find(t => t.id === st.id);
+            return orig && (orig.startDate !== st.startDate || orig.endDate !== st.endDate);
+        }).length;
+        return { origTotal, sbTotal, delta: sbTotal - origTotal, changed };
+    }, [isSandboxMode, sandboxTasks, tasks]);
+
+    const toggleSandbox = useCallback(() => {
+        if (!isSandboxMode) {
+            setSandboxTasks(tasks.map(t => ({ ...t })));
+            setIsSandboxMode(true);
+        } else {
+            setIsSandboxMode(false);
+            setSandboxTasks([]);
+        }
+    }, [isSandboxMode, tasks]);
+
+    const applySandbox = useCallback(async () => {
+        for (const t of sandboxTasks) {
+            const orig = tasks.find(o => o.id === t.id);
+            if (orig && (orig.startDate !== t.startDate || orig.endDate !== t.endDate || orig.duration !== t.duration)) {
+                await taskService.upsert(t);
+            }
+        }
+        setTasks(sandboxTasks.map(t => ({ ...t })));
+        setIsSandboxMode(false);
+        setSandboxTasks([]);
+    }, [sandboxTasks, tasks]);
+
+    // ====== GĐ5: AI Risk Analysis (Rule-based) ======
+    const aiInsights = useMemo(() => {
+        const insights: { icon: string; title: string; desc: string; severity: 'high' | 'medium' | 'low' }[] = [];
+        // Rule 1: Tasks with heavy accumulated delays
+        const delayMap: Record<string, number> = {};
+        for (const log of dailyLogs) {
+            for (const dt of (log.delayTasks || [])) {
+                delayMap[dt.taskId] = (delayMap[dt.taskId] || 0) + dt.delayDays;
+            }
+        }
+        for (const [tid, days] of Object.entries(delayMap)) {
+            if (days >= 5) {
+                const t = tasks.find(x => x.id === tid);
+                if (t) insights.push({ icon: '🔴', title: `"${t.name}" đã trễ ${days} ngày`, desc: `Hạng mục này liên tục bị ghi nhận trễ trong nhật ký. Xem xét tăng ca hoặc bổ sung nhân lực.`, severity: 'high' });
+            }
+        }
+        // Rule 2: Outdoor tasks in rainy months (T6-T10)
+        const now = new Date();
+        const month = now.getMonth() + 1;
+        if (month >= 6 && month <= 10) {
+            const outdoorTasks = tasks.filter(t => t.resourceType === 'worker' && t.progress < 100 && new Date(t.endDate) > now);
+            for (const t of outdoorTasks.slice(0, 3)) {
+                insights.push({ icon: '🌧️', title: `"${t.name}" vào mùa mưa`, desc: `Tháng ${month} là mùa mưa. Hạng mục ngoài trời có nguy cơ trễ 2-4 ngày. Cân nhắc lùi lịch đặt vật tư.`, severity: 'medium' });
+            }
+        }
+        // Rule 3: Long dependency chains (domino risk)
+        const getChainLen = (taskId: string, visited = new Set<string>()): number => {
+            if (visited.has(taskId)) return 0;
+            visited.add(taskId);
+            const t = tasks.find(x => x.id === taskId);
+            if (!t?.dependencies?.length) return 1;
+            return 1 + Math.max(...t.dependencies.map(d => getChainLen(d.taskId, visited)));
+        };
+        for (const t of tasks) {
+            const chain = getChainLen(t.id);
+            if (chain >= 4) {
+                insights.push({ icon: '⛓️', title: `Chuỗi phụ thuộc dài: "${t.name}"`, desc: `${chain} hạng mục nối tiếp nhau. Nếu 1 task trễ, hiệu ứng domino sẽ ảnh hưởng toàn chuỗi.`, severity: 'medium' });
+            }
+        }
+        // Rule 4: Tasks overdue with no delay explanation
+        for (const t of tasks) {
+            if (getStatus(t) === 'overdue' && !delayMap[t.id]) {
+                insights.push({ icon: '⚠️', title: `"${t.name}" trễ chưa rõ nguyên nhân`, desc: `Hạng mục này đã quá hạn nhưng chưa có nhật ký ghi nhận lý do trễ. Yêu cầu giám sát báo cáo.`, severity: 'low' });
+            }
+        }
+        return insights.sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.severity] - { high: 0, medium: 1, low: 2 }[b.severity]));
+    }, [tasks, dailyLogs]);
 
     // ====== Timeline ======
     const { timelineStart, totalDays, months } = useMemo(() => {
@@ -512,12 +610,63 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                         <Lock size={13} /> Chốt Baseline
                         {baselines.length > 0 && <span className="text-[9px] text-slate-400">v{baselines.length}</span>}
                     </button>
+                    {/* GĐ5: Sandbox Toggle */}
+                    <button onClick={toggleSandbox}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${isSandboxMode
+                                ? 'border-violet-400 bg-violet-50 dark:bg-violet-900/30 text-violet-700 ring-2 ring-violet-300 shadow-lg shadow-violet-500/20'
+                                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                            }`}
+                        title="Chế độ giả lập (không lưu vào DB)">
+                        <FlaskConical size={13} /> {isSandboxMode ? 'Tắt Giả lập' : 'Giả lập'}
+                    </button>
+                    {/* GĐ5: AI Insights Toggle */}
+                    <button onClick={() => setShowAiInsights(v => !v)}
+                        className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${showAiInsights
+                                ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700'
+                                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                            }`}
+                        title="AI Dự báo rủi ro">
+                        <Lightbulb size={13} /> AI
+                        {aiInsights.length > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-amber-500 text-white text-[8px] font-black flex items-center justify-center">
+                                {aiInsights.length}
+                            </span>
+                        )}
+                    </button>
                     <button onClick={() => openAdd()}
                         className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg shadow-orange-500/20 hover:shadow-xl hover:scale-[1.02] transition-all">
                         <Plus size={14} /> Thêm hạng mục
                     </button>
                 </div>
             </div>
+
+            {/* GĐ5: Sandbox active banner */}
+            {isSandboxMode && (
+                <div className="bg-gradient-to-r from-violet-600 to-purple-600 rounded-2xl p-4 shadow-lg flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <FlaskConical size={20} className="text-white" />
+                        <div>
+                            <p className="text-sm font-black text-white">🧪 Chế độ Giả lập (Sandbox)</p>
+                            <p className="text-[10px] text-violet-200">Mọi thay đổi chỉ lưu tạm. Dữ liệu thật KHÔNG bị ảnh hưởng.</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {sandboxDiff && (
+                            <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${sandboxDiff.delta > 0 ? 'bg-red-500/20 text-red-100' : sandboxDiff.delta < 0 ? 'bg-emerald-500/20 text-emerald-100' : 'bg-white/10 text-white'}`}>
+                                {sandboxDiff.changed} task thay đổi • {sandboxDiff.delta > 0 ? '+' : ''}{sandboxDiff.delta} ngày
+                            </span>
+                        )}
+                        <button onClick={() => { setIsSandboxMode(false); setSandboxTasks([]); }}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-white/20 hover:bg-white/30 transition-colors">
+                            <RotateCcw size={12} /> Huỷ
+                        </button>
+                        <button onClick={applySandbox}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold text-violet-700 bg-white hover:bg-violet-50 transition-colors shadow-sm">
+                            <Check size={12} /> Áp dụng thật
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Stats Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
@@ -1211,6 +1360,51 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                     </div>
                 );
             })()}
+
+            {/* GĐ5: AI Insights Panel */}
+            {showAiInsights && (
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/10 dark:to-orange-900/10">
+                        <div className="flex items-center gap-2">
+                            <Lightbulb size={14} className="text-amber-500" />
+                            <span className="text-xs font-black text-slate-700 dark:text-white">🤖 AI Dự báo Rủi ro ({aiInsights.length})</span>
+                        </div>
+                        <button onClick={() => setShowAiInsights(false)} className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors">
+                            <X size={13} />
+                        </button>
+                    </div>
+                    <div className="p-4">
+                        {aiInsights.length === 0 ? (
+                            <div className="text-center py-6">
+                                <CheckCircle2 size={28} className="text-emerald-400 mx-auto mb-2" />
+                                <p className="text-xs font-bold text-emerald-600">Không phát hiện rủi ro nào! 🎉</p>
+                                <p className="text-[10px] text-slate-400 mt-1">Dự án đang ổn định.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {aiInsights.map((insight, i) => (
+                                    <div key={i} className={`flex items-start gap-3 p-3 rounded-xl border ${
+                                        insight.severity === 'high' ? 'bg-red-50/50 dark:bg-red-900/10 border-red-200 dark:border-red-800' :
+                                        insight.severity === 'medium' ? 'bg-amber-50/50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800' :
+                                        'bg-slate-50 dark:bg-slate-700/30 border-slate-200 dark:border-slate-600'
+                                    }`}>
+                                        <span className="text-lg shrink-0 mt-0.5">{insight.icon}</span>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{insight.title}</p>
+                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">{insight.desc}</p>
+                                        </div>
+                                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full shrink-0 ${
+                                            insight.severity === 'high' ? 'bg-red-100 text-red-600' :
+                                            insight.severity === 'medium' ? 'bg-amber-100 text-amber-600' :
+                                            'bg-slate-100 text-slate-500'
+                                        }`}>{insight.severity === 'high' ? 'Cao' : insight.severity === 'medium' ? 'TB' : 'Thấp'}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* ====== TASK FORM MODAL ====== */}
             {showForm && (

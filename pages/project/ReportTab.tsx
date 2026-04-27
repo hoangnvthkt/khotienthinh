@@ -2,8 +2,9 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, AreaChart, Area, LineChart, Line, RadarChart, Radar,
-    PolarGrid, PolarAngleAxis, PolarRadiusAxis, ComposedChart
+    PolarGrid, PolarAngleAxis, PolarRadiusAxis, ComposedChart, ReferenceLine
 } from 'recharts';
+import * as XLSX from 'xlsx';
 import {
     BarChart3, PieChart as PieChartIcon, TrendingUp, FileText, Download,
     DollarSign, Users, Package, Truck, CheckCircle2, AlertTriangle,
@@ -32,7 +33,7 @@ const GRADIENT_PAIRS = [
     ['#fbbf24', '#f59e0b'], ['#60a5fa', '#3b82f6'], ['#f87171', '#ef4444'],
 ];
 
-const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue = 0, totalSpent = 0 }) => {
+const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, contractValue = 0, totalSpent = 0 }) => {
     const [selectedChart, setSelectedChart] = useState<string | null>(null);
 
     // Load all data from Supabase
@@ -88,6 +89,36 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
         taskService.list(constructionSiteId).then(setTasks).catch(console.error);
         dailyLogService.list(constructionSiteId).then(setDailyLogs).catch(console.error);
     }, [constructionSiteId]);
+
+    // ==================== COMPUTED DATA (PHASE 4) ====================
+    const allDelays = useMemo(() => {
+        return dailyLogs.flatMap(log =>
+            (log.delayTasks || []).map((dt: any) => ({
+                ...dt,
+                logDate: log.date,
+            }))
+        );
+    }, [dailyLogs]);
+
+    const riskMatrix = useMemo(() => {
+        const byTask: Record<string, { taskName: string; totalDays: number; categories: string[] }> = {};
+        allDelays.forEach(d => {
+            if (!byTask[d.taskId]) byTask[d.taskId] = { taskName: d.taskName, totalDays: 0, categories: [] };
+            byTask[d.taskId].totalDays += d.delayDays;
+            if (!byTask[d.taskId].categories.includes(d.category)) byTask[d.taskId].categories.push(d.category);
+        });
+        return Object.values(byTask).sort((a, b) => b.totalDays - a.totalDays);
+    }, [allDelays]);
+
+    const delayByCategory = useMemo(() => {
+        const map: Record<string, number> = {};
+        allDelays.forEach(d => { map[d.category] = (map[d.category] || 0) + d.delayDays; });
+        const labels: Record<string, string> = {
+            weather: '🌧️ Thời tiết', material: '📦 Vật tư',
+            labor: '👷 Nhân công', drawing: '📐 Bản vẽ', other: '📋 Khác'
+        };
+        return Object.entries(map).map(([k, v]) => ({ name: labels[k] || k, days: v }));
+    }, [allDelays]);
 
     // ==================== COMPUTED DATA ====================
 
@@ -230,6 +261,63 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
         return { avgProgress, totalAccepted, totalPaid, totalPO, totalMatBudget, totalMatActual, wasteOverCount, rainyDays };
     }, [tasks, acceptances, purchaseOrders, boqItems, dailyLogs]);
 
+    const healthScore = useMemo(() => {
+        const progress = kpis.avgProgress;
+        const photoCompliance = dailyLogs.length > 0
+            ? (dailyLogs.filter(l => l.photos && l.photos.length > 0).length / dailyLogs.length) * 100
+            : 100;
+        const gpsCompliance = dailyLogs.length > 0
+            ? (dailyLogs.filter(l => l.gpsLat).length / dailyLogs.length) * 100
+            : 100;
+        const totalDelayDays = allDelays.reduce((s, d) => s + d.delayDays, 0);
+        const delayScore = Math.max(0, 100 - totalDelayDays * 3);
+
+        const score = Math.round(progress * 0.4 + photoCompliance * 0.2 + gpsCompliance * 0.2 + delayScore * 0.2);
+        return { score, progress, photoCompliance, gpsCompliance, delayScore, totalDelayDays };
+    }, [kpis.avgProgress, dailyLogs, allDelays]);
+
+    const fieldComplianceByWeek = useMemo(() => {
+        const weeks: Record<string, { total: number; withGps: number; withPhoto: number }> = {};
+        dailyLogs.forEach(log => {
+            const d = new Date(log.date);
+            const weekKey = `T${Math.ceil(d.getDate() / 7)}/T${d.getMonth() + 1}`;
+            if (!weeks[weekKey]) weeks[weekKey] = { total: 0, withGps: 0, withPhoto: 0 };
+            weeks[weekKey].total++;
+            if (log.gpsLat) weeks[weekKey].withGps++;
+            if (log.photos && log.photos.length > 0) weeks[weekKey].withPhoto++;
+        });
+        return Object.entries(weeks).map(([week, v]) => ({
+            week,
+            'GPS %': Math.round((v.withGps / v.total) * 100),
+            'Ảnh %': Math.round((v.withPhoto / v.total) * 100),
+        }));
+    }, [dailyLogs]);
+
+    const exportToExcel = () => {
+        const data = [
+            ['Báo cáo Dự án', new Date().toLocaleDateString('vi-VN')],
+            [],
+            ['HEALTH SCORE', healthScore.score + '/100'],
+            ['Tiến độ trung bình', kpis.avgProgress + '%'],
+            ['Tuân thủ ảnh', healthScore.photoCompliance.toFixed(0) + '%'],
+            ['Tuân thủ GPS', healthScore.gpsCompliance.toFixed(0) + '%'],
+            ['Tổng ngày trễ', healthScore.totalDelayDays],
+            [],
+            ['MA TRẬN RỦI RO'],
+            ['Hạng mục', 'Tổng ngày trễ', 'Nguyên nhân', 'Mức độ'],
+            ...riskMatrix.map(r => [
+                r.taskName,
+                r.totalDays,
+                r.categories.join(', '),
+                r.totalDays > 7 ? 'Cao' : r.totalDays > 3 ? 'Trung bình' : 'Thấp'
+            ]),
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Bao_cao');
+        XLSX.writeFile(wb, `Bao_cao_Du_an_${new Date().getTime()}.xlsx`);
+    };
+
     // Chart card component
     const ChartCard: React.FC<{ title: string; icon: React.ReactNode; color: string; children: React.ReactNode; span?: number }> =
         ({ title, icon, color, children, span = 1 }) => (
@@ -249,6 +337,45 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
 
     return (
         <div className="space-y-6">
+            {/* Health Score Banner */}
+            <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl p-5 shadow-lg overflow-hidden relative">
+                <div className="absolute top-0 right-0 p-8 opacity-10">
+                    <Activity size={100} className={healthScore.score > 75 ? 'text-emerald-400' : healthScore.score > 50 ? 'text-amber-400' : 'text-red-400'} />
+                </div>
+                <div className="relative z-10">
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-xl text-white ${healthScore.score > 75 ? 'bg-emerald-500' : healthScore.score > 50 ? 'bg-amber-500' : 'bg-red-500'}`}>
+                            {healthScore.score}
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-black text-white">Sức khỏe Dự án</h3>
+                            <div className="text-xs font-medium text-slate-400">
+                                {healthScore.score > 75 ? 'Tình trạng rất tốt, giữ vững phong độ!' : healthScore.score > 50 ? 'Cần chú ý một số rủi ro tiềm ẩn.' : 'Báo động đỏ! Cần can thiệp ngay.'}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700">
+                            <div className="text-[10px] text-slate-400 font-bold uppercase mb-1 flex items-center gap-1"><Activity size={12}/> Tiến độ</div>
+                            <div className="text-sm font-black text-white">{kpis.avgProgress}%</div>
+                        </div>
+                        <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700">
+                            <div className="text-[10px] text-slate-400 font-bold uppercase mb-1 flex items-center gap-1"><CheckCircle2 size={12}/> Ảnh Hiện Trường</div>
+                            <div className="text-sm font-black text-white">{healthScore.photoCompliance.toFixed(0)}%</div>
+                        </div>
+                        <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700">
+                            <div className="text-[10px] text-slate-400 font-bold uppercase mb-1 flex items-center gap-1"><CheckCircle2 size={12}/> Tọa Độ GPS</div>
+                            <div className="text-sm font-black text-white">{healthScore.gpsCompliance.toFixed(0)}%</div>
+                        </div>
+                        <div className="bg-slate-800/50 rounded-xl p-3 border border-slate-700">
+                            <div className="text-[10px] text-slate-400 font-bold uppercase mb-1 flex items-center gap-1"><AlertTriangle size={12}/> Trễ Tiến Độ</div>
+                            <div className="text-sm font-black text-white">{healthScore.totalDelayDays} ngày</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {/* Summary KPI Row */}
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
                 {[
@@ -280,7 +407,7 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
                                 <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} />
                                 <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} tickFormatter={v => fmt(v)} />
                                 <Tooltip formatter={(v: number) => fmt(v) + ' đ'} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 11 }} />
-                                <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                                <Bar dataKey="value" radius={[6, 6, 0, 0]} isAnimationActive={false}>
                                     {budgetWaterfall.map((entry, idx) => (
                                         <Cell key={idx} fill={entry.fill} />
                                     ))}
@@ -297,7 +424,7 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
                             <PieChart>
                                 <Pie data={contractPie} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4}
                                     dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                                    labelLine={{ strokeWidth: 1 }}>
+                                    labelLine={{ strokeWidth: 1 }} isAnimationActive={false}>
                                     {contractPie.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
                                 </Pie>
                                 <Tooltip formatter={(v: number) => fmt(v) + ' đ'} contentStyle={{ borderRadius: 12, fontSize: 11 }} />
@@ -314,7 +441,7 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
                                 <PolarGrid stroke="#e2e8f0" />
                                 <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fill: '#64748b' }} />
                                 <PolarRadiusAxis tick={{ fontSize: 9 }} />
-                                <Radar name="Số lượng" dataKey="A" stroke="#10b981" fill="#10b981" fillOpacity={0.3} />
+                                <Radar name="Số lượng" dataKey="A" stroke="#10b981" fill="#10b981" fillOpacity={0.3} isAnimationActive={false} />
                             </RadarChart>
                         </ResponsiveContainer>
                     ) : <EmptyChart text="Chưa có hạng mục" />}
@@ -340,8 +467,8 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
                                 <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} tickFormatter={v => fmt(v)} />
                                 <Tooltip formatter={(v: number) => fmt(v) + ' đ'} contentStyle={{ borderRadius: 12, fontSize: 11 }} />
                                 <Legend wrapperStyle={{ fontSize: 10 }} />
-                                <Area type="monotone" dataKey="Luỹ kế NT" stroke="#818cf8" fill="url(#colorNT)" strokeWidth={2} />
-                                <Area type="monotone" dataKey="Luỹ kế TT" stroke="#a78bfa" fill="url(#colorTT)" strokeWidth={2} />
+                                <Area type="monotone" dataKey="Luỹ kế NT" stroke="#818cf8" fill="url(#colorNT)" strokeWidth={2} isAnimationActive={false} />
+                                <Area type="monotone" dataKey="Luỹ kế TT" stroke="#a78bfa" fill="url(#colorTT)" strokeWidth={2} isAnimationActive={false} />
                             </AreaChart>
                         </ResponsiveContainer>
                     ) : <EmptyChart text="Chưa có biên bản nghiệm thu" />}
@@ -357,8 +484,8 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
                                 <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} />
                                 <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} />
                                 <Legend wrapperStyle={{ fontSize: 10 }} />
-                                <Bar dataKey="Dự toán" fill="#818cf8" radius={[3, 3, 0, 0]} />
-                                <Bar dataKey="Thực tế" radius={[3, 3, 0, 0]}>
+                                <Bar dataKey="Dự toán" fill="#818cf8" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+                                <Bar dataKey="Thực tế" radius={[3, 3, 0, 0]} isAnimationActive={false}>
                                     {wasteData.map((e, i) => <Cell key={i} fill={e.isOver ? '#ef4444' : '#34d399'} />)}
                                 </Bar>
                             </BarChart>
@@ -373,7 +500,7 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
                             <PieChart>
                                 <Pie data={matCategoryPie} cx="50%" cy="50%" outerRadius={75} paddingAngle={2}
                                     dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                                    labelLine={{ strokeWidth: 1 }}>
+                                    labelLine={{ strokeWidth: 1 }} isAnimationActive={false}>
                                     {matCategoryPie.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
                                 </Pie>
                                 <Tooltip formatter={(v: number) => fmt(v) + ' đ'} contentStyle={{ borderRadius: 12, fontSize: 11 }} />
@@ -389,7 +516,7 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
                             <PieChart>
                                 <Pie data={poStatusPie} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={3}
                                     dataKey="value" label={({ name, value }) => `${name}: ${value}`}
-                                    labelLine={{ strokeWidth: 1 }}>
+                                    labelLine={{ strokeWidth: 1 }} isAnimationActive={false}>
                                     {poStatusPie.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
                                 </Pie>
                                 <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} />
@@ -405,7 +532,7 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
                             <PieChart>
                                 <Pie data={weatherPie} cx="50%" cy="50%" outerRadius={75} paddingAngle={3}
                                     dataKey="value" label={({ name, value }) => `${name}: ${value}`}
-                                    labelLine={{ strokeWidth: 1 }}>
+                                    labelLine={{ strokeWidth: 1 }} isAnimationActive={false}>
                                     {weatherPie.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
                                 </Pie>
                                 <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} />
@@ -429,7 +556,7 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
                                 <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#94a3b8' }} />
                                 <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} />
                                 <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} />
-                                <Area type="monotone" dataKey="Công nhân" stroke="#f97316" fill="url(#colorWorker)" strokeWidth={2} dot={{ r: 2 }} />
+                                <Area type="monotone" dataKey="Công nhân" stroke="#f97316" fill="url(#colorWorker)" strokeWidth={2} dot={{ r: 2 }} isAnimationActive={false} />
                             </AreaChart>
                         </ResponsiveContainer>
                     ) : <EmptyChart text="Chưa có nhật ký công trường" />}
@@ -444,7 +571,7 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
                                 <XAxis type="number" domain={[0, 5]} tick={{ fontSize: 9, fill: '#94a3b8' }} />
                                 <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 9, fill: '#64748b' }} />
                                 <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} />
-                                <Bar dataKey="rating" barSize={16} radius={[0, 4, 4, 0]}>
+                                <Bar dataKey="rating" barSize={16} radius={[0, 4, 4, 0]} isAnimationActive={false}>
                                     {vendorRatingData.map((e, i) => (
                                         <Cell key={i} fill={e.rating >= 4 ? '#34d399' : e.rating >= 3 ? '#fbbf24' : '#f87171'} />
                                     ))}
@@ -467,12 +594,84 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
                                 <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} />
                                 <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} tickFormatter={v => fmt(v)} />
                                 <Tooltip formatter={(v: number) => fmt(v) + ' đ'} contentStyle={{ borderRadius: 12, fontSize: 11 }} />
-                                <Bar dataKey="Giá trị" barSize={50} radius={[6, 6, 0, 0]}>
+                                <Bar dataKey="Giá trị" barSize={50} radius={[6, 6, 0, 0]} isAnimationActive={false}>
                                     {[0,1,2].map(i => <Cell key={i} fill={['#818cf8', '#f87171', (contractValue - totalSpent) >= 0 ? '#34d399' : '#ef4444'][i]} />)}
                                 </Bar>
                             </ComposedChart>
                         </ResponsiveContainer>
                     ) : <EmptyChart text="Chưa có dữ liệu tài chính" />}
+                </ChartCard>
+
+                {/* 12. Risk Matrix Table */}
+                <ChartCard title="Ma trận Rủi ro Hạng mục" icon={<AlertTriangle size={14} />} color="bg-gradient-to-br from-red-500 to-rose-500" span={2}>
+                    {riskMatrix.length > 0 ? (
+                        <div className="overflow-x-auto max-h-[220px]">
+                            <table className="w-full text-xs">
+                                <thead className="bg-slate-50 sticky top-0">
+                                    <tr className="text-[10px] font-bold text-slate-400 uppercase">
+                                        <th className="text-left px-3 py-2">Hạng mục</th>
+                                        <th className="text-right px-3 py-2">Tổng trễ</th>
+                                        <th className="text-left px-3 py-2">Nguyên nhân</th>
+                                        <th className="text-center px-3 py-2">Mức độ</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {riskMatrix.map((r, i) => (
+                                        <tr key={i} className="hover:bg-slate-50/50">
+                                            <td className="px-3 py-2 font-bold text-slate-700">{r.taskName}</td>
+                                            <td className="px-3 py-2 text-right font-bold text-red-600">{r.totalDays} ngày</td>
+                                            <td className="px-3 py-2 text-slate-600">{r.categories.join(', ')}</td>
+                                            <td className="px-3 py-2 text-center">
+                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.totalDays > 7 ? 'bg-red-50 text-red-600 border border-red-200' : r.totalDays > 3 ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-emerald-50 text-emerald-600 border border-emerald-200'}`}>
+                                                    {r.totalDays > 7 ? '🔴 Cao' : r.totalDays > 3 ? '🟡 Trung bình' : '🟢 Thấp'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <div className="h-[200px] flex flex-col items-center justify-center text-xs text-emerald-500 font-bold">
+                            <CheckCircle2 size={32} className="mb-2 opacity-50" />
+                            Chưa ghi nhận trễ tiến độ 🎉
+                        </div>
+                    )}
+                </ChartCard>
+
+                {/* 13. Delay by Category */}
+                <ChartCard title="Nguyên nhân Trễ" icon={<BarChart3 size={14} />} color="bg-gradient-to-br from-rose-500 to-pink-500">
+                    {delayByCategory.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={220}>
+                            <BarChart data={delayByCategory} layout="vertical" margin={{ left: 30 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                <XAxis type="number" tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: '#64748b' }} width={80} />
+                                <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} formatter={(v: number) => v + ' ngày'} />
+                                <Bar dataKey="days" radius={[0, 4, 4, 0]} barSize={20} isAnimationActive={false}>
+                                    {delayByCategory.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : <EmptyChart text="Không có dữ liệu trễ" />}
+                </ChartCard>
+
+                {/* 14. Field Compliance Line Chart */}
+                <ChartCard title="Tuân thủ Hiện trường (GPS & Ảnh)" icon={<CheckCircle2 size={14} />} color="bg-gradient-to-br from-blue-500 to-indigo-500">
+                    {fieldComplianceByWeek.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={220}>
+                            <LineChart data={fieldComplianceByWeek}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                <XAxis dataKey="week" tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                                <YAxis domain={[0, 100]} tick={{ fontSize: 9, fill: '#94a3b8' }} tickFormatter={v => v + '%'} />
+                                <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} formatter={(v: number) => v + '%'} />
+                                <Legend wrapperStyle={{ fontSize: 10 }} />
+                                <Line type="monotone" dataKey="GPS %" stroke="#818cf8" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} isAnimationActive={false} />
+                                <Line type="monotone" dataKey="Ảnh %" stroke="#34d399" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} isAnimationActive={false} />
+                                <ReferenceLine y={80} stroke="#ef4444" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Ngưỡng 80%', fill: '#ef4444', fontSize: 10 }} />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    ) : <EmptyChart text="Chưa có nhật ký" />}
                 </ChartCard>
             </div>
 
@@ -480,6 +679,9 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                 <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
                     <h3 className="text-xs font-black text-slate-700 flex items-center gap-2"><FileText size={14} className="text-indigo-500" /> Bảng tổng hợp dự án</h3>
+                    <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-lg text-xs font-bold transition-colors border border-emerald-200">
+                        <Download size={14} /> Xuất báo cáo
+                    </button>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-xs">
@@ -516,6 +718,6 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
             </div>
         </div>
     );
-};
+});
 
 export default ReportTab;
