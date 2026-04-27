@@ -316,6 +316,14 @@ export interface ProjectBaseline {
 // ==================== NHẬT KÝ CÔNG TRƯỜNG ====================
 export type WeatherType = 'sunny' | 'cloudy' | 'rainy' | 'storm';
 
+export interface DelayTaskEntry {
+  taskId: string;
+  taskName: string;        // cache tên để hiển thị
+  delayDays: number;
+  reason: string;          // ghi chú tự do
+  category: DelayCategory; // 'material' | 'weather' | 'drawing' | 'labor' | 'other'
+}
+
 export interface DailyLog {
   id: string;
   constructionSiteId: string;
@@ -325,6 +333,13 @@ export interface DailyLog {
   description: string;
   issues?: string;
   photos?: { name: string; url: string }[];
+  gpsLat?: number;
+  gpsLng?: number;
+  gpsAccuracy?: number;
+  delayTasks?: DelayTaskEntry[];
+  photoRequired?: boolean;
+  verified?: boolean;
+  verifiedBy?: string;
   createdBy: string;
   createdAt: string;
 }

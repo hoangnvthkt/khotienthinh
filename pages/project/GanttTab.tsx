@@ -153,6 +153,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
     const [showForm, setShowForm] = useState(false);
     const [editing, setEditing] = useState<ProjectTask | null>(null);
     const [deleteTarget, setDeleteTarget] = useState<ProjectTask | null>(null);
+    const [photoTooltip, setPhotoTooltip] = useState<{ x: number, y: number, photoUrl: string, date: string, taskName: string } | null>(null);
 
     // Form state
     const [fName, setFName] = useState('');
@@ -799,6 +800,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                                         const isDragging = draggingTaskId === task.id;
                                         const isRippling = draggingTaskId !== null && draggingTaskId !== task.id;
 
+                                        // GĐ3: Tìm ảnh mới nhất từ daily logs của task này
+                                        const relatedLogs = dailyLogs.filter(log => log.date >= task.startDate && log.date <= task.endDate && log.photos && log.photos.length > 0);
+                                        const latestPhotoLog = relatedLogs.at(-1);
+                                        const latestPhoto = latestPhotoLog?.photos?.[0];
+
                                         // Baseline shadow position
                                         const blLeft = baselineTask ? daysBetween(timelineStart, baselineTask.startDate) * zoom : 0;
                                         const blWidth = baselineTask ? Math.max(baselineTask.duration * zoom, zoom) : 0;
@@ -844,7 +850,18 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                                                             border: `2px solid ${isGateBlocked ? '#94a3b8' : (isCrit ? '#ef4444' : color)}`,
                                                         }}
                                                         title={`${task.name}: ${task.progress}% (${fmtShort(task.startDate)} → ${fmtShort(task.endDate)})${isCrit ? ' ⚡ Đường găng' : ''}${floatVal > 0 ? ` | Float: ${floatVal}d` : ''}${delayDays > 0 ? ` | Trễ: ${delayDays}d` : ''}${isGateBlocked ? ' 🔒 Chờ nghiệm thu' : ''}`}
-                                                        onClick={() => openEdit(task)}>
+                                                        onClick={() => openEdit(task)}
+                                                        onMouseEnter={(e) => {
+                                                            if (latestPhoto) {
+                                                                setPhotoTooltip({ x: e.clientX, y: e.clientY, photoUrl: latestPhoto.url, date: latestPhotoLog!.date, taskName: task.name });
+                                                            }
+                                                        }}
+                                                        onMouseLeave={() => setPhotoTooltip(null)}
+                                                        onMouseMove={(e) => {
+                                                            if (latestPhoto) {
+                                                                setPhotoTooltip({ x: e.clientX, y: e.clientY, photoUrl: latestPhoto.url, date: latestPhotoLog!.date, taskName: task.name });
+                                                            }
+                                                        }}>
                                                         <div className="absolute inset-0 rounded-md transition-all" style={{ width: `${task.progress}%`, backgroundColor: isGateBlocked ? '#94a3b8' : (isCrit ? '#ef4444' : color), opacity: 0.65 }} />
                                                         {width > 50 && (
                                                             <span className="absolute inset-0 flex items-center px-2 text-[9px] font-bold truncate z-10"
@@ -1396,6 +1413,16 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                 onClose={() => setGateModalTask(null)}
                 onTransition={handleGateApproval}
             />
+
+            {/* GĐ3: Photo Tooltip */}
+            {photoTooltip && (
+                <div className="fixed z-[9999] pointer-events-none bg-white rounded-lg shadow-xl border border-slate-200 p-2"
+                    style={{ left: photoTooltip.x + 15, top: photoTooltip.y + 15 }}>
+                    <img src={photoTooltip.photoUrl} className="w-32 h-24 object-cover rounded shadow-sm mb-1" />
+                    <div className="text-[10px] font-bold text-slate-700 truncate w-32">{photoTooltip.taskName}</div>
+                    <div className="text-[9px] text-slate-500">{new Date(photoTooltip.date).toLocaleDateString('vi-VN')}</div>
+                </div>
+            )}
         </div>
     );
 };

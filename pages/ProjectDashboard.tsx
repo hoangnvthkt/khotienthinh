@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { ProjectFinance, ProjectTransaction, ProjectCostCategory, ProjectTxType, ProjectTxSource } from '../types';
+import { ProjectFinance, ProjectTransaction, ProjectCostCategory, ProjectTxType, ProjectTxSource, Attachment } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import * as XLSX from 'xlsx';
 import CashFlowTab from './project/CashFlowTab';
@@ -92,7 +92,7 @@ const ProjectDashboard: React.FC = () => {
     const [uploading, setUploading] = useState(false);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [editingTx, setEditingTx] = useState<ProjectTransaction | null>(null);
-    const [existingAttachments, setExistingAttachments] = useState<{ name: string; url: string; type: string }[]>([]);
+    const [existingAttachments, setExistingAttachments] = useState<Attachment[]>([]);
 
     const selectedSite = hrmConstructionSites.find(s => s.id === selectedSiteId);
     const selectedFinance = useMemo(() =>
@@ -173,9 +173,9 @@ const ProjectDashboard: React.FC = () => {
         });
     };
 
-    const uploadFiles = async (files: File[]): Promise<{ name: string; url: string; type: string }[]> => {
+    const uploadFiles = async (files: File[]): Promise<Attachment[]> => {
         if (files.length === 0) return [];
-        const results: { name: string; url: string; type: string }[] = [];
+        const results: Attachment[] = [];
 
         for (const file of files) {
             let uploaded = false;
@@ -195,7 +195,7 @@ const ProjectDashboard: React.FC = () => {
                     } else {
                         const { data: urlData } = supabase.storage.from('project-attachments').getPublicUrl(path);
                         console.log('[Attachment] Upload OK, URL:', urlData.publicUrl);
-                        results.push({ name: file.name, url: urlData.publicUrl, type: file.type });
+                        results.push({ name: file.name, url: urlData.publicUrl, fileType: file.type });
                         uploaded = true;
                     }
                 } catch (err: any) {
@@ -208,7 +208,7 @@ const ProjectDashboard: React.FC = () => {
                 try {
                     console.log('[Attachment] Falling back to base64 for:', file.name);
                     const base64 = await fileToBase64(file);
-                    results.push({ name: file.name, url: base64, type: file.type });
+                    results.push({ name: file.name, url: base64, fileType: file.type });
                 } catch (err: any) {
                     console.error('[Attachment] Base64 conversion failed:', err.message);
                 }
@@ -670,7 +670,7 @@ const ProjectDashboard: React.FC = () => {
                             <div className="flex flex-wrap gap-2">
                                 {existingAttachments.map((att, i) => (
                                     <div key={i} className="relative group">
-                                        {att.type.startsWith('image/') ? (
+                                        {(att.fileType || '').startsWith('image/') ? (
                                             <img src={att.url} className="w-16 h-16 object-cover rounded-lg border border-slate-200" />
                                         ) : (
                                             <div className="w-16 h-16 rounded-lg border border-slate-200 bg-slate-50 flex flex-col items-center justify-center">
@@ -846,7 +846,7 @@ const ProjectDashboard: React.FC = () => {
                                     <div key={cat.key}
                                         onClick={() => { setTxFilter(txFilter === cat.filterKey ? 'all' : cat.filterKey); document.getElementById('tx-list-section')?.scrollIntoView({ behavior: 'smooth' }); }}
                                         className={`cursor-pointer rounded-xl p-2 -mx-2 transition-all hover:bg-slate-50 ${txFilter === cat.filterKey ? 'ring-2 ring-offset-1 bg-slate-50 scale-[1.02]' : ''}`}
-                                        style={txFilter === cat.filterKey ? { ringColor: cat.color } : {}}
+                                        style={txFilter === cat.filterKey ? { '--tw-ring-color': cat.color } as any : {}}
                                     >
                                         <div className="flex items-center justify-between mb-1.5">
                                             <div className="flex items-center gap-2"><span className="text-lg">{cat.icon}</span><span className="text-sm font-bold text-slate-700">{cat.label}</span>{txFilter === cat.filterKey && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold text-white" style={{ backgroundColor: cat.color }}>Đang lọc</span>}</div>
@@ -956,7 +956,7 @@ const ProjectDashboard: React.FC = () => {
                                                     <div className="flex gap-1.5 mt-1.5">
                                                         {tx.attachments!.map((att, ai) => (
                                                             <button key={ai} onClick={() => setPreviewUrl(att.url)} className="group/att relative">
-                                                                {att.type.startsWith('image/') ? (
+                                                                {(att.fileType || '').startsWith('image/') ? (
                                                                     <img src={att.url} className="w-10 h-10 object-cover rounded-lg border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all" />
                                                                 ) : (
                                                                     <div className="w-10 h-10 rounded-lg border border-slate-200 bg-slate-50 flex flex-col items-center justify-center hover:border-blue-400 transition-all">
