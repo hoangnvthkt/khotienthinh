@@ -58,6 +58,7 @@ const AssetCatalog: React.FC = () => {
     const [showImportModal, setShowImportModal] = useState(false);
     const [importRows, setImportRows] = useState<Array<Record<string, any>>>([]);
     const [importErrors, setImportErrors] = useState<Record<number, string>>({});
+    const [importWarnings, setImportWarnings] = useState<Record<number, string[]>>({});
     const [importing, setImporting] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -259,15 +260,16 @@ const AssetCatalog: React.FC = () => {
 
     // ========== EXCEL IMPORT ==========
     const EXCEL_COLUMNS = [
-        'Mã TS', 'Tên tài sản', 'Loại tài sản', 'Nhãn hiệu', 'Model',
-        'Số Serial', 'Nguyên giá', 'Ngày mua (DD/MM/YYYY)', 'Khấu hao (năm)',
-        'Bảo hành (tháng)', 'Giá trị thanh lý', 'Kho', 'Vị trí', 'Ghi chú',
+        'Mã TS', 'Tên tài sản', 'Loại tài sản', 'Loại hình (Đơn/Lô/Bộ)', 'Số lượng', 'Đơn vị tính',
+        'Nhãn hiệu', 'Model', 'Số Serial', 'Nguyên giá', 'Ngày mua (DD/MM/YYYY)', 'Khấu hao (năm)',
+        'Bảo hành (tháng)', 'Giá trị thanh lý', 'Kho', 'Vị trí', 'Nhà cung cấp', 'Ghi chú',
     ];
 
     const downloadTemplate = () => {
         const ws = XLSX.utils.aoa_to_sheet([
             EXCEL_COLUMNS,
-            ['TS-001', 'Máy xúc CAT 320D', 'Máy móc', 'CAT', '320D', 'SN12345', '500000000', '17/03/2026', '10', '24', '50000000', '', '', ''],
+            ['TS-001', 'Máy xúc CAT 320D', 'Máy móc', 'Đơn', '1', 'Cái', 'CAT', '320D', 'SN12345', '500000000', '17/03/2026', '10', '24', '50000000', '', '', '', ''],
+            ['TS-002', 'Gạch xây', 'Vật tư', 'Lô', '1000', 'Viên', '', '', '', '1500', '17/03/2026', '1', '0', '0', '', '', '', ''],
         ]);
         // column widths
         ws['!cols'] = EXCEL_COLUMNS.map(() => ({ wch: 18 }));
@@ -299,16 +301,30 @@ const AssetCatalog: React.FC = () => {
 
                 // validate & map
                 const errors: Record<number, string> = {};
+                const warnings: Record<number, string[]> = {};
                 const mapped = jsonRows.map((row, i) => {
                     const errs: string[] = [];
+                    const warns: string[] = [];
+                    
                     const code = String(row['Mã TS'] || '').trim();
                     const name = String(row['Tên tài sản'] || '').trim();
                     const catName = String(row['Loại tài sản'] || '').trim();
                     const originalValue = Number(row['Nguyên giá']) || 0;
+                    
+                    const assetTypeStr = String(row['Loại hình (Đơn/Lô/Bộ)'] || '').trim().toLowerCase();
+                    let assetType: 'single' | 'batch' | 'bundle' = 'single';
+                    if (assetTypeStr === 'lô') assetType = 'batch';
+                    else if (assetTypeStr === 'bộ') assetType = 'bundle';
+                    
+                    const quantity = Math.max(1, Number(row['Số lượng']) || 1);
+                    const unit = String(row['Đơn vị tính'] || '').trim() || 'Cái';
+                    
+                    const supplierNameInput = String(row['Nhà cung cấp'] || '').trim();
+                    const supplier = supplierNameInput ? suppliers.find(s => s.name.toLowerCase() === supplierNameInput.toLowerCase()) : undefined;
 
                     if (!code) errs.push('Thiếu mã TS');
                     if (!name) errs.push('Thiếu tên');
-                    if (originalValue <= 0) errs.push('Nguyên giá phải > 0');
+                    if (originalValue <= 0) warns.push('Nguyên giá = 0 (nên cập nhật sau)');
                     // Check duplicate code in existing assets
                     if (code && assets.some(a => a.code === code)) errs.push('Mã đã tồn tại');
 
@@ -331,6 +347,7 @@ const AssetCatalog: React.FC = () => {
                     if (catName && !cat) errs.push(`Loại "${catName}" không tồn tại`);
 
                     if (errs.length > 0) errors[i] = errs.join('; ');
+                    if (warns.length > 0) warnings[i] = warns;
 
                     return {
                         _rowIndex: i,
@@ -352,11 +369,17 @@ const AssetCatalog: React.FC = () => {
                         })(),
                         locationNote: String(row['Vị trí'] || '').trim(),
                         note: String(row['Ghi chú'] || '').trim(),
+                        assetType,
+                        quantity,
+                        unit,
+                        supplierId: supplier?.id || '',
+                        supplierName: supplier?.name || supplierNameInput || '',
                     };
                 });
 
                 setImportRows(mapped);
                 setImportErrors(errors);
+                setImportWarnings(warnings);
                 setShowImportModal(true);
             } catch (err) {
                 toast.error('Lỗi đọc file', 'File Excel không hợp lệ. Vui lòng dùng file mẫu.');
@@ -392,6 +415,11 @@ const AssetCatalog: React.FC = () => {
                 warehouseId: row.warehouseId,
                 locationNote: row.locationNote,
                 note: row.note,
+                assetType: row.assetType,
+                quantity: row.quantity,
+                unit: row.unit,
+                supplierId: row.supplierId || undefined,
+                supplierName: row.supplierName || undefined,
                 status: AssetStatus.AVAILABLE,
                 createdAt: now,
                 updatedAt: now,
@@ -401,6 +429,7 @@ const AssetCatalog: React.FC = () => {
         setShowImportModal(false);
         setImportRows([]);
         setImportErrors({});
+        setImportWarnings({});
         setImporting(false);
     };
 
@@ -1243,6 +1272,9 @@ const AssetCatalog: React.FC = () => {
                                         {Object.keys(importErrors).length > 0 && (
                                             <> • <span className="text-red-500 font-bold">{Object.keys(importErrors).length} lỗi</span></>
                                         )}
+                                        {Object.keys(importWarnings).length > 0 && (
+                                            <> • <span className="text-amber-500 font-bold">{Object.keys(importWarnings).length} cảnh báo (sẽ được nhập)</span></>
+                                        )}
                                     </p>
                                 </div>
                             </div>
@@ -1258,32 +1290,39 @@ const AssetCatalog: React.FC = () => {
                                         <th className="p-3">Mã TS</th>
                                         <th className="p-3">Tên tài sản</th>
                                         <th className="p-3">Loại</th>
+                                        <th className="p-3 text-center">Loại hình</th>
                                         <th className="p-3 text-right">Nguyên giá</th>
                                         <th className="p-3">Ngày mua</th>
-                                        <th className="p-3">Nhãn hiệu</th>
-                                        <th className="p-3">KH (năm)</th>
-                                        <th className="p-3">BH (tháng)</th>
-                                        <th className="p-3">Trạng thái</th>
+                                        <th className="p-3">Nhà cung cấp</th>
+                                        <th className="p-3 text-center">Trạng thái</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
                                     {importRows.map((row, i) => {
                                         const hasError = !!importErrors[i];
+                                        const rowWarns = importWarnings[i];
                                         return (
-                                            <tr key={i} className={hasError ? 'bg-red-50/50 dark:bg-red-950/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}>
+                                            <tr key={i} className={hasError ? 'bg-red-50/50 dark:bg-red-950/10' : rowWarns ? 'bg-amber-50/30 dark:bg-amber-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}>
                                                 <td className="p-3 text-slate-400 font-mono text-[10px]">{i + 1}</td>
                                                 <td className="p-3 font-mono font-bold text-slate-600 dark:text-slate-300">{row.code || '—'}</td>
                                                 <td className="p-3 font-bold text-slate-800 dark:text-white max-w-[200px] truncate">{row.name || '—'}</td>
                                                 <td className="p-3 text-slate-500">{row.categoryName || '—'}</td>
-                                                <td className="p-3 text-right font-bold text-slate-800 dark:text-white">{row.originalValue > 0 ? row.originalValue.toLocaleString('vi-VN') + 'đ' : '—'}</td>
+                                                <td className="p-3 text-center">
+                                                    {row.assetType === 'batch' ? <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px] font-bold">LÔ (x{row.quantity} {row.unit})</span> :
+                                                     row.assetType === 'bundle' ? <span className="bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded text-[10px] font-bold">BỘ</span> :
+                                                     <span className="text-[10px] text-slate-400">Đơn ({row.unit})</span>}
+                                                </td>
+                                                <td className="p-3 text-right font-bold text-slate-800 dark:text-white">{row.originalValue > 0 ? row.originalValue.toLocaleString('vi-VN') + 'đ' : <span className="text-amber-500 font-bold">0đ</span>}</td>
                                                 <td className="p-3 text-slate-500">{row.purchaseDate ? new Date(row.purchaseDate).toLocaleDateString('vi-VN') : '—'}</td>
-                                                <td className="p-3 text-slate-500">{row.brand || '—'}</td>
-                                                <td className="p-3 text-slate-500 text-center">{row.depreciationYears}</td>
-                                                <td className="p-3 text-slate-500 text-center">{row.warrantyMonths}</td>
-                                                <td className="p-3">
+                                                <td className="p-3 text-slate-500 truncate max-w-[150px]" title={row.supplierName}>{row.supplierName || '—'}</td>
+                                                <td className="p-3 text-center">
                                                     {hasError ? (
                                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black text-red-600 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800" title={importErrors[i]}>
                                                             <XCircle size={10} /> {importErrors[i]}
+                                                        </span>
+                                                    ) : rowWarns ? (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black text-amber-600 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800" title={rowWarns.join('; ')}>
+                                                            <AlertTriangle size={10} /> CẢNH BÁO
                                                         </span>
                                                     ) : (
                                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800">
