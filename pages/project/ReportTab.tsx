@@ -10,7 +10,8 @@ import {
     Calendar, Activity
 } from 'lucide-react';
 import { ProjectContract, AcceptanceRecord, MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor, PurchaseOrder, ProjectTask, DailyLog } from '../../types';
-import { contractService, acceptanceService, boqService, matRequestService, vendorService, poService, taskService, dailyLogService } from '../../lib/projectService';
+import { acceptanceService, boqService, matRequestService, vendorService, poService, taskService, dailyLogService } from '../../lib/projectService';
+import { customerContractService, subcontractorContractService } from '../../lib/hdService';
 
 interface ReportTabProps {
     constructionSiteId: string;
@@ -45,7 +46,40 @@ const ReportTab: React.FC<ReportTabProps> = ({ constructionSiteId, contractValue
     const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
 
     useEffect(() => {
-        contractService.list(constructionSiteId).then(setContracts).catch(console.error);
+        // Fetch new contract models and map to generic ProjectContract shape for reporting
+        Promise.all([
+            customerContractService.listBySite(constructionSiteId),
+            subcontractorContractService.listBySite(constructionSiteId)
+        ]).then(([customers, subs]) => {
+            const mainContracts: ProjectContract[] = customers.map(c => ({
+                id: c.id,
+                constructionSiteId: c.constructionSiteId || constructionSiteId,
+                contractNumber: c.code,
+                type: 'main',
+                partyName: c.customerName,
+                value: c.value,
+                signDate: c.signedDate || '',
+                startDate: c.effectiveDate || '',
+                endDate: c.endDate || '',
+                status: c.status as any,
+                createdAt: c.createdAt
+            }));
+            const subContracts: ProjectContract[] = subs.map(c => ({
+                id: c.id,
+                constructionSiteId: c.constructionSiteId || constructionSiteId,
+                contractNumber: c.code,
+                type: 'subcontract',
+                partyName: c.subcontractorName,
+                value: c.value,
+                signDate: c.signedDate || '',
+                startDate: c.effectiveDate || '',
+                endDate: c.completionDate || '',
+                status: c.status as any,
+                createdAt: c.createdAt
+            }));
+            setContracts([...mainContracts, ...subContracts]);
+        }).catch(console.error);
+
         acceptanceService.list(constructionSiteId).then(setAcceptances).catch(console.error);
         boqService.list(constructionSiteId).then(setBoqItems).catch(console.error);
         matRequestService.list(constructionSiteId).then(setMatRequests).catch(console.error);

@@ -33,9 +33,9 @@ const Layout: React.FC = () => {
   const navigate = useNavigate();
 
   const lastActivityRef = useRef<number>(Date.now());
-  const warningTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const logoutTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const countdownRef = useRef<ReturnType<typeof setInterval>>();
+  const warningTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const logoutTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   const appInitials = appSettings.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
 
@@ -342,10 +342,10 @@ const Layout: React.FC = () => {
           const bd = new Date(emp.dateOfBirth!);
           return bd.getMonth() === today.getMonth() && bd.getDate() === today.getDate();
         })() : false;
-        return <EasterEggs isBirthday={isBirthday} userName={emp?.fullName || user?.fullName} />;
+        return <EasterEggs isBirthday={isBirthday} userName={emp?.fullName || user?.name} />;
       })()}
       {/* ChibiBot Virtual Assistant */}
-      <ChibiBot userName={user?.name || user?.fullName} userId={user?.id} />
+      <ChibiBot userName={employees.find(e => e.userId === user?.id)?.fullName || user?.name} userId={user?.id} />
     </div>
   );
 };

@@ -298,9 +298,9 @@ const ChibiBot: React.FC<ChibiBotProps> = ({ userName, userId }) => {
   const [isResizing, setIsResizing] = useState(false);
   const resizeRef = useRef<{ edge: string; startX: number; startY: number; startW: number; startH: number } | null>(null);
 
-  const bubbleTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const sleepTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const frameRef = useRef<ReturnType<typeof setInterval>>();
+  const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const sleepTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const frameRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const usedMessagesRef = useRef<Set<string>>(new Set());
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);

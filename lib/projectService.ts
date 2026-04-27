@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 import {
     ProjectTask, DailyLog, AcceptanceRecord,
     MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor,
-    PurchaseOrder, PaymentSchedule
+    PurchaseOrder, PaymentSchedule, ProjectBaseline
 } from '../types';
 import { auditService } from './auditService';
 
@@ -232,6 +232,32 @@ export const paymentService = {
     async remove(id: string): Promise<void> {
         const { error } = await supabase
             .from('payment_schedules')
+            .delete()
+            .eq('id', id);
+        if (error) throw error;
+    },
+};
+
+// ==================== BASELINES ====================
+export const baselineService = {
+    async list(siteId: string): Promise<ProjectBaseline[]> {
+        const { data, error } = await supabase
+            .from('project_baselines')
+            .select('*')
+            .eq('construction_site_id', siteId)
+            .order('locked_at', { ascending: false });
+        if (error) throw error;
+        return (data || []).map(fromDb);
+    },
+    async create(baseline: ProjectBaseline): Promise<void> {
+        const { error } = await supabase
+            .from('project_baselines')
+            .insert(toDb(baseline));
+        if (error) throw error;
+    },
+    async remove(id: string): Promise<void> {
+        const { error } = await supabase
+            .from('project_baselines')
             .delete()
             .eq('id', id);
         if (error) throw error;

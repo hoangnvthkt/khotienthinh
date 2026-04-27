@@ -169,7 +169,7 @@ const BottomNav: React.FC = () => {
   const resetDefaults = () => setEnabledKeys([...DEFAULT_KEYS]);
 
   // Long press timer ref
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   return (
     <>

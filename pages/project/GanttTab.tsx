@@ -1,14 +1,17 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import AiInsightPanel from '../../components/AiInsightPanel';
 import ConfirmDeleteModal from '../../components/ConfirmDeleteModal';
+import GateStateMachineModal from '../../components/project/GateStateMachineModal';
 import {
     Plus, Edit2, Trash2, X, Save, ChevronRight, ChevronDown, Flag,
     ZoomIn, ZoomOut, LayoutList, BarChart3, Columns, Search,
     Filter, Calendar, User, Clock, AlertTriangle, CheckCircle2,
-    Circle, PlayCircle, ArrowUpDown, ChevronUp, Copy
+    Circle, PlayCircle, ArrowUpDown, ChevronUp, Copy,
+    Anchor, Link2, Shield, Wrench, Users, Zap, Lock, Bell
 } from 'lucide-react';
-import { ProjectTask } from '../../types';
-import { taskService } from '../../lib/projectService';
+import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus } from '../../types';
+import { taskService, baselineService, dailyLogService } from '../../lib/projectService';
+import { computeCriticalPath, getDelayDays, rippleEffect, type CriticalPathResult } from '../../lib/criticalPathEngine';
 
 interface GanttTabProps {
     constructionSiteId: string;
@@ -16,6 +19,11 @@ interface GanttTabProps {
 
 // ============= CONSTANTS =============
 const COLORS = ['#f97316', '#0ea5e9', '#8b5cf6', '#10b981', '#ec4899', '#6366f1', '#f43f5e', '#14b8a6'];
+const WEATHER_ICONS: Record<string, string> = { sunny: '☀️', cloudy: '⛅', rainy: '🌧️', storm: '⛈️' };
+const WEATHER_COLORS: Record<string, string> = { sunny: '', cloudy: '', rainy: 'bg-blue-200/60 dark:bg-blue-800/40', storm: 'bg-red-200/60 dark:bg-red-800/40' };
+// Row height must be identical on BOTH the table (left) and Gantt bars (right) to stay aligned
+const ROW_HEIGHT = 44; // px
+const GANTT_HEADER_HEIGHT = 53; // px — must match left <thead> height
 
 type ViewMode = 'table' | 'gantt' | 'split';
 type TaskStatus = 'not_started' | 'in_progress' | 'completed' | 'overdue';
@@ -47,8 +55,8 @@ const getStatus = (t: ProjectTask): TaskStatus => {
 };
 
 const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string; bg: string; icon: any }> = {
-    not_started: { label: 'Chưa bắt đầu', color: 'text-slate-500', bg: 'bg-slate-100', icon: Circle },
-    in_progress: { label: 'Đang thực hiện', color: 'text-blue-600', bg: 'bg-blue-50', icon: PlayCircle },
+    not_started: { label: 'Chưa BĐ', color: 'text-slate-500', bg: 'bg-slate-100', icon: Circle },
+    in_progress: { label: 'Đang TH', color: 'text-blue-600', bg: 'bg-blue-50', icon: PlayCircle },
     completed: { label: 'Hoàn thành', color: 'text-emerald-600', bg: 'bg-emerald-50', icon: CheckCircle2 },
     overdue: { label: 'Trễ hạn', color: 'text-red-600', bg: 'bg-red-50', icon: AlertTriangle },
 };
@@ -60,7 +68,7 @@ const StatusBadge: React.FC<{ status: TaskStatus }> = ({ status }) => {
     const cfg = STATUS_CONFIG[status];
     const Icon = cfg.icon;
     return (
-        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${cfg.color} ${cfg.bg}`}>
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${cfg.color} ${cfg.bg}`}>
             <Icon size={10} /> {cfg.label}
         </span>
     );
@@ -90,11 +98,46 @@ const ProgressCell: React.FC<{ value: number; onChange: (v: number) => void }> =
 const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
     // Data
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
+    const [baselines, setBaselines] = useState<ProjectBaseline[]>([]);
+    const [activeBaseline, setActiveBaseline] = useState<ProjectBaseline | null>(null);
+    const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
     const [loading, setLoading] = useState(true);
+    const [showBaselinePanel, setShowBaselinePanel] = useState(false);
+    // GĐ2: Drag state for ripple + ghosting
+    const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+    const [dragGhost, setDragGhost] = useState<{ taskId: string; origLeft: number; origWidth: number; deltaDays: number; weatherWarn: string | null } | null>(null);
+    const [showWorkload, setShowWorkload] = useState(false);
+    // GĐ2: Gate State Machine
+    const [gateModalTask, setGateModalTask] = useState<ProjectTask | null>(null);
+    const [showGatePanel, setShowGatePanel] = useState(false);
+    // GĐ2: Set of task IDs whose predecessor gate is blocking them
+    const gateBlockedIds = useMemo(() => {
+        const blocked = new Set<string>();
+        for (const t of tasks) {
+            if (!t.dependencies) continue;
+            for (const dep of t.dependencies) {
+                const pred = tasks.find(p => p.id === dep.taskId);
+                if (pred && pred.progress >= 100 && pred.gateStatus !== 'approved') {
+                    blocked.add(t.id);
+                }
+            }
+        }
+        return blocked;
+    }, [tasks]);
 
     useEffect(() => {
         setLoading(true);
-        taskService.list(constructionSiteId).then(data => { setTasks(data); setLoading(false); }).catch(e => { console.error(e); setLoading(false); });
+        Promise.all([
+            taskService.list(constructionSiteId),
+            baselineService.list(constructionSiteId),
+            dailyLogService.list(constructionSiteId),
+        ]).then(([taskData, baselineData, logData]) => {
+            setTasks(taskData);
+            setBaselines(baselineData);
+            setDailyLogs(logData);
+            if (baselineData.length > 0) setActiveBaseline(baselineData[0]);
+            setLoading(false);
+        }).catch(e => { console.error(e); setLoading(false); });
     }, [constructionSiteId]);
 
     // View
@@ -121,11 +164,18 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
     const [fMilestone, setFMilestone] = useState(false);
     const [fNotes, setFNotes] = useState('');
     const [fColor, setFColor] = useState('');
+    // GĐ1: Advanced form fields
+    const [fDeps, setFDeps] = useState<{ taskId: string; type: TaskDependencyType }[]>([]);
+    const [fLagTime, setFLagTime] = useState('0');
+    const [fResourceCount, setFResourceCount] = useState('1');
+    const [fResourceType, setFResourceType] = useState<ResourceType>('worker');
+    const [fCostPerDay, setFCostPerDay] = useState('0');
 
     // ====== CRUD operations ======
     const resetForm = () => {
         setEditing(null); setFName(''); setFStart(''); setFEnd(''); setFProgress('0');
         setFAssignee(''); setFParentId(''); setFMilestone(false); setFNotes(''); setFColor('');
+        setFDeps([]); setFLagTime('0'); setFResourceCount('1'); setFResourceType('worker'); setFCostPerDay('0');
         setShowForm(false);
     };
 
@@ -144,6 +194,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
         setFProgress(String(t.progress)); setFAssignee(t.assignee || '');
         setFParentId(t.parentId || ''); setFMilestone(t.isMilestone);
         setFNotes(t.notes || ''); setFColor(t.color || '');
+        setFDeps(t.dependencies || []); setFLagTime(String(t.lagTime || 0));
+        setFResourceCount(String(t.resourceCount || 1)); setFResourceType(t.resourceType || 'worker');
+        setFCostPerDay(String(t.estimatedCostPerDay || 0));
         setShowForm(true);
     };
 
@@ -164,6 +217,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
             progress: Number(fProgress), assignee: fAssignee || undefined,
             parentId: fParentId || undefined, isMilestone: fMilestone,
             notes: fNotes || undefined, color: fColor || undefined,
+            dependencies: fDeps.length > 0 ? fDeps : undefined,
+            lagTime: Number(fLagTime) || 0,
+            resourceCount: Number(fResourceCount) || 1,
+            resourceType: fResourceType,
+            estimatedCostPerDay: Number(fCostPerDay) || 0,
         } : {
             id: crypto.randomUUID(), constructionSiteId,
             name: fName, startDate: fStart, endDate: fEnd, duration,
@@ -171,6 +229,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
             parentId: fParentId || undefined, isMilestone: fMilestone,
             notes: fNotes || undefined, color: fColor || undefined,
             order: tasks.length,
+            dependencies: fDeps.length > 0 ? fDeps : undefined,
+            lagTime: Number(fLagTime) || 0,
+            resourceCount: Number(fResourceCount) || 1,
+            resourceType: fResourceType,
+            estimatedCostPerDay: Number(fCostPerDay) || 0,
         };
         await taskService.upsert(item);
         setTasks(await taskService.list(constructionSiteId));
@@ -261,6 +324,118 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
         return { total, completed, inProgress, overdue, avgProgress };
     }, [tasks]);
 
+    // ====== GĐ1: Critical Path ======
+    const criticalPathResult = useMemo<CriticalPathResult | null>(() => {
+        if (tasks.length === 0) return null;
+        return computeCriticalPath(tasks);
+    }, [tasks]);
+
+    // Map baseline tasks by ID for quick lookup (shadow bars)
+    const baselineMap = useMemo(() => {
+        if (!activeBaseline) return new Map<string, ProjectTask>();
+        const m = new Map<string, ProjectTask>();
+        for (const t of activeBaseline.tasksSnapshot) m.set(t.id, t);
+        return m;
+    }, [activeBaseline]);
+
+    // Lock baseline handler
+    const lockBaseline = useCallback(async () => {
+        const name = `Baseline v${baselines.length + 1} — ${new Date().toLocaleDateString('vi-VN')}`;
+        const bl: ProjectBaseline = {
+            id: crypto.randomUUID(),
+            constructionSiteId,
+            name,
+            lockedAt: new Date().toISOString(),
+            tasksSnapshot: tasks.map(t => ({ ...t, baselineStart: t.startDate, baselineEnd: t.endDate, baselineLocked: true })),
+        };
+        await baselineService.create(bl);
+        // Update tasks with baseline dates
+        const updatedTasks = tasks.map(t => ({
+            ...t,
+            baselineStart: t.startDate,
+            baselineEnd: t.endDate,
+            baselineLocked: true,
+        }));
+        await taskService.upsertMany(updatedTasks);
+        setTasks(updatedTasks);
+        setBaselines(prev => [bl, ...prev]);
+        setActiveBaseline(bl);
+    }, [tasks, baselines, constructionSiteId]);
+
+    // ====== GĐ2: Gate State Machine ======
+    const handleGateApproval = useCallback(async (taskId: string, status: GateStatus, reason?: string) => {
+        const task = tasks.find(t => t.id === taskId);
+        if (!task) return;
+        const updated: ProjectTask = {
+            ...task,
+            gateStatus: status,
+            gateApprovedBy: status === 'approved' ? 'Quản lý' : (status === 'rejected' ? `Từ chối: ${reason || 'Không đạt'}` : undefined),
+            gateApprovedAt: (status === 'approved' || status === 'rejected') ? new Date().toISOString() : undefined,
+        };
+        await taskService.upsert(updated);
+        setTasks(prev => prev.map(t => t.id === taskId ? updated : t));
+        // Sync modal task
+        setGateModalTask(prev => prev?.id === taskId ? updated : prev);
+    }, [tasks]);
+
+    // ====== GĐ2: Drag-Resize with Ripple ======
+    const handleBarDragEnd = useCallback(async (taskId: string, newEndDate: string) => {
+        const rippled = rippleEffect(tasks, taskId, newEndDate);
+        const changedTasks = rippled.filter(t => {
+            const orig = tasks.find(o => o.id === t.id);
+            return orig && (orig.startDate !== t.startDate || orig.endDate !== t.endDate || orig.duration !== t.duration);
+        });
+        for (const t of changedTasks) {
+            await taskService.upsert(t);
+        }
+        setTasks(rippled);
+        setDraggingTaskId(null);
+        setDragGhost(null);
+    }, [tasks]);
+
+    // GĐ2: Live ripple preview during drag (updates successors in real-time)
+    const handleBarDragMove = useCallback((taskId: string, newEndDate: string) => {
+        const rippled = rippleEffect(tasks, taskId, newEndDate);
+        setTasks(rippled);
+    }, [tasks]);
+
+    // ====== GĐ2: Weather Map (date → weather) ======
+    const weatherMap = useMemo(() => {
+        const m = new Map<string, string>();
+        for (const log of dailyLogs) {
+            m.set(log.date, log.weather);
+        }
+        return m;
+    }, [dailyLogs]);
+
+    // ====== GĐ2: Workload Histogram ======
+    const workloadData = useMemo(() => {
+        if (tasks.length === 0) return [];
+        const allDates = tasks.flatMap(t => [t.startDate, t.endDate]).sort();
+        if (allDates.length === 0) return [];
+        const start = allDates[0];
+        const end = allDates[allDates.length - 1];
+        const totalD = daysBetween(start, end);
+        const histogram: { date: string; workers: number; machines: number; specialists: number; total: number }[] = [];
+
+        for (let i = 0; i <= totalD; i++) {
+            const d = addDays(start, i);
+            let workers = 0, machines = 0, specialists = 0;
+            for (const t of tasks) {
+                if (d >= t.startDate && d <= t.endDate && t.progress < 100) {
+                    const count = t.resourceCount || 1;
+                    switch (t.resourceType) {
+                        case 'machine': machines += count; break;
+                        case 'specialist': specialists += count; break;
+                        default: workers += count;
+                    }
+                }
+            }
+            histogram.push({ date: d, workers, machines, specialists, total: workers + machines + specialists });
+        }
+        return histogram;
+    }, [tasks]);
+
     // ====== Timeline ======
     const { timelineStart, totalDays, months } = useMemo(() => {
         if (filteredTasks.length === 0) {
@@ -299,10 +474,43 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
             <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                     <h3 className="text-base font-black text-slate-800 dark:text-white">📊 Tiến độ thi công</h3>
-                    <p className="text-xs text-slate-400 mt-0.5">{stats.total} hạng mục • Tiến độ TB: {stats.avgProgress}%</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                        {stats.total} hạng mục • Tiến độ TB: {stats.avgProgress}%
+                        {criticalPathResult && criticalPathResult.criticalPath.length > 0 && (
+                            <span className="ml-2 text-red-500 font-bold">
+                                • Đường găng: {criticalPathResult.criticalPath.length} task
+                            </span>
+                        )}
+                    </p>
                 </div>
                 <div className="flex items-center gap-2">
                     <AiInsightPanel module="gantt" siteId={constructionSiteId} />
+                    {/* GĐ2: Gate Panel toggle */}
+                    {(() => {
+                        const pendingCount = tasks.filter(t => t.gateStatus === 'pending').length;
+                        return (
+                            <button onClick={() => setShowGatePanel(v => !v)}
+                                className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${showGatePanel
+                                        ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700'
+                                        : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    }`}
+                                title="Danh sách chờ nghiệm thu">
+                                <Shield size={13} /> Gate
+                                {pendingCount > 0 && (
+                                    <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center animate-pulse">
+                                        {pendingCount}
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })()}
+                    {/* GĐ1: Lock Baseline */}
+                    <button onClick={lockBaseline}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
+                        title="Chốt kế hoạch gốc (Baseline)">
+                        <Lock size={13} /> Chốt Baseline
+                        {baselines.length > 0 && <span className="text-[9px] text-slate-400">v{baselines.length}</span>}
+                    </button>
                     <button onClick={() => openAdd()}
                         className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg shadow-orange-500/20 hover:shadow-xl hover:scale-[1.02] transition-all">
                         <Plus size={14} /> Thêm hạng mục
@@ -378,9 +586,17 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                         </div>
                     </div>
 
-                    {/* Right: Zoom (for gantt) */}
+                    {/* Right: Zoom + GĐ2 controls */}
                     {viewMode !== 'table' && (
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-2">
+                            {/* GĐ2: Workload toggle */}
+                            <button onClick={() => setShowWorkload(v => !v)}
+                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${showWorkload ? 'border-violet-400 bg-violet-50 dark:bg-violet-900/20 text-violet-600' : 'border-slate-200 dark:border-slate-600 text-slate-400 hover:text-slate-600'
+                                    }`}
+                                title="Biểu đồ phân bổ nguồn lực">
+                                <Users size={11} /> Workload
+                            </button>
+                            {/* Zoom */}
                             <button onClick={() => setZoom(z => Math.max(10, z - 6))} className="w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-600 flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"><ZoomOut size={12} /></button>
                             <span className="text-[10px] font-bold text-slate-400 w-10 text-center">{zoom}px</span>
                             <button onClick={() => setZoom(z => Math.min(60, z + 6))} className="w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-600 flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"><ZoomIn size={12} /></button>
@@ -456,6 +672,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                                             const status = getStatus(task);
                                             return (
                                                 <tr key={task.id}
+                                                    style={{ height: `${ROW_HEIGHT}px` }}
                                                     className={`border-b border-slate-50 dark:border-slate-700/50 hover:bg-orange-50/30 dark:hover:bg-slate-700/30 group transition-colors ${status === 'overdue' ? 'bg-red-50/20' : ''}`}>
                                                     {/* Name */}
                                                     <td className="px-3 py-2.5">
@@ -476,7 +693,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                                                         </div>
                                                     </td>
                                                     {/* Status */}
-                                                    <td className="px-2 py-2.5"><StatusBadge status={status} /></td>
+                                                    <td className="px-2 py-0 overflow-hidden" style={{ maxWidth: "95px" }}><StatusBadge status={status} /></td>
                                                     {/* Dates */}
                                                     <td className="px-2 py-2.5 text-slate-500 font-medium">{fmtShort(task.startDate)}</td>
                                                     <td className="px-2 py-2.5 text-slate-500 font-medium">{fmtShort(task.endDate)}</td>
@@ -529,10 +746,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
 
                         {/* ====== GANTT VIEW ====== */}
                         {(viewMode === 'gantt' || viewMode === 'split') && (
-                            <div className="flex-1 overflow-x-auto">
-                                <div style={{ width: `${totalDays * zoom}px`, minWidth: '100%' }}>
+                            <div className="flex-1 overflow-x-auto overflow-y-hidden relative">
+                                <div className="relative" style={{ width: `${totalDays * zoom}px`, minWidth: '100%' }}>
                                     {/* Month headers */}
-                                    <div className="h-[42px] flex border-b border-slate-100 dark:border-slate-700 relative bg-slate-50/50 dark:bg-slate-700/30">
+                                    <div className="flex border-b border-slate-100 dark:border-slate-700 relative bg-slate-50/50 dark:bg-slate-700/30" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
                                         {months.map((m, i) => (
                                             <div key={i} className="absolute top-0 h-full flex flex-col justify-center border-r border-slate-100 dark:border-slate-700"
                                                 style={{ left: `${m.startDay * zoom}px`, width: `${m.days * zoom}px` }}>
@@ -552,8 +769,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                                     {viewMode === 'gantt' && (
                                         <div className="border-b border-slate-100 dark:border-slate-700">
                                             {taskTree.map(({ task, level, hasChildren }) => (
-                                                <div key={task.id} className="h-[36px] flex items-center gap-1 px-2 border-b border-slate-50 dark:border-slate-700/50 hover:bg-slate-50/50 dark:hover:bg-slate-700/30 group text-xs"
-                                                    style={{ paddingLeft: `${8 + level * 16}px` }}>
+                                                <div key={task.id} className="flex items-center gap-1 px-2 border-b border-slate-50 dark:border-slate-700/50 hover:bg-slate-50/50 dark:hover:bg-slate-700/30 group text-xs"
+                                                    style={{ height: `${ROW_HEIGHT}px`, paddingLeft: `${8 + level * 16}px` }}>
                                                     {hasChildren ? (
                                                         <button onClick={() => toggleCollapse(task.id)} className="w-4 h-4 flex items-center justify-center text-slate-400 hover:text-orange-500 shrink-0">
                                                             {collapsedParents.has(task.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
@@ -567,45 +784,174 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                                         </div>
                                     )}
 
-                                    {/* Task bars */}
+                                    {/* Task bars + Baseline shadows + Critical Path + GĐ2: Ghost + Gate Block */}
                                     {taskTree.map(({ task }, idx) => {
                                         const left = daysBetween(timelineStart, task.startDate) * zoom;
                                         const width = Math.max(task.duration * zoom, zoom);
                                         const color = task.color || COLORS[idx % COLORS.length];
                                         const status = getStatus(task);
+                                        const isCrit = criticalPathResult?.criticalPath.includes(task.id);
+                                        const scheduleInfo = criticalPathResult?.taskSchedule.get(task.id);
+                                        const floatVal = scheduleInfo?.float ?? 0;
+                                        const baselineTask = baselineMap.get(task.id);
+                                        const delayDays = getDelayDays(task);
+                                        const isGateBlocked = gateBlockedIds.has(task.id);
+                                        const isDragging = draggingTaskId === task.id;
+                                        const isRippling = draggingTaskId !== null && draggingTaskId !== task.id;
+
+                                        // Baseline shadow position
+                                        const blLeft = baselineTask ? daysBetween(timelineStart, baselineTask.startDate) * zoom : 0;
+                                        const blWidth = baselineTask ? Math.max(baselineTask.duration * zoom, zoom) : 0;
 
                                         return (
-                                            <div key={task.id} className="h-[36px] relative border-b border-slate-50 dark:border-slate-700/50" style={{ width: `${totalDays * zoom}px` }}>
+                                            <div key={task.id} className="w-full relative border-b border-slate-50 dark:border-slate-700/50" style={{ height: `${ROW_HEIGHT}px` }}>
                                                 {todayOffset >= 0 && todayOffset <= totalDays && (
                                                     <div className="absolute top-0 h-full w-[2px] bg-red-500/10 z-0" style={{ left: `${todayOffset * zoom}px` }} />
                                                 )}
 
+                                                {/* GĐ1: Baseline Shadow Bar */}
+                                                {baselineTask && blWidth > 0 && (
+                                                    <div className="absolute top-[10px] h-[16px] rounded bg-slate-300/30 dark:bg-slate-500/20 z-[1] pointer-events-none border border-dashed border-slate-300/50"
+                                                        style={{ left: `${blLeft}px`, width: `${blWidth}px` }}
+                                                        title={`Baseline: ${fmtShort(baselineTask.startDate)} → ${fmtShort(baselineTask.endDate)}`} />
+                                                )}
+
+                                                {/* GĐ2: Ghost Bar — fixed at original position during drag */}
+                                                {dragGhost && dragGhost.taskId === task.id && (
+                                                    <div className="absolute top-[8px] h-[20px] rounded-lg z-[2] pointer-events-none border-2 border-dashed"
+                                                        style={{
+                                                            left: `${dragGhost.origLeft}px`,
+                                                            width: `${dragGhost.origWidth}px`,
+                                                            borderColor: `${color}60`,
+                                                            backgroundColor: `${color}10`,
+                                                            opacity: 0.35,
+                                                        }} />
+                                                )}
+
                                                 {task.isMilestone ? (
                                                     <div className="absolute top-1/2 -translate-y-1/2 z-10" style={{ left: `${left}px` }}>
-                                                        <div className="w-4 h-4 rotate-45 rounded-sm shadow-md" style={{ backgroundColor: color }} />
+                                                        <div className={`w-4 h-4 rotate-45 rounded-sm shadow-md ${isCrit ? 'ring-2 ring-red-500 ring-offset-1' : ''}`} style={{ backgroundColor: color }} />
                                                     </div>
                                                 ) : (
-                                                    <div className={`absolute top-[6px] h-[24px] rounded-lg shadow-sm cursor-pointer group/bar transition-all hover:scale-y-[1.15] hover:shadow-md z-10 ${status === 'overdue' ? 'ring-1 ring-red-400 ring-offset-1' : ''}`}
-                                                        style={{ left: `${left}px`, width: `${width}px`, backgroundColor: `${color}20`, border: `2px solid ${color}` }}
-                                                        title={`${task.name}: ${task.progress}% (${fmtShort(task.startDate)} → ${fmtShort(task.endDate)})`}
+                                                    <div className={`absolute top-[6px] h-[24px] rounded-lg shadow-sm cursor-pointer group/bar z-10 ${isDragging ? 'shadow-lg scale-y-[1.2] z-30' : 'hover:scale-y-[1.15] hover:shadow-md'
+                                                        } ${isCrit ? 'ring-2 ring-red-500/70 ring-offset-1' : ''
+                                                        } ${status === 'overdue' ? 'ring-1 ring-red-400 ring-offset-1' : ''
+                                                        } ${isGateBlocked ? 'opacity-40 grayscale' : ''
+                                                        } ${isRippling ? 'transition-[left,width] duration-300 ease-out' : 'transition-all'}`}
+                                                        style={{
+                                                            left: `${left}px`, width: `${width}px`,
+                                                            backgroundColor: isGateBlocked ? '#e2e8f0' : `${color}20`,
+                                                            border: `2px solid ${isGateBlocked ? '#94a3b8' : (isCrit ? '#ef4444' : color)}`,
+                                                        }}
+                                                        title={`${task.name}: ${task.progress}% (${fmtShort(task.startDate)} → ${fmtShort(task.endDate)})${isCrit ? ' ⚡ Đường găng' : ''}${floatVal > 0 ? ` | Float: ${floatVal}d` : ''}${delayDays > 0 ? ` | Trễ: ${delayDays}d` : ''}${isGateBlocked ? ' 🔒 Chờ nghiệm thu' : ''}`}
                                                         onClick={() => openEdit(task)}>
-                                                        <div className="absolute inset-0 rounded-md transition-all" style={{ width: `${task.progress}%`, backgroundColor: color, opacity: 0.65 }} />
+                                                        <div className="absolute inset-0 rounded-md transition-all" style={{ width: `${task.progress}%`, backgroundColor: isGateBlocked ? '#94a3b8' : (isCrit ? '#ef4444' : color), opacity: 0.65 }} />
                                                         {width > 50 && (
                                                             <span className="absolute inset-0 flex items-center px-2 text-[9px] font-bold truncate z-10"
-                                                                style={{ color: task.progress > 50 ? '#fff' : color }}>
-                                                                {task.name}
+                                                                style={{ color: task.progress > 50 ? '#fff' : (isGateBlocked ? '#64748b' : (isCrit ? '#ef4444' : color)) }}>
+                                                                {isGateBlocked && '🔒 '}{task.name}
                                                             </span>
                                                         )}
+                                                        {/* GĐ2: Drag delta indicator */}
+                                                        {isDragging && dragGhost && dragGhost.deltaDays !== 0 && (
+                                                            <span className={`absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-black px-1.5 py-0.5 rounded-full whitespace-nowrap z-30 shadow-sm ${dragGhost.deltaDays > 0 ? 'bg-orange-100 text-orange-700 border border-orange-300' : 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                                                                }`}>
+                                                                {dragGhost.deltaDays > 0 ? '+' : ''}{dragGhost.deltaDays}d
+                                                            </span>
+                                                        )}
+                                                        {/* GĐ2: Weather warning on drag target end date */}
+                                                        {isDragging && dragGhost?.weatherWarn && (
+                                                            <span className="absolute -bottom-5 right-0 text-[8px] font-bold text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-full whitespace-nowrap z-30 animate-pulse shadow-sm">
+                                                                {WEATHER_ICONS[dragGhost.weatherWarn] || '⚠️'} {dragGhost.weatherWarn === 'storm' ? 'Bão!' : 'Mưa!'}
+                                                            </span>
+                                                        )}
+                                                        {/* Float badge */}
+                                                        {!isDragging && floatVal > 0 && width > 60 && (
+                                                            <span className="absolute -top-3.5 right-0 text-[8px] font-bold text-emerald-500 bg-emerald-50 dark:bg-emerald-900/30 px-1 rounded"
+                                                                title={`Float: ${floatVal} ngày dự phòng`}>
+                                                                +{floatVal}d
+                                                            </span>
+                                                        )}
+                                                        {/* Delay badge */}
+                                                        {!isDragging && delayDays > 0 && (
+                                                            <span className="absolute -top-3.5 left-0 text-[8px] font-bold text-red-500 bg-red-50 dark:bg-red-900/30 px-1 rounded animate-pulse">
+                                                                -{delayDays}d
+                                                            </span>
+                                                        )}
+                                                        {/* GĐ2: Gate State Machine Badge */}
+                                                        {task.progress >= 100 && task.gateStatus !== 'approved' && (
+                                                            <button
+                                                                className={`absolute -bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-0.5 text-[7px] font-bold px-1.5 py-0.5 rounded-full border whitespace-nowrap z-20 hover:scale-110 transition-all shadow-sm ${task.gateStatus === 'pending'
+                                                                        ? 'text-amber-700 bg-amber-50 border-amber-300 animate-pulse'
+                                                                        : task.gateStatus === 'rejected'
+                                                                            ? 'text-red-600 bg-red-50 border-red-300'
+                                                                            : 'text-slate-600 bg-white border-slate-300'
+                                                                    }`}
+                                                                onClick={e => { e.stopPropagation(); setGateModalTask(task); }}
+                                                                title="Mở quy trình nghiệm thu">
+                                                                {task.gateStatus === 'pending' && <><Clock size={6} className="inline" /> Chờ duyệt</>}
+                                                                {task.gateStatus === 'rejected' && <><AlertTriangle size={6} className="inline" /> Từ chối</>}
+                                                                {(!task.gateStatus || task.gateStatus === 'none') && <><Shield size={6} className="inline" /> Nghiệm thu</>}
+                                                            </button>
+                                                        )}
+                                                        {task.gateStatus === 'approved' && (
+                                                            <button
+                                                                className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 flex items-center gap-0.5 text-[7px] font-bold text-emerald-600 whitespace-nowrap z-20 hover:underline"
+                                                                onClick={e => { e.stopPropagation(); setGateModalTask(task); }}
+                                                                title="Xem chi tiết nghiệm thu">
+                                                                <CheckCircle2 size={8} className="inline" /> Đã duyệt
+                                                            </button>
+                                                        )}
+                                                        {/* GĐ2: Gate-blocked indicator */}
+                                                        {isGateBlocked && (
+                                                            <span className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 text-[7px] font-bold text-slate-500 bg-slate-100 px-1.5 rounded-full whitespace-nowrap z-20 border border-slate-200">
+                                                                <Lock size={7} className="inline mr-0.5" />Chờ gate
+                                                            </span>
+                                                        )}
+                                                        {/* Drag handle — resize bar end date with ripple + ghost + weather */}
                                                         <div className="absolute right-0 top-0 h-full w-3 cursor-col-resize opacity-0 group-hover/bar:opacity-100 flex items-center justify-center"
                                                             onMouseDown={e => {
                                                                 e.stopPropagation();
+                                                                e.preventDefault();
+                                                                setDraggingTaskId(task.id);
                                                                 const startX = e.clientX;
-                                                                const startProgress = task.progress;
+                                                                const origEnd = task.endDate;
+                                                                const origLeft = left;
+                                                                const origWidth = width;
+                                                                setDragGhost({ taskId: task.id, origLeft, origWidth, deltaDays: 0, weatherWarn: null });
                                                                 const onMove = (me: MouseEvent) => {
-                                                                    const dp = Math.round(((me.clientX - startX) / width) * 100);
-                                                                    updateProgress(task.id, Math.round((startProgress + dp) / 5) * 5);
+                                                                    const dx = me.clientX - startX;
+                                                                    const daysDelta = Math.round(dx / zoom);
+                                                                    const newEnd = addDays(origEnd, daysDelta);
+                                                                    // Check weather warning for outdoor tasks
+                                                                    let weatherWarn: string | null = null;
+                                                                    if (task.resourceType !== 'machine') {
+                                                                        const endW = weatherMap.get(newEnd);
+                                                                        if (endW === 'rainy' || endW === 'storm') weatherWarn = endW;
+                                                                    }
+                                                                    setDragGhost({ taskId: task.id, origLeft, origWidth, deltaDays: daysDelta, weatherWarn });
+                                                                    if (daysDelta !== 0 && newEnd > task.startDate) {
+                                                                        handleBarDragMove(task.id, newEnd);
+                                                                    }
                                                                 };
-                                                                const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+                                                                const onUp = (me: MouseEvent) => {
+                                                                    window.removeEventListener('mousemove', onMove);
+                                                                    window.removeEventListener('mouseup', onUp);
+                                                                    const dx = me.clientX - startX;
+                                                                    const daysDelta = Math.round(dx / zoom);
+                                                                    if (daysDelta !== 0) {
+                                                                        const newEnd = addDays(origEnd, daysDelta);
+                                                                        if (newEnd > task.startDate) {
+                                                                            handleBarDragEnd(task.id, newEnd);
+                                                                        } else {
+                                                                            setDraggingTaskId(null);
+                                                                            setDragGhost(null);
+                                                                        }
+                                                                    } else {
+                                                                        setDraggingTaskId(null);
+                                                                        setDragGhost(null);
+                                                                    }
+                                                                };
                                                                 window.addEventListener('mousemove', onMove);
                                                                 window.addEventListener('mouseup', onUp);
                                                             }}>
@@ -616,12 +962,238 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                                             </div>
                                         );
                                     })}
+
+                                    {/* GĐ1: SVG Dependency Arrows */}
+                                    <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-20" style={{ height: `${taskTree.length * ROW_HEIGHT + GANTT_HEADER_HEIGHT}px` }}>
+                                        <defs>
+                                            <marker id="dep-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                                <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
+                                            </marker>
+                                            <marker id="dep-arrow-crit" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                                <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" />
+                                            </marker>
+                                        </defs>
+                                        {taskTree.map(({ task }, idx) => {
+                                            if (!task.dependencies || task.dependencies.length === 0) return null;
+                                            const succY = GANTT_HEADER_HEIGHT + idx * ROW_HEIGHT + ROW_HEIGHT / 2; // center of this row
+                                            const succLeft = daysBetween(timelineStart, task.startDate) * zoom;
+
+                                            return task.dependencies.map(dep => {
+                                                const predIdx = taskTree.findIndex(t => t.task.id === dep.taskId);
+                                                if (predIdx < 0) return null;
+                                                const predTask = taskTree[predIdx].task;
+                                                const predY = GANTT_HEADER_HEIGHT + predIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
+                                                const predRight = daysBetween(timelineStart, predTask.endDate) * zoom;
+                                                const predLeft = daysBetween(timelineStart, predTask.startDate) * zoom;
+
+                                                const isBothCrit = criticalPathResult?.criticalPath.includes(task.id) && criticalPathResult?.criticalPath.includes(dep.taskId);
+
+                                                // Arrow points based on dependency type
+                                                let x1: number, x2: number;
+                                                if (dep.type === 'FS') { x1 = predRight; x2 = succLeft; }
+                                                else if (dep.type === 'SS') { x1 = predLeft; x2 = succLeft; }
+                                                else if (dep.type === 'FF') { x1 = predRight; x2 = succLeft + Math.max(task.duration * zoom, zoom); }
+                                                else { x1 = predLeft; x2 = succLeft + Math.max(task.duration * zoom, zoom); }
+
+                                                // Draw an L-shaped path
+                                                const midX = (x1 + x2) / 2;
+                                                const path = `M ${x1} ${predY} L ${midX} ${predY} L ${midX} ${succY} L ${x2} ${succY}`;
+
+                                                return (
+                                                    <path key={`${dep.taskId}-${task.id}`} d={path}
+                                                        stroke={isBothCrit ? '#ef4444' : '#94a3b8'}
+                                                        strokeWidth={isBothCrit ? 2 : 1.5}
+                                                        fill="none"
+                                                        strokeDasharray={dep.type !== 'FS' ? '4 2' : undefined}
+                                                        markerEnd={`url(#${isBothCrit ? 'dep-arrow-crit' : 'dep-arrow'})`}
+                                                        opacity={0.7} />
+                                                );
+                                            });
+                                        })}
+                                    </svg>
+
+                                    {/* GĐ2: Weather Overlay */}
+                                    <div className="absolute top-0 left-0 h-full w-full pointer-events-none z-[5]">
+                                        {Array.from({ length: totalDays }, (_, i) => {
+                                            const d = addDays(timelineStart, i);
+                                            const w = weatherMap.get(d);
+                                            if (!w || w === 'sunny' || w === 'cloudy') return null;
+                                            return (
+                                                <div key={i} className={`absolute top-0 h-full ${WEATHER_COLORS[w] || ''} pointer-events-auto`}
+                                                    style={{ left: `${i * zoom}px`, width: `${zoom}px`, borderLeft: `2px solid ${w === 'storm' ? '#fca5a5' : '#93c5fd'}` }}
+                                                    title={`Thời tiết ngày ${d}: ${WEATHER_ICONS[w] || ''} ${w === 'rainy' ? 'Mưa' : 'Bão'} (Nguy cơ chậm tiến độ)`}>
+                                                    <span className="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] drop-shadow">{WEATHER_ICONS[w]}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
+
+                                {/* GĐ2: Workload Histogram — Enhanced */}
+                                {showWorkload && workloadData.length > 0 && (() => {
+                                    // Dynamic threshold from daily_logs max worker_count
+                                    const maxLogged = Math.max(1, ...dailyLogs.map(l => l.workerCount || 0));
+                                    const threshold = maxLogged > 0 ? maxLogged : Math.ceil(Math.max(1, ...workloadData.map(d => d.total)) * 0.75);
+                                    const maxVal = Math.max(threshold + 2, ...workloadData.map(d => d.total));
+
+                                    return (
+                                        <div className="border-t-2 border-slate-200 dark:border-slate-700 pt-2 pb-1 w-full">
+                                            <div className="px-2 mb-1 flex items-center gap-3 flex-wrap">
+                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">📊 Phân bổ nguồn lực</span>
+                                                <span className="flex items-center gap-1 text-[8px] text-blue-500"><span className="w-2 h-2 rounded bg-blue-400" /> Nhân công</span>
+                                                <span className="flex items-center gap-1 text-[8px] text-amber-500"><span className="w-2 h-2 rounded bg-amber-400" /> Máy</span>
+                                                <span className="flex items-center gap-1 text-[8px] text-violet-500"><span className="w-2 h-2 rounded bg-violet-400" /> Chuyên gia</span>
+                                                <span className="flex items-center gap-1 text-[8px] text-red-400"><span className="w-2 h-[1px] bg-red-400 border-t border-dashed border-red-400" style={{ width: '10px' }} /> Ngưỡng: {threshold} người</span>
+                                            </div>
+                                            <div className="relative h-20 w-full">
+                                                {workloadData.map((d, i) => {
+                                                    const dayOffset = daysBetween(timelineStart, d.date);
+                                                    if (dayOffset < 0 || dayOffset > totalDays) return null;
+                                                    const barH = (d.total / maxVal) * 72;
+                                                    const wH = (d.workers / maxVal) * 72;
+                                                    const mH = (d.machines / maxVal) * 72;
+                                                    const sH = (d.specialists / maxVal) * 72;
+                                                    const isOverload = d.total > threshold;
+                                                    return (
+                                                        <div key={i}
+                                                            className={`absolute bottom-0 group/wbar cursor-default ${isOverload ? 'z-[2]' : ''}`}
+                                                            style={{ left: `${dayOffset * zoom}px`, width: `${Math.max(zoom - 1, 2)}px` }}>
+                                                            <div className={`flex flex-col-reverse rounded-t-sm ${isOverload ? 'animate-pulse' : ''}`} style={{ height: `${barH}px` }}>
+                                                                {wH > 0 && <div className={`rounded-t-sm ${isOverload ? 'bg-red-400/80' : 'bg-blue-400/60'}`} style={{ height: `${wH}px` }} />}
+                                                                {mH > 0 && <div className={isOverload ? 'bg-red-300/80' : 'bg-amber-400/60'} style={{ height: `${mH}px` }} />}
+                                                                {sH > 0 && <div className={`rounded-t-sm ${isOverload ? 'bg-red-500/80' : 'bg-violet-400/60'}`} style={{ height: `${sH}px` }} />}
+                                                            </div>
+                                                            {/* Hover tooltip */}
+                                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 opacity-0 group-hover/wbar:opacity-100 pointer-events-none transition-opacity z-30">
+                                                                <div className="bg-slate-800 text-white text-[8px] px-2 py-1 rounded-lg shadow-lg whitespace-nowrap font-medium">
+                                                                    <div className="font-bold text-[9px] mb-0.5">{fmtShort(d.date)}</div>
+                                                                    <div>👷 {d.workers} CN • 🔧 {d.machines} Máy • 🧑‍🔬 {d.specialists} CG</div>
+                                                                    <div className="font-bold mt-0.5">Tổng: {d.total}{isOverload ? ' ⚠️ QUÁ TẢI' : ''}</div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                                {/* Dynamic threshold line */}
+                                                <div className="absolute left-0 right-0 border-t-2 border-dashed border-red-400/60 dark:border-red-600/60"
+                                                    style={{ bottom: `${(threshold / maxVal) * 72}px` }}>
+                                                    <span className="absolute right-1 -top-3 text-[7px] font-bold text-red-400 bg-white dark:bg-slate-800 px-1 rounded">
+                                                        ⚠️ Quá tải ({threshold})
+                                                    </span>
+                                                </div>
+                                                {/* Overload count summary */}
+                                                {(() => {
+                                                    const overloadDays = workloadData.filter(d => d.total > threshold).length;
+                                                    return overloadDays > 0 ? (
+                                                        <div className="absolute top-0 left-1 text-[8px] font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded-b shadow-sm animate-pulse">
+                                                            🔴 {overloadDays} ngày quá tải
+                                                        </div>
+                                                    ) : null;
+                                                })()}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         )}
                     </div>
                 )}
             </div>
+
+            {/* GĐ2: Gate Panel — pending tasks sidebar */}
+            {showGatePanel && (() => {
+                const pending = tasks.filter(t => t.gateStatus === 'pending' || (t.progress >= 100 && (!t.gateStatus || t.gateStatus === 'none')));
+                const approved = tasks.filter(t => t.gateStatus === 'approved');
+                const rejected = tasks.filter(t => t.gateStatus === 'rejected');
+                return (
+                    <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
+                        <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-700/30">
+                            <div className="flex items-center gap-2">
+                                <Shield size={14} className="text-amber-500" />
+                                <span className="text-xs font-black text-slate-700 dark:text-white">Cổng Nghiệm Thu (Gate Approval)</span>
+                            </div>
+                            <button onClick={() => setShowGatePanel(false)} className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors">
+                                <X size={13} />
+                            </button>
+                        </div>
+                        <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {/* Chờ duyệt */}
+                            <div>
+                                <p className="text-[9px] font-black text-amber-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                                    <Clock size={9} /> Chờ nghiệm thu ({pending.length})
+                                </p>
+                                <div className="space-y-1.5">
+                                    {pending.length === 0 && <p className="text-[10px] text-slate-400 italic">Không có</p>}
+                                    {pending.map(t => (
+                                        <button key={t.id}
+                                            onClick={() => setGateModalTask(t)}
+                                            className={`w-full flex items-center gap-2 p-2 rounded-xl border text-left hover:scale-[1.01] transition-all ${t.gateStatus === 'pending'
+                                                    ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800'
+                                                    : 'bg-slate-50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600'
+                                                }`}>
+                                            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#f97316' }} />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-[10px] font-bold text-slate-700 dark:text-slate-200 truncate">{t.name}</p>
+                                                <p className="text-[9px] text-slate-400">
+                                                    {t.gateStatus === 'pending' ? '⏳ Chờ duyệt' : '📋 Chưa nộp'}
+                                                    {t.assignee && ` • ${t.assignee}`}
+                                                </p>
+                                            </div>
+                                            <Shield size={11} className={t.gateStatus === 'pending' ? 'text-amber-500' : 'text-slate-300'} />
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            {/* Đã duyệt */}
+                            <div>
+                                <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                                    <CheckCircle2 size={9} /> Đã duyệt ({approved.length})
+                                </p>
+                                <div className="space-y-1.5">
+                                    {approved.length === 0 && <p className="text-[10px] text-slate-400 italic">Không có</p>}
+                                    {approved.map(t => (
+                                        <button key={t.id}
+                                            onClick={() => setGateModalTask(t)}
+                                            className="w-full flex items-center gap-2 p-2 rounded-xl border text-left bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800 hover:scale-[1.01] transition-all">
+                                            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#10b981' }} />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-[10px] font-bold text-slate-700 dark:text-slate-200 truncate">{t.name}</p>
+                                                <p className="text-[9px] text-emerald-600">
+                                                    ✓ {t.gateApprovedAt ? new Date(t.gateApprovedAt).toLocaleDateString('vi-VN') : 'Đã duyệt'}
+                                                </p>
+                                            </div>
+                                            <CheckCircle2 size={11} className="text-emerald-500" />
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            {/* Bị từ chối */}
+                            <div>
+                                <p className="text-[9px] font-black text-red-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                                    <AlertTriangle size={9} /> Bị từ chối ({rejected.length})
+                                </p>
+                                <div className="space-y-1.5">
+                                    {rejected.length === 0 && <p className="text-[10px] text-slate-400 italic">Không có</p>}
+                                    {rejected.map(t => (
+                                        <button key={t.id}
+                                            onClick={() => setGateModalTask(t)}
+                                            className="w-full flex items-center gap-2 p-2 rounded-xl border text-left bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800 hover:scale-[1.01] transition-all">
+                                            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#ef4444' }} />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-[10px] font-bold text-slate-700 dark:text-slate-200 truncate">{t.name}</p>
+                                                <p className="text-[9px] text-red-500 truncate">
+                                                    ✗ {t.gateApprovedBy || 'Không đạt'}
+                                                </p>
+                                            </div>
+                                            <AlertTriangle size={11} className="text-red-400" />
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* ====== TASK FORM MODAL ====== */}
             {showForm && (
@@ -715,6 +1287,66 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                                 <span className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1"><Flag size={12} className="text-red-500" /> Đánh dấu là Milestone (Mốc quan trọng)</span>
                             </label>
 
+                            {/* GĐ1: Dependencies */}
+                            <div className="border border-slate-100 dark:border-slate-700 rounded-xl p-3 space-y-2">
+                                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-1"><Link2 size={10} /> Phụ thuộc (Dependencies)</label>
+                                {fDeps.map((dep, i) => (
+                                    <div key={i} className="flex items-center gap-2">
+                                        <select value={dep.taskId} onChange={e => {
+                                            const newDeps = [...fDeps];
+                                            newDeps[i] = { ...newDeps[i], taskId: e.target.value };
+                                            setFDeps(newDeps);
+                                        }} className="flex-1 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-xs bg-transparent">
+                                            <option value="">— Chọn task —</option>
+                                            {tasks.filter(t => t.id !== editing?.id).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                        </select>
+                                        <select value={dep.type} onChange={e => {
+                                            const newDeps = [...fDeps];
+                                            newDeps[i] = { ...newDeps[i], type: e.target.value as TaskDependencyType };
+                                            setFDeps(newDeps);
+                                        }} className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-xs bg-transparent font-bold">
+                                            <option value="FS">FS</option>
+                                            <option value="SS">SS</option>
+                                            <option value="FF">FF</option>
+                                            <option value="SF">SF</option>
+                                        </select>
+                                        <button onClick={() => setFDeps(fDeps.filter((_, j) => j !== i))} className="w-6 h-6 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-50 transition-colors"><X size={12} /></button>
+                                    </div>
+                                ))}
+                                <button onClick={() => setFDeps([...fDeps, { taskId: '', type: 'FS' }])}
+                                    className="flex items-center gap-1 text-[10px] font-bold text-orange-500 hover:text-orange-600 transition-colors">
+                                    <Plus size={10} /> Thêm phụ thuộc
+                                </button>
+                            </div>
+
+                            {/* GĐ1: Lag Time + Resources */}
+                            <div className="grid grid-cols-3 gap-3">
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Clock size={10} /> Lag (ngày)</label>
+                                    <input type="number" min={0} value={fLagTime} onChange={e => setFLagTime(e.target.value)}
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Users size={10} /> Nhân lực</label>
+                                    <input type="number" min={1} value={fResourceCount} onChange={e => setFResourceCount(e.target.value)}
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Wrench size={10} /> Loại TN</label>
+                                    <select value={fResourceType} onChange={e => setFResourceType(e.target.value as ResourceType)}
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none">
+                                        <option value="worker">Nhân công</option>
+                                        <option value="machine">Máy móc</option>
+                                        <option value="specialist">Chuyên gia</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Zap size={10} /> Chi phí/ngày (VNĐ)</label>
+                                <input type="number" min={0} step={100000} value={fCostPerDay} onChange={e => setFCostPerDay(e.target.value)}
+                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                            </div>
+
                             {/* Notes */}
                             <div>
                                 <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Ghi chú</label>
@@ -756,6 +1388,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                     ? 'Hạng mục này có công việc con. Tất cả sẽ bị xoá.'
                     : 'Hành động này không thể hoàn tác.'}
                 countdownSeconds={2}
+            />
+
+            {/* GĐ2: Gate State Machine Modal */}
+            <GateStateMachineModal
+                task={gateModalTask}
+                onClose={() => setGateModalTask(null)}
+                onTransition={handleGateApproval}
             />
         </div>
     );

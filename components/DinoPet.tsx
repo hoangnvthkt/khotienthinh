@@ -58,8 +58,8 @@ const DinoPet: React.FC<DinoProps> = ({ visible, onClose }) => {
   const [speech, setSpeech] = useState<string | null>(null);
   const [showSpeech, setShowSpeech] = useState(false);
   const [isJumping, setIsJumping] = useState(false);
-  const animRef = useRef<ReturnType<typeof setInterval>>();
-  const stateRef = useRef<ReturnType<typeof setTimeout>>();
+  const animRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const stateRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Frame animation

@@ -263,6 +263,10 @@ export interface ProjectContract {
 // ==================== TIẾN ĐỘ (Gantt) ====================
 export type TaskDependencyType = 'FS' | 'SS' | 'FF' | 'SF';
 
+export type DelayCategory = 'material' | 'weather' | 'drawing' | 'labor' | 'other';
+export type ResourceType = 'worker' | 'machine' | 'specialist';
+export type GateStatus = 'none' | 'pending' | 'approved' | 'rejected';
+
 export interface ProjectTask {
   id: string;
   constructionSiteId: string;
@@ -278,6 +282,35 @@ export interface ProjectTask {
   color?: string;
   notes?: string;
   order: number;
+  // GĐ1: Network Graph & Critical Path
+  lagTime?: number;           // Thời gian chờ (ngày) giữa task và predecessor
+  floatDays?: number;         // Slack/Float — số ngày có thể trễ mà không ảnh hưởng dự án
+  isCritical?: boolean;       // Nằm trên đường găng?
+  // GĐ1: Baseline (Shadow)
+  baselineStart?: string;     // Kế hoạch gốc — ngày bắt đầu
+  baselineEnd?: string;       // Kế hoạch gốc — ngày kết thúc
+  baselineLocked?: boolean;   // Đã chốt baseline?
+  // GĐ1: Resource Management
+  resourceCount?: number;     // Số nhân lực/máy cần
+  resourceType?: ResourceType;
+  estimatedCostPerDay?: number; // Chi phí ước tính/ngày
+  // GĐ3: Delay Tracking
+  delayReason?: string;
+  delayCategory?: DelayCategory;
+  // GĐ1: Gate Approval
+  gateStatus?: GateStatus;
+  gateApprovedBy?: string;
+  gateApprovedAt?: string;
+}
+
+export interface ProjectBaseline {
+  id: string;
+  constructionSiteId: string;
+  name: string;
+  lockedAt: string;
+  lockedBy?: string;
+  tasksSnapshot: ProjectTask[];
+  createdAt?: string;
 }
 
 // ==================== NHẬT KÝ CÔNG TRƯỜNG ====================

@@ -26,7 +26,7 @@ const EasterEggs: React.FC<EasterEggsProps> = ({ isBirthday, userName }) => {
     return localStorage.getItem('vioo_dino_active') === 'true';
   });
   const [birthdayShown, setBirthdayShown] = useState(false);
-  const partyTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const partyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const { celebrate, showToast } = useCelebration();
 
   // ── Konami Code Listener ──

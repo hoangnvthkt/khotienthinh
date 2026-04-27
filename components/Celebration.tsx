@@ -59,7 +59,7 @@ const CONFETTI_COLORS = [
 const CelebrationOverlay: React.FC<{ config: CelebrationConfig | null; onDone: () => void }> = ({ config, onDone }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particlesRef = useRef<Particle[]>([]);
-  const animFrameRef = useRef<number>();
+  const animFrameRef = useRef<number | undefined>(undefined);
   const [visible, setVisible] = useState(false);
   const [exiting, setExiting] = useState(false);
 
