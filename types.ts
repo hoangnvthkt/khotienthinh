@@ -10,6 +10,8 @@ export enum TransactionType {
   TRANSFER = 'TRANSFER', // Chuyển kho
   ADJUSTMENT = 'ADJUSTMENT', // Kiểm kê/Điều chỉnh
   LIQUIDATION = 'LIQUIDATION', // Xuất hủy
+  LEGACY_IN = 'in',
+  LEGACY_NHAP = 'nhap',
 }
 
 export enum TransactionStatus {
@@ -17,6 +19,9 @@ export enum TransactionStatus {
   APPROVED = 'APPROVED',
   COMPLETED = 'COMPLETED',
   CANCELLED = 'CANCELLED',
+  LEGACY_PENDING = 'pending',
+  LEGACY_COMPLETED = 'completed',
+  LEGACY_CANCELLED = 'cancelled',
 }
 
 export enum RequestStatus {
@@ -26,6 +31,8 @@ export enum RequestStatus {
   REJECTED = 'REJECTED',     // Từ chối
   IN_TRANSIT = 'IN_TRANSIT', // Đã xuất kho (Đang vận chuyển)
   COMPLETED = 'COMPLETED',   // Đã nhận hàng
+  LEGACY_PENDING = 'pending',
+  LEGACY_APPROVED = 'approved',
 }
 
 export type WarehouseType = 'GENERAL' | 'SITE' | 'OFFICE'; // Tổng | Công trường | Văn phòng
@@ -45,6 +52,7 @@ export interface User {
   allowedSubModules?: Record<string, string[]>; // Module key -> danh sách route sub-app được phép (VD: { "HRM": ["/hrm/attendance", "/hrm/leave"] })
   adminSubModules?: Record<string, string[]>; // Module key -> danh sách route sub-app có quyền CRUD (VD: { "HRM": ["/hrm/employees"] })
   signatureUrl?: string; // URL ảnh chữ ký số
+  isActive?: boolean;
 }
 
 export interface Warehouse {
@@ -467,6 +475,7 @@ export interface OrgUnit {
 
 export interface Employee {
   id: string;
+  name?: string;
   employeeCode: string; // Mã nhân sự TT00x
   fullName: string;
   title: string;
@@ -533,6 +542,7 @@ export interface TransactionItem {
 
 export interface Transaction {
   id: string;
+  code?: string;
   type: TransactionType;
   date: string;
   items: TransactionItem[];
@@ -540,6 +550,7 @@ export interface Transaction {
   targetWarehouseId?: string; // For Import/Transfer
   supplierId?: string; // For Import
   requesterId: string; // User requesting
+  createdBy?: string;
   approverId?: string; // User approving
   status: TransactionStatus;
   note?: string;
@@ -644,9 +655,11 @@ export interface MaterialRequest {
   siteWarehouseId: string; // Kho công trường yêu cầu
   sourceWarehouseId?: string; // Kho cung cấp (thường là kho tổng)
   requesterId: string;
+  requestedBy?: string;
   status: RequestStatus;
   items: RequestItem[];
   createdDate: string;
+  date?: string;
   expectedDate: string;
   note?: string;
   logs: AuditLog[];
@@ -990,6 +1003,7 @@ export interface AssetTransfer {
 export interface Asset {
   id: string;
   code: string;              // Mã tài sản: TS-001
+  assetCode?: string;
   name: string;
   categoryId: string;
   brand?: string;            // Nhãn hiệu
@@ -1061,6 +1075,8 @@ export interface Asset {
 export interface AssetAssignment {
   id: string;
   assetId: string;
+  assetCode?: string;
+  employeeId?: string;
   type: 'assign' | 'return' | 'transfer';  // Cấp phát / Thu hồi / Luân chuyển
   userId: string;              // Người nhận (hoặc người nhận mới khi transfer)
   userName: string;
@@ -1072,6 +1088,8 @@ export interface AssetAssignment {
   siteName?: string;
   qty?: number;                // Số lượng (nếu là batch)
   date: string;
+  assignedDate?: string;
+  returnedDate?: string;
   note?: string;
   performedBy: string;         // Admin/Keeper thực hiện
   performedByName: string;
@@ -1107,10 +1125,11 @@ export interface AssetMaintenance {
 
 // ==================== HRM CHẤM CÔNG & LƯƠNG (PHASE 5A) ====================
 
-export type AttendanceStatus = 'present' | 'absent' | 'half_day' | 'leave' | 'holiday' | 'business_trip';
+export type AttendanceStatus = 'present' | 'late' | 'absent' | 'half_day' | 'leave' | 'holiday' | 'business_trip';
 
 export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {
   present: 'Đi làm',
+  late: 'Đi muộn',
   absent: 'Vắng',
   half_day: 'Nửa ngày',
   leave: 'Nghỉ phép',
@@ -1120,6 +1139,7 @@ export const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {
 
 export const ATTENDANCE_STATUS_COLORS: Record<AttendanceStatus, string> = {
   present: 'bg-emerald-500 text-white',
+  late: 'bg-orange-500 text-white',
   absent: 'bg-red-500 text-white',
   half_day: 'bg-amber-500 text-white',
   leave: 'bg-blue-500 text-white',
@@ -1318,27 +1338,34 @@ export interface PayrollRecord {
   allowanceTransport: number; // Phụ cấp đi lại
   allowancePhone: number;    // Phụ cấp điện thoại
   allowanceOther: number;    // Phụ cấp khác
+  allowance?: number;
+  bonus?: number;
   // Khấu trừ
   deductionInsurance: number; // BHXH/BHYT/BHTN
   deductionTax: number;      // Thuế TNCN
   deductionAdvance: number;  // Tạm ứng
   deductionOther: number;    // Khấu trừ khác
+  deduction?: number;
+  insurance?: number;
   // Tổng
   grossSalary: number;       // Tổng thu nhập
   netSalary: number;         // Thực lĩnh
   note?: string;
   status: 'draft' | 'confirmed' | 'paid';
   paidDate?: string;
+  templateValues?: Record<string, any>;
+  templateId?: string;
   createdAt: string;
 }
 
 // ===== HỢP ĐỒNG LAO ĐỘNG =====
 
-export type LaborContractType = 'probation' | 'fixed_term' | 'indefinite' | 'seasonal';
+export type LaborContractType = 'probation' | 'fixed_term' | 'definite' | 'indefinite' | 'seasonal';
 
 export const LABOR_CONTRACT_LABELS: Record<LaborContractType, string> = {
   probation: 'Thử việc',
   fixed_term: 'Có thời hạn',
+  definite: 'Có thời hạn',
   indefinite: 'Không thời hạn',
   seasonal: 'Thời vụ',
 };
@@ -1350,6 +1377,7 @@ export interface LaborContract {
   employeeId: string;
   contractNumber: string;    // HĐ-001
   type: LaborContractType;
+  contractType?: LaborContractType;
   status: LaborContractStatus;
   startDate: string;
   endDate?: string;          // null = vô thời hạn
@@ -1521,4 +1549,3 @@ export interface SubcontractorContract {
   createdAt: string;
   updatedAt: string;
 }
-

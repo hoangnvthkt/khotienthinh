@@ -24,7 +24,8 @@ const AssetProfile: React.FC = () => {
         assets, assetAssignments, assetMaintenances, assetCategories, warehouses, users, user,
         addAssetMaintenance,
     } = useApp();
-  useModuleData('ts');
+    useModuleData('ts');
+    useModuleData('wms');
     const toast = useToast();
     const { canManage } = usePermission();
     const canCRUD = canManage('/ts/catalog');

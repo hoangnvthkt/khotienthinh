@@ -32,5 +32,11 @@
     "**/*.ts",
     "**/*.tsx",
     "r3f.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    "stitch-skills-main"
   ]
 }

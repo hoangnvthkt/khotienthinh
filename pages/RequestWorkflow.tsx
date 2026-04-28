@@ -4,9 +4,11 @@ import { useApp } from '../context/AppContext';
 import { MaterialRequest, RequestStatus, Role } from '../types';
 import { Plus, Search, FileText, ArrowRight, Truck, CheckCircle, Clock, AlertCircle, Inbox, Send as SendIcon, PackageSearch, ShieldAlert } from 'lucide-react';
 import RequestModal from '../components/RequestModal';
+import { useModuleData } from '../hooks/useModuleData';
 
 const RequestWorkflow: React.FC = () => {
   const { requests, warehouses, user, users } = useApp();
+  useModuleData('wms');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
 
 

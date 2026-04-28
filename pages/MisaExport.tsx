@@ -7,7 +7,10 @@ import {
     Package, Info, ChevronDown, ChevronUp, AlertTriangle
 } from 'lucide-react';
 import { TransactionType, TransactionStatus, Role } from '../types';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../lib/loadXlsx';
+import { useModuleData } from '../hooks/useModuleData';
+
+type XlsxModule = Awaited<ReturnType<typeof loadXlsx>>;
 
 // ========================
 // MISA Export Utility
@@ -17,7 +20,7 @@ import * as XLSX from 'xlsx';
  * Tạo file Excel chuẩn format "Nhập khẩu chứng từ Nhập kho" của MISA SME
  * Columns: Ngày CT | Số CT | Diễn giải | Mã kho | Mã VT | Tên VT | ĐVT | Số lượng | Đơn giá | Thành tiền | Mã NCC | Ghi chú
  */
-function buildMisaImportSheet(rows: MisaImportRow[]) {
+function buildMisaImportSheet(XLSX: XlsxModule, rows: MisaImportRow[]) {
     // Header dòng 1 — Tiêu đề bảng chuẩn MISA
     const headers = [
         'Ngày chứng từ',
@@ -70,7 +73,7 @@ function buildMisaImportSheet(rows: MisaImportRow[]) {
 /**
  * Tạo file Excel chuẩn format "Nhập khẩu chứng từ Xuất kho" của MISA SME
  */
-function buildMisaExportSheet(rows: MisaExportRow[]) {
+function buildMisaExportSheet(XLSX: XlsxModule, rows: MisaExportRow[]) {
     const headers = [
         'Ngày chứng từ',
         'Số chứng từ',
@@ -160,6 +163,7 @@ interface MisaExportRow {
 // ========================
 const MisaExport: React.FC = () => {
     const { items, transactions, warehouses, suppliers, user } = useApp();
+    useModuleData('wms');
 
     const today = new Date().toISOString().split('T')[0];
     const firstOfMonth = (() => {
@@ -329,13 +333,14 @@ const MisaExport: React.FC = () => {
             });
     };
 
-    const handleExport = () => {
+    const handleExport = async () => {
+        const XLSX = await loadXlsx();
         const wb = XLSX.utils.book_new();
 
         if (exportType === 'IMPORT' || exportType === 'BOTH') {
             const rows = buildImportRows();
             if (rows.length > 0) {
-                const ws = buildMisaImportSheet(rows);
+                const ws = buildMisaImportSheet(XLSX, rows);
                 XLSX.utils.book_append_sheet(wb, ws, 'NK - Nhập kho');
             }
         }
@@ -343,7 +348,7 @@ const MisaExport: React.FC = () => {
         if (exportType === 'EXPORT' || exportType === 'BOTH') {
             const rows = buildExportRows();
             if (rows.length > 0) {
-                const ws = buildMisaExportSheet(rows);
+                const ws = buildMisaExportSheet(XLSX, rows);
                 XLSX.utils.book_append_sheet(wb, ws, 'XK - Xuất kho');
             }
         }

@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useModuleData } from '../../hooks/useModuleData';
 import { useOrgMapStore } from '../../components/orgmap/useOrgMapStore';
 import Scene3D from '../../components/orgmap/Scene3D';
 import RoomScene from '../../components/orgmap/RoomScene';
@@ -17,6 +18,7 @@ const CAMERA_LABELS: Record<string, string> = {
 
 const OrgMap3D: React.FC = () => {
   const { orgUnits, employees } = useApp();
+  useModuleData('hrm');
   const {
     cameraMode, setCameraMode,
     selectedEmployee, setSelectedEmployee,

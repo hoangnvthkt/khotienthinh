@@ -19,6 +19,7 @@ import SettingsAccount from './settings/SettingsAccount';
 import SettingsMaintenance from './settings/SettingsMaintenance';
 import SignaturePad from '../components/SignaturePad';
 import SettingsChibiBot from './settings/SettingsChibiBot';
+import { useModuleData } from '../hooks/useModuleData';
 
 const Settings: React.FC = () => {
   const {
@@ -33,6 +34,11 @@ const Settings: React.FC = () => {
     items, lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
     saveSignature, deleteSignature
   } = useApp();
+  useModuleData('wms');
+  useModuleData('hrm');
+  useModuleData('ts');
+  useModuleData('ex');
+  useModuleData('da');
 
   const [activeTab, setActiveTab] = useState('general');
   const [showSignaturePad, setShowSignaturePad] = useState(false);

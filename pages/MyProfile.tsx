@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
+import { useModuleData } from '../hooks/useModuleData';
 import { Employee, AssetStatus, Asset } from '../types';
 import {
     User as UserIcon, Briefcase, Phone, Calendar, MapPin, Building,
@@ -19,6 +20,8 @@ const MyProfile: React.FC = () => {
         orgUnits, assets, assetAssignments, assetCategories,
         updateEmployee, updateUser,
     } = useApp();
+    useModuleData('hrm');
+    useModuleData('ts');
     const toast = useToast();
 
     const [activeTab, setActiveTab] = useState<TabKey>('personal');

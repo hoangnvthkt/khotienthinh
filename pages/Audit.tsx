@@ -10,10 +10,12 @@ import {
 } from 'lucide-react';
 import { TransactionType, TransactionStatus, InventoryItem, Role, LossReason, LOSS_REASON_LABELS, AuditSession, AuditSessionItem } from '../types';
 import ScannerModal from '../components/ScannerModal';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../lib/loadXlsx';
+import { useModuleData } from '../hooks/useModuleData';
 
 const Audit: React.FC = () => {
   const { items, warehouses, user, addTransaction, lossNorms, categories, auditSessions, addAuditSession } = useApp();
+  useModuleData('wms');
   const toast = useToast();
   const [selectedWhId, setSelectedWhId] = useState<string>(user.assignedWarehouseId || '');
   const [searchTerm, setSearchTerm] = useState('');
@@ -189,7 +191,8 @@ const Audit: React.FC = () => {
   };
 
   // ==================== EXCEL EXPORT ====================
-  const exportSessionToExcel = (session: AuditSession) => {
+  const exportSessionToExcel = async (session: AuditSession) => {
+    const XLSX = await loadXlsx();
     const wsData = [
       ['BÁO CÁO KIỂM KÊ KHO'],
       [],

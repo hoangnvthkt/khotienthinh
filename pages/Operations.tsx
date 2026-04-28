@@ -19,10 +19,12 @@ import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import Pagination from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
 import { useReservedStock } from '../hooks/useReservedStock';
+import { useModuleData } from '../hooks/useModuleData';
 
 const Operations: React.FC = () => {
   const location = useLocation();
   const { items, warehouses, suppliers, users, user, transactions, addTransaction, updateTransactionStatus, clearTransactionHistory } = useApp();
+  useModuleData('wms');
   const toast = useToast();
   const { getStockSummary, getConflictingTxs } = useReservedStock();
   const [activeTab, setActiveTab] = useState<string>('IMPORT');

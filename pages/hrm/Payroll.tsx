@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import * as XLSX from 'xlsx';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
+import { loadXlsx } from '../../lib/loadXlsx';
 import {
   DollarSign, Plus, Download, Search, Calculator,
   CheckCircle, Users, Trash2, GripVertical, FileText,
@@ -392,7 +392,8 @@ const Payroll: React.FC = () => {
   };
 
   // Export Excel
-  const exportExcel = () => {
+  const exportExcel = async () => {
+    const XLSX = await loadXlsx();
     const header = ['M\u00e3 NV', 'H\u1ecd t\u00ean', 'Ng\u00e0y c\u00f4ng', 'Ng\u00e0y chu\u1ea9n', 'OT(h)', 'L\u01b0\u01a1ng CB', 'PC ch\u1ee9c v\u1ee5', 'PC \u0103n', 'PC \u0111i l\u1ea1i', 'PC \u0111i\u1ec7n tho\u1ea1i', 'PC kh\u00e1c', 'BHXH/YT/TN', 'Thu\u1ebf TNCN', 'T\u1ea1m \u1ee9ng', 'KT kh\u00e1c', 'T\u1ed5ng TN', 'Th\u1ef1c l\u0129nh', 'Tr\u1ea1ng th\u00e1i'];
     const rows = filteredPayrolls.map(p => {
       const emp = employeeMap.get(p.employeeId);

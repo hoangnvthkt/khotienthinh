@@ -25,10 +25,13 @@ interface AppSettings {
   logo: string;
 }
 
+export type AppModule = 'wms' | 'hrm' | 'da' | 'ts' | 'ex';
+
 interface AppContextType {
   user: User;
   users: User[];
   appSettings: AppSettings;
+  theme: 'light' | 'dark';
   setUser: (user: User) => void;
   switchUser: (user: User) => void;
   login: (username: string, password: string) => Promise<User | null>;
@@ -53,6 +56,7 @@ interface AppContextType {
   hrmSalaryPolicies: HrmSalaryPolicy[];
   hrmWorkSchedules: HrmWorkSchedule[];
   hrmConstructionSites: HrmConstructionSite[];
+  constructionSites: HrmConstructionSite[];
   shiftTypes: HrmShiftType[];
   employeeShifts: HrmEmployeeShift[];
   addHrmItem: (table: string, item: any) => void;
@@ -86,7 +90,7 @@ interface AppContextType {
   updateItem: (item: InventoryItem) => void;
   removeItem: (itemId: string) => void;
   addTransaction: (transaction: Transaction) => void;
-  updateTransactionStatus: (id: string, status: TransactionStatus, approverId?: string) => void;
+  updateTransactionStatus: (id: string, status: TransactionStatus, approverId?: string) => Promise<void>;
   clearTransactionHistory: () => void;
   addWarehouse: (warehouse: Warehouse) => void;
   updateWarehouse: (warehouse: Warehouse) => void;
@@ -139,6 +143,7 @@ interface AppContextType {
   assetLocationStocks: AssetLocationStock[];
   assetTransfers: AssetTransfer[];
   addAsset: (asset: Asset) => void;
+  addAssetWithInitialStock: (asset: Asset) => Promise<void>;
   updateAsset: (asset: Asset) => void;
   removeAsset: (id: string) => void;
   addAssetCategory: (cat: AssetCategory) => void;
@@ -148,8 +153,17 @@ interface AppContextType {
   addAssetMaintenance: (m: AssetMaintenance) => void;
   updateAssetMaintenance: (m: AssetMaintenance) => void;
   addAssetTransfer: (transfer: AssetTransfer, updatedStocks: AssetLocationStock[]) => void;
+  transferAssetStock: (args: {
+    assetId: string;
+    fromStockId: string;
+    qty: number;
+    toWarehouseId?: string;
+    toUserId?: string;
+    reason?: string;
+    date: string;
+  }) => Promise<AssetTransfer | null>;
   isModuleAdmin: (moduleKey: string) => boolean;
-  loadModuleData: (module: 'hrm' | 'da' | 'ts' | 'ex') => Promise<void>;
+  loadModuleData: (module: AppModule) => Promise<void>;
   isLoading: boolean;
   isRefreshing: boolean;
   connectionError: string | null;
@@ -159,17 +173,90 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const mapInventoryItemFromDb = (i: any): InventoryItem => ({
+  ...i,
+  purchaseUnit: i.purchase_unit,
+  priceIn: i.price_in,
+  priceOut: i.price_out,
+  minStock: i.min_stock,
+  supplierId: i.supplier_id,
+  imageUrl: i.image_url,
+  stockByWarehouse: i.stock_by_warehouse || {},
+});
+
+const mapTransactionFromDb = (t: any): Transaction => ({
+  ...t,
+  sourceWarehouseId: t.source_warehouse_id,
+  targetWarehouseId: t.target_warehouse_id,
+  supplierId: t.supplier_id,
+  requesterId: t.requester_id,
+  approverId: t.approver_id,
+  relatedRequestId: t.related_request_id,
+  pendingItems: t.pending_items,
+});
+
+const mapAssetLocationStockFromDb = (l: any): AssetLocationStock => ({
+  ...l,
+  assetId: l.asset_id,
+  warehouseId: l.warehouse_id,
+  constructionSiteId: l.construction_site_id,
+  deptId: l.dept_id,
+  assignedToUserId: l.assigned_to_user_id,
+  assignedToName: l.assigned_to_name,
+  updatedAt: l.updated_at,
+});
+
+const mapAssetTransferFromDb = (t: any): AssetTransfer => ({
+  ...t,
+  assetId: t.asset_id,
+  assetCode: t.asset_code,
+  assetName: t.asset_name,
+  fromWarehouseId: t.from_warehouse_id,
+  fromSiteId: t.from_site_id,
+  fromDeptId: t.from_dept_id,
+  fromLocationLabel: t.from_location_label,
+  toWarehouseId: t.to_warehouse_id,
+  toSiteId: t.to_site_id,
+  toDeptId: t.to_dept_id,
+  toLocationLabel: t.to_location_label,
+  receivedByUserId: t.received_by_user_id,
+  receivedByName: t.received_by_name,
+  performedBy: t.performed_by,
+  performedByName: t.performed_by_name,
+  createdAt: t.created_at,
+});
+
+const assetToDbPayload = (data: Asset) => ({
+  id: data.id, code: data.code, name: data.name, category_id: data.categoryId,
+  brand: data.brand || null, model: data.model || null, serial_number: data.serialNumber || null,
+  status: data.status,
+  asset_type: data.assetType || 'single', quantity: data.quantity ?? 1, unit: data.unit || null,
+  parent_id: data.parentId || null, child_index: data.childIndex || null, is_bundle: data.isBundle || false,
+  managed_by_user_id: data.managedByUserId || null, managing_dept_id: data.managingDeptId || null, construction_site_id: data.constructionSiteId || null,
+  supplier_id: data.supplierId || null, contract_number: data.contractNumber || null, invoice_number: data.invoiceNumber || null,
+  asset_origin: data.assetOrigin || 'purchase', is_fixed_asset: data.isFixedAsset ?? true, is_leased: data.isLeased || false, leased_from: data.leasedFrom || null, lease_end_date: data.leaseEndDate || null,
+  warranty_condition: data.warrantyCondition || null, warranty_provider: data.warrantyProvider || null, warranty_contact: data.warrantyContact || null,
+  original_value: data.originalValue ?? 0, purchase_date: data.purchaseDate,
+  depreciation_years: data.depreciationYears ?? 5, warranty_months: data.warrantyMonths ?? 0,
+  residual_value: data.residualValue ?? 0, warehouse_id: data.warehouseId || null, location_note: data.locationNote || null,
+  assigned_to_user_id: data.assignedToUserId || null, assigned_to_name: data.assignedToName || null,
+  assigned_date: data.assignedDate || null, disposal_date: data.disposalDate || null,
+  disposal_value: data.disposalValue || null, disposal_note: data.disposalNote || null,
+  image_url: data.imageUrl || null, note: data.note || null,
+  created_at: data.createdAt, updated_at: data.updatedAt
+});
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User>(() => {
     const saved = localStorage.getItem('vioo_user');
     return saved ? JSON.parse(saved) : MOCK_USERS[0];
   });
-  const [users, setUsers] = useState<User[]>(MOCK_USERS);
+  const [users, setUsers] = useState<User[]>(() => isSupabaseConfigured ? [] : MOCK_USERS);
   const [appSettings, setAppSettings] = useState<AppSettings>({ name: 'Vioo', logo: '' });
-  const [items, setItems] = useState<InventoryItem[]>(MOCK_ITEMS);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>(MOCK_WAREHOUSES);
-  const [suppliers, setSuppliers] = useState<Supplier[]>(MOCK_SUPPLIERS);
-  const [transactions, setTransactions] = useState<Transaction[]>(MOCK_TRANSACTIONS);
+  const [items, setItems] = useState<InventoryItem[]>(() => isSupabaseConfigured ? [] : MOCK_ITEMS);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => isSupabaseConfigured ? [] : MOCK_WAREHOUSES);
+  const [suppliers, setSuppliers] = useState<Supplier[]>(() => isSupabaseConfigured ? [] : MOCK_SUPPLIERS);
+  const [transactions, setTransactions] = useState<Transaction[]>(() => isSupabaseConfigured ? [] : MOCK_TRANSACTIONS);
   const [requests, setRequests] = useState<MaterialRequest[]>([]);
   const [activities, setActivities] = useState<GlobalActivity[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -204,7 +291,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [projectTransactions, setProjectTransactions] = useState<ProjectTransaction[]>([]);
   // Asset Management
   const [assets, setAssets] = useState<Asset[]>([]);
-  const [assetCategories, setAssetCategories] = useState<AssetCategory[]>([
+  const [assetCategories, setAssetCategories] = useState<AssetCategory[]>(() => isSupabaseConfigured ? [] : [
     { id: 'ac1', name: 'Máy xúc', type: 'machinery', depreciationYears: 8 },
     { id: 'ac2', name: 'Máy khoan', type: 'equipment', depreciationYears: 5 },
     { id: 'ac3', name: 'Xe tải', type: 'vehicle', depreciationYears: 10 },
@@ -215,12 +302,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [assetMaintenances, setAssetMaintenances] = useState<AssetMaintenance[]>([]);
   const [assetLocationStocks, setAssetLocationStocks] = useState<AssetLocationStock[]>([]);
   const [assetTransfers, setAssetTransfers] = useState<AssetTransfer[]>([]);
-  const [categories, setCategories] = useState<ItemCategory[]>([
+  const [categories, setCategories] = useState<ItemCategory[]>(() => isSupabaseConfigured ? [] : [
     { id: 'cat1', name: 'Vật liệu xây dựng' },
     { id: 'cat2', name: 'Công cụ dụng cụ' },
     { id: 'cat3', name: 'Bảo hộ lao động' }
   ]);
-  const [units, setUnits] = useState<ItemUnit[]>([
+  const [units, setUnits] = useState<ItemUnit[]>(() => isSupabaseConfigured ? [] : [
     { id: 'u1', name: 'kg' },
     { id: 'u2', name: 'Bao (50kg)' },
     { id: 'u3', name: 'Cái' },
@@ -259,36 +346,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         };
 
-        const [
-          itemsData, whData, supData, txData, reqData, actData, catData, unitData, settingsData, usersData, empData,
-          areasData, officesData, empTypesData, positionsData, salaryData, schedulesData, constructionSitesData, orgUnitsData,
-          lossNormsData, auditSessionsData, projectFinancesData, projectTxData
-        ] = await Promise.all([
-          fetchTable('items'),
-          fetchTable('warehouses'),
-          fetchTable('suppliers'),
-          fetchTable('transactions', supabase.from('transactions').select('*').order('date', { ascending: false })),
-          fetchTable('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
-          fetchTable('activities', supabase.from('activities').select('*').order('timestamp', { ascending: false }).limit(50)),
-          fetchTable('categories'),
-          fetchTable('units'),
+        const [settingsData, usersData] = await Promise.all([
           fetchTable('app_settings', supabase.from('app_settings').select('*').maybeSingle()),
-          fetchTable('users'),
-          fetchTable('employees'),
-          fetchTable('hrm_areas'),
-          fetchTable('hrm_offices'),
-          fetchTable('hrm_employee_types'),
-          fetchTable('hrm_positions'),
-          fetchTable('hrm_salary_policies'),
-          fetchTable('hrm_work_schedules'),
-          fetchTable('hrm_construction_sites'),
-          fetchTable('org_units'),
-          fetchTable('loss_norms'),
-          fetchTable('audit_sessions', supabase.from('audit_sessions').select('*').order('date', { ascending: false })),
-          fetchTable('project_finances'),
-          fetchTable('project_transactions', supabase.from('project_transactions').select('*').order('date', { ascending: false }))
+          fetchTable('users')
         ]);
 
+        if (settingsData) setAppSettings(settingsData);
         if (usersData && usersData.length > 0) {
           const mappedUsers = usersData.map((u: any) => ({ ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined, allowedSubModules: u.allowed_sub_modules || undefined, adminSubModules: u.admin_sub_modules || undefined }));
           // Fetch signatures and merge
@@ -306,112 +369,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (currentInList) setUser(currentInList);
         }
 
-        if (empData) {
-          setEmployees(empData.map((e: any) => ({
-            id: e.id,
-            employeeCode: e.employee_code,
-            fullName: e.full_name,
-            title: e.title,
-            gender: e.gender,
-            phone: e.phone,
-            email: e.email,
-            dateOfBirth: e.date_of_birth,
-            startDate: e.start_date,
-            officialDate: e.official_date,
-            status: e.status,
-            userId: e.user_id,
-            areaId: e.area_id,
-            officeId: e.office_id,
-            employeeTypeId: e.employee_type_id,
-            positionId: e.position_id,
-            salaryPolicyId: e.salary_policy_id,
-            workScheduleId: e.work_schedule_id,
-            constructionSiteId: e.construction_site_id,
-            departmentId: e.department_id,
-            factoryId: e.factory_id,
-            maritalStatus: e.marital_status,
-            avatarUrl: e.avatar_url,
-            orgUnitId: e.org_unit_id || undefined,  // FK → org_units.id for 3D map
-            createdAt: e.created_at,
-            updatedAt: e.updated_at
-          })));
-        }
-
-        if (itemsData) setItems(itemsData.map((i: any) => ({
-          ...i, priceIn: i.price_in, priceOut: i.price_out, minStock: i.min_stock,
-          supplierId: i.supplier_id, imageUrl: i.image_url, stockByWarehouse: i.stock_by_warehouse,
-          purchaseUnit: i.purchase_unit ?? undefined
-        })));
-
-        if (whData && whData.length > 0) setWarehouses(whData.map((w: any) => ({ ...w, isArchived: w.is_archived })));
-        if (supData) setSuppliers(supData.map((s: any) => ({ ...s, contactPerson: s.contact_person })));
-
-        if (txData) setTransactions(txData.map((t: any) => ({
-          ...t, sourceWarehouseId: t.source_warehouse_id, targetWarehouseId: t.target_warehouse_id, supplierId: t.supplier_id, requesterId: t.requester_id, approverId: t.approver_id, relatedRequestId: t.related_request_id, pendingItems: t.pending_items
-        })));
-
-        if (reqData) setRequests(reqData.map((r: any) => ({
-          ...r, siteWarehouseId: r.site_warehouse_id, sourceWarehouseId: r.source_warehouse_id, requesterId: r.requester_id, createdDate: r.created_date, expectedDate: r.expected_date
-        })));
-
-        if (actData) setActivities(actData.map((a: any) => ({
-          ...a, userId: a.user_id, userName: a.user_name, userAvatar: a.user_avatar, warehouseId: a.warehouse_id
-        })));
-
-        if (catData && catData.length > 0) setCategories(catData);
-        if (unitData && unitData.length > 0) setUnits(unitData);
-        if (settingsData) setAppSettings(settingsData);
-
-        // HRM Master Data
-        if (areasData) setHrmAreas(areasData);
-        if (officesData) setHrmOffices(officesData);
-        if (empTypesData) setHrmEmployeeTypes(empTypesData);
-        if (positionsData) setHrmPositions(positionsData);
-        if (salaryData) setHrmSalaryPolicies(salaryData);
-        if (schedulesData) setHrmWorkSchedules(schedulesData.map((s: any) => ({
-          id: s.id, name: s.name, description: s.description,
-          morningStart: s.morning_start, morningEnd: s.morning_end,
-          afternoonStart: s.afternoon_start, afternoonEnd: s.afternoon_end,
-          createdAt: s.created_at,
-        })));
-        if (constructionSitesData) setHrmConstructionSites(constructionSitesData);
-
-        // Org Units
-        if (orgUnitsData) {
-          const units = orgUnitsData.map((u: any) => ({
-            id: u.id, name: u.name, type: u.type, customTypeLabel: u.customTypeLabel || undefined,
-            parentId: u.parent_id, description: u.description, orderIndex: u.order_index, createdAt: u.created_at
-          }));
-          
-          if (!units.some(u => u.type === 'factory')) {
-             const root = units.find(u => !u.parentId && u.type === 'company');
-             if (root) {
-                const factId = 'mock-factory-1';
-                units.push({ id: factId, name: 'Nhà máy Sản xuất', type: 'factory', orderIndex: 99, parentId: root.id });
-                units.push({ id: 'mock-fact-room-1', name: 'Xưởng Lắp Ráp', type: 'department', orderIndex: 1, parentId: factId });
-                units.push({ id: 'mock-fact-room-2', name: 'Kho Bán thành phẩm', type: 'department', orderIndex: 2, parentId: factId });
-             }
-          }
-          setOrgUnits(units);
-        }
-
-        // Loss Norms
-        if (lossNormsData) setLossNorms(lossNormsData.map((n: any) => ({
-          id: n.id, itemId: n.item_id, categoryId: n.category_id, lossType: n.loss_type,
-          allowedPercentage: n.allowed_percentage, period: n.period,
-          createdBy: n.created_by, createdAt: n.created_at
-        })));
-
-        // Audit Sessions
-        if (auditSessionsData) setAuditSessions(auditSessionsData);
-
-        // Project Finances
-        if (projectFinancesData) setProjectFinances(projectFinancesData);
-
-        // Project Transactions
-        if (projectTxData) setProjectTransactions(projectTxData);
-
-        // Module-specific data (HRM 5A, Budget, Assets) is loaded lazily via loadModuleData()
+        // Module-specific data is loaded lazily via loadModuleData()
       } catch (error: any) {
         console.error('Error fetching data from Supabase:', error);
         setConnectionError(error.message);
@@ -645,13 +603,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (e) { console.warn(`Exception fetching ${table}:`, e); return null; }
   };
 
-  const loadModuleData = useCallback(async (module: 'hrm' | 'da' | 'ts' | 'ex') => {
+  const loadModuleData = useCallback(async (module: AppModule) => {
     if (!isSupabaseConfigured || loadedModulesRef.current.has(module)) return;
     loadedModulesRef.current.add(module);
 
     try {
-      if (module === 'hrm') {
-        const [leaveBalData, leaveReqData, attendData, payrollData, contractData, payrollTplData, holidayData, salaryHistData, shiftTypesData, empShiftsData] = await Promise.all([
+      if (module === 'wms') {
+        const [itemsData, whData, supData, txData, reqData, actData, catData, unitData, lossNormsData, auditSessionsData] = await Promise.all([
+          fetchTableHelper('items'),
+          fetchTableHelper('warehouses'),
+          fetchTableHelper('suppliers'),
+          fetchTableHelper('transactions', supabase.from('transactions').select('*').order('date', { ascending: false })),
+          fetchTableHelper('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
+          fetchTableHelper('activities', supabase.from('activities').select('*').order('timestamp', { ascending: false }).limit(50)),
+          fetchTableHelper('categories'),
+          fetchTableHelper('units'),
+          fetchTableHelper('loss_norms'),
+          fetchTableHelper('audit_sessions', supabase.from('audit_sessions').select('*').order('date', { ascending: false })),
+        ]);
+        if (itemsData) setItems(itemsData.map(mapInventoryItemFromDb));
+        if (whData) setWarehouses(whData.map((w: any) => ({ ...w, isArchived: w.is_archived })));
+        if (supData) setSuppliers(supData.map((s: any) => ({ ...s, contactPerson: s.contact_person })));
+        if (txData) setTransactions(txData.map(mapTransactionFromDb));
+        if (reqData) setRequests(reqData.map((r: any) => ({
+          ...r,
+          siteWarehouseId: r.site_warehouse_id,
+          sourceWarehouseId: r.source_warehouse_id,
+          requesterId: r.requester_id,
+          createdDate: r.created_date,
+          expectedDate: r.expected_date,
+        })));
+        if (actData) setActivities(actData.map((a: any) => ({
+          ...a,
+          userId: a.user_id,
+          userName: a.user_name,
+          userAvatar: a.user_avatar,
+          warehouseId: a.warehouse_id,
+        })));
+        if (catData) setCategories(catData);
+        if (unitData) setUnits(unitData);
+        if (lossNormsData) setLossNorms(lossNormsData.map((n: any) => ({
+          id: n.id,
+          itemId: n.item_id,
+          categoryId: n.category_id,
+          lossType: n.loss_type,
+          allowedPercentage: n.allowed_percentage,
+          period: n.period,
+          createdBy: n.created_by,
+          createdAt: n.created_at,
+        })));
+        if (auditSessionsData) setAuditSessions(auditSessionsData);
+      } else if (module === 'hrm') {
+        const [
+          empData, areasData, officesData, empTypesData, positionsData, salaryData, schedulesData, constructionSitesData, orgUnitsData,
+          leaveBalData, leaveReqData, attendData, payrollData, contractData, payrollTplData, holidayData, salaryHistData, shiftTypesData, empShiftsData
+        ] = await Promise.all([
+          fetchTableHelper('employees'),
+          fetchTableHelper('hrm_areas'),
+          fetchTableHelper('hrm_offices'),
+          fetchTableHelper('hrm_employee_types'),
+          fetchTableHelper('hrm_positions'),
+          fetchTableHelper('hrm_salary_policies'),
+          fetchTableHelper('hrm_work_schedules'),
+          fetchTableHelper('hrm_construction_sites'),
+          fetchTableHelper('org_units'),
           fetchTableHelper('hrm_leave_balances'),
           fetchTableHelper('hrm_leave_requests'),
           fetchTableHelper('hrm_attendance'),
@@ -663,6 +678,75 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTableHelper('hrm_shift_types'),
           fetchTableHelper('hrm_employee_shifts'),
         ]);
+        if (empData) {
+          setEmployees(empData.map((e: any) => ({
+            id: e.id,
+            employeeCode: e.employee_code,
+            fullName: e.full_name,
+            title: e.title,
+            gender: e.gender,
+            phone: e.phone,
+            email: e.email,
+            dateOfBirth: e.date_of_birth,
+            startDate: e.start_date,
+            officialDate: e.official_date,
+            status: e.status,
+            userId: e.user_id,
+            areaId: e.area_id,
+            officeId: e.office_id,
+            employeeTypeId: e.employee_type_id,
+            positionId: e.position_id,
+            salaryPolicyId: e.salary_policy_id,
+            workScheduleId: e.work_schedule_id,
+            constructionSiteId: e.construction_site_id,
+            departmentId: e.department_id,
+            factoryId: e.factory_id,
+            maritalStatus: e.marital_status,
+            avatarUrl: e.avatar_url,
+            orgUnitId: e.org_unit_id || undefined,
+            createdAt: e.created_at,
+            updatedAt: e.updated_at,
+          })));
+        }
+        if (areasData) setHrmAreas(areasData);
+        if (officesData) setHrmOffices(officesData);
+        if (empTypesData) setHrmEmployeeTypes(empTypesData);
+        if (positionsData) setHrmPositions(positionsData);
+        if (salaryData) setHrmSalaryPolicies(salaryData);
+        if (schedulesData) setHrmWorkSchedules(schedulesData.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          description: s.description,
+          morningStart: s.morning_start,
+          morningEnd: s.morning_end,
+          afternoonStart: s.afternoon_start,
+          afternoonEnd: s.afternoon_end,
+          createdAt: s.created_at,
+        })));
+        if (constructionSitesData) setHrmConstructionSites(constructionSitesData);
+        if (orgUnitsData) {
+          const units = orgUnitsData.map((u: any) => ({
+            id: u.id,
+            name: u.name,
+            type: u.type,
+            customTypeLabel: u.customTypeLabel || undefined,
+            parentId: u.parent_id,
+            description: u.description,
+            orderIndex: u.order_index,
+            createdAt: u.created_at,
+          }));
+
+          if (!units.some((u: OrgUnit) => u.type === 'factory')) {
+            const root = units.find((u: OrgUnit) => !u.parentId && u.type === 'company');
+            if (root) {
+              const factId = 'mock-factory-1';
+              units.push({ id: factId, name: 'Nhà máy Sản xuất', type: 'factory', orderIndex: 99, parentId: root.id });
+              units.push({ id: 'mock-fact-room-1', name: 'Xưởng Lắp Ráp', type: 'department', orderIndex: 1, parentId: factId });
+              units.push({ id: 'mock-fact-room-2', name: 'Kho Bán thành phẩm', type: 'department', orderIndex: 2, parentId: factId });
+            }
+          }
+          setOrgUnits(units);
+        }
         if (leaveBalData) setLeaveBalances(leaveBalData);
         if (leaveReqData) setLeaveRequests(leaveReqData);
         const leaveLogData = await fetchTableHelper('hrm_leave_logs');
@@ -758,6 +842,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           performedBy: t.performed_by, performedByName: t.performed_by_name,
           createdAt: t.created_at
         })));
+      } else if (module === 'da') {
+        const [constructionSitesData, projectFinancesData, projectTxData] = await Promise.all([
+          fetchTableHelper('hrm_construction_sites'),
+          fetchTableHelper('project_finances'),
+          fetchTableHelper('project_transactions', supabase.from('project_transactions').select('*').order('date', { ascending: false })),
+        ]);
+        if (constructionSitesData) setHrmConstructionSites(constructionSitesData);
+        if (projectFinancesData) setProjectFinances(projectFinancesData);
+        if (projectTxData) setProjectTransactions(projectTxData);
       } else if (module === 'ex') {
         const [budgetCatData, budgetEntData, expRecData] = await Promise.all([
           fetchTableHelper('budget_categories'),
@@ -851,25 +944,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           parent_id: data.parentId || null, description: data.description || '', order_index: data.orderIndex || 0
         };
       } else if (table === 'assets') {
-        payload = {
-          id: data.id, code: data.code, name: data.name, category_id: data.categoryId,
-          brand: data.brand || null, model: data.model || null, serial_number: data.serialNumber || null,
-          status: data.status,
-          asset_type: data.assetType || 'single', quantity: data.quantity ?? 1, unit: data.unit || null,
-          parent_id: data.parentId || null, child_index: data.childIndex || null, is_bundle: data.isBundle || false,
-          managed_by_user_id: data.managedByUserId || null, managing_dept_id: data.managingDeptId || null, construction_site_id: data.constructionSiteId || null,
-          supplier_id: data.supplierId || null, contract_number: data.contractNumber || null, invoice_number: data.invoiceNumber || null,
-          asset_origin: data.assetOrigin || 'purchase', is_fixed_asset: data.isFixedAsset ?? true, is_leased: data.isLeased || false, leased_from: data.leasedFrom || null, lease_end_date: data.leaseEndDate || null,
-          warranty_condition: data.warrantyCondition || null, warranty_provider: data.warrantyProvider || null, warranty_contact: data.warrantyContact || null,
-          original_value: data.originalValue ?? 0, purchase_date: data.purchaseDate,
-          depreciation_years: data.depreciationYears ?? 5, warranty_months: data.warrantyMonths ?? 0,
-          residual_value: data.residualValue ?? 0, warehouse_id: data.warehouseId || null, location_note: data.locationNote || null,
-          assigned_to_user_id: data.assignedToUserId || null, assigned_to_name: data.assignedToName || null,
-          assigned_date: data.assignedDate || null, disposal_date: data.disposalDate || null,
-          disposal_value: data.disposalValue || null, disposal_note: data.disposalNote || null,
-          image_url: data.imageUrl || null, note: data.note || null,
-          created_at: data.createdAt, updated_at: data.updatedAt
-        };
+        payload = assetToDbPayload(data);
       } else if (table === 'asset_location_stocks') {
         payload = {
           id: data.id, asset_id: data.assetId, warehouse_id: data.warehouseId || null,
@@ -1143,7 +1218,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncToSupabase('transactions', tx);
   };
 
-  const updateTransactionStatus = (id: string, status: TransactionStatus, approverId?: string) => {
+  const updateTransactionStatus = async (id: string, status: TransactionStatus, approverId?: string) => {
+    if (isSupabaseConfigured) {
+      const tx = transactions.find(t => t.id === id);
+      const { data, error } = await supabase.rpc('process_transaction_status', {
+        p_transaction_id: id,
+        p_status: status,
+        p_approver_id: approverId || user.id,
+      });
+      if (error) {
+        console.error('Error processing transaction status:', error);
+        return;
+      }
+
+      if (data) setTransactions(prev => prev.map(t => t.id === id ? mapTransactionFromDb(data) : t));
+
+      const { data: itemsData, error: itemsError } = await supabase.from('items').select('*');
+      if (itemsError) console.error('Error refreshing items after transaction:', itemsError);
+      else if (itemsData) setItems(itemsData.map(mapInventoryItemFromDb));
+
+      const whId = tx?.targetWarehouseId || tx?.sourceWarehouseId;
+      logActivity('TRANSACTION', `Cập nhật phiếu`, `Phiếu mã ${id.slice(-6)} chuyển sang ${status}`, status === TransactionStatus.COMPLETED ? 'SUCCESS' : 'INFO', whId);
+      return;
+    }
+
     setTransactions(prev => prev.map(tx => {
       if (tx.id === id) {
         const updatedTx = { ...tx, status, approverId: approverId || user.id };
@@ -1655,6 +1753,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     auditService.log({ tableName: 'assets', recordId: asset.id, action: 'INSERT', newData: asset as any, userId: user.id, userName: user.name || user.username });
   };
 
+  const addAssetWithInitialStock = async (asset: Asset) => {
+    const initialQty = Math.max(1, asset.assetType === 'batch' ? (asset.quantity || 1) : 1);
+    const initialStock: AssetLocationStock | null = asset.warehouseId ? {
+      id: `stock-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      assetId: asset.id,
+      warehouseId: asset.warehouseId,
+      qty: initialQty,
+      note: asset.locationNote,
+      updatedAt: asset.updatedAt || new Date().toISOString(),
+    } : null;
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.rpc('create_asset_with_initial_stock', {
+        p_asset: assetToDbPayload(asset),
+      });
+      if (error) throw error;
+
+      const { data: stockRows, error: stockError } = await supabase
+        .from('asset_location_stocks')
+        .select('*')
+        .eq('asset_id', asset.id);
+      if (stockError) throw stockError;
+
+      setAssetLocationStocks(prev => [
+        ...prev.filter(s => s.assetId !== asset.id),
+        ...(stockRows || []).map(mapAssetLocationStockFromDb),
+      ]);
+      setAssets(prev => prev.some(a => a.id === asset.id)
+        ? prev.map(a => a.id === asset.id ? asset : a)
+        : [...prev, asset]
+      );
+
+      if (!data) {
+        console.warn('create_asset_with_initial_stock returned no asset row');
+      }
+    } else {
+      setAssets(prev => [...prev, asset]);
+      if (initialStock) setAssetLocationStocks(prev => [...prev, initialStock]);
+    }
+
+    logActivity('SYSTEM', 'Thêm tài sản', `Thêm tài sản ${asset.name} (${asset.code})`, 'SUCCESS');
+    auditService.log({ tableName: 'assets', recordId: asset.id, action: 'INSERT', newData: asset as any, userId: user.id, userName: user.name || user.username });
+  };
+
   const updateAsset = (asset: Asset) => {
     const oldAsset = assets.find(a => a.id === asset.id);
     setAssets(prev => prev.map(a => a.id === asset.id ? asset : a));
@@ -1744,6 +1886,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updatedStocks.forEach(s => syncToSupabase('asset_location_stocks', s));
     }
     logActivity('SYSTEM', 'Điều chuyển lô', `Điều chuyển ${t.qty} ${t.assetCode} từ ${t.fromLocationLabel} sang ${t.toLocationLabel}`, 'INFO');
+  };
+
+  const transferAssetStock = async (args: {
+    assetId: string;
+    fromStockId: string;
+    qty: number;
+    toWarehouseId?: string;
+    toUserId?: string;
+    reason?: string;
+    date: string;
+  }): Promise<AssetTransfer | null> => {
+    if (!isSupabaseConfigured) return null;
+
+    const { data, error } = await supabase.rpc('transfer_asset_stock', {
+      p_asset_id: args.assetId,
+      p_from_stock_id: args.fromStockId,
+      p_qty: args.qty,
+      p_to_warehouse_id: args.toWarehouseId || null,
+      p_to_user_id: args.toUserId || null,
+      p_reason: args.reason || null,
+      p_date: args.date,
+    });
+    if (error) throw error;
+
+    const transfer = mapAssetTransferFromDb(data);
+    const { data: stockRows, error: stockError } = await supabase
+      .from('asset_location_stocks')
+      .select('*')
+      .eq('asset_id', args.assetId);
+    if (stockError) throw stockError;
+
+    setAssetTransfers(prev => [transfer, ...prev.filter(t => t.id !== transfer.id)]);
+    setAssetLocationStocks(prev => [
+      ...prev.filter(s => s.assetId !== args.assetId),
+      ...(stockRows || []).map(mapAssetLocationStockFromDb),
+    ]);
+    logActivity('SYSTEM', 'Điều chuyển lô', `Điều chuyển ${transfer.qty} ${transfer.assetCode} từ ${transfer.fromLocationLabel} sang ${transfer.toLocationLabel}`, 'INFO');
+    return transfer;
   };
 
   const updateAssetMaintenance = (m: AssetMaintenance) => {
@@ -1854,11 +2034,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) { console.error('Delete signature error:', err); return false; }
   };
 
+  const theme: 'light' | 'dark' =
+    typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+
   return (
     <AppContext.Provider value={{
-      user, users, appSettings, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
+      user, users, appSettings, theme, setUser, switchUser, addUser, updateUser, removeUser, items, warehouses, suppliers, transactions, requests, activities,
       categories, units, employees,
-      hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
+      hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, constructionSites: hrmConstructionSites,
       shiftTypes, employeeShifts,
       attendanceRecords, leaveRequests, leaveLogs, leaveBalances, payrollRecords, payrollTemplates, holidays, laborContracts, salaryHistory,
       attendanceProposals, approveLeave, rejectLeave, addLeaveLog,
@@ -1873,8 +2056,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       projectFinances, addProjectFinance, updateProjectFinance, removeProjectFinance,
       projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction,
       assets, assetCategories, assetAssignments, assetMaintenances, assetLocationStocks, assetTransfers,
-      addAsset, updateAsset, removeAsset, addAssetCategory, updateAssetCategory, removeAssetCategory,
-      addAssetAssignment, addAssetMaintenance, updateAssetMaintenance, addAssetTransfer,
+      addAsset, addAssetWithInitialStock, updateAsset, removeAsset, addAssetCategory, updateAssetCategory, removeAssetCategory,
+      addAssetAssignment, addAssetMaintenance, updateAssetMaintenance, addAssetTransfer, transferAssetStock,
       isModuleAdmin, loadModuleData,
       saveSignature, deleteSignature,
       login, logout, isLoading, isRefreshing, connectionError, realtimeStatus, lastRealtimeEvent

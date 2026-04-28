@@ -8,7 +8,7 @@ import {
     BarChart3
 } from 'lucide-react';
 import { AssetStatus, ASSET_STATUS_LABELS } from '../../types';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../../lib/loadXlsx';
 
 const AssetReports: React.FC = () => {
     const { assets, assetCategories, assetAssignments } = useApp();
@@ -97,7 +97,8 @@ const AssetReports: React.FC = () => {
         }), { totalOriginal: 0, totalDepreciated: 0, totalRemaining: 0, count: 0, warrantyExpiring: 0 });
     }, [reportData]);
 
-    const handleExportExcel = () => {
+    const handleExportExcel = async () => {
+        const XLSX = await loadXlsx();
         const data = reportData.map((r, idx) => ({
             'STT': idx + 1,
             'Mã TS': r.code,

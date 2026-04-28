@@ -16,12 +16,30 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
         this.state = { hasError: false };
     }
 
+    componentDidMount() {
+        // Xóa cờ reload khi app load thành công
+        sessionStorage.removeItem('chunk_failed_reload');
+    }
+
     static getDerivedStateFromError(error: Error) {
         return { hasError: true, error };
     }
 
     componentDidCatch(error: Error, info: React.ErrorInfo) {
         console.error('ErrorBoundary caught:', error, info);
+        
+        // Tự động reload 1 lần nếu lỗi do Vercel build mới làm mất chunk cũ (ChunkLoadError)
+        const isChunkLoadError = error.name === 'ChunkLoadError' || 
+                                 error.message.includes('Failed to fetch dynamically imported module') ||
+                                 error.message.includes('Importing a module script failed');
+                                 
+        if (isChunkLoadError) {
+            const hasReloaded = sessionStorage.getItem('chunk_failed_reload');
+            if (!hasReloaded) {
+                sessionStorage.setItem('chunk_failed_reload', 'true');
+                window.location.reload();
+            }
+        }
     }
 
     render() {

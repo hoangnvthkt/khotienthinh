@@ -153,9 +153,9 @@ export const notificationService = {
     const { data: sites } = await supabase
       .from('hrm_construction_sites').select('id, name');
     const { data: payments } = await supabase
-      .from('payment_schedules').select('id, construction_site_id, title, status, due_date, amount');
+      .from('payment_schedules').select('id, construction_site_id, description, status, due_date, amount');
     const { data: boqItems } = await supabase
-      .from('material_budget_items').select('id, construction_site_id, name, waste_percent, waste_threshold');
+      .from('material_budget_items').select('id, construction_site_id, item_name, waste_percent, waste_threshold');
     // Include accepted value for better profit calc
     const { data: acceptances } = await supabase
       .from('acceptance_records').select('construction_site_id, approved_value, status');
@@ -210,7 +210,7 @@ export const notificationService = {
             type: 'error',
             category: 'payment',
             title: '🧾 Thanh toán quá hạn',
-            message: `${p.title || 'Phiếu thanh toán'} — ${getSiteName(p.construction_site_id)}: quá hạn ${p.due_date}`,
+            message: `${p.description || 'Phiếu thanh toán'} — ${getSiteName(p.construction_site_id)}: quá hạn ${p.due_date}`,
             severity: 'critical',
             icon: '🧾',
             link: '/da',
@@ -235,7 +235,7 @@ export const notificationService = {
             type: 'warning',
             category: 'material',
             title: '📦 Hao hụt vượt định mức',
-            message: `${b.name || 'Vật tư'} — ${getSiteName(b.construction_site_id)}: hao hụt ${wp.toFixed(1)}% (định mức ${wt}%)`,
+            message: `${b.item_name || 'Vật tư'} — ${getSiteName(b.construction_site_id)}: hao hụt ${wp.toFixed(1)}% (định mức ${wt}%)`,
             severity: 'warning',
             icon: '📦',
             link: '/da',
@@ -405,17 +405,22 @@ export const notificationService = {
         // Get current stock per item across all warehouses
         const { data: stockData } = await supabase
           .from('transactions')
-          .select('item_id, type, quantity')
-          .eq('status', 'completed');
+          .select('type, items')
+          .eq('status', 'COMPLETED');
         
         // Calculate total stock per item
         const stockMap = new Map<string, number>();
         for (const tx of (stockData || [])) {
-          const current = stockMap.get(tx.item_id) || 0;
-          if (tx.type === 'in' || tx.type === 'return') {
-            stockMap.set(tx.item_id, current + (tx.quantity || 0));
-          } else if (tx.type === 'out') {
-            stockMap.set(tx.item_id, current - (tx.quantity || 0));
+          for (const txItem of (tx.items || [])) {
+            const itemId = txItem.itemId || txItem.item_id;
+            if (!itemId) continue;
+            const quantity = Number(txItem.quantity || txItem.qty || 0);
+            const current = stockMap.get(itemId) || 0;
+            if (['IMPORT', 'in', 'nhap', 'return'].includes(tx.type)) {
+              stockMap.set(itemId, current + quantity);
+            } else if (['EXPORT', 'LIQUIDATION', 'out'].includes(tx.type)) {
+              stockMap.set(itemId, current - quantity);
+            }
           }
         }
 
@@ -467,7 +472,7 @@ export const notificationService = {
           message: `${req.code || 'YC'} — ${req.title || 'Không tiêu đề'}: quá hạn ${daysOverdue} ngày`,
           severity: daysOverdue > 7 ? 'critical' : 'warning',
           icon: '⚠️',
-          link: '/yeu-cau',
+          link: '/rq',
           sourceType: 'system',
           sourceId: alertId,
           metadata: { requestId: req.id, daysOverdue, dueDate: req.due_date },

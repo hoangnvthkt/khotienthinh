@@ -10,13 +10,15 @@ import InventoryDetailModal from '../components/InventoryDetailModal';
 import DeleteInventoryModal from '../components/DeleteInventoryModal';
 import Pagination from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../lib/loadXlsx';
 import { InventoryItem, Role, Transaction, TransactionType, TransactionStatus } from '../types';
 import { usePermission } from '../hooks/usePermission';
+import { useModuleData } from '../hooks/useModuleData';
 
 const Inventory: React.FC = () => {
   const location = useLocation();
   const { items, warehouses, addItems, addItem, removeItem, addTransaction, user, transactions, categories, units } = useApp();
+  useModuleData('wms');
   const toast = useToast();
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -99,7 +101,8 @@ const Inventory: React.FC = () => {
     }
   };
 
-  const handleDownloadTemplate = () => {
+  const handleDownloadTemplate = async () => {
+    const XLSX = await loadXlsx();
     const headers = [['Mã SKU', 'Tên vật tư', 'Danh mục', 'Đơn vị tính', 'Giá nhập', 'Giá xuất', 'Tồn tối thiểu', 'Kho nhận hàng', 'Số lượng nhập']];
     const ws = XLSX.utils.aoa_to_sheet(headers);
     const wb = XLSX.utils.book_new();
@@ -120,7 +123,8 @@ const Inventory: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
+      const XLSX = await loadXlsx();
       const bstr = evt.target?.result;
       const wb = XLSX.read(bstr, { type: 'binary' });
       const ws = wb.Sheets[wb.SheetNames[0]];

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { X, Send, Loader2, ChevronDown, Bot, Sparkles, Trash2 } from 'lucide-react';
+import { escapeHtml } from '../lib/safeHtml';
 
 // ══════════════════════════════════════════
 //  CHIBI BOT 🤖 — Virtual AI Assistant Mascot
@@ -35,7 +36,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 
 // ─── Markdown formatter (matches AiAssistant) ────────────
 const formatMarkdown = (text: string): string => {
-  let html = text;
+  let html = escapeHtml(text);
 
   // Headers
   html = html.replace(/^### (.*?)$/gm, '<h4 class="text-xs font-black text-slate-800 dark:text-white mt-2 mb-0.5">$1</h4>');

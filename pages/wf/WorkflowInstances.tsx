@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
 import {
@@ -14,12 +14,12 @@ import {
     LayoutGrid, List, Printer, Shield, UserPlus
 } from 'lucide-react';
 import KanbanBoard from '../../components/KanbanBoard';
-import * as XLSX from 'xlsx';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { saveAs } from 'file-saver';
 import { supabase } from '../../lib/supabase';
 import { useCelebration } from '../../components/Celebration';
+import { loadXlsx } from '../../lib/loadXlsx';
 
 const STATUS_MAP: Record<WorkflowInstanceStatus, { label: string; color: string; icon: any }> = {
     RUNNING: { label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300', icon: Clock },
@@ -160,6 +160,8 @@ const ExcelTablePreview: React.FC<{
 };
 
 // ========== File Download Helper ==========
+const WORKFLOW_ATTACHMENT_BUCKET = 'workflow-attachments';
+
 const downloadFileFromBase64 = (base64: string, fileName: string, mimeType: string) => {
     const byteChars = atob(base64);
     const byteNumbers = new Array(byteChars.length);
@@ -178,16 +180,99 @@ const downloadFileFromBase64 = (base64: string, fileName: string, mimeType: stri
 
 const getBase64DataUrl = (base64: string, mimeType: string) => `data:${mimeType};base64,${base64}`;
 
+const sanitizeStorageFileName = (name: string) =>
+    name.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 120) || 'attachment';
+
+const getAttachmentBucket = (file: any) => file?.storageBucket || WORKFLOW_ATTACHMENT_BUCKET;
+
+const hasDownloadableFile = (file: any) => Boolean(file?.data || file?.storagePath);
+
+const uploadWorkflowAttachment = async (file: File) => {
+    const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const storagePath = `${new Date().getFullYear()}/${id}-${sanitizeStorageFileName(file.name)}`;
+    const { error } = await supabase.storage.from(WORKFLOW_ATTACHMENT_BUCKET).upload(storagePath, file, {
+        contentType: file.type || 'application/octet-stream',
+        upsert: false,
+    });
+    if (error) throw error;
+
+    return {
+        fileName: file.name,
+        fileType: file.type || 'application/octet-stream',
+        fileSize: file.size,
+        storageBucket: WORKFLOW_ATTACHMENT_BUCKET,
+        storagePath,
+    };
+};
+
+const downloadWorkflowFile = async (file: any) => {
+    try {
+        if (file?.data) {
+            downloadFileFromBase64(file.data, file.fileName, file.fileType);
+            return;
+        }
+
+        if (file?.storagePath) {
+            const { data, error } = await supabase.storage.from(getAttachmentBucket(file)).download(file.storagePath);
+            if (error || !data) throw error || new Error('Không tải được file');
+            saveAs(data, file.fileName || 'attachment');
+        }
+    } catch (err) {
+        console.error('downloadWorkflowFile error:', err);
+        alert('Không tải được file đính kèm. Vui lòng thử lại.');
+    }
+};
+
 // ========== File Preview Modal ==========
 const FilePreviewModal: React.FC<{
     file: any;
     onClose: () => void;
 }> = ({ file, onClose }) => {
-    if (!file) return null;
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [previewError, setPreviewError] = useState('');
+    const isImage = /^image\//i.test(file?.fileType || '');
+    const isPdf = /pdf/i.test(file?.fileType || '') || /\.pdf$/i.test(file?.fileName || '');
+    const isExcel = /\.(xlsx|xls|csv)$/i.test(file?.fileName || '');
 
-    const isImage = /^image\//i.test(file.fileType || '');
-    const isPdf = /pdf/i.test(file.fileType || '') || /\.pdf$/i.test(file.fileName || '');
-    const isExcel = /\.(xlsx|xls|csv)$/i.test(file.fileName || '');
+    useEffect(() => {
+        let objectUrl: string | null = null;
+        let cancelled = false;
+        setPreviewUrl(null);
+        setPreviewError('');
+
+        const loadPreview = async () => {
+            if (!file || (!isImage && !isPdf)) return;
+            if (file.data) {
+                setPreviewUrl(getBase64DataUrl(file.data, isPdf ? 'application/pdf' : file.fileType));
+                return;
+            }
+            if (!file.storagePath) {
+                setPreviewError('File cũ chỉ còn thông tin đính kèm, không còn dữ liệu xem trước');
+                return;
+            }
+
+            const { data, error } = await supabase.storage.from(getAttachmentBucket(file)).download(file.storagePath);
+            if (cancelled) return;
+            if (error || !data) {
+                console.error('File preview download error:', error);
+                setPreviewError('Không tải được bản xem trước');
+                return;
+            }
+            objectUrl = URL.createObjectURL(data);
+            setPreviewUrl(objectUrl);
+        };
+
+        loadPreview();
+        return () => {
+            cancelled = true;
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
+    }, [file, isImage, isPdf]);
+
+    if (!file) return null;
 
     return (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -200,7 +285,8 @@ const FilePreviewModal: React.FC<{
                         <p className="text-[10px] text-slate-400">{file.fileType} • {(file.fileSize / 1024).toFixed(1)} KB</p>
                     </div>
                     <button
-                        onClick={() => downloadFileFromBase64(file.data, file.fileName, file.fileType)}
+                        onClick={() => downloadWorkflowFile(file)}
+                        disabled={!hasDownloadableFile(file)}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600 transition shadow-md"
                     >
                         <Download size={13} /> Tải về
@@ -211,20 +297,33 @@ const FilePreviewModal: React.FC<{
                 </div>
                 {/* Content */}
                 <div className="flex-1 overflow-auto p-4">
-                    {isImage && file.data && (
+                    {isImage && previewUrl && (
                         <div className="flex items-center justify-center">
-                            <img src={getBase64DataUrl(file.data, file.fileType)} alt={file.fileName} className="max-w-full max-h-[70vh] rounded-lg shadow-lg" />
+                            <img src={previewUrl} alt={file.fileName} className="max-w-full max-h-[70vh] rounded-lg shadow-lg" />
                         </div>
                     )}
-                    {isPdf && file.data && (
+                    {isPdf && previewUrl && (
                         <iframe
-                            src={getBase64DataUrl(file.data, 'application/pdf')}
+                            src={previewUrl}
                             className="w-full h-[70vh] rounded-lg border border-slate-200 dark:border-slate-700"
                             title={file.fileName}
                         />
                     )}
+                    {(isImage || isPdf) && !previewUrl && (
+                        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                            <FileText size={48} className="mb-3 opacity-50" />
+                            <p className="text-sm font-medium">{previewError || 'Đang tải bản xem trước...'}</p>
+                        </div>
+                    )}
                     {isExcel && file.excelData && file.sheetNames && (
                         <ExcelTablePreview sheets={file.excelData} sheetNames={file.sheetNames} />
+                    )}
+                    {isExcel && (!file.excelData || !file.sheetNames) && (
+                        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                            <FileSpreadsheet size={48} className="mb-3 opacity-50" />
+                            <p className="text-sm font-medium">File Excel đã được lưu trong Storage</p>
+                            <p className="text-xs mt-1">Nhấn "Tải về" để mở và chỉnh sửa trên máy tính</p>
+                        </div>
                     )}
                     {!isImage && !isPdf && !isExcel && (
                         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
@@ -249,11 +348,13 @@ const FileFieldInput: React.FC<{
     const fileRef = useRef<HTMLInputElement>(null);
     const [dragOver, setDragOver] = useState(false);
     const [showPreview, setShowPreview] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
 
     const isExcelFile = (name: string) => /\.(xlsx|xls|csv)$/i.test(name);
 
-    const parseExcel = useCallback((buffer: ArrayBuffer, fileName: string) => {
+    const parseExcel = useCallback(async (buffer: ArrayBuffer, fileName: string) => {
         try {
+            const XLSX = await loadXlsx();
             const wb = XLSX.read(buffer, { type: 'array' });
             const sheetNames = wb.SheetNames;
             const excelData: Record<string, any[][]> = {};
@@ -267,42 +368,33 @@ const FileFieldInput: React.FC<{
         }
     }, []);
 
-    const handleFile = useCallback((file: File) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const buffer = e.target?.result as ArrayBuffer;
-            // Convert to base64 for storage
-            const bytes = new Uint8Array(buffer);
-            let binary = '';
-            bytes.forEach(b => binary += String.fromCharCode(b));
-            const base64 = btoa(binary);
-
-            const fileData: any = {
-                fileName: file.name,
-                fileType: file.type,
-                fileSize: file.size,
-                data: base64,
-            };
-
+    const handleFile = useCallback(async (file: File) => {
+        setIsUploading(true);
+        try {
+            const fileData: any = await uploadWorkflowAttachment(file);
             if (isExcelFile(file.name)) {
-                const parsed = parseExcel(buffer, file.name);
+                const buffer = await file.arrayBuffer();
+                const parsed = await parseExcel(buffer, file.name);
                 if (parsed) {
-                    fileData.excelData = parsed.excelData;
                     fileData.sheetNames = parsed.sheetNames;
                 }
             }
 
             onChange(fileData);
-        };
-        reader.readAsArrayBuffer(file);
+        } catch (err) {
+            console.error('Workflow attachment upload error:', err);
+            alert('Không upload được file đính kèm. Vui lòng thử lại.');
+        } finally {
+            setIsUploading(false);
+        }
     }, [onChange, parseExcel]);
 
     const handleDrop = useCallback((e: React.DragEvent) => {
         e.preventDefault();
         setDragOver(false);
         const file = e.dataTransfer.files[0];
-        if (file && !disabled) handleFile(file);
-    }, [disabled, handleFile]);
+        if (file && !disabled && !isUploading) handleFile(file);
+    }, [disabled, handleFile, isUploading]);
 
     // If disabled and has value, show preview only
     if (disabled && value && typeof value === 'object' && value.fileName) {
@@ -316,8 +408,8 @@ const FileFieldInput: React.FC<{
                         className="p-1 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-800/30 text-blue-500 transition-colors" title="Xem trước">
                         <Eye size={14} />
                     </button>
-                    {value.data && (
-                        <button onClick={() => downloadFileFromBase64(value.data, value.fileName, value.fileType)}
+                    {hasDownloadableFile(value) && (
+                        <button onClick={() => downloadWorkflowFile(value)}
                             className="p-1 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về">
                             <Download size={14} />
                         </button>
@@ -337,23 +429,24 @@ const FileFieldInput: React.FC<{
                 ref={fileRef}
                 type="file"
                 className="hidden"
+                disabled={disabled || isUploading}
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
                 accept=".xlsx,.xls,.csv,.pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.txt"
             />
             {/* Upload zone */}
             {!value || typeof value !== 'object' ? (
                 <div
-                    onClick={() => !disabled && fileRef.current?.click()}
-                    onDragOver={e => { e.preventDefault(); !disabled && setDragOver(true); }}
+                    onClick={() => !disabled && !isUploading && fileRef.current?.click()}
+                    onDragOver={e => { e.preventDefault(); !disabled && !isUploading && setDragOver(true); }}
                     onDragLeave={() => setDragOver(false)}
                     onDrop={handleDrop}
                     className={`flex flex-col items-center gap-2 px-4 py-5 rounded-xl border-2 border-dashed cursor-pointer transition-all ${dragOver
                         ? 'border-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10'
                         : 'border-slate-200 dark:border-slate-600 hover:border-emerald-300 hover:bg-emerald-50/30 dark:hover:bg-emerald-900/5'
-                        } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        } ${disabled || isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
                     <Upload size={20} className={dragOver ? 'text-emerald-500' : 'text-slate-400'} />
                     <span className="text-xs text-slate-500 text-center">
-                        <span className="font-bold text-emerald-600">Chọn file</span> hoặc kéo thả vào đây
+                        <span className="font-bold text-emerald-600">{isUploading ? 'Đang tải file...' : 'Chọn file'}</span>{!isUploading && ' hoặc kéo thả vào đây'}
                         <br /><span className="text-[10px] text-slate-400">Excel, PDF, Word, Ảnh (tối đa 5MB)</span>
                     </span>
                 </div>
@@ -374,8 +467,8 @@ const FileFieldInput: React.FC<{
                                 className="p-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-800/30 text-blue-500 transition-colors" title="Xem trước">
                                 <Eye size={14} />
                             </button>
-                            {value.data && (
-                                <button onClick={() => downloadFileFromBase64(value.data, value.fileName, value.fileType)}
+                            {hasDownloadableFile(value) && (
+                                <button onClick={() => downloadWorkflowFile(value)}
                                     className="p-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về">
                                     <Download size={14} />
                                 </button>
@@ -408,7 +501,7 @@ const FileFieldInput: React.FC<{
 };
 
 const WorkflowInstances: React.FC = () => {
-    const { templates, instances, nodes, edges, logs, createInstance, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates, updateInstanceWatchers } = useWorkflow();
+    const { templates, instances, nodes, edges, logs, createInstance, loadInstanceFormData, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates, updateInstanceWatchers } = useWorkflow();
     const { user, users } = useApp();
     const { celebrate, showToast: celebrationToast } = useCelebration();
     const [activeTab, setActiveTab] = useState<'mine' | 'pending' | 'watching'>('mine');
@@ -418,6 +511,7 @@ const WorkflowInstances: React.FC = () => {
     const [boardTemplateId, setBoardTemplateId] = useState<string>('');
     const [boardDetailInstanceId, setBoardDetailInstanceId] = useState<string | null>(null);
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const loadedFormDataIdsRef = useRef<Set<string>>(new Set());
 
     // File preview state
     const [previewFile, setPreviewFile] = useState<any>(null);
@@ -435,6 +529,7 @@ const WorkflowInstances: React.FC = () => {
     // Action state
     const [actionComment, setActionComment] = useState('');
     const [processingId, setProcessingId] = useState<string | null>(null);
+    const [uploadingStepFiles, setUploadingStepFiles] = useState(false);
 
     // Edit instance state
     const [editingInstance, setEditingInstance] = useState<WorkflowInstance | null>(null);
@@ -505,6 +600,42 @@ const WorkflowInstances: React.FC = () => {
         celebrationToast({ type, title: text });
     };
 
+    const ensureInstanceFormData = useCallback(async (instance: WorkflowInstance): Promise<WorkflowInstance> => {
+        if (Object.keys(instance.formData || {}).length > 0 || loadedFormDataIdsRef.current.has(instance.id)) {
+            return instance;
+        }
+
+        const formData = await loadInstanceFormData(instance.id);
+        loadedFormDataIdsRef.current.add(instance.id);
+        return { ...instance, formData: formData || {} };
+    }, [loadInstanceFormData]);
+
+    const handleToggleExpand = useCallback(async (instance: WorkflowInstance) => {
+        if (expandedId === instance.id) {
+            setExpandedId(null);
+            return;
+        }
+        setExpandedId(instance.id);
+        await ensureInstanceFormData(instance);
+    }, [expandedId, ensureInstanceFormData]);
+
+    const handleStepFileUpload = useCallback(async (files: FileList | null) => {
+        if (!files || files.length === 0) return;
+        setUploadingStepFiles(true);
+        try {
+            const uploadedFiles = [];
+            for (let i = 0; i < files.length; i++) {
+                uploadedFiles.push(await uploadWorkflowAttachment(files[i]));
+            }
+            setStepFormData(prev => ({ ...prev, _files: [...(prev._files || []), ...uploadedFiles] }));
+        } catch (err) {
+            console.error('Step attachment upload error:', err);
+            alert('Không upload được file đính kèm. Vui lòng thử lại.');
+        } finally {
+            setUploadingStepFiles(false);
+        }
+    }, []);
+
     const handleCreate = async () => {
         if (!selectedTemplateId || !newTitle.trim()) return;
         // Check required custom fields
@@ -525,6 +656,7 @@ const WorkflowInstances: React.FC = () => {
             setNewTitle('');
             setNewNote('');
             setCustomFormData({});
+            loadedFormDataIdsRef.current.add(result.id);
             setActiveTab('mine');
             showToast('success', `Phiếu "${result.title}" đã được tạo thành công!`);
         } catch (err) {
@@ -542,6 +674,7 @@ const WorkflowInstances: React.FC = () => {
     // ==================== WORD EXPORT ====================
     const handleExportWord = async (instance: WorkflowInstance, printTemplate: WorkflowPrintTemplate) => {
         try {
+            instance = await ensureInstanceFormData(instance);
             // 1. Download .docx from Supabase Storage
             const { data: fileData, error } = await supabase.storage.from('workflow-templates').download(printTemplate.storagePath);
             if (error || !fileData) { alert('Không tải được file mẫu. Vui lòng thử lại.'); return; }
@@ -636,7 +769,7 @@ const WorkflowInstances: React.FC = () => {
                     const actor = users.find(u => u.id === log.actedBy);
                     const safeLabel = node.label.replace(/\s+/g, '_').toLowerCase();
                     data[`approver_${safeLabel}`] = actor?.name || '';
-                    const logDate = new Date(log.timestamp);
+                    const logDate = new Date(log.createdAt);
                     data[`approved_date_${safeLabel}`] = logDate.toLocaleDateString('vi-VN');
                 }
             });
@@ -655,60 +788,75 @@ const WorkflowInstances: React.FC = () => {
 
     const handleAction = async (instanceId: string, action: WorkflowInstanceAction) => {
         setProcessingId(instanceId);
-        // Save step data if any
-        const instance = instances.find(i => i.id === instanceId);
-        if (instance) {
-            const nodeId = instance.currentNodeId;
-            const newFormData = { ...instance.formData };
-            // Save step form fields (exclude _files which is handled separately)
-            const formEntries = Object.entries(stepFormData).filter(([k]) => k !== '_files');
-            if (formEntries.length > 0) {
-                formEntries.forEach(([key, value]) => {
-                    newFormData[`step_${nodeId}_${key}`] = value;
+        let instance = instances.find(i => i.id === instanceId);
+        try {
+            // Save step data if any
+            if (instance) {
+                instance = await ensureInstanceFormData(instance);
+                const nodeId = instance.currentNodeId;
+                const newFormData = { ...(instance.formData || {}) };
+                // Save step form fields (exclude _files which is handled separately)
+                const formEntries = Object.entries(stepFormData).filter(([k]) => k !== '_files');
+                if (formEntries.length > 0) {
+                    formEntries.forEach(([key, value]) => {
+                        newFormData[`step_${nodeId}_${key}`] = value;
+                    });
+                }
+                // Save step file attachments
+                if (stepFormData._files && stepFormData._files.length > 0) {
+                    newFormData[`step_${nodeId}_files`] = stepFormData._files;
+                }
+                // Save step-level Excel edits
+                if (stepExcelData) {
+                    newFormData[`step_${nodeId}_excel_data`] = stepExcelData.sheets;
+                    newFormData[`step_${nodeId}_excel_sheets`] = stepExcelData.sheetNames;
+                }
+                if (formEntries.length > 0 || stepExcelData || (stepFormData._files && stepFormData._files.length > 0)) {
+                    const saved = await updateInstance(instanceId, { formData: newFormData });
+                    if (!saved) throw new Error('Không lưu được dữ liệu bước');
+                    instance = { ...instance, formData: newFormData };
+                }
+            }
+
+            const ok = await processInstance(instanceId, action, user.id, actionComment);
+            if (!ok) {
+                showToast('error', 'Thao tác quy trình thất bại. Vui lòng thử lại.');
+                return;
+            }
+
+            // 🎉 Celebration!
+            if (action === WorkflowInstanceAction.APPROVED) {
+                celebrate({
+                    variant: 'approve',
+                    title: '✅ Đã Duyệt Thành Công!',
+                    subtitle: instance?.title || '',
+                    confetti: true,
                 });
+            } else if (action === WorkflowInstanceAction.REJECTED) {
+                celebrationToast({ type: 'warning', title: 'Phiếu đã bị từ chối', message: instance?.title || '' });
+            } else if (action === WorkflowInstanceAction.REVISION_REQUESTED) {
+                celebrationToast({ type: 'info', title: 'Yêu cầu chỉnh sửa đã gửi', message: instance?.title || '' });
             }
-            // Save step file attachments
-            if (stepFormData._files && stepFormData._files.length > 0) {
-                newFormData[`step_${nodeId}_files`] = stepFormData._files;
-            }
-            // Save step-level Excel edits
-            if (stepExcelData) {
-                newFormData[`step_${nodeId}_excel_data`] = stepExcelData.sheets;
-                newFormData[`step_${nodeId}_excel_sheets`] = stepExcelData.sheetNames;
-            }
-            if (formEntries.length > 0 || stepExcelData || (stepFormData._files && stepFormData._files.length > 0)) {
-                await updateInstance(instanceId, { formData: newFormData });
-            }
-        }
-        await processInstance(instanceId, action, user.id, actionComment);
 
-        // 🎉 Celebration!
-        if (action === WorkflowInstanceAction.APPROVED) {
-            celebrate({
-                variant: 'approve',
-                title: '✅ Đã Duyệt Thành Công!',
-                subtitle: instance?.title || '',
-                confetti: true,
-            });
-        } else if (action === WorkflowInstanceAction.REJECTED) {
-            celebrationToast({ type: 'warning', title: 'Phiếu đã bị từ chối', message: instance?.title || '' });
-        } else if (action === WorkflowInstanceAction.REVISION_REQUESTED) {
-            celebrationToast({ type: 'info', title: 'Yêu cầu chỉnh sửa đã gửi', message: instance?.title || '' });
+            setActionComment('');
+            setStepFormData({});
+            setStepExcelData(null);
+        } catch (err) {
+            console.error('handleAction error:', err);
+            showToast('error', 'Không xử lý được phiếu. Vui lòng thử lại.');
+        } finally {
+            setProcessingId(null);
         }
-
-        setActionComment('');
-        setStepFormData({});
-        setStepExcelData(null);
-        setProcessingId(null);
     };
 
     // Edit instance handlers
-    const openEditModal = (instance: WorkflowInstance) => {
-        setEditingInstance(instance);
-        setEditTitle(instance.title);
+    const openEditModal = async (instance: WorkflowInstance) => {
+        const readyInstance = await ensureInstanceFormData(instance);
+        setEditingInstance(readyInstance);
+        setEditTitle(readyInstance.title);
         // Extract only the original form data (non step_ prefixed)
         const originalFormData: Record<string, any> = {};
-        Object.entries(instance.formData || {}).forEach(([key, value]) => {
+        Object.entries(readyInstance.formData || {}).forEach(([key, value]) => {
             if (!key.startsWith('step_')) {
                 originalFormData[key] = value;
             }
@@ -1087,7 +1235,10 @@ const WorkflowInstances: React.FC = () => {
                         <KanbanBoard
                             templateId={boardTemplateId}
                             instances={instances}
-                            onCardClick={(instance) => setBoardDetailInstanceId(instance.id)}
+                            onCardClick={async (instance) => {
+                                setBoardDetailInstanceId(instance.id);
+                                await ensureInstanceFormData(instance);
+                            }}
                             onDragComplete={async (instanceId, action, comment, assigneeId) => {
                                 if (assigneeId) {
                                     // Update the target node's assignee for this instance
@@ -1105,7 +1256,8 @@ const WorkflowInstances: React.FC = () => {
                                         }
                                     }
                                 }
-                                await processInstance(instanceId, action, user.id, comment);
+                                const ok = await processInstance(instanceId, action, user.id, comment);
+                                if (!ok) showToast('error', 'Không xử lý được phiếu.');
                             }}
                         />
                     ) : (
@@ -1314,7 +1466,7 @@ const WorkflowInstances: React.FC = () => {
                                                                     <span className="font-medium flex-1 truncate">{fv.fileName}</span>
                                                                     <span className="text-slate-400 shrink-0">({(fv.fileSize / 1024).toFixed(1)} KB)</span>
                                                                     <button onClick={() => setPreviewFile(fv)} className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-800/30 text-blue-500 transition-colors" title="Xem trước"><Eye size={12} /></button>
-                                                                    {fv.data && <button onClick={() => downloadFileFromBase64(fv.data, fv.fileName, fv.fileType)} className="p-1 rounded hover:bg-emerald-100 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về"><Download size={12} /></button>}
+                                                                    {hasDownloadableFile(fv) && <button onClick={() => downloadWorkflowFile(fv)} className="p-1 rounded hover:bg-emerald-100 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về"><Download size={12} /></button>}
                                                                 </div>
                                                                 {fv.excelData && fv.sheetNames && <ExcelTablePreview sheets={fv.excelData} sheetNames={fv.sheetNames} />}
                                                             </div>
@@ -1386,16 +1538,10 @@ const WorkflowInstances: React.FC = () => {
                                                 </div>
                                             ))}
                                             <label className="flex items-center gap-2 px-3 py-2 border border-dashed border-amber-300 dark:border-amber-700 rounded-xl cursor-pointer hover:bg-amber-50/50 dark:hover:bg-amber-900/10 transition">
-                                                <Upload size={14} className="text-amber-400" /><span className="text-[10px] text-amber-500 font-bold">Chọn file đính kèm...</span>
+                                                <Upload size={14} className="text-amber-400" /><span className="text-[10px] text-amber-500 font-bold">{uploadingStepFiles ? 'Đang tải file...' : 'Chọn file đính kèm...'}</span>
                                                 <input type="file" className="hidden" multiple onChange={async (e) => {
-                                                    const files = e.target.files; if (!files) return;
-                                                    const nf = [...(stepFormData._files || [])];
-                                                    for (let i = 0; i < files.length; i++) {
-                                                        const file = files[i]; const reader = new FileReader();
-                                                        const fd = await new Promise<string>((resolve) => { reader.onload = () => resolve((reader.result as string).split(',')[1]); reader.readAsDataURL(file); });
-                                                        nf.push({ fileName: file.name, fileType: file.type, fileSize: file.size, data: fd });
-                                                    }
-                                                    setStepFormData(prev => ({ ...prev, _files: nf })); e.target.value = '';
+                                                    await handleStepFileUpload(e.target.files);
+                                                    e.target.value = '';
                                                 }} />
                                             </label>
                                         </div>
@@ -1443,7 +1589,7 @@ const WorkflowInstances: React.FC = () => {
                                                                             <div key={fi} className="flex items-center gap-1.5 text-[10px]">
                                                                                 <Paperclip size={10} className="text-rose-400" /><span className="truncate">{f.fileName}</span>
                                                                                 <button onClick={() => setPreviewFile(f)} className="text-blue-500 hover:underline">Xem</button>
-                                                                                {f.data && <button onClick={() => downloadFileFromBase64(f.data, f.fileName, f.fileType)} className="text-emerald-500 hover:underline">Tải</button>}
+                                                                                {hasDownloadableFile(f) && <button onClick={() => downloadWorkflowFile(f)} className="text-emerald-500 hover:underline">Tải</button>}
                                                                             </div>
                                                                         ))}
                                                                     </div>
@@ -1482,7 +1628,7 @@ const WorkflowInstances: React.FC = () => {
                             {/* Header Row */}
                             <div
                                 className="p-4 cursor-pointer hover:bg-white/30 dark:hover:bg-slate-700/30 transition"
-                                onClick={() => setExpandedId(isExpanded ? null : instance.id)}
+                                onClick={() => handleToggleExpand(instance)}
                             >
                                 <div className="flex items-start md:items-center justify-between gap-3">
                                     <div className="flex-1 min-w-0">
@@ -1734,8 +1880,8 @@ const WorkflowInstances: React.FC = () => {
                                                                             className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-800/30 text-blue-500 transition-colors" title="Xem trước">
                                                                             <Eye size={12} />
                                                                         </button>
-                                                                        {v.data && (
-                                                                            <button onClick={() => downloadFileFromBase64(v.data, v.fileName, v.fileType)}
+                                                                        {hasDownloadableFile(v) && (
+                                                                            <button onClick={() => downloadWorkflowFile(v)}
                                                                                 className="p-1 rounded hover:bg-emerald-100 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về">
                                                                                 <Download size={12} />
                                                                             </button>
@@ -1873,26 +2019,9 @@ const WorkflowInstances: React.FC = () => {
                                                 ))}
                                                 <label className="flex items-center gap-2 px-3 py-2 border border-dashed border-amber-300 dark:border-amber-700 rounded-xl cursor-pointer hover:bg-amber-50/50 dark:hover:bg-amber-900/10 transition">
                                                     <Upload size={14} className="text-amber-400" />
-                                                    <span className="text-[10px] text-amber-500 font-bold">Chọn file đính kèm...</span>
+                                                    <span className="text-[10px] text-amber-500 font-bold">{uploadingStepFiles ? 'Đang tải file...' : 'Chọn file đính kèm...'}</span>
                                                     <input type="file" className="hidden" multiple onChange={async (e) => {
-                                                        const files = e.target.files;
-                                                        if (!files) return;
-                                                        const newFiles = [...(stepFormData._files || [])];
-                                                        for (let i = 0; i < files.length; i++) {
-                                                            const file = files[i];
-                                                            const reader = new FileReader();
-                                                            const fileData = await new Promise<string>((resolve) => {
-                                                                reader.onload = () => resolve((reader.result as string).split(',')[1]);
-                                                                reader.readAsDataURL(file);
-                                                            });
-                                                            newFiles.push({
-                                                                fileName: file.name,
-                                                                fileType: file.type,
-                                                                fileSize: file.size,
-                                                                data: fileData,
-                                                            });
-                                                        }
-                                                        setStepFormData(prev => ({ ...prev, _files: newFiles }));
+                                                        await handleStepFileUpload(e.target.files);
                                                         e.target.value = '';
                                                     }} />
                                                 </label>
@@ -1989,7 +2118,7 @@ const WorkflowInstances: React.FC = () => {
                                                                                     <Paperclip size={10} className="text-rose-400" />
                                                                                     <span className="truncate">{f.fileName}</span>
                                                                                     <button onClick={() => setPreviewFile(f)} className="text-blue-500 hover:underline">Xem</button>
-                                                                                    {f.data && <button onClick={() => downloadFileFromBase64(f.data, f.fileName, f.fileType)} className="text-emerald-500 hover:underline">Tải</button>}
+                                                                                    {hasDownloadableFile(f) && <button onClick={() => downloadWorkflowFile(f)} className="text-emerald-500 hover:underline">Tải</button>}
                                                                                 </div>
                                                                             ))}
                                                                         </div>

@@ -3,6 +3,7 @@ import {
   Bot, Sparkles, X, Loader2, RefreshCw, AlertTriangle,
   AlertCircle, Info, ChevronDown, ChevronUp, Zap, Clock, Lightbulb
 } from 'lucide-react';
+import { escapeHtml } from '../lib/safeHtml';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -47,7 +48,7 @@ const ALERT_STYLES = {
 };
 
 const formatMarkdown = (text: string): string => {
-  return text
+  return escapeHtml(text)
     .replace(/^### (.*?)$/gm, '<h4 class="text-sm font-black text-slate-800 dark:text-white mt-3 mb-1">$1</h4>')
     .replace(/^## (.*?)$/gm, '<h3 class="text-base font-black text-slate-800 dark:text-white mt-3 mb-1.5">$1</h3>')
     .replace(/\*\*(.*?)\*\*/g, '<strong class="font-black text-slate-800 dark:text-white">$1</strong>')

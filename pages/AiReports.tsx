@@ -6,6 +6,7 @@ import {
   Package, Users, DollarSign, Zap, Eye
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { escapeHtml } from '../lib/safeHtml';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -107,7 +108,7 @@ const AiReports: React.FC = () => {
 
   // Format markdown simple
   const formatMd = (text: string) => {
-    return text
+    return escapeHtml(text)
       .replace(/## (.+)/g, '<h3 class="text-base font-black text-slate-800 dark:text-white mt-4 mb-2">$1</h3>')
       .replace(/### (.+)/g, '<h4 class="text-sm font-bold text-slate-700 dark:text-slate-300 mt-3 mb-1">$1</h4>')
       .replace(/\*\*(.+?)\*\*/g, '<strong class="font-black">$1</strong>')

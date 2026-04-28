@@ -8,7 +8,6 @@ import {
   Upload, FileSpreadsheet, Loader2, CheckCircle2, AlertTriangle, Trash2, Star, Plus,
   MapPin, Eye, Save, X, Edit3
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import {
   AttendanceStatus, AttendanceRecord,
   ATTENDANCE_STATUS_LABELS, ATTENDANCE_STATUS_COLORS,
@@ -17,11 +16,12 @@ import {
   PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_COLORS
 } from '../../types';
 import { usePermission } from '../../hooks/usePermission';
+import { loadXlsx } from '../../lib/loadXlsx';
 
 const STATUS_CYCLE: AttendanceStatus[] = ['present', 'absent', 'half_day', 'leave', 'holiday', 'business_trip'];
 
 const STATUS_SHORT: Record<AttendanceStatus, string> = {
-  present: '✓', absent: '✗', half_day: '½', leave: 'P', holiday: 'L', business_trip: 'CT',
+  present: '✓', late: 'M', absent: '✗', half_day: '½', leave: 'P', holiday: 'L', business_trip: 'CT',
 };
 
 const Attendance: React.FC = () => {
@@ -394,7 +394,8 @@ const Attendance: React.FC = () => {
 
   // ==================== IMPORT TỪ MÁY CHẤM CÔNG ====================
 
-  const downloadTemplate = () => {
+  const downloadTemplate = async () => {
+    const XLSX = await loadXlsx();
     const header = ['Mã NV', 'Ngày (dd/mm/yyyy)', 'Giờ vào', 'Giờ ra', 'Trạng thái', 'OT (giờ)', 'Ghi chú'];
     const sampleRows = [
       ['TT001', '01/03/2026', '07:30', '17:00', '', '', ''],
@@ -478,7 +479,8 @@ const Attendance: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
+      const XLSX = await loadXlsx();
       const data = new Uint8Array(evt.target?.result as ArrayBuffer);
       const wb = XLSX.read(data, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
@@ -1341,7 +1343,7 @@ const Attendance: React.FC = () => {
         const rec = recordMap.get(recKey);
         const emp = employees.find(e => e.id === detailCell.employeeId);
         const dayInfo = dayHeaders.find(d => d.dayNum === detailCell.day);
-        const indicator = getCellIndicator(rec, detailCell.day);
+        const indicator = getCellIndicator(rec, detailCell.day, detailCell.employeeId);
 
         // Location info
         let locationDisplay = rec?.locationName || '';

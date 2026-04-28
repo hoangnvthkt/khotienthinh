@@ -11,6 +11,7 @@ import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { SupplierContract, HdContractStatus, ContractAttachment } from '../../types';
+import { useModuleData } from '../../hooks/useModuleData';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatCurrency = (v: number, currency = 'VND') =>
@@ -60,6 +61,7 @@ const EMPTY_FORM: Omit<SupplierContract, 'id' | 'attachments' | 'createdAt' | 'u
 // ─── Main Component ────────────────────────────────────────────────────────────
 const SupplierContracts: React.FC = () => {
   const { user, suppliers } = useApp();
+  useModuleData('wms');
   const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();

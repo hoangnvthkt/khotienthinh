@@ -17,6 +17,7 @@ import Pagination from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
 import { AnimatedNumber, Sparkline, LastUpdated } from '../components/LiveDashboardWidgets';
 import { useReservedStock } from '../hooks/useReservedStock';
+import { useModuleData } from '../hooks/useModuleData';
 
 const StatCard: React.FC<{
   title: string;
@@ -90,6 +91,7 @@ const DashboardSkeleton = () => (
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { items, transactions, activities, isLoading, warehouses, user, theme, lastRealtimeEvent } = useApp();
+  useModuleData('wms');
   const { getStockSummary } = useReservedStock();
   const [chartType, setChartType] = useState<'bar' | 'line' | 'pie'>('bar');
   const [selectedWhId, setSelectedWhId] = useState<string>(user.assignedWarehouseId || 'all');

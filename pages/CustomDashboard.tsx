@@ -17,6 +17,7 @@ import { dashboardService } from '../lib/dashboardService';
 import { xpService, UserXP, LEVELS } from '../lib/xpService';
 import { alertEngine, SmartAlert, AlertEngineSummary, ALERT_CATEGORY_INFO, SEVERITY_INFO } from '../lib/alertEngine';
 import { WorkflowInstanceStatus } from '../types';
+import { useModuleData } from '../hooks/useModuleData';
 
 // ══════════════════════════════════════════
 //  CUSTOM DASHBOARD — Drag-Drop Widget Grid
@@ -413,6 +414,10 @@ const AddWidgetPanel: React.FC<{
 // ═══════════════════════════════════════════════
 const CustomDashboard: React.FC = () => {
   const { items, transactions, activities, user, users, categories, warehouses, employees, requests, projectFinances, assets, constructionSites, laborContracts, assetMaintenances } = useApp();
+  useModuleData('wms');
+  useModuleData('hrm');
+  useModuleData('da');
+  useModuleData('ts');
   const { instances: wfInstances } = useWorkflow();
   const { requests: rqRequests } = useRequest();
 

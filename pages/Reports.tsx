@@ -7,10 +7,12 @@ import {
   Search, Building, Package, PieChart, Printer
 } from 'lucide-react';
 import { TransactionType, TransactionStatus, Role } from '../types';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../lib/loadXlsx';
+import { useModuleData } from '../hooks/useModuleData';
 
 const Reports: React.FC = () => {
   const { items, transactions, warehouses, user, appSettings } = useApp();
+  useModuleData('wms');
 
   const isAdmin = user.role === Role.ADMIN;
   const hasAssignedWh = !!user.assignedWarehouseId;
@@ -140,7 +142,8 @@ const Reports: React.FC = () => {
     }), { totalValue: 0, totalIn: 0, totalOut: 0 });
   }, [reportData]);
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
+    const XLSX = await loadXlsx();
     const data = reportData.map(r => ({
       'Mã SKU': r.sku,
       'Tên vật tư': r.name,

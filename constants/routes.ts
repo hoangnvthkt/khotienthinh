@@ -9,7 +9,7 @@
  *
  * Quy tắc:
  *  - Route nào không có trong map → guard bỏ qua (allow all)
- *  - Route dynamic (/:id) → không đưa vào map, guard bỏ qua → page tự xử lý
+ *  - Route dynamic dùng pattern của react-router-dom matchPath
  */
 export const ROUTE_TO_MODULE: Record<string, string> = {
   // ── WMS ──────────────────────────────────────────────
@@ -38,7 +38,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/wf/dashboard':  'WF',
   '/wf':            'WF',
   '/wf/templates':  'WF',
-  // /wf/builder/:id → dynamic, không guard ở đây
+  '/wf/builder/:id': 'WF',
 
   // ── DỰ ÁN ────────────────────────────────────────────
   '/da':            'DA',
@@ -51,7 +51,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/ts/maintenance': 'TS',
   '/ts/audit':       'TS',
   '/ts/reports':     'TS',
-  // /ts/asset/:id → dynamic, không guard ở đây
+  '/ts/asset/:id':   'TS',
 
   // ── YÊU CẦU ──────────────────────────────────────────
   '/rq/dashboard':  'RQ',
@@ -63,7 +63,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
 
   // ── EMPLOYEE PROFILE ──────────────────────────────────
   '/ep': 'EP',
-  // /ep/:employeeId → dynamic, không guard ở đây
+  '/ep/:employeeId': 'EP',
 
   // ── HỢP ĐỒNG ──────────────────────────────────────────
   '/hd/supplier':      'HD',

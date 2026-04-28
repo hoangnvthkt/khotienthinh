@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import * as XLSX from 'xlsx';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
+import { loadXlsx } from '../../lib/loadXlsx';
 import {
   BarChart3, Plus, ChevronDown, ChevronRight, Download,
   Trash2, Edit3, Save, X, FolderPlus, Zap, FileText,
@@ -28,6 +28,8 @@ const BudgetDashboard: React.FC = () => {
     addHrmItem, updateHrmItem, removeHrmItem, user
   } = useApp();
   useModuleData('ex');
+  useModuleData('hrm');
+  useModuleData('wms');
   const { theme } = useTheme();
 
   const currentYear = new Date().getFullYear();
@@ -359,7 +361,8 @@ const BudgetDashboard: React.FC = () => {
 
   // ==================== EXPORT EXCEL ====================
 
-  const exportExcel = () => {
+  const exportExcel = async () => {
+    const XLSX = await loadXlsx();
     const headers = ['Mã', 'Mục chi phí', 'Nguồn'];
     for (const m of months) headers.push(`T${m} DK`, `T${m} TT`);
     headers.push('Tổng DK', 'Tổng TT', '% TH');

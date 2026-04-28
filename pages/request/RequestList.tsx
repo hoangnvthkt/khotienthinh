@@ -280,7 +280,7 @@ const RequestList: React.FC = () => {
         setSelectedIds(new Set());
         if (success > 0) {
             celebrate({
-                variant: action === 'approve' ? 'approve' : 'complete',
+                variant: action === 'approve' ? 'approve' : 'reject',
                 title: action === 'approve' ? `✅ Đã duyệt ${success} phiếu!` : `❌ Đã từ chối ${success} phiếu`,
                 subtitle: fail > 0 ? `${fail} phiếu thất bại` : '',
                 confetti: action === 'approve',

@@ -34,6 +34,8 @@ const EmployeeProfile: React.FC = () => {
     hrmConstructionSites, hrmOffices, shiftTypes, employeeShifts,
   } = useApp();
   useModuleData('hrm');
+  useModuleData('ts');
+  useModuleData('wms');
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 

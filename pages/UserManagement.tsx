@@ -5,9 +5,11 @@ import { Role, User } from '../types';
 import { Mail, Shield, MapPin, MoreVertical, Plus, Phone, Trash2 } from 'lucide-react';
 import UserModal from '../components/UserModal';
 import DeleteUserModal from '../components/DeleteUserModal';
+import { useModuleData } from '../hooks/useModuleData';
 
 const UserManagement: React.FC = () => {
   const { users, warehouses, addUser, updateUser, removeUser, user: currentUser } = useApp();
+  useModuleData('wms');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);

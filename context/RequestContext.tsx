@@ -209,8 +209,9 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
         dueDate?: string;
     }): Promise<RequestInstance | null> => {
         const year = new Date().getFullYear();
-        const count = requests.length + 1;
-        const code = `REQ-${year}-${String(count).padStart(3, '0')}`;
+        let code = `REQ-${year}-${String(requests.length + 1).padStart(3, '0')}`;
+        const { data: nextCode, error: codeError } = await supabase.rpc('next_request_code');
+        if (!codeError && nextCode) code = nextCode;
 
         // Auto-calculate dueDate from SLA if not manually set
         let dueDate = data.dueDate || null;
@@ -271,7 +272,7 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         // 🔔 Notify first approver when new request is created
         try {
-            const approversList = data?.approvers as RequestApprover[] || [];
+            const approversList = approvers;
             const firstApprover = approversList.sort((a: RequestApprover, b: RequestApprover) => a.order - b.order)[0];
             if (firstApprover && firstApprover.userId !== data.userId) {
                 notificationService.create({
@@ -282,7 +283,7 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     message: `"${data.title}" (${code}) — Bạn cần duyệt yêu cầu này`,
                     severity: 'info',
                     icon: '📋',
-                    link: '/yeu-cau',
+                    link: '/rq',
                     sourceType: 'request',
                     sourceId: `rq_new_${row.id}`,
                     metadata: { requestId: row.id },
@@ -349,19 +350,13 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         const newStatus = allApproved ? RQStatus.APPROVED : RQStatus.PENDING;
 
-        const { error } = await supabase.from('request_instances').update({
-            approvers: updatedApprovers,
-            status: newStatus,
-            updated_at: new Date().toISOString(),
-        }).eq('id', id);
-        if (error) { console.error(error); return false; }
-
-        await supabase.from('request_logs').insert({
-            request_id: id,
-            action: 'APPROVED',
-            acted_by: userId,
-            comment: comment || `Duyệt bước ${stepOrder}${allApproved ? ' — Phiếu đã được duyệt hoàn tất' : ` — Chuyển sang bước ${stepOrder + 1}`}`,
+        const { error } = await supabase.rpc('process_request_step', {
+            p_request_id: id,
+            p_user_id: userId,
+            p_action: 'APPROVED',
+            p_comment: comment || '',
         });
+        if (error) { console.error(error); return false; }
 
         await refreshData();
 
@@ -392,7 +387,7 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     message: `"${req.title}" (${req.code})${allApproved ? ' — Tất cả các bước đã được duyệt' : ` — Đang chờ bước ${stepOrder + 1}`}`,
                     severity: 'info',
                     icon: '✅',
-                    link: '/yeu-cau',
+                    link: '/rq',
                     sourceType: 'request',
                     sourceId: `rq_approved_${id}_${Date.now()}`,
                     metadata: { requestId: id },
@@ -408,7 +403,7 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     message: `"${req.title}" (${req.code}) — Bạn cần duyệt bước ${nextStep.order}`,
                     severity: 'info',
                     icon: '📋',
-                    link: '/yeu-cau',
+                    link: '/rq',
                     sourceType: 'request',
                     sourceId: `rq_next_${id}_${Date.now()}`,
                     metadata: { requestId: id },
@@ -432,19 +427,13 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 : a
         );
 
-        const { error } = await supabase.from('request_instances').update({
-            approvers: updatedApprovers,
-            status: 'REJECTED',
-            updated_at: new Date().toISOString(),
-        }).eq('id', id);
-        if (error) { console.error(error); return false; }
-
-        await supabase.from('request_logs').insert({
-            request_id: id,
-            action: 'REJECTED',
-            acted_by: userId,
-            comment: comment || `Từ chối ở bước ${stepOrder} — Phiếu bị hủy`,
+        const { error } = await supabase.rpc('process_request_step', {
+            p_request_id: id,
+            p_user_id: userId,
+            p_action: 'REJECTED',
+            p_comment: comment || '',
         });
+        if (error) { console.error(error); return false; }
 
         await refreshData();
 
@@ -471,7 +460,7 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     message: `"${req.title}" (${req.code}) bị từ chối ở bước ${stepOrder}${comment ? ': ' + comment : ''}`,
                     severity: 'warning',
                     icon: '❌',
-                    link: '/yeu-cau',
+                    link: '/rq',
                     sourceType: 'request',
                     sourceId: `rq_rejected_${id}_${Date.now()}`,
                     metadata: { requestId: id },

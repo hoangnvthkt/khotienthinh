@@ -1,6 +1,6 @@
 
 import React, { Suspense, useState, useEffect } from 'react';
-import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, useLocation, matchPath } from 'react-router-dom';
 import Layout from './components/Layout';
 import LoadingSpinner from './components/LoadingSpinner';
 import Login from './pages/Login';
@@ -148,7 +148,10 @@ const SubModuleGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =
   // Với HashRouter, location.pathname là path thực (không có #)
   // VD: /hrm/dashboard — không cần clean gì thêm
   const pathname = location.pathname;
-  const moduleKey = ROUTE_TO_MODULE[pathname];
+  const moduleKey = ROUTE_TO_MODULE[pathname] ||
+    Object.entries(ROUTE_TO_MODULE).find(([routePattern]) =>
+      routePattern.includes(':') && matchPath({ path: routePattern, end: true }, pathname)
+    )?.[1];
 
   // Route không nằm trong map → không guard (settings, chat, profile...)
   if (!moduleKey) return <>{children}</>;

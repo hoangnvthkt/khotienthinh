@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
+import { escapeHtml } from '../lib/safeHtml';
 import {
   Bot, Send, MessageCircle, Sparkles, Trash2, Plus, ChevronLeft,
   Database, Clock, Loader2, X, Code2, FileText, BookOpen, Menu, ArrowRight,
@@ -248,7 +249,7 @@ const AiAssistant: React.FC = () => {
   };
 
   const formatMarkdown = (text: string) => {
-    let html = text;
+    let html = escapeHtml(text);
 
     // Headers: ### -> h3, ## -> h2
     html = html.replace(/^### (.*?)$/gm, '<h4 class="text-sm font-black text-slate-800 dark:text-white mt-3 mb-1">$1</h4>');

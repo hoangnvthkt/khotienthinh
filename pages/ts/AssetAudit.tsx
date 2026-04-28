@@ -8,7 +8,7 @@ import {
     Shield, Landmark, XCircle, MapPin, AlertTriangle
 } from 'lucide-react';
 import { AssetStatus, ASSET_STATUS_LABELS } from '../../types';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../../lib/loadXlsx';
 
 type AssetCondition = 'good' | 'damaged' | 'lost' | 'wrong_location';
 const CONDITION_LABELS: Record<AssetCondition, string> = {
@@ -127,7 +127,8 @@ const AssetAudit: React.FC = () => {
         }, 800);
     };
 
-    const exportSessionToExcel = (session: AssetAuditSession) => {
+    const exportSessionToExcel = async (session: AssetAuditSession) => {
+        const XLSX = await loadXlsx();
         const wsData = [
             ['BÁO CÁO KIỂM KÊ TÀI SẢN'],
             [],

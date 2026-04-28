@@ -175,7 +175,7 @@ const EmployeeRanking: React.FC = () => {
       if (result.error) throw new Error(result.error);
       setData(result);
       // Auto-select top 3 for radar
-      const top3 = new Set(result.rankings.slice(0, 3).map((r: EmployeeScore) => r.employeeId));
+      const top3 = new Set<string>(result.rankings.slice(0, 3).map((r: EmployeeScore) => r.employeeId));
       setRadarSelected(top3);
     } catch (err: any) {
       setError(err.message || 'Không thể tính xếp hạng');

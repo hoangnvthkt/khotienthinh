@@ -11,8 +11,11 @@ import {
 } from 'lucide-react';
 import { Asset, AssetStatus, ASSET_STATUS_LABELS, ASSET_CATEGORY_LABELS, AssetCategoryType, AssetLocationStock, AssetTransfer } from '../../types';
 import ScannerModal from '../../components/ScannerModal';
-import * as XLSX from 'xlsx';
 import { usePermission } from '../../hooks/usePermission';
+import { isSupabaseConfigured, supabase } from '../../lib/supabase';
+import { loadXlsx } from '../../lib/loadXlsx';
+import Pagination from '../../components/Pagination';
+import { usePagination } from '../../hooks/usePagination';
 
 const AssetCatalog: React.FC = () => {
     const navigate = useNavigate();
@@ -20,8 +23,9 @@ const AssetCatalog: React.FC = () => {
         assets, assetCategories, warehouses, users, user,
         assetLocationStocks, assetTransfers,
         suppliers, units,
-        addAsset, updateAsset, removeAsset,
+        addAssetWithInitialStock, updateAsset, removeAsset,
         addAssetCategory, updateAssetCategory, removeAssetCategory, addAssetTransfer,
+        transferAssetStock,
         addSupplier, addUnit
     } = useApp();
   useModuleData('ts');
@@ -81,9 +85,13 @@ const AssetCatalog: React.FC = () => {
         });
     };
 
-    const openAdd = () => {
+    const openAdd = async () => {
         resetForm();
-        const nextCode = `TS-${String(assets.length + 1).padStart(3, '0')}`;
+        let nextCode = `TS-${String(assets.length + 1).padStart(3, '0')}`;
+        if (isSupabaseConfigured) {
+            const { data, error } = await supabase.rpc('next_asset_code');
+            if (!error && data) nextCode = data;
+        }
         setForm(prev => ({ ...prev, code: nextCode, categoryId: assetCategories[0]?.id || '' }));
         setEditingAsset(null);
         setShowAddModal(true);
@@ -103,15 +111,16 @@ const AssetCatalog: React.FC = () => {
         setShowAddModal(true);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!form.name.trim() || !form.code.trim()) {
             toast.error('Lỗi', 'Vui lòng nhập mã tài sản và tên tài sản');
             return;
         }
         const now = new Date().toISOString();
         const resolvedSupplierName = suppliers.find(s => s.id === form.supplierId)?.name || undefined;
-        if (editingAsset) {
-            updateAsset({
+        try {
+          if (editingAsset) {
+            await updateAsset({
                 ...editingAsset, ...form,
                 originalValue: Number(form.originalValue),
                 depreciationYears: Number(form.depreciationYears),
@@ -122,8 +131,8 @@ const AssetCatalog: React.FC = () => {
                 updatedAt: now,
             });
             toast.success('Cập nhật thành công', `Tài sản ${form.name} đã được cập nhật`);
-        } else {
-            addAsset({
+          } else {
+            await addAssetWithInitialStock({
                 id: `ast-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
                 ...form,
                 originalValue: Number(form.originalValue),
@@ -137,8 +146,11 @@ const AssetCatalog: React.FC = () => {
                 updatedAt: now,
             });
             toast.success('Thêm thành công', `Tài sản ${form.name} đã được thêm vào danh mục`);
+          }
+          setShowAddModal(false);
+        } catch (err: any) {
+          toast.error('Lỗi lưu tài sản', err?.message || 'Không thể lưu tài sản');
         }
-        setShowAddModal(false);
     };
 
     // Quick-add Supplier states & handler
@@ -188,10 +200,34 @@ const AssetCatalog: React.FC = () => {
         setDisposeReason('');
     };
 
-    const handleBatchTransfer = () => {
+    const handleBatchTransfer = async () => {
         if (!transferFromStock || !detailAsset) return;
         if (tForm.qty <= 0 || tForm.qty > transferFromStock.qty) {
             toast.error('Lỗi', 'Số lượng xuất kho không hợp lệ');
+            return;
+        }
+        if (!tForm.toWarehouseId && !tForm.userId) {
+            toast.error('Lỗi', 'Vui lòng chọn kho hoặc người nhận');
+            return;
+        }
+
+        if (isSupabaseConfigured) {
+            try {
+                await transferAssetStock({
+                    assetId: detailAsset.id,
+                    fromStockId: transferFromStock.id,
+                    qty: tForm.qty,
+                    toWarehouseId: tForm.toWarehouseId || undefined,
+                    toUserId: tForm.userId || undefined,
+                    reason: tForm.reason,
+                    date: tForm.date,
+                });
+                toast.success('Thành công', 'Đã điều chuyển lô tài sản thành công');
+                setShowBatchTransfer(false);
+                setTransferFromStock(null);
+            } catch (err: any) {
+                toast.error('Lỗi điều chuyển', err?.message || 'Không thể điều chuyển tài sản');
+            }
             return;
         }
 
@@ -265,7 +301,8 @@ const AssetCatalog: React.FC = () => {
         'Bảo hành (tháng)', 'Giá trị thanh lý', 'Kho', 'Vị trí', 'Nhà cung cấp', 'Ghi chú',
     ];
 
-    const downloadTemplate = () => {
+    const downloadTemplate = async () => {
+        const XLSX = await loadXlsx();
         const ws = XLSX.utils.aoa_to_sheet([
             EXCEL_COLUMNS,
             ['TS-001', 'Máy xúc CAT 320D', 'Máy móc', 'Đơn', '1', 'Cái', 'CAT', '320D', 'SN12345', '500000000', '17/03/2026', '10', '24', '50000000', '', '', '', ''],
@@ -292,8 +329,9 @@ const AssetCatalog: React.FC = () => {
         const file = e.target.files?.[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = (evt) => {
+        reader.onload = async (evt) => {
             try {
+                const XLSX = await loadXlsx();
                 const data = new Uint8Array(evt.target?.result as ArrayBuffer);
                 const wb = XLSX.read(data, { type: 'array' });
                 const ws = wb.Sheets[wb.SheetNames[0]];
@@ -390,7 +428,7 @@ const AssetCatalog: React.FC = () => {
         e.target.value = '';
     };
 
-    const handleBulkImport = () => {
+    const handleBulkImport = async () => {
         const validRows = importRows.filter((_, i) => !importErrors[i]);
         if (validRows.length === 0) {
             toast.error('Không có dữ liệu hợp lệ', 'Vui lòng kiểm tra lại file Excel');
@@ -398,8 +436,9 @@ const AssetCatalog: React.FC = () => {
         }
         setImporting(true);
         const now = new Date().toISOString();
-        validRows.forEach(row => {
-            addAsset({
+        try {
+          for (const row of validRows) {
+            await addAssetWithInitialStock({
                 id: `ast-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
                 code: row.code,
                 name: row.name,
@@ -424,13 +463,17 @@ const AssetCatalog: React.FC = () => {
                 createdAt: now,
                 updatedAt: now,
             });
-        });
-        toast.success('Nhập thành công', `Đã nhập ${validRows.length} tài sản từ file Excel`);
-        setShowImportModal(false);
-        setImportRows([]);
-        setImportErrors({});
-        setImportWarnings({});
-        setImporting(false);
+          }
+          toast.success('Nhập thành công', `Đã nhập ${validRows.length} tài sản từ file Excel`);
+          setShowImportModal(false);
+          setImportRows([]);
+          setImportErrors({});
+          setImportWarnings({});
+        } catch (err: any) {
+          toast.error('Lỗi nhập Excel', err?.message || 'Không thể nhập danh sách tài sản');
+        } finally {
+          setImporting(false);
+        }
     };
 
     const filteredAssets = useMemo(() => {
@@ -452,6 +495,18 @@ const AssetCatalog: React.FC = () => {
             return matchCat && matchStatus && matchType;
         });
     }, [assets, searchTerm, filterCategory, filterStatus, filterAssetType]);
+
+    const {
+        paginatedItems: paginatedAssets,
+        currentPage,
+        totalPages,
+        totalItems,
+        pageSize,
+        setPage,
+        setPageSize,
+        startIndex,
+        endIndex,
+    } = usePagination<Asset>(filteredAssets, 25);
 
     const toggleBundle = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -768,14 +823,14 @@ const AssetCatalog: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
-                            {filteredAssets.map(asset => renderAssetRow(asset, 0))}
+                            {paginatedAssets.map(asset => renderAssetRow(asset, 0))}
                         </tbody>
                     </table>
                 </div>
 
                 {/* Mobile Cards */}
                 <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
-                    {filteredAssets.map(asset => renderMobileCard(asset, 0))}
+                    {paginatedAssets.map(asset => renderMobileCard(asset, 0))}
                 </div>
 
                 {filteredAssets.length === 0 && (
@@ -785,6 +840,18 @@ const AssetCatalog: React.FC = () => {
                         <p className="text-sm text-slate-300 mt-1">Nhấn "Thêm tài sản" để bắt đầu</p>
                     </div>
                 )}
+
+                <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    totalItems={totalItems}
+                    startIndex={startIndex}
+                    endIndex={endIndex}
+                    onPageChange={setPage}
+                    pageSize={pageSize}
+                    onPageSizeChange={setPageSize}
+                    pageSizeOptions={[25, 50, 100]}
+                />
             </div>
 
             {/* ===================== ADD/EDIT MODAL ===================== */}

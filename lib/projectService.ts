@@ -21,6 +21,18 @@ const mapKeys = (obj: any, fn: (k: string) => string): any => {
 const toDb = (obj: any) => mapKeys(obj, toSnake);
 const fromDb = (obj: any) => mapKeys(obj, toCamel);
 
+const taskFromDb = (row: any): ProjectTask => ({
+    ...fromDb(row),
+    order: row.sort_order ?? row.order ?? 0,
+});
+
+const taskToDb = (task: ProjectTask): any => {
+    const row = toDb(task);
+    row.sort_order = task.order ?? 0;
+    delete row.order;
+    return row;
+};
+
 // NOTE: contractService đã chuyển sang lib/hdService.ts
 
 
@@ -33,18 +45,18 @@ export const taskService = {
             .eq('construction_site_id', siteId)
             .order('sort_order', { ascending: true });
         if (error) throw error;
-        return (data || []).map(fromDb);
+        return (data || []).map(taskFromDb);
     },
     async upsertMany(items: ProjectTask[]): Promise<void> {
         const { error } = await supabase
             .from('project_tasks')
-            .upsert(items.map(toDb), { onConflict: 'id' });
+            .upsert(items.map(taskToDb), { onConflict: 'id' });
         if (error) throw error;
     },
     async upsert(item: ProjectTask): Promise<void> {
         const { error } = await supabase
             .from('project_tasks')
-            .upsert(toDb(item), { onConflict: 'id' });
+            .upsert(taskToDb(item), { onConflict: 'id' });
         if (error) throw error;
     },
     async remove(id: string): Promise<void> {

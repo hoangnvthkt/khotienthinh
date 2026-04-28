@@ -2,7 +2,8 @@ import React, { useState, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { ProjectFinance, ProjectTransaction, ProjectCostCategory, ProjectTxType, ProjectTxSource, Attachment } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../lib/loadXlsx';
+import { useModuleData } from '../hooks/useModuleData';
 import CashFlowTab from './project/CashFlowTab';
 import ContractTab from './project/ContractTab';
 import GanttTab from './project/GanttTab';
@@ -71,6 +72,8 @@ const ProjectDashboard: React.FC = () => {
         hrmConstructionSites, projectFinances, addProjectFinance, updateProjectFinance, removeProjectFinance,
         projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction, user
     } = useApp();
+    useModuleData('da');
+    useModuleData('wms');
 
     const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
     const [activeView, setActiveView] = useState<'list' | 'overview'>('list');
@@ -303,8 +306,9 @@ const ProjectDashboard: React.FC = () => {
         }
 
         const reader = new FileReader();
-        reader.onload = (ev) => {
+        reader.onload = async (ev) => {
             try {
+                const XLSX = await loadXlsx();
                 const data = new Uint8Array(ev.target?.result as ArrayBuffer);
                 const wb = XLSX.read(data, { type: 'array' });
                 const ws = wb.Sheets[wb.SheetNames[0]];

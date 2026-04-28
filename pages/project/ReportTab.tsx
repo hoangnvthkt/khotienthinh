@@ -4,12 +4,12 @@ import {
     PieChart, Pie, Cell, AreaChart, Area, LineChart, Line, RadarChart, Radar,
     PolarGrid, PolarAngleAxis, PolarRadiusAxis, ComposedChart, ReferenceLine
 } from 'recharts';
-import * as XLSX from 'xlsx';
 import {
     BarChart3, PieChart as PieChartIcon, TrendingUp, FileText, Download,
     DollarSign, Users, Package, Truck, CheckCircle2, AlertTriangle,
     Calendar, Activity
 } from 'lucide-react';
+import { loadXlsx } from '../../lib/loadXlsx';
 import { ProjectContract, AcceptanceRecord, MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor, PurchaseOrder, ProjectTask, DailyLog } from '../../types';
 import { acceptanceService, boqService, matRequestService, vendorService, poService, taskService, dailyLogService } from '../../lib/projectService';
 import { customerContractService, subcontractorContractService } from '../../lib/hdService';
@@ -293,7 +293,8 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, co
         }));
     }, [dailyLogs]);
 
-    const exportToExcel = () => {
+    const exportToExcel = async () => {
+        const XLSX = await loadXlsx();
         const data = [
             ['Báo cáo Dự án', new Date().toLocaleDateString('vi-VN')],
             [],

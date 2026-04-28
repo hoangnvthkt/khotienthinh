@@ -12,6 +12,7 @@ import {
   forecastStock, analyzeBudgetBurndown, detectAnomalies,
   StockForecast, BudgetBurndown, Anomaly
 } from '../lib/predictiveService';
+import { useModuleData } from '../hooks/useModuleData';
 
 // ══════════════════════════════════════════
 //  PREDICTIVE ANALYTICS PAGE
@@ -21,6 +22,8 @@ type TabType = 'stock' | 'budget' | 'anomalies';
 
 const PredictiveAnalytics: React.FC = () => {
   const { items, transactions, projectFinances, constructionSites } = useApp();
+  useModuleData('wms');
+  useModuleData('da');
   const [tab, setTab] = useState<TabType>('stock');
   const [selectedForecast, setSelectedForecast] = useState<string | null>(null);
 

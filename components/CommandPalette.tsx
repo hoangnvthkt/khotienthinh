@@ -195,7 +195,7 @@ const CommandPalette: React.FC = () => {
         subtitle: `${cat?.name || 'Yêu cầu'} • ${rq.status}`,
         category: 'Yêu cầu',
         icon: <ClipboardCheck size={16} />,
-        route: '/yeu-cau',
+        route: '/rq',
         keywords: `${rq.code} ${rq.title} ${rq.status} ${cat?.name || ''} yeu cau phieu`,
       });
     });

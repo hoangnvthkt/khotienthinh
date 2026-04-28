@@ -32,10 +32,11 @@ interface WorkflowContextType {
 
     // Instances
     createInstance: (templateId: string, title: string, userId: string, formData?: Record<string, any>) => Promise<WorkflowInstance | null>;
+    loadInstanceFormData: (instanceId: string) => Promise<Record<string, any> | null>;
     updateInstance: (instanceId: string, updates: { title?: string; formData?: Record<string, any> }) => Promise<boolean>;
     deleteInstance: (instanceId: string) => Promise<boolean>;
     cancelInstance: (instanceId: string, userId: string) => Promise<boolean>;
-    processInstance: (instanceId: string, action: WorkflowInstanceAction, userId: string, comment?: string) => Promise<void>;
+    processInstance: (instanceId: string, action: WorkflowInstanceAction, userId: string, comment?: string) => Promise<boolean>;
     reopenInstance: (instanceId: string, targetNodeId: string, userId: string, comment?: string) => Promise<boolean>;
     getInstanceLogs: (instanceId: string) => WorkflowInstanceLog[];
     updateInstanceWatchers: (instanceId: string, watchers: string[]) => Promise<boolean>;
@@ -49,6 +50,8 @@ interface WorkflowContextType {
 }
 
 const WorkflowContext = createContext<WorkflowContextType | undefined>(undefined);
+
+const WORKFLOW_INSTANCE_LIST_SELECT = 'id, template_id, code, title, created_by, current_node_id, status, watchers, created_at, updated_at';
 
 // DB snake_case <-> TS camelCase mappers
 const mapTemplateFromDB = (row: any): WorkflowTemplate => ({
@@ -90,7 +93,7 @@ const mapInstanceFromDB = (row: any): WorkflowInstance => ({
     createdBy: row.created_by,
     currentNodeId: row.current_node_id,
     status: row.status,
-    formData: row.form_data || {},
+    formData: row.form_data || row.formData || {},
     watchers: row.watchers || [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -131,7 +134,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 supabase.from('workflow_templates').select('*').order('created_at', { ascending: false }),
                 supabase.from('workflow_nodes').select('*'),
                 supabase.from('workflow_edges').select('*'),
-                supabase.from('workflow_instances').select('*').order('created_at', { ascending: false }),
+                supabase.from('workflow_instances').select(WORKFLOW_INSTANCE_LIST_SELECT).order('created_at', { ascending: false }),
                 supabase.from('workflow_instance_logs').select('*').order('created_at', { ascending: true }),
                 supabase.from('workflow_print_templates').select('*').order('created_at', { ascending: false }),
             ]);
@@ -260,10 +263,11 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // Auto-copy default watchers from template
         const tmpl = templates.find(t => t.id === templateId);
 
-        // Generate code: WF-YYYY-NNN (global sequential)
+        // Generate code: WF-YYYY-NNN (DB-backed when Supabase RPC is available)
         const year = new Date().getFullYear();
-        const count = instances.length + 1;
-        const code = `WF-${year}-${String(count).padStart(3, '0')}`;
+        let code = `WF-${year}-${String(instances.length + 1).padStart(3, '0')}`;
+        const { data: nextCode, error: codeError } = await supabase.rpc('next_workflow_code');
+        if (!codeError && nextCode) code = nextCode;
 
         const { data, error } = await supabase.from('workflow_instances').insert({
             template_id: templateId,
@@ -274,20 +278,22 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             status: 'RUNNING',
             form_data: formData,
             watchers: tmpl?.defaultWatchers || [],
-        }).select().single();
+        }).select(WORKFLOW_INSTANCE_LIST_SELECT).single();
 
         if (error || !data) { console.error(error); return null; }
 
         // Log the submission at the START node
-        await supabase.from('workflow_instance_logs').insert({
+        const { data: logData } = await supabase.from('workflow_instance_logs').insert({
             instance_id: data.id,
             node_id: startNode.id,
             action: 'SUBMITTED',
             acted_by: userId,
             comment: 'Phiếu được tạo mới',
-        });
+        }).select().single();
 
-        await refreshData();
+        const createdInstance = { ...mapInstanceFromDB(data), formData };
+        setInstances(prev => [createdInstance, ...prev]);
+        if (logData) setLogs(prev => [...prev, mapLogFromDB(logData)]);
 
         // 📝 Audit trail: new workflow instance created
         auditService.log({
@@ -324,20 +330,37 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             }
         }
 
-        return mapInstanceFromDB(data);
+        return createdInstance;
     };
 
-    const processInstance = async (instanceId: string, action: WorkflowInstanceAction, userId: string, comment: string = '') => {
+    const loadInstanceFormData = useCallback(async (instanceId: string): Promise<Record<string, any> | null> => {
+        const { data, error } = await supabase
+            .from('workflow_instances')
+            .select('form_data')
+            .eq('id', instanceId)
+            .single();
+
+        if (error) {
+            console.error('loadInstanceFormData error:', error);
+            return null;
+        }
+
+        const formData = data?.form_data || {};
+        setInstances(prev => prev.map(i => i.id === instanceId ? { ...i, formData } : i));
+        return formData;
+    }, []);
+
+    const processInstance = async (instanceId: string, action: WorkflowInstanceAction, userId: string, comment: string = ''): Promise<boolean> => {
         // IMPORTANT: Fetch fresh data from DB to avoid stale React state closure issues
         const { data: freshInstance } = await supabase
             .from('workflow_instances')
-            .select('*')
+            .select(WORKFLOW_INSTANCE_LIST_SELECT)
             .eq('id', instanceId)
             .single();
         
         if (!freshInstance || !freshInstance.current_node_id) {
             console.error('processInstance: instance not found or no current_node_id', instanceId);
-            return;
+            return false;
         }
 
         const currentNodeId = freshInstance.current_node_id;
@@ -351,65 +374,43 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const templateNodes = (nodesRes.data || []).map(mapNodeFromDB);
         const templateEdges = (edgesRes.data || []).map(mapEdgeFromDB);
 
-        // Log the action at current node
-        await supabase.from('workflow_instance_logs').insert({
-            instance_id: instanceId,
-            node_id: currentNodeId,
-            action,
-            acted_by: userId,
-            comment,
+        const { data: processedData, error: processError } = await supabase.rpc('process_workflow_instance_fast', {
+            p_instance_id: instanceId,
+            p_action: action,
+            p_user_id: userId,
+            p_comment: comment,
         });
-
-        if (action === WorkflowInstanceAction.APPROVED) {
-            // Move to next node
-            const nextEdge = templateEdges.find(e => e.sourceNodeId === currentNodeId);
-            if (nextEdge) {
-                const nextNode = templateNodes.find(n => n.id === nextEdge.targetNodeId);
-                if (nextNode && nextNode.type === WorkflowNodeType.END) {
-                    // Reached END
-                    await supabase.from('workflow_instances').update({
-                        current_node_id: nextNode.id,
-                        status: 'COMPLETED',
-                        updated_at: new Date().toISOString(),
-                    }).eq('id', instanceId);
-                } else {
-                    await supabase.from('workflow_instances').update({
-                        current_node_id: nextEdge.targetNodeId,
-                        updated_at: new Date().toISOString(),
-                    }).eq('id', instanceId);
-                }
-            } else {
-                console.error('processInstance: No next edge found from node', currentNodeId);
-            }
-        } else if (action === WorkflowInstanceAction.REJECTED) {
-            await supabase.from('workflow_instances').update({
-                status: 'REJECTED',
-                updated_at: new Date().toISOString(),
-            }).eq('id', instanceId);
-        } else if (action === WorkflowInstanceAction.REVISION_REQUESTED) {
-            // Send back to previous step (find edge where target = current)
-            const prevEdge = templateEdges.find(e => e.targetNodeId === currentNodeId);
-            if (prevEdge) {
-                const prevNode = templateNodes.find(n => n.id === prevEdge.sourceNodeId);
-                if (prevNode && prevNode.type === WorkflowNodeType.START) {
-                    // If prev is START, find the first real step (node right after START)
-                    const firstStepEdge = templateEdges.find(e => e.sourceNodeId === prevNode.id);
-                    if (firstStepEdge) {
-                        await supabase.from('workflow_instances').update({
-                            current_node_id: firstStepEdge.targetNodeId,
-                            updated_at: new Date().toISOString(),
-                        }).eq('id', instanceId);
-                    }
-                } else {
-                    await supabase.from('workflow_instances').update({
-                        current_node_id: prevEdge.sourceNodeId,
-                        updated_at: new Date().toISOString(),
-                    }).eq('id', instanceId);
-                }
-            }
+        if (processError) {
+            console.error('processInstance RPC error:', processError);
+            return false;
         }
 
-        await refreshData();
+        let processedRow = Array.isArray(processedData) ? processedData[0] : processedData;
+        if (!processedRow) {
+            const { data: updatedRow } = await supabase
+                .from('workflow_instances')
+                .select(WORKFLOW_INSTANCE_LIST_SELECT)
+                .eq('id', instanceId)
+                .single();
+            processedRow = updatedRow;
+        }
+
+        if (processedRow) {
+            const existingFormData = instances.find(i => i.id === instanceId)?.formData || {};
+            const updatedInstance = { ...mapInstanceFromDB(processedRow), formData: existingFormData };
+            setInstances(prev => prev.map(i => i.id === instanceId ? updatedInstance : i));
+        }
+
+        const { data: latestLog } = await supabase
+            .from('workflow_instance_logs')
+            .select('*')
+            .eq('instance_id', instanceId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (latestLog) {
+            setLogs(prev => prev.some(l => l.id === latestLog.id) ? prev : [...prev, mapLogFromDB(latestLog)]);
+        }
 
         // 📝 Audit trail: workflow status change
         const actionLabels: Record<string, string> = {
@@ -422,7 +423,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             recordId: instanceId,
             action: 'UPDATE',
             oldData: { status: freshInstance.status, current_node_id: freshInstance.current_node_id },
-            newData: { status: action === 'REJECTED' ? 'REJECTED' : freshInstance.status, action, comment },
+            newData: { status: processedRow?.status || (action === 'REJECTED' ? 'REJECTED' : freshInstance.status), current_node_id: processedRow?.current_node_id, action, comment },
             userId,
             userName: userId,
             description: `${actionLabels[action] || action} phiếu "${freshInstance.title || ''}" (${freshInstance.code || ''})`,
@@ -494,6 +495,8 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 }
             }
         } catch (err) { console.error('WF notification error:', err); }
+
+        return true;
     };
 
     const getInstanceLogs = (instanceId: string) => logs.filter(l => l.instanceId === instanceId);
@@ -518,19 +521,23 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     const cancelInstance = async (instanceId: string, userId: string): Promise<boolean> => {
-        const { error } = await supabase.from('workflow_instances').update({
+        const updatedAt = new Date().toISOString();
+        const { data, error } = await supabase.from('workflow_instances').update({
             status: 'CANCELLED',
-            updated_at: new Date().toISOString(),
-        }).eq('id', instanceId);
+            updated_at: updatedAt,
+        }).eq('id', instanceId).select(WORKFLOW_INSTANCE_LIST_SELECT).single();
         if (error) { console.error(error); return false; }
-        await supabase.from('workflow_instance_logs').insert({
+        const existingFormData = instances.find(i => i.id === instanceId)?.formData || {};
+        if (data) setInstances(prev => prev.map(i => i.id === instanceId ? { ...mapInstanceFromDB(data), formData: existingFormData } : i));
+
+        const { data: logData } = await supabase.from('workflow_instance_logs').insert({
             instance_id: instanceId,
             node_id: instances.find(i => i.id === instanceId)?.currentNodeId,
             action: 'REJECTED',
             acted_by: userId,
             comment: 'Phiếu đã bị hủy bởi người tạo',
-        });
-        await refreshData();
+        }).select().single();
+        if (logData) setLogs(prev => [...prev, mapLogFromDB(logData)]);
         return true;
     };
 
@@ -540,24 +547,25 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // Only allow reopening COMPLETED or REJECTED instances
         if (instance.status !== WorkflowInstanceStatus.COMPLETED && instance.status !== WorkflowInstanceStatus.REJECTED) return false;
 
-        const { error } = await supabase.from('workflow_instances').update({
+        const { data, error } = await supabase.from('workflow_instances').update({
             status: 'RUNNING',
             current_node_id: targetNodeId,
             updated_at: new Date().toISOString(),
-        }).eq('id', instanceId);
+        }).eq('id', instanceId).select(WORKFLOW_INSTANCE_LIST_SELECT).single();
         if (error) { console.error(error); return false; }
+        if (data) setInstances(prev => prev.map(i => i.id === instanceId ? { ...mapInstanceFromDB(data), formData: instance.formData || {} } : i));
 
         // Log the reopen action
         const targetNode = nodes.find(n => n.id === targetNodeId);
-        await supabase.from('workflow_instance_logs').insert({
+        const { data: logData } = await supabase.from('workflow_instance_logs').insert({
             instance_id: instanceId,
             node_id: targetNodeId,
             action: 'REOPENED',
             acted_by: userId,
             comment: comment || `Mở lại quy trình về bước "${targetNode?.label || ''}"`
-        });
+        }).select().single();
+        if (logData) setLogs(prev => [...prev, mapLogFromDB(logData)]);
 
-        await refreshData();
         return true;
     };
 
@@ -608,7 +616,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         templates, nodes, edges, instances, logs, printTemplates, isLoading,
         createTemplate, updateTemplate, deleteTemplate,
         saveNodesAndEdges, getTemplateNodes, getTemplateEdges,
-        createInstance, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs, updateInstanceWatchers,
+        createInstance, loadInstanceFormData, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs, updateInstanceWatchers,
         uploadPrintTemplate, deletePrintTemplate, getPrintTemplates,
         refreshData,
     };

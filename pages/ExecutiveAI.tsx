@@ -8,6 +8,7 @@ import {
   AlertCircle, Info, CheckCircle2, Sparkles, Briefcase, Inbox, DollarSign,
   Settings2, Trophy, Medal, Award, Calendar
 } from 'lucide-react';
+import { escapeHtml } from '../lib/safeHtml';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 
@@ -255,7 +256,7 @@ const ExecutiveAI: React.FC = () => {
   };
 
   const formatMarkdown = (text: string) => {
-    return text
+    return escapeHtml(text)
       .replace(/^### (.*?)$/gm, '<h4 class="text-sm font-black text-white mt-2 mb-1">$1</h4>')
       .replace(/^## (.*?)$/gm, '<h3 class="text-base font-black text-white mt-2 mb-1">$1</h3>')
       .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white">$1</strong>')

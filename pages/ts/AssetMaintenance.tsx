@@ -8,7 +8,7 @@ import {
     Eye, Trash2, FileSpreadsheet, Building2, Hash
 } from 'lucide-react';
 import { AssetMaintenance as MaintenanceType, MaintenanceAttachment, AssetStatus } from '../../types';
-import * as XLSX from 'xlsx';
+import { loadXlsx } from '../../lib/loadXlsx';
 
 const TYPE_LABELS: Record<string, string> = { scheduled: 'Bảo trì định kỳ', repair: 'Sửa chữa', inspection: 'Kiểm tra', warranty: 'Bảo hành' };
 const STATUS_LABELS: Record<string, string> = { planned: 'Lên kế hoạch', in_progress: 'Đang thực hiện', completed: 'Hoàn thành' };
@@ -129,8 +129,9 @@ const AssetMaintenancePage: React.FC = () => {
         const file = e.target.files?.[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = (evt) => {
+        reader.onload = async (evt) => {
             try {
+                const XLSX = await loadXlsx();
                 const wb = XLSX.read(evt.target?.result, { type: 'binary' });
                 const ws = wb.Sheets[wb.SheetNames[0]];
                 const data = XLSX.utils.sheet_to_json<any>(ws);
