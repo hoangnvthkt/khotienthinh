@@ -13,6 +13,7 @@ import { loadXlsx } from '../../lib/loadXlsx';
 import { ProjectContract, AcceptanceRecord, MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor, PurchaseOrder, ProjectTask, DailyLog } from '../../types';
 import { acceptanceService, boqService, matRequestService, vendorService, poService, taskService, dailyLogService } from '../../lib/projectService';
 import { customerContractService, subcontractorContractService } from '../../lib/hdService';
+import { calculateProjectProgress } from '../../lib/projectScheduleRules';
 
 interface ReportTabProps {
     constructionSiteId: string;
@@ -250,7 +251,8 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, co
 
     // Overall KPIs
     const kpis = useMemo(() => {
-        const avgProgress = tasks.length > 0 ? Math.round(tasks.reduce((s, t) => s + t.progress, 0) / tasks.length) : 0;
+        const progressSummary = calculateProjectProgress(tasks);
+        const avgProgress = progressSummary.progressPercent;
         const totalAccepted = acceptances.reduce((s, a) => s + a.approvedValue, 0);
         const totalPaid = acceptances.filter(a => a.status === 'paid').reduce((s, a) => s + (a.payableAmount || a.approvedValue), 0);
         const totalPO = purchaseOrders.reduce((s, p) => s + p.totalAmount, 0);
@@ -258,7 +260,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, co
         const totalMatActual = boqItems.reduce((s, b) => s + (b.actualTotal || 0), 0);
         const wasteOverCount = boqItems.filter(b => (b.wastePercent || 0) > b.wasteThreshold).length;
         const rainyDays = dailyLogs.filter(l => l.weather === 'rainy' || l.weather === 'storm').length;
-        return { avgProgress, totalAccepted, totalPaid, totalPO, totalMatBudget, totalMatActual, wasteOverCount, rainyDays };
+        return { avgProgress, progressSummary, totalAccepted, totalPaid, totalPO, totalMatBudget, totalMatActual, wasteOverCount, rainyDays };
     }, [tasks, acceptances, purchaseOrders, boqItems, dailyLogs]);
 
     const healthScore = useMemo(() => {

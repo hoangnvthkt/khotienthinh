@@ -1,4 +1,6 @@
 import { supabase } from './supabase';
+import type { ProjectTask } from '../types';
+import { calculateProjectProgress } from './projectScheduleRules';
 
 /* ──────────────────────────────────────────────
    Portfolio Service — cross-project aggregates
@@ -61,7 +63,7 @@ async function fetchProjectSummaries(): Promise<ProjectSummary[]> {
     supabase.from('hrm_construction_sites').select('id, name, address'),
     supabase.from('project_finances').select('"constructionSiteId", "contractValue", "actualMaterials", "actualLabor", "actualSubcontract", "actualMachinery", "actualOverhead", "revenueReceived", "progressPercent", status'),
     supabase.from('project_contracts').select('id, construction_site_id, type, value'),
-    supabase.from('project_tasks').select('id, construction_site_id, progress, start_date, end_date'),
+    supabase.from('project_tasks').select('id, construction_site_id, parent_id, name, start_date, end_date, duration, progress, gate_status, is_milestone, resource_count, estimated_cost_per_day, sort_order'),
     supabase.from('acceptance_records').select('id, construction_site_id, approved_value, payable_amount, status'),
     supabase.from('material_budget_items').select('id, construction_site_id, waste_percent, waste_threshold'),
     supabase.from('project_vendors').select('id, construction_site_id'),
@@ -121,8 +123,24 @@ async function fetchProjectSummaries(): Promise<ProjectSummary[]> {
     const effectiveRevenue = Math.max(totalRevenue, acceptedValue);
     const profit = effectiveRevenue - totalExpense;
 
-    const avgProgress = siteTasks.length > 0
-      ? Math.round(siteTasks.reduce((s: number, t: any) => s + (t.progress || 0), 0) / siteTasks.length)
+    const mappedTasks: ProjectTask[] = siteTasks.map((t: any) => ({
+      id: t.id,
+      constructionSiteId: t.construction_site_id,
+      parentId: t.parent_id || undefined,
+      name: t.name || '',
+      startDate: t.start_date || today,
+      endDate: t.end_date || today,
+      duration: t.duration || 0,
+      progress: t.progress || 0,
+      gateStatus: t.gate_status || 'none',
+      isMilestone: !!t.is_milestone,
+      resourceCount: t.resource_count || 1,
+      estimatedCostPerDay: t.estimated_cost_per_day || 0,
+      order: t.sort_order || 0,
+    }));
+    const progressSummary = calculateProjectProgress(mappedTasks);
+    const avgProgress = progressSummary.leafTaskCount > 0
+      ? progressSummary.progressPercent
       : (finance?.progressPercent || 0);
 
     // Dates from tasks
@@ -143,7 +161,7 @@ async function fetchProjectSummaries(): Promise<ProjectSummary[]> {
       progressPercent: avgProgress,
       contractCount: siteContracts.length,
       taskCount: siteTasks.length,
-      taskDone: siteTasks.filter((t: any) => t.progress >= 100).length,
+      taskDone: progressSummary.completedLeafCount,
       acceptanceCount: siteAcceptances.length,
       boqItemCount: siteBoq.length,
       wasteOverCount: siteBoq.filter((b: any) => (b.waste_percent || 0) > (b.waste_threshold || 999)).length,

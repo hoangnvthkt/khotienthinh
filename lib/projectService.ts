@@ -47,6 +47,17 @@ export const taskService = {
         if (error) throw error;
         return (data || []).map(taskFromDb);
     },
+    async listBySites(siteIds: string[]): Promise<ProjectTask[]> {
+        if (siteIds.length === 0) return [];
+        const { data, error } = await supabase
+            .from('project_tasks')
+            .select('*')
+            .in('construction_site_id', siteIds)
+            .order('construction_site_id', { ascending: true })
+            .order('sort_order', { ascending: true });
+        if (error) throw error;
+        return (data || []).map(taskFromDb);
+    },
     async upsertMany(items: ProjectTask[]): Promise<void> {
         const { error } = await supabase
             .from('project_tasks')

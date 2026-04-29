@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { ProjectFinance, ProjectTransaction, ProjectCostCategory, ProjectTxType, ProjectTxSource, Attachment } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
@@ -13,6 +13,8 @@ import MaterialTab from './project/MaterialTab';
 import SupplyChainTab from './project/SupplyChainTab';
 import ReportTab from './project/ReportTab';
 import DocumentsTab from './project/DocumentsTab';
+import { taskService } from '../lib/projectService';
+import { calculateProjectProgress } from '../lib/projectScheduleRules';
 import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, FileText,
@@ -96,6 +98,7 @@ const ProjectDashboard: React.FC = () => {
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [editingTx, setEditingTx] = useState<ProjectTransaction | null>(null);
     const [existingAttachments, setExistingAttachments] = useState<Attachment[]>([]);
+    const [taskProgressBySite, setTaskProgressBySite] = useState<Record<string, { progressPercent: number; leafTaskCount: number }>>({});
 
     const selectedSite = hrmConstructionSites.find(s => s.id === selectedSiteId);
     const selectedFinance = useMemo(() =>
@@ -129,6 +132,48 @@ const ProjectDashboard: React.FC = () => {
         return txs.sort((a, b) => b.date.localeCompare(a.date));
     }, [selectedSiteId, projectTransactions, txFilter]);
 
+    const financeSiteKey = useMemo(() =>
+        projectFinances.map(p => `${p.constructionSiteId}:${p.progressPercent}`).sort().join('|'),
+        [projectFinances]
+    );
+
+    useEffect(() => {
+        if (!isSupabaseConfigured) {
+            setTaskProgressBySite({});
+            return;
+        }
+        const siteIds = Array.from(new Set(projectFinances.map(p => p.constructionSiteId).filter(Boolean)));
+        if (siteIds.length === 0) {
+            setTaskProgressBySite({});
+            return;
+        }
+
+        let cancelled = false;
+        taskService.listBySites(siteIds)
+            .then(allTasks => {
+                if (cancelled) return;
+                const next: Record<string, { progressPercent: number; leafTaskCount: number }> = {};
+                for (const siteId of siteIds) {
+                    const summary = calculateProjectProgress(allTasks.filter(task => task.constructionSiteId === siteId));
+                    if (summary.leafTaskCount > 0) {
+                        next[siteId] = {
+                            progressPercent: summary.progressPercent,
+                            leafTaskCount: summary.leafTaskCount,
+                        };
+                    }
+                }
+                setTaskProgressBySite(next);
+            })
+            .catch(console.error);
+
+        return () => { cancelled = true; };
+    }, [financeSiteKey, projectFinances]);
+
+    const getDisplayProgress = (finance?: ProjectFinance | null) => {
+        if (!finance) return 0;
+        return taskProgressBySite[finance.constructionSiteId]?.progressPercent ?? finance.progressPercent;
+    };
+
     // === BUDGET CATEGORIES for chart ===
     const BUDGET_CATS = [
         { key: 'Materials', label: 'Vật tư', icon: '🧱', color: '#f97316', aggKey: 'actualMaterials' as const, filterKey: 'materials' as ProjectCostCategory },
@@ -145,9 +190,9 @@ const ProjectDashboard: React.FC = () => {
         const totalBudget = projectFinances.reduce((s, p) => s + p.budgetMaterials + p.budgetLabor + p.budgetSubcontract + p.budgetMachinery + p.budgetOverhead, 0);
         const totalActual = projectTransactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
         const totalRevenue = projectTransactions.filter(t => t.type === 'revenue_received').reduce((s, t) => s + t.amount, 0);
-        const avgProgress = projectFinances.length > 0 ? projectFinances.reduce((s, p) => s + p.progressPercent, 0) / projectFinances.length : 0;
+        const avgProgress = projectFinances.length > 0 ? projectFinances.reduce((s, p) => s + getDisplayProgress(p), 0) / projectFinances.length : 0;
         return { totalContract, totalBudget, totalActual, totalRevenue, avgProgress, profit: totalContract - totalActual };
-    }, [projectFinances, projectTransactions]);
+    }, [projectFinances, projectTransactions, taskProgressBySite]);
 
     // === HANDLERS ===
     const openBudgetForm = (siteId: string) => {
@@ -158,12 +203,17 @@ const ProjectDashboard: React.FC = () => {
 
     const saveBudget = () => {
         if (!budgetData) return;
-        budgetData.updatedAt = new Date().toISOString();
-        const existing = projectFinances.find(pf => pf.id === budgetData.id);
-        if (existing) updateProjectFinance(budgetData);
-        else addProjectFinance(budgetData);
+        const derivedProgress = taskProgressBySite[budgetData.constructionSiteId]?.progressPercent;
+        const nextBudgetData = {
+            ...budgetData,
+            progressPercent: derivedProgress ?? budgetData.progressPercent,
+            updatedAt: new Date().toISOString(),
+        };
+        const existing = projectFinances.find(pf => pf.id === nextBudgetData.id);
+        if (existing) updateProjectFinance(nextBudgetData);
+        else addProjectFinance(nextBudgetData);
         setShowBudgetForm(false);
-        setSelectedSiteId(budgetData.constructionSiteId);
+        setSelectedSiteId(nextBudgetData.constructionSiteId);
         setActiveView('overview');
     };
 
@@ -493,6 +543,8 @@ const ProjectDashboard: React.FC = () => {
     const renderBudgetForm = () => {
         if (!showBudgetForm || !budgetData) return null;
         const site = hrmConstructionSites.find(s => s.id === budgetData.constructionSiteId);
+        const derivedProgress = taskProgressBySite[budgetData.constructionSiteId]?.progressPercent;
+        const progressValue = derivedProgress ?? budgetData.progressPercent;
         const budgetCats = [
             { key: 'Materials', label: 'Vật tư', icon: '🧱' },
             { key: 'Labor', label: 'Nhân công', icon: '👷' },
@@ -555,10 +607,11 @@ const ProjectDashboard: React.FC = () => {
                         {/* Progress */}
                         <div className="flex items-center gap-4">
                             <label className="text-xs font-bold text-slate-500">Tiến độ:</label>
-                            <input type="range" min={0} max={100} value={budgetData.progressPercent}
+                            <input type="range" min={0} max={100} value={progressValue}
+                                disabled={derivedProgress !== undefined}
                                 onChange={e => setBudgetData({ ...budgetData, progressPercent: Number(e.target.value) })}
-                                className="flex-1 accent-orange-500" />
-                            <span className="text-lg font-black text-orange-600 w-14 text-right">{budgetData.progressPercent}%</span>
+                                className="flex-1 accent-orange-500 disabled:opacity-60" />
+                            <span className="text-lg font-black text-orange-600 w-14 text-right">{progressValue}%</span>
                         </div>
                         {/* Notes */}
                         <textarea value={budgetData.notes || ''} onChange={e => setBudgetData({ ...budgetData, notes: e.target.value })}
@@ -749,11 +802,11 @@ const ProjectDashboard: React.FC = () => {
                         </div>
                         <div className="text-right">
                             <div className="inline-block px-3 py-1 rounded-full text-sm font-bold bg-white/20 mb-1">{STATUS_CONFIG[selectedFinance.status]?.label}</div>
-                            <div className="text-3xl font-black">{selectedFinance.progressPercent}%</div>
+                            <div className="text-3xl font-black">{getDisplayProgress(selectedFinance)}%</div>
                         </div>
                     </div>
                     <div className="mt-4 h-3 bg-white/20 rounded-full overflow-hidden">
-                        <div className="h-full bg-white rounded-full transition-all duration-700" style={{ width: `${selectedFinance.progressPercent}%` }} />
+                        <div className="h-full bg-white rounded-full transition-all duration-700" style={{ width: `${getDisplayProgress(selectedFinance)}%` }} />
                     </div>
                 </div>
 
@@ -1048,6 +1101,7 @@ const ProjectDashboard: React.FC = () => {
                             const finance = projectFinances.find(pf => pf.constructionSiteId === site.id);
                             const agg = getAggregated(site.id);
                             const profit = finance ? finance.contractValue - agg.totalExpense : 0;
+                            const displayProgress = getDisplayProgress(finance);
 
                             return (
                                 <div key={site.id} className="flex items-center justify-between p-4 hover:bg-slate-50/50 transition-colors group">
@@ -1070,9 +1124,9 @@ const ProjectDashboard: React.FC = () => {
                                                 </div>
                                             </div>
                                             <div className="w-20 hidden lg:block">
-                                                <div className="text-[10px] font-bold text-slate-500 mb-0.5">{finance.progressPercent}%</div>
+                                                <div className="text-[10px] font-bold text-slate-500 mb-0.5">{displayProgress}%</div>
                                                 <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-orange-500 rounded-full" style={{ width: `${finance.progressPercent}%` }} />
+                                                    <div className="h-full bg-orange-500 rounded-full" style={{ width: `${displayProgress}%` }} />
                                                 </div>
                                             </div>
                                             <button onClick={() => { setSelectedSiteId(site.id); setActiveView('overview'); }}

@@ -13,6 +13,19 @@ import {
 import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus } from '../../types';
 import { taskService, baselineService, dailyLogService } from '../../lib/projectService';
 import { computeCriticalPath, getDelayDays, rippleEffect, type CriticalPathResult } from '../../lib/criticalPathEngine';
+import { useApp } from '../../context/AppContext';
+import { useToast } from '../../context/ToastContext';
+import {
+    applyProgressGateTransition,
+    calculateProjectProgress,
+    collectDescendantTaskIds,
+    getGateBlockedTaskIds,
+    getProjectTaskStatus,
+    getTaskRelatedPhotoLog,
+    removeTasksAndReferences,
+    validateProjectTaskDraft,
+    type ProjectTaskStatus,
+} from '../../lib/projectScheduleRules';
 
 interface GanttTabProps {
     constructionSiteId: string;
@@ -27,7 +40,7 @@ const ROW_HEIGHT = 44; // px
 const GANTT_HEADER_HEIGHT = 53; // px — must match left <thead> height
 
 type ViewMode = 'table' | 'gantt' | 'split';
-type TaskStatus = 'not_started' | 'in_progress' | 'completed' | 'overdue';
+type TaskStatus = ProjectTaskStatus;
 type SortField = 'name' | 'startDate' | 'endDate' | 'progress' | 'assignee' | 'status';
 type SortDir = 'asc' | 'desc';
 
@@ -48,16 +61,13 @@ const fmtShort = (d: string) => new Date(d).toLocaleDateString('vi-VN', { day: '
 const today = () => new Date().toISOString().split('T')[0];
 
 const getStatus = (t: ProjectTask): TaskStatus => {
-    if (t.progress >= 100) return 'completed';
-    const now = today();
-    if (t.endDate < now && t.progress < 100) return 'overdue';
-    if (t.progress > 0) return 'in_progress';
-    return 'not_started';
+    return getProjectTaskStatus(t, today());
 };
 
 const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string; bg: string; icon: any }> = {
     not_started: { label: 'Chưa BĐ', color: 'text-slate-500', bg: 'bg-slate-100', icon: Circle },
     in_progress: { label: 'Đang TH', color: 'text-blue-600', bg: 'bg-blue-50', icon: PlayCircle },
+    pending_gate: { label: 'Chờ NT', color: 'text-amber-600', bg: 'bg-amber-50', icon: Shield },
     completed: { label: 'Hoàn thành', color: 'text-emerald-600', bg: 'bg-emerald-50', icon: CheckCircle2 },
     overdue: { label: 'Trễ hạn', color: 'text-red-600', bg: 'bg-red-50', icon: AlertTriangle },
 };
@@ -97,6 +107,8 @@ const ProgressCell: React.FC<{ value: number; onChange: (v: number) => void }> =
 
 // ============= MAIN COMPONENT =============
 const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
+    const { projectFinances, updateProjectFinance, user } = useApp();
+    const toast = useToast();
     // Data
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
     const [baselines, setBaselines] = useState<ProjectBaseline[]>([]);
@@ -116,19 +128,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
     const [sandboxTasks, setSandboxTasks] = useState<ProjectTask[]>([]);
     const [showAiInsights, setShowAiInsights] = useState(false);
     // GĐ2: Set of task IDs whose predecessor gate is blocking them
-    const gateBlockedIds = useMemo(() => {
-        const blocked = new Set<string>();
-        for (const t of tasks) {
-            if (!t.dependencies) continue;
-            for (const dep of t.dependencies) {
-                const pred = tasks.find(p => p.id === dep.taskId);
-                if (pred && pred.progress >= 100 && pred.gateStatus !== 'approved') {
-                    blocked.add(t.id);
-                }
-            }
-        }
-        return blocked;
-    }, [tasks]);
+    const gateBlockedIds = useMemo(() => getGateBlockedTaskIds(tasks), [tasks]);
 
     useEffect(() => {
         setLoading(true);
@@ -177,6 +177,26 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
     const [fResourceType, setFResourceType] = useState<ResourceType>('worker');
     const [fCostPerDay, setFCostPerDay] = useState('0');
 
+    const progressSummary = useMemo(() => calculateProjectProgress(tasks), [tasks]);
+
+    const syncProjectFinanceProgress = useCallback((nextTasks: ProjectTask[]) => {
+        const summary = calculateProjectProgress(nextTasks);
+        if (summary.leafTaskCount === 0) return;
+
+        const finance = projectFinances.find(pf => pf.constructionSiteId === constructionSiteId);
+        if (!finance || finance.progressPercent === summary.progressPercent) return;
+
+        updateProjectFinance({
+            ...finance,
+            progressPercent: summary.progressPercent,
+            updatedAt: new Date().toISOString(),
+        });
+    }, [constructionSiteId, projectFinances, updateProjectFinance]);
+
+    useEffect(() => {
+        if (!loading && tasks.length > 0) syncProjectFinanceProgress(tasks);
+    }, [loading, tasks, syncProjectFinanceProgress]);
+
     // ====== CRUD operations ======
     const resetForm = () => {
         setEditing(null); setFName(''); setFStart(''); setFEnd(''); setFProgress('0');
@@ -217,13 +237,28 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
 
     const handleSave = async () => {
         if (!fName || !fStart || !fEnd) return;
-        const duration = daysBetween(fStart, fEnd);
-        const item: ProjectTask = editing ? {
+        const cleanedDeps = fDeps.filter(dep => dep.taskId);
+        const validation = validateProjectTaskDraft({
+            id: editing?.id,
+            name: fName,
+            startDate: fStart,
+            endDate: fEnd,
+            parentId: fParentId || undefined,
+            dependencies: fDeps,
+            isMilestone: fMilestone,
+        }, tasks, editing?.id);
+        if (!validation.valid) {
+            toast.error('Không thể lưu tiến độ', validation.errors[0]);
+            return;
+        }
+
+        const duration = fMilestone ? 0 : daysBetween(fStart, fEnd);
+        const baseItem: ProjectTask = editing ? {
             ...editing, name: fName, startDate: fStart, endDate: fEnd, duration,
             progress: Number(fProgress), assignee: fAssignee || undefined,
             parentId: fParentId || undefined, isMilestone: fMilestone,
             notes: fNotes || undefined, color: fColor || undefined,
-            dependencies: fDeps.length > 0 ? fDeps : undefined,
+            dependencies: cleanedDeps.length > 0 ? cleanedDeps : undefined,
             lagTime: Number(fLagTime) || 0,
             resourceCount: Number(fResourceCount) || 1,
             resourceType: fResourceType,
@@ -235,32 +270,56 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
             parentId: fParentId || undefined, isMilestone: fMilestone,
             notes: fNotes || undefined, color: fColor || undefined,
             order: tasks.length,
-            dependencies: fDeps.length > 0 ? fDeps : undefined,
+            dependencies: cleanedDeps.length > 0 ? cleanedDeps : undefined,
             lagTime: Number(fLagTime) || 0,
             resourceCount: Number(fResourceCount) || 1,
             resourceType: fResourceType,
             estimatedCostPerDay: Number(fCostPerDay) || 0,
         };
+        const item = applyProgressGateTransition(baseItem, Number(fProgress));
         await taskService.upsert(item);
-        setTasks(await taskService.list(constructionSiteId));
+        const nextTasks = await taskService.list(constructionSiteId);
+        setTasks(nextTasks);
+        syncProjectFinanceProgress(nextTasks);
         resetForm();
+        if (item.progress >= 100 && item.gateStatus === 'pending') {
+            toast.info('Đã chuyển sang chờ nghiệm thu', 'Hạng mục 100% cần được duyệt trước khi tính là hoàn thành.');
+        }
     };
 
     const handleDelete = async () => {
         if (!deleteTarget) return;
-        const children = tasks.filter(t => t.parentId === deleteTarget.id);
-        for (const c of children) await taskService.remove(c.id);
-        await taskService.remove(deleteTarget.id);
-        setTasks(await taskService.list(constructionSiteId));
+        const idsToRemove = collectDescendantTaskIds(tasks, deleteTarget.id);
+        idsToRemove.add(deleteTarget.id);
+        const nextLocalTasks = removeTasksAndReferences(tasks, idsToRemove);
+        const changedRefs = nextLocalTasks.filter(next => {
+            const prev = tasks.find(t => t.id === next.id);
+            return JSON.stringify(prev?.dependencies || []) !== JSON.stringify(next.dependencies || []);
+        });
+
+        for (const id of idsToRemove) await taskService.remove(id);
+        for (const task of changedRefs) await taskService.upsert(task);
+        const nextTasks = await taskService.list(constructionSiteId);
+        setTasks(nextTasks);
+        syncProjectFinanceProgress(nextTasks);
         setDeleteTarget(null);
     };
 
     const updateProgress = async (id: string, progress: number) => {
         const task = tasks.find(t => t.id === id);
         if (!task) return;
-        const updated = { ...task, progress: Math.max(0, Math.min(100, progress)) };
+        if (gateBlockedIds.has(id) && progress > task.progress) {
+            toast.warning('Đang bị chặn nghiệm thu', 'Hạng mục trước đó cần được duyệt trước khi tăng tiến độ.');
+            return;
+        }
+        const updated = applyProgressGateTransition(task, progress);
         await taskService.upsert(updated);
-        setTasks(prev => prev.map(t => t.id === id ? updated : t));
+        const nextTasks = tasks.map(t => t.id === id ? updated : t);
+        setTasks(nextTasks);
+        syncProjectFinanceProgress(nextTasks);
+        if (updated.progress >= 100 && updated.gateStatus === 'pending') {
+            toast.info('Đã nộp chờ nghiệm thu', 'Hạng mục sẽ chỉ tính là hoàn thành sau khi được duyệt.');
+        }
     };
 
     // ====== Tree & filtering ======
@@ -323,12 +382,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
     // ====== Stats ======
     const stats = useMemo(() => {
         const total = tasks.length;
-        const completed = tasks.filter(t => t.progress >= 100).length;
-        const inProgress = tasks.filter(t => t.progress > 0 && t.progress < 100).length;
+        const completed = progressSummary.completedLeafCount;
+        const pendingGate = progressSummary.pendingGateCount;
+        const inProgress = tasks.filter(t => getStatus(t) === 'in_progress').length;
         const overdue = tasks.filter(t => getStatus(t) === 'overdue').length;
-        const avgProgress = total > 0 ? Math.round(tasks.filter(t => !t.parentId).reduce((s, t) => s + t.progress, 0) / tasks.filter(t => !t.parentId).length) : 0;
-        return { total, completed, inProgress, overdue, avgProgress };
-    }, [tasks]);
+        const avgProgress = progressSummary.progressPercent;
+        return { total, completed, pendingGate, inProgress, overdue, avgProgress };
+    }, [progressSummary, tasks]);
 
     // ====== GĐ1: Critical Path ======
     const criticalPathResult = useMemo<CriticalPathResult | null>(() => {
@@ -375,14 +435,16 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
         const updated: ProjectTask = {
             ...task,
             gateStatus: status,
-            gateApprovedBy: status === 'approved' ? 'Quản lý' : (status === 'rejected' ? `Từ chối: ${reason || 'Không đạt'}` : undefined),
+            gateApprovedBy: status === 'approved' ? (user.name || user.username || 'Quản lý') : (status === 'rejected' ? `Từ chối: ${reason || 'Không đạt'}` : undefined),
             gateApprovedAt: (status === 'approved' || status === 'rejected') ? new Date().toISOString() : undefined,
         };
         await taskService.upsert(updated);
-        setTasks(prev => prev.map(t => t.id === taskId ? updated : t));
+        const nextTasks = tasks.map(t => t.id === taskId ? updated : t);
+        setTasks(nextTasks);
+        syncProjectFinanceProgress(nextTasks);
         // Sync modal task
         setGateModalTask(prev => prev?.id === taskId ? updated : prev);
-    }, [tasks]);
+    }, [syncProjectFinanceProgress, tasks, user.name, user.username]);
 
     // ====== GĐ2: Drag-Resize with Ripple (GĐ5: sandbox-aware) ======
     const handleBarDragEnd = useCallback(async (taskId: string, newEndDate: string) => {
@@ -399,16 +461,17 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                 await taskService.upsert(t);
             }
             setTasks(rippled);
+            syncProjectFinanceProgress(rippled);
         }
         setDraggingTaskId(null);
         setDragGhost(null);
-    }, [tasks, isSandboxMode, sandboxTasks]);
+    }, [tasks, isSandboxMode, sandboxTasks, syncProjectFinanceProgress]);
 
     // GĐ2: Live ripple preview during drag
     const handleBarDragMove = useCallback((taskId: string, newEndDate: string) => {
         const source = isSandboxMode ? sandboxTasks : tasks;
         const rippled = rippleEffect(source, taskId, newEndDate);
-        if (isSandboxMode) setSandboxTasks(rippled); else setTasks(rippled);
+        if (isSandboxMode) setSandboxTasks(rippled);
     }, [tasks, isSandboxMode, sandboxTasks]);
 
     // ====== GĐ2: Weather Map (date → weather) ======
@@ -483,9 +546,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
             }
         }
         setTasks(sandboxTasks.map(t => ({ ...t })));
+        syncProjectFinanceProgress(sandboxTasks);
         setIsSandboxMode(false);
         setSandboxTasks([]);
-    }, [sandboxTasks, tasks]);
+    }, [sandboxTasks, syncProjectFinanceProgress, tasks]);
 
     // ====== GĐ5: AI Risk Analysis (Rule-based) ======
     const aiInsights = useMemo(() => {
@@ -586,7 +650,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                     <AiInsightPanel module="gantt" siteId={constructionSiteId} />
                     {/* GĐ2: Gate Panel toggle */}
                     {(() => {
-                        const pendingCount = tasks.filter(t => t.gateStatus === 'pending').length;
+                        const pendingCount = progressSummary.pendingGateCount;
                         return (
                             <button onClick={() => setShowGatePanel(v => !v)}
                                 className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${showGatePanel
@@ -669,11 +733,12 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
             )}
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
                 {[
                     { label: 'Tổng hạng mục', value: stats.total, color: 'text-slate-800', icon: '📋' },
                     { label: 'Tiến độ TB', value: `${stats.avgProgress}%`, color: 'text-orange-600', icon: '📈', bar: stats.avgProgress },
                     { label: 'Hoàn thành', value: stats.completed, color: 'text-emerald-600', icon: '✅' },
+                    { label: 'Chờ NT', value: stats.pendingGate, color: stats.pendingGate > 0 ? 'text-amber-600' : 'text-slate-400', icon: '🛡️' },
                     { label: 'Đang thực hiện', value: stats.inProgress, color: 'text-blue-600', icon: '🔄' },
                     { label: 'Trễ hạn', value: stats.overdue, color: stats.overdue > 0 ? 'text-red-600' : 'text-slate-400', icon: '⚠️' },
                 ].map((s, i) => (
@@ -729,6 +794,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                                 <option value="all">Tất cả</option>
                                 <option value="not_started">Chưa bắt đầu</option>
                                 <option value="in_progress">Đang thực hiện</option>
+                                <option value="pending_gate">Chờ nghiệm thu</option>
                                 <option value="completed">Hoàn thành</option>
                                 <option value="overdue">Trễ hạn</option>
                             </select>
@@ -823,7 +889,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                                             return (
                                                 <tr key={task.id}
                                                     style={{ height: `${ROW_HEIGHT}px` }}
-                                                    className={`border-b border-slate-50 dark:border-slate-700/50 hover:bg-orange-50/30 dark:hover:bg-slate-700/30 group transition-colors ${status === 'overdue' ? 'bg-red-50/20' : ''}`}>
+                                                    className={`border-b border-slate-50 dark:border-slate-700/50 hover:bg-orange-50/30 dark:hover:bg-slate-700/30 group transition-colors ${status === 'overdue' ? 'bg-red-50/20' : status === 'pending_gate' ? 'bg-amber-50/20' : ''}`}>
                                                     {/* Name */}
                                                     <td className="px-3 py-2.5">
                                                         <div className="flex items-center gap-1" style={{ paddingLeft: viewMode === 'split' ? `${level * 16}px` : 0 }}>
@@ -950,8 +1016,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                                         const isRippling = draggingTaskId !== null && draggingTaskId !== task.id;
 
                                         // GĐ3: Tìm ảnh mới nhất từ daily logs của task này
-                                        const relatedLogs = dailyLogs.filter(log => log.date >= task.startDate && log.date <= task.endDate && log.photos && log.photos.length > 0);
-                                        const latestPhotoLog = relatedLogs.at(-1);
+                                        const latestPhotoLog = getTaskRelatedPhotoLog(task, dailyLogs);
                                         const latestPhoto = latestPhotoLog?.photos?.[0];
 
                                         // Baseline shadow position
@@ -991,6 +1056,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                                                     <div className={`absolute top-[6px] h-[24px] rounded-lg shadow-sm cursor-pointer group/bar z-10 ${isDragging ? 'shadow-lg scale-y-[1.2] z-30' : 'hover:scale-y-[1.15] hover:shadow-md'
                                                         } ${isCrit ? 'ring-2 ring-red-500/70 ring-offset-1' : ''
                                                         } ${status === 'overdue' ? 'ring-1 ring-red-400 ring-offset-1' : ''
+                                                        } ${status === 'pending_gate' ? 'ring-1 ring-amber-400 ring-offset-1' : ''
                                                         } ${isGateBlocked ? 'opacity-40 grayscale' : ''
                                                         } ${isRippling ? 'transition-[left,width] duration-300 ease-out' : 'transition-all'}`}
                                                         style={{
@@ -1596,7 +1662,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                 targetName={deleteTarget?.name || ''}
                 subtitle={deleteTarget ? `${fmtDate(deleteTarget.startDate)} → ${fmtDate(deleteTarget.endDate)} • Tiến độ: ${deleteTarget.progress}%` : ''}
                 warningText={deleteTarget && tasks.some(t => t.parentId === deleteTarget.id)
-                    ? 'Hạng mục này có công việc con. Tất cả sẽ bị xoá.'
+                    ? `Hạng mục này có ${collectDescendantTaskIds(tasks, deleteTarget.id).size} công việc con. Tất cả sẽ bị xoá và phụ thuộc liên quan sẽ được gỡ.`
                     : 'Hành động này không thể hoàn tác.'}
                 countdownSeconds={2}
             />
