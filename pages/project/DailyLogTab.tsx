@@ -1,12 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import AiInsightPanel from '../../components/AiInsightPanel';
 import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock } from 'lucide-react';
-import { DailyLog, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory } from '../../types';
+import { DailyLog, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, ContractItem } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { dailyLogService, taskService } from '../../lib/projectService';
+import { contractItemService } from '../../lib/contractItemService';
 import { useVoiceInput } from '../../hooks/useVoiceInput';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import DailyLogDetailTabs from '../../components/project/DailyLogDetailTabs';
 
 interface DailyLogTabProps {
     constructionSiteId: string;
@@ -71,10 +73,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
     const confirm = useConfirm();
     const [logs, setLogs] = useState<DailyLog[]>([]);
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
+    const [contractItems, setContractItems] = useState<ContractItem[]>([]);
 
     useEffect(() => {
         dailyLogService.list(constructionSiteId).then(setLogs).catch(console.error);
         taskService.list(constructionSiteId).then(setTasks).catch(console.error);
+        contractItemService.listBySite(constructionSiteId).then(setContractItems).catch(console.error);
     }, [constructionSiteId]);
 
     const [showForm, setShowForm] = useState(false);
@@ -97,6 +101,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
 
     const [fDelayTasks, setFDelayTasks] = useState<DelayTaskEntry[]>([]);
 
+    // FastCons detail states
+    const [fVolumes, setFVolumes] = useState<DailyLogVolume[]>([]);
+    const [fMaterials, setFMaterials] = useState<DailyLogMaterial[]>([]);
+    const [fLabor, setFLabor] = useState<DailyLogLabor[]>([]);
+    const [fMachines, setFMachines] = useState<DailyLogMachine[]>([]);
+
     const resetForm = () => {
         setEditing(null);
         setFDate(new Date().toISOString().split('T')[0]);
@@ -105,6 +115,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
         setFPhotos([]);
         setPhotoRequired(true);
         setFDelayTasks([]);
+        setFVolumes([]); setFMaterials([]); setFLabor([]); setFMachines([]);
         setShowForm(false);
     };
 
@@ -116,6 +127,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
         setFPhotos(l.photos || []);
         setPhotoRequired(l.photoRequired ?? true);
         setFDelayTasks(l.delayTasks || []);
+        setFVolumes(l.volumes || []); setFMaterials(l.materials || []);
+        setFLabor(l.laborDetails || []); setFMachines(l.machines || []);
         setShowForm(true);
     };
 
@@ -162,7 +175,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
             date: fDate, weather: fWeather, workerCount: Number(fWorkers) || 0,
             description: fDesc, issues: fIssues || undefined,
             gpsLat: gpsCoords?.lat, gpsLng: gpsCoords?.lng, gpsAccuracy: gpsCoords?.accuracy,
-            photos: fPhotos, photoRequired, delayTasks: fDelayTasks
+            photos: fPhotos, photoRequired, delayTasks: fDelayTasks,
+            volumes: fVolumes, materials: fMaterials, laborDetails: fLabor, machines: fMachines,
         };
         
         const item: DailyLog = editing ? {
@@ -471,6 +485,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
                                     </div>
                                 </div>
                             )}
+
+                            {/* FastCons Detail Tabs */}
+                            <DailyLogDetailTabs
+                                volumes={fVolumes} materials={fMaterials}
+                                laborDetails={fLabor} machines={fMachines}
+                                onVolumesChange={setFVolumes} onMaterialsChange={setFMaterials}
+                                onLaborChange={setFLabor} onMachinesChange={setFMachines}
+                                contractItems={contractItems}
+                            />
                         </div>
                         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
                             <button onClick={resetForm} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Huỷ</button>
