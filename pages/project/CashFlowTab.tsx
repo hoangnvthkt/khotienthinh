@@ -11,6 +11,7 @@ import { ProjectTransaction, PaymentSchedule, PaymentScheduleStatus } from '../.
 import { paymentService } from '../../lib/projectService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import CostAnalysisPanel from '../../components/project/CostAnalysisPanel';
 
 interface CashFlowTabProps {
     constructionSiteId: string;
@@ -446,6 +447,14 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
                     </div>
                 </div>
             )}
+
+            {/* FastCons: Cost Analysis */}
+            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden p-5">
+                <h3 className="text-sm font-black text-slate-700 dark:text-white mb-4 flex items-center gap-2">
+                    📊 Phân tích chi phí dự án (FastCons)
+                </h3>
+                <CostAnalysisPanel constructionSiteId={constructionSiteId} />
+            </div>
         </div>
     );
 };
