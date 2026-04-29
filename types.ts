@@ -309,6 +309,14 @@ export interface ProjectTask {
   gateStatus?: GateStatus;
   gateApprovedBy?: string;
   gateApprovedAt?: string;
+  // FastCons: BOQ Integration
+  code?: string;              // Mã hạng mục: "HM-001"
+  quantity?: number;          // Khối lượng theo BOQ
+  unit?: string;              // Đơn vị tính: m3, kg, m2...
+  unitPrice?: number;         // Đơn giá (VNĐ)
+  totalPrice?: number;        // Auto = quantity × unitPrice
+  completedQuantity?: number; // KL hoàn thành thực tế (cộng dồn từ nhật ký)
+  contractItemId?: string;    // FK → ContractItem.id (liên kết hạng mục HĐ)
 }
 
 export interface ProjectBaseline {
@@ -332,6 +340,63 @@ export interface DelayTaskEntry {
   category: DelayCategory; // 'material' | 'weather' | 'drawing' | 'labor' | 'other'
 }
 
+// FastCons: Chi tiết nhật ký (gộp KL/VT/NC/Máy vào 1 DailyLog)
+export interface DailyLogVolume {
+  contractItemId: string;     // FK → ContractItem hoặc ProjectTask
+  contractItemName?: string;  // Cache tên hạng mục
+  taskId?: string;            // FK → ProjectTask (nếu liên kết Gantt)
+  quantity: number;           // KL thực hiện trong ngày
+  unit: string;               // Đơn vị tính
+  note?: string;
+  photoUrl?: string;
+}
+
+export interface DailyLogMaterial {
+  materialId?: string;        // FK → MaterialBudgetItem.id
+  itemName: string;           // Tên vật tư
+  unit: string;               // Đơn vị: kg, m3, bao...
+  quantity: number;           // SL sử dụng trong ngày
+  note?: string;
+}
+
+export type LaborType = 'tho_chinh' | 'tho_phu' | 'van_hanh' | 'giam_sat' | 'khac';
+export const LABOR_TYPE_LABELS: Record<LaborType, string> = {
+  tho_chinh: 'Thợ chính',
+  tho_phu: 'Thợ phụ',
+  van_hanh: 'Vận hành',
+  giam_sat: 'Giám sát',
+  khac: 'Khác',
+};
+
+export interface DailyLogLabor {
+  laborType: LaborType;
+  count: number;              // Số lượng
+  hours?: number;             // Giờ làm (default 8)
+  unitCost?: number;          // Đơn giá / ngày
+  totalCost?: number;         // Auto = count × unitCost
+  note?: string;
+}
+
+export type MachineType = 'excavator' | 'crane' | 'truck' | 'mixer' | 'pump' | 'compactor' | 'other';
+export const MACHINE_TYPE_LABELS: Record<MachineType, string> = {
+  excavator: 'Máy đào',
+  crane: 'Cần trục',
+  truck: 'Xe tải',
+  mixer: 'Trộn bê tông',
+  pump: 'Máy bơm',
+  compactor: 'Máy đầm',
+  other: 'Khác',
+};
+
+export interface DailyLogMachine {
+  machineName: string;        // Tên máy cụ thể
+  machineType: MachineType;
+  shifts: number;             // Số ca (0.5, 1, 1.5, 2)
+  unitCost?: number;          // Đơn giá / ca
+  totalCost?: number;         // Auto = shifts × unitCost
+  note?: string;
+}
+
 export interface DailyLog {
   id: string;
   constructionSiteId: string;
@@ -350,9 +415,14 @@ export interface DailyLog {
   verifiedBy?: string;
   createdBy: string;
   createdAt: string;
+  // FastCons: Chi tiết nhật ký gộp
+  volumes?: DailyLogVolume[];      // Khối lượng thi công theo hạng mục
+  materials?: DailyLogMaterial[];  // Vật tư sử dụng
+  laborDetails?: DailyLogLabor[];  // Nhân công chi tiết
+  machines?: DailyLogMachine[];    // Máy thi công
 }
 
-// ==================== NGHIỆM THU NHÀ THẦU ====================
+// ==================== NGHIỆM THU NHÀ THẦU (Legacy — giữ lại tương thích) ====================
 export type AcceptanceStatus = 'draft' | 'submitted' | 'approved' | 'paid';
 
 export interface AcceptanceRecord {
@@ -374,6 +444,130 @@ export interface AcceptanceRecord {
   paidAt?: string;
   note?: string;
   createdAt: string;
+}
+
+// ==================== BOQ HẠNG MỤC HỢP ĐỒNG (FastCons) ====================
+
+export type ContractItemType = 'customer' | 'subcontractor';
+
+export interface ContractItem {
+  id: string;
+  contractId: string;           // FK → CustomerContract.id hoặc SubcontractorContract.id
+  contractType: ContractItemType;
+  constructionSiteId: string;
+  parentId?: string;            // Phân cấp cha/con (nhóm hạng mục)
+  code: string;                 // Mã hạng mục: "1", "1.1", "2"
+  name: string;                 // Tên hạng mục: "Đào đất móng"
+  unit: string;                 // Đơn vị: m3, kg, m2, md
+  quantity: number;             // Khối lượng HĐ
+  unitPrice: number;            // Đơn giá (VNĐ)
+  totalPrice: number;           // Auto = quantity × unitPrice
+  // Tracking KL
+  completedQuantity?: number;   // KL hoàn thành lũy kế (auto từ nhật ký/nghiệm thu)
+  completedPercent?: number;    // Auto = completedQuantity / quantity × 100
+  // Metadata
+  order: number;
+  note?: string;
+  createdAt?: string;
+}
+
+// ==================== THANH TOÁN THEO CHUẨN FASTCONS ====================
+
+export type PaymentCertificateStatus = 'draft' | 'submitted' | 'approved' | 'paid';
+
+export interface PaymentCertificateItem {
+  contractItemId: string;       // FK → ContractItem.id
+  contractItemCode?: string;    // Cache mã hạng mục
+  contractItemName?: string;    // Cache tên hạng mục
+  unit?: string;                // Cache ĐVT
+  contractQuantity: number;     // KL theo HĐ
+  previousQuantity: number;     // KL đã nghiệm thu các đợt trước
+  currentQuantity: number;      // KL nghiệm thu đợt này
+  cumulativeQuantity: number;   // Auto = previousQuantity + currentQuantity
+  unitPrice: number;            // Đơn giá
+  currentAmount: number;        // Auto = currentQuantity × unitPrice
+  cumulativeAmount: number;     // Auto = cumulativeQuantity × unitPrice
+}
+
+export interface PaymentCertificate {
+  id: string;
+  contractId: string;           // FK → CustomerContract hoặc SubcontractorContract
+  contractType: ContractItemType; // 'customer' | 'subcontractor'
+  constructionSiteId: string;
+  periodNumber: number;         // Đợt thanh toán: 1, 2, 3...
+  periodStart: string;
+  periodEnd: string;
+  description?: string;         // "Thanh toán đợt 2 — Phần thân"
+  // Chi tiết hạng mục
+  items: PaymentCertificateItem[];
+  // Giá trị tổng hợp
+  totalContractValue: number;       // GT HĐ (cache)
+  totalCompletedValue: number;      // GT hoàn thành lũy kế = Σ(cumulativeAmount)
+  currentCompletedValue: number;    // GT hoàn thành đợt này = Σ(currentAmount)
+  // Khấu trừ & Phạt
+  advanceRecovery: number;          // Thu hồi tạm ứng (auto từ AdvancePayment)
+  retentionPercent: number;         // % giữ lại bảo hành (VD: 5%)
+  retentionAmount: number;          // Auto = totalCompletedValue × retentionPercent / 100
+  penaltyAmount: number;            // Phạt (nhập tay)
+  penaltyReason?: string;
+  deductionAmount: number;          // Khấu trừ khác (nhập tay)
+  deductionReason?: string;
+  // Lũy kế
+  previousCertifiedAmount: number;  // GT đã TT các đợt trước
+  currentPayableAmount: number;     // GT TT đợt này (= Completed - Recovery - Retention - Penalty - Deduction - Previous)
+  // Workflow
+  status: PaymentCertificateStatus;
+  submittedBy?: string;
+  submittedAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  paidAt?: string;
+  note?: string;
+  attachments?: Attachment[];
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// ==================== TẠM ỨNG (FastCons) ====================
+
+export type AdvancePaymentStatus = 'active' | 'fully_recovered' | 'cancelled';
+
+export interface AdvancePayment {
+  id: string;
+  contractId: string;           // FK → HĐ
+  contractType: ContractItemType;
+  constructionSiteId: string;
+  amount: number;               // Số tiền tạm ứng
+  date: string;                 // Ngày tạm ứng
+  recoveryPercent: number;      // % thu hồi mỗi đợt (VD: 30% → thu 30% GT hoàn thành)
+  recoveredAmount: number;      // Đã thu hồi lũy kế
+  remainingAmount: number;      // Auto = amount - recoveredAmount
+  status: AdvancePaymentStatus;
+  note?: string;
+  createdAt: string;
+}
+
+// ==================== DANH MỤC KHOẢN MỤC CHI PHÍ DỰ ÁN (FastCons) ====================
+
+export type CostItemSource = 'manual' | 'contract' | 'dailylog' | 'payment';
+
+export interface ProjectCostItem {
+  id: string;
+  constructionSiteId: string;
+  code: string;                 // Mã phân cấp: "I", "I.1", "II", "II.3"
+  name: string;                 // Tên khoản mục: "Chi phí vật liệu"
+  parentId?: string;            // FK → ProjectCostItem.id (cây phân cấp)
+  order: number;
+  budgetAmount: number;         // Dự toán (VNĐ)
+  actualAmount: number;         // Thực tế (auto sum từ nguồn)
+  varianceAmount?: number;      // Auto = actualAmount - budgetAmount
+  variancePercent?: number;     // Auto = varianceAmount / budgetAmount × 100
+  formula?: string;             // Công thức tính (VD: "{VL} + 75%*{MTC}")
+  warningThreshold?: number;    // % cảnh báo vượt (VD: 90 → cảnh báo khi actual > 90% budget)
+  source: CostItemSource;       // Nguồn dữ liệu thực tế
+  isAutoCalculated?: boolean;   // true = tự động tính từ nguồn, false = nhập tay
+  note?: string;
+  createdAt?: string;
 }
 
 // ==================== VẬT TƯ & HAO HỤT ====================
