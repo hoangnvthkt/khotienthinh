@@ -2,12 +2,14 @@ import React, { useState, useMemo, useEffect } from 'react';
 import AiInsightPanel from '../../components/AiInsightPanel';
 import {
     Plus, Edit2, Trash2, X, Save, FileText,
-    CheckCircle2, AlertCircle, Clock, Ban
+    CheckCircle2, AlertCircle, Clock, Ban, Package, CreditCard, List
 } from 'lucide-react';
-import { CustomerContract, SubcontractorContract, HdContractStatus } from '../../types';
+import { CustomerContract, SubcontractorContract, HdContractStatus, ContractItemType } from '../../types';
 import { customerContractService, subcontractorContractService } from '../../lib/hdService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import ContractItemTable from '../../components/project/ContractItemTable';
+import PaymentCertificatePanel from '../../components/project/PaymentCertificatePanel';
 
 interface ContractTabProps {
     constructionSiteId: string;
@@ -88,9 +90,7 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
 
     const [filterType, setFilterType] = useState<'all' | 'customer' | 'subcontractor'>('all');
     const [expandedId, setExpandedId] = useState<string | null>(null);
-
-    // Form state — chỉ thêm Contract mới redirect sang module HD
-    // Việc edit/tạo mới → dùng module HD đầy đủ (có upload file, tax code...)
+    const [activeSubTab, setActiveSubTab] = useState<'info' | 'boq' | 'payment'>('boq');
     const filtered = useMemo(() => {
         if (filterType === 'all') return contracts;
         return contracts.filter(c => c.type === filterType);
@@ -214,12 +214,50 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
                                     </div>
                                     {isExpanded && (
                                         <div className="px-5 pb-4 bg-slate-50/50 dark:bg-slate-700/30 border-t border-slate-100 dark:border-slate-700">
-                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-3 text-xs">
-                                                <div><span className="text-slate-400 block">Loại</span><span className="font-bold">{tCfg.label}</span></div>
-                                                <div><span className="text-slate-400 block">Hiệu lực</span><span className="font-bold">{c.effectiveDate ? new Date(c.effectiveDate).toLocaleDateString('vi-VN') : '—'}</span></div>
-                                                <div><span className="text-slate-400 block">Kết thúc</span><span className="font-bold">{c.endDate ? new Date(c.endDate).toLocaleDateString('vi-VN') : '—'}</span></div>
-                                                <div><span className="text-slate-400 block">Ghi chú</span><span className="font-bold">{c.note || '—'}</span></div>
+                                            {/* Sub-tabs */}
+                                            <div className="flex gap-1 pt-3 pb-2 border-b border-slate-100 dark:border-slate-600 mb-1">
+                                                {([
+                                                    { key: 'boq', label: 'BOQ Hạng mục', icon: <Package size={12} /> },
+                                                    { key: 'payment', label: 'Thanh toán', icon: <CreditCard size={12} /> },
+                                                    { key: 'info', label: 'Chi tiết HĐ', icon: <List size={12} /> },
+                                                ] as const).map(tab => (
+                                                    <button key={tab.key}
+                                                        onClick={() => setActiveSubTab(tab.key)}
+                                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                                                            activeSubTab === tab.key
+                                                                ? 'text-indigo-700 bg-indigo-100 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700'
+                                                                : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-600'
+                                                        }`}>
+                                                        {tab.icon} {tab.label}
+                                                    </button>
+                                                ))}
                                             </div>
+
+                                            {/* Sub-tab Content */}
+                                            {activeSubTab === 'info' && (
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-3 text-xs">
+                                                    <div><span className="text-slate-400 block">Loại</span><span className="font-bold">{tCfg.label}</span></div>
+                                                    <div><span className="text-slate-400 block">Hiệu lực</span><span className="font-bold">{c.effectiveDate ? new Date(c.effectiveDate).toLocaleDateString('vi-VN') : '—'}</span></div>
+                                                    <div><span className="text-slate-400 block">Kết thúc</span><span className="font-bold">{c.endDate ? new Date(c.endDate).toLocaleDateString('vi-VN') : '—'}</span></div>
+                                                    <div><span className="text-slate-400 block">Ghi chú</span><span className="font-bold">{c.note || '—'}</span></div>
+                                                </div>
+                                            )}
+
+                                            {activeSubTab === 'boq' && (
+                                                <ContractItemTable
+                                                    contractId={c.id}
+                                                    contractType={c.type as ContractItemType}
+                                                    constructionSiteId={constructionSiteId}
+                                                />
+                                            )}
+
+                                            {activeSubTab === 'payment' && (
+                                                <PaymentCertificatePanel
+                                                    contractId={c.id}
+                                                    contractType={c.type as ContractItemType}
+                                                    constructionSiteId={constructionSiteId}
+                                                />
+                                            )}
                                         </div>
                                     )}
                                 </div>
