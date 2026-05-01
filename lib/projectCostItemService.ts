@@ -120,6 +120,13 @@ export const projectCostItemService = {
 
   /** Xóa */
   async remove(id: string): Promise<void> {
+    const { count } = await supabase
+      .from(TABLE)
+      .select('id', { count: 'exact', head: true })
+      .eq('parent_id', id);
+    if ((count ?? 0) > 0) {
+      throw new Error('Khoản mục chi phí này có khoản mục con. Vui lòng xóa các khoản mục con trước.');
+    }
     const { error } = await supabase.from(TABLE).delete().eq('id', id);
     if (error) throw error;
   },

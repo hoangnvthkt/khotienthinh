@@ -8,6 +8,7 @@ import { paymentCertificateService, calculatePayableAmount } from '../../lib/pay
 import { advancePaymentService } from '../../lib/advancePaymentService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useApp } from '../../context/AppContext';
 
 interface Props {
   contractId: string;
@@ -25,13 +26,16 @@ const fmtM = (n: number) => {
 const STATUS_CFG: Record<PaymentCertificateStatus, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
   draft:     { label: 'Nháp',       color: 'text-slate-600',   bg: 'bg-slate-50 border-slate-200',     icon: <Clock size={11} /> },
   submitted: { label: 'Chờ duyệt',  color: 'text-amber-600',   bg: 'bg-amber-50 border-amber-200',     icon: <Send size={11} /> },
+  returned:  { label: 'Trả lại',     color: 'text-red-600',     bg: 'bg-red-50 border-red-200',         icon: <AlertTriangle size={11} /> },
   approved:  { label: 'Đã duyệt',   color: 'text-blue-600',    bg: 'bg-blue-50 border-blue-200',       icon: <Check size={11} /> },
   paid:      { label: 'Đã thanh toán', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', icon: <CreditCard size={11} /> },
+  cancelled: { label: 'Đã hủy',      color: 'text-slate-500',   bg: 'bg-slate-100 border-slate-200',    icon: <X size={11} /> },
 };
 
 const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, constructionSiteId }) => {
   const toast = useToast();
   const confirm = useConfirm();
+  const { user } = useApp();
   const [certs, setCerts] = useState<PaymentCertificate[]>([]);
   const [advances, setAdvances] = useState<AdvancePayment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,8 +58,8 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, co
   useEffect(() => { load(); }, [load]);
 
   // Summary
-  const totalPaid = certs.filter(c => c.status === 'paid').reduce((s, c) => s + c.currentPayableAmount, 0);
-  const totalApproved = certs.filter(c => c.status === 'approved' || c.status === 'paid').reduce((s, c) => s + c.currentPayableAmount, 0);
+  const totalPaid = certs.filter(c => c.status === 'paid').reduce((s, c) => s + (c.payableThisPeriod ?? c.currentPayableAmount), 0);
+  const totalApproved = certs.filter(c => c.status === 'approved' || c.status === 'paid').reduce((s, c) => s + (c.payableThisPeriod ?? c.currentPayableAmount), 0);
   const totalContract = certs[0]?.totalContractValue || 0;
   const advanceBalance = advances.filter(a => a.status === 'active').reduce((s, a) => s + a.remainingAmount, 0);
 
@@ -68,11 +72,11 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, co
   };
 
   const handleStatusChange = async (cert: PaymentCertificate, newStatus: PaymentCertificateStatus) => {
-    const labels: Record<string, string> = { submitted: 'Gửi duyệt', approved: 'Phê duyệt', paid: 'Xác nhận thanh toán' };
+    const labels: Record<string, string> = { submitted: 'Gửi duyệt', returned: 'Trả lại', approved: 'Phê duyệt', paid: 'Xác nhận thanh toán' };
     const ok = await confirm({ title: labels[newStatus] || newStatus, targetName: `Đợt ${cert.periodNumber}` });
     if (!ok) return;
     try {
-      await paymentCertificateService.setStatus(cert.id, newStatus);
+      await paymentCertificateService.setStatus(cert.id, newStatus, user.id, undefined, { approverUser: user });
       await load();
       toast.success(`${labels[newStatus]} thành công`);
     } catch (e: any) { toast.error('Lỗi', e?.message); }
@@ -97,12 +101,11 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, co
     const advanceRecovery = await advancePaymentService.calculateRecovery(contractId, contractType, currentCompletedValue);
     const retentionPercent = cert.retentionPercent || 5;
     const { retentionAmount, currentPayableAmount } = calculatePayableAmount({
-      totalCompletedValue,
+      grossThisPeriod: currentCompletedValue,
       advanceRecovery,
       retentionPercent,
       penaltyAmount: cert.penaltyAmount || 0,
       deductionAmount: cert.deductionAmount || 0,
-      previousCertifiedAmount: cert.previousCertifiedAmount || 0,
     });
 
     try {
@@ -113,6 +116,10 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, co
         advanceRecovery,
         retentionAmount,
         currentPayableAmount,
+        grossThisPeriod: currentCompletedValue,
+        grossCumulative: totalCompletedValue,
+        retentionThisPeriod: retentionAmount,
+        payableThisPeriod: currentPayableAmount,
       });
       await load();
     } catch (e: any) { toast.error('Lỗi cập nhật', e?.message); }
@@ -251,7 +258,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, co
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-black text-emerald-600">{fmtM(cert.currentPayableAmount)}</div>
+	                      <div className="text-sm font-black text-emerald-600">{fmtM(cert.payableThisPeriod ?? cert.currentPayableAmount)}</div>
                       <div className="text-[10px] text-slate-400">GT đợt này</div>
                     </div>
                   </div>
@@ -284,7 +291,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, co
                                 <td className="px-2 py-1.5 text-[10px] text-right">{fmt(item.contractQuantity)}</td>
                                 <td className="px-2 py-1.5 text-[10px] text-right text-slate-400">{fmt(item.previousQuantity)}</td>
                                 <td className="px-2 py-1.5 text-right">
-                                  {cert.status === 'draft' ? (
+                                  {cert.status === 'draft' || cert.status === 'returned' ? (
                                     <input type="number" value={item.currentQuantity || ''} min={0}
                                       onChange={e => handleUpdateItem(cert, idx, Number(e.target.value))}
                                       className="w-16 px-1 py-0.5 rounded border border-indigo-300 text-[10px] text-right outline-none focus:ring-1 focus:ring-indigo-400" />
@@ -305,12 +312,13 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, co
                       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 p-4 space-y-2">
                         <h5 className="text-[10px] font-black text-slate-500 uppercase mb-2">Tính toán thanh toán</h5>
                         {[
-                          { label: 'GT hoàn thành lũy kế', value: cert.totalCompletedValue, color: 'text-slate-800 dark:text-white', bold: true },
-                          { label: `(−) Thu hồi tạm ứng`, value: -cert.advanceRecovery, color: 'text-red-500' },
-                          { label: `(−) Giữ lại bảo hành (${cert.retentionPercent}%)`, value: -cert.retentionAmount, color: 'text-red-500' },
+                          { label: 'GT hoàn thành kỳ này', value: cert.grossThisPeriod ?? cert.currentCompletedValue, color: 'text-slate-800 dark:text-white', bold: true },
+                          { label: 'GT hoàn thành lũy kế', value: cert.grossCumulative ?? cert.totalCompletedValue, color: 'text-blue-600' },
+                          { label: `(−) Thu hồi tạm ứng kỳ này`, value: -(cert.advanceRecoveryThisPeriod ?? cert.advanceRecovery), color: 'text-red-500' },
+                          { label: `(−) Giữ lại bảo hành kỳ này (${cert.retentionPercent}%)`, value: -(cert.retentionThisPeriod ?? cert.retentionAmount), color: 'text-red-500' },
                           { label: '(−) Phạt', value: -cert.penaltyAmount, color: 'text-red-500', note: cert.penaltyReason },
                           { label: '(−) Khấu trừ khác', value: -cert.deductionAmount, color: 'text-red-500', note: cert.deductionReason },
-                          { label: '(−) Đã TT đợt trước', value: -cert.previousCertifiedAmount, color: 'text-slate-500' },
+                          { label: 'Đã TT đợt trước', value: cert.previousCertifiedAmount, color: 'text-slate-500' },
                         ].map((row, i) => (
                           <div key={i} className="flex items-center justify-between text-xs">
                             <span className="text-slate-500">{row.label} {row.note && <span className="text-[9px] italic">({row.note})</span>}</span>
@@ -319,13 +327,13 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, co
                         ))}
                         <div className="border-t-2 border-indigo-200 dark:border-indigo-800 pt-2 mt-2 flex items-center justify-between">
                           <span className="text-xs font-black text-indigo-700 dark:text-indigo-300 uppercase">GT thanh toán đợt này</span>
-                          <span className="text-lg font-black text-indigo-700 dark:text-indigo-300">{fmtM(cert.currentPayableAmount)}</span>
+	                          <span className="text-lg font-black text-indigo-700 dark:text-indigo-300">{fmtM(cert.payableThisPeriod ?? cert.currentPayableAmount)}</span>
                         </div>
                       </div>
 
                       {/* Actions */}
                       <div className="flex gap-2 justify-end">
-                        {cert.status === 'draft' && (
+	                        {(cert.status === 'draft' || cert.status === 'returned') && (
                           <>
                             <button onClick={() => handleDeleteCert(cert)} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-red-500 hover:bg-red-50 border border-red-200">Xoá</button>
                             <button onClick={() => handleStatusChange(cert, 'submitted')} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white bg-amber-500 hover:bg-amber-600 flex items-center gap-1">
@@ -333,11 +341,16 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, co
                             </button>
                           </>
                         )}
-                        {cert.status === 'submitted' && (
-                          <button onClick={() => handleStatusChange(cert, 'approved')} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white bg-blue-500 hover:bg-blue-600 flex items-center gap-1">
-                            <Check size={10} /> Phê duyệt
-                          </button>
-                        )}
+	                        {cert.status === 'submitted' && (
+	                          <>
+	                            <button onClick={() => handleStatusChange(cert, 'returned')} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 flex items-center gap-1">
+	                              <AlertTriangle size={10} /> Trả lại
+	                            </button>
+	                            <button onClick={() => handleStatusChange(cert, 'approved')} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white bg-blue-500 hover:bg-blue-600 flex items-center gap-1">
+	                              <Check size={10} /> Phê duyệt
+	                            </button>
+	                          </>
+	                        )}
                         {cert.status === 'approved' && (
                           <button onClick={() => handleStatusChange(cert, 'paid')} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white bg-emerald-500 hover:bg-emerald-600 flex items-center gap-1">
                             <CreditCard size={10} /> Xác nhận thanh toán

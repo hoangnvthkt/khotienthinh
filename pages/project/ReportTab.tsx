@@ -5,15 +5,16 @@ import {
     PolarGrid, PolarAngleAxis, PolarRadiusAxis, ComposedChart, ReferenceLine
 } from 'recharts';
 import {
-    BarChart3, PieChart as PieChartIcon, TrendingUp, FileText, Download,
+    BarChart3, PieChart as PieChartIcon, TrendingUp, TrendingDown, FileText, Download,
     DollarSign, Users, Package, Truck, CheckCircle2, AlertTriangle,
-    Calendar, Activity
+    Calendar, Activity, RotateCcw, ShieldCheck
 } from 'lucide-react';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { ProjectContract, AcceptanceRecord, MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor, PurchaseOrder, ProjectTask, DailyLog } from '../../types';
 import { acceptanceService, boqService, matRequestService, vendorService, poService, taskService, dailyLogService } from '../../lib/projectService';
 import { customerContractService, subcontractorContractService } from '../../lib/hdService';
 import { calculateProjectProgress } from '../../lib/projectScheduleRules';
+import { projectFinancialService, ProjectFinancialKPIs } from '../../lib/projectFinancialService';
 
 interface ReportTabProps {
     constructionSiteId: string;
@@ -46,6 +47,8 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, co
     const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
     const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
+    const [financialKPIs, setFinancialKPIs] = useState<ProjectFinancialKPIs | null>(null);
+    const [kpisLoading, setKpisLoading] = useState(true);
 
     useEffect(() => {
         // Fetch new contract models and map to generic ProjectContract shape for reporting
@@ -89,6 +92,11 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, co
         poService.list(constructionSiteId).then(setPurchaseOrders).catch(console.error);
         taskService.list(constructionSiteId).then(setTasks).catch(console.error);
         dailyLogService.list(constructionSiteId).then(setDailyLogs).catch(console.error);
+        setKpisLoading(true);
+        projectFinancialService.getKPIs(constructionSiteId)
+            .then(setFinancialKPIs)
+            .catch(console.error)
+            .finally(() => setKpisLoading(false));
     }, [constructionSiteId]);
 
     // ==================== COMPUTED DATA (PHASE 4) ====================
@@ -133,19 +141,19 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, co
         const matActual = boqItems.reduce((s, b) => s + (b.actualTotal || 0), 0);
         const poValue = purchaseOrders.reduce((s, p) => s + p.totalAmount, 0);
         const accepted = acceptances.reduce((s, a) => s + a.approvedValue, 0);
-        const profit = (contractValue || mainValue) - totalSpent;
+        const budgetVarianceVal = (financialKPIs?.budgetTotal || contractValue || mainValue) - totalSpent;
 
         return [
-            { name: 'Giá trị HĐ', value: contractValue || mainValue, fill: '#818cf8' },
+            { name: 'Giá trị HĐ', value: financialKPIs?.revisedContractValue || contractValue || mainValue, fill: '#818cf8' },
             { name: 'Thầu phụ', value: subValue, fill: '#f472b6' },
             { name: 'Vật tư DT', value: matBudget, fill: '#60a5fa' },
             { name: 'Vật tư TT', value: matActual, fill: matActual > matBudget ? '#ef4444' : '#34d399' },
             { name: 'PO', value: poValue, fill: '#fbbf24' },
             { name: 'Nghiệm thu', value: accepted, fill: '#a78bfa' },
             { name: 'Chi phí TT', value: totalSpent, fill: '#f87171' },
-            { name: 'Lợi nhuận', value: profit, fill: profit >= 0 ? '#34d399' : '#ef4444' },
+            { name: 'Ch.lệch NS', value: budgetVarianceVal, fill: budgetVarianceVal >= 0 ? '#34d399' : '#ef4444' },
         ];
-    }, [contracts, boqItems, purchaseOrders, acceptances, contractValue, totalSpent]);
+    }, [contracts, boqItems, purchaseOrders, acceptances, contractValue, totalSpent, financialKPIs]);
 
     // 2. Contract Distribution (Pie)
     const contractPie = useMemo(() => {
@@ -340,6 +348,73 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, co
 
     return (
         <div className="space-y-6">
+            {/* T1: 4 Financial KPIs Banner */}
+            {!kpisLoading && financialKPIs && (
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    {[
+                        {
+                            label: 'Chênh lệch ngân sách',
+                            value: financialKPIs.budgetVariance,
+                            pct: financialKPIs.budgetVariancePercent,
+                            sub: `NS: ${fmt(financialKPIs.budgetTotal)} · TT: ${fmt(financialKPIs.actualCost)}`,
+                            icon: financialKPIs.budgetVariance >= 0 ? <TrendingUp size={15} className="text-emerald-600" /> : <TrendingDown size={15} className="text-red-600" />,
+                            positive: financialKPIs.budgetVariance >= 0,
+                            bg: financialKPIs.budgetVariance >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200',
+                            textColor: financialKPIs.budgetVariance >= 0 ? 'text-emerald-700' : 'text-red-700',
+                            pctColor: financialKPIs.budgetVariance >= 0 ? 'text-emerald-600' : 'text-red-600',
+                        },
+                        {
+                            label: 'Biên lợi nhuận HĐ',
+                            value: financialKPIs.contractMargin,
+                            pct: financialKPIs.contractMarginPercent,
+                            sub: `HĐ điều chỉnh: ${fmt(financialKPIs.revisedContractValue)}`,
+                            icon: <DollarSign size={15} className={financialKPIs.contractMargin >= 0 ? 'text-violet-600' : 'text-red-600'} />,
+                            positive: financialKPIs.contractMargin >= 0,
+                            bg: financialKPIs.contractMargin >= 0 ? 'bg-violet-50 border-violet-200' : 'bg-red-50 border-red-200',
+                            textColor: financialKPIs.contractMargin >= 0 ? 'text-violet-700' : 'text-red-700',
+                            pctColor: financialKPIs.contractMargin >= 0 ? 'text-violet-600' : 'text-red-600',
+                        },
+                        {
+                            label: 'Doanh thu xác nhận',
+                            value: financialKPIs.totalCertifiedRevenue,
+                            pct: financialKPIs.certificationPercent,
+                            sub: `Đã TT: ${fmt(financialKPIs.totalPaidRevenue)} · Giữ: ${fmt(financialKPIs.totalRetentionHeld)}`,
+                            icon: <ShieldCheck size={15} className="text-blue-600" />,
+                            positive: true,
+                            bg: 'bg-blue-50 border-blue-200',
+                            textColor: 'text-blue-700',
+                            pctColor: 'text-blue-600',
+                        },
+                        {
+                            label: 'Vị thế tiền mặt',
+                            value: financialKPIs.cashPosition,
+                            pct: financialKPIs.cashPositionPercent,
+                            sub: `Thu: ${fmt(financialKPIs.cashIn)} · Chi: ${fmt(financialKPIs.cashOut)}`,
+                            icon: <RotateCcw size={15} className={financialKPIs.cashPosition >= 0 ? 'text-indigo-600' : 'text-orange-600'} />,
+                            positive: financialKPIs.cashPosition >= 0,
+                            bg: financialKPIs.cashPosition >= 0 ? 'bg-indigo-50 border-indigo-200' : 'bg-orange-50 border-orange-200',
+                            textColor: financialKPIs.cashPosition >= 0 ? 'text-indigo-700' : 'text-orange-700',
+                            pctColor: financialKPIs.cashPosition >= 0 ? 'text-indigo-600' : 'text-orange-600',
+                        },
+                    ].map((kpi, i) => (
+                        <div key={i} className={`rounded-2xl border p-4 ${kpi.bg}`}>
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="w-8 h-8 rounded-xl bg-white/70 shadow-sm flex items-center justify-center">
+                                    {kpi.icon}
+                                </div>
+                                <span className={`text-xs font-black ${kpi.pctColor}`}>
+                                    {kpi.pct > 0 ? '+' : ''}{kpi.pct}%
+                                </span>
+                            </div>
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">{kpi.label}</p>
+                            <p className={`text-lg font-black leading-tight ${kpi.textColor}`}>
+                                {kpi.value > 0 ? '+' : ''}{fmt(kpi.value)}
+                            </p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">{kpi.sub}</p>
+                        </div>
+                    ))}
+                </div>
+            )}
             {/* Health Score Banner */}
             <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl p-5 shadow-lg overflow-hidden relative">
                 <div className="absolute top-0 right-0 p-8 opacity-10">

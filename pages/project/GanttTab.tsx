@@ -10,8 +10,10 @@ import {
     Anchor, Link2, Shield, Wrench, Users, Zap, Lock, Bell,
     FlaskConical, Lightbulb, RotateCcw, Check
 } from 'lucide-react';
-import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus } from '../../types';
+import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus, ProjectTaskProgressMode, ContractItem } from '../../types';
 import { taskService, baselineService, dailyLogService } from '../../lib/projectService';
+import { contractItemService } from '../../lib/contractItemService';
+import { taskContractItemService } from '../../lib/taskContractItemService';
 import { computeCriticalPath, getDelayDays, rippleEffect, type CriticalPathResult } from '../../lib/criticalPathEngine';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -114,6 +116,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
     const [baselines, setBaselines] = useState<ProjectBaseline[]>([]);
     const [activeBaseline, setActiveBaseline] = useState<ProjectBaseline | null>(null);
     const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
+    const [contractItems, setContractItems] = useState<ContractItem[]>([]);
+    const [taskContractLinks, setTaskContractLinks] = useState<Record<string, string[]>>({});
     const [loading, setLoading] = useState(true);
     const [showBaselinePanel, setShowBaselinePanel] = useState(false);
     // GĐ2: Drag state for ripple + ghosting
@@ -136,10 +140,18 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
             taskService.list(constructionSiteId),
             baselineService.list(constructionSiteId),
             dailyLogService.list(constructionSiteId),
-        ]).then(([taskData, baselineData, logData]) => {
+            contractItemService.listBySite(constructionSiteId),
+            taskContractItemService.listBySite(constructionSiteId),
+        ]).then(([taskData, baselineData, logData, contractItemData, linkData]) => {
             setTasks(taskData);
             setBaselines(baselineData);
             setDailyLogs(logData);
+            setContractItems(contractItemData);
+            setTaskContractLinks(linkData.reduce<Record<string, string[]>>((acc, link) => {
+                if (!acc[link.taskId]) acc[link.taskId] = [];
+                acc[link.taskId].push(link.contractItemId);
+                return acc;
+            }, {}));
             if (baselineData.length > 0) setActiveBaseline(baselineData[0]);
             setLoading(false);
         }).catch(e => { console.error(e); setLoading(false); });
@@ -165,17 +177,19 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
     const [fStart, setFStart] = useState('');
     const [fEnd, setFEnd] = useState('');
     const [fProgress, setFProgress] = useState('0');
+    const [fProgressMode, setFProgressMode] = useState<ProjectTaskProgressMode>('manual');
     const [fAssignee, setFAssignee] = useState('');
     const [fParentId, setFParentId] = useState('');
     const [fMilestone, setFMilestone] = useState(false);
     const [fNotes, setFNotes] = useState('');
     const [fColor, setFColor] = useState('');
     // GĐ1: Advanced form fields
-    const [fDeps, setFDeps] = useState<{ taskId: string; type: TaskDependencyType }[]>([]);
+    const [fDeps, setFDeps] = useState<{ taskId: string; type: TaskDependencyType; requiresGateApproval?: boolean }[]>([]);
     const [fLagTime, setFLagTime] = useState('0');
     const [fResourceCount, setFResourceCount] = useState('1');
     const [fResourceType, setFResourceType] = useState<ResourceType>('worker');
     const [fCostPerDay, setFCostPerDay] = useState('0');
+    const [fContractItemIds, setFContractItemIds] = useState<string[]>([]);
 
     const progressSummary = useMemo(() => calculateProjectProgress(tasks), [tasks]);
 
@@ -199,9 +213,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
 
     // ====== CRUD operations ======
     const resetForm = () => {
-        setEditing(null); setFName(''); setFStart(''); setFEnd(''); setFProgress('0');
+        setEditing(null); setFName(''); setFStart(''); setFEnd(''); setFProgress('0'); setFProgressMode('manual');
         setFAssignee(''); setFParentId(''); setFMilestone(false); setFNotes(''); setFColor('');
         setFDeps([]); setFLagTime('0'); setFResourceCount('1'); setFResourceType('worker'); setFCostPerDay('0');
+        setFContractItemIds([]);
         setShowForm(false);
     };
 
@@ -217,12 +232,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
     const openEdit = (t: ProjectTask) => {
         setEditing(t);
         setFName(t.name); setFStart(t.startDate); setFEnd(t.endDate);
-        setFProgress(String(t.progress)); setFAssignee(t.assignee || '');
+        setFProgress(String(t.progress)); setFProgressMode(t.progressMode || 'manual'); setFAssignee(t.assignee || '');
         setFParentId(t.parentId || ''); setFMilestone(t.isMilestone);
         setFNotes(t.notes || ''); setFColor(t.color || '');
         setFDeps(t.dependencies || []); setFLagTime(String(t.lagTime || 0));
         setFResourceCount(String(t.resourceCount || 1)); setFResourceType(t.resourceType || 'worker');
         setFCostPerDay(String(t.estimatedCostPerDay || 0));
+        setFContractItemIds(taskContractLinks[t.id] || []);
         setShowForm(true);
     };
 
@@ -255,7 +271,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
         const duration = fMilestone ? 0 : daysBetween(fStart, fEnd);
         const baseItem: ProjectTask = editing ? {
             ...editing, name: fName, startDate: fStart, endDate: fEnd, duration,
-            progress: Number(fProgress), assignee: fAssignee || undefined,
+            progress: Number(fProgress), progressMode: fProgressMode, assignee: fAssignee || undefined,
             parentId: fParentId || undefined, isMilestone: fMilestone,
             notes: fNotes || undefined, color: fColor || undefined,
             dependencies: cleanedDeps.length > 0 ? cleanedDeps : undefined,
@@ -266,7 +282,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
         } : {
             id: crypto.randomUUID(), constructionSiteId,
             name: fName, startDate: fStart, endDate: fEnd, duration,
-            progress: Number(fProgress), assignee: fAssignee || undefined,
+            progress: Number(fProgress), progressMode: fProgressMode, assignee: fAssignee || undefined,
             parentId: fParentId || undefined, isMilestone: fMilestone,
             notes: fNotes || undefined, color: fColor || undefined,
             order: tasks.length,
@@ -276,10 +292,17 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
             resourceType: fResourceType,
             estimatedCostPerDay: Number(fCostPerDay) || 0,
         };
-        const item = applyProgressGateTransition(baseItem, Number(fProgress));
-        await taskService.upsert(item);
-        const nextTasks = await taskService.list(constructionSiteId);
-        setTasks(nextTasks);
+	        const item = applyProgressGateTransition(baseItem, Number(fProgress));
+	        await taskService.upsert(item);
+	        await taskContractItemService.replaceForTask(item.id, constructionSiteId, fContractItemIds);
+	        const nextTasks = await taskService.list(constructionSiteId);
+	        const nextLinks = await taskContractItemService.listBySite(constructionSiteId);
+	        setTasks(nextTasks);
+	        setTaskContractLinks(nextLinks.reduce<Record<string, string[]>>((acc, link) => {
+	            if (!acc[link.taskId]) acc[link.taskId] = [];
+	            acc[link.taskId].push(link.contractItemId);
+	            return acc;
+	        }, {}));
         syncProjectFinanceProgress(nextTasks);
         resetForm();
         if (item.progress >= 100 && item.gateStatus === 'pending') {
@@ -308,6 +331,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
     const updateProgress = async (id: string, progress: number) => {
         const task = tasks.find(t => t.id === id);
         if (!task) return;
+        if (task.progressMode === 'derived_from_acceptance') {
+            toast.warning('Tiến độ lấy từ nghiệm thu', 'Hạng mục này cần cập nhật qua nghiệm thu khối lượng thay vì chỉnh tay.');
+            return;
+        }
         if (gateBlockedIds.has(id) && progress > task.progress) {
             toast.warning('Đang bị chặn nghiệm thu', 'Hạng mục trước đó cần được duyệt trước khi tăng tiến độ.');
             return;
@@ -674,6 +701,18 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                         <Lock size={13} /> Chốt Baseline
                         {baselines.length > 0 && <span className="text-[9px] text-slate-400">v{baselines.length}</span>}
                     </button>
+                    {/* T3: Baseline Compare Panel toggle */}
+                    {baselines.length > 0 && (
+                        <button onClick={() => setShowBaselinePanel(v => !v)}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+                                showBaselinePanel
+                                    ? 'border-sky-400 bg-sky-50 dark:bg-sky-900/20 text-sky-700'
+                                    : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                            }`}
+                            title="So sánh kế hoạch vs thực tế">
+                            <BarChart3 size={13} /> So sánh BL
+                        </button>
+                    )}
                     {/* GĐ5: Sandbox Toggle */}
                     <button onClick={toggleSandbox}
                         className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${isSandboxMode
@@ -729,6 +768,132 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                             <Check size={12} /> Áp dụng thật
                         </button>
                     </div>
+                </div>
+            )}
+
+            {/* T3: Baseline Compare Panel */}
+            {showBaselinePanel && baselines.length > 0 && (
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-sky-200 dark:border-sky-800 shadow-lg overflow-hidden">
+                    <div className="px-5 py-3 border-b border-sky-100 dark:border-sky-800 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <BarChart3 size={16} className="text-sky-500" />
+                            <h4 className="text-sm font-black text-slate-800 dark:text-white">So sánh Baseline vs Thực tế</h4>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {/* Baseline selector */}
+                            <select
+                                value={activeBaseline?.id || ''}
+                                onChange={e => {
+                                    const bl = baselines.find(b => b.id === e.target.value) || null;
+                                    setActiveBaseline(bl);
+                                }}
+                                className="text-xs font-bold border border-slate-200 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-700 dark:border-slate-600 text-slate-700 dark:text-slate-200"
+                            >
+                                {baselines.map(bl => (
+                                    <option key={bl.id} value={bl.id}>{bl.name}</option>
+                                ))}
+                            </select>
+                            <button onClick={() => setShowBaselinePanel(false)}
+                                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+                                <X size={14} />
+                            </button>
+                        </div>
+                    </div>
+                    {activeBaseline && (() => {
+                        const blMap = new Map<string, ProjectTask>();
+                        for (const t of activeBaseline.tasksSnapshot) blMap.set(t.id, t);
+                        const rows = tasks
+                            .filter(t => blMap.has(t.id))
+                            .map(t => {
+                                const bl = blMap.get(t.id)!;
+                                const startDelta = daysBetween(bl.startDate, t.startDate);
+                                const endDelta = daysBetween(bl.endDate, t.endDate);
+                                const durationDelta = t.duration - bl.duration;
+                                return { task: t, bl, startDelta, endDelta, durationDelta };
+                            })
+                            .sort((a, b) => Math.abs(b.endDelta) - Math.abs(a.endDelta));
+                        const delayed = rows.filter(r => r.endDelta > 0).length;
+                        const ahead = rows.filter(r => r.endDelta < 0).length;
+                        const onTrack = rows.filter(r => r.endDelta === 0).length;
+                        return (
+                            <div>
+                                {/* Summary badges */}
+                                <div className="px-5 py-2.5 flex items-center gap-3 bg-slate-50 dark:bg-slate-700/50 border-b border-slate-100 dark:border-slate-700">
+                                    <span className="text-[10px] font-black text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+                                        ⏰ Trễ: {delayed}
+                                    </span>
+                                    <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                        ✔ Đúng hạn: {onTrack}
+                                    </span>
+                                    <span className="text-[10px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                                        ⚡ Sớm: {ahead}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 ml-auto">
+                                        Baseline: {new Date(activeBaseline.lockedAt).toLocaleDateString('vi-VN')}
+                                    </span>
+                                </div>
+                                {/* Table */}
+                                <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
+                                    <table className="w-full text-xs">
+                                        <thead className="bg-slate-50 dark:bg-slate-700 sticky top-0">
+                                            <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                                                <th className="text-left px-4 py-2.5">Hạng mục</th>
+                                                <th className="text-center px-3 py-2.5">Tiến độ</th>
+                                                <th className="text-right px-3 py-2.5">NGÀY BĐ (BL)</th>
+                                                <th className="text-right px-3 py-2.5">NGÀY KẾT (BL)</th>
+                                                <th className="text-right px-3 py-2.5">NGÀY BĐ (TT)</th>
+                                                <th className="text-right px-3 py-2.5">NGÀY KẾT (TT)</th>
+                                                <th className="text-center px-3 py-2.5">ĐỘ THẤY ĐỔI</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
+                                            {rows.map(({ task, bl, startDelta, endDelta }) => {
+                                                const isDelayed = endDelta > 0;
+                                                const isAhead = endDelta < 0;
+                                                return (
+                                                    <tr key={task.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors ${
+                                                        isDelayed ? 'bg-red-50/30 dark:bg-red-900/10' : isAhead ? 'bg-emerald-50/30 dark:bg-emerald-900/10' : ''
+                                                    }`}>
+                                                        <td className="px-4 py-2">
+                                                            <div className="font-bold text-slate-800 dark:text-slate-200 truncate max-w-[200px]">{task.name}</div>
+                                                            {task.assignee && <div className="text-[9px] text-slate-400">{task.assignee}</div>}
+                                                        </td>
+                                                        <td className="px-3 py-2 text-center">
+                                                            <div className="flex items-center gap-1">
+                                                                <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                                                    <div className={`h-full rounded-full ${
+                                                                        task.progress >= 100 ? 'bg-emerald-500' : task.progress > 0 ? 'bg-blue-500' : 'bg-slate-200'
+                                                                    }`} style={{ width: `${task.progress}%` }} />
+                                                                </div>
+                                                                <span className="text-[10px] font-bold text-slate-600">{task.progress}%</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-3 py-2 text-right text-slate-500">{fmtShort(bl.startDate)}</td>
+                                                        <td className="px-3 py-2 text-right text-slate-500">{fmtShort(bl.endDate)}</td>
+                                                        <td className="px-3 py-2 text-right font-bold text-slate-700 dark:text-slate-200">{fmtShort(task.startDate)}</td>
+                                                        <td className="px-3 py-2 text-right font-bold text-slate-700 dark:text-slate-200">{fmtShort(task.endDate)}</td>
+                                                        <td className="px-3 py-2 text-center">
+                                                            {endDelta === 0 ? (
+                                                                <span className="text-[10px] font-bold text-emerald-600">✔ Đúng hạn</span>
+                                                            ) : (
+                                                                <span className={`inline-flex items-center gap-0.5 text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                                                    isDelayed
+                                                                        ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                                                        : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                                                }`}>
+                                                                    {isDelayed ? '⏰' : '⚡'} {isDelayed ? '+' : ''}{endDelta} ngày
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </div>
             )}
 
@@ -1516,22 +1681,31 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
 
                             {/* Progress + Assignee */}
                             <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">
-                                        Tiến độ: <span className="text-orange-600">{fProgress}%</span>
-                                    </label>
-                                    <input type="range" min={0} max={100} step={5} value={fProgress} onChange={e => setFProgress(e.target.value)}
-                                        className="w-full accent-orange-500" />
-                                    <div className="flex justify-between text-[9px] text-slate-400 mt-0.5">
-                                        <span>0%</span><span>50%</span><span>100%</span>
-                                    </div>
-                                </div>
-                                <div>
+	                                <div>
+	                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">
+	                                        Tiến độ: <span className="text-orange-600">{fProgress}%</span>
+	                                    </label>
+	                                    <input type="range" min={0} max={100} step={5} value={fProgress} disabled={fProgressMode === 'derived_from_acceptance'} onChange={e => setFProgress(e.target.value)}
+	                                        className="w-full accent-orange-500 disabled:opacity-40" />
+	                                    <div className="flex justify-between text-[9px] text-slate-400 mt-0.5">
+	                                        <span>0%</span><span>50%</span><span>100%</span>
+	                                    </div>
+	                                </div>
+	                                <div>
                                     <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><User size={10} /> Người phụ trách</label>
                                     <input value={fAssignee} onChange={e => setFAssignee(e.target.value)} placeholder="Tên người phụ trách"
                                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
-                                </div>
-                            </div>
+	                                </div>
+	                            </div>
+
+	                            <div>
+	                                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Nguồn tiến độ</label>
+	                                <select value={fProgressMode} onChange={e => setFProgressMode(e.target.value as ProjectTaskProgressMode)}
+	                                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none">
+	                                    <option value="manual">Nhập tay theo kế hoạch thi công</option>
+	                                    <option value="derived_from_acceptance">Tự tính từ nghiệm thu khối lượng</option>
+	                                </select>
+	                            </div>
 
                             {/* Parent + Color */}
                             <div className="grid grid-cols-2 gap-3">
@@ -1555,9 +1729,33 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                                         ))}
                                     </div>
                                 </div>
-                            </div>
+	                            </div>
 
-                            {/* Milestone */}
+	                            {contractItems.length > 0 && (
+	                                <div className="border border-slate-100 dark:border-slate-700 rounded-xl p-3">
+	                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-2">Liên kết BOQ hợp đồng</label>
+	                                    <div className="max-h-28 overflow-y-auto space-y-1">
+	                                        {contractItems.map(item => (
+	                                            <label key={item.id} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+	                                                <input
+	                                                    type="checkbox"
+	                                                    checked={fContractItemIds.includes(item.id)}
+	                                                    onChange={e => {
+	                                                        setFContractItemIds(prev => e.target.checked
+	                                                            ? [...prev, item.id]
+	                                                            : prev.filter(id => id !== item.id));
+	                                                    }}
+	                                                    className="accent-orange-500"
+	                                                />
+	                                                <span className="font-bold text-indigo-600">{item.code}</span>
+	                                                <span className="truncate">{item.name}</span>
+	                                            </label>
+	                                        ))}
+	                                    </div>
+	                                </div>
+	                            )}
+
+	                            {/* Milestone */}
                             <label className="flex items-center gap-2.5 cursor-pointer p-2.5 rounded-xl border border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                                 <input type="checkbox" checked={fMilestone} onChange={e => setFMilestone(e.target.checked)}
                                     className="w-4 h-4 rounded accent-red-500" />
@@ -1577,16 +1775,24 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
                                             <option value="">— Chọn task —</option>
                                             {tasks.filter(t => t.id !== editing?.id).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                                         </select>
-                                        <select value={dep.type} onChange={e => {
-                                            const newDeps = [...fDeps];
-                                            newDeps[i] = { ...newDeps[i], type: e.target.value as TaskDependencyType };
-                                            setFDeps(newDeps);
-                                        }} className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-xs bg-transparent font-bold">
+	                                        <select value={dep.type} onChange={e => {
+	                                            const newDeps = [...fDeps];
+	                                            newDeps[i] = { ...newDeps[i], type: e.target.value as TaskDependencyType };
+	                                            setFDeps(newDeps);
+	                                        }} className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-xs bg-transparent font-bold">
                                             <option value="FS">FS</option>
                                             <option value="SS">SS</option>
                                             <option value="FF">FF</option>
-                                            <option value="SF">SF</option>
-                                        </select>
+	                                            <option value="SF">SF</option>
+	                                        </select>
+	                                        <label className="flex items-center gap-1 text-[9px] font-bold text-slate-500 whitespace-nowrap">
+	                                            <input type="checkbox" checked={!!dep.requiresGateApproval} onChange={e => {
+	                                                const newDeps = [...fDeps];
+	                                                newDeps[i] = { ...newDeps[i], requiresGateApproval: e.target.checked };
+	                                                setFDeps(newDeps);
+	                                            }} className="accent-orange-500" />
+	                                            Chặn gate
+	                                        </label>
                                         <button onClick={() => setFDeps(fDeps.filter((_, j) => j !== i))} className="w-6 h-6 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-50 transition-colors"><X size={12} /></button>
                                     </div>
                                 ))}

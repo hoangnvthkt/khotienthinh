@@ -3,9 +3,10 @@ import {
   TrendingUp, TrendingDown, AlertTriangle, BarChart3, ChevronDown, ChevronRight,
   DollarSign, RefreshCw,
 } from 'lucide-react';
-import { ProjectCostItem } from '../../types';
+import { ProjectCostItem, ProjectFinancialSummary } from '../../types';
 import { projectCostItemService } from '../../lib/projectCostItemService';
 import { paymentCertificateService } from '../../lib/paymentCertificateService';
+import { buildFinancialSummary } from '../../lib/projectFinancialService';
 import { useToast } from '../../context/ToastContext';
 
 interface Props {
@@ -24,6 +25,7 @@ const CostAnalysisPanel: React.FC<Props> = ({ constructionSiteId }) => {
   const [warnings, setWarnings] = useState<Array<{ item: ProjectCostItem; overPercent: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [paymentSummary, setPaymentSummary] = useState<{ totalPaid: number; totalApproved: number } | null>(null);
+  const [financialSummary, setFinancialSummary] = useState<ProjectFinancialSummary | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
@@ -41,9 +43,10 @@ const CostAnalysisPanel: React.FC<Props> = ({ constructionSiteId }) => {
 
       // Payment summary across all contracts
       const certs = await paymentCertificateService.listBySite(constructionSiteId);
-      const totalPaid = certs.filter(c => c.status === 'paid').reduce((s, c) => s + c.currentPayableAmount, 0);
-      const totalApproved = certs.filter(c => c.status === 'approved' || c.status === 'paid').reduce((s, c) => s + c.currentPayableAmount, 0);
-      setPaymentSummary({ totalPaid, totalApproved });
+	      const totalPaid = certs.filter(c => c.status === 'paid').reduce((s, c) => s + (c.payableThisPeriod ?? c.currentPayableAmount ?? 0), 0);
+	      const totalApproved = certs.filter(c => c.status === 'approved' || c.status === 'paid').reduce((s, c) => s + (c.grossThisPeriod ?? c.currentCompletedValue ?? 0), 0);
+	      setPaymentSummary({ totalPaid, totalApproved });
+	      setFinancialSummary(await buildFinancialSummary(constructionSiteId));
     } catch (e: any) { toast.error('Lỗi tải CP', e?.message); }
     finally { setLoading(false); }
   }, [constructionSiteId]);
@@ -55,8 +58,9 @@ const CostAnalysisPanel: React.FC<Props> = ({ constructionSiteId }) => {
 
   const totalBudget = rootItems.reduce((s, i) => s + i.budgetAmount, 0);
   const totalActual = rootItems.reduce((s, i) => s + i.actualAmount, 0);
-  const margin = totalBudget - totalActual;
-  const marginPercent = totalBudget > 0 ? (margin / totalBudget) * 100 : 0;
+  const budgetVariance = totalBudget - totalActual;
+  const budgetVariancePercent = totalBudget > 0 ? (budgetVariance / totalBudget) * 100 : 0;
+  const contractMargin = financialSummary?.contractMargin ?? 0;
 
   const toggleExpand = (id: string) => {
     setExpanded(prev => {
@@ -80,20 +84,21 @@ const CostAnalysisPanel: React.FC<Props> = ({ constructionSiteId }) => {
           <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">Thực tế</div>
           <div className="text-lg font-black text-orange-600">{fmt(totalActual)}</div>
         </div>
-        <div className={`rounded-xl p-4 border ${margin >= 0 ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
+        <div className={`rounded-xl p-4 border ${budgetVariance >= 0 ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
           <div className="text-[9px] font-bold text-slate-400 uppercase flex items-center gap-1 mb-1">
-            {margin >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />} Lãi/Lỗ
+            {budgetVariance >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />} Chênh lệch ngân sách
           </div>
-          <div className={`text-lg font-black ${margin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-            {margin >= 0 ? '+' : ''}{fmt(margin)}
+          <div className={`text-lg font-black ${budgetVariance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+            {budgetVariance >= 0 ? '+' : ''}{fmt(budgetVariance)}
           </div>
-          <div className={`text-[9px] font-bold ${margin >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-            {marginPercent.toFixed(1)}%
+          <div className={`text-[9px] font-bold ${budgetVariance >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+            {budgetVariancePercent.toFixed(1)}%
           </div>
         </div>
         <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-100 dark:border-slate-700">
-          <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">Đã thu (TT)</div>
-          <div className="text-lg font-black text-blue-600">{fmt(paymentSummary?.totalPaid || 0)}</div>
+          <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">DT nghiệm thu / Margin</div>
+          <div className="text-lg font-black text-blue-600">{fmt(paymentSummary?.totalApproved || 0)}</div>
+          <div className={`text-[9px] font-bold ${contractMargin >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>Margin: {fmt(contractMargin)}</div>
         </div>
       </div>
 

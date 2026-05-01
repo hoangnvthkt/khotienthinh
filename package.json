@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "tsc",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke:project": "supabase db query --linked -f scripts/smoke-project-construction-flow.sql"
   },
   "dependencies": {
     "@react-three/drei": "^9.122.0",
@@ -33,6 +34,7 @@
     "@types/node": "^22.14.0",
     "@types/three": "^0.169.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "supabase": "^2.95.6",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

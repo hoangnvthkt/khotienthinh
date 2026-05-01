@@ -13,6 +13,7 @@ import MaterialTab from './project/MaterialTab';
 import SupplyChainTab from './project/SupplyChainTab';
 import ReportTab from './project/ReportTab';
 import DocumentsTab from './project/DocumentsTab';
+import ProjectOrgTab from './project/ProjectOrgTab';
 import { taskService } from '../lib/projectService';
 import { calculateProjectProgress } from '../lib/projectScheduleRules';
 import {
@@ -79,7 +80,7 @@ const ProjectDashboard: React.FC = () => {
 
     const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
     const [activeView, setActiveView] = useState<'list' | 'overview'>('list');
-    const [overviewTab, setOverviewTab] = useState<'budget' | 'cashflow' | 'contract' | 'gantt' | 'dailylog' | 'subcontract' | 'material' | 'supply' | 'report' | 'documents'>('budget');
+    const [overviewTab, setOverviewTab] = useState<'org' | 'budget' | 'cashflow' | 'contract' | 'gantt' | 'dailylog' | 'subcontract' | 'material' | 'supply' | 'report' | 'documents'>('org');
     const [showBudgetForm, setShowBudgetForm] = useState(false);
     const [showTxForm, setShowTxForm] = useState(false);
     const [budgetData, setBudgetData] = useState<ProjectFinance | null>(null);
@@ -758,8 +759,8 @@ const ProjectDashboard: React.FC = () => {
     const renderOverview = () => {
         if (!selectedSite || !selectedFinance || !selectedAgg) return null;
         const totalBudget = selectedFinance.budgetMaterials + selectedFinance.budgetLabor + selectedFinance.budgetSubcontract + selectedFinance.budgetMachinery + selectedFinance.budgetOverhead;
-        const profit = selectedFinance.contractValue - selectedAgg.totalExpense;
-        const profitPct = selectedFinance.contractValue > 0 ? (profit / selectedFinance.contractValue * 100) : 0;
+        const estimatedMargin = selectedFinance.contractValue - selectedAgg.totalExpense;
+        const estimatedMarginPct = selectedFinance.contractValue > 0 ? (estimatedMargin / selectedFinance.contractValue * 100) : 0;
         const budgetUsed = totalBudget > 0 ? (selectedAgg.totalExpense / totalBudget * 100) : 0;
 
         // Chart max value
@@ -813,6 +814,7 @@ const ProjectDashboard: React.FC = () => {
                 {/* Overview Sub-tabs */}
                 <div className="flex gap-1 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm overflow-x-auto">
                     {[
+                        { key: 'org' as const, label: 'Tổ chức', icon: '👥' },
                         { key: 'budget' as const, label: 'Ngân sách', icon: '📊' },
                         { key: 'cashflow' as const, label: 'Dòng tiền', icon: '💰' },
                         { key: 'contract' as const, label: 'Hợp đồng', icon: '📋' },
@@ -833,7 +835,9 @@ const ProjectDashboard: React.FC = () => {
                     ))}
                 </div>
 
-                {overviewTab === 'cashflow' ? (
+                {overviewTab === 'org' ? (
+                    <ProjectOrgTab constructionSiteId={selectedSiteId!} />
+                ) : overviewTab === 'cashflow' ? (
                     <CashFlowTab
                         constructionSiteId={selectedSiteId!}
                         transactions={projectTransactions.filter(t => t.constructionSiteId === selectedSiteId)}
@@ -876,10 +880,10 @@ const ProjectDashboard: React.FC = () => {
                         </div>
                     </div>
                     <div onClick={() => setOverviewTab('cashflow')} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-emerald-500 transition-colors"><TrendingUp size={12} /> Lợi nhuận</div>
-                        <div className={`text-xl font-black ${profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmt(profit)}</div>
-                        <div className={`text-[10px] mt-1 font-bold ${profitPct >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                            {profitPct >= 0 ? '+' : ''}{profitPct.toFixed(1)}%
+	                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-emerald-500 transition-colors"><TrendingUp size={12} /> Biên tạm tính</div>
+	                        <div className={`text-xl font-black ${estimatedMargin >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmt(estimatedMargin)}</div>
+	                        <div className={`text-[10px] mt-1 font-bold ${estimatedMarginPct >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+	                            {estimatedMarginPct >= 0 ? '+' : ''}{estimatedMarginPct.toFixed(1)}%
                         </div>
                     </div>
                     <div onClick={() => setOverviewTab('cashflow')} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
@@ -952,10 +956,10 @@ const ProjectDashboard: React.FC = () => {
                                 <span className="text-sm font-bold text-orange-700">Tổng chi thực tế ({selectedAgg.txCount} GD)</span>
                                 <span className="text-sm font-black text-orange-700">- {fmtFull(selectedAgg.totalExpense)}</span>
                             </div>
-                            <div className={`flex justify-between items-center p-4 rounded-xl border-2 ${profit >= 0 ? 'bg-emerald-50 border-emerald-300' : 'bg-red-50 border-red-300'}`}>
-                                <span className={`text-sm font-black uppercase ${profit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{profit >= 0 ? '✅ Lợi nhuận' : '❌ Lỗ'}</span>
-                                <span className={`text-lg font-black ${profit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{profit >= 0 ? '+' : ''}{fmtFull(profit)}</span>
-                            </div>
+	                            <div className={`flex justify-between items-center p-4 rounded-xl border-2 ${estimatedMargin >= 0 ? 'bg-emerald-50 border-emerald-300' : 'bg-red-50 border-red-300'}`}>
+	                                <span className={`text-sm font-black uppercase ${estimatedMargin >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{estimatedMargin >= 0 ? 'Biên doanh thu - chi' : 'Âm theo chi hiện tại'}</span>
+	                                <span className={`text-lg font-black ${estimatedMargin >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{estimatedMargin >= 0 ? '+' : ''}{fmtFull(estimatedMargin)}</span>
+	                            </div>
                         </div>
                     </div>
                 </div>
@@ -1072,7 +1076,7 @@ const ProjectDashboard: React.FC = () => {
                         <div className="text-xs opacity-60 mt-1">NS: {fmt(allStats.totalBudget)}</div>
                     </div>
                     <div onClick={() => setActiveView('overview')} className={`bg-gradient-to-br ${allStats.profit >= 0 ? 'from-emerald-500 to-green-600' : 'from-red-500 to-rose-600'} rounded-2xl p-5 text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all cursor-pointer`}>
-                        <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">{allStats.profit >= 0 ? 'Lợi nhuận' : 'Thua lỗ'}</div>
+                        <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">{allStats.profit >= 0 ? 'Biên tạm tính' : 'Âm theo chi hiện tại'}</div>
                         <div className="text-2xl font-black">{fmt(allStats.profit)}</div>
                     </div>
                     <div onClick={() => setActiveView('overview')} className="bg-gradient-to-br from-violet-500 to-purple-600 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all cursor-pointer">

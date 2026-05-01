@@ -17,7 +17,7 @@ export interface ProjectTaskDraft {
   startDate: string;
   endDate: string;
   parentId?: string;
-  dependencies?: { taskId: string; type: TaskDependencyType }[];
+  dependencies?: { taskId: string; type: TaskDependencyType; requiresGateApproval?: boolean }[];
   isMilestone?: boolean;
 }
 
@@ -101,6 +101,7 @@ export const getGateBlockedTaskIds = (tasks: ProjectTask[]): Set<string> => {
 
   for (const task of tasks) {
     for (const dep of task.dependencies || []) {
+      if (!dep.requiresGateApproval) continue;
       const predecessor = taskMap.get(dep.taskId);
       if (predecessor && predecessor.progress >= 100 && predecessor.gateStatus !== 'approved') {
         blocked.add(task.id);

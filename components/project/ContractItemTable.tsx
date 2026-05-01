@@ -69,7 +69,7 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
   };
 
   // Summary
-  const totalValue = items.filter(i => !isGroup(i.id)).reduce((s, i) => s + (i.totalPrice || 0), 0);
+  const totalValue = items.filter(i => !isGroup(i.id)).reduce((s, i) => s + (i.revisedTotalPrice ?? i.totalPrice ?? 0), 0);
   const completedValue = items.filter(i => !isGroup(i.id)).reduce((s, i) => s + ((i.completedQuantity || 0) * i.unitPrice), 0);
   const completedPercent = totalValue > 0 ? (completedValue / totalValue) * 100 : 0;
 
@@ -219,7 +219,9 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
                 onChange={e => setEditData({ ...editData, quantity: Number(e.target.value) })}
                 className="w-20 px-1 py-1 rounded border border-indigo-300 text-xs text-right outline-none" />
             ) : (
-              <span className="text-slate-700 dark:text-slate-200 font-medium">{isGrp ? '' : fmt(item.quantity)}</span>
+              <span className="text-slate-700 dark:text-slate-200 font-medium">
+                {isGrp ? '' : (item.revisedQuantity !== undefined && item.revisedQuantity !== item.quantity ? `${fmt(item.quantity)} → ${fmt(item.revisedQuantity)}` : fmt(item.quantity))}
+              </span>
             )}
           </td>
           {/* Đơn giá */}
@@ -236,8 +238,8 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
           <td className="px-2 py-2 text-xs text-right font-bold">
             <span className={isGrp ? 'text-slate-800 dark:text-white' : 'text-emerald-600'}>
               {isGrp
-                ? fmtMoney(children.reduce((s, c) => s + (c.totalPrice || 0), 0))
-                : fmtMoney(item.totalPrice || 0)
+                ? fmtMoney(children.reduce((s, c) => s + (c.revisedTotalPrice ?? c.totalPrice ?? 0), 0))
+                : fmtMoney(item.revisedTotalPrice ?? (item.totalPrice || 0))
               }
             </span>
           </td>
@@ -267,9 +269,9 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
                 </div>
               ) : (
                 <div className="flex gap-0.5 justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => handleStartEdit(item)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50">
+                  {!item.isLocked && <button onClick={() => handleStartEdit(item)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50">
                     <Edit2 size={11} />
-                  </button>
+                  </button>}
                   <button onClick={() => handleDelete(item)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50">
                     <Trash2 size={11} />
                   </button>

@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
-import { AdvancePayment, AdvancePaymentStatus, ContractItemType } from '../types';
+import { AdvancePayment, AdvancePaymentStatus, ContractItemType, PaymentCertificateAdvanceRecovery } from '../types';
+import { fromDb, toDb } from './dbMapping';
 
 // ══════════════════════════════════════════════════════════════
 //  ADVANCE PAYMENT SERVICE — Quản lý Tạm ứng (FastCons)
@@ -8,17 +9,6 @@ import { AdvancePayment, AdvancePaymentStatus, ContractItemType } from '../types
 
 const TABLE = 'advance_payments';
 
-const toSnake = (s: string) => s.replace(/[A-Z]/g, l => `_${l.toLowerCase()}`);
-const toCamel = (s: string) => s.replace(/_([a-z])/g, (_, l) => l.toUpperCase());
-const mapKeys = (obj: any, fn: (k: string) => string): any => {
-  if (Array.isArray(obj)) return obj.map(v => mapKeys(v, fn));
-  if (obj && typeof obj === 'object' && !(obj instanceof Date)) {
-    return Object.fromEntries(Object.entries(obj).map(([k, v]) => [fn(k), v]));
-  }
-  return obj;
-};
-const toDb = (obj: any) => mapKeys(obj, toSnake);
-const fromDb = (obj: any) => mapKeys(obj, toCamel);
 
 export const advancePaymentService = {
   /** Lấy tất cả tạm ứng theo HĐ */
@@ -73,6 +63,25 @@ export const advancePaymentService = {
     if (error) throw error;
   },
 
+  async applyRecoveries(recoveries: PaymentCertificateAdvanceRecovery[]): Promise<void> {
+    for (const recovery of recoveries) {
+      if (recovery.recoveryAmount <= 0) continue;
+      const { data: current, error: readError } = await supabase
+        .from(TABLE)
+        .select('amount, recovered_amount')
+        .eq('id', recovery.advancePaymentId)
+        .single();
+      if (readError) throw readError;
+      if (!current) throw new Error('Advance payment not found');
+
+      const recoveredAmount = Math.min(
+        Number(current.amount || 0),
+        Number(current.recovered_amount || 0) + recovery.recoveryAmount,
+      );
+      await this.updateRecovery(recovery.advancePaymentId, recoveredAmount);
+    }
+  },
+
   /**
    * Tính tổng thu hồi TU cho 1 đợt thanh toán
    * recovery = min(TU còn lại, GT hoàn thành × % thu hồi)
@@ -108,6 +117,18 @@ export const advancePaymentService = {
 
   /** Xóa tạm ứng */
   async remove(id: string): Promise<void> {
+    const { data, error: readError } = await supabase
+      .from(TABLE)
+      .select('status, recovered_amount')
+      .eq('id', id)
+      .single();
+    if (readError) throw readError;
+    if (data?.status === 'fully_recovered') {
+      throw new Error('Tạm ứng đã thu hồi hoàn tất, không thể xóa. Vui lòng hủy nếu cần.');
+    }
+    if (data?.recovered_amount > 0) {
+      throw new Error('Tạm ứng đã có thu hồi một phần, không thể xóa. Dùng chức năng Hủy thay vì Xóa.');
+    }
     const { error } = await supabase.from(TABLE).delete().eq('id', id);
     if (error) throw error;
   },

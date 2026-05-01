@@ -175,6 +175,50 @@ export interface HrmConstructionSite {
 }
 
 // ==================== DỰ ÁN (DA) ====================
+
+// ── Tổ chức Dự Án — Phân bổ nhân sự + quyền nghiệp vụ ──
+export interface ProjectPermissionType {
+  id: string;
+  code: string;       // 'view' | 'edit' | 'submit' | 'verify' | 'confirm' | 'approve'
+  name: string;
+  module?: string;    // NULL = áp dụng mọi module DA
+  description?: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt?: string;
+}
+
+export interface ProjectStaff {
+  id: string;
+  constructionSiteId: string;
+  userId: string;
+  positionId: string;          // FK → hrm_positions.id
+  startDate?: string;
+  endDate?: string;
+  note?: string;
+  sortOrder: number;
+  createdAt?: string;
+  updatedAt?: string;
+  // Joined fields (populated by service)
+  userName?: string;
+  userAvatar?: string;
+  positionName?: string;
+  positionLevel?: number;
+  permissions?: ProjectStaffPermission[];
+}
+
+export interface ProjectStaffPermission {
+  id: string;
+  staffId: string;
+  permissionTypeId: string;
+  isActive: boolean;
+  grantedBy?: string;
+  grantedAt?: string;
+  // Joined
+  permissionCode?: string;
+  permissionName?: string;
+}
+
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed';
 
 export interface ProjectFinance {
@@ -270,6 +314,7 @@ export interface ProjectContract {
 
 // ==================== TIẾN ĐỘ (Gantt) ====================
 export type TaskDependencyType = 'FS' | 'SS' | 'FF' | 'SF';
+export type ProjectTaskProgressMode = 'manual' | 'derived_from_acceptance';
 
 export type DelayCategory = 'material' | 'weather' | 'drawing' | 'labor' | 'other';
 export type ResourceType = 'worker' | 'machine' | 'specialist';
@@ -284,8 +329,9 @@ export interface ProjectTask {
   endDate: string;
   duration: number;         // ngày
   progress: number;         // 0-100
+  progressMode?: ProjectTaskProgressMode;
   assignee?: string;
-  dependencies?: { taskId: string; type: TaskDependencyType }[];
+  dependencies?: { taskId: string; type: TaskDependencyType; requiresGateApproval?: boolean }[];
   isMilestone: boolean;
   color?: string;
   notes?: string;
@@ -309,14 +355,34 @@ export interface ProjectTask {
   gateStatus?: GateStatus;
   gateApprovedBy?: string;
   gateApprovedAt?: string;
-  // FastCons: BOQ Integration
+  baselineVersion?: string;
+  baselineChangeReason?: string;
+  // FastCons: BOQ Integration — DEPRECATED, dùng task_contract_items thay thế
+  // Xem taskContractItemService.ts + TaskContractItem type
+  /** @deprecated Dùng task_contract_items join contract_items để đọc BOQ */
   code?: string;              // Mã hạng mục: "HM-001"
+  /** @deprecated Dùng task_contract_items join contract_items để đọc BOQ */
   quantity?: number;          // Khối lượng theo BOQ
+  /** @deprecated Dùng task_contract_items join contract_items để đọc BOQ */
   unit?: string;              // Đơn vị tính: m3, kg, m2...
+  /** @deprecated Dùng task_contract_items join contract_items để đọc BOQ */
   unitPrice?: number;         // Đơn giá (VNĐ)
+  /** @deprecated Dùng task_contract_items join contract_items để đọc BOQ */
   totalPrice?: number;        // Auto = quantity × unitPrice
+  /** @deprecated Dùng ContractItem.completedQuantity thay thế */
   completedQuantity?: number; // KL hoàn thành thực tế (cộng dồn từ nhật ký)
   contractItemId?: string;    // FK → ContractItem.id (liên kết hạng mục HĐ)
+
+}
+
+export interface TaskContractItem {
+  id: string;
+  taskId: string;
+  contractItemId: string;
+  constructionSiteId: string;
+  weightPercent?: number;
+  note?: string;
+  createdAt?: string;
 }
 
 export interface ProjectBaseline {
@@ -331,6 +397,7 @@ export interface ProjectBaseline {
 
 // ==================== NHẬT KÝ CÔNG TRƯỜNG ====================
 export type WeatherType = 'sunny' | 'cloudy' | 'rainy' | 'storm';
+export type DailyLogStatus = 'draft' | 'submitted' | 'verified' | 'rejected';
 
 export interface DelayTaskEntry {
   taskId: string;
@@ -413,6 +480,12 @@ export interface DailyLog {
   photoRequired?: boolean;
   verified?: boolean;
   verifiedBy?: string;
+  status?: DailyLogStatus;
+  submittedBy?: string;
+  submittedAt?: string;
+  rejectedBy?: string;
+  rejectedAt?: string;
+  rejectionReason?: string;
   createdBy: string;
   createdAt: string;
   // FastCons: Chi tiết nhật ký gộp
@@ -462,6 +535,15 @@ export interface ContractItem {
   quantity: number;             // Khối lượng HĐ
   unitPrice: number;            // Đơn giá (VNĐ)
   totalPrice: number;           // Auto = quantity × unitPrice
+  originalQuantity?: number;     // Snapshot khối lượng gốc
+  originalUnitPrice?: number;    // Snapshot đơn giá gốc
+  originalTotalPrice?: number;   // Snapshot thành tiền gốc
+  variationQuantity?: number;    // Tổng tăng/giảm KL từ phát sinh approved
+  variationAmount?: number;      // Tổng tăng/giảm giá trị từ phát sinh approved
+  revisedQuantity?: number;      // KL hợp đồng sau phát sinh
+  revisedTotalPrice?: number;    // GT hợp đồng sau phát sinh
+  isLocked?: boolean;            // Đã phát sinh nghiệm thu/thanh toán
+  lockedAt?: string;
   // Tracking KL
   completedQuantity?: number;   // KL hoàn thành lũy kế (auto từ nhật ký/nghiệm thu)
   completedPercent?: number;    // Auto = completedQuantity / quantity × 100
@@ -473,20 +555,28 @@ export interface ContractItem {
 
 // ==================== THANH TOÁN THEO CHUẨN FASTCONS ====================
 
-export type PaymentCertificateStatus = 'draft' | 'submitted' | 'approved' | 'paid';
+export type QuantityAcceptanceStatus = 'draft' | 'submitted' | 'returned' | 'approved' | 'cancelled';
+export type PaymentCertificateStatus = 'draft' | 'submitted' | 'returned' | 'approved' | 'paid' | 'cancelled';
+export type ContractVariationStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'cancelled';
 
 export interface PaymentCertificateItem {
+  id?: string;
+  paymentCertificateId?: string;
   contractItemId: string;       // FK → ContractItem.id
   contractItemCode?: string;    // Cache mã hạng mục
   contractItemName?: string;    // Cache tên hạng mục
   unit?: string;                // Cache ĐVT
   contractQuantity: number;     // KL theo HĐ
+  revisedContractQuantity?: number;
   previousQuantity: number;     // KL đã nghiệm thu các đợt trước
   currentQuantity: number;      // KL nghiệm thu đợt này
+  certifiedQuantity?: number;   // Alias nghiệp vụ cho currentQuantity
   cumulativeQuantity: number;   // Auto = previousQuantity + currentQuantity
   unitPrice: number;            // Đơn giá
   currentAmount: number;        // Auto = currentQuantity × unitPrice
   cumulativeAmount: number;     // Auto = cumulativeQuantity × unitPrice
+  sourceAcceptanceItemId?: string;
+  note?: string;
 }
 
 export interface PaymentCertificate {
@@ -498,16 +588,23 @@ export interface PaymentCertificate {
   periodStart: string;
   periodEnd: string;
   description?: string;         // "Thanh toán đợt 2 — Phần thân"
+  acceptanceId?: string;
   // Chi tiết hạng mục
   items: PaymentCertificateItem[];
   // Giá trị tổng hợp
   totalContractValue: number;       // GT HĐ (cache)
   totalCompletedValue: number;      // GT hoàn thành lũy kế = Σ(cumulativeAmount)
   currentCompletedValue: number;    // GT hoàn thành đợt này = Σ(currentAmount)
+  grossThisPeriod?: number;         // GT hoàn thành kỳ này
+  grossCumulative?: number;         // GT hoàn thành lũy kế
   // Khấu trừ & Phạt
   advanceRecovery: number;          // Thu hồi tạm ứng (auto từ AdvancePayment)
+  advanceRecoveryThisPeriod?: number;
+  advanceRecoveryCumulative?: number;
   retentionPercent: number;         // % giữ lại bảo hành (VD: 5%)
   retentionAmount: number;          // Auto = totalCompletedValue × retentionPercent / 100
+  retentionThisPeriod?: number;
+  retentionCumulative?: number;
   penaltyAmount: number;            // Phạt (nhập tay)
   penaltyReason?: string;
   deductionAmount: number;          // Khấu trừ khác (nhập tay)
@@ -515,6 +612,7 @@ export interface PaymentCertificate {
   // Lũy kế
   previousCertifiedAmount: number;  // GT đã TT các đợt trước
   currentPayableAmount: number;     // GT TT đợt này (= Completed - Recovery - Retention - Penalty - Deduction - Previous)
+  payableThisPeriod?: number;
   // Workflow
   status: PaymentCertificateStatus;
   submittedBy?: string;
@@ -526,6 +624,14 @@ export interface PaymentCertificate {
   attachments?: Attachment[];
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface PaymentCertificateAdvanceRecovery {
+  id?: string;
+  paymentCertificateId: string;
+  advancePaymentId: string;
+  recoveryAmount: number;
+  createdAt?: string;
 }
 
 // ==================== TẠM ỨNG (FastCons) ====================
@@ -545,6 +651,82 @@ export interface AdvancePayment {
   status: AdvancePaymentStatus;
   note?: string;
   createdAt: string;
+}
+
+export interface QuantityAcceptanceItem {
+  id?: string;
+  acceptanceId?: string;
+  contractItemId: string;
+  contractItemCode?: string;
+  contractItemName?: string;
+  unit?: string;
+  previousAcceptedQuantity: number;
+  proposedQuantity: number;
+  acceptedQuantity: number;
+  cumulativeAcceptedQuantity: number;
+  unitPrice: number;
+  acceptedAmount: number;
+  sourceDailyLogVolumeIds?: string[];
+  note?: string;
+}
+
+export interface QuantityAcceptance {
+  id: string;
+  contractId: string;
+  contractType: ContractItemType;
+  constructionSiteId: string;
+  periodNumber: number;
+  periodStart: string;
+  periodEnd: string;
+  description?: string;
+  status: QuantityAcceptanceStatus;
+  items: QuantityAcceptanceItem[];
+  totalAcceptedAmount: number;
+  submittedBy?: string;
+  submittedAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  returnedBy?: string;
+  returnedAt?: string;
+  returnReason?: string;
+  note?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ContractVariationItem {
+  id?: string;
+  variationId?: string;
+  contractItemId?: string;
+  code: string;
+  name: string;
+  unit: string;
+  quantityDelta: number;
+  unitPrice: number;
+  amountDelta: number;
+  note?: string;
+}
+
+export interface ContractVariation {
+  id: string;
+  contractId: string;
+  contractType: ContractItemType;
+  constructionSiteId: string;
+  code: string;
+  title: string;
+  status: ContractVariationStatus;
+  reason?: string;
+  items: ContractVariationItem[];
+  totalAmountDelta: number;
+  submittedBy?: string;
+  submittedAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectedBy?: string;
+  rejectedAt?: string;
+  rejectionReason?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 // ==================== DANH MỤC KHOẢN MỤC CHI PHÍ DỰ ÁN (FastCons) ====================
@@ -568,6 +750,36 @@ export interface ProjectCostItem {
   isAutoCalculated?: boolean;   // true = tự động tính từ nguồn, false = nhập tay
   note?: string;
   createdAt?: string;
+}
+
+export type ProjectCostActualSource = 'transaction' | 'purchase_order' | 'subcontract' | 'dailylog' | 'manual';
+
+export interface ProjectCostActual {
+  id: string;
+  constructionSiteId: string;
+  costItemId?: string;
+  category: ProjectCostCategory;
+  source: ProjectCostActualSource;
+  sourceRef?: string;
+  amount: number;
+  description?: string;
+  date: string;
+  createdAt?: string;
+}
+
+export interface ProjectFinancialSummary {
+  revisedContractValue: number;
+  approvedVariationValue: number;
+  forecastFinalCost: number;
+  actualCost: number;
+  budgetAmount: number;
+  budgetVariance: number;
+  contractMargin: number;
+  certifiedRevenue: number;
+  paidRevenue: number;
+  cashIn: number;
+  cashOut: number;
+  cashPosition: number;
 }
 
 // ==================== VẬT TƯ & HAO HỤT ====================

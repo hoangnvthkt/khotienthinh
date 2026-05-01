@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import AiInsightPanel from '../../components/AiInsightPanel';
-import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock } from 'lucide-react';
-import { DailyLog, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, ContractItem } from '../../types';
+import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw } from 'lucide-react';
+import { DailyLog, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, ContractItem, DailyLogStatus } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { dailyLogService, taskService } from '../../lib/projectService';
 import { contractItemService } from '../../lib/contractItemService';
@@ -19,6 +19,13 @@ const WEATHER: Record<WeatherType, { label: string; icon: React.ReactNode; emoji
     cloudy: { label: 'Mây', icon: <Cloud size={14} />, emoji: '⛅' },
     rainy: { label: 'Mưa', icon: <CloudRain size={14} />, emoji: '🌧️' },
     storm: { label: 'Bão', icon: <CloudLightning size={14} />, emoji: '⛈️' },
+};
+
+const STATUS_CFG: Record<DailyLogStatus, { label: string; cls: string }> = {
+    draft: { label: 'Nháp', cls: 'bg-slate-50 text-slate-600 border-slate-200' },
+    submitted: { label: 'Chờ xác nhận', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+    verified: { label: 'Đã xác nhận', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    rejected: { label: 'Trả lại', cls: 'bg-red-50 text-red-700 border-red-200' },
 };
 
 // Voice-enabled Textarea component
@@ -171,25 +178,47 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
             return;
         }
         
-        const baseItem = {
-            date: fDate, weather: fWeather, workerCount: Number(fWorkers) || 0,
-            description: fDesc, issues: fIssues || undefined,
-            gpsLat: gpsCoords?.lat, gpsLng: gpsCoords?.lng, gpsAccuracy: gpsCoords?.accuracy,
-            photos: fPhotos, photoRequired, delayTasks: fDelayTasks,
-            volumes: fVolumes, materials: fMaterials, laborDetails: fLabor, machines: fMachines,
-        };
+	        const baseItem = {
+	            date: fDate, weather: fWeather, workerCount: Number(fWorkers) || 0,
+	            description: fDesc, issues: fIssues || undefined,
+	            gpsLat: gpsCoords?.lat, gpsLng: gpsCoords?.lng, gpsAccuracy: gpsCoords?.accuracy,
+	            photos: fPhotos, photoRequired, delayTasks: fDelayTasks,
+	            volumes: fVolumes, materials: fMaterials, laborDetails: fLabor, machines: fMachines,
+	            status: editing?.status || 'draft',
+	            verified: editing?.status === 'verified' || editing?.verified || false,
+	        };
         
-        const item: DailyLog = editing ? {
-            ...editing, ...baseItem
-        } : {
-            id: crypto.randomUUID(), constructionSiteId, ...baseItem,
-            createdBy: 'admin', createdAt: new Date().toISOString(),
-        };
-        await dailyLogService.upsert(item);
-        setLogs(await dailyLogService.list(constructionSiteId));
-        toast.success(editing ? 'Cập nhật nhật ký' : 'Ghi nhật ký thành công');
-        resetForm();
-    };
+	        const item: DailyLog = editing ? {
+	            ...editing, ...baseItem
+	        } : {
+	            id: crypto.randomUUID(), constructionSiteId, ...baseItem,
+	            createdBy: 'admin', createdAt: new Date().toISOString(),
+		    };
+	        await dailyLogService.upsert(item);
+	        setLogs(await dailyLogService.list(constructionSiteId));
+	        toast.success(editing ? 'Cập nhật nhật ký' : 'Ghi nhật ký thành công');
+	        resetForm();
+	    };
+
+	    const handleStatusChange = async (log: DailyLog, status: DailyLogStatus) => {
+	        const now = new Date().toISOString();
+	        const updated: DailyLog = {
+	            ...log,
+	            status,
+	            verified: status === 'verified',
+	            submittedAt: status === 'submitted' ? now : log.submittedAt,
+	            verifiedBy: status === 'verified' ? 'PM/QS' : log.verifiedBy,
+	            rejectedAt: status === 'rejected' ? now : log.rejectedAt,
+	            rejectionReason: status === 'rejected' ? 'Cần bổ sung/kiểm tra lại' : log.rejectionReason,
+	        };
+	        await dailyLogService.upsert(updated);
+	        setLogs(await dailyLogService.list(constructionSiteId));
+	        toast.success(
+	            status === 'submitted' ? 'Đã gửi nhật ký' :
+	            status === 'verified' ? 'Đã xác nhận nhật ký' :
+	            status === 'rejected' ? 'Đã trả lại nhật ký' : 'Đã cập nhật trạng thái'
+	        );
+	    };
 
     const handleDelete = async (id: string) => {
         const log = logs.find(l => l.id === id);
@@ -280,22 +309,25 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
                     </div>
                 ) : (
                     <div className="divide-y divide-slate-50">
-                        {filtered.map(l => {
-                            const w = WEATHER[l.weather];
-                            return (
-                                <div key={l.id} className="px-5 py-4 hover:bg-slate-50/50 transition-colors group">
-                                    <div className="flex items-start justify-between gap-3">
+	                        {filtered.map(l => {
+	                            const w = WEATHER[l.weather];
+	                            const status = (l.status || (l.verified ? 'verified' : 'draft')) as DailyLogStatus;
+	                            const statusCfg = STATUS_CFG[status];
+	                            return (
+	                                <div key={l.id} className="px-5 py-4 hover:bg-slate-50/50 transition-colors group">
+	                                    <div className="flex items-start justify-between gap-3">
                                         <div className="flex items-start gap-3 flex-1 min-w-0">
                                             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-50 to-cyan-50 border border-teal-100 flex flex-col items-center justify-center shrink-0">
                                                 <div className="text-[9px] font-black text-teal-600">{new Date(l.date).getDate()}</div>
                                                 <div className="text-[8px] text-teal-400">T{new Date(l.date).getMonth() + 1}</div>
                                             </div>
                                             <div className="min-w-0 flex-1">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <span className="text-sm font-bold text-slate-800">{new Date(l.date).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
-                                                    <span className="text-xs">{w.emoji}</span>
-                                                    <span className="text-[10px] font-bold text-blue-500 flex items-center gap-0.5"><Users size={10} /> {l.workerCount}</span>
-                                                </div>
+	                                                <div className="flex items-center gap-2 mb-1">
+	                                                    <span className="text-sm font-bold text-slate-800">{new Date(l.date).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+	                                                    <span className="text-xs">{w.emoji}</span>
+	                                                    <span className="text-[10px] font-bold text-blue-500 flex items-center gap-0.5"><Users size={10} /> {l.workerCount}</span>
+	                                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${statusCfg.cls}`}>{statusCfg.label}</span>
+	                                                </div>
                                                 <p className="text-xs text-slate-600 leading-relaxed">{l.description}</p>
                                                 {l.issues && (
                                                     <div className="mt-1.5 flex items-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-50 border border-red-100">
@@ -305,10 +337,19 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
                                                 )}
                                             </div>
                                         </div>
-                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                            <button onClick={() => openEdit(l)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50"><Edit2 size={13} /></button>
-                                            <button onClick={() => handleDelete(l.id)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={13} /></button>
-                                        </div>
+	                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+	                                            {status === 'draft' && (
+	                                                <button onClick={() => handleStatusChange(l, 'submitted')} title="Gửi xác nhận" className="w-7 h-7 rounded-lg flex items-center justify-center text-amber-400 hover:text-amber-600 hover:bg-amber-50"><Send size={13} /></button>
+	                                            )}
+	                                            {status === 'submitted' && (
+	                                                <>
+	                                                    <button onClick={() => handleStatusChange(l, 'verified')} title="Xác nhận" className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50"><CheckCircle2 size={13} /></button>
+	                                                    <button onClick={() => handleStatusChange(l, 'rejected')} title="Trả lại" className="w-7 h-7 rounded-lg flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50"><RotateCcw size={13} /></button>
+	                                                </>
+	                                            )}
+	                                            <button onClick={() => openEdit(l)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50"><Edit2 size={13} /></button>
+	                                            <button onClick={() => handleDelete(l.id)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={13} /></button>
+	                                        </div>
                                     </div>
                                 </div>
                             );

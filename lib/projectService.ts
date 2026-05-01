@@ -5,6 +5,7 @@ import {
     PurchaseOrder, PaymentSchedule, ProjectBaseline
 } from '../types';
 import { auditService } from './auditService';
+import { dailyLogDetailService } from './dailyLogDetailService';
 
 // ==================== HELPER ====================
 // snake_case ↔ camelCase mapping
@@ -30,6 +31,14 @@ const taskToDb = (task: ProjectTask): any => {
     const row = toDb(task);
     row.sort_order = task.order ?? 0;
     delete row.order;
+    // WBS tasks no longer own BOQ commercial fields. Keep legacy DB columns untouched during transition.
+    delete row.code;
+    delete row.quantity;
+    delete row.unit;
+    delete row.unit_price;
+    delete row.total_price;
+    delete row.completed_quantity;
+    delete row.contract_item_id;
     return row;
 };
 
@@ -88,14 +97,37 @@ export const dailyLogService = {
             .eq('construction_site_id', siteId)
             .order('date', { ascending: false });
         if (error) throw error;
-        return (data || []).map(fromDb);
+        const logs = (data || []).map(fromDb) as DailyLog[];
+        const detailMap = await dailyLogDetailService.listByLogIds(logs.map(l => l.id));
+        return logs.map(log => {
+            const details = detailMap[log.id];
+            if (!details) return log;
+            return {
+                ...log,
+                volumes: details.volumes.length > 0 ? details.volumes : log.volumes,
+                materials: details.materials.length > 0 ? details.materials : log.materials,
+                laborDetails: details.laborDetails.length > 0 ? details.laborDetails : log.laborDetails,
+                machines: details.machines.length > 0 ? details.machines : log.machines,
+            };
+        });
     },
     async upsert(item: DailyLog): Promise<void> {
+        // Mục 8: Strip JSONB array fields — data chi tiết lưu trong normalized tables
+        // (daily_log_volumes, daily_log_materials, daily_log_labor, daily_log_machines)
+        // Không gửi lên daily_logs để tránh double-write và drift
+        const { volumes, materials, laborDetails, machines, ...metaItem } = item;
         const { error } = await supabase
             .from('daily_logs')
-            .upsert(toDb(item), { onConflict: 'id' });
+            .upsert(toDb(metaItem), { onConflict: 'id' });
         if (error) throw error;
+        await dailyLogDetailService.replaceForLog(item.id, item.constructionSiteId, {
+            volumes: volumes || [],
+            materials: materials || [],
+            laborDetails: laborDetails || [],
+            machines: machines || [],
+        });
     },
+
     async remove(id: string): Promise<void> {
         const { error } = await supabase
             .from('daily_logs')

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import AiInsightPanel from '../../components/AiInsightPanel';
 import {
     Plus, Edit2, Trash2, X, Save, FileText,
-    CheckCircle2, AlertCircle, Clock, Ban, Package, CreditCard, List
+    CheckCircle2, AlertCircle, Clock, Ban, Package, CreditCard, List, FilePlus2, ClipboardCheck, DollarSign, ShieldCheck, TrendingUp
 } from 'lucide-react';
 import { CustomerContract, SubcontractorContract, HdContractStatus, ContractItemType } from '../../types';
 import { customerContractService, subcontractorContractService } from '../../lib/hdService';
@@ -10,6 +10,12 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import ContractItemTable from '../../components/project/ContractItemTable';
 import PaymentCertificatePanel from '../../components/project/PaymentCertificatePanel';
+import ContractVariationPanel from '../../components/project/ContractVariationPanel';
+import QuantityAcceptancePanel from '../../components/project/QuantityAcceptancePanel';
+import AdvancePaymentPanel from '../../components/project/AdvancePaymentPanel';
+import RetentionPanel from '../../components/project/RetentionPanel';
+import FinancialPipelineWidget from '../../components/project/FinancialPipelineWidget';
+import ApprovalMatrixPanel from '../../components/project/ApprovalMatrixPanel';
 
 interface ContractTabProps {
     constructionSiteId: string;
@@ -90,7 +96,7 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
 
     const [filterType, setFilterType] = useState<'all' | 'customer' | 'subcontractor'>('all');
     const [expandedId, setExpandedId] = useState<string | null>(null);
-    const [activeSubTab, setActiveSubTab] = useState<'info' | 'boq' | 'payment'>('boq');
+    const [activeSubTab, setActiveSubTab] = useState<'info' | 'pipeline' | 'boq' | 'variation' | 'acceptance' | 'payment' | 'advance' | 'retention'>('pipeline');
     const filtered = useMemo(() => {
         if (filterType === 'all') return contracts;
         return contracts.filter(c => c.type === filterType);
@@ -215,10 +221,15 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
                                     {isExpanded && (
                                         <div className="px-5 pb-4 bg-slate-50/50 dark:bg-slate-700/30 border-t border-slate-100 dark:border-slate-700">
                                             {/* Sub-tabs */}
-                                            <div className="flex gap-1 pt-3 pb-2 border-b border-slate-100 dark:border-slate-600 mb-1">
+                                            <div className="flex flex-wrap gap-1 pt-3 pb-2 border-b border-slate-100 dark:border-slate-600 mb-1">
                                                 {([
+                                                    { key: 'pipeline', label: 'Tài chính', icon: <TrendingUp size={12} /> },
                                                     { key: 'boq', label: 'BOQ Hạng mục', icon: <Package size={12} /> },
+                                                    { key: 'variation', label: 'Phát sinh', icon: <FilePlus2 size={12} /> },
+                                                    { key: 'acceptance', label: 'Nghiệm thu', icon: <ClipboardCheck size={12} /> },
                                                     { key: 'payment', label: 'Thanh toán', icon: <CreditCard size={12} /> },
+                                                    { key: 'advance', label: 'Tạm ứng', icon: <DollarSign size={12} /> },
+                                                    { key: 'retention', label: 'Giữ lại', icon: <ShieldCheck size={12} /> },
                                                     { key: 'info', label: 'Chi tiết HĐ', icon: <List size={12} /> },
                                                 ] as const).map(tab => (
                                                     <button key={tab.key}
@@ -234,6 +245,16 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
                                             </div>
 
                                             {/* Sub-tab Content */}
+                                            {activeSubTab === 'pipeline' && (
+                                                <div className="pt-3">
+                                                    <FinancialPipelineWidget
+                                                        contractId={c.id}
+                                                        contractType={c.type as 'customer' | 'subcontractor'}
+                                                        constructionSiteId={constructionSiteId}
+                                                    />
+                                                </div>
+                                            )}
+
                                             {activeSubTab === 'info' && (
                                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-3 text-xs">
                                                     <div><span className="text-slate-400 block">Loại</span><span className="font-bold">{tCfg.label}</span></div>
@@ -251,13 +272,44 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
                                                 />
                                             )}
 
-                                            {activeSubTab === 'payment' && (
-                                                <PaymentCertificatePanel
-                                                    contractId={c.id}
-                                                    contractType={c.type as ContractItemType}
-                                                    constructionSiteId={constructionSiteId}
-                                                />
-                                            )}
+	                                            {activeSubTab === 'payment' && (
+	                                                <PaymentCertificatePanel
+	                                                    contractId={c.id}
+	                                                    contractType={c.type as ContractItemType}
+	                                                    constructionSiteId={constructionSiteId}
+	                                                />
+	                                            )}
+
+	                                            {activeSubTab === 'variation' && (
+	                                                <ContractVariationPanel
+	                                                    contractId={c.id}
+	                                                    contractType={c.type as ContractItemType}
+	                                                    constructionSiteId={constructionSiteId}
+	                                                />
+	                                            )}
+
+	                                            {activeSubTab === 'acceptance' && (
+	                                                <QuantityAcceptancePanel
+	                                                    contractId={c.id}
+	                                                    contractType={c.type as ContractItemType}
+	                                                    constructionSiteId={constructionSiteId}
+	                                                />
+	                                            )}
+
+	                                            {activeSubTab === 'advance' && (
+	                                                <AdvancePaymentPanel
+	                                                    contractId={c.id}
+	                                                    contractType={c.type as ContractItemType}
+	                                                    constructionSiteId={constructionSiteId}
+	                                                />
+	                                            )}
+
+	                                            {activeSubTab === 'retention' && (
+	                                                <RetentionPanel
+	                                                    contractId={c.id}
+	                                                    contractType={c.type as ContractItemType}
+	                                                />
+	                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -275,6 +327,9 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
                     Nhớ chọn đúng <em>Dự án</em> khi tạo hợp đồng ở đó.
                 </p>
             </div>
+
+            {/* T5: Approval Matrix */}
+            <ApprovalMatrixPanel constructionSiteId={constructionSiteId} />
         </div>
     );
 };

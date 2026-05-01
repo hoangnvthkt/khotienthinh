@@ -178,7 +178,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
         const totalExpense = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
         const totalRevenue = transactions.filter(t => t.type === 'revenue_received').reduce((s, t) => s + t.amount, 0);
         const totalPending = transactions.filter(t => t.type === 'revenue_pending').reduce((s, t) => s + t.amount, 0);
-        const profit = totalRevenue - totalExpense;
+	        const cashPosition = totalRevenue - totalExpense;
 
         const receivables = paymentSchedules.filter(p => p.type === 'receivable' && p.status !== 'paid');
         const payables = paymentSchedules.filter(p => p.type === 'payable' && p.status !== 'paid');
@@ -186,7 +186,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
         const totalReceivable = receivables.reduce((s, p) => s + p.amount, 0);
         const totalPayable = payables.reduce((s, p) => s + p.amount, 0);
 
-        return { totalExpense, totalRevenue, totalPending, profit, totalReceivable, totalPayable, overdueCount };
+	        return { totalExpense, totalRevenue, totalPending, cashPosition, totalReceivable, totalPayable, overdueCount };
     }, [transactions, paymentSchedules]);
 
     return (
@@ -208,11 +208,11 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
                     <div className="text-[10px] text-slate-400 mt-1">{((summary.totalExpense / (contractValue || 1)) * 100).toFixed(1)}% HĐ</div>
                 </div>
                 <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><DollarSign size={11} /> Lợi nhuận</div>
-                    <div className={`text-xl font-black ${summary.profit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmt(summary.profit)}</div>
-                    <div className={`text-[10px] font-bold mt-1 flex items-center gap-0.5 ${summary.profit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                        {summary.profit >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
-                        {((summary.profit / (contractValue || 1)) * 100).toFixed(1)}%
+	                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><DollarSign size={11} /> Dòng tiền ròng</div>
+	                    <div className={`text-xl font-black ${summary.cashPosition >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmt(summary.cashPosition)}</div>
+	                    <div className={`text-[10px] font-bold mt-1 flex items-center gap-0.5 ${summary.cashPosition >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+	                        {summary.cashPosition >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
+	                        {((summary.cashPosition / (contractValue || 1)) * 100).toFixed(1)}%
                     </div>
                 </div>
                 <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
@@ -281,7 +281,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
                                     formatter={(value: any, name: string) => [fmtFull(Number(value)), name]} />
                                 <Area type="monotone" dataKey="cumRevenue" name="Thu luỹ kế" stroke="#10b981" strokeWidth={2.5} fill="url(#cfRevGrad)" dot={{ r: 3, fill: '#10b981' }} />
                                 <Area type="monotone" dataKey="cumExpense" name="Chi luỹ kế" stroke="#f97316" strokeWidth={2.5} fill="url(#cfExpGrad)" dot={{ r: 3, fill: '#f97316' }} />
-                                <Area type="monotone" dataKey="profit" name="Lợi nhuận" stroke="#6366f1" strokeWidth={2} fill="url(#cfProfitGrad)" dot={{ r: 2, fill: '#6366f1' }} strokeDasharray="5 5" />
+	                                <Area type="monotone" dataKey="profit" name="Dòng tiền ròng" stroke="#6366f1" strokeWidth={2} fill="url(#cfProfitGrad)" dot={{ r: 2, fill: '#6366f1' }} strokeDasharray="5 5" />
                                 <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', fontWeight: 700 }} />
                             </AreaChart>
                         </ResponsiveContainer>
@@ -305,7 +305,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
                                 <th className="p-3 text-right">Chi trong kỳ</th>
                                 <th className="p-3 text-right">Thu luỹ kế</th>
                                 <th className="p-3 text-right">Chi luỹ kế</th>
-                                <th className="p-3 text-right">Lợi nhuận LK</th>
+	                                <th className="p-3 text-right">Dòng tiền ròng LK</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50 text-xs">
@@ -453,7 +453,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
                 <h3 className="text-sm font-black text-slate-700 dark:text-white mb-4 flex items-center gap-2">
                     📊 Phân tích chi phí dự án (FastCons)
                 </h3>
-                <CostAnalysisPanel constructionSiteId={constructionSiteId} />
+	                <CostAnalysisPanel constructionSiteId={constructionSiteId} />
             </div>
         </div>
     );
