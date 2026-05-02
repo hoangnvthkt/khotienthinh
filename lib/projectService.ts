@@ -6,6 +6,7 @@ import {
 } from '../types';
 import { auditService } from './auditService';
 import { dailyLogDetailService } from './dailyLogDetailService';
+import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 
 // ==================== HELPER ====================
 // snake_case ↔ camelCase mapping
@@ -47,14 +48,14 @@ const taskToDb = (task: ProjectTask): any => {
 
 // ==================== TASKS (GANTT) ====================
 export const taskService = {
-    async list(siteId: string): Promise<ProjectTask[]> {
+    async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectTask[]> {
         const { data, error } = await supabase
             .from('project_tasks')
             .select('*')
-            .eq('construction_site_id', siteId)
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('sort_order', { ascending: true });
         if (error) throw error;
-        return (data || []).map(taskFromDb);
+        return dedupeRowsById(data || []).map(taskFromDb);
     },
     async listBySites(siteIds: string[]): Promise<ProjectTask[]> {
         if (siteIds.length === 0) return [];
@@ -90,14 +91,14 @@ export const taskService = {
 
 // ==================== DAILY LOGS ====================
 export const dailyLogService = {
-    async list(siteId: string): Promise<DailyLog[]> {
+    async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<DailyLog[]> {
         const { data, error } = await supabase
             .from('daily_logs')
             .select('*')
-            .eq('construction_site_id', siteId)
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('date', { ascending: false });
         if (error) throw error;
-        const logs = (data || []).map(fromDb) as DailyLog[];
+        const logs = dedupeRowsById(data || []).map(fromDb) as DailyLog[];
         const detailMap = await dailyLogDetailService.listByLogIds(logs.map(l => l.id));
         return logs.map(log => {
             const details = detailMap[log.id];
@@ -120,7 +121,7 @@ export const dailyLogService = {
             .from('daily_logs')
             .upsert(toDb(metaItem), { onConflict: 'id' });
         if (error) throw error;
-        await dailyLogDetailService.replaceForLog(item.id, item.constructionSiteId, {
+        await dailyLogDetailService.replaceForLog(item.id, item.projectId || null, item.constructionSiteId || null, {
             volumes: volumes || [],
             materials: materials || [],
             laborDetails: laborDetails || [],
@@ -139,14 +140,14 @@ export const dailyLogService = {
 
 // ==================== ACCEPTANCE RECORDS ====================
 export const acceptanceService = {
-    async list(siteId: string): Promise<AcceptanceRecord[]> {
+    async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<AcceptanceRecord[]> {
         const { data, error } = await supabase
             .from('acceptance_records')
             .select('*')
-            .eq('construction_site_id', siteId)
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('period_number', { ascending: true });
         if (error) throw error;
-        return (data || []).map(fromDb);
+        return dedupeRowsById(data || []).map(fromDb);
     },
     async upsert(item: AcceptanceRecord): Promise<void> {
         const { error } = await supabase
@@ -165,14 +166,14 @@ export const acceptanceService = {
 
 // ==================== MATERIAL BUDGET (BOQ) ====================
 export const boqService = {
-    async list(siteId: string): Promise<MaterialBudgetItem[]> {
+    async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<MaterialBudgetItem[]> {
         const { data, error } = await supabase
             .from('material_budget_items')
             .select('*')
-            .eq('construction_site_id', siteId)
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('category', { ascending: true });
         if (error) throw error;
-        return (data || []).map(fromDb);
+        return dedupeRowsById(data || []).map(fromDb);
     },
     async upsert(item: MaterialBudgetItem): Promise<void> {
         const { error } = await supabase
@@ -191,14 +192,14 @@ export const boqService = {
 
 // ==================== MATERIAL REQUESTS ====================
 export const matRequestService = {
-    async list(siteId: string): Promise<ProjectMaterialRequest[]> {
+    async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectMaterialRequest[]> {
         const { data, error } = await supabase
             .from('project_material_requests')
             .select('*')
-            .eq('construction_site_id', siteId)
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('created_at', { ascending: false });
         if (error) throw error;
-        return (data || []).map(fromDb);
+        return dedupeRowsById(data || []).map(fromDb);
     },
     async upsert(item: ProjectMaterialRequest): Promise<void> {
         const { error } = await supabase
@@ -217,14 +218,14 @@ export const matRequestService = {
 
 // ==================== VENDORS ====================
 export const vendorService = {
-    async list(siteId: string): Promise<ProjectVendor[]> {
+    async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectVendor[]> {
         const { data, error } = await supabase
             .from('project_vendors')
             .select('*')
-            .eq('construction_site_id', siteId)
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('name', { ascending: true });
         if (error) throw error;
-        return (data || []).map(fromDb);
+        return dedupeRowsById(data || []).map(fromDb);
     },
     async upsert(item: ProjectVendor): Promise<void> {
         const { error } = await supabase
@@ -243,14 +244,14 @@ export const vendorService = {
 
 // ==================== PURCHASE ORDERS ====================
 export const poService = {
-    async list(siteId: string): Promise<PurchaseOrder[]> {
+    async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<PurchaseOrder[]> {
         const { data, error } = await supabase
             .from('purchase_orders')
             .select('*')
-            .eq('construction_site_id', siteId)
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('created_at', { ascending: false });
         if (error) throw error;
-        return (data || []).map(fromDb);
+        return dedupeRowsById(data || []).map(fromDb);
     },
     async upsert(item: PurchaseOrder): Promise<void> {
         const { error } = await supabase
@@ -269,14 +270,14 @@ export const poService = {
 
 // ==================== PAYMENT SCHEDULES ====================
 export const paymentService = {
-    async list(siteId: string): Promise<PaymentSchedule[]> {
+    async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<PaymentSchedule[]> {
         const { data, error } = await supabase
             .from('payment_schedules')
             .select('*')
-            .eq('construction_site_id', siteId)
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('due_date', { ascending: true });
         if (error) throw error;
-        return (data || []).map(fromDb);
+        return dedupeRowsById(data || []).map(fromDb);
     },
     async upsert(item: PaymentSchedule): Promise<void> {
         const { error } = await supabase
@@ -295,14 +296,14 @@ export const paymentService = {
 
 // ==================== BASELINES ====================
 export const baselineService = {
-    async list(siteId: string): Promise<ProjectBaseline[]> {
+    async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectBaseline[]> {
         const { data, error } = await supabase
             .from('project_baselines')
             .select('*')
-            .eq('construction_site_id', siteId)
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('locked_at', { ascending: false });
         if (error) throw error;
-        return (data || []).map(fromDb);
+        return dedupeRowsById(data || []).map(fromDb);
     },
     async create(baseline: ProjectBaseline): Promise<void> {
         const { error } = await supabase

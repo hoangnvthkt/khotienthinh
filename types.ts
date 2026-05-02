@@ -190,7 +190,8 @@ export interface ProjectPermissionType {
 
 export interface ProjectStaff {
   id: string;
-  constructionSiteId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
   userId: string;
   positionId: string;          // FK → hrm_positions.id
   startDate?: string;
@@ -221,8 +222,27 @@ export interface ProjectStaffPermission {
 
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed';
 
+export interface Project {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  clientName?: string;
+  projectType: 'construction' | 'infrastructure' | 'maintenance' | 'other' | string;
+  status: ProjectStatus | 'cancelled';
+  constructionSiteId?: string | null;
+  managerId?: string;
+  startDate?: string;
+  endDate?: string;
+  createdBy?: string;
+  source?: 'manual' | 'backfill';
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ProjectFinance {
   id: string;
+  projectId?: string | null;
   constructionSiteId: string;
 
   // Hợp đồng
@@ -262,6 +282,7 @@ export type ProjectTxSource = 'manual' | 'import' | 'workflow';
 
 export interface ProjectTransaction {
   id: string;
+  projectId?: string | null;
   projectFinanceId: string;
   constructionSiteId: string;
   type: ProjectTxType;
@@ -322,7 +343,8 @@ export type GateStatus = 'none' | 'pending' | 'approved' | 'rejected';
 
 export interface ProjectTask {
   id: string;
-  constructionSiteId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
   parentId?: string;
   name: string;
   startDate: string;
@@ -379,7 +401,8 @@ export interface TaskContractItem {
   id: string;
   taskId: string;
   contractItemId: string;
-  constructionSiteId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
   weightPercent?: number;
   note?: string;
   createdAt?: string;
@@ -387,7 +410,8 @@ export interface TaskContractItem {
 
 export interface ProjectBaseline {
   id: string;
-  constructionSiteId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
   name: string;
   lockedAt: string;
   lockedBy?: string;
@@ -466,7 +490,8 @@ export interface DailyLogMachine {
 
 export interface DailyLog {
   id: string;
-  constructionSiteId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
   date: string;
   weather: WeatherType;
   workerCount: number;
@@ -501,7 +526,8 @@ export type AcceptanceStatus = 'draft' | 'submitted' | 'approved' | 'paid';
 export interface AcceptanceRecord {
   id: string;
   contractId: string;           // Liên kết HĐ thầu phụ
-  constructionSiteId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
   periodNumber: number;         // Đợt nghiệm thu (1, 2, 3...)
   description: string;          // "Nghiệm thu đợt 1 - Phần móng"
   periodStart: string;
@@ -527,7 +553,8 @@ export interface ContractItem {
   id: string;
   contractId: string;           // FK → CustomerContract.id hoặc SubcontractorContract.id
   contractType: ContractItemType;
-  constructionSiteId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
   parentId?: string;            // Phân cấp cha/con (nhóm hạng mục)
   code: string;                 // Mã hạng mục: "1", "1.1", "2"
   name: string;                 // Tên hạng mục: "Đào đất móng"
@@ -787,7 +814,8 @@ export type MaterialRequestStatus = 'pending' | 'approved' | 'rejected' | 'fulfi
 
 export interface MaterialBudgetItem {
   id: string;
-  constructionSiteId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
   inventoryItemId?: string;       // Link tới InventoryItem.id trong module Kho
   materialCode?: string;        // Mã vật tư chuẩn: VT_CT_1-Thep_phi22
   category: string;             // Nhóm: Xi măng, Thép, Cát...
@@ -813,7 +841,8 @@ export interface MaterialBudgetItem {
 
 export interface ProjectMaterialRequest {
   id: string;
-  constructionSiteId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
   requestNumber: string;        // Số phiếu: YC-001
   requestedBy: string;
   requestDate: string;
@@ -832,7 +861,8 @@ export type POStatus = 'draft' | 'sent' | 'partial' | 'delivered' | 'cancelled';
 
 export interface ProjectVendor {
   id: string;
-  constructionSiteId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
   name: string;
   contact: string;           // Người liên hệ
   phone: string;
@@ -849,7 +879,8 @@ export interface ProjectVendor {
 
 export interface PurchaseOrder {
   id: string;
-  constructionSiteId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
   vendorId: string;
   vendorName?: string;       // cache tên NCC
   poNumber: string;          // PO-001

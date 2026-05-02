@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { ProjectFinance, ProjectTransaction, ProjectCostCategory, ProjectTxType, ProjectTxSource, Attachment } from '../types';
+import { Project, ProjectFinance, ProjectTransaction, ProjectCostCategory, ProjectTxType, ProjectTxSource, Attachment } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { loadXlsx } from '../lib/loadXlsx';
 import { useModuleData } from '../hooks/useModuleData';
@@ -16,6 +16,7 @@ import DocumentsTab from './project/DocumentsTab';
 import ProjectOrgTab from './project/ProjectOrgTab';
 import { taskService } from '../lib/projectService';
 import { calculateProjectProgress } from '../lib/projectScheduleRules';
+import { projectMasterService } from '../lib/projectMasterService';
 import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, FileText,
@@ -70,10 +71,47 @@ const emptyFinance = (siteId: string): ProjectFinance => ({
     updatedAt: new Date().toISOString(),
 });
 
+type ProjectFormState = {
+    name: string;
+    code: string;
+    clientName: string;
+    constructionSiteId: string;
+    managerId: string;
+    status: Project['status'];
+    startDate: string;
+    endDate: string;
+    description: string;
+};
+
+const emptyProjectForm = (): ProjectFormState => ({
+    name: '',
+    code: '',
+    clientName: '',
+    constructionSiteId: '',
+    managerId: '',
+    status: 'planning',
+    startDate: '',
+    endDate: '',
+    description: '',
+});
+
+const siteToProjectFallback = (site: { id: string; name: string; address?: string; description?: string; managerId?: string; createdAt?: string }): Project => ({
+    id: site.id,
+    code: `PRJ-${site.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
+    name: site.name,
+    description: site.address || site.description,
+    projectType: 'construction',
+    status: 'active',
+    constructionSiteId: site.id,
+    managerId: site.managerId,
+    source: 'backfill',
+    createdAt: site.createdAt,
+});
+
 const ProjectDashboard: React.FC = () => {
     const {
         hrmConstructionSites, projectFinances, addProjectFinance, updateProjectFinance, removeProjectFinance,
-        projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction, user
+        projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction, user, users
     } = useApp();
     useModuleData('da');
     useModuleData('wms');
@@ -100,11 +138,50 @@ const ProjectDashboard: React.FC = () => {
     const [editingTx, setEditingTx] = useState<ProjectTransaction | null>(null);
     const [existingAttachments, setExistingAttachments] = useState<Attachment[]>([]);
     const [taskProgressBySite, setTaskProgressBySite] = useState<Record<string, { progressPercent: number; leafTaskCount: number }>>({});
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [projectsLoading, setProjectsLoading] = useState(false);
+    const [projectLoadError, setProjectLoadError] = useState<string | null>(null);
+    const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+    const [showProjectForm, setShowProjectForm] = useState(false);
+    const [editingProject, setEditingProject] = useState<Project | null>(null);
+    const [savingProject, setSavingProject] = useState(false);
+    const [projectForm, setProjectForm] = useState<ProjectFormState>(emptyProjectForm);
 
-    const selectedSite = hrmConstructionSites.find(s => s.id === selectedSiteId);
+    useEffect(() => {
+        let cancelled = false;
+        setProjectsLoading(true);
+        projectMasterService.list()
+            .then(data => {
+                if (cancelled) return;
+                setProjects(data);
+                setProjectLoadError(null);
+            })
+            .catch(err => {
+                if (cancelled) return;
+                setProjects([]);
+                setProjectLoadError(err?.message || 'Không tải được danh sách dự án');
+            })
+            .finally(() => {
+                if (!cancelled) setProjectsLoading(false);
+            });
+        return () => { cancelled = true; };
+    }, []);
+
+    const projectRows = useMemo(() => {
+        if (projects.length > 0) return projects;
+        return hrmConstructionSites.map(siteToProjectFallback);
+    }, [projects, hrmConstructionSites]);
+
+    const selectedProject = useMemo(
+        () => projectRows.find(project => project.id === selectedProjectId) || null,
+        [projectRows, selectedProjectId]
+    );
+
+    const effectiveSiteId = selectedProject?.constructionSiteId || selectedSiteId || null;
+    const selectedSite = effectiveSiteId ? hrmConstructionSites.find(s => s.id === effectiveSiteId) || null : null;
     const selectedFinance = useMemo(() =>
-        selectedSiteId ? projectFinances.find(pf => pf.constructionSiteId === selectedSiteId) || null : null,
-        [selectedSiteId, projectFinances]
+        effectiveSiteId ? projectFinances.find(pf => pf.constructionSiteId === effectiveSiteId) || null : null,
+        [effectiveSiteId, projectFinances]
     );
 
     // === AUTO-AGGREGATE from transactions ===
@@ -125,13 +202,13 @@ const ProjectDashboard: React.FC = () => {
         };
     };
 
-    const selectedAgg = selectedSiteId ? getAggregated(selectedSiteId) : null;
+    const selectedAgg = effectiveSiteId ? getAggregated(effectiveSiteId) : null;
     const siteTxs = useMemo(() => {
-        if (!selectedSiteId) return [];
-        let txs = projectTransactions.filter(t => t.constructionSiteId === selectedSiteId);
+        if (!effectiveSiteId) return [];
+        let txs = projectTransactions.filter(t => t.constructionSiteId === effectiveSiteId);
         if (txFilter !== 'all') txs = txs.filter(t => t.category === txFilter);
         return txs.sort((a, b) => b.date.localeCompare(a.date));
-    }, [selectedSiteId, projectTransactions, txFilter]);
+    }, [effectiveSiteId, projectTransactions, txFilter]);
 
     const financeSiteKey = useMemo(() =>
         projectFinances.map(p => `${p.constructionSiteId}:${p.progressPercent}`).sort().join('|'),
@@ -196,6 +273,84 @@ const ProjectDashboard: React.FC = () => {
     }, [projectFinances, projectTransactions, taskProgressBySite]);
 
     // === HANDLERS ===
+    const openProjectDetail = (project: Project) => {
+        setSelectedProjectId(project.id);
+        setSelectedSiteId(project.constructionSiteId || null);
+        setOverviewTab('org');
+        setActiveView('overview');
+    };
+
+    const openCreateProject = () => {
+        setEditingProject(null);
+        setProjectForm(emptyProjectForm());
+        setShowProjectForm(true);
+    };
+
+    const openEditProject = (project: Project) => {
+        setEditingProject(project);
+        setProjectForm({
+            name: project.name || '',
+            code: project.code || '',
+            clientName: project.clientName || '',
+            constructionSiteId: project.constructionSiteId || '',
+            managerId: project.managerId || '',
+            status: project.status || 'planning',
+            startDate: project.startDate || '',
+            endDate: project.endDate || '',
+            description: project.description || '',
+        });
+        setShowProjectForm(true);
+    };
+
+    const saveProject = async () => {
+        if (!projectForm.name.trim()) {
+            alert('Vui lòng nhập tên dự án');
+            return;
+        }
+        setSavingProject(true);
+        try {
+            if (editingProject) {
+                const updated = await projectMasterService.update({
+                    ...editingProject,
+                    name: projectForm.name.trim(),
+                    code: projectForm.code.trim() || editingProject.code,
+                    clientName: projectForm.clientName.trim() || undefined,
+                    constructionSiteId: projectForm.constructionSiteId || null,
+                    managerId: projectForm.managerId || undefined,
+                    status: projectForm.status,
+                    startDate: projectForm.startDate || undefined,
+                    endDate: projectForm.endDate || undefined,
+                    description: projectForm.description.trim() || undefined,
+                });
+                setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
+                if (selectedProjectId === updated.id) {
+                    setSelectedSiteId(updated.constructionSiteId || null);
+                }
+            } else {
+                const created = await projectMasterService.create({
+                    name: projectForm.name.trim(),
+                    code: projectForm.code.trim() || undefined,
+                    clientName: projectForm.clientName.trim() || undefined,
+                    constructionSiteId: projectForm.constructionSiteId || null,
+                    managerId: projectForm.managerId || undefined,
+                    status: projectForm.status,
+                    startDate: projectForm.startDate || undefined,
+                    endDate: projectForm.endDate || undefined,
+                    description: projectForm.description.trim() || undefined,
+                    createdBy: user.id,
+                });
+                setProjects(prev => [created, ...prev.filter(p => p.id !== created.id)]);
+                openProjectDetail(created);
+            }
+            setShowProjectForm(false);
+            setEditingProject(null);
+        } catch (err: any) {
+            alert(`Lưu dự án thất bại: ${err?.message || 'Lỗi không xác định'}`);
+        } finally {
+            setSavingProject(false);
+        }
+    };
+
     const openBudgetForm = (siteId: string) => {
         const existing = projectFinances.find(pf => pf.constructionSiteId === siteId);
         setBudgetData(existing ? { ...existing } : emptyFinance(siteId));
@@ -300,11 +455,11 @@ const ProjectDashboard: React.FC = () => {
     };
 
     const handleAddTx = async () => {
-        if (!selectedSiteId || !txAmount || Number(txAmount) <= 0) return;
+        if (!effectiveSiteId || !txAmount || Number(txAmount) <= 0) return;
         setUploading(true);
         let financeId = selectedFinance?.id;
         if (!financeId) {
-            const newFin = emptyFinance(selectedSiteId);
+            const newFin = emptyFinance(effectiveSiteId);
             addProjectFinance(newFin);
             financeId = newFin.id;
         }
@@ -328,7 +483,7 @@ const ProjectDashboard: React.FC = () => {
             const tx: ProjectTransaction = {
                 id: crypto.randomUUID(),
                 projectFinanceId: financeId,
-                constructionSiteId: selectedSiteId,
+                constructionSiteId: effectiveSiteId,
                 type: txType,
                 category: txCategory,
                 amount: Number(txAmount),
@@ -348,10 +503,10 @@ const ProjectDashboard: React.FC = () => {
     const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (!selectedSiteId) { alert('Vui lòng chọn dự án trước khi import'); return; }
+        if (!effectiveSiteId) { alert('Dự án cần liên kết công trường trước khi import giao dịch'); return; }
         let financeId = selectedFinance?.id;
         if (!financeId) {
-            const newFin = emptyFinance(selectedSiteId);
+            const newFin = emptyFinance(effectiveSiteId);
             addProjectFinance(newFin);
             financeId = newFin.id;
         }
@@ -481,7 +636,7 @@ const ProjectDashboard: React.FC = () => {
                         tx: {
                             id: crypto.randomUUID(),
                             projectFinanceId: financeId!,
-                            constructionSiteId: selectedSiteId,
+                            constructionSiteId: effectiveSiteId,
                             type: typeMap[rawType] || 'expense',
                             category: catMap[rawCat] || 'other',
                             amount,
@@ -538,6 +693,122 @@ const ProjectDashboard: React.FC = () => {
 
     const handleDeleteTx = (id: string) => {
         if (confirm('Xoá giao dịch này?')) removeProjectTransaction(id);
+    };
+
+    // ========== PROJECT FORM MODAL ==========
+    const renderProjectForm = () => {
+        if (!showProjectForm) return null;
+        const linkedSiteProject = projectForm.constructionSiteId
+            ? projectRows.find(p => p.constructionSiteId === projectForm.constructionSiteId && p.id !== editingProject?.id)
+            : null;
+
+        return (
+            <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+                    <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-700 to-slate-900 rounded-t-3xl flex items-center justify-between">
+                        <div className="text-white">
+                            <span className="font-bold text-lg block">{editingProject ? 'Cập nhật dự án' : 'Thêm dự án mới'}</span>
+                            <span className="text-white/70 text-sm">Tạo dự án trước, cấu hình nhân sự và quyền trong tab Tổ chức</span>
+                        </div>
+                        <button onClick={() => setShowProjectForm(false)} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><X size={18} /></button>
+                    </div>
+
+                    <div className="p-6 space-y-5">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="md:col-span-2">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Tên dự án</label>
+                                <input
+                                    value={projectForm.name}
+                                    onChange={e => setProjectForm({ ...projectForm, name: e.target.value })}
+                                    placeholder="VD: Dự án RICO"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Mã dự án</label>
+                                <input
+                                    value={projectForm.code}
+                                    onChange={e => setProjectForm({ ...projectForm, code: e.target.value })}
+                                    placeholder="Tự sinh nếu bỏ trống"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none uppercase"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Chủ đầu tư / Khách hàng</label>
+                                <input
+                                    value={projectForm.clientName}
+                                    onChange={e => setProjectForm({ ...projectForm, clientName: e.target.value })}
+                                    placeholder="Tên chủ đầu tư"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Công trường HRM liên kết</label>
+                                <select
+                                    value={projectForm.constructionSiteId}
+                                    onChange={e => setProjectForm({ ...projectForm, constructionSiteId: e.target.value })}
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none"
+                                >
+                                    <option value="">Không liên kết công trường</option>
+                                    {hrmConstructionSites.map(site => (
+                                        <option key={site.id} value={site.id}>{site.name}</option>
+                                    ))}
+                                </select>
+                                {linkedSiteProject && (
+                                    <p className="text-[10px] text-amber-600 font-bold mt-1">Công trường này đang được liên kết với {linkedSiteProject.name}</p>
+                                )}
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Quản lý dự án</label>
+                                <select
+                                    value={projectForm.managerId}
+                                    onChange={e => setProjectForm({ ...projectForm, managerId: e.target.value })}
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                                >
+                                    <option value="">Chưa chọn</option>
+                                    {users.map(u => <option key={u.id} value={u.id}>{u.name || u.username || u.email}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ngày bắt đầu</label>
+                                <input type="date" value={projectForm.startDate} onChange={e => setProjectForm({ ...projectForm, startDate: e.target.value })}
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-orange-500 outline-none" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ngày kết thúc dự kiến</label>
+                                <input type="date" value={projectForm.endDate} onChange={e => setProjectForm({ ...projectForm, endDate: e.target.value })}
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-orange-500 outline-none" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Trạng thái</label>
+                                <select value={projectForm.status} onChange={e => setProjectForm({ ...projectForm, status: e.target.value as Project['status'] })}
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none">
+                                    {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                                </select>
+                            </div>
+                            <div className="md:col-span-2">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ghi chú</label>
+                                <textarea
+                                    value={projectForm.description}
+                                    onChange={e => setProjectForm({ ...projectForm, description: e.target.value })}
+                                    rows={2}
+                                    placeholder="Phạm vi, địa điểm, ghi chú quản lý..."
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-orange-500 outline-none resize-none"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+                        <button onClick={() => setShowProjectForm(false)} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Huỷ</button>
+                        <button onClick={saveProject} disabled={savingProject || !projectForm.name.trim()}
+                            className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50">
+                            {savingProject ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Đang lưu...</> : <><Save size={16} /> Lưu dự án</>}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
     };
 
     // ========== BUDGET FORM MODAL ==========
@@ -757,37 +1028,71 @@ const ProjectDashboard: React.FC = () => {
 
     // ========== OVERVIEW (project detail) ==========
     const renderOverview = () => {
-        if (!selectedSite || !selectedFinance || !selectedAgg) return null;
-        const totalBudget = selectedFinance.budgetMaterials + selectedFinance.budgetLabor + selectedFinance.budgetSubcontract + selectedFinance.budgetMachinery + selectedFinance.budgetOverhead;
-        const estimatedMargin = selectedFinance.contractValue - selectedAgg.totalExpense;
-        const estimatedMarginPct = selectedFinance.contractValue > 0 ? (estimatedMargin / selectedFinance.contractValue * 100) : 0;
-        const budgetUsed = totalBudget > 0 ? (selectedAgg.totalExpense / totalBudget * 100) : 0;
+        if (!selectedProject) return null;
+        const hasSiteLink = Boolean(effectiveSiteId && selectedSite);
+        const financeForRender = selectedFinance || (effectiveSiteId ? emptyFinance(effectiveSiteId) : null);
+        const aggForRender = selectedAgg || {
+            actualMaterials: 0,
+            actualLabor: 0,
+            actualSubcontract: 0,
+            actualMachinery: 0,
+            actualOverhead: 0,
+            actualOther: 0,
+            revenueReceived: 0,
+            revenuePending: 0,
+            totalExpense: 0,
+            txCount: 0,
+        };
+        const totalBudget = financeForRender
+            ? financeForRender.budgetMaterials + financeForRender.budgetLabor + financeForRender.budgetSubcontract + financeForRender.budgetMachinery + financeForRender.budgetOverhead
+            : 0;
+        const contractValue = financeForRender?.contractValue || 0;
+        const estimatedMargin = contractValue - aggForRender.totalExpense;
+        const estimatedMarginPct = contractValue > 0 ? (estimatedMargin / contractValue * 100) : 0;
+        const budgetUsed = totalBudget > 0 ? (aggForRender.totalExpense / totalBudget * 100) : 0;
+        const statusKey = financeForRender?.status || selectedProject.status || 'planning';
+        const displayProgress = financeForRender ? getDisplayProgress(financeForRender) : 0;
 
         // Chart max value
         const maxVal = Math.max(...BUDGET_CATS.map(c =>
-            Math.max((selectedFinance as any)[`budget${c.key}`] || 0, (selectedAgg as any)[c.aggKey] || 0)
+            Math.max((financeForRender as any)?.[`budget${c.key}`] || 0, (aggForRender as any)[c.aggKey] || 0)
         ), 1);
+        const renderSiteRequired = (title: string) => (
+            <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center shadow-sm">
+                <Building2 size={40} className="mx-auto mb-3 text-slate-300" />
+                <p className="text-sm font-black text-slate-600">{title} cần liên kết công trường HRM</p>
+                <p className="text-xs text-slate-400 mt-1">Bấm "Dự án" để chọn công trường đã tạo tại HrmConstructionSite.</p>
+            </div>
+        );
 
         return (
             <div className="space-y-6">
                 {/* Back + Actions */}
                 <div className="flex items-center justify-between flex-wrap gap-2">
-                    <button onClick={() => { setActiveView('list'); setSelectedSiteId(null); }}
+                    <button onClick={() => { setActiveView('list'); setSelectedSiteId(null); setSelectedProjectId(null); }}
                         className="flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">← Danh sách dự án</button>
                     <div className="flex gap-2 flex-wrap">
-                        <button onClick={() => { resetTxForm(); setShowTxForm(true); }}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-all">
-                            <Plus size={14} /> Thêm giao dịch
+                        <button onClick={() => openEditProject(selectedProject)}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-all">
+                            <Edit2 size={14} /> Dự án
                         </button>
-                        <button onClick={() => fileInputRef.current?.click()}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-all">
-                            <Upload size={14} /> Import Excel
-                        </button>
-                        <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
-                        <button onClick={() => openBudgetForm(selectedSiteId!)}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-all">
-                            <Edit2 size={14} /> Ngân sách
-                        </button>
+                        {hasSiteLink && (
+                            <>
+                                <button onClick={() => { resetTxForm(); setShowTxForm(true); }}
+                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-all">
+                                    <Plus size={14} /> Thêm giao dịch
+                                </button>
+                                <button onClick={() => fileInputRef.current?.click()}
+                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-all">
+                                    <Upload size={14} /> Import Excel
+                                </button>
+                                <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
+                                <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
+                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-all">
+                                    <Edit2 size={14} /> Ngân sách
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -797,17 +1102,19 @@ const ProjectDashboard: React.FC = () => {
                         <div className="flex items-center gap-3">
                             <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center"><HardHat size={24} /></div>
                             <div>
-                                <h2 className="text-2xl font-black">{selectedSite.name}</h2>
-                                <p className="text-white/70 text-sm">{selectedSite.address || selectedSite.description || '—'}</p>
+                                <h2 className="text-2xl font-black">{selectedProject.name}</h2>
+                                <p className="text-white/70 text-sm">
+                                    {selectedSite ? `Công trường: ${selectedSite.name}` : 'Chưa liên kết công trường HRM'}
+                                </p>
                             </div>
                         </div>
                         <div className="text-right">
-                            <div className="inline-block px-3 py-1 rounded-full text-sm font-bold bg-white/20 mb-1">{STATUS_CONFIG[selectedFinance.status]?.label}</div>
-                            <div className="text-3xl font-black">{getDisplayProgress(selectedFinance)}%</div>
+                            <div className="inline-block px-3 py-1 rounded-full text-sm font-bold bg-white/20 mb-1">{STATUS_CONFIG[statusKey]?.label || statusKey}</div>
+                            <div className="text-3xl font-black">{displayProgress}%</div>
                         </div>
                     </div>
                     <div className="mt-4 h-3 bg-white/20 rounded-full overflow-hidden">
-                        <div className="h-full bg-white rounded-full transition-all duration-700" style={{ width: `${getDisplayProgress(selectedFinance)}%` }} />
+                        <div className="h-full bg-white rounded-full transition-all duration-700" style={{ width: `${displayProgress}%` }} />
                     </div>
                 </div>
 
@@ -836,45 +1143,49 @@ const ProjectDashboard: React.FC = () => {
                 </div>
 
                 {overviewTab === 'org' ? (
-                    <ProjectOrgTab constructionSiteId={selectedSiteId!} />
+                    <ProjectOrgTab projectId={selectedProject.id} constructionSiteId={effectiveSiteId} />
                 ) : overviewTab === 'cashflow' ? (
-                    <CashFlowTab
-                        constructionSiteId={selectedSiteId!}
-                        transactions={projectTransactions.filter(t => t.constructionSiteId === selectedSiteId)}
-                        contractValue={selectedFinance.contractValue}
-                    />
+                    hasSiteLink ? (
+                        <CashFlowTab
+                            constructionSiteId={effectiveSiteId!}
+                            transactions={projectTransactions.filter(t => t.constructionSiteId === effectiveSiteId)}
+                            contractValue={contractValue}
+                        />
+                    ) : renderSiteRequired('Dòng tiền')
                 ) : overviewTab === 'contract' ? (
-                    <ContractTab constructionSiteId={selectedSiteId!} />
+                    <ContractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
                 ) : overviewTab === 'gantt' ? (
-                    <GanttTab constructionSiteId={selectedSiteId!} />
+                    <GanttTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
                 ) : overviewTab === 'dailylog' ? (
-                    <DailyLogTab constructionSiteId={selectedSiteId!} />
+                    <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
                 ) : overviewTab === 'subcontract' ? (
-                    <SubcontractTab constructionSiteId={selectedSiteId!} />
+                    <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
                 ) : overviewTab === 'material' ? (
-                    <MaterialTab constructionSiteId={selectedSiteId!} />
+                    <MaterialTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
                 ) : overviewTab === 'supply' ? (
-                    <SupplyChainTab constructionSiteId={selectedSiteId!} />
+                    <SupplyChainTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
                 ) : overviewTab === 'report' ? (
-                    <ReportTab
-                        constructionSiteId={selectedSiteId!}
-                        contractValue={selectedFinance?.contractValue || 0}
-                        totalSpent={selectedAgg?.totalExpense || 0}
-                    />
+                    hasSiteLink ? (
+                        <ReportTab
+                            constructionSiteId={effectiveSiteId!}
+                            contractValue={contractValue}
+                            totalSpent={aggForRender.totalExpense}
+                        />
+                    ) : renderSiteRequired('Báo cáo')
                 ) : overviewTab === 'documents' ? (
-                    <DocumentsTab constructionSiteId={selectedSiteId!} uploadedBy={user?.name} />
+                    <DocumentsTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} uploadedBy={user?.name} />
                 ) : (
                 <>
                 {/* KPI Cards — AUTO-AGGREGATED */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <div onClick={() => setOverviewTab('contract')} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
                         <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-indigo-500 transition-colors"><FileText size={12} /> Giá trị HĐ</div>
-                        <div className="text-xl font-black text-slate-800">{fmt(selectedFinance.contractValue)}</div>
-                        <div className="text-[10px] text-slate-400 mt-1">{fmtFull(selectedFinance.contractValue)}</div>
+                        <div className="text-xl font-black text-slate-800">{fmt(contractValue)}</div>
+                        <div className="text-[10px] text-slate-400 mt-1">{fmtFull(contractValue)}</div>
                     </div>
                     <div onClick={() => setOverviewTab('budget')} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
                         <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-orange-500 transition-colors"><DollarSign size={12} /> Chi phí thực tế</div>
-                        <div className="text-xl font-black text-slate-800">{fmt(selectedAgg.totalExpense)}</div>
+                        <div className="text-xl font-black text-slate-800">{fmt(aggForRender.totalExpense)}</div>
                         <div className={`text-[10px] mt-1 font-bold flex items-center gap-1 ${budgetUsed > 100 ? 'text-red-500' : 'text-emerald-500'}`}>
                             {budgetUsed > 100 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />} {budgetUsed.toFixed(1)}% ngân sách
                         </div>
@@ -888,8 +1199,8 @@ const ProjectDashboard: React.FC = () => {
                     </div>
                     <div onClick={() => setOverviewTab('cashflow')} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
                         <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-cyan-500 transition-colors"><Target size={12} /> Thu / Chờ thu</div>
-                        <div className="text-xl font-black text-emerald-600">{fmt(selectedAgg.revenueReceived)}</div>
-                        <div className="text-[10px] text-amber-500 font-bold mt-1">Chờ: {fmt(selectedAgg.revenuePending)}</div>
+                        <div className="text-xl font-black text-emerald-600">{fmt(aggForRender.revenueReceived)}</div>
+                        <div className="text-[10px] text-amber-500 font-bold mt-1">Chờ: {fmt(aggForRender.revenuePending)}</div>
                     </div>
                 </div>
 
@@ -900,8 +1211,8 @@ const ProjectDashboard: React.FC = () => {
                         <h3 className="text-sm font-black text-slate-700 mb-4 flex items-center gap-2"><BarChart3 size={16} className="text-orange-500" /> Dự toán vs Thực tế (tự động)</h3>
                         <div className="space-y-4">
                             {BUDGET_CATS.map(cat => {
-                                const budget = (selectedFinance as any)[`budget${cat.key}`] || 0;
-                                const actual = (selectedAgg as any)[cat.aggKey] || 0;
+                                const budget = (financeForRender as any)?.[`budget${cat.key}`] || 0;
+                                const actual = (aggForRender as any)[cat.aggKey] || 0;
                                 const diff = actual - budget;
                                 return (
                                     <div key={cat.key}
@@ -937,15 +1248,15 @@ const ProjectDashboard: React.FC = () => {
                         <div className="space-y-2.5">
                             <div className="flex justify-between items-center p-3 bg-blue-50 rounded-xl border border-blue-100">
                                 <span className="text-sm font-bold text-blue-700">Giá trị HĐ (A)</span>
-                                <span className="text-sm font-black text-blue-700">{fmtFull(selectedFinance.contractValue)}</span>
+                                <span className="text-sm font-black text-blue-700">{fmtFull(contractValue)}</span>
                             </div>
                             <div className="flex justify-between items-center p-3 bg-emerald-50 rounded-xl border border-emerald-100">
                                 <span className="text-sm font-bold text-emerald-700">Đã thanh toán</span>
-                                <span className="text-sm font-black text-emerald-700">+ {fmtFull(selectedAgg.revenueReceived)}</span>
+                                <span className="text-sm font-black text-emerald-700">+ {fmtFull(aggForRender.revenueReceived)}</span>
                             </div>
                             <div className="flex justify-between items-center p-3 bg-amber-50 rounded-xl border border-amber-100">
                                 <span className="text-sm font-bold text-amber-700">Chờ nghiệm thu</span>
-                                <span className="text-sm font-black text-amber-700">{fmtFull(selectedAgg.revenuePending)}</span>
+                                <span className="text-sm font-black text-amber-700">{fmtFull(aggForRender.revenuePending)}</span>
                             </div>
                             <div className="border-t-2 border-dashed border-slate-200 my-1" />
                             <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-200">
@@ -953,8 +1264,8 @@ const ProjectDashboard: React.FC = () => {
                                 <span className="text-sm font-black text-slate-700">{fmtFull(totalBudget)}</span>
                             </div>
                             <div className="flex justify-between items-center p-3 bg-orange-50 rounded-xl border border-orange-200">
-                                <span className="text-sm font-bold text-orange-700">Tổng chi thực tế ({selectedAgg.txCount} GD)</span>
-                                <span className="text-sm font-black text-orange-700">- {fmtFull(selectedAgg.totalExpense)}</span>
+                                <span className="text-sm font-bold text-orange-700">Tổng chi thực tế ({aggForRender.txCount} GD)</span>
+                                <span className="text-sm font-black text-orange-700">- {fmtFull(aggForRender.totalExpense)}</span>
                             </div>
 	                            <div className={`flex justify-between items-center p-4 rounded-xl border-2 ${estimatedMargin >= 0 ? 'bg-emerald-50 border-emerald-300' : 'bg-red-50 border-red-300'}`}>
 	                                <span className={`text-sm font-black uppercase ${estimatedMargin >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{estimatedMargin >= 0 ? 'Biên doanh thu - chi' : 'Âm theo chi hiện tại'}</span>
@@ -1063,23 +1374,23 @@ const ProjectDashboard: React.FC = () => {
     const renderList = () => (
         <div className="space-y-6">
             {/* Aggregate KPIs */}
-            {projectFinances.length > 0 && (
+            {projectRows.length > 0 && (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div onClick={() => setActiveView('overview')} className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all cursor-pointer">
+                    <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-lg">
                         <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">Tổng giá trị HĐ</div>
                         <div className="text-2xl font-black">{fmt(allStats.totalContract)}</div>
-                        <div className="text-xs opacity-60 mt-1">{projectFinances.length} dự án</div>
+                        <div className="text-xs opacity-60 mt-1">{projectRows.length} dự án</div>
                     </div>
-                    <div onClick={() => setActiveView('overview')} className="bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all cursor-pointer">
+                    <div className="bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl p-5 text-white shadow-lg">
                         <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">Tổng chi thực tế</div>
                         <div className="text-2xl font-black">{fmt(allStats.totalActual)}</div>
                         <div className="text-xs opacity-60 mt-1">NS: {fmt(allStats.totalBudget)}</div>
                     </div>
-                    <div onClick={() => setActiveView('overview')} className={`bg-gradient-to-br ${allStats.profit >= 0 ? 'from-emerald-500 to-green-600' : 'from-red-500 to-rose-600'} rounded-2xl p-5 text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all cursor-pointer`}>
+                    <div className={`bg-gradient-to-br ${allStats.profit >= 0 ? 'from-emerald-500 to-green-600' : 'from-red-500 to-rose-600'} rounded-2xl p-5 text-white shadow-lg`}>
                         <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">{allStats.profit >= 0 ? 'Biên tạm tính' : 'Âm theo chi hiện tại'}</div>
                         <div className="text-2xl font-black">{fmt(allStats.profit)}</div>
                     </div>
-                    <div onClick={() => setActiveView('overview')} className="bg-gradient-to-br from-violet-500 to-purple-600 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all cursor-pointer">
+                    <div className="bg-gradient-to-br from-violet-500 to-purple-600 rounded-2xl p-5 text-white shadow-lg">
                         <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">Tiến độ TB</div>
                         <div className="text-2xl font-black">{allStats.avgProgress.toFixed(0)}%</div>
                         <div className="text-xs opacity-60 mt-1">Thu: {fmt(allStats.totalRevenue)}</div>
@@ -1089,61 +1400,97 @@ const ProjectDashboard: React.FC = () => {
 
             {/* Project cards */}
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                    <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider">Danh sách dự án</h3>
-                    <span className="text-xs font-bold text-slate-400">{hrmConstructionSites.length} công trường</span>
+                <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3">
+                    <div>
+                        <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider">Danh sách dự án</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                            {projectRows.length} dự án • {hrmConstructionSites.length} công trường HRM có thể liên kết
+                        </p>
+                    </div>
+                    <button onClick={openCreateProject}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg shadow-orange-500/20 hover:shadow-xl transition-all">
+                        <Plus size={14} /> Thêm dự án
+                    </button>
                 </div>
-                {hrmConstructionSites.length === 0 ? (
+
+                {projectLoadError && projects.length === 0 && hrmConstructionSites.length > 0 && (
+                    <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 text-xs font-bold text-amber-700">
+                        Đang dùng dữ liệu công trường cũ làm fallback. Cần chạy migration `projects` để bật luồng dự án mới.
+                    </div>
+                )}
+
+                {projectsLoading ? (
+                    <div className="p-12 text-center">
+                        <div className="w-8 h-8 border-2 border-orange-200 border-t-orange-500 rounded-full animate-spin mx-auto mb-3" />
+                        <p className="text-sm font-bold text-slate-400">Đang tải danh sách dự án...</p>
+                    </div>
+                ) : projectRows.length === 0 ? (
                     <div className="p-12 text-center">
                         <Building2 size={40} className="mx-auto mb-3 text-slate-300" />
-                        <p className="text-sm font-bold text-slate-500">Chưa có công trường nào</p>
-                        <p className="text-xs text-slate-400 mt-1">Thêm tại Cài đặt → Dữ liệu gốc HRM → Công trường</p>
+                        <p className="text-sm font-bold text-slate-500">Chưa có dự án nào</p>
+                        <p className="text-xs text-slate-400 mt-1">Bấm "Thêm dự án" để tạo dự án, sau đó cấu hình nhân sự tại tab Tổ chức.</p>
                     </div>
                 ) : (
                     <div className="divide-y divide-slate-100">
-                        {hrmConstructionSites.map(site => {
-                            const finance = projectFinances.find(pf => pf.constructionSiteId === site.id);
-                            const agg = getAggregated(site.id);
+                        {projectRows.map(project => {
+                            const site = project.constructionSiteId
+                                ? hrmConstructionSites.find(s => s.id === project.constructionSiteId) || null
+                                : null;
+                            const finance = site ? projectFinances.find(pf => pf.constructionSiteId === site.id) || null : null;
+                            const agg = site ? getAggregated(site.id) : { totalExpense: 0, txCount: 0 };
                             const profit = finance ? finance.contractValue - agg.totalExpense : 0;
-                            const displayProgress = getDisplayProgress(finance);
+                            const displayProgress = finance ? getDisplayProgress(finance) : 0;
+                            const status = finance?.status || project.status || 'planning';
 
                             return (
-                                <div key={site.id} className="flex items-center justify-between p-4 hover:bg-slate-50/50 transition-colors group">
+                                <div key={project.id} className="flex items-center justify-between p-4 hover:bg-slate-50/50 transition-colors group">
                                     <div className="flex items-center gap-4 flex-1 min-w-0">
-                                        <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0"><HardHat size={18} /></div>
+                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${site ? 'bg-orange-50 text-orange-500' : 'bg-slate-100 text-slate-400'}`}>
+                                            {site ? <HardHat size={18} /> : <Building2 size={18} />}
+                                        </div>
                                         <div className="min-w-0">
-                                            <div className="text-sm font-bold text-slate-800 truncate">{site.name}</div>
-                                            <div className="text-xs text-slate-400 truncate">{site.address || site.description || '—'}</div>
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <div className="text-sm font-bold text-slate-800 truncate">{project.name}</div>
+                                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-bold shrink-0">{project.code}</span>
+                                            </div>
+                                            <div className="text-xs text-slate-400 truncate">
+                                                {site ? `Công trường: ${site.name}` : 'Chưa liên kết công trường HRM'}
+                                                {project.clientName ? ` • ${project.clientName}` : ''}
+                                            </div>
                                         </div>
                                     </div>
-                                    {finance ? (
-                                        <div className="flex items-center gap-4">
-                                            <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_CONFIG[finance.status]?.bg} ${STATUS_CONFIG[finance.status]?.color}`}>
-                                                {STATUS_CONFIG[finance.status]?.label}
-                                            </div>
-                                            <div className="text-right hidden md:block">
-                                                <div className="text-xs font-bold text-slate-600">{fmt(finance.contractValue)}</div>
-                                                <div className={`text-[10px] font-bold ${profit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                                                    {profit >= 0 ? '+' : ''}{fmt(profit)} ({agg.txCount} GD)
-                                                </div>
-                                            </div>
-                                            <div className="w-20 hidden lg:block">
-                                                <div className="text-[10px] font-bold text-slate-500 mb-0.5">{displayProgress}%</div>
-                                                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-orange-500 rounded-full" style={{ width: `${displayProgress}%` }} />
-                                                </div>
-                                            </div>
-                                            <button onClick={() => { setSelectedSiteId(site.id); setActiveView('overview'); }}
-                                                className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 opacity-0 group-hover:opacity-100 transition-all">
-                                                Xem chi tiết
-                                            </button>
+
+                                    <div className="flex items-center gap-4">
+                                        <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_CONFIG[status]?.bg || 'bg-slate-50 border-slate-200'} ${STATUS_CONFIG[status]?.color || 'text-slate-500'}`}>
+                                            {STATUS_CONFIG[status]?.label || status}
                                         </div>
-                                    ) : (
-                                        <button onClick={() => openBudgetForm(site.id)}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 opacity-0 group-hover:opacity-100 transition-all">
-                                            <Plus size={12} /> Thiết lập dự án
+                                        <div className="text-right hidden md:block">
+                                            <div className="text-xs font-bold text-slate-600">{fmt(finance?.contractValue || 0)}</div>
+                                            <div className={`text-[10px] font-bold ${profit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                                {site ? `${profit >= 0 ? '+' : ''}${fmt(profit)} (${agg.txCount} GD)` : 'Chưa có dữ liệu hiện trường'}
+                                            </div>
+                                        </div>
+                                        <div className="w-20 hidden lg:block">
+                                            <div className="text-[10px] font-bold text-slate-500 mb-0.5">{displayProgress}%</div>
+                                            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                                <div className="h-full bg-orange-500 rounded-full" style={{ width: `${displayProgress}%` }} />
+                                            </div>
+                                        </div>
+                                        <button onClick={() => openEditProject(project)}
+                                            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 hover:text-slate-700 hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-all">
+                                            <Edit2 size={14} />
                                         </button>
-                                    )}
+                                        {site && !finance && (
+                                            <button onClick={() => openBudgetForm(site.id)}
+                                                className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 opacity-0 group-hover:opacity-100 transition-all">
+                                                Ngân sách
+                                            </button>
+                                        )}
+                                        <button onClick={() => openProjectDetail(project)}
+                                            className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 opacity-0 group-hover:opacity-100 transition-all">
+                                            Xem chi tiết
+                                        </button>
+                                    </div>
                                 </div>
                             );
                         })}
@@ -1169,6 +1516,7 @@ const ProjectDashboard: React.FC = () => {
 
             {activeView === 'list' && renderList()}
             {activeView === 'overview' && renderOverview()}
+            {renderProjectForm()}
             {renderBudgetForm()}
             {renderTxForm()}
 

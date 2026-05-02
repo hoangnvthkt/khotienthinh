@@ -377,7 +377,7 @@ const PortfolioDashboard: React.FC = () => {
                             {sortedSummaries.map((s, i) => {
                                 const stConfig = STATUS_CONFIG[s.status] || STATUS_CONFIG.planning;
                                 return (
-                                    <tr key={s.siteId} className="hover:bg-slate-50/50 dark:hover:bg-slate-700/20 transition-colors group cursor-pointer"
+                                    <tr key={s.projectId} className="hover:bg-slate-50/50 dark:hover:bg-slate-700/20 transition-colors group cursor-pointer"
                                         onClick={() => navigate('/da')}>
                                         <td className="p-3 text-slate-400 font-bold">{i + 1}</td>
                                         <td className="p-3">

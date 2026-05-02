@@ -10,7 +10,8 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 
 interface Props {
-  constructionSiteId: string;
+  projectId: string;
+  constructionSiteId?: string | null;
 }
 
 const LEVEL_COLORS: Record<number, string> = {
@@ -31,7 +32,7 @@ const LEVEL_BG: Record<number, string> = {
   6: 'bg-slate-50 border-slate-100',
 };
 
-const ProjectOrgTab: React.FC<Props> = ({ constructionSiteId }) => {
+const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
   const toast = useToast();
   const confirm = useConfirm();
   const { users, hrmPositions } = useApp();
@@ -55,7 +56,7 @@ const ProjectOrgTab: React.FC<Props> = ({ constructionSiteId }) => {
     setLoading(true);
     try {
       const [staffData, permData] = await Promise.all([
-        projectStaffService.listBySite(constructionSiteId),
+        projectStaffService.listByProject(projectId, constructionSiteId || undefined),
         projectPermissionTypeService.list(),
       ]);
       setStaff(staffData);
@@ -65,7 +66,7 @@ const ProjectOrgTab: React.FC<Props> = ({ constructionSiteId }) => {
     } finally {
       setLoading(false);
     }
-  }, [constructionSiteId]);
+  }, [projectId, constructionSiteId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -142,19 +143,21 @@ const ProjectOrgTab: React.FC<Props> = ({ constructionSiteId }) => {
           positionId: fPositionId,
           startDate: fStartDate,
           note: fNote,
-        });
+        }, currentUser?.id, currentUser?.name);
         // Update permissions (replace all)
-        await projectStaffService.setPermissions(editingStaff.id, [...fPermIds], currentUser.id);
+        await projectStaffService.setPermissions(editingStaff.id, [...fPermIds], currentUser?.id, currentUser?.name);
         toast.success('Đã cập nhật thành viên');
       } else {
         await projectStaffService.add({
-          constructionSiteId,
+          projectId,
+          constructionSiteId: constructionSiteId || null,
           userId: fUserId,
           positionId: fPositionId,
           permissionTypeIds: [...fPermIds],
           startDate: fStartDate,
           note: fNote,
-          grantedBy: currentUser.id,
+          grantedBy: currentUser?.id,
+          operatorName: currentUser?.name,
         });
         toast.success('Đã thêm thành viên mới');
       }
@@ -173,7 +176,7 @@ const ProjectOrgTab: React.FC<Props> = ({ constructionSiteId }) => {
     });
     if (!ok) return;
     try {
-      await projectStaffService.remove(s.id);
+      await projectStaffService.remove(s.id, currentUser?.id, currentUser?.name);
       await load();
       toast.success('Đã xoá thành viên');
     } catch (e: any) {
@@ -189,7 +192,7 @@ const ProjectOrgTab: React.FC<Props> = ({ constructionSiteId }) => {
     });
     if (!ok) return;
     try {
-      await projectStaffService.update(s.id, { endDate: new Date().toISOString().slice(0, 10) });
+      await projectStaffService.update(s.id, { endDate: new Date().toISOString().slice(0, 10) }, currentUser?.id, currentUser?.name);
       await load();
       toast.success('Đã cập nhật');
     } catch (e: any) {
@@ -204,7 +207,7 @@ const ProjectOrgTab: React.FC<Props> = ({ constructionSiteId }) => {
       ? currentPerms.filter(id => id !== ptId)
       : [...currentPerms, ptId];
     try {
-      await projectStaffService.setPermissions(s.id, newPerms, currentUser.id);
+      await projectStaffService.setPermissions(s.id, newPerms, currentUser?.id, currentUser?.name);
       await load();
     } catch (e: any) {
       toast.error('Lỗi', e?.message);

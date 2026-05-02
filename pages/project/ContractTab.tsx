@@ -18,7 +18,8 @@ import FinancialPipelineWidget from '../../components/project/FinancialPipelineW
 import ApprovalMatrixPanel from '../../components/project/ApprovalMatrixPanel';
 
 interface ContractTabProps {
-    constructionSiteId: string;
+    constructionSiteId?: string;
+    projectId?: string;
 }
 
 const fmt = (n: number) => {
@@ -56,9 +57,11 @@ const TYPE_CFG = {
     subcontractor: { label: 'Thầu phụ',       icon: '🏗️', color: 'text-orange-600 bg-orange-50 border-orange-200' },
 };
 
-const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
+const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId }) => {
     const toast = useToast();
     const confirm = useConfirm();
+    const effectiveId = projectId || constructionSiteId || '';
+    const hasSiteLink = Boolean(constructionSiteId);
     const [customerContracts, setCustomerContracts] = useState<CustomerContract[]>([]);
     const [subContracts, setSubContracts] = useState<SubcontractorContract[]>([]);
     const [loading, setLoading] = useState(true);
@@ -67,8 +70,8 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
         setLoading(true);
         try {
             const [cust, sub] = await Promise.all([
-                customerContractService.listBySite(constructionSiteId),
-                subcontractorContractService.listBySite(constructionSiteId),
+                customerContractService.listBySite(effectiveId, constructionSiteId || null),
+                subcontractorContractService.listBySite(effectiveId, constructionSiteId || null),
             ]);
             setCustomerContracts(cust);
             setSubContracts(sub);
@@ -76,7 +79,13 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
         finally { setLoading(false); }
     };
 
-    useEffect(() => { loadContracts(); }, [constructionSiteId]);
+    useEffect(() => { if (effectiveId) loadContracts(); }, [effectiveId, constructionSiteId]);
+
+    const renderSiteRequired = (title: string) => (
+        <div className="py-5 text-center text-xs font-bold text-slate-400">
+            {title} cần liên kết công trường HRM để dùng dữ liệu nghiệm thu/thanh toán hiện trường.
+        </div>
+    );
 
     // Unified view
     const contracts: ContractView[] = useMemo(() => [
@@ -247,11 +256,11 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
                                             {/* Sub-tab Content */}
                                             {activeSubTab === 'pipeline' && (
                                                 <div className="pt-3">
-                                                    <FinancialPipelineWidget
+                                                    {hasSiteLink ? <FinancialPipelineWidget
                                                         contractId={c.id}
                                                         contractType={c.type as 'customer' | 'subcontractor'}
-                                                        constructionSiteId={constructionSiteId}
-                                                    />
+                                                        constructionSiteId={constructionSiteId!}
+                                                    /> : renderSiteRequired('Pipeline tài chính')}
                                                 </div>
                                             )}
 
@@ -268,40 +277,41 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId }) => {
                                                 <ContractItemTable
                                                     contractId={c.id}
                                                     contractType={c.type as ContractItemType}
-                                                    constructionSiteId={constructionSiteId}
+                                                    projectId={projectId || constructionSiteId || null}
+                                                    constructionSiteId={constructionSiteId || null}
                                                 />
                                             )}
 
 	                                            {activeSubTab === 'payment' && (
-	                                                <PaymentCertificatePanel
+	                                                hasSiteLink ? <PaymentCertificatePanel
 	                                                    contractId={c.id}
 	                                                    contractType={c.type as ContractItemType}
-	                                                    constructionSiteId={constructionSiteId}
-	                                                />
+	                                                    constructionSiteId={constructionSiteId!}
+	                                                /> : renderSiteRequired('Thanh toán')
 	                                            )}
 
 	                                            {activeSubTab === 'variation' && (
-	                                                <ContractVariationPanel
+	                                                hasSiteLink ? <ContractVariationPanel
 	                                                    contractId={c.id}
 	                                                    contractType={c.type as ContractItemType}
-	                                                    constructionSiteId={constructionSiteId}
-	                                                />
+	                                                    constructionSiteId={constructionSiteId!}
+	                                                /> : renderSiteRequired('Phát sinh')
 	                                            )}
 
 	                                            {activeSubTab === 'acceptance' && (
-	                                                <QuantityAcceptancePanel
+	                                                hasSiteLink ? <QuantityAcceptancePanel
 	                                                    contractId={c.id}
 	                                                    contractType={c.type as ContractItemType}
-	                                                    constructionSiteId={constructionSiteId}
-	                                                />
+	                                                    constructionSiteId={constructionSiteId!}
+	                                                /> : renderSiteRequired('Nghiệm thu')
 	                                            )}
 
 	                                            {activeSubTab === 'advance' && (
-	                                                <AdvancePaymentPanel
+	                                                hasSiteLink ? <AdvancePaymentPanel
 	                                                    contractId={c.id}
 	                                                    contractType={c.type as ContractItemType}
-	                                                    constructionSiteId={constructionSiteId}
-	                                                />
+	                                                    constructionSiteId={constructionSiteId!}
+	                                                /> : renderSiteRequired('Tạm ứng')
 	                                            )}
 
 	                                            {activeSubTab === 'retention' && (

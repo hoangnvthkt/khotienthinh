@@ -12,7 +12,8 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 
 interface SubcontractTabProps {
-    constructionSiteId: string;
+    constructionSiteId?: string;
+    projectId?: string;
 }
 
 const fmt = (n: number) => {
@@ -28,18 +29,20 @@ const STATUS_CFG: Record<AcceptanceStatus, { label: string; color: string; bg: s
     paid: { label: 'Đã TT', color: 'text-violet-600', bg: 'bg-violet-50 border-violet-200', icon: <CreditCard size={12} /> },
 };
 
-const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId }) => {
+const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, projectId }) => {
     const toast = useToast();
     const confirm = useConfirm();
+    const effectiveId = projectId || constructionSiteId || '';
     const [contracts, setContracts] = useState<SubcontractorContract[]>([]);
     const [acceptances, setAcceptances] = useState<AcceptanceRecord[]>([]);
 
     useEffect(() => {
-        subcontractorContractService.listBySite(constructionSiteId)
+        if (!effectiveId) return;
+        subcontractorContractService.listBySite(effectiveId, constructionSiteId || null)
             .then(setContracts)
             .catch(console.error);
-        acceptanceService.list(constructionSiteId).then(setAcceptances).catch(console.error);
-    }, [constructionSiteId]);
+        acceptanceService.list(effectiveId, constructionSiteId || null).then(setAcceptances).catch(console.error);
+    }, [effectiveId, constructionSiteId]);
 
     const [expandedContractId, setExpandedContractId] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
@@ -101,7 +104,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId }) =
             approvedAt: fStatus === 'approved' && editing.status !== 'approved' ? new Date().toISOString() : editing.approvedAt,
             paidAt: fStatus === 'paid' && editing.status !== 'paid' ? new Date().toISOString() : editing.paidAt,
         } : {
-            id: crypto.randomUUID(), contractId: formContractId, constructionSiteId,
+            id: crypto.randomUUID(), contractId: formContractId, projectId: projectId || constructionSiteId || null, constructionSiteId: constructionSiteId || null,
             periodNumber: Number(fPeriod), description: fDesc,
             periodStart: fStart, periodEnd: fEnd, approvedValue: value,
             retentionPercent: retention, retentionAmount, payableAmount,
@@ -112,7 +115,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId }) =
             createdAt: new Date().toISOString(),
         };
         await acceptanceService.upsert(item);
-        setAcceptances(await acceptanceService.list(constructionSiteId));
+        setAcceptances(await acceptanceService.list(effectiveId, constructionSiteId || null));
         resetForm();
     };
 
@@ -122,7 +125,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId }) =
         if (!ok) return;
         try {
             await acceptanceService.remove(id);
-            setAcceptances(await acceptanceService.list(constructionSiteId));
+            setAcceptances(await acceptanceService.list(effectiveId, constructionSiteId || null));
             toast.success('Xoá biên bản thành công');
         } catch (e: any) {
             toast.error('Lỗi xoá', e?.message);
@@ -138,7 +141,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId }) =
             paidAt: status === 'paid' ? new Date().toISOString() : record.paidAt,
         };
         await acceptanceService.upsert(updated);
-        setAcceptances(await acceptanceService.list(constructionSiteId));
+        setAcceptances(await acceptanceService.list(effectiveId, constructionSiteId || null));
     };
 
     // Stats per contract

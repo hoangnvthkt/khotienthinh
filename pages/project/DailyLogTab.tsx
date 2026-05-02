@@ -1,17 +1,21 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import AiInsightPanel from '../../components/AiInsightPanel';
 import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw } from 'lucide-react';
 import { DailyLog, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, ContractItem, DailyLogStatus } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { dailyLogService, taskService } from '../../lib/projectService';
 import { contractItemService } from '../../lib/contractItemService';
+import { projectStaffService } from '../../lib/projectStaffService';
+import { notificationService } from '../../lib/notificationService';
 import { useVoiceInput } from '../../hooks/useVoiceInput';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useApp } from '../../context/AppContext';
 import DailyLogDetailTabs from '../../components/project/DailyLogDetailTabs';
 
 interface DailyLogTabProps {
-    constructionSiteId: string;
+    constructionSiteId?: string;
+    projectId?: string;
 }
 
 const WEATHER: Record<WeatherType, { label: string; icon: React.ReactNode; emoji: string }> = {
@@ -75,18 +79,67 @@ const VoiceTextarea: React.FC<{
     );
 };
 
-const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
+const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId }) => {
     const toast = useToast();
     const confirm = useConfirm();
+    const { user } = useApp();
+    const effectiveId = projectId || constructionSiteId || '';
     const [logs, setLogs] = useState<DailyLog[]>([]);
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
     const [contractItems, setContractItems] = useState<ContractItem[]>([]);
 
+    // ── PBAC: Load user permissions ──
+    const [userPerms, setUserPerms] = useState<Set<string>>(new Set());
+    const [pbacLoaded, setPbacLoaded] = useState(false);
+
     useEffect(() => {
-        dailyLogService.list(constructionSiteId).then(setLogs).catch(console.error);
-        taskService.list(constructionSiteId).then(setTasks).catch(console.error);
-        contractItemService.listBySite(constructionSiteId).then(setContractItems).catch(console.error);
-    }, [constructionSiteId]);
+        setPbacLoaded(false);
+        setUserPerms(new Set());
+        if (!effectiveId) return;
+        const loadPerms = async () => {
+            try {
+                // Check if PBAC is configured for this site/project
+                const hasStaff = projectId
+                    ? await projectStaffService.hasProjectStaff(projectId, constructionSiteId)
+                    : constructionSiteId
+                        ? await projectStaffService.hasSiteStaff(constructionSiteId)
+                        : false;
+
+                if (!hasStaff || !user?.id) {
+                    // No PBAC setup → grant all permissions (backward compatible)
+                    setUserPerms(new Set(['submit', 'verify', 'reject', 'confirm', 'approve']));
+                    setPbacLoaded(true);
+                    return;
+                }
+
+                const permsToCheck = ['submit', 'verify', 'reject'] as const;
+                const results = await Promise.all(
+                    permsToCheck.map(async code => {
+                        const r = projectId
+                            ? await projectStaffService.checkProjectPermission(user.id, projectId, code, constructionSiteId)
+                            : constructionSiteId
+                                ? await projectStaffService.checkPermission(user.id, constructionSiteId, code)
+                                : { allowed: false };
+                        return { code, allowed: r.allowed };
+                    })
+                );
+                setUserPerms(new Set(results.filter(r => r.allowed).map(r => r.code)));
+            } catch (err) {
+                console.warn('PBAC load failed, granting all', err);
+                setUserPerms(new Set(['submit', 'verify', 'reject', 'confirm', 'approve']));
+            } finally {
+                setPbacLoaded(true);
+            }
+        };
+        loadPerms();
+    }, [effectiveId, user?.id, constructionSiteId, projectId]);
+
+    useEffect(() => {
+        if (!effectiveId) return;
+        dailyLogService.list(effectiveId, constructionSiteId || null).then(setLogs).catch(console.error);
+        taskService.list(effectiveId, constructionSiteId || null).then(setTasks).catch(console.error);
+        contractItemService.listBySite(effectiveId, undefined, constructionSiteId || null).then(setContractItems).catch(console.error);
+    }, [effectiveId, constructionSiteId]);
 
     const [showForm, setShowForm] = useState(false);
     const [editing, setEditing] = useState<DailyLog | null>(null);
@@ -159,9 +212,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
         try {
             const ext = file.name.split('.').pop();
             const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}.${ext}`;
-            const { error } = await supabase.storage.from('project-photos').upload(`dailylogs/${constructionSiteId}/${fileName}`, file);
+            const { error } = await supabase.storage.from('project-photos').upload(`dailylogs/${effectiveId}/${fileName}`, file);
             if (error) throw error;
-            const { data: { publicUrl } } = supabase.storage.from('project-photos').getPublicUrl(`dailylogs/${constructionSiteId}/${fileName}`);
+            const { data: { publicUrl } } = supabase.storage.from('project-photos').getPublicUrl(`dailylogs/${effectiveId}/${fileName}`);
             setFPhotos([...fPhotos, { name: file.name, url: publicUrl }]);
             toast.success('Tải ảnh thành công');
         } catch (err: any) {
@@ -191,28 +244,71 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
 	        const item: DailyLog = editing ? {
 	            ...editing, ...baseItem
 	        } : {
-	            id: crypto.randomUUID(), constructionSiteId, ...baseItem,
-	            createdBy: 'admin', createdAt: new Date().toISOString(),
+	            id: crypto.randomUUID(), projectId: projectId || constructionSiteId || null, constructionSiteId: constructionSiteId || null, ...baseItem,
+	            createdBy: user?.name || 'admin', createdAt: new Date().toISOString(),
 		    };
 	        await dailyLogService.upsert(item);
-	        setLogs(await dailyLogService.list(constructionSiteId));
+	        setLogs(await dailyLogService.list(effectiveId, constructionSiteId || null));
 	        toast.success(editing ? 'Cập nhật nhật ký' : 'Ghi nhật ký thành công');
 	        resetForm();
 	    };
 
 	    const handleStatusChange = async (log: DailyLog, status: DailyLogStatus) => {
+	        // ── PBAC Check ──
+	        const permCode = status === 'submitted' ? 'submit'
+	            : status === 'verified' ? 'verify' : 'reject';
+	        if (pbacLoaded && !userPerms.has(permCode)) {
+	            toast.error('Không có quyền', `Bạn cần quyền "${permCode}" để thực hiện thao tác này.`);
+	            return;
+	        }
 	        const now = new Date().toISOString();
 	        const updated: DailyLog = {
 	            ...log,
 	            status,
 	            verified: status === 'verified',
 	            submittedAt: status === 'submitted' ? now : log.submittedAt,
-	            verifiedBy: status === 'verified' ? 'PM/QS' : log.verifiedBy,
+	            verifiedBy: status === 'verified' ? (user?.name || 'PM/QS') : log.verifiedBy,
 	            rejectedAt: status === 'rejected' ? now : log.rejectedAt,
 	            rejectionReason: status === 'rejected' ? 'Cần bổ sung/kiểm tra lại' : log.rejectionReason,
 	        };
 	        await dailyLogService.upsert(updated);
-	        setLogs(await dailyLogService.list(constructionSiteId));
+	        setLogs(await dailyLogService.list(effectiveId, constructionSiteId || null));
+
+            // Notify if submitted
+            if (status === 'submitted') {
+                try {
+                    const staffList = projectId
+                        ? await projectStaffService.listByProject(projectId, constructionSiteId)
+                        : constructionSiteId
+                            ? await projectStaffService.listBySite(constructionSiteId)
+                            : [];
+
+                    const verifiers = staffList.filter(s =>
+                        s.permissions?.some(p => p.permissionCode === 'verify')
+                    );
+
+                    for (const v of verifiers) {
+                        if (!v.userId || v.userId === user?.id) continue;
+                        await notificationService.create({
+                            userId: v.userId,
+                            type: 'info',
+                            category: 'progress',
+                            title: '📝 Nhật ký chờ xác nhận',
+                            message: `${user?.name || 'Nhân viên'} đã gửi nhật ký ngày ${new Date(log.date).toLocaleDateString('vi-VN')}`,
+                            severity: 'info',
+                            icon: '📝',
+                            link: '/da',
+                            sourceType: 'dailylog_submitted',
+                            sourceId: `dailylog_${log.id}`,
+                            constructionSiteId: constructionSiteId || undefined,
+                            metadata: { logId: log.id, date: log.date, submittedBy: user?.name },
+                        });
+                    }
+                } catch (err) {
+                    console.error('Failed to notify verifiers:', err);
+                }
+            }
+
 	        toast.success(
 	            status === 'submitted' ? 'Đã gửi nhật ký' :
 	            status === 'verified' ? 'Đã xác nhận nhật ký' :
@@ -226,7 +322,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
         if (!ok) return;
         try {
             await dailyLogService.remove(id);
-            setLogs(await dailyLogService.list(constructionSiteId));
+            setLogs(await dailyLogService.list(effectiveId, constructionSiteId || null));
             toast.success('Xoá nhật ký thành công');
         } catch (e: any) {
             toast.error('Lỗi xoá', e?.message);
@@ -338,14 +434,14 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId }) => {
                                             </div>
                                         </div>
 	                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-	                                            {status === 'draft' && (
+	                                            {status === 'draft' && userPerms.has('submit') && (
 	                                                <button onClick={() => handleStatusChange(l, 'submitted')} title="Gửi xác nhận" className="w-7 h-7 rounded-lg flex items-center justify-center text-amber-400 hover:text-amber-600 hover:bg-amber-50"><Send size={13} /></button>
 	                                            )}
-	                                            {status === 'submitted' && (
-	                                                <>
-	                                                    <button onClick={() => handleStatusChange(l, 'verified')} title="Xác nhận" className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50"><CheckCircle2 size={13} /></button>
-	                                                    <button onClick={() => handleStatusChange(l, 'rejected')} title="Trả lại" className="w-7 h-7 rounded-lg flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50"><RotateCcw size={13} /></button>
-	                                                </>
+	                                            {status === 'submitted' && userPerms.has('verify') && (
+	                                                <button onClick={() => handleStatusChange(l, 'verified')} title="Xác nhận" className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50"><CheckCircle2 size={13} /></button>
+	                                            )}
+	                                            {status === 'submitted' && userPerms.has('reject') && (
+	                                                <button onClick={() => handleStatusChange(l, 'rejected')} title="Trả lại" className="w-7 h-7 rounded-lg flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50"><RotateCcw size={13} /></button>
 	                                            )}
 	                                            <button onClick={() => openEdit(l)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50"><Edit2 size={13} /></button>
 	                                            <button onClick={() => handleDelete(l.id)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={13} /></button>

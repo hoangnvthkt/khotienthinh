@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 export interface AppNotification {
   id: string;
@@ -561,22 +562,55 @@ export const notificationService = {
     } catch (err) {
       console.error('Payroll alert error:', err);
     }
+    // 11. 📝 DailyLog submitted > 2 days without verification
+    try {
+      const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: staleLogs } = await supabase
+        .from('daily_logs')
+        .select('id, date, construction_site_id')
+        .eq('status', 'submitted')
+        .lt('submitted_at', twoDaysAgo)
+        .limit(20);
+
+      for (const log of (staleLogs || [])) {
+        const alertId = `dailylog_stale_${log.id}`;
+        if (!isNew('progress', alertId)) continue;
+        await createNotification({
+          type: 'warning',
+          category: 'progress',
+          title: '📝 Nhật ký chờ xác nhận > 2 ngày',
+          message: `Nhật ký ${log.date} tại ${getSiteName(log.construction_site_id)} chưa được xác nhận`,
+          severity: 'warning',
+          icon: '📝',
+          link: '/da',
+          sourceType: 'progress',
+          sourceId: alertId,
+          constructionSiteId: log.construction_site_id,
+          metadata: { logId: log.id, date: log.date },
+        });
+        alertCount++;
+      }
+    } catch (err) {
+      console.error('Stale dailylog check error:', err);
+    }
 
     return alertCount;
   },
 
   /** Subscribe to realtime notifications */
-  subscribe(callback: (n: AppNotification) => void) {
+  subscribe(callback: (n: AppNotification) => void, userId?: string): RealtimeChannel {
     return supabase
-      .channel('notifications')
+      .channel(`notifications:${userId || 'global'}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
-        callback(toCamel(payload.new));
+        const notification = toCamel(payload.new);
+        if (notification.userId && notification.userId !== userId) return;
+        callback(notification);
       })
       .subscribe();
   },
 
   /** Unsubscribe */
-  unsubscribe() {
-    supabase.removeChannel(supabase.channel('notifications'));
+  unsubscribe(channel?: RealtimeChannel) {
+    if (channel) supabase.removeChannel(channel);
   },
 };

@@ -7,6 +7,7 @@ import { calculateProjectProgress } from './projectScheduleRules';
    ────────────────────────────────────────────── */
 
 export interface ProjectSummary {
+  projectId: string;
   siteId: string;
   siteName: string;
   siteAddress?: string;
@@ -49,6 +50,7 @@ export interface PortfolioKPIs {
 async function fetchProjectSummaries(): Promise<ProjectSummary[]> {
   // Fetch only needed columns — avoid N+1
   const [
+    { data: projects },
     { data: sites },
     { data: finances },
     { data: contracts },
@@ -60,53 +62,52 @@ async function fetchProjectSummaries(): Promise<ProjectSummary[]> {
     { data: logs },
     { data: payments },
   ] = await Promise.all([
+    supabase.from('projects').select('id, code, name, status, construction_site_id, start_date, end_date'),
     supabase.from('hrm_construction_sites').select('id, name, address'),
-    supabase.from('project_finances').select('"constructionSiteId", "contractValue", "actualMaterials", "actualLabor", "actualSubcontract", "actualMachinery", "actualOverhead", "revenueReceived", "progressPercent", status'),
-    supabase.from('project_contracts').select('id, construction_site_id, type, value'),
-    supabase.from('project_tasks').select('id, construction_site_id, parent_id, name, start_date, end_date, duration, progress, gate_status, is_milestone, resource_count, estimated_cost_per_day, sort_order'),
-    supabase.from('acceptance_records').select('id, construction_site_id, approved_value, payable_amount, status'),
-    supabase.from('material_budget_items').select('id, construction_site_id, waste_percent, waste_threshold'),
-    supabase.from('project_vendors').select('id, construction_site_id'),
-    supabase.from('purchase_orders').select('id, construction_site_id, total_amount'),
-    supabase.from('daily_logs').select('id, construction_site_id'),
-    supabase.from('payment_schedules').select('id, construction_site_id, status, amount, due_date'),
+    supabase.from('project_finances').select('project_id, "constructionSiteId", "contractValue", "actualMaterials", "actualLabor", "actualSubcontract", "actualMachinery", "actualOverhead", "revenueReceived", "progressPercent", status'),
+    supabase.from('project_contracts').select('id, project_id, construction_site_id, type, value'),
+    supabase.from('project_tasks').select('id, project_id, construction_site_id, parent_id, name, start_date, end_date, duration, progress, gate_status, is_milestone, resource_count, estimated_cost_per_day, sort_order'),
+    supabase.from('acceptance_records').select('id, project_id, construction_site_id, approved_value, payable_amount, status'),
+    supabase.from('material_budget_items').select('id, project_id, construction_site_id, waste_percent, waste_threshold'),
+    supabase.from('project_vendors').select('id, project_id, construction_site_id'),
+    supabase.from('purchase_orders').select('id, project_id, construction_site_id, total_amount'),
+    supabase.from('daily_logs').select('id, project_id, construction_site_id'),
+    supabase.from('payment_schedules').select('id, project_id, construction_site_id, status, amount, due_date'),
   ]);
 
-  if (!sites || sites.length === 0) return [];
+  const projectRows = (projects && projects.length > 0)
+    ? projects
+    : (sites || []).map((site: any) => ({
+      id: site.id,
+      name: site.name,
+      status: 'planning',
+      construction_site_id: site.id,
+    }));
 
-  // Pre-group by construction_site_id for O(n) lookup instead of O(n²)
-  const group = (items: any[] | null, siteKey = 'construction_site_id'): Record<string, any[]> => {
-    const map: Record<string, any[]> = {};
-    for (const item of (items || [])) {
-      (map[item[siteKey]] ||= []).push(item);
-    }
-    return map;
-  };
+  if (projectRows.length === 0) return [];
 
-  const financeMap = group(finances as any, 'constructionSiteId');
-  const contractMap = group(contracts as any);
-  const taskMap = group(tasks as any);
-  const acceptanceMap = group(acceptances as any);
-  const boqMap = group(boqItems as any);
-  const vendorMap = group(vendors as any);
-  const poMap = group(pos as any);
-  const logMap = group(logs as any);
-  const paymentMap = group(payments as any);
+  const siteMap = new Map((sites || []).map((site: any) => [site.id, site]));
+  const scoped = (items: any[] | null, projectId: string, siteId?: string | null, siteKey = 'construction_site_id') =>
+    (items || []).filter((item: any) => item.project_id === projectId || (siteId && item[siteKey] === siteId));
+  const scopedFinances = (items: any[] | null, projectId: string, siteId?: string | null) =>
+    (items || []).filter((item: any) => item.project_id === projectId || (siteId && item.constructionSiteId === siteId));
 
   const today = new Date().toISOString().split('T')[0];
 
-  return sites.map((site: any) => {
-    const siteId = site.id;
-    const finance = (financeMap[siteId] || [])[0];
+  return projectRows.map((project: any) => {
+    const projectId = project.id;
+    const siteId = project.construction_site_id || null;
+    const site = siteId ? siteMap.get(siteId) : null;
+    const finance = scopedFinances(finances as any, projectId, siteId)[0];
 
-    const siteContracts = contractMap[siteId] || [];
-    const siteTasks = taskMap[siteId] || [];
-    const siteAcceptances = acceptanceMap[siteId] || [];
-    const siteBoq = boqMap[siteId] || [];
-    const siteVendors = vendorMap[siteId] || [];
-    const sitePos = poMap[siteId] || [];
-    const siteLogs = logMap[siteId] || [];
-    const sitePayments = paymentMap[siteId] || [];
+    const siteContracts = scoped(contracts as any, projectId, siteId);
+    const siteTasks = scoped(tasks as any, projectId, siteId);
+    const siteAcceptances = scoped(acceptances as any, projectId, siteId);
+    const siteBoq = scoped(boqItems as any, projectId, siteId);
+    const siteVendors = scoped(vendors as any, projectId, siteId);
+    const sitePos = scoped(pos as any, projectId, siteId);
+    const siteLogs = scoped(logs as any, projectId, siteId);
+    const sitePayments = scoped(payments as any, projectId, siteId);
 
     const contractValue = finance?.contractValue || siteContracts.filter((c: any) => c.type === 'main').reduce((s: number, c: any) => s + (c.value || 0), 0);
     const totalExpense = finance
@@ -148,10 +149,11 @@ async function fetchProjectSummaries(): Promise<ProjectSummary[]> {
     const taskEndDates = siteTasks.filter((t: any) => t.end_date).map((t: any) => t.end_date);
 
     return {
-      siteId,
-      siteName: site.name || 'N/A',
-      siteAddress: site.address,
-      status: finance?.status || 'planning',
+      projectId,
+      siteId: siteId || projectId,
+      siteName: project.name || site?.name || 'N/A',
+      siteAddress: site?.address,
+      status: finance?.status || project.status || 'planning',
       contractValue,
       totalExpense,
       totalRevenue,
@@ -173,8 +175,8 @@ async function fetchProjectSummaries(): Promise<ProjectSummary[]> {
         const isUnpaid = p.status === 'pending' || p.status === 'overdue' || p.status === 'partial';
         return isUnpaid && p.due_date && p.due_date < today;
       }).length,
-      startDate: taskStartDates.length > 0 ? taskStartDates.sort()[0] : undefined,
-      endDate: taskEndDates.length > 0 ? taskEndDates.sort().reverse()[0] : undefined,
+      startDate: project.start_date || (taskStartDates.length > 0 ? taskStartDates.sort()[0] : undefined),
+      endDate: project.end_date || (taskEndDates.length > 0 ? taskEndDates.sort().reverse()[0] : undefined),
     };
   });
 }

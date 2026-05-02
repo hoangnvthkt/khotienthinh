@@ -83,9 +83,9 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
                     // Audio not available
                 }
             }
-        });
-        return () => { notificationService.unsubscribe(); };
-    }, []);
+        }, userId);
+        return () => { notificationService.unsubscribe(channel); };
+    }, [userId]);
 
     // Request browser notification permission
     useEffect(() => {

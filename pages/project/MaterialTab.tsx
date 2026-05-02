@@ -14,7 +14,8 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 
 interface MaterialTabProps {
-    constructionSiteId: string;
+    constructionSiteId?: string;
+    projectId?: string;
     siteWarehouseId?: string; // ID kho công trường
 }
 
@@ -32,10 +33,11 @@ const REQ_STATUS_MAP: Record<string, { label: string; color: string; bg: string;
     REJECTED:   { label: 'Từ chối', color: 'text-red-600', bg: 'bg-red-50 border-red-200', icon: <Ban size={12} /> },
 };
 
-const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, siteWarehouseId }) => {
+const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, siteWarehouseId }) => {
     const { items: inventoryItems, requests: allRequests, warehouses, users } = useApp();
     const toast = useToast();
     const confirm = useConfirm();
+    const effectiveId = projectId || constructionSiteId || '';
     const [activeSubTab, setActiveSubTab] = useState<'summary' | 'boq' | 'request' | 'waste' | 'dashboard'>('summary');
 
     // BOQ Data
@@ -58,8 +60,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, siteWareh
     const [selectedRequest, setSelectedRequest] = useState<MaterialRequest | undefined>(undefined);
 
     useEffect(() => {
-        boqService.list(constructionSiteId).then(setBoqItems).catch(console.error);
-    }, [constructionSiteId]);
+        if (!effectiveId) return;
+        boqService.list(effectiveId, constructionSiteId || null).then(setBoqItems).catch(console.error);
+    }, [effectiveId, constructionSiteId]);
 
     const [showBoqForm, setShowBoqForm] = useState(false);
     const [editingBoq, setEditingBoq] = useState<MaterialBudgetItem | null>(null);
@@ -163,7 +166,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, siteWareh
 
         const item: MaterialBudgetItem = {
             id: editingBoq?.id || crypto.randomUUID(),
-            constructionSiteId,
+            projectId: projectId || constructionSiteId || null,
+            constructionSiteId: constructionSiteId || null,
             inventoryItemId: bInventoryItemId || undefined,
             materialCode: bMaterialCode || undefined,
             category: bCat, itemName: bName, unit: bUnit,
@@ -175,7 +179,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, siteWareh
         };
 
         await boqService.upsert(item);
-        setBoqItems(await boqService.list(constructionSiteId));
+        setBoqItems(await boqService.list(effectiveId, constructionSiteId || null));
         toast.success(editingBoq ? 'Cập nhật BOQ' : 'Thêm mục BOQ thành công');
         resetBoqForm();
     };
@@ -185,7 +189,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, siteWareh
         if (!ok) return;
         try {
             await boqService.remove(id);
-            setBoqItems(await boqService.list(constructionSiteId));
+            setBoqItems(await boqService.list(effectiveId, constructionSiteId || null));
             toast.success('Xoá BOQ thành công');
         } catch (e: any) {
             toast.error('Lỗi xoá', e?.message);

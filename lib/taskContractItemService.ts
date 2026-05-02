@@ -1,24 +1,25 @@
 import { supabase } from './supabase';
 import { TaskContractItem } from '../types';
 import { fromDb, toDb } from './dbMapping';
+import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 
 const TABLE = 'task_contract_items';
 
 export const taskContractItemService = {
-  async listBySite(constructionSiteId: string): Promise<TaskContractItem[]> {
+  async listBySite(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<TaskContractItem[]> {
     const { data, error } = await supabase
       .from(TABLE)
       .select('*')
-      .eq('construction_site_id', constructionSiteId)
+      .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
       .order('created_at', { ascending: true });
     if (error) {
       console.warn('task_contract_items unavailable', error.message);
       return [];
     }
-    return (data || []).map(fromDb);
+    return dedupeRowsById(data || []).map(fromDb);
   },
 
-  async replaceForTask(taskId: string, constructionSiteId: string, contractItemIds: string[]): Promise<void> {
+  async replaceForTask(taskId: string, projectIdOrSiteId: string, constructionSiteId: string | null, contractItemIds: string[]): Promise<void> {
     try {
       const { error: deleteError } = await supabase.from(TABLE).delete().eq('task_id', taskId);
       if (deleteError) throw deleteError;
@@ -26,6 +27,7 @@ export const taskContractItemService = {
       if (uniqueIds.length === 0) return;
       const rows = uniqueIds.map(contractItemId => toDb({
         taskId,
+        projectId: projectIdOrSiteId,
         constructionSiteId,
         contractItemId,
       }));

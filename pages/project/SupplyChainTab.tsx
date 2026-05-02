@@ -11,7 +11,8 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 
 interface SupplyChainTabProps {
-    constructionSiteId: string;
+    constructionSiteId?: string;
+    projectId?: string;
 }
 
 const fmt = (n: number) => {
@@ -30,9 +31,10 @@ const PO_STATUS: Record<POStatus, { label: string; color: string; bg: string; ic
 
 const VENDOR_CATS = ['Xi măng', 'Thép', 'Cát & Đá', 'Gạch', 'Gỗ', 'Sơn', 'Ống/Phụ kiện nước', 'Dây & TB điện', 'VLXD khác'];
 
-const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) => {
+const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, projectId }) => {
     const toast = useToast();
     const confirm = useConfirm();
+    const effectiveId = projectId || constructionSiteId || '';
     const [subTab, setSubTab] = useState<'vendor' | 'po'>('vendor');
 
     // Vendors
@@ -41,9 +43,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
     const [pos, setPos] = useState<PurchaseOrder[]>([]);
 
     useEffect(() => {
-        vendorService.list(constructionSiteId).then(setVendors).catch(console.error);
-        poService.list(constructionSiteId).then(setPos).catch(console.error);
-    }, [constructionSiteId]);
+        if (!effectiveId) return;
+        vendorService.list(effectiveId, constructionSiteId || null).then(setVendors).catch(console.error);
+        poService.list(effectiveId, constructionSiteId || null).then(setPos).catch(console.error);
+    }, [effectiveId, constructionSiteId]);
 
     const [showVendorForm, setShowVendorForm] = useState(false);
     const [editingVendor, setEditingVendor] = useState<ProjectVendor | null>(null);
@@ -86,7 +89,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
         if (!vName || !vPhone) return;
         const vendorPosData = pos.filter(p => editingVendor ? p.vendorId === editingVendor.id : false);
         const v: ProjectVendor = {
-            id: editingVendor?.id || crypto.randomUUID(), constructionSiteId,
+            id: editingVendor?.id || crypto.randomUUID(), projectId: projectId || constructionSiteId || null, constructionSiteId: constructionSiteId || null,
             name: vName, contact: vContact, phone: vPhone, email: vEmail || undefined,
             address: vAddress || undefined, taxCode: vTax || undefined, rating: vRating,
             categories: vCats, totalOrders: vendorPosData.length,
@@ -94,7 +97,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
             notes: vNotes || undefined, createdAt: editingVendor?.createdAt || new Date().toISOString(),
         };
         await vendorService.upsert(v);
-        setVendors(await vendorService.list(constructionSiteId));
+        setVendors(await vendorService.list(effectiveId, constructionSiteId || null));
         toast.success(editingVendor ? 'Cập nhật NCC' : 'Thêm NCC thành công');
         resetVendorForm();
     };
@@ -121,13 +124,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
             poNumber: pNum, items: validItems, totalAmount, orderDate: pDate,
             expectedDeliveryDate: pExpDate || undefined, note: pNote || undefined,
         } : {
-            id: crypto.randomUUID(), constructionSiteId, vendorId: pVendorId,
+            id: crypto.randomUUID(), projectId: projectId || constructionSiteId || null, constructionSiteId: constructionSiteId || null, vendorId: pVendorId,
             vendorName: vendor?.name, poNumber: pNum, items: validItems,
             totalAmount, orderDate: pDate, expectedDeliveryDate: pExpDate || undefined,
             status: 'draft', note: pNote || undefined, createdAt: new Date().toISOString(),
         };
         await poService.upsert(poItem);
-        setPos(await poService.list(constructionSiteId));
+        setPos(await poService.list(effectiveId, constructionSiteId || null));
         toast.success(editingPo ? 'Cập nhật PO' : 'Tạo đơn hàng thành công');
         resetPoForm();
     };
@@ -140,7 +143,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
             actualDeliveryDate: status === 'delivered' ? new Date().toISOString().split('T')[0] : po.actualDeliveryDate,
         };
         await poService.upsert(updated);
-        setPos(await poService.list(constructionSiteId));
+        setPos(await poService.list(effectiveId, constructionSiteId || null));
         toast.success(`Cập nhật trạng thái PO`);
     };
 
@@ -149,7 +152,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
         if (!ok) return;
         try {
             await vendorService.remove(v.id);
-            setVendors(await vendorService.list(constructionSiteId));
+            setVendors(await vendorService.list(effectiveId, constructionSiteId || null));
             toast.success('Xoá NCC thành công');
         } catch (e: any) {
             toast.error('Lỗi xoá', e?.message);
@@ -161,7 +164,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId }) =
         if (!ok) return;
         try {
             await poService.remove(po.id);
-            setPos(await poService.list(constructionSiteId));
+            setPos(await poService.list(effectiveId, constructionSiteId || null));
             toast.success('Xoá PO thành công');
         } catch (e: any) {
             toast.error('Lỗi xoá', e?.message);

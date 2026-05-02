@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { ContractItem, ContractItemType } from '../types';
 import { fromDb, toDb } from './dbMapping';
+import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 
 // ══════════════════════════════════════════════════════════════
 //  CONTRACT ITEM SERVICE — CRUD cho BOQ hạng mục hợp đồng
@@ -39,17 +40,17 @@ export const contractItemService = {
     return (data || []).map(fromDb);
   },
 
-  /** Lấy BOQ theo construction site */
-  async listBySite(constructionSiteId: string, contractType?: ContractItemType): Promise<ContractItem[]> {
+  /** Lấy BOQ theo project master, fallback theo construction site */
+  async listBySite(projectIdOrSiteId: string, contractType?: ContractItemType, constructionSiteId?: string | null): Promise<ContractItem[]> {
     let query = supabase
       .from(TABLE)
       .select('*')
-      .eq('construction_site_id', constructionSiteId)
+      .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
       .order('order', { ascending: true });
     if (contractType) query = query.eq('contract_type', contractType);
     const { data, error } = await query;
     if (error) throw error;
-    return (data || []).map(fromDb);
+    return dedupeRowsById(data || []).map(fromDb);
   },
 
   /** Trả về cây phân cấp */

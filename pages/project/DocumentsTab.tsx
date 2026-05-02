@@ -10,7 +10,8 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 
 interface DocumentsTabProps {
-    constructionSiteId: string;
+    constructionSiteId?: string;
+    projectId?: string;
     uploadedBy?: string;
 }
 
@@ -28,9 +29,10 @@ const FILE_ICONS: Record<string, { icon: React.ReactNode; color: string }> = {
 
 const getFileIcon = (fileType: string) => FILE_ICONS[fileType] || { icon: <FileIcon size={18} />, color: 'text-slate-500 bg-slate-50' };
 
-const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, uploadedBy }) => {
+const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, projectId, uploadedBy }) => {
     const toast = useToast();
     const confirm = useConfirm();
+    const effectiveId = projectId || constructionSiteId || '';
     const [documents, setDocuments] = useState<ProjectDocument[]>([]);
     const [filterCategory, setFilterCategory] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
@@ -50,9 +52,10 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, uploade
 
     // Load documents
     const loadDocs = useCallback(async () => {
-        const docs = await documentService.list(constructionSiteId, filterCategory);
+        if (!effectiveId) return;
+        const docs = await documentService.list(effectiveId, filterCategory, constructionSiteId || null);
         setDocuments(docs);
-    }, [constructionSiteId, filterCategory]);
+    }, [effectiveId, filterCategory, constructionSiteId]);
 
     useEffect(() => { loadDocs(); }, [loadDocs]);
 
@@ -100,9 +103,11 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, uploade
         try {
             const tags = uploadTags.split(',').map(t => t.trim()).filter(Boolean);
             for (const file of uploadFiles) {
-                await documentService.upload(file, constructionSiteId, {
+                await documentService.upload(file, effectiveId, {
                     title: uploadFiles.length === 1 ? uploadTitle : file.name.replace(/\.[^.]+$/, ''),
                     category: uploadCategory,
+                    projectId: projectId || constructionSiteId || null,
+                    constructionSiteId: constructionSiteId || null,
                     description: uploadDescription || undefined,
                     uploadedBy,
                     tags,

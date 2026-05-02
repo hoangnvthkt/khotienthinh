@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { CustomerContract, SubcontractorContract, SupplierContract } from '../types';
+import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 
 // ══════════════════════════════════════════════════════════════
 //  HD SERVICE — CRUD cho 3 bảng Hợp Đồng
@@ -30,14 +31,14 @@ export const customerContractService = {
     return (data || []).map(fromDb);
   },
 
-  async listBySite(constructionSiteId: string): Promise<CustomerContract[]> {
+  async listBySite(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<CustomerContract[]> {
     const { data, error } = await supabase
       .from('customer_contracts')
       .select('*')
-      .eq('construction_site_id', constructionSiteId)
+      .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data || []).map(fromDb);
+    return dedupeRowsById(data || []).map(fromDb);
   },
 
   async upsert(item: CustomerContract): Promise<void> {
@@ -67,14 +68,14 @@ export const subcontractorContractService = {
     return (data || []).map(fromDb);
   },
 
-  async listBySite(constructionSiteId: string): Promise<SubcontractorContract[]> {
+  async listBySite(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<SubcontractorContract[]> {
     const { data, error } = await supabase
       .from('subcontractor_contracts')
       .select('*')
-      .eq('construction_site_id', constructionSiteId)
+      .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data || []).map(fromDb);
+    return dedupeRowsById(data || []).map(fromDb);
   },
 
   async upsert(item: SubcontractorContract): Promise<void> {

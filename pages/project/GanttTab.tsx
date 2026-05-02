@@ -14,6 +14,8 @@ import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLo
 import { taskService, baselineService, dailyLogService } from '../../lib/projectService';
 import { contractItemService } from '../../lib/contractItemService';
 import { taskContractItemService } from '../../lib/taskContractItemService';
+import { projectStaffService } from '../../lib/projectStaffService';
+import { notificationService } from '../../lib/notificationService';
 import { computeCriticalPath, getDelayDays, rippleEffect, type CriticalPathResult } from '../../lib/criticalPathEngine';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -30,7 +32,8 @@ import {
 } from '../../lib/projectScheduleRules';
 
 interface GanttTabProps {
-    constructionSiteId: string;
+    constructionSiteId?: string;
+    projectId?: string;
 }
 
 // ============= CONSTANTS =============
@@ -108,9 +111,10 @@ const ProgressCell: React.FC<{ value: number; onChange: (v: number) => void }> =
 };
 
 // ============= MAIN COMPONENT =============
-const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
+const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) => {
     const { projectFinances, updateProjectFinance, user } = useApp();
     const toast = useToast();
+    const effectiveId = projectId || constructionSiteId || '';
     // Data
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
     const [baselines, setBaselines] = useState<ProjectBaseline[]>([]);
@@ -135,13 +139,22 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
     const gateBlockedIds = useMemo(() => getGateBlockedTaskIds(tasks), [tasks]);
 
     useEffect(() => {
+        if (!effectiveId) {
+            setTasks([]);
+            setBaselines([]);
+            setDailyLogs([]);
+            setContractItems([]);
+            setTaskContractLinks({});
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         Promise.all([
-            taskService.list(constructionSiteId),
-            baselineService.list(constructionSiteId),
-            dailyLogService.list(constructionSiteId),
-            contractItemService.listBySite(constructionSiteId),
-            taskContractItemService.listBySite(constructionSiteId),
+            taskService.list(effectiveId, constructionSiteId || null),
+            baselineService.list(effectiveId, constructionSiteId || null),
+            dailyLogService.list(effectiveId, constructionSiteId || null),
+            contractItemService.listBySite(effectiveId, undefined, constructionSiteId || null),
+            taskContractItemService.listBySite(effectiveId, constructionSiteId || null),
         ]).then(([taskData, baselineData, logData, contractItemData, linkData]) => {
             setTasks(taskData);
             setBaselines(baselineData);
@@ -155,7 +168,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
             if (baselineData.length > 0) setActiveBaseline(baselineData[0]);
             setLoading(false);
         }).catch(e => { console.error(e); setLoading(false); });
-    }, [constructionSiteId]);
+    }, [effectiveId, constructionSiteId]);
 
     // View
     const [viewMode, setViewMode] = useState<ViewMode>('split');
@@ -193,9 +206,42 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
 
     const progressSummary = useMemo(() => calculateProjectProgress(tasks), [tasks]);
 
+    const notifyGateApprovers = useCallback(async (task: ProjectTask) => {
+        try {
+            const staffList = projectId
+                ? await projectStaffService.listByProject(projectId, constructionSiteId)
+                : constructionSiteId
+                    ? await projectStaffService.listBySite(constructionSiteId)
+                    : [];
+            const approvers = staffList.filter(s =>
+                s.permissions?.some(p => ['verify', 'approve', 'confirm'].includes(p.permissionCode || ''))
+            );
+            for (const a of approvers) {
+                if (!a.userId || a.userId === user?.id) continue;
+                await notificationService.create({
+                    userId: a.userId,
+                    type: 'warning',
+                    category: 'progress',
+                    title: '📋 Hạng mục chờ nghiệm thu',
+                    message: `"${task.name}" đã hoàn thành 100% — cần duyệt gate`,
+                    severity: 'warning',
+                    icon: '📋',
+                    link: '/da',
+                    sourceType: 'gate_pending',
+                    sourceId: `gate_${task.id}`,
+                    constructionSiteId: constructionSiteId || undefined,
+                    metadata: { taskId: task.id, taskName: task.name, projectId },
+                });
+            }
+        } catch (err) {
+            console.error('Failed to notify approvers:', err);
+        }
+    }, [projectId, constructionSiteId, user?.id]);
+
     const syncProjectFinanceProgress = useCallback((nextTasks: ProjectTask[]) => {
         const summary = calculateProjectProgress(nextTasks);
         if (summary.leafTaskCount === 0) return;
+        if (!constructionSiteId) return;
 
         const finance = projectFinances.find(pf => pf.constructionSiteId === constructionSiteId);
         if (!finance || finance.progressPercent === summary.progressPercent) return;
@@ -280,7 +326,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
             resourceType: fResourceType,
             estimatedCostPerDay: Number(fCostPerDay) || 0,
         } : {
-            id: crypto.randomUUID(), constructionSiteId,
+            id: crypto.randomUUID(), projectId: projectId || constructionSiteId || null, constructionSiteId: constructionSiteId || null,
             name: fName, startDate: fStart, endDate: fEnd, duration,
             progress: Number(fProgress), progressMode: fProgressMode, assignee: fAssignee || undefined,
             parentId: fParentId || undefined, isMilestone: fMilestone,
@@ -294,9 +340,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
         };
 	        const item = applyProgressGateTransition(baseItem, Number(fProgress));
 	        await taskService.upsert(item);
-	        await taskContractItemService.replaceForTask(item.id, constructionSiteId, fContractItemIds);
-	        const nextTasks = await taskService.list(constructionSiteId);
-	        const nextLinks = await taskContractItemService.listBySite(constructionSiteId);
+	        await taskContractItemService.replaceForTask(item.id, effectiveId, constructionSiteId || null, fContractItemIds);
+	        const nextTasks = await taskService.list(effectiveId, constructionSiteId || null);
+	        const nextLinks = await taskContractItemService.listBySite(effectiveId, constructionSiteId || null);
 	        setTasks(nextTasks);
 	        setTaskContractLinks(nextLinks.reduce<Record<string, string[]>>((acc, link) => {
 	            if (!acc[link.taskId]) acc[link.taskId] = [];
@@ -307,6 +353,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
         resetForm();
         if (item.progress >= 100 && item.gateStatus === 'pending') {
             toast.info('Đã chuyển sang chờ nghiệm thu', 'Hạng mục 100% cần được duyệt trước khi tính là hoàn thành.');
+            const wasAlreadyPending = editing?.progress >= 100 && editing?.gateStatus === 'pending';
+            if (!wasAlreadyPending) await notifyGateApprovers(item);
         }
     };
 
@@ -322,7 +370,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
 
         for (const id of idsToRemove) await taskService.remove(id);
         for (const task of changedRefs) await taskService.upsert(task);
-        const nextTasks = await taskService.list(constructionSiteId);
+        const nextTasks = await taskService.list(effectiveId, constructionSiteId || null);
         setTasks(nextTasks);
         syncProjectFinanceProgress(nextTasks);
         setDeleteTarget(null);
@@ -346,6 +394,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
         syncProjectFinanceProgress(nextTasks);
         if (updated.progress >= 100 && updated.gateStatus === 'pending') {
             toast.info('Đã nộp chờ nghiệm thu', 'Hạng mục sẽ chỉ tính là hoàn thành sau khi được duyệt.');
+            const wasAlreadyPending = task.progress >= 100 && task.gateStatus === 'pending';
+            if (!wasAlreadyPending) await notifyGateApprovers(updated);
         }
     };
 
@@ -436,7 +486,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
         const name = `Baseline v${baselines.length + 1} — ${new Date().toLocaleDateString('vi-VN')}`;
         const bl: ProjectBaseline = {
             id: crypto.randomUUID(),
-            constructionSiteId,
+            projectId: projectId || constructionSiteId || null,
+            constructionSiteId: constructionSiteId || null,
             name,
             lockedAt: new Date().toISOString(),
             tasksSnapshot: tasks.map(t => ({ ...t, baselineStart: t.startDate, baselineEnd: t.endDate, baselineLocked: true })),
@@ -453,7 +504,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId }) => {
         setTasks(updatedTasks);
         setBaselines(prev => [bl, ...prev]);
         setActiveBaseline(bl);
-    }, [tasks, baselines, constructionSiteId]);
+    }, [tasks, baselines, projectId, constructionSiteId]);
 
     // ====== GĐ2: Gate State Machine ======
     const handleGateApproval = useCallback(async (taskId: string, status: GateStatus, reason?: string) => {

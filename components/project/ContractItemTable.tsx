@@ -11,7 +11,8 @@ import { useConfirm } from '../../context/ConfirmContext';
 interface ContractItemTableProps {
   contractId: string;
   contractType: ContractItemType;
-  constructionSiteId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
   readOnly?: boolean;
 }
 
@@ -27,7 +28,7 @@ const EMPTY_ITEM: Partial<ContractItem> = {
 };
 
 const ContractItemTable: React.FC<ContractItemTableProps> = ({
-  contractId, contractType, constructionSiteId, readOnly,
+  contractId, contractType, projectId, constructionSiteId, readOnly,
 }) => {
   const toast = useToast();
   const confirm = useConfirm();
@@ -81,6 +82,7 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
         ...newItem as any,
         contractId,
         contractType,
+        projectId: projectId || constructionSiteId || null,
         constructionSiteId,
         quantity: newItem.quantity || 0,
         unitPrice: newItem.unitPrice || 0,
@@ -140,6 +142,7 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
         importItems.push({
           contractId,
           contractType,
+          projectId: projectId || constructionSiteId || null,
           constructionSiteId,
           code: String(row[0] || ''),
           name: String(row[1] || ''),

@@ -35,8 +35,10 @@ const toCamel = (row: any): AuditEntry => ({
   createdAt: row.created_at,
 });
 
-// Module mapping from table name
 const TABLE_MODULE_MAP: Record<string, string> = {
+  project_staff: 'PROJECT',
+  project_staff_permissions: 'PROJECT',
+  project_permission_types: 'PROJECT',
   items: 'WMS',
   warehouses: 'WMS',
   categories: 'WMS',
@@ -82,6 +84,9 @@ const TABLE_MODULE_MAP: Record<string, string> = {
 
 // Human-readable table names
 export const TABLE_LABELS: Record<string, string> = {
+  project_staff: 'Nhân sự dự án',
+  project_staff_permissions: 'Quyền nhân sự dự án',
+  project_permission_types: 'Loại quyền dự án',
   items: 'Vật tư',
   warehouses: 'Kho bãi',
   categories: 'Danh mục',

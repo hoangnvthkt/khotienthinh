@@ -23,9 +23,9 @@ const emptyDetails = (): DailyLogDetails => ({
   machines: [],
 });
 
-const attachMeta = (items: any[], dailyLogId: string, constructionSiteId: string) =>
+const attachMeta = (items: any[], dailyLogId: string, projectId: string | null, constructionSiteId: string | null) =>
   items.map((item, sourceIndex) => {
-    const row = toDb({ ...item, dailyLogId, constructionSiteId, sourceIndex });
+    const row = toDb({ ...item, dailyLogId, projectId, constructionSiteId, sourceIndex });
     delete row.id;
     return row;
   });
@@ -68,15 +68,16 @@ export const dailyLogDetailService = {
 
   async replaceForLog(
     dailyLogId: string,
-    constructionSiteId: string,
+    projectId: string | null,
+    constructionSiteId: string | null,
     details: DailyLogDetails,
   ): Promise<void> {
     try {
       await Promise.all([
-        replaceTable('daily_log_volumes', dailyLogId, attachMeta(details.volumes, dailyLogId, constructionSiteId)),
-        replaceTable('daily_log_materials', dailyLogId, attachMeta(details.materials, dailyLogId, constructionSiteId)),
-        replaceTable('daily_log_labor', dailyLogId, attachMeta(details.laborDetails, dailyLogId, constructionSiteId)),
-        replaceTable('daily_log_machines', dailyLogId, attachMeta(details.machines, dailyLogId, constructionSiteId)),
+        replaceTable('daily_log_volumes', dailyLogId, attachMeta(details.volumes, dailyLogId, projectId, constructionSiteId)),
+        replaceTable('daily_log_materials', dailyLogId, attachMeta(details.materials, dailyLogId, projectId, constructionSiteId)),
+        replaceTable('daily_log_labor', dailyLogId, attachMeta(details.laborDetails, dailyLogId, projectId, constructionSiteId)),
+        replaceTable('daily_log_machines', dailyLogId, attachMeta(details.machines, dailyLogId, projectId, constructionSiteId)),
       ]);
     } catch (error: any) {
       console.warn('Cannot write normalized daily log details yet; JSONB copy remains available', error?.message || error);

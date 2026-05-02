@@ -1,8 +1,10 @@
 import { supabase } from './supabase';
+import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 
 export interface ProjectDocument {
   id: string;
-  constructionSiteId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
   category: string;
   title: string;
   description?: string;
@@ -35,6 +37,7 @@ const ALLOWED_TYPES = [
 
 const toCamel = (row: any): ProjectDocument => ({
   id: row.id,
+  projectId: row.project_id,
   constructionSiteId: row.construction_site_id,
   category: row.category,
   title: row.title,
@@ -76,10 +79,12 @@ export const documentService = {
   /** Upload file to storage and create metadata record */
   async upload(
     file: File,
-    siteId: string,
+    projectIdOrSiteId: string,
     meta: {
       title: string;
       category: string;
+      projectId?: string | null;
+      constructionSiteId?: string | null;
       description?: string;
       uploadedBy?: string;
       linkedRecordType?: string;
@@ -97,7 +102,7 @@ export const documentService = {
     const ext = file.name.split('.').pop() || '';
     // Use UUID in path to prevent collisions
     const uuid = crypto.randomUUID();
-    const storagePath = `${siteId}/${uuid}_${file.name}`;
+    const storagePath = `${projectIdOrSiteId}/${uuid}_${file.name}`;
 
     // Upload to storage
     const { error: uploadError } = await supabase.storage
@@ -111,7 +116,8 @@ export const documentService = {
     // Create metadata record
     const doc = {
       id: crypto.randomUUID(),
-      construction_site_id: siteId,
+      project_id: meta.projectId ?? projectIdOrSiteId,
+      construction_site_id: meta.constructionSiteId === undefined ? projectIdOrSiteId : meta.constructionSiteId,
       category: meta.category,
       title: meta.title,
       description: meta.description || null,
@@ -137,17 +143,17 @@ export const documentService = {
   },
 
   /** List documents for a construction site */
-  async list(siteId: string, category?: string): Promise<ProjectDocument[]> {
+  async list(projectIdOrSiteId: string, category?: string, constructionSiteId?: string | null): Promise<ProjectDocument[]> {
     let query = supabase
       .from('project_documents')
       .select('*')
-      .eq('construction_site_id', siteId)
+      .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
       .order('created_at', { ascending: false });
     if (category && category !== 'all') {
       query = query.eq('category', category);
     }
     const { data } = await query;
-    return (data || []).map(toCamel);
+    return dedupeRowsById(data || []).map(toCamel);
   },
 
   /** Get a signed URL for private file access (1 hour expiry) */
@@ -179,6 +185,7 @@ export const documentService = {
     const snake: any = {};
     const map: Record<string, string> = {
       constructionSiteId: 'construction_site_id', fileName: 'file_name',
+      projectId: 'project_id',
       fileType: 'file_type', fileSize: 'file_size', storagePath: 'storage_path',
       uploadedBy: 'uploaded_by', linkedRecordType: 'linked_record_type',
       linkedRecordId: 'linked_record_id', updatedAt: 'updated_at',

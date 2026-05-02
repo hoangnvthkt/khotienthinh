@@ -22,6 +22,11 @@ DO $$
 DECLARE
   v_site_id uuid := gen_random_uuid();
   v_site_text text := v_site_id::text;
+  v_project_id text := 'smoke-project-' || replace(gen_random_uuid()::text, '-', '');
+  v_no_site_project_id text := 'smoke-project-nosite-' || replace(gen_random_uuid()::text, '-', '');
+  v_project_staff_id uuid;
+  v_smoke_user_id uuid := gen_random_uuid();
+  v_smoke_position_id uuid := gen_random_uuid();
   v_contract_id uuid := gen_random_uuid();
   v_task_id text := 'smoke-task-' || replace(gen_random_uuid()::text, '-', '');
   v_daily_log_id text := 'smoke-log-' || replace(gen_random_uuid()::text, '-', '');
@@ -43,6 +48,57 @@ DECLARE
   v_payable numeric := 35100000000;
   v_advance_remaining numeric := 33800000000;
 BEGIN
+  INSERT INTO hrm_construction_sites (id, name)
+  VALUES (v_site_id, 'Smoke HRM construction site');
+
+  INSERT INTO hrm_positions (id, name, level)
+  VALUES (v_smoke_position_id, 'Smoke project position', 99);
+
+  INSERT INTO projects (
+    id,
+    code,
+    name,
+    status,
+    construction_site_id,
+    source
+  )
+  VALUES
+    (v_project_id, 'SMOKE-LINKED-' || substr(replace(v_project_id, '-', ''), 1, 8), 'Smoke linked project', 'active', v_site_id, 'manual'),
+    (v_no_site_project_id, 'SMOKE-NOSITE-' || substr(replace(v_no_site_project_id, '-', ''), 1, 8), 'Smoke project without site', 'planning', NULL, 'manual');
+
+  INSERT INTO project_staff (
+    project_id,
+    construction_site_id,
+    user_id,
+    position_id,
+    start_date,
+    note
+  )
+  VALUES (
+    v_no_site_project_id,
+    NULL,
+    v_smoke_user_id,
+    v_smoke_position_id,
+    '2026-05-01',
+    'Smoke staff assigned before HRM site link'
+  )
+  RETURNING id INTO v_project_staff_id;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM projects p
+    JOIN project_staff ps ON ps.project_id = p.id
+    WHERE p.id = v_no_site_project_id
+      AND p.construction_site_id IS NULL
+      AND ps.id = v_project_staff_id
+      AND ps.construction_site_id IS NULL
+  ) THEN
+    RAISE EXCEPTION 'Project master or project-level staff setup failed';
+  END IF;
+
+  INSERT INTO _project_smoke_result
+  VALUES (5, 'project_master_optional_site', 'PASS', 'Project can be created without HRM site and staff can be assigned by project_id.');
+
   INSERT INTO contract_items (
     contract_id,
     contract_type,
