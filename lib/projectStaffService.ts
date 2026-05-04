@@ -11,6 +11,44 @@ const STAFF_TABLE = 'project_staff';
 const PERM_TABLE = 'project_staff_permissions';
 const PERM_TYPE_TABLE = 'project_permission_types';
 
+export type ProjectPermissionCode = 'view' | 'edit' | 'submit' | 'verify' | 'confirm' | 'approve';
+
+export const PROJECT_PERMISSION_LABELS: Record<ProjectPermissionCode, string> = {
+  view: 'xem dữ liệu',
+  edit: 'sửa dữ liệu',
+  submit: 'gửi yêu cầu',
+  verify: 'xác nhận kết quả',
+  confirm: 'xác nhận nghiệp vụ',
+  approve: 'phê duyệt',
+};
+
+const PROJECT_PERMISSION_CODES = new Set<ProjectPermissionCode>([
+  'view',
+  'edit',
+  'submit',
+  'verify',
+  'confirm',
+  'approve',
+]);
+
+export const normalizeProjectPermissionCode = (code: string): ProjectPermissionCode | null => {
+  if (code === 'reject' || code === 'returned') return 'verify';
+  if (code === 'paid') return 'confirm';
+  return PROJECT_PERMISSION_CODES.has(code as ProjectPermissionCode) ? (code as ProjectPermissionCode) : null;
+};
+
+const isActiveStaff = (staff: ProjectStaff) => !staff.endDate;
+
+const getPermissionDeniedMessage = (code: ProjectPermissionCode, actionLabel?: string) => {
+  const label = actionLabel || PROJECT_PERMISSION_LABELS[code];
+  return `Bạn cần quyền "${code}" (${PROJECT_PERMISSION_LABELS[code]}) để ${label}.`;
+};
+
+const isMissingRpcError = (error: any) => {
+  const msg = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ');
+  return error?.code === 'PGRST202' || error?.code === 'PGRST203' || error?.code === '42883' || msg.includes('replace_project_staff_permissions');
+};
+
 const hydrateStaffRows = async (staffRows: any[]): Promise<ProjectStaff[]> => {
   if (!staffRows?.length) return [];
 
@@ -169,16 +207,13 @@ export const projectStaffService = {
 
     const staffId = data.id;
 
-    // Insert permissions
-    if (staff.permissionTypeIds.length > 0) {
-      const permInserts = staff.permissionTypeIds.map(ptId => ({
-        staff_id: staffId,
-        permission_type_id: ptId,
-        is_active: true,
-        granted_by: staff.grantedBy || null,
-      }));
-      const { error: permErr } = await supabase.from(PERM_TABLE).insert(permInserts);
-      if (permErr) throw permErr;
+    try {
+      if (staff.permissionTypeIds.length > 0) {
+        await this.setPermissions(staffId, staff.permissionTypeIds, staff.grantedBy, staff.operatorName);
+      }
+    } catch (permErr) {
+      await supabase.from(STAFF_TABLE).delete().eq('id', staffId);
+      throw permErr;
     }
 
     await auditService.log({
@@ -244,20 +279,35 @@ export const projectStaffService = {
 
   /** Cập nhật toàn bộ quyền cho 1 staff (replace all) */
   async setPermissions(staffId: string, permissionTypeIds: string[], grantedBy?: string, operatorName?: string): Promise<void> {
-    const { data: oldPerms } = await supabase.from(PERM_TABLE).select('permission_type_id').eq('staff_id', staffId);
-    // Xoá hết cũ
-    await supabase.from(PERM_TABLE).delete().eq('staff_id', staffId);
+    const nextPermissionTypeIds = [...new Set(permissionTypeIds.filter(Boolean))];
+    const { data: oldPerms, error: oldPermsError } = await supabase
+      .from(PERM_TABLE)
+      .select('permission_type_id')
+      .eq('staff_id', staffId);
+    if (oldPermsError) throw oldPermsError;
 
-    // Insert mới
-    if (permissionTypeIds.length > 0) {
-      const inserts = permissionTypeIds.map(ptId => ({
-        staff_id: staffId,
-        permission_type_id: ptId,
-        is_active: true,
-        granted_by: grantedBy || null,
-      }));
-      const { error } = await supabase.from(PERM_TABLE).insert(inserts);
-      if (error) throw error;
+    const rpcResult = await supabase.rpc('replace_project_staff_permissions', {
+      p_staff_id: staffId,
+      p_permission_type_ids: nextPermissionTypeIds,
+      p_granted_by: grantedBy || null,
+    });
+
+    if (rpcResult.error) {
+      if (!isMissingRpcError(rpcResult.error)) throw rpcResult.error;
+
+      const { error: deleteError } = await supabase.from(PERM_TABLE).delete().eq('staff_id', staffId);
+      if (deleteError) throw deleteError;
+
+      if (nextPermissionTypeIds.length > 0) {
+        const inserts = nextPermissionTypeIds.map(ptId => ({
+          staff_id: staffId,
+          permission_type_id: ptId,
+          is_active: true,
+          granted_by: grantedBy || null,
+        }));
+        const { error: insertError } = await supabase.from(PERM_TABLE).insert(inserts);
+        if (insertError) throw insertError;
+      }
     }
 
     await auditService.log({
@@ -265,10 +315,10 @@ export const projectStaffService = {
       recordId: staffId,
       action: 'UPDATE',
       oldData: { permissions: (oldPerms || []).map(p => p.permission_type_id) },
-      newData: { permissions: permissionTypeIds },
+      newData: { permissions: nextPermissionTypeIds },
       userId: grantedBy || 'system',
       userName: operatorName || 'System',
-      description: `Cập nhật quyền nhân sự dự án (${oldPerms?.length || 0} → ${permissionTypeIds.length} quyền)`,
+      description: `Cập nhật quyền nhân sự dự án (${oldPerms?.length || 0} → ${nextPermissionTypeIds.length} quyền)`,
     });
   },
 
@@ -281,6 +331,9 @@ export const projectStaffService = {
     constructionSiteId: string,
     actionCode: string, // 'verify' | 'confirm' | 'approve' | 'submit' | 'edit' | 'view'
   ): Promise<{ allowed: boolean; staffRecord?: ProjectStaff }> {
+    const normalizedCode = normalizeProjectPermissionCode(actionCode);
+    if (!normalizedCode) return { allowed: false };
+
     // Load staff records for this user at this site
     const { data: staffRows, error } = await supabase
       .from(STAFF_TABLE)
@@ -294,22 +347,24 @@ export const projectStaffService = {
     const staffIds = staffRows.map(r => r.id);
 
     // Tìm permission type ID cho action code
-    const { data: permType } = await supabase
+    const { data: permType, error: permTypeError } = await supabase
       .from(PERM_TYPE_TABLE)
       .select('id')
-      .eq('code', actionCode)
+      .eq('code', normalizedCode)
       .eq('is_active', true)
-      .single();
+      .maybeSingle();
+    if (permTypeError) throw permTypeError;
     if (!permType) return { allowed: false };
 
     // Check nếu bất kỳ staff record nào có permission này
-    const { data: permMatch } = await supabase
+    const { data: permMatch, error: permMatchError } = await supabase
       .from(PERM_TABLE)
       .select('staff_id')
       .in('staff_id', staffIds)
       .eq('permission_type_id', permType.id)
       .eq('is_active', true)
       .limit(1);
+    if (permMatchError) throw permMatchError;
 
     return { allowed: (permMatch?.length || 0) > 0 };
   },
@@ -323,6 +378,9 @@ export const projectStaffService = {
     actionCode: string,
     constructionSiteId?: string,
   ): Promise<{ allowed: boolean; staffRecord?: ProjectStaff }> {
+    const normalizedCode = normalizeProjectPermissionCode(actionCode);
+    if (!normalizedCode) return { allowed: false };
+
     let { data: staffRows, error } = await supabase
       .from(STAFF_TABLE)
       .select('id')
@@ -345,46 +403,115 @@ export const projectStaffService = {
     if (!staffRows?.length) return { allowed: false };
 
     const staffIds = staffRows.map(r => r.id);
-    const { data: permType } = await supabase
+    const { data: permType, error: permTypeError } = await supabase
       .from(PERM_TYPE_TABLE)
       .select('id')
-      .eq('code', actionCode)
+      .eq('code', normalizedCode)
       .eq('is_active', true)
-      .single();
+      .maybeSingle();
+    if (permTypeError) throw permTypeError;
     if (!permType) return { allowed: false };
 
-    const { data: permMatch } = await supabase
+    const { data: permMatch, error: permMatchError } = await supabase
       .from(PERM_TABLE)
       .select('staff_id')
       .in('staff_id', staffIds)
       .eq('permission_type_id', permType.id)
       .eq('is_active', true)
       .limit(1);
+    if (permMatchError) throw permMatchError;
 
     return { allowed: (permMatch?.length || 0) > 0 };
   },
 
   /** Check nhanh: CT này đã setup staff chưa? */
   async hasSiteStaff(constructionSiteId: string): Promise<boolean> {
-    const { count } = await supabase
+    const { count, error } = await supabase
       .from(STAFF_TABLE)
       .select('id', { count: 'exact', head: true })
-      .eq('construction_site_id', constructionSiteId);
+      .eq('construction_site_id', constructionSiteId)
+      .is('end_date', null);
+    if (error) throw error;
     return (count || 0) > 0;
   },
 
   /** Check nhanh: project này đã setup staff chưa? */
   async hasProjectStaff(projectId: string, constructionSiteId?: string): Promise<boolean> {
-    const { count } = await supabase
+    const { count, error } = await supabase
       .from(STAFF_TABLE)
       .select('id', { count: 'exact', head: true })
-      .eq('project_id', projectId);
+      .eq('project_id', projectId)
+      .is('end_date', null);
+    if (error) throw error;
     if ((count || 0) > 0) return true;
     if (!constructionSiteId) return false;
-    const { count: fallbackCount } = await supabase
+    const { count: fallbackCount, error: fallbackError } = await supabase
       .from(STAFF_TABLE)
       .select('id', { count: 'exact', head: true })
-      .eq('construction_site_id', constructionSiteId);
+      .eq('construction_site_id', constructionSiteId)
+      .is('end_date', null);
+    if (fallbackError) throw fallbackError;
     return (fallbackCount || 0) > 0;
+  },
+
+  async hasProjectPbac(projectId?: string, constructionSiteId?: string | null): Promise<boolean> {
+    if (projectId) return this.hasProjectStaff(projectId, constructionSiteId || undefined);
+    if (constructionSiteId) return this.hasSiteStaff(constructionSiteId);
+    return false;
+  },
+
+  async requireProjectPermission(params: {
+    userId?: string;
+    projectId?: string;
+    constructionSiteId?: string | null;
+    code: string;
+    actionLabel?: string;
+  }): Promise<void> {
+    const normalizedCode = normalizeProjectPermissionCode(params.code);
+    if (!normalizedCode) {
+      throw new Error(`Quyền "${params.code}" chưa được cấu hình trong danh mục quyền nghiệp vụ.`);
+    }
+
+    const hasPbac = await this.hasProjectPbac(params.projectId, params.constructionSiteId);
+    if (!hasPbac) return;
+    if (!params.userId) throw new Error('Không xác định được người dùng đang thao tác.');
+
+    const result = params.projectId
+      ? await this.checkProjectPermission(params.userId, params.projectId, normalizedCode, params.constructionSiteId || undefined)
+      : params.constructionSiteId
+        ? await this.checkPermission(params.userId, params.constructionSiteId, normalizedCode)
+        : { allowed: false };
+
+    if (!result.allowed) {
+      throw new Error(getPermissionDeniedMessage(normalizedCode, params.actionLabel));
+    }
+  },
+
+  async listProjectStaffWithPermissions(
+    projectId: string | undefined,
+    constructionSiteId: string | null | undefined,
+    permissionCodes: string[],
+  ): Promise<ProjectStaff[]> {
+    const normalizedCodes = new Set(
+      permissionCodes
+        .map(code => normalizeProjectPermissionCode(code))
+        .filter(Boolean) as ProjectPermissionCode[],
+    );
+    if (normalizedCodes.size === 0) return [];
+
+    const staffList = projectId
+      ? await this.listByProject(projectId, constructionSiteId || undefined)
+      : constructionSiteId
+        ? await this.listBySite(constructionSiteId)
+        : [];
+
+    return staffList.filter(staff =>
+      isActiveStaff(staff) &&
+      staff.permissions?.some(permission =>
+        permission.isActive &&
+        !!permission.permissionCode &&
+        normalizedCodes.has(normalizeProjectPermissionCode(permission.permissionCode) as ProjectPermissionCode)
+      )
+    );
   },
 };

@@ -4,10 +4,12 @@ import {
   ContractVariation,
   ContractVariationItem,
   ContractVariationStatus,
+  User,
 } from '../types';
 import { contractItemService } from './contractItemService';
 import { fromDb, toDb } from './dbMapping';
 import { auditService } from './auditService';
+import { approvalService } from './approvalService';
 
 const TABLE = 'contract_variations';
 const ITEM_TABLE = 'contract_variation_items';
@@ -100,7 +102,7 @@ export const variationService = {
     if (updates.items) await replaceItems(id, updates.items);
   },
 
-  async setStatus(id: string, status: ContractVariationStatus, userId?: string, reason?: string): Promise<void> {
+  async setStatus(id: string, status: ContractVariationStatus, userId?: string, reason?: string, approverUser?: User, projectId?: string): Promise<void> {
     const { data, error: readError } = await supabase.from(TABLE).select('*').eq('id', id).single();
     if (readError) throw readError;
     const variation = normalize(data);
@@ -109,6 +111,18 @@ export const variationService = {
 
     if (variation.status === 'approved' || variation.status === 'cancelled') {
       throw new Error('Phát sinh đã kết thúc, không thể đổi trạng thái.');
+    }
+
+    if ((status === 'approved' || status === 'rejected') && approverUser) {
+      const check = await approvalService.checkApproval({
+        module: 'contract_variation',
+        action: 'approve',
+        amount: Math.abs(variation.totalAmountDelta || 0),
+        projectId,
+        constructionSiteId: variation.constructionSiteId,
+        user: approverUser,
+      });
+      if (!check.allowed) throw new Error(check.reason);
     }
 
     const now = new Date().toISOString();

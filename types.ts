@@ -221,6 +221,7 @@ export interface ProjectStaffPermission {
 }
 
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed';
+export type ProjectProgressCalculationMode = 'gantt_weighted' | 'budget' | 'duration' | 'task_count' | 'manual';
 
 export interface Project {
   id: string;
@@ -234,6 +235,8 @@ export interface Project {
   managerId?: string;
   startDate?: string;
   endDate?: string;
+  progressCalculationMode?: ProjectProgressCalculationMode;
+  manualProgressPercent?: number;
   createdBy?: string;
   source?: 'manual' | 'backfill';
   createdAt?: string;
@@ -353,6 +356,7 @@ export interface ProjectTask {
   progress: number;         // 0-100
   progressMode?: ProjectTaskProgressMode;
   assignee?: string;
+  assigneeUserId?: string;   // User ID người phụ trách chuẩn từ project_staff
   dependencies?: { taskId: string; type: TaskDependencyType; requiresGateApproval?: boolean }[];
   isMilestone: boolean;
   color?: string;
@@ -379,14 +383,21 @@ export interface ProjectTask {
   gateApprovedAt?: string;
   baselineVersion?: string;
   baselineChangeReason?: string;
+  // Tiến độ: Ngày thực tế
+  actualStartDate?: string;   // Ngày bắt đầu thực tế (ISO date)
+  actualEndDate?: string;     // Ngày kết thúc thực tế (ISO date)
+  // WBS & đơn vị
+  wbsCode?: string;           // Mã WBS: "1.1.3"
+  fallbackUnit?: string;      // Đơn vị tính fallback (khi chưa liên kết BOQ)
+  watchers?: string[];        // User IDs theo dõi hạng mục
   // FastCons: BOQ Integration — DEPRECATED, dùng task_contract_items thay thế
   // Xem taskContractItemService.ts + TaskContractItem type
   /** @deprecated Dùng task_contract_items join contract_items để đọc BOQ */
-  code?: string;              // Mã hạng mục: "HM-001"
+  code?: string;              // Mã hạng mục BOQ legacy
   /** @deprecated Dùng task_contract_items join contract_items để đọc BOQ */
   quantity?: number;          // Khối lượng theo BOQ
   /** @deprecated Dùng task_contract_items join contract_items để đọc BOQ */
-  unit?: string;              // Đơn vị tính: m3, kg, m2...
+  unit?: string;              // Đơn vị tính BOQ legacy
   /** @deprecated Dùng task_contract_items join contract_items để đọc BOQ */
   unitPrice?: number;         // Đơn giá (VNĐ)
   /** @deprecated Dùng task_contract_items join contract_items để đọc BOQ */

@@ -69,7 +69,7 @@ function markAlertCheckDone(): void {
 
 // ── Helper: create notification (standalone function, no `this`) ──
 async function createNotification(n: Omit<AppNotification, 'id' | 'isRead' | 'isDismissed' | 'createdAt'>): Promise<void> {
-  await supabase.from('notifications').insert({
+  const { error } = await supabase.from('notifications').insert({
     user_id: n.userId || null,
     type: n.type,
     category: n.category,
@@ -84,6 +84,50 @@ async function createNotification(n: Omit<AppNotification, 'id' | 'isRead' | 'is
     metadata: n.metadata || {},
     expires_at: n.expiresAt || null,
   });
+  if (error) throw error;
+}
+
+interface NotifyProjectUsersInput {
+  recipientIds: Array<string | null | undefined>;
+  actorId?: string | null;
+  type: AppNotification['type'];
+  category: string;
+  title: string;
+  message: string;
+  severity: AppNotification['severity'];
+  icon?: string;
+  link?: string;
+  sourceType?: string;
+  sourceId?: string;
+  constructionSiteId?: string;
+  metadata?: Record<string, any>;
+  expiresAt?: string;
+}
+
+async function notifyProjectUsers(input: NotifyProjectUsersInput): Promise<string[]> {
+  const actorId = input.actorId || undefined;
+  const recipientIds = [...new Set(input.recipientIds.filter(Boolean) as string[])]
+    .filter(userId => userId !== actorId);
+
+  for (const userId of recipientIds) {
+    await createNotification({
+      userId,
+      type: input.type,
+      category: input.category,
+      title: input.title,
+      message: input.message,
+      severity: input.severity,
+      icon: input.icon,
+      link: input.link,
+      sourceType: input.sourceType,
+      sourceId: input.sourceId,
+      constructionSiteId: input.constructionSiteId,
+      metadata: input.metadata || {},
+      expiresAt: input.expiresAt,
+    });
+  }
+
+  return recipientIds;
 }
 
 export const notificationService = {
@@ -138,6 +182,9 @@ export const notificationService = {
 
   /** Create a notification */
   create: createNotification,
+
+  /** Create the same project notification for many users, excluding actor and duplicates in this call */
+  notifyProjectUsers,
 
   /** Run all alert checks — throttled, single-tab safe */
   async runAlertChecks(): Promise<number> {

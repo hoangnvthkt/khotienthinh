@@ -3,18 +3,28 @@ import { Check, FilePlus2, Plus, Send, X } from 'lucide-react';
 import { ContractItem, ContractItemType, ContractVariation } from '../../types';
 import { contractItemService } from '../../lib/contractItemService';
 import { variationService } from '../../lib/variationService';
+import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
 import { useToast } from '../../context/ToastContext';
+import { useApp } from '../../context/AppContext';
 
 interface Props {
   contractId: string;
   contractType: ContractItemType;
+  projectId?: string;
   constructionSiteId: string;
 }
 
 const fmt = (n: number) => n.toLocaleString('vi-VN') + ' đ';
 
-const ContractVariationPanel: React.FC<Props> = ({ contractId, contractType, constructionSiteId }) => {
+const STATUS_PERMISSION: Record<string, ProjectPermissionCode> = {
+  submitted: 'submit',
+  approved: 'approve',
+  rejected: 'approve',
+};
+
+const ContractVariationPanel: React.FC<Props> = ({ contractId, contractType, projectId, constructionSiteId }) => {
   const toast = useToast();
+  const { user } = useApp();
   const [items, setItems] = useState<ContractVariation[]>([]);
   const [boq, setBoq] = useState<ContractItem[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -56,32 +66,54 @@ const ContractVariationPanel: React.FC<Props> = ({ contractId, contractType, con
     const price = Number(unitPrice || selected?.unitPrice || 0);
     if (!title || !qty || !price || (!selected && (!code || !name))) return;
 
-    await variationService.create({
-      contractId,
-      contractType,
-      constructionSiteId,
-      code: `PS-${Date.now().toString().slice(-5)}`,
-      title,
-      reason,
-      items: [{
-        contractItemId: selected?.id,
-        code: selected?.code || code,
-        name: selected?.name || name,
-        unit: selected?.unit || unit,
-        quantityDelta: qty,
-        unitPrice: price,
-        amountDelta: qty * price,
-      }],
-    });
-    reset();
-    await load();
-    toast.success('Đã tạo phát sinh hợp đồng');
+    try {
+      await projectStaffService.requireProjectPermission({
+        userId: user?.id,
+        projectId,
+        constructionSiteId,
+        code: 'edit',
+        actionLabel: 'tạo phát sinh hợp đồng',
+      });
+      await variationService.create({
+        contractId,
+        contractType,
+        constructionSiteId,
+        code: `PS-${Date.now().toString().slice(-5)}`,
+        title,
+        reason,
+        items: [{
+          contractItemId: selected?.id,
+          code: selected?.code || code,
+          name: selected?.name || name,
+          unit: selected?.unit || unit,
+          quantityDelta: qty,
+          unitPrice: price,
+          amountDelta: qty * price,
+        }],
+      });
+      reset();
+      await load();
+      toast.success('Đã tạo phát sinh hợp đồng');
+    } catch (e: any) {
+      toast.error('Lỗi tạo phát sinh', e?.message);
+    }
   };
 
   const setStatus = async (item: ContractVariation, status: 'submitted' | 'approved' | 'rejected') => {
-    await variationService.setStatus(item.id, status);
-    await load();
-    toast.success(status === 'approved' ? 'Đã duyệt phát sinh' : status === 'submitted' ? 'Đã gửi duyệt' : 'Đã từ chối');
+    try {
+      await projectStaffService.requireProjectPermission({
+        userId: user?.id,
+        projectId,
+        constructionSiteId,
+        code: STATUS_PERMISSION[status],
+        actionLabel: status === 'submitted' ? 'gửi duyệt phát sinh' : 'duyệt hoặc từ chối phát sinh',
+      });
+      await variationService.setStatus(item.id, status, user?.id, undefined, user, projectId);
+      await load();
+      toast.success(status === 'approved' ? 'Đã duyệt phát sinh' : status === 'submitted' ? 'Đã gửi duyệt' : 'Đã từ chối');
+    } catch (e: any) {
+      toast.error('Lỗi cập nhật phát sinh', e?.message);
+    }
   };
 
   return (

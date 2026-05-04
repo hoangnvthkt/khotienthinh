@@ -37,6 +37,7 @@ interface ApprovalCheckParams {
   module: ApprovalModule;
   action: ApprovalAction;
   amount: number;           // Giá trị chứng từ
+  projectId?: string;
   constructionSiteId?: string;
   user: User;               // User đang thao tác
 }
@@ -95,17 +96,21 @@ export const approvalService = {
    * 5. Kiểm tra user có phù hợp rule đó không
    */
   async checkApproval(params: ApprovalCheckParams): Promise<ApprovalCheckResult> {
-    const { module, action, amount, constructionSiteId, user } = params;
+    const { module, action, amount, projectId, constructionSiteId, user } = params;
 
     // ── PBAC CHECK (Priority 1) ──
-    // Nếu công trình đã setup project_staff → dùng position-based permissions
-    if (constructionSiteId) {
+    // Nếu dự án/công trình đã setup project_staff → dùng position-based permissions
+    if (projectId || constructionSiteId) {
       try {
-        const hasSiteStaff = await projectStaffService.hasSiteStaff(constructionSiteId);
-        if (hasSiteStaff) {
+        const hasPbac = await projectStaffService.hasProjectPbac(projectId, constructionSiteId);
+        if (hasPbac) {
           // Map approval action → permission code
-          const permCode = action === 'paid' ? 'approve' : action; // 'paid' maps to 'approve' permission
-          const pbacResult = await projectStaffService.checkPermission(user.id, constructionSiteId, permCode);
+          const permCode = action === 'paid' ? 'confirm' : action; // paid maps to confirm permission
+          const pbacResult = projectId
+            ? await projectStaffService.checkProjectPermission(user.id, projectId, permCode, constructionSiteId)
+            : constructionSiteId
+              ? await projectStaffService.checkPermission(user.id, constructionSiteId, permCode)
+              : { allowed: false };
 
           if (pbacResult.allowed) {
             return { allowed: true, reason: `Đủ quyền theo tổ chức dự án (PBAC).` };

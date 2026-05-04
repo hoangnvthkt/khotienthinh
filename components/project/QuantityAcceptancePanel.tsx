@@ -3,6 +3,7 @@ import { Check, ClipboardCheck, CreditCard, Plus, RotateCcw, Send, XCircle } fro
 import { ContractItemType, QuantityAcceptance } from '../../types';
 import { quantityAcceptanceService } from '../../lib/quantityAcceptanceService';
 import { paymentCertificateService } from '../../lib/paymentCertificateService';
+import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
@@ -10,13 +11,21 @@ import { useApp } from '../../context/AppContext';
 interface Props {
   contractId: string;
   contractType: ContractItemType;
+  projectId?: string;
   constructionSiteId: string;
 }
 
 const fmt = (n: number) => n.toLocaleString('vi-VN');
 const today = () => new Date().toISOString().slice(0, 10);
 
-const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, constructionSiteId }) => {
+const STATUS_PERMISSION: Record<string, ProjectPermissionCode> = {
+  submitted: 'submit',
+  returned: 'verify',
+  approved: 'approve',
+  cancelled: 'approve',
+};
+
+const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, projectId, constructionSiteId }) => {
   const toast = useToast();
   const confirm = useConfirm();
   const { user } = useApp();
@@ -69,7 +78,14 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, co
     if (!ok) return;
 
     try {
-      await quantityAcceptanceService.setStatus(item.id, status, user.id, undefined, user);
+      await projectStaffService.requireProjectPermission({
+        userId: user?.id,
+        projectId,
+        constructionSiteId,
+        code: STATUS_PERMISSION[status],
+        actionLabel: labels[status].toLowerCase(),
+      });
+      await quantityAcceptanceService.setStatus(item.id, status, user.id, undefined, user, projectId);
       await load();
       toast.success(`${labels[status]} thành công`);
     } catch (e: any) {

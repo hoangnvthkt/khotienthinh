@@ -8,13 +8,15 @@ import {
     Filter, Calendar, User, Clock, AlertTriangle, CheckCircle2,
     Circle, PlayCircle, ArrowUpDown, ChevronUp, Copy,
     Anchor, Link2, Shield, Wrench, Users, Zap, Lock, Bell,
-    FlaskConical, Lightbulb, RotateCcw, Check
+    FlaskConical, Lightbulb, RotateCcw, Check,
+    Upload, Download, FileSpreadsheet, Loader2, XCircle, Eye
 } from 'lucide-react';
-import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus, ProjectTaskProgressMode, ContractItem } from '../../types';
+import * as XLSX from 'xlsx';
+import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus, ProjectTaskProgressMode, ContractItem, ProjectStaff } from '../../types';
 import { taskService, baselineService, dailyLogService } from '../../lib/projectService';
 import { contractItemService } from '../../lib/contractItemService';
 import { taskContractItemService } from '../../lib/taskContractItemService';
-import { projectStaffService } from '../../lib/projectStaffService';
+import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
 import { notificationService } from '../../lib/notificationService';
 import { computeCriticalPath, getDelayDays, rippleEffect, type CriticalPathResult } from '../../lib/criticalPathEngine';
 import { useApp } from '../../context/AppContext';
@@ -48,6 +50,7 @@ type ViewMode = 'table' | 'gantt' | 'split';
 type TaskStatus = ProjectTaskStatus;
 type SortField = 'name' | 'startDate' | 'endDate' | 'progress' | 'assignee' | 'status';
 type SortDir = 'asc' | 'desc';
+type ExcelImportRow = Record<string, unknown>;
 
 // ============= HELPERS =============
 const daysBetween = (a: string, b: string) => {
@@ -69,12 +72,106 @@ const getStatus = (t: ProjectTask): TaskStatus => {
     return getProjectTaskStatus(t, today());
 };
 
+const toIsoDate = (date: Date): string => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
+const parseExcelDate = (value: unknown): string | null => {
+    if (value === null || value === undefined || value === '') return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return toIsoDate(value);
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        const parsed = XLSX.SSF.parse_date_code(value);
+        if (!parsed) return null;
+        return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+    }
+
+    const raw = String(value).trim();
+    if (!raw) return null;
+    const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+    const vi = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+    if (vi) return `${vi[3]}-${vi[2].padStart(2, '0')}-${vi[1].padStart(2, '0')}`;
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric) && numeric > 20000) return parseExcelDate(numeric);
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : toIsoDate(parsed);
+};
+
+const parseProgress = (value: unknown): number => {
+    const progress = Number(value || 0);
+    if (!Number.isFinite(progress)) return 0;
+    return Math.max(0, Math.min(100, Math.round(progress)));
+};
+
+const getTaskUnit = (task: ProjectTask, linkedIds: string[], contractItems: ContractItem[]): string => {
+    if (linkedIds.length === 1) {
+        const ci = contractItems.find(c => c.id === linkedIds[0]);
+        return ci?.unit || task.fallbackUnit || '–';
+    }
+    if (linkedIds.length > 1) {
+        const units = linkedIds.map(id => contractItems.find(c => c.id === id)?.unit).filter(Boolean);
+        return units.length > 0 ? 'Nhiều' : (task.fallbackUnit || 'Nhiều');
+    }
+    return task.fallbackUnit || '–';
+};
+
+const getTaskUnitTitle = (task: ProjectTask, linkedIds: string[], contractItems: ContractItem[]): string => {
+    if (linkedIds.length <= 1) return '';
+    return linkedIds.map(id => contractItems.find(c => c.id === id)?.unit).filter(Boolean).join(', ');
+};
+
+const deriveActualDates = (task: ProjectTask, allLogs: DailyLog[], linkedContractItemIds: string[] = []) => {
+    let start = task.actualStartDate;
+    let end = task.actualEndDate;
+    const linkedSet = new Set(linkedContractItemIds);
+
+    if (!start || !end) {
+        const taskLogs = allLogs.filter(log => {
+            const verified = log.status === 'verified' || log.verified;
+            if (!verified) return false;
+            const hasDelayLink = (log.delayTasks || []).some(d => d.taskId === task.id);
+            const hasVolumeLink = (log.volumes || []).some(v => v.taskId === task.id || linkedSet.has(v.contractItemId));
+            return hasDelayLink || hasVolumeLink;
+        });
+        if (taskLogs.length > 0) {
+            const sortedDates = taskLogs.map(l => l.date).sort();
+            if (!start) start = sortedDates[0];
+            if (!end && (task.progress === 100 || task.gateStatus === 'approved')) {
+                end = sortedDates[sortedDates.length - 1];
+            }
+        }
+    }
+
+    // Fallback end to gateApprovedAt if approved
+    if (!end && task.gateStatus === 'approved' && task.gateApprovedAt) {
+        end = task.gateApprovedAt.split('T')[0];
+    }
+
+    return { derivedStart: start, derivedEnd: end };
+};
+
 const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string; bg: string; icon: any }> = {
     not_started: { label: 'Chưa BĐ', color: 'text-slate-500', bg: 'bg-slate-100', icon: Circle },
     in_progress: { label: 'Đang TH', color: 'text-blue-600', bg: 'bg-blue-50', icon: PlayCircle },
     pending_gate: { label: 'Chờ NT', color: 'text-amber-600', bg: 'bg-amber-50', icon: Shield },
     completed: { label: 'Hoàn thành', color: 'text-emerald-600', bg: 'bg-emerald-50', icon: CheckCircle2 },
     overdue: { label: 'Trễ hạn', color: 'text-red-600', bg: 'bg-red-50', icon: AlertTriangle },
+};
+
+const getStatusLabel = (status: TaskStatus) => STATUS_CONFIG[status]?.label || 'Không rõ';
+
+const ALL_PROJECT_PERMISSION_CODES: ProjectPermissionCode[] = ['view', 'edit', 'submit', 'verify', 'confirm', 'approve'];
+
+const PROJECT_PERMISSION_HINTS: Record<ProjectPermissionCode, string> = {
+    view: 'xem dữ liệu tiến độ',
+    edit: 'tạo, sửa hoặc xoá hạng mục tiến độ',
+    submit: 'gửi hạng mục vào luồng nghiệm thu',
+    verify: 'xác nhận kỹ thuật',
+    confirm: 'xác nhận nghiệp vụ',
+    approve: 'duyệt hoặc từ chối nghiệm thu',
 };
 
 // ============= COMPONENTS =============
@@ -122,6 +219,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
     const [contractItems, setContractItems] = useState<ContractItem[]>([]);
     const [taskContractLinks, setTaskContractLinks] = useState<Record<string, string[]>>({});
+    const [projectStaff, setProjectStaff] = useState<ProjectStaff[]>([]);
+    const [projectPerms, setProjectPerms] = useState<Set<ProjectPermissionCode>>(new Set());
+    const [pbacLoaded, setPbacLoaded] = useState(false);
     const [loading, setLoading] = useState(true);
     const [showBaselinePanel, setShowBaselinePanel] = useState(false);
     // GĐ2: Drag state for ripple + ghosting
@@ -145,6 +245,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             setDailyLogs([]);
             setContractItems([]);
             setTaskContractLinks({});
+            setProjectStaff([]);
             setLoading(false);
             return;
         }
@@ -155,11 +256,17 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             dailyLogService.list(effectiveId, constructionSiteId || null),
             contractItemService.listBySite(effectiveId, undefined, constructionSiteId || null),
             taskContractItemService.listBySite(effectiveId, constructionSiteId || null),
-        ]).then(([taskData, baselineData, logData, contractItemData, linkData]) => {
+            projectId
+                ? projectStaffService.listByProject(projectId, constructionSiteId)
+                : constructionSiteId
+                    ? projectStaffService.listBySite(constructionSiteId)
+                    : Promise.resolve([]),
+        ]).then(([taskData, baselineData, logData, contractItemData, linkData, staffData]) => {
             setTasks(taskData);
             setBaselines(baselineData);
             setDailyLogs(logData);
             setContractItems(contractItemData);
+            setProjectStaff(staffData);
             setTaskContractLinks(linkData.reduce<Record<string, string[]>>((acc, link) => {
                 if (!acc[link.taskId]) acc[link.taskId] = [];
                 acc[link.taskId].push(link.contractItemId);
@@ -168,7 +275,58 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             if (baselineData.length > 0) setActiveBaseline(baselineData[0]);
             setLoading(false);
         }).catch(e => { console.error(e); setLoading(false); });
-    }, [effectiveId, constructionSiteId]);
+    }, [effectiveId, constructionSiteId, projectId]);
+
+    useEffect(() => {
+        setPbacLoaded(false);
+        setProjectPerms(new Set());
+        if (!effectiveId) return;
+
+        const loadProjectPerms = async () => {
+            try {
+                const hasPbac = await projectStaffService.hasProjectPbac(projectId, constructionSiteId || undefined);
+                if (!hasPbac) {
+                    setProjectPerms(new Set(ALL_PROJECT_PERMISSION_CODES));
+                    return;
+                }
+                if (!user?.id) {
+                    setProjectPerms(new Set());
+                    return;
+                }
+
+                const results = await Promise.all(
+                    ALL_PROJECT_PERMISSION_CODES.map(async code => {
+                        const check = projectId
+                            ? await projectStaffService.checkProjectPermission(user.id, projectId, code, constructionSiteId || undefined)
+                            : constructionSiteId
+                                ? await projectStaffService.checkPermission(user.id, constructionSiteId, code)
+                                : { allowed: false };
+                        return { code, allowed: check.allowed };
+                    })
+                );
+                setProjectPerms(new Set(results.filter(result => result.allowed).map(result => result.code)));
+            } catch (err) {
+                console.warn('Gantt PBAC load failed', err);
+                setProjectPerms(new Set());
+            } finally {
+                setPbacLoaded(true);
+            }
+        };
+
+        loadProjectPerms();
+    }, [effectiveId, projectId, constructionSiteId, user?.id]);
+
+    const ensureProjectPermission = useCallback((code: ProjectPermissionCode, actionLabel?: string) => {
+        if (!pbacLoaded) {
+            toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
+            return false;
+        }
+        if (!projectPerms.has(code)) {
+            toast.error('Không có quyền', `Bạn cần quyền "${code}" để ${actionLabel || PROJECT_PERMISSION_HINTS[code]}.`);
+            return false;
+        }
+        return true;
+    }, [pbacLoaded, projectPerms, toast]);
 
     // View
     const [viewMode, setViewMode] = useState<ViewMode>('split');
@@ -192,6 +350,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const [fProgress, setFProgress] = useState('0');
     const [fProgressMode, setFProgressMode] = useState<ProjectTaskProgressMode>('manual');
     const [fAssignee, setFAssignee] = useState('');
+    const [fAssigneeUserId, setFAssigneeUserId] = useState('');
     const [fParentId, setFParentId] = useState('');
     const [fMilestone, setFMilestone] = useState(false);
     const [fNotes, setFNotes] = useState('');
@@ -203,38 +362,115 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const [fResourceType, setFResourceType] = useState<ResourceType>('worker');
     const [fCostPerDay, setFCostPerDay] = useState('0');
     const [fContractItemIds, setFContractItemIds] = useState<string[]>([]);
+    const [fWbsCode, setFWbsCode] = useState('');
+    const [fFallbackUnit, setFFallbackUnit] = useState('');
+    const [fActualStart, setFActualStart] = useState('');
+    const [fActualEnd, setFActualEnd] = useState('');
+    const [fWatchers, setFWatchers] = useState<string[]>([]);
+
+    // Excel Import State
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [importRows, setImportRows] = useState<ExcelImportRow[]>([]);
+    const [importErrors, setImportErrors] = useState<Record<number, string>>({});
+    const [importing, setImporting] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const progressSummary = useMemo(() => calculateProjectProgress(tasks), [tasks]);
+    const staffUserMap = useMemo(() => {
+        const map = new Map<string, { name: string; position?: string }>();
+        for (const staff of projectStaff) {
+            if (staff.endDate) continue;
+            if (!staff.userId || map.has(staff.userId)) continue;
+            map.set(staff.userId, {
+                name: staff.userName || staff.userId,
+                position: staff.positionName,
+            });
+        }
+        return map;
+    }, [projectStaff]);
+    const watcherOptions = useMemo(() => {
+        return [...staffUserMap.entries()]
+            .map(([id, value]) => ({ id, ...value }))
+            .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+    }, [staffUserMap]);
+    const getWatcherNames = useCallback((watchers?: string[]) => {
+        return (watchers || []).map(id => staffUserMap.get(id)?.name || id).join(', ');
+    }, [staffUserMap]);
 
-    const notifyGateApprovers = useCallback(async (task: ProjectTask) => {
+    const notifyTaskWatchers = useCallback(async (task: ProjectTask, gateStatus: GateStatus, excludeUserIds: string[] = []) => {
+        const excluded = new Set([user?.id, ...excludeUserIds].filter(Boolean) as string[]);
+        const recipientIds = [...new Set([task.assigneeUserId, ...(task.watchers || [])])]
+            .filter(uid => uid && !excluded.has(uid)) as string[];
+        if (recipientIds.length === 0) return;
+
+        const statusCfg: Record<string, { type: 'info' | 'warning' | 'success' | 'error'; severity: 'info' | 'warning' | 'critical'; title: string; message: string; icon: string }> = {
+            pending: {
+                type: 'warning',
+                severity: 'warning',
+                title: '📋 Hạng mục chờ nghiệm thu',
+                message: `"${task.name}" đã hoàn thành 100% và chờ duyệt gate`,
+                icon: '📋',
+            },
+            approved: {
+                type: 'success',
+                severity: 'info',
+                title: '✅ Hạng mục đã nghiệm thu',
+                message: `"${task.name}" đã được duyệt nghiệm thu`,
+                icon: '✅',
+            },
+            rejected: {
+                type: 'warning',
+                severity: 'warning',
+                title: '⚠️ Hạng mục bị từ chối',
+                message: `"${task.name}" chưa đạt nghiệm thu${task.gateApprovedBy ? ` — ${task.gateApprovedBy}` : ''}`,
+                icon: '⚠️',
+            },
+        };
+        const cfg = statusCfg[gateStatus];
+        if (!cfg) return;
+
+        await notificationService.notifyProjectUsers({
+            recipientIds,
+            actorId: user?.id,
+            type: cfg.type,
+            category: 'progress',
+            title: cfg.title,
+            message: cfg.message,
+            severity: cfg.severity,
+            icon: cfg.icon,
+            link: '/da',
+            sourceType: 'task_watcher_gate',
+            sourceId: `task_watcher_${gateStatus}_${task.id}`,
+            constructionSiteId: constructionSiteId || undefined,
+            metadata: { taskId: task.id, taskName: task.name, projectId, gateStatus },
+        });
+    }, [constructionSiteId, projectId, user?.id]);
+
+    const notifyGateApprovers = useCallback(async (task: ProjectTask): Promise<string[]> => {
         try {
-            const staffList = projectId
-                ? await projectStaffService.listByProject(projectId, constructionSiteId)
-                : constructionSiteId
-                    ? await projectStaffService.listBySite(constructionSiteId)
-                    : [];
-            const approvers = staffList.filter(s =>
-                s.permissions?.some(p => ['verify', 'approve', 'confirm'].includes(p.permissionCode || ''))
+            const approvers = await projectStaffService.listProjectStaffWithPermissions(
+                projectId,
+                constructionSiteId,
+                ['approve', 'confirm'],
             );
-            for (const a of approvers) {
-                if (!a.userId || a.userId === user?.id) continue;
-                await notificationService.create({
-                    userId: a.userId,
-                    type: 'warning',
-                    category: 'progress',
-                    title: '📋 Hạng mục chờ nghiệm thu',
-                    message: `"${task.name}" đã hoàn thành 100% — cần duyệt gate`,
-                    severity: 'warning',
-                    icon: '📋',
-                    link: '/da',
-                    sourceType: 'gate_pending',
-                    sourceId: `gate_${task.id}`,
-                    constructionSiteId: constructionSiteId || undefined,
-                    metadata: { taskId: task.id, taskName: task.name, projectId },
-                });
-            }
+            return notificationService.notifyProjectUsers({
+                recipientIds: approvers.map(staff => staff.userId),
+                actorId: user?.id,
+                type: 'warning',
+                category: 'progress',
+                title: '📋 Hạng mục chờ nghiệm thu',
+                message: `"${task.name}" đã hoàn thành 100% — cần duyệt gate`,
+                severity: 'warning',
+                icon: '📋',
+                link: '/da',
+                sourceType: 'gate_pending',
+                sourceId: `gate_${task.id}`,
+                constructionSiteId: constructionSiteId || undefined,
+                metadata: { taskId: task.id, taskName: task.name, projectId },
+            });
         } catch (err) {
             console.error('Failed to notify approvers:', err);
+            return [];
         }
     }, [projectId, constructionSiteId, user?.id]);
 
@@ -260,13 +496,15 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     // ====== CRUD operations ======
     const resetForm = () => {
         setEditing(null); setFName(''); setFStart(''); setFEnd(''); setFProgress('0'); setFProgressMode('manual');
-        setFAssignee(''); setFParentId(''); setFMilestone(false); setFNotes(''); setFColor('');
+        setFAssignee(''); setFAssigneeUserId(''); setFParentId(''); setFMilestone(false); setFNotes(''); setFColor('');
         setFDeps([]); setFLagTime('0'); setFResourceCount('1'); setFResourceType('worker'); setFCostPerDay('0');
-        setFContractItemIds([]);
+        setFContractItemIds([]); setFWbsCode(''); setFFallbackUnit(''); setFActualStart(''); setFActualEnd('');
+        setFWatchers([]);
         setShowForm(false);
     };
 
     const openAdd = (parentId?: string) => {
+        if (!ensureProjectPermission('edit', 'tạo hạng mục tiến độ')) return;
         resetForm();
         if (parentId) setFParentId(parentId);
         const t = today();
@@ -276,24 +514,30 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     };
 
     const openEdit = (t: ProjectTask) => {
+        if (!ensureProjectPermission('edit', 'sửa hạng mục tiến độ')) return;
         setEditing(t);
         setFName(t.name); setFStart(t.startDate); setFEnd(t.endDate);
-        setFProgress(String(t.progress)); setFProgressMode(t.progressMode || 'manual'); setFAssignee(t.assignee || '');
+        setFProgress(String(t.progress)); setFProgressMode(t.progressMode || 'manual'); setFAssignee(t.assignee || ''); setFAssigneeUserId(t.assigneeUserId || '');
         setFParentId(t.parentId || ''); setFMilestone(t.isMilestone);
         setFNotes(t.notes || ''); setFColor(t.color || '');
         setFDeps(t.dependencies || []); setFLagTime(String(t.lagTime || 0));
         setFResourceCount(String(t.resourceCount || 1)); setFResourceType(t.resourceType || 'worker');
         setFCostPerDay(String(t.estimatedCostPerDay || 0));
         setFContractItemIds(taskContractLinks[t.id] || []);
+        setFWbsCode(t.wbsCode || ''); setFFallbackUnit(t.fallbackUnit || '');
+        setFActualStart(t.actualStartDate || ''); setFActualEnd(t.actualEndDate || '');
+        setFWatchers(t.watchers || []);
         setShowForm(true);
     };
 
     const duplicateTask = (t: ProjectTask) => {
+        if (!ensureProjectPermission('edit', 'nhân bản hạng mục tiến độ')) return;
         setEditing(null);
         setFName(t.name + ' (Bản sao)'); setFStart(t.startDate); setFEnd(t.endDate);
-        setFProgress('0'); setFAssignee(t.assignee || '');
+        setFProgress('0'); setFAssignee(t.assignee || ''); setFAssigneeUserId(t.assigneeUserId || '');
         setFParentId(t.parentId || ''); setFMilestone(t.isMilestone);
         setFNotes(t.notes || ''); setFColor(t.color || '');
+        setFWatchers([]);
         setShowForm(true);
     };
 
@@ -313,31 +557,45 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             toast.error('Không thể lưu tiến độ', validation.errors[0]);
             return;
         }
+        if (fActualStart && fActualEnd && fActualEnd < fActualStart) {
+            toast.error('Không thể lưu tiến độ', 'Ngày kết thúc thực tế không được trước ngày bắt đầu thực tế.');
+            return;
+        }
+        if (!ensureProjectPermission('edit', editing ? 'sửa hạng mục tiến độ' : 'tạo hạng mục tiến độ')) return;
 
-        const duration = fMilestone ? 0 : daysBetween(fStart, fEnd);
-        const baseItem: ProjectTask = editing ? {
-            ...editing, name: fName, startDate: fStart, endDate: fEnd, duration,
-            progress: Number(fProgress), progressMode: fProgressMode, assignee: fAssignee || undefined,
-            parentId: fParentId || undefined, isMilestone: fMilestone,
-            notes: fNotes || undefined, color: fColor || undefined,
-            dependencies: cleanedDeps.length > 0 ? cleanedDeps : undefined,
-            lagTime: Number(fLagTime) || 0,
-            resourceCount: Number(fResourceCount) || 1,
-            resourceType: fResourceType,
-            estimatedCostPerDay: Number(fCostPerDay) || 0,
-        } : {
-            id: crypto.randomUUID(), projectId: projectId || constructionSiteId || null, constructionSiteId: constructionSiteId || null,
-            name: fName, startDate: fStart, endDate: fEnd, duration,
-            progress: Number(fProgress), progressMode: fProgressMode, assignee: fAssignee || undefined,
-            parentId: fParentId || undefined, isMilestone: fMilestone,
-            notes: fNotes || undefined, color: fColor || undefined,
-            order: tasks.length,
-            dependencies: cleanedDeps.length > 0 ? cleanedDeps : undefined,
-            lagTime: Number(fLagTime) || 0,
-            resourceCount: Number(fResourceCount) || 1,
-            resourceType: fResourceType,
-            estimatedCostPerDay: Number(fCostPerDay) || 0,
-        };
+        try {
+            const duration = fMilestone ? 0 : daysBetween(fStart, fEnd);
+            const baseItem: ProjectTask = editing ? {
+                ...editing, name: fName, startDate: fStart, endDate: fEnd, duration,
+                progress: Number(fProgress), progressMode: fProgressMode, assignee: fAssignee || undefined,
+                assigneeUserId: fAssigneeUserId || undefined,
+                parentId: fParentId || undefined, isMilestone: fMilestone,
+                notes: fNotes || undefined, color: fColor || undefined,
+                dependencies: cleanedDeps.length > 0 ? cleanedDeps : undefined,
+                lagTime: Number(fLagTime) || 0,
+                resourceCount: Number(fResourceCount) || 1,
+                resourceType: fResourceType,
+                estimatedCostPerDay: Number(fCostPerDay) || 0,
+                wbsCode: fWbsCode || undefined, fallbackUnit: fFallbackUnit || undefined,
+                actualStartDate: fActualStart || undefined, actualEndDate: fActualEnd || undefined,
+                watchers: fWatchers,
+            } : {
+                id: crypto.randomUUID(), projectId: projectId || constructionSiteId || null, constructionSiteId: constructionSiteId || null,
+                name: fName, startDate: fStart, endDate: fEnd, duration,
+                progress: Number(fProgress), progressMode: fProgressMode, assignee: fAssignee || undefined,
+                assigneeUserId: fAssigneeUserId || undefined,
+                parentId: fParentId || undefined, isMilestone: fMilestone,
+                notes: fNotes || undefined, color: fColor || undefined,
+                order: tasks.length,
+                dependencies: cleanedDeps.length > 0 ? cleanedDeps : undefined,
+                lagTime: Number(fLagTime) || 0,
+                resourceCount: Number(fResourceCount) || 1,
+                resourceType: fResourceType,
+                estimatedCostPerDay: Number(fCostPerDay) || 0,
+                wbsCode: fWbsCode || undefined, fallbackUnit: fFallbackUnit || undefined,
+                actualStartDate: fActualStart || undefined, actualEndDate: fActualEnd || undefined,
+                watchers: fWatchers,
+            };
 	        const item = applyProgressGateTransition(baseItem, Number(fProgress));
 	        await taskService.upsert(item);
 	        await taskContractItemService.replaceForTask(item.id, effectiveId, constructionSiteId || null, fContractItemIds);
@@ -354,31 +612,45 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         if (item.progress >= 100 && item.gateStatus === 'pending') {
             toast.info('Đã chuyển sang chờ nghiệm thu', 'Hạng mục 100% cần được duyệt trước khi tính là hoàn thành.');
             const wasAlreadyPending = editing?.progress >= 100 && editing?.gateStatus === 'pending';
-            if (!wasAlreadyPending) await notifyGateApprovers(item);
+            if (!wasAlreadyPending) {
+                const approverIds = await notifyGateApprovers(item);
+                await notifyTaskWatchers(item, 'pending', approverIds);
+            }
+        }
+            toast.success(editing ? 'Đã cập nhật hạng mục' : 'Đã thêm hạng mục');
+        } catch (e: any) {
+            toast.error('Lỗi lưu tiến độ', e?.message);
         }
     };
 
     const handleDelete = async () => {
         if (!deleteTarget) return;
-        const idsToRemove = collectDescendantTaskIds(tasks, deleteTarget.id);
-        idsToRemove.add(deleteTarget.id);
-        const nextLocalTasks = removeTasksAndReferences(tasks, idsToRemove);
-        const changedRefs = nextLocalTasks.filter(next => {
-            const prev = tasks.find(t => t.id === next.id);
-            return JSON.stringify(prev?.dependencies || []) !== JSON.stringify(next.dependencies || []);
-        });
+        if (!ensureProjectPermission('edit', 'xoá hạng mục tiến độ')) return;
+        try {
+            const idsToRemove = collectDescendantTaskIds(tasks, deleteTarget.id);
+            idsToRemove.add(deleteTarget.id);
+            const nextLocalTasks = removeTasksAndReferences(tasks, idsToRemove);
+            const changedRefs = nextLocalTasks.filter(next => {
+                const prev = tasks.find(t => t.id === next.id);
+                return JSON.stringify(prev?.dependencies || []) !== JSON.stringify(next.dependencies || []);
+            });
 
-        for (const id of idsToRemove) await taskService.remove(id);
-        for (const task of changedRefs) await taskService.upsert(task);
-        const nextTasks = await taskService.list(effectiveId, constructionSiteId || null);
-        setTasks(nextTasks);
-        syncProjectFinanceProgress(nextTasks);
-        setDeleteTarget(null);
+            for (const id of idsToRemove) await taskService.remove(id);
+            for (const task of changedRefs) await taskService.upsert(task);
+            const nextTasks = await taskService.list(effectiveId, constructionSiteId || null);
+            setTasks(nextTasks);
+            syncProjectFinanceProgress(nextTasks);
+            setDeleteTarget(null);
+            toast.success('Đã xoá hạng mục');
+        } catch (e: any) {
+            toast.error('Lỗi xoá hạng mục', e?.message);
+        }
     };
 
     const updateProgress = async (id: string, progress: number) => {
         const task = tasks.find(t => t.id === id);
         if (!task) return;
+        if (!ensureProjectPermission('edit', 'cập nhật tiến độ hạng mục')) return;
         if (task.progressMode === 'derived_from_acceptance') {
             toast.warning('Tiến độ lấy từ nghiệm thu', 'Hạng mục này cần cập nhật qua nghiệm thu khối lượng thay vì chỉnh tay.');
             return;
@@ -387,16 +659,197 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             toast.warning('Đang bị chặn nghiệm thu', 'Hạng mục trước đó cần được duyệt trước khi tăng tiến độ.');
             return;
         }
-        const updated = applyProgressGateTransition(task, progress);
-        await taskService.upsert(updated);
-        const nextTasks = tasks.map(t => t.id === id ? updated : t);
-        setTasks(nextTasks);
-        syncProjectFinanceProgress(nextTasks);
-        if (updated.progress >= 100 && updated.gateStatus === 'pending') {
-            toast.info('Đã nộp chờ nghiệm thu', 'Hạng mục sẽ chỉ tính là hoàn thành sau khi được duyệt.');
-            const wasAlreadyPending = task.progress >= 100 && task.gateStatus === 'pending';
-            if (!wasAlreadyPending) await notifyGateApprovers(updated);
+        try {
+            const updated = applyProgressGateTransition(task, progress);
+            await taskService.upsert(updated);
+            const nextTasks = tasks.map(t => t.id === id ? updated : t);
+            setTasks(nextTasks);
+            syncProjectFinanceProgress(nextTasks);
+            if (updated.progress >= 100 && updated.gateStatus === 'pending') {
+                toast.info('Đã nộp chờ nghiệm thu', 'Hạng mục sẽ chỉ tính là hoàn thành sau khi được duyệt.');
+                const wasAlreadyPending = task.progress >= 100 && task.gateStatus === 'pending';
+                if (!wasAlreadyPending) {
+                    const approverIds = await notifyGateApprovers(updated);
+                    await notifyTaskWatchers(updated, 'pending', approverIds);
+                }
+            }
+        } catch (e: any) {
+            toast.error('Lỗi cập nhật tiến độ', e?.message);
         }
+    };
+
+    // ====== GĐ3: Excel Import / Export ======
+    const downloadTemplate = () => {
+        const ws = XLSX.utils.json_to_sheet([
+            {
+                'Mã WBS': '1.1',
+                'Công việc (*)': 'Đào đất móng',
+                'Người thực hiện': 'Nguyễn Văn A',
+                'Bắt đầu KH (*)': '2026-05-01',
+                'Kết thúc KH (*)': '2026-05-10',
+                'Bắt đầu thực tế': '',
+                'Kết thúc thực tế': '',
+                'Đơn vị': 'm3',
+                'Tiến độ (%)': 0,
+                'Công việc cha (Mã WBS)': '1'
+            }
+        ]);
+        ws['!cols'] = [
+            { wch: 15 }, // WBS
+            { wch: 30 }, // Name
+            { wch: 20 }, // Assignee
+            { wch: 15 }, // Start
+            { wch: 15 }, // End
+            { wch: 15 }, // Actual Start
+            { wch: 15 }, // Actual End
+            { wch: 10 }, // Unit
+            { wch: 10 }, // Progress
+            { wch: 20 }  // Parent
+        ];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Template');
+        XLSX.writeFile(wb, 'Tien_do_mau.xlsx');
+    };
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const bstr = evt.target?.result;
+                const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
+                const wsname = wb.SheetNames[0];
+                const ws = wb.Sheets[wsname];
+                const data = XLSX.utils.sheet_to_json<ExcelImportRow>(ws, { defval: '', raw: true });
+
+                const errors: Record<number, string> = {};
+                data.forEach((row, idx) => {
+                    const start = parseExcelDate(row['Bắt đầu KH (*)']);
+                    const end = parseExcelDate(row['Kết thúc KH (*)']);
+                    const actualStart = parseExcelDate(row['Bắt đầu thực tế']);
+                    const actualEnd = parseExcelDate(row['Kết thúc thực tế']);
+                    const rawProgress = row['Tiến độ (%)'] === '' ? 0 : Number(row['Tiến độ (%)']);
+                    if (!row['Công việc (*)']) errors[idx] = 'Thiếu tên công việc';
+                    else if (!start) errors[idx] = 'Thiếu/sai ngày BĐ kế hoạch';
+                    else if (!end) errors[idx] = 'Thiếu/sai ngày KT kế hoạch';
+                    else if (start > end) {
+                        errors[idx] = 'Ngày kết thúc KH phải sau ngày BĐ KH';
+                    }
+                    else if (actualStart && actualEnd && actualStart > actualEnd) errors[idx] = 'Ngày thực tế không hợp lệ';
+                    else if (!Number.isFinite(rawProgress) || rawProgress < 0 || rawProgress > 100) errors[idx] = 'Tiến độ không hợp lệ';
+                });
+                setImportRows(data);
+                setImportErrors(errors);
+                setShowImportModal(true);
+            } catch (err) {
+                toast.error('Lỗi định dạng', 'Không thể đọc file Excel. Vui lòng dùng file mẫu.');
+            }
+        };
+        reader.readAsBinaryString(file);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    const processBulkImport = async () => {
+        setImporting(true);
+        try {
+            const validRows = importRows.filter((_, i) => !importErrors[i]);
+            const newTasks: ProjectTask[] = [];
+            const codeToId: Record<string, string> = {};
+
+            for (const row of validRows) {
+                const start = parseExcelDate(row['Bắt đầu KH (*)']);
+                const end = parseExcelDate(row['Kết thúc KH (*)']);
+                if (!start || !end) continue;
+                const id = crypto.randomUUID();
+
+                const wbs = row['Mã WBS'] ? String(row['Mã WBS']) : undefined;
+                if (wbs) codeToId[wbs] = id;
+                codeToId[String(row['Công việc (*)'])] = id;
+
+                newTasks.push({
+                    id,
+                    projectId: effectiveId,
+                    constructionSiteId: constructionSiteId || null,
+                    name: String(row['Công việc (*)']),
+                    startDate: start,
+                    endDate: end,
+                    duration: daysBetween(start, end),
+                    progress: parseProgress(row['Tiến độ (%)']),
+                    progressMode: 'manual',
+                    assignee: row['Người thực hiện'] ? String(row['Người thực hiện']) : undefined,
+                    wbsCode: wbs,
+                    fallbackUnit: row['Đơn vị'] ? String(row['Đơn vị']) : undefined,
+                    actualStartDate: parseExcelDate(row['Bắt đầu thực tế']) || undefined,
+                    actualEndDate: parseExcelDate(row['Kết thúc thực tế']) || undefined,
+                    parentId: row['Công việc cha (Mã WBS)'] ? String(row['Công việc cha (Mã WBS)']) : undefined,
+                    order: tasks.length + newTasks.length,
+                    isMilestone: false,
+                });
+            }
+
+            for (const task of newTasks) {
+                if (task.parentId) {
+                    const parentWbsOrName = task.parentId;
+                    const existingParent = tasks.find(t => t.wbsCode === parentWbsOrName || t.name === parentWbsOrName);
+                    if (existingParent) {
+                        task.parentId = existingParent.id;
+                    } else if (codeToId[parentWbsOrName]) {
+                        task.parentId = codeToId[parentWbsOrName];
+                    } else {
+                        task.parentId = undefined;
+                    }
+                }
+            }
+
+            for (const t of newTasks) {
+                await taskService.upsert(applyProgressGateTransition(t, t.progress));
+            }
+
+            const nextTasks = [...tasks, ...newTasks];
+            setTasks(nextTasks);
+            syncProjectFinanceProgress(nextTasks);
+            toast.success('Thành công', `Đã nhập ${validRows.length} hạng mục thi công`);
+            setShowImportModal(false);
+            setImportRows([]);
+        } catch (err) {
+            toast.error('Lỗi', 'Có lỗi khi nhập dữ liệu');
+            console.error(err);
+        } finally {
+            setImporting(false);
+        }
+    };
+
+    const handleExportExcel = () => {
+        const rows = (viewMode === 'split' ? taskTree : sortedTasks.map(t => ({ task: t, level: 0, hasChildren: false }))).map(({ task }) => {
+            const status = getStatus(task);
+            const parentName = task.parentId ? tasks.find(t => t.id === task.parentId)?.name : '';
+            const linkedIds = taskContractLinks[task.id] || [];
+            const { derivedStart, derivedEnd } = deriveActualDates(task, dailyLogs, linkedIds);
+            return {
+                'Mã WBS': task.wbsCode || '',
+                'Công việc': task.name,
+                'Người thực hiện': task.assignee || '',
+                'Thời gian (ngày)': task.duration,
+                'Bắt đầu KH': fmtDate(task.startDate),
+                'Kết thúc KH': fmtDate(task.endDate),
+                'Bắt đầu thực tế': derivedStart ? fmtDate(derivedStart) : '',
+                'Kết thúc thực tế': derivedEnd ? fmtDate(derivedEnd) : '',
+                'Đơn vị': getTaskUnit(task, linkedIds, contractItems),
+                'Tiến độ (%)': task.progress,
+                'Trạng thái': getStatusLabel(status),
+                'Công việc cha': parentName
+            };
+        });
+
+        const ws = XLSX.utils.json_to_sheet(rows);
+        ws['!cols'] = [
+            { wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
+            { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 20 }
+        ];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'TienDo');
+        XLSX.writeFile(wb, `Tien_do_DA_${new Date().toISOString().split('T')[0]}.xlsx`);
     };
 
     // ====== Tree & filtering ======
@@ -510,19 +963,45 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const handleGateApproval = useCallback(async (taskId: string, status: GateStatus, reason?: string) => {
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
-        const updated: ProjectTask = {
-            ...task,
-            gateStatus: status,
-            gateApprovedBy: status === 'approved' ? (user.name || user.username || 'Quản lý') : (status === 'rejected' ? `Từ chối: ${reason || 'Không đạt'}` : undefined),
-            gateApprovedAt: (status === 'approved' || status === 'rejected') ? new Date().toISOString() : undefined,
-        };
-        await taskService.upsert(updated);
-        const nextTasks = tasks.map(t => t.id === taskId ? updated : t);
-        setTasks(nextTasks);
-        syncProjectFinanceProgress(nextTasks);
-        // Sync modal task
-        setGateModalTask(prev => prev?.id === taskId ? updated : prev);
-    }, [syncProjectFinanceProgress, tasks, user.name, user.username]);
+        const requiredPermission: ProjectPermissionCode = status === 'pending' ? 'submit' : 'approve';
+        if (!ensureProjectPermission(requiredPermission, status === 'pending' ? 'gửi nghiệm thu hạng mục' : 'duyệt hoặc từ chối nghiệm thu hạng mục')) return;
+
+        try {
+            const now = new Date().toISOString();
+            const updated: ProjectTask = {
+                ...task,
+                gateStatus: status,
+                gateApprovedBy: status === 'approved' ? (user.name || user.username || 'Quản lý') : (status === 'rejected' ? `Từ chối: ${reason || 'Không đạt'}` : undefined),
+                gateApprovedAt: (status === 'approved' || status === 'rejected') ? now : undefined,
+            };
+
+            // GĐ2: Auto set actualEndDate on gate approval if not manually set
+            if (status === 'approved' && !updated.actualEndDate) {
+                updated.actualEndDate = now.split('T')[0];
+            }
+
+            await taskService.upsert(updated);
+            const nextTasks = tasks.map(t => t.id === taskId ? updated : t);
+            setTasks(nextTasks);
+            syncProjectFinanceProgress(nextTasks);
+            if (status === 'pending' && task.gateStatus !== 'pending') {
+                const approverIds = await notifyGateApprovers(updated);
+                await notifyTaskWatchers(updated, 'pending', approverIds);
+            }
+            if ((status === 'approved' || status === 'rejected') && task.gateStatus !== status) {
+                await notifyTaskWatchers(updated, status);
+            }
+            toast.success(
+                status === 'approved' ? 'Đã duyệt nghiệm thu' :
+                status === 'rejected' ? 'Đã từ chối nghiệm thu' :
+                'Đã gửi chờ nghiệm thu'
+            );
+            // Sync modal task
+            setGateModalTask(prev => prev?.id === taskId ? updated : prev);
+        } catch (e: any) {
+            toast.error('Lỗi cập nhật nghiệm thu', e?.message);
+        }
+    }, [ensureProjectPermission, notifyGateApprovers, notifyTaskWatchers, syncProjectFinanceProgress, tasks, toast, user.name, user.username]);
 
     // ====== GĐ2: Drag-Resize with Ripple (GĐ5: sandbox-aware) ======
     const handleBarDragEnd = useCallback(async (taskId: string, newEndDate: string) => {
@@ -726,6 +1205,18 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 </div>
                 <div className="flex items-center gap-2">
                     <AiInsightPanel module="gantt" siteId={constructionSiteId} />
+                    {/* GĐ3: Excel Import/Export */}
+                    <button onClick={handleExportExcel}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-emerald-600 border border-emerald-200 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30 transition-all"
+                        title="Xuất Excel">
+                        <Download size={13} />
+                    </button>
+                    <button onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-blue-600 border border-blue-200 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-all"
+                        title="Nhập Excel">
+                        <Upload size={13} />
+                    </button>
+                    <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx,.xls" onChange={handleFileUpload} />
                     {/* GĐ2: Gate Panel toggle */}
                     {(() => {
                         const pendingCount = progressSummary.pendingGateCount;
@@ -981,7 +1472,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                         {/* View mode toggle */}
                         <div className="flex bg-slate-100 dark:bg-slate-700 rounded-xl p-0.5">
                             {([
-                                { mode: 'table' as ViewMode, icon: LayoutList, label: 'Bảng' },
+                                { mode: 'table' as ViewMode, icon: LayoutList, label: 'Bảng đầy đủ' },
                                 { mode: 'split' as ViewMode, icon: Columns, label: 'Kết hợp' },
                                 { mode: 'gantt' as ViewMode, icon: BarChart3, label: 'Gantt' },
                             ]).map(v => (
@@ -1055,44 +1546,83 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                         </button>
                     </div>
                 ) : (
-                    <div className="flex overflow-hidden">
+                    <div className="flex flex-col lg:flex-row overflow-hidden">
                         {/* ====== TABLE VIEW ====== */}
                         {(viewMode === 'table' || viewMode === 'split') && (
-                            <div className={`${viewMode === 'split' ? 'w-[520px] shrink-0 border-r border-slate-100 dark:border-slate-700' : 'flex-1'} overflow-auto`}>
-                                <table className="w-full text-xs">
+                            <div className={`${viewMode === 'split' ? 'w-full lg:w-[520px] shrink-0 lg:border-r border-b lg:border-b-0 border-slate-100 dark:border-slate-700' : 'flex-1'} overflow-auto`}>
+                                <table className={`${viewMode === 'table' ? 'w-full min-w-[760px] lg:min-w-[1180px] table-fixed' : 'w-full min-w-[500px]'} text-xs`}>
                                     <thead>
                                         <tr className="bg-slate-50/80 dark:bg-slate-700/50 border-b border-slate-100 dark:border-slate-700">
+                                            {viewMode === 'table' && (
+                                                <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[40px]">
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">STT</span>
+                                                </th>
+                                            )}
+                                            {viewMode === 'table' && (
+                                                <th className="hidden sm:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[76px]">
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Mã WBS</span>
+                                                </th>
+                                            )}
                                             <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-3 py-2.5 text-left">
                                                 <button onClick={() => handleSort('name')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
-                                                    Hạng mục <SortIcon field="name" />
+                                                    Công việc <SortIcon field="name" />
                                                 </button>
                                             </th>
-                                            <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[85px]">
-                                                <button onClick={() => handleSort('status')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
-                                                    T.Thái <SortIcon field="status" />
-                                                </button>
-                                            </th>
-                                            <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[80px]">
+                                            {viewMode === 'table' && (
+                                                <th className="hidden md:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[128px]">
+                                                    <button onClick={() => handleSort('assignee')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                        Người thực hiện <SortIcon field="assignee" />
+                                                    </button>
+                                                </th>
+                                            )}
+                                            {viewMode === 'table' && (
+                                                <th className="hidden lg:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[88px]">
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Thời gian<br />(ngày)</span>
+                                                </th>
+                                            )}
+                                            {viewMode === 'split' && (
+                                                <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[85px]">
+                                                    <button onClick={() => handleSort('status')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                        T.Thái <SortIcon field="status" />
+                                                    </button>
+                                                </th>
+                                            )}
+                                            <th className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[80px]`}>
                                                 <button onClick={() => handleSort('startDate')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
-                                                    Bắt đầu <SortIcon field="startDate" />
+                                                    BĐ KH <SortIcon field="startDate" />
                                                 </button>
                                             </th>
-                                            <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[80px]">
+                                            <th className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[80px]`}>
                                                 <button onClick={() => handleSort('endDate')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
-                                                    Kết thúc <SortIcon field="endDate" />
+                                                    KT KH <SortIcon field="endDate" />
                                                 </button>
                                             </th>
-                                            <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[130px]">
+                                            {viewMode === 'table' && (
+                                                <>
+                                                    <th className="hidden lg:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[86px]">
+                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">BĐ thực tế</span>
+                                                    </th>
+                                                    <th className="hidden lg:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[86px]">
+                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">KT thực tế</span>
+                                                    </th>
+                                                </>
+                                            )}
+                                            <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[120px]">
                                                 <button onClick={() => handleSort('progress')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
                                                     Tiến độ <SortIcon field="progress" />
                                                 </button>
                                             </th>
                                             {viewMode === 'table' && (
-                                                <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[100px]">
-                                                    <button onClick={() => handleSort('assignee')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
-                                                        Phụ trách <SortIcon field="assignee" />
-                                                    </button>
+                                                <th className="hidden xl:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[70px]">
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Đơn vị</span>
                                                 </th>
+                                            )}
+                                            {viewMode === 'table' && (
+                                                <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[96px]">
+                                                <button onClick={() => handleSort('status')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                    T.Thái <SortIcon field="status" />
+                                                </button>
+                                            </th>
                                             )}
                                             <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[80px]">
                                                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Thao tác</span>
@@ -1102,10 +1632,28 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     <tbody>
                                         {(viewMode === 'split' ? taskTree : sortedTasks.map(t => ({ task: t, level: 0, hasChildren: false }))).map(({ task, level, hasChildren }, idx) => {
                                             const status = getStatus(task);
+                                            const linkedIds = taskContractLinks[task.id] || [];
+                                            const { derivedStart, derivedEnd } = deriveActualDates(task, dailyLogs, linkedIds);
+                                            const unitLabel = getTaskUnit(task, linkedIds, contractItems);
+                                            const unitTitle = getTaskUnitTitle(task, linkedIds, contractItems);
                                             return (
                                                 <tr key={task.id}
                                                     style={{ height: `${ROW_HEIGHT}px` }}
                                                     className={`border-b border-slate-50 dark:border-slate-700/50 hover:bg-orange-50/30 dark:hover:bg-slate-700/30 group transition-colors ${status === 'overdue' ? 'bg-red-50/20' : status === 'pending_gate' ? 'bg-amber-50/20' : ''}`}>
+                                                    {/* STT */}
+                                                    {viewMode === 'table' && (
+                                                        <td className="px-2 py-2.5 text-center text-slate-400 font-bold">{idx + 1}</td>
+                                                    )}
+                                                    {/* Mã WBS */}
+                                                    {viewMode === 'table' && (
+                                                        <td className="hidden sm:table-cell px-2 py-2.5">
+                                                            {task.wbsCode ? (
+                                                                <span className="text-indigo-600 dark:text-indigo-400 font-bold">{task.wbsCode}</span>
+                                                            ) : (
+                                                                <span className="text-slate-300">–</span>
+                                                            )}
+                                                        </td>
+                                                    )}
                                                     {/* Name */}
                                                     <td className="px-3 py-2.5">
                                                         <div className="flex items-center gap-1" style={{ paddingLeft: viewMode === 'split' ? `${level * 16}px` : 0 }}>
@@ -1122,20 +1670,29 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                                 onClick={() => openEdit(task)} title={task.name}>
                                                                 {task.name}
                                                             </span>
+                                                            {(task.watchers || []).length > 0 && (
+                                                                <span title={`Theo dõi: ${getWatcherNames(task.watchers)}`} className="inline-flex shrink-0">
+                                                                    <Eye size={11} className="text-blue-400" />
+                                                                </span>
+                                                            )}
                                                         </div>
+                                                        {viewMode === 'table' && (
+                                                            <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[9px] font-bold text-slate-400 md:hidden">
+                                                                {task.wbsCode && <span>WBS {task.wbsCode}</span>}
+                                                                {task.assignee && <span>{task.assignee}</span>}
+                                                                <span>{fmtShort(task.startDate)}→{fmtShort(task.endDate)}</span>
+                                                                {unitLabel !== '–' && <span>{unitLabel}</span>}
+                                                                {(task.watchers || []).length > 0 && <span>{task.watchers?.length} theo dõi</span>}
+                                                            </div>
+                                                        )}
                                                     </td>
                                                     {/* Status */}
-                                                    <td className="px-2 py-0 overflow-hidden" style={{ maxWidth: "95px" }}><StatusBadge status={status} /></td>
-                                                    {/* Dates */}
-                                                    <td className="px-2 py-2.5 text-slate-500 font-medium">{fmtShort(task.startDate)}</td>
-                                                    <td className="px-2 py-2.5 text-slate-500 font-medium">{fmtShort(task.endDate)}</td>
-                                                    {/* Progress */}
-                                                    <td className="px-2 py-2.5">
-                                                        <ProgressCell value={task.progress} onChange={v => updateProgress(task.id, v)} />
-                                                    </td>
-                                                    {/* Assignee (only in full table mode) */}
+                                                    {viewMode === 'split' && (
+                                                        <td className="px-2 py-0 overflow-hidden" style={{ maxWidth: "95px" }}><StatusBadge status={status} /></td>
+                                                    )}
+                                                    {/* Assignee */}
                                                     {viewMode === 'table' && (
-                                                        <td className="px-2 py-2.5">
+                                                        <td className="hidden md:table-cell px-2 py-2.5">
                                                             {task.assignee ? (
                                                                 <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300 font-medium">
                                                                     <User size={10} className="text-slate-400" /> {task.assignee}
@@ -1145,9 +1702,41 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                             )}
                                                         </td>
                                                     )}
+                                                    {/* Duration */}
+                                                    {viewMode === 'table' && (
+                                                        <td className="hidden lg:table-cell px-2 py-2.5 text-center font-bold text-slate-500">{task.duration}</td>
+                                                    )}
+                                                    {/* Planned Dates */}
+                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 py-2.5 text-slate-500 font-medium`}>{fmtShort(task.startDate)}</td>
+                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 py-2.5 text-slate-500 font-medium`}>{fmtShort(task.endDate)}</td>
+                                                    {/* Actual Dates (table mode only) */}
+                                                    {viewMode === 'table' && (
+                                                        <>
+                                                            <td className="hidden lg:table-cell px-2 py-2.5 text-emerald-600 font-medium" title={task.actualStartDate ? "Nhập tay" : derivedStart ? "Tính tự động" : ""}>
+                                                                {derivedStart ? fmtShort(derivedStart) : <span className="text-slate-300">–</span>}
+                                                            </td>
+                                                            <td className="hidden lg:table-cell px-2 py-2.5 text-emerald-600 font-medium" title={task.actualEndDate ? "Nhập tay" : derivedEnd ? "Tính tự động" : ""}>
+                                                                {derivedEnd ? fmtShort(derivedEnd) : <span className="text-slate-300">–</span>}
+                                                            </td>
+                                                        </>
+                                                    )}
+                                                    {/* Progress */}
+                                                    <td className="px-2 py-2.5">
+                                                        <ProgressCell value={task.progress} onChange={v => updateProgress(task.id, v)} />
+                                                    </td>
+                                                    {/* Unit (table mode only) */}
+                                                    {viewMode === 'table' && (
+                                                        <td className="hidden xl:table-cell px-2 py-2.5 text-slate-500 font-medium" title={unitTitle}>
+                                                            {unitLabel}
+                                                        </td>
+                                                    )}
+                                                    {/* Status */}
+                                                    {viewMode === 'table' && (
+                                                        <td className="px-2 py-0 overflow-hidden" style={{ maxWidth: "96px" }}><StatusBadge status={status} /></td>
+                                                    )}
                                                     {/* Actions */}
                                                     <td className="px-2 py-2.5">
-                                                        <div className="flex items-center justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <div className="flex items-center justify-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                                             <button onClick={() => openEdit(task)} title="Sửa"
                                                                 className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
                                                                 <Edit2 size={12} />
@@ -1210,6 +1799,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                     ) : <span className="w-4 shrink-0" />}
                                                     {task.isMilestone && <Flag size={10} className="text-red-500 shrink-0" />}
                                                     <span className="truncate font-bold text-slate-700 dark:text-slate-200 flex-1" title={task.name}>{task.name}</span>
+                                                    {(task.watchers || []).length > 0 && (
+                                                        <span title={`Theo dõi: ${getWatcherNames(task.watchers)}`} className="inline-flex shrink-0">
+                                                            <Eye size={10} className="text-blue-400" />
+                                                        </span>
+                                                    )}
                                                     <span className="text-[9px] font-bold text-slate-400 shrink-0 w-8 text-right">{task.progress}%</span>
                                                 </div>
                                             ))}
@@ -1709,17 +2303,45 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm font-bold bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" autoFocus />
                             </div>
 
-                            {/* Dates */}
+                            {/* WBS Code + Unit */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> Bắt đầu <span className="text-red-400">*</span></label>
+                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Mã WBS</label>
+                                    <input value={fWbsCode} onChange={e => setFWbsCode(e.target.value)} placeholder="VD: 1.1.3"
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Đơn vị</label>
+                                    <input value={fFallbackUnit} onChange={e => setFFallbackUnit(e.target.value)} placeholder="m³, kg, m²..."
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                </div>
+                            </div>
+
+                            {/* Planned Dates */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> BĐ kế hoạch <span className="text-red-400">*</span></label>
                                     <input type="date" value={fStart} onChange={e => setFStart(e.target.value)}
                                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> Kết thúc <span className="text-red-400">*</span></label>
+                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> KT kế hoạch <span className="text-red-400">*</span></label>
                                     <input type="date" value={fEnd} onChange={e => setFEnd(e.target.value)}
                                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                </div>
+                            </div>
+
+                            {/* Actual Dates */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> BĐ thực tế</label>
+                                    <input type="date" value={fActualStart} onChange={e => setFActualStart(e.target.value)}
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-emerald-200 dark:border-emerald-700 text-sm bg-emerald-50/30 dark:bg-emerald-900/10 focus:ring-2 focus:ring-emerald-500 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> KT thực tế</label>
+                                    <input type="date" value={fActualEnd} onChange={e => setFActualEnd(e.target.value)}
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-emerald-200 dark:border-emerald-700 text-sm bg-emerald-50/30 dark:bg-emerald-900/10 focus:ring-2 focus:ring-emerald-500 outline-none" />
                                 </div>
                             </div>
 
@@ -1744,10 +2366,56 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 	                                </div>
 	                                <div>
                                     <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><User size={10} /> Người phụ trách</label>
-                                    <input value={fAssignee} onChange={e => setFAssignee(e.target.value)} placeholder="Tên người phụ trách"
-                                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                    <select
+                                        value={fAssigneeUserId}
+                                        onChange={e => {
+                                            const uid = e.target.value;
+                                            setFAssigneeUserId(uid);
+                                            if (uid) setFAssignee(staffUserMap.get(uid)?.name || '');
+                                        }}
+                                        className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-xs bg-transparent focus:ring-2 focus:ring-orange-500 outline-none mb-1.5"
+                                    >
+                                        <option value="">Chọn từ nhân sự dự án...</option>
+                                        {watcherOptions.map(opt => (
+                                            <option key={opt.id} value={opt.id}>{opt.name}{opt.position ? ` — ${opt.position}` : ''}</option>
+                                        ))}
+                                    </select>
+                                    <input value={fAssignee} onChange={e => setFAssignee(e.target.value)} placeholder="Tên hiển thị"
+                                        className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
 	                                </div>
 	                            </div>
+
+                                <div className="rounded-xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/30 dark:bg-blue-900/10 p-3">
+                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-1 mb-2">
+                                        <Eye size={11} className="text-blue-500" /> Người theo dõi
+                                    </label>
+                                    {fWatchers.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5 mb-2">
+                                            {fWatchers.map(uid => (
+                                                <span key={uid} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                                                    {staffUserMap.get(uid)?.name || uid}
+                                                    <button onClick={() => setFWatchers(prev => prev.filter(id => id !== uid))} className="hover:text-red-500 transition-colors" title="Gỡ người theo dõi">
+                                                        <X size={11} />
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <select
+                                        value=""
+                                        onChange={e => {
+                                            if (!e.target.value) return;
+                                            setFWatchers(prev => prev.includes(e.target.value) ? prev : [...prev, e.target.value]);
+                                        }}
+                                        disabled={watcherOptions.length === 0}
+                                        className="w-full px-3 py-2 rounded-xl border border-blue-100 dark:border-blue-800 text-xs bg-white/70 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50"
+                                    >
+                                        <option value="">{watcherOptions.length === 0 ? 'Chưa có nhân sự dự án' : '+ Thêm người theo dõi'}</option>
+                                        {watcherOptions.filter(opt => !fWatchers.includes(opt.id)).map(opt => (
+                                            <option key={opt.id} value={opt.id}>{opt.name}{opt.position ? ` — ${opt.position}` : ''}</option>
+                                        ))}
+                                    </select>
+                                </div>
 
 	                            <div>
 	                                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Nguồn tiến độ</label>
@@ -1938,6 +2606,109 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                     <img src={photoTooltip.photoUrl} className="w-32 h-24 object-cover rounded shadow-sm mb-1" />
                     <div className="text-[10px] font-bold text-slate-700 truncate w-32">{photoTooltip.taskName}</div>
                     <div className="text-[9px] text-slate-500">{new Date(photoTooltip.date).toLocaleDateString('vi-VN')}</div>
+                </div>
+            )}
+
+            {/* ====== GĐ3: EXCEL IMPORT MODAL ====== */}
+            {showImportModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-[95vw] max-w-6xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+                                    <FileSpreadsheet size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-800 dark:text-white">Xem trước dữ liệu Excel</h3>
+                                    <p className="text-sm text-slate-500 font-medium">Hệ thống tìm thấy {importRows.length} hạng mục từ file</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                                    <Upload size={14} /> Chọn file khác
+                                </button>
+                                <button onClick={downloadTemplate} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
+                                    <Download size={14} /> Tải file mẫu
+                                </button>
+                                <button onClick={() => { setShowImportModal(false); setImportRows([]); setImportErrors({}); }} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                                    <X size={16} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 overflow-auto bg-slate-50/50 dark:bg-slate-900/50 p-6">
+                            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-[11px]">
+                                        <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 uppercase tracking-wider font-bold">
+                                            <tr>
+                                                <th className="px-3 py-2 border-b border-slate-200 w-10 text-center">STT</th>
+                                                <th className="px-3 py-2 border-b border-slate-200">Mã WBS</th>
+                                                <th className="px-3 py-2 border-b border-slate-200">Công việc</th>
+                                                <th className="px-3 py-2 border-b border-slate-200">BĐ Kế hoạch</th>
+                                                <th className="px-3 py-2 border-b border-slate-200">KT Kế hoạch</th>
+                                                <th className="px-3 py-2 border-b border-slate-200">Tiến độ</th>
+                                                <th className="px-3 py-2 border-b border-slate-200">Trạng thái</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+	                                            {importRows.map((row, idx) => {
+	                                                const err = importErrors[idx];
+	                                                const plannedStart = parseExcelDate(row['Bắt đầu KH (*)']);
+	                                                const plannedEnd = parseExcelDate(row['Kết thúc KH (*)']);
+                                                const wbsPreview = row['Mã WBS'] ? String(row['Mã WBS']) : '-';
+                                                const taskPreview = row['Công việc (*)'] ? String(row['Công việc (*)']) : '-';
+                                                const progressPreview = parseProgress(row['Tiến độ (%)']);
+	                                                return (
+                                                    <tr key={idx} className={`hover:bg-slate-50 transition-colors ${err ? 'bg-red-50/50 dark:bg-red-900/10' : ''}`}>
+                                                        <td className="px-3 py-2 text-center text-slate-400">{idx + 1}</td>
+	                                                        <td className="px-3 py-2 font-mono text-slate-600">{wbsPreview}</td>
+	                                                        <td className="px-3 py-2 font-semibold text-slate-700">{taskPreview}</td>
+                                                        <td className="px-3 py-2 text-slate-600">{plannedStart ? fmtDate(plannedStart) : '-'}</td>
+                                                        <td className="px-3 py-2 text-slate-600">{plannedEnd ? fmtDate(plannedEnd) : '-'}</td>
+                                                        <td className="px-3 py-2">
+	                                                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-bold">{progressPreview}%</span>
+                                                        </td>
+                                                        <td className="px-3 py-2">
+                                                            {err ? (
+                                                                <span className="flex items-center gap-1 text-red-600 font-medium">
+                                                                    <XCircle size={12} /> {err}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="flex items-center gap-1 text-emerald-600 font-medium">
+                                                                    <CheckCircle2 size={12} /> Hợp lệ
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center bg-white dark:bg-slate-800">
+                            <div className="flex gap-4 text-xs font-bold">
+                                <span className="text-emerald-600 flex items-center gap-1"><CheckCircle2 size={14} /> {importRows.length - Object.keys(importErrors).length} Hợp lệ</span>
+                                {Object.keys(importErrors).length > 0 && (
+                                    <span className="text-red-500 flex items-center gap-1"><XCircle size={14} /> {Object.keys(importErrors).length} Lỗi</span>
+                                )}
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => { setShowImportModal(false); setImportRows([]); setImportErrors({}); }} className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">Huỷ</button>
+                                <button onClick={processBulkImport} disabled={importing || importRows.length === 0 || Object.keys(importErrors).length === importRows.length}
+                                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-lg hover:shadow-xl flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                                    {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                                    Nhập {importRows.length - Object.keys(importErrors).length} Hạng mục
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

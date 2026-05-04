@@ -286,6 +286,7 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
 	                                                hasSiteLink ? <PaymentCertificatePanel
 	                                                    contractId={c.id}
 	                                                    contractType={c.type as ContractItemType}
+	                                                    projectId={projectId}
 	                                                    constructionSiteId={constructionSiteId!}
 	                                                /> : renderSiteRequired('Thanh toán')
 	                                            )}
@@ -294,6 +295,7 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
 	                                                hasSiteLink ? <ContractVariationPanel
 	                                                    contractId={c.id}
 	                                                    contractType={c.type as ContractItemType}
+	                                                    projectId={projectId}
 	                                                    constructionSiteId={constructionSiteId!}
 	                                                /> : renderSiteRequired('Phát sinh')
 	                                            )}
@@ -302,6 +304,7 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
 	                                                hasSiteLink ? <QuantityAcceptancePanel
 	                                                    contractId={c.id}
 	                                                    contractType={c.type as ContractItemType}
+	                                                    projectId={projectId}
 	                                                    constructionSiteId={constructionSiteId!}
 	                                                /> : renderSiteRequired('Nghiệm thu')
 	                                            )}

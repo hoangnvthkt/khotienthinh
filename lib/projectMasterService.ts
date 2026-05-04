@@ -43,6 +43,8 @@ export const projectMasterService = {
     managerId?: string;
     startDate?: string;
     endDate?: string;
+    progressCalculationMode?: Project['progressCalculationMode'];
+    manualProgressPercent?: number;
     createdBy?: string;
   }): Promise<Project> {
     if (!isSupabaseConfigured) {
@@ -58,6 +60,8 @@ export const projectMasterService = {
         managerId: input.managerId,
         startDate: input.startDate,
         endDate: input.endDate,
+        progressCalculationMode: input.progressCalculationMode || 'gantt_weighted',
+        manualProgressPercent: input.manualProgressPercent || 0,
         createdBy: input.createdBy,
         source: 'manual',
         createdAt: new Date().toISOString(),
@@ -76,6 +80,8 @@ export const projectMasterService = {
       managerId: input.managerId || null,
       startDate: input.startDate || null,
       endDate: input.endDate || null,
+      progressCalculationMode: input.progressCalculationMode || 'gantt_weighted',
+      manualProgressPercent: input.manualProgressPercent || 0,
       createdBy: input.createdBy || null,
       source: 'manual',
     }));
@@ -102,6 +108,8 @@ export const projectMasterService = {
       managerId: project.managerId || null,
       startDate: project.startDate || null,
       endDate: project.endDate || null,
+      progressCalculationMode: project.progressCalculationMode || 'gantt_weighted',
+      manualProgressPercent: project.manualProgressPercent || 0,
     }));
 
     const { data, error } = await supabase

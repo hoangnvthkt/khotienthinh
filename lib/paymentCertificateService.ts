@@ -341,7 +341,7 @@ export const paymentCertificateService = {
     status: PaymentCertificateStatus,
     userId?: string,
     reason?: string,
-    options?: { allowZeroOrNegativePayable?: boolean; approverUser?: User },
+    options?: { allowZeroOrNegativePayable?: boolean; approverUser?: User; projectId?: string },
   ): Promise<void> {
     const { data, error: readError } = await supabase.from(TABLE).select('*').eq('id', id).single();
     if (readError) throw readError;
@@ -385,6 +385,7 @@ export const paymentCertificateService = {
         module: 'payment_certificate',
         action: approvalAction as any,
         amount: Math.abs(certAmount),
+        projectId: options.projectId,
         constructionSiteId: cert.constructionSiteId,
         user: options.approverUser,
       });

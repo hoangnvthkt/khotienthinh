@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Project, ProjectFinance, ProjectTransaction, ProjectCostCategory, ProjectTxType, ProjectTxSource, Attachment } from '../types';
+import { Project, ProjectFinance, ProjectTransaction, ProjectCostCategory, ProjectTxType, ProjectTxSource, Attachment, ProjectProgressCalculationMode } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { loadXlsx } from '../lib/loadXlsx';
 import { useModuleData } from '../hooks/useModuleData';
@@ -52,6 +52,14 @@ const SOURCE_CONFIG: Record<ProjectTxSource, { label: string; icon: string }> = 
     workflow: { label: 'Workflow', icon: '🔄' },
 };
 
+const PROGRESS_MODE_OPTIONS: { value: ProjectProgressCalculationMode; label: string }[] = [
+    { value: 'gantt_weighted', label: 'Theo Gantt có trọng số' },
+    { value: 'budget', label: 'Theo ngân sách công việc' },
+    { value: 'duration', label: 'Theo thời gian thực hiện' },
+    { value: 'task_count', label: 'Theo số lượng công việc hoàn thành' },
+    { value: 'manual', label: 'Nhập thủ công' },
+];
+
 const fmt = (n: number) => {
     if (n >= 1e9) return (n / 1e9).toFixed(1) + ' tỷ';
     if (n >= 1e6) return (n / 1e6).toFixed(0) + ' tr';
@@ -80,6 +88,8 @@ type ProjectFormState = {
     status: Project['status'];
     startDate: string;
     endDate: string;
+    progressCalculationMode: ProjectProgressCalculationMode;
+    manualProgressPercent: string;
     description: string;
 };
 
@@ -92,6 +102,8 @@ const emptyProjectForm = (): ProjectFormState => ({
     status: 'planning',
     startDate: '',
     endDate: '',
+    progressCalculationMode: 'gantt_weighted',
+    manualProgressPercent: '0',
     description: '',
 });
 
@@ -104,6 +116,8 @@ const siteToProjectFallback = (site: { id: string; name: string; address?: strin
     status: 'active',
     constructionSiteId: site.id,
     managerId: site.managerId,
+    progressCalculationMode: 'gantt_weighted',
+    manualProgressPercent: 0,
     source: 'backfill',
     createdAt: site.createdAt,
 });
@@ -297,6 +311,8 @@ const ProjectDashboard: React.FC = () => {
             status: project.status || 'planning',
             startDate: project.startDate || '',
             endDate: project.endDate || '',
+            progressCalculationMode: project.progressCalculationMode || 'gantt_weighted',
+            manualProgressPercent: String(project.manualProgressPercent ?? 0),
             description: project.description || '',
         });
         setShowProjectForm(true);
@@ -307,6 +323,7 @@ const ProjectDashboard: React.FC = () => {
             alert('Vui lòng nhập tên dự án');
             return;
         }
+        const manualProgressPercent = Math.max(0, Math.min(100, Number(projectForm.manualProgressPercent) || 0));
         setSavingProject(true);
         try {
             if (editingProject) {
@@ -320,6 +337,8 @@ const ProjectDashboard: React.FC = () => {
                     status: projectForm.status,
                     startDate: projectForm.startDate || undefined,
                     endDate: projectForm.endDate || undefined,
+                    progressCalculationMode: projectForm.progressCalculationMode,
+                    manualProgressPercent,
                     description: projectForm.description.trim() || undefined,
                 });
                 setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
@@ -336,6 +355,8 @@ const ProjectDashboard: React.FC = () => {
                     status: projectForm.status,
                     startDate: projectForm.startDate || undefined,
                     endDate: projectForm.endDate || undefined,
+                    progressCalculationMode: projectForm.progressCalculationMode,
+                    manualProgressPercent,
                     description: projectForm.description.trim() || undefined,
                     createdBy: user.id,
                 });
@@ -786,6 +807,31 @@ const ProjectDashboard: React.FC = () => {
                                     {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                                 </select>
                             </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Cách tính tiến độ</label>
+                                <select
+                                    value={projectForm.progressCalculationMode}
+                                    onChange={e => setProjectForm({ ...projectForm, progressCalculationMode: e.target.value as ProjectProgressCalculationMode })}
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none"
+                                >
+                                    {PROGRESS_MODE_OPTIONS.map(option => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            {projectForm.progressCalculationMode === 'manual' && (
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Tiến độ thủ công (%)</label>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        max={100}
+                                        value={projectForm.manualProgressPercent}
+                                        onChange={e => setProjectForm({ ...projectForm, manualProgressPercent: e.target.value })}
+                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none"
+                                    />
+                                </div>
+                            )}
                             <div className="md:col-span-2">
                                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ghi chú</label>
                                 <textarea
@@ -1168,6 +1214,7 @@ const ProjectDashboard: React.FC = () => {
                     hasSiteLink ? (
                         <ReportTab
                             constructionSiteId={effectiveSiteId!}
+                            projectId={selectedProject.id}
                             contractValue={contractValue}
                             totalSpent={aggForRender.totalExpense}
                         />

@@ -15,9 +15,11 @@ import { acceptanceService, boqService, matRequestService, vendorService, poServ
 import { customerContractService, subcontractorContractService } from '../../lib/hdService';
 import { calculateProjectProgress } from '../../lib/projectScheduleRules';
 import { projectFinancialService, ProjectFinancialKPIs } from '../../lib/projectFinancialService';
+import FastConsDashboard from '../../components/project/FastConsDashboard';
 
 interface ReportTabProps {
     constructionSiteId: string;
+    projectId?: string;
     contractValue?: number;
     totalSpent?: number;
 }
@@ -35,7 +37,7 @@ const GRADIENT_PAIRS = [
     ['#fbbf24', '#f59e0b'], ['#60a5fa', '#3b82f6'], ['#f87171', '#ef4444'],
 ];
 
-const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, contractValue = 0, totalSpent = 0 }) => {
+const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, projectId, contractValue = 0, totalSpent = 0 }) => {
     const [selectedChart, setSelectedChart] = useState<string | null>(null);
 
     // Load all data from Supabase
@@ -348,6 +350,8 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, co
 
     return (
         <div className="space-y-6">
+            <FastConsDashboard constructionSiteId={constructionSiteId} projectId={projectId} />
+
             {/* T1: 4 Financial KPIs Banner */}
             {!kpisLoading && financialKPIs && (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

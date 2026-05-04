@@ -209,6 +209,11 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
     try {
       await projectStaffService.setPermissions(s.id, newPerms, currentUser?.id, currentUser?.name);
       await load();
+      const perm = permTypes.find(pt => pt.id === ptId);
+      toast.success(
+        currentPerms.includes(ptId) ? 'Đã gỡ quyền' : 'Đã cấp quyền',
+        `${s.userName || 'Thành viên'}${perm ? ` — ${perm.name}` : ''}`
+      );
     } catch (e: any) {
       toast.error('Lỗi', e?.message);
     }

@@ -6,6 +6,7 @@ import {
 import { PaymentCertificate, PaymentCertificateStatus, ContractItemType, AdvancePayment } from '../../types';
 import { paymentCertificateService, calculatePayableAmount } from '../../lib/paymentCertificateService';
 import { advancePaymentService } from '../../lib/advancePaymentService';
+import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
@@ -13,6 +14,7 @@ import { useApp } from '../../context/AppContext';
 interface Props {
   contractId: string;
   contractType: ContractItemType;
+  projectId?: string;
   constructionSiteId: string;
 }
 
@@ -32,7 +34,15 @@ const STATUS_CFG: Record<PaymentCertificateStatus, { label: string; color: strin
   cancelled: { label: 'Đã hủy',      color: 'text-slate-500',   bg: 'bg-slate-100 border-slate-200',    icon: <X size={11} /> },
 };
 
-const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, constructionSiteId }) => {
+const STATUS_PERMISSION: Partial<Record<PaymentCertificateStatus, ProjectPermissionCode>> = {
+  submitted: 'submit',
+  returned: 'verify',
+  approved: 'approve',
+  paid: 'confirm',
+  cancelled: 'approve',
+};
+
+const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, projectId, constructionSiteId }) => {
   const toast = useToast();
   const confirm = useConfirm();
   const { user } = useApp();
@@ -76,7 +86,17 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, co
     const ok = await confirm({ title: labels[newStatus] || newStatus, targetName: `Đợt ${cert.periodNumber}` });
     if (!ok) return;
     try {
-      await paymentCertificateService.setStatus(cert.id, newStatus, user.id, undefined, { approverUser: user });
+      const requiredPermission = STATUS_PERMISSION[newStatus];
+      if (requiredPermission) {
+        await projectStaffService.requireProjectPermission({
+          userId: user?.id,
+          projectId,
+          constructionSiteId,
+          code: requiredPermission,
+          actionLabel: (labels[newStatus] || newStatus).toLowerCase(),
+        });
+      }
+      await paymentCertificateService.setStatus(cert.id, newStatus, user.id, undefined, { approverUser: user, projectId });
       await load();
       toast.success(`${labels[newStatus]} thành công`);
     } catch (e: any) { toast.error('Lỗi', e?.message); }

@@ -603,6 +603,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (e) { console.warn(`Exception fetching ${table}:`, e); return null; }
   };
 
+  const normalizeProjectTransaction = (row: any): ProjectTransaction => ({
+    ...row,
+    projectId: row.projectId ?? row.project_id ?? null,
+    projectFinanceId: row.projectFinanceId ?? row.project_finance_id,
+    constructionSiteId: row.constructionSiteId ?? row.construction_site_id,
+    sourceRef: row.sourceRef ?? row.source_ref,
+    createdAt: row.createdAt ?? row.created_at,
+  });
+
+  const projectTransactionPayload = (tx: ProjectTransaction) => ({
+    ...tx,
+    project_id: tx.projectId || null,
+    project_finance_id: tx.projectFinanceId || null,
+    construction_site_id: tx.constructionSiteId || null,
+  });
+
   const loadModuleData = useCallback(async (module: AppModule) => {
     if (!isSupabaseConfigured || loadedModulesRef.current.has(module)) return;
     loadedModulesRef.current.add(module);
@@ -850,7 +866,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ]);
         if (constructionSitesData) setHrmConstructionSites(constructionSitesData);
         if (projectFinancesData) setProjectFinances(projectFinancesData);
-        if (projectTxData) setProjectTransactions(projectTxData);
+        if (projectTxData) setProjectTransactions(projectTxData.map(normalizeProjectTransaction));
       } else if (module === 'ex') {
         const [budgetCatData, budgetEntData, expRecData] = await Promise.all([
           fetchTableHelper('budget_categories'),
@@ -1713,7 +1729,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addProjectTransaction = (tx: ProjectTransaction) => {
     setProjectTransactions(prev => [tx, ...prev]);
     if (isSupabaseConfigured) {
-      supabase.from('project_transactions').upsert(tx)
+      supabase.from('project_transactions').upsert(projectTransactionPayload(tx))
         .then(({ error }) => { if (error) console.error('Error saving project_tx:', error); });
     }
   };
@@ -1721,7 +1737,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addProjectTransactions = (txs: ProjectTransaction[]) => {
     setProjectTransactions(prev => [...txs, ...prev]);
     if (isSupabaseConfigured) {
-      supabase.from('project_transactions').upsert(txs)
+      supabase.from('project_transactions').upsert(txs.map(projectTransactionPayload))
         .then(({ error }) => { if (error) console.error('Error saving project_txs:', error); });
     }
   };
@@ -1729,7 +1745,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateProjectTransaction = (tx: ProjectTransaction) => {
     setProjectTransactions(prev => prev.map(t => t.id === tx.id ? tx : t));
     if (isSupabaseConfigured) {
-      supabase.from('project_transactions').upsert(tx)
+      supabase.from('project_transactions').upsert(projectTransactionPayload(tx))
         .then(({ error }) => { if (error) console.error('Error updating project_tx:', error); });
     }
   };

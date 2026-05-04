@@ -235,7 +235,7 @@ export const quantityAcceptanceService = {
     if (items) await replaceItems(id, items);
   },
 
-  async setStatus(id: string, status: QuantityAcceptanceStatus, userId?: string, reason?: string, approverUser?: User): Promise<void> {
+  async setStatus(id: string, status: QuantityAcceptanceStatus, userId?: string, reason?: string, approverUser?: User, projectId?: string): Promise<void> {
     const { data, error: readError } = await supabase.from(TABLE).select('*').eq('id', id).single();
     if (readError) throw readError;
     const acceptance = normalize(data);
@@ -255,6 +255,7 @@ export const quantityAcceptanceService = {
         module: 'quantity_acceptance',
         action: approvalAction,
         amount: acceptance.totalAcceptedAmount || 0,
+        projectId,
         constructionSiteId: acceptance.constructionSiteId,
         user: approverUser,
       });

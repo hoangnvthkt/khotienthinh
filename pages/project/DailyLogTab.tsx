@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import AiInsightPanel from '../../components/AiInsightPanel';
-import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight } from 'lucide-react';
 import { DailyLog, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, ContractItem, DailyLogStatus } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { dailyLogService, taskService } from '../../lib/projectService';
 import { contractItemService } from '../../lib/contractItemService';
-import { projectStaffService } from '../../lib/projectStaffService';
+import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
 import { notificationService } from '../../lib/notificationService';
 import { useVoiceInput } from '../../hooks/useVoiceInput';
 import { useToast } from '../../context/ToastContext';
@@ -30,6 +30,54 @@ const STATUS_CFG: Record<DailyLogStatus, { label: string; cls: string }> = {
     submitted: { label: 'Chờ xác nhận', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
     verified: { label: 'Đã xác nhận', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
     rejected: { label: 'Trả lại', cls: 'bg-red-50 text-red-700 border-red-200' },
+};
+
+const STATUS_DOT: Record<DailyLogStatus, string> = {
+    draft: 'bg-slate-400',
+    submitted: 'bg-amber-500',
+    verified: 'bg-emerald-500',
+    rejected: 'bg-red-500',
+};
+
+const DAILY_LOG_STATUS_PERMISSION: Partial<Record<DailyLogStatus, ProjectPermissionCode>> = {
+    submitted: 'submit',
+    verified: 'verify',
+    rejected: 'verify',
+};
+
+const ALL_DAILY_LOG_PERMISSION_CODES: ProjectPermissionCode[] = ['edit', 'submit', 'verify'];
+
+const toDateKey = (date: Date): string => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
+const monthKeyFromDate = (date: Date): string => toDateKey(date).slice(0, 7);
+
+const shiftMonth = (monthKey: string, delta: number): string => {
+    const [year, month] = monthKey.split('-').map(Number);
+    return monthKeyFromDate(new Date(year, month - 1 + delta, 1));
+};
+
+const getLogStatus = (log: DailyLog): DailyLogStatus => (log.status || (log.verified ? 'verified' : 'draft')) as DailyLogStatus;
+
+const buildCalendarCells = (monthKey: string) => {
+    const [year, month] = monthKey.split('-').map(Number);
+    const firstOfMonth = new Date(year, month - 1, 1);
+    const start = new Date(firstOfMonth);
+    start.setDate(firstOfMonth.getDate() - firstOfMonth.getDay());
+
+    return Array.from({ length: 42 }, (_, idx) => {
+        const d = new Date(start);
+        d.setDate(start.getDate() + idx);
+        return {
+            date: toDateKey(d),
+            day: d.getDate(),
+            inMonth: d.getMonth() === month - 1,
+        };
+    });
 };
 
 // Voice-enabled Textarea component
@@ -107,12 +155,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
                 if (!hasStaff || !user?.id) {
                     // No PBAC setup → grant all permissions (backward compatible)
-                    setUserPerms(new Set(['submit', 'verify', 'reject', 'confirm', 'approve']));
+                    setUserPerms(new Set(ALL_DAILY_LOG_PERMISSION_CODES));
                     setPbacLoaded(true);
                     return;
                 }
 
-                const permsToCheck = ['submit', 'verify', 'reject'] as const;
+                const permsToCheck = ALL_DAILY_LOG_PERMISSION_CODES;
                 const results = await Promise.all(
                     permsToCheck.map(async code => {
                         const r = projectId
@@ -125,14 +173,26 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 );
                 setUserPerms(new Set(results.filter(r => r.allowed).map(r => r.code)));
             } catch (err) {
-                console.warn('PBAC load failed, granting all', err);
-                setUserPerms(new Set(['submit', 'verify', 'reject', 'confirm', 'approve']));
+                console.warn('PBAC load failed', err);
+                setUserPerms(new Set());
             } finally {
                 setPbacLoaded(true);
             }
         };
         loadPerms();
     }, [effectiveId, user?.id, constructionSiteId, projectId]);
+
+    const ensureDailyLogPermission = useCallback((code: ProjectPermissionCode, actionLabel: string) => {
+        if (!pbacLoaded) {
+            toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
+            return false;
+        }
+        if (!userPerms.has(code)) {
+            toast.error('Không có quyền', `Bạn cần quyền "${code}" để ${actionLabel}.`);
+            return false;
+        }
+        return true;
+    }, [pbacLoaded, toast, userPerms]);
 
     useEffect(() => {
         if (!effectiveId) return;
@@ -144,6 +204,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [showForm, setShowForm] = useState(false);
     const [editing, setEditing] = useState<DailyLog | null>(null);
     const [filterMonth, setFilterMonth] = useState('');
+    const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+    const [calendarMonth, setCalendarMonth] = useState(monthKeyFromDate(new Date()));
+    const [dayLogPicker, setDayLogPicker] = useState<{ date: string; logs: DailyLog[] } | null>(null);
 
     // Form state
     const [fDate, setFDate] = useState(new Date().toISOString().split('T')[0]);
@@ -192,6 +255,26 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setShowForm(true);
     };
 
+    const openCreateForDate = (date: string) => {
+        resetForm();
+        setDayLogPicker(null);
+        setFDate(date);
+        setShowForm(true);
+    };
+
+    const handleCalendarDayClick = (date: string, dayLogs: DailyLog[]) => {
+        if (dayLogs.length === 0) {
+            openCreateForDate(date);
+            return;
+        }
+        if (dayLogs.length === 1) {
+            setDayLogPicker(null);
+            openEdit(dayLogs[0]);
+            return;
+        }
+        setDayLogPicker({ date, logs: dayLogs });
+    };
+
     const captureGPS = () => {
         setGpsLoading(true);
         navigator.geolocation.getCurrentPosition(
@@ -226,11 +309,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     const handleSave = async () => {
         if (!fDate || !fDesc) return;
+        if (!ensureDailyLogPermission('edit', editing ? 'cập nhật nhật ký' : 'tạo nhật ký')) return;
         if (photoRequired && fPhotos.length === 0) {
             toast.error('Cần ít nhất 1 ảnh công trường');
             return;
         }
-        
+
+        try {
 	        const baseItem = {
 	            date: fDate, weather: fWeather, workerCount: Number(fWorkers) || 0,
 	            description: fDesc, issues: fIssues || undefined,
@@ -251,59 +336,56 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 	        setLogs(await dailyLogService.list(effectiveId, constructionSiteId || null));
 	        toast.success(editing ? 'Cập nhật nhật ký' : 'Ghi nhật ký thành công');
 	        resetForm();
+        } catch (e: any) {
+            toast.error('Lỗi lưu nhật ký', e?.message);
+        }
 	    };
 
 	    const handleStatusChange = async (log: DailyLog, status: DailyLogStatus) => {
 	        // ── PBAC Check ──
-	        const permCode = status === 'submitted' ? 'submit'
-	            : status === 'verified' ? 'verify' : 'reject';
-	        if (pbacLoaded && !userPerms.has(permCode)) {
-	            toast.error('Không có quyền', `Bạn cần quyền "${permCode}" để thực hiện thao tác này.`);
-	            return;
-	        }
-	        const now = new Date().toISOString();
-	        const updated: DailyLog = {
-	            ...log,
-	            status,
-	            verified: status === 'verified',
-	            submittedAt: status === 'submitted' ? now : log.submittedAt,
-	            verifiedBy: status === 'verified' ? (user?.name || 'PM/QS') : log.verifiedBy,
-	            rejectedAt: status === 'rejected' ? now : log.rejectedAt,
-	            rejectionReason: status === 'rejected' ? 'Cần bổ sung/kiểm tra lại' : log.rejectionReason,
-	        };
-	        await dailyLogService.upsert(updated);
-	        setLogs(await dailyLogService.list(effectiveId, constructionSiteId || null));
+	        const permCode = DAILY_LOG_STATUS_PERMISSION[status];
+            if (permCode && !ensureDailyLogPermission(
+                permCode,
+                status === 'submitted' ? 'gửi nhật ký' : status === 'verified' ? 'xác nhận nhật ký' : 'trả lại nhật ký',
+            )) return;
+
+            try {
+	            const now = new Date().toISOString();
+	            const updated: DailyLog = {
+	                ...log,
+	                status,
+	                verified: status === 'verified',
+	                submittedAt: status === 'submitted' ? now : log.submittedAt,
+	                verifiedBy: status === 'verified' ? (user?.name || 'PM/QS') : log.verifiedBy,
+	                rejectedAt: status === 'rejected' ? now : log.rejectedAt,
+	                rejectionReason: status === 'rejected' ? 'Cần bổ sung/kiểm tra lại' : log.rejectionReason,
+	            };
+	            await dailyLogService.upsert(updated);
+	            setLogs(await dailyLogService.list(effectiveId, constructionSiteId || null));
 
             // Notify if submitted
             if (status === 'submitted') {
                 try {
-                    const staffList = projectId
-                        ? await projectStaffService.listByProject(projectId, constructionSiteId)
-                        : constructionSiteId
-                            ? await projectStaffService.listBySite(constructionSiteId)
-                            : [];
-
-                    const verifiers = staffList.filter(s =>
-                        s.permissions?.some(p => p.permissionCode === 'verify')
+                    const verifiers = await projectStaffService.listProjectStaffWithPermissions(
+                        projectId,
+                        constructionSiteId,
+                        ['verify'],
                     );
-
-                    for (const v of verifiers) {
-                        if (!v.userId || v.userId === user?.id) continue;
-                        await notificationService.create({
-                            userId: v.userId,
-                            type: 'info',
-                            category: 'progress',
-                            title: '📝 Nhật ký chờ xác nhận',
-                            message: `${user?.name || 'Nhân viên'} đã gửi nhật ký ngày ${new Date(log.date).toLocaleDateString('vi-VN')}`,
-                            severity: 'info',
-                            icon: '📝',
-                            link: '/da',
-                            sourceType: 'dailylog_submitted',
-                            sourceId: `dailylog_${log.id}`,
-                            constructionSiteId: constructionSiteId || undefined,
-                            metadata: { logId: log.id, date: log.date, submittedBy: user?.name },
-                        });
-                    }
+                    await notificationService.notifyProjectUsers({
+                        recipientIds: verifiers.map(v => v.userId),
+                        actorId: user?.id,
+                        type: 'info',
+                        category: 'progress',
+                        title: '📝 Nhật ký chờ xác nhận',
+                        message: `${user?.name || 'Nhân viên'} đã gửi nhật ký ngày ${new Date(log.date).toLocaleDateString('vi-VN')}`,
+                        severity: 'info',
+                        icon: '📝',
+                        link: '/da',
+                        sourceType: 'dailylog_submitted',
+                        sourceId: `dailylog_${log.id}`,
+                        constructionSiteId: constructionSiteId || undefined,
+                        metadata: { logId: log.id, date: log.date, projectId, submittedBy: user?.name },
+                    });
                 } catch (err) {
                     console.error('Failed to notify verifiers:', err);
                 }
@@ -314,9 +396,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 	            status === 'verified' ? 'Đã xác nhận nhật ký' :
 	            status === 'rejected' ? 'Đã trả lại nhật ký' : 'Đã cập nhật trạng thái'
 	        );
+            } catch (e: any) {
+                toast.error('Lỗi cập nhật trạng thái', e?.message);
+            }
 	    };
 
     const handleDelete = async (id: string) => {
+        if (!ensureDailyLogPermission('edit', 'xoá nhật ký')) return;
         const log = logs.find(l => l.id === id);
         const ok = await confirm({ targetName: log ? new Date(log.date).toLocaleDateString('vi-VN') : 'nhật ký này', title: 'Xoá nhật ký công trường' });
         if (!ok) return;
@@ -330,7 +416,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     };
 
     const filtered = useMemo(() => {
-        let list = logs;
+        let list = [...logs];
         if (filterMonth) list = list.filter(l => l.date.startsWith(filterMonth));
         return list.sort((a, b) => b.date.localeCompare(a.date));
     }, [logs, filterMonth]);
@@ -350,6 +436,25 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         const ms = new Set(logs.map(l => l.date.slice(0, 7)));
         return Array.from(ms).sort().reverse();
     }, [logs]);
+
+    const logsByDate = useMemo(() => {
+        const map = new Map<string, DailyLog[]>();
+        logs.forEach(log => {
+            const list = map.get(log.date) || [];
+            list.push(log);
+            map.set(log.date, list);
+        });
+        for (const list of map.values()) {
+            list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+        }
+        return map;
+    }, [logs]);
+
+    const calendarCells = useMemo(() => buildCalendarCells(calendarMonth), [calendarMonth]);
+    const calendarTitle = useMemo(() => {
+        const [year, month] = calendarMonth.split('-').map(Number);
+        return new Date(year, month - 1, 1).toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' });
+    }, [calendarMonth]);
 
     return (
         <div className="space-y-6">
@@ -385,12 +490,47 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     <h3 className="text-sm font-black text-slate-700 flex items-center gap-2">
                         <Calendar size={16} className="text-teal-500" /> Nhật ký công trường
                     </h3>
-                    <div className="flex items-center gap-2">
-                        <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
-                            className="text-xs font-bold text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200 bg-white outline-none">
-                            <option value="">Tất cả</option>
-                            {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
-                        </select>
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                        <div className="flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200">
+                            <button
+                                onClick={() => setViewMode('list')}
+                                className={`w-8 h-7 rounded-lg flex items-center justify-center transition-colors ${viewMode === 'list' ? 'bg-white text-teal-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                title="Danh sách"
+                            >
+                                <LayoutList size={14} />
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setCalendarMonth(filterMonth || calendarMonth);
+                                    setViewMode('calendar');
+                                }}
+                                className={`w-8 h-7 rounded-lg flex items-center justify-center transition-colors ${viewMode === 'calendar' ? 'bg-white text-teal-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                title="Lịch tháng"
+                            >
+                                <Calendar size={14} />
+                            </button>
+                        </div>
+                        {viewMode === 'calendar' ? (
+                            <div className="flex items-center gap-1.5 px-2 py-1 rounded-xl border border-slate-200 bg-white">
+                                <button onClick={() => setCalendarMonth(shiftMonth(calendarMonth, -1))}
+                                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
+                                    title="Tháng trước">
+                                    <ChevronLeft size={14} />
+                                </button>
+                                <span className="min-w-[116px] text-center text-xs font-black text-slate-600 capitalize">{calendarTitle}</span>
+                                <button onClick={() => setCalendarMonth(shiftMonth(calendarMonth, 1))}
+                                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
+                                    title="Tháng sau">
+                                    <ChevronRight size={14} />
+                                </button>
+                            </div>
+                        ) : (
+                            <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
+                                className="text-xs font-bold text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200 bg-white outline-none">
+                                <option value="">Tất cả</option>
+                                {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                        )}
                         <button onClick={() => { resetForm(); setShowForm(true); }}
                             className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-teal-600 bg-teal-50 border border-teal-200 hover:bg-teal-100 transition-all">
                             <Plus size={12} /> Ghi nhật ký
@@ -398,7 +538,52 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     </div>
                 </div>
 
-                {filtered.length === 0 ? (
+                {viewMode === 'calendar' ? (
+                    <div className="p-3 sm:p-5">
+                        <div className="grid grid-cols-7 border-l border-t border-slate-100 rounded-2xl overflow-hidden">
+                            {['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'].map(day => (
+                                <div key={day} className="bg-slate-50 border-r border-b border-slate-100 px-1.5 py-2 text-center text-[10px] font-black text-slate-400 uppercase">
+                                    {day}
+                                </div>
+                            ))}
+                            {calendarCells.map(cell => {
+                                const dayLogs = logsByDate.get(cell.date) || [];
+                                const primaryLog = dayLogs[0];
+                                const totalWorkers = dayLogs.reduce((sum, log) => sum + (log.workerCount || 0), 0);
+                                const isToday = cell.date === toDateKey(new Date());
+                                return (
+                                    <button
+                                        key={cell.date}
+                                        onClick={() => handleCalendarDayClick(cell.date, dayLogs)}
+                                        className={`min-h-[72px] sm:min-h-[92px] border-r border-b border-slate-100 p-1.5 sm:p-2 text-left transition-colors hover:bg-teal-50/60 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-teal-400 ${cell.inMonth ? 'bg-white' : 'bg-slate-50/70 text-slate-300'} ${isToday ? 'ring-2 ring-inset ring-teal-400' : ''}`}
+                                    >
+                                        <div className="flex items-start justify-between gap-1">
+                                            <span className={`text-xs font-black ${cell.inMonth ? 'text-slate-700' : 'text-slate-300'}`}>{cell.day}</span>
+                                            {primaryLog && <span className="text-sm leading-none">{WEATHER[primaryLog.weather]?.emoji}</span>}
+                                        </div>
+                                        {dayLogs.length > 0 && (
+                                            <div className="mt-2 space-y-1">
+                                                <div className="flex items-center gap-1">
+                                                    {dayLogs.slice(0, 4).map(log => (
+                                                        <span key={log.id} className={`w-2 h-2 rounded-full ${STATUS_DOT[getLogStatus(log)]}`} />
+                                                    ))}
+                                                    {dayLogs.length > 4 && <span className="text-[9px] font-bold text-slate-400">+{dayLogs.length - 4}</span>}
+                                                </div>
+                                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-bold text-slate-500">
+                                                    <span className="inline-flex items-center gap-0.5"><Users size={10} /> {totalWorkers}</span>
+                                                    {dayLogs.length > 1 && <span>{dayLogs.length} nhật ký</span>}
+                                                </div>
+                                                {primaryLog?.description && (
+                                                    <p className="hidden sm:block text-[10px] text-slate-500 line-clamp-2 leading-snug">{primaryLog.description}</p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ) : filtered.length === 0 ? (
                     <div className="p-12 text-center">
                         <Calendar size={36} className="mx-auto mb-2 text-slate-200" />
                         <p className="text-sm font-bold text-slate-400">Chưa có nhật ký nào</p>
@@ -453,6 +638,46 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     </div>
                 )}
             </div>
+
+            {dayLogPicker && (
+                <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/30 backdrop-blur-sm px-4" onClick={e => e.target === e.currentTarget && setDayLogPicker(null)}>
+                    <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-100 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                            <div>
+                                <p className="text-sm font-black text-slate-700">{new Date(dayLogPicker.date).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
+                                <p className="text-[10px] font-bold text-slate-400">{dayLogPicker.logs.length} nhật ký trong ngày</p>
+                            </div>
+                            <button onClick={() => setDayLogPicker(null)} className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors">
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <div className="p-4 space-y-2 max-h-[50vh] overflow-y-auto">
+                            {dayLogPicker.logs.map(log => {
+                                const status = getLogStatus(log);
+                                return (
+                                    <button key={log.id} onClick={() => { setDayLogPicker(null); openEdit(log); }}
+                                        className="w-full text-left p-3 rounded-xl border border-slate-100 hover:border-teal-200 hover:bg-teal-50/50 transition-colors">
+                                        <div className="flex items-center justify-between gap-2 mb-1">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm">{WEATHER[log.weather]?.emoji}</span>
+                                                <span className="text-xs font-bold text-slate-700">{log.workerCount} công nhân</span>
+                                            </div>
+                                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${STATUS_CFG[status].cls}`}>{STATUS_CFG[status].label}</span>
+                                        </div>
+                                        <p className="text-xs text-slate-500 line-clamp-2">{log.description}</p>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <div className="px-4 py-3 border-t border-slate-100 flex justify-end">
+                            <button onClick={() => openCreateForDate(dayLogPicker.date)}
+                                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-teal-600 bg-teal-50 border border-teal-200 hover:bg-teal-100 transition-colors">
+                                <Plus size={13} /> Thêm nhật ký
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Form Modal */}
             {showForm && (
