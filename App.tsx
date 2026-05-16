@@ -160,7 +160,7 @@ const SubModuleGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
   // User không được phép dùng module này nói chung
   const allowedModules = user.allowedModules;
-  if (allowedModules && allowedModules.length > 0 && !allowedModules.includes(moduleKey)) {
+  if (allowedModules !== undefined && !allowedModules.includes(moduleKey)) {
     return <Navigate to="/" replace />;
   }
 

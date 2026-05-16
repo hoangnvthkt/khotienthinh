@@ -26,6 +26,37 @@ interface AppSettings {
   logo: string;
 }
 
+const mapUserFromDb = (row: any): User => ({
+  ...row,
+  authId: row.auth_id ?? row.authId,
+  assignedWarehouseId: row.assigned_warehouse_id ?? row.assignedWarehouseId,
+  allowedModules: row.allowed_modules ?? row.allowedModules ?? undefined,
+  adminModules: row.admin_modules ?? row.adminModules ?? undefined,
+  allowedSubModules: row.allowed_sub_modules ?? row.allowedSubModules ?? undefined,
+  adminSubModules: row.admin_sub_modules ?? row.adminSubModules ?? undefined,
+  isActive: row.is_active ?? row.isActive,
+});
+
+const userToDbPayload = (data: User) => {
+  const payload: any = {
+    id: data.id,
+    name: data.name,
+    email: data.email,
+    username: data.username,
+    phone: data.phone || null,
+    role: data.role,
+    avatar: data.avatar,
+    assigned_warehouse_id: data.assignedWarehouseId || null,
+    allowed_modules: data.allowedModules ?? null,
+    admin_modules: data.adminModules ?? null,
+    allowed_sub_modules: data.allowedSubModules ?? null,
+    admin_sub_modules: data.adminSubModules ?? null,
+    is_active: data.isActive ?? true,
+  };
+  if (data.authId !== undefined) payload.auth_id = data.authId || null;
+  return payload;
+};
+
 export type AppModule = 'wms' | 'hrm' | 'da' | 'ts' | 'ex';
 
 interface AppContextType {
@@ -38,8 +69,8 @@ interface AppContextType {
   login: (username: string, password: string) => Promise<User | null>;
   logout: () => void;
   addUser: (user: User) => Promise<void>;
-  updateUser: (user: User) => void;
-  removeUser: (userId: string) => void;
+  updateUser: (user: User) => Promise<void>;
+  removeUser: (userId: string) => Promise<void>;
   items: InventoryItem[];
   warehouses: Warehouse[];
   suppliers: Supplier[];
@@ -366,7 +397,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         if (settingsData) setAppSettings(settingsData);
         if (usersData && usersData.length > 0) {
-          const mappedUsers = usersData.map((u: any) => ({ ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined, allowedSubModules: u.allowed_sub_modules || undefined, adminSubModules: u.admin_sub_modules || undefined }));
+          const mappedUsers = usersData.map(mapUserFromDb);
           // Fetch signatures and merge
           const { data: sigData } = await supabase.from('user_signatures').select('*');
           if (sigData && sigData.length > 0) {
@@ -378,7 +409,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             mappedUsers.forEach((u: any) => { if (sigMap.has(u.id)) u.signatureUrl = sigMap.get(u.id); });
           }
           setUsers(mappedUsers);
-          const currentInList = mappedUsers.find((u: any) => u.email === user.email);
+          const currentInList = mappedUsers.find((u: any) => (user.authId && u.authId === user.authId) || u.email === user.email);
           if (currentInList) setUser(currentInList);
         }
 
@@ -503,8 +534,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // ── Users ──
     const unsubUsers = realtimeService.on('users', (event) => {
       if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
-        const u = event.newRecord;
-        const mapped = { ...u, assignedWarehouseId: u.assigned_warehouse_id, allowedModules: u.allowed_modules || undefined, adminModules: u.admin_modules || undefined, allowedSubModules: u.allowed_sub_modules || undefined, adminSubModules: u.admin_sub_modules || undefined };
+        const mapped = mapUserFromDb(event.newRecord);
         setUsers(prev => {
           const exists = prev.find(user => user.id === mapped.id);
           if (exists) return prev.map(user => user.id === mapped.id ? mapped : user);
@@ -930,15 +960,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           warehouse_id: data.warehouseId, status: data.status
         };
       } else if (table === 'users') {
-        payload = {
-          id: data.id, name: data.name, email: data.email, username: data.username,
-          phone: data.phone, role: data.role, avatar: data.avatar,
-          assigned_warehouse_id: data.assignedWarehouseId,
-          allowed_modules: data.allowedModules || null,
-          admin_modules: data.adminModules || null,
-          allowed_sub_modules: data.allowedSubModules || null,
-          admin_sub_modules: data.adminSubModules || null
-        };
+        payload = userToDbPayload(data);
       } else if (table === 'employees') {
         payload = {
           id: data.id,
@@ -1022,7 +1044,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       }
 
-      const { error } = await supabase.from(table).upsert(payload);
+      const { error } = table === 'users'
+        ? await supabase.from(table).upsert(payload).select('id').single()
+        : await supabase.from(table).upsert(payload);
       if (error) throw error;
       return true;
     } catch (error) {
@@ -1059,9 +1083,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         let loginEmail = username;
         if (!username.includes('@')) {
-          const { data, error } = await supabase.from('users').select('email').eq('username', username).single();
-          if (error || !data) throw new Error('Không tìm thấy tài khoản');
-          loginEmail = data.email;
+          const { data: rpcEmail, error: rpcError } = await supabase.rpc('lookup_login_email', { p_username: username });
+          if (!rpcError && rpcEmail) {
+            loginEmail = rpcEmail;
+          } else {
+            const { data, error } = await supabase.from('users').select('email').eq('username', username).single();
+            if (error || !data) throw new Error('Không tìm thấy tài khoản');
+            loginEmail = data.email;
+          }
         }
 
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -1072,10 +1101,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (authError) throw authError;
 
         // Fetch user profile
-        const { data: userData, error: userError } = await supabase.from('users').select('*').eq('email', loginEmail).single();
+        const byAuth = await supabase
+          .from('users')
+          .select('*')
+          .eq('auth_id', authData.user.id)
+          .maybeSingle();
+        const { data: userData, error: userError } = byAuth.data
+          ? byAuth
+          : await supabase.from('users').select('*').eq('email', loginEmail).single();
         if (userError || !userData) throw new Error('Lỗi lấy thông tin người dùng');
 
-        const mappedUser = { ...userData, assignedWarehouseId: userData.assigned_warehouse_id, allowedModules: userData.allowed_modules || undefined, adminModules: userData.admin_modules || undefined, allowedSubModules: userData.allowed_sub_modules || undefined, adminSubModules: userData.admin_sub_modules || undefined };
+        const mappedUser = mapUserFromDb(userData);
         setUser(mappedUser);
         const { avatar, ...userForStorage } = mappedUser;
         localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
@@ -1114,77 +1150,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addUser = async (u: User) => {
-    setUsers(prev => [...prev, u]);
+    const nextUser = { ...u, isActive: u.isActive ?? true };
 
-    // Await syncToSupabase để bắt lỗi kịp thời
-    const syncOk = await syncToSupabase('users', u);
+    const syncOk = await syncToSupabase('users', nextUser);
     if (!syncOk) {
       console.error('❌ addUser: Không thể lưu user vào Supabase:', u.email);
-    } else {
-      console.log('✅ addUser: Đã lưu user vào Supabase:', u.email);
+      throw new Error('Không thể lưu người dùng vào Supabase. Vui lòng kiểm tra RLS/policy hoặc quyền admin.');
     }
+
+    setUsers(prev => [...prev, nextUser]);
+    console.log('✅ addUser: Đã lưu user vào Supabase:', u.email);
 
     logActivity('SYSTEM', 'Thêm người dùng', `Đã thêm người dùng mới: ${u.name}`, 'SUCCESS');
-
-    // Auto-sync: tạo hồ sơ nhân sự từ thông tin người dùng (Họ tên, Email, SĐT)
-    // Kiểm tra trực tiếp trên DB thay vì local state để tránh race condition
-    let existingEmployee = employees.find(e => e.userId === u.id || e.email === u.email);
-    if (!existingEmployee && isSupabaseConfigured) {
-      try {
-        const { data: empCheck } = await supabase
-          .from('employees')
-          .select('id')
-          .or(`email.eq.${u.email},user_id.eq.${u.id}`)
-          .maybeSingle();
-        if (empCheck) existingEmployee = { id: empCheck.id } as Employee; // already exists on DB
-      } catch (err) {
-        console.warn('⚠️ addUser: Không check được employee trên DB:', err);
-      }
-    }
-
-    if (!existingEmployee) {
-      // Lấy mã nhân viên từ PostgreSQL sequence (mã duy nhất vĩnh viễn, không bao giờ tái sử dụng)
-      let employeeCode = `TT${String(employees.length + 1).padStart(3, '0')}`; // fallback
-      if (isSupabaseConfigured) {
-        try {
-          const { data, error } = await supabase.rpc('get_next_employee_code');
-          if (!error && data) employeeCode = data;
-        } catch (err) {
-          console.warn('⚠️ Fallback employee code (RPC failed):', err);
-        }
-      }
-      const newEmployee: Employee = {
-        id: crypto.randomUUID(),
-        employeeCode,
-        fullName: u.name,
-        title: '',
-        gender: 'Nam',
-        phone: u.phone || '',
-        email: u.email,
-        status: 'Đang làm việc',
-        userId: u.id,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      addEmployee(newEmployee);
-    }
   };
 
-  const updateUser = (u: User) => {
+  const updateUser = async (u: User) => {
+    const syncOk = await syncToSupabase('users', u);
+    if (!syncOk) {
+      throw new Error('Không thể cập nhật người dùng trên Supabase. Dữ liệu local chưa được thay đổi.');
+    }
     setUsers(prev => prev.map(item => item.id === u.id ? u : item));
     if (user.id === u.id) setUser(u);
-    syncToSupabase('users', u);
     logActivity('SYSTEM', 'Cập nhật người dùng', `Đã cập nhật thông tin người dùng: ${u.name}`, 'INFO');
   };
 
   const removeUser = async (id: string) => {
     const u = users.find(user => user.id === id);
-    setUsers(prev => prev.filter(u => u.id !== id));
     try {
-      await supabase.from('users').delete().eq('id', id);
+      if (isSupabaseConfigured) {
+        const { data, error } = await supabase.from('users').delete().eq('id', id).select('id').maybeSingle();
+        if (error) throw error;
+        if (!data) throw new Error('Không có bản ghi người dùng nào bị xoá trên Supabase.');
+      }
+      setUsers(prev => prev.filter(u => u.id !== id));
       if (u) logActivity('SYSTEM', 'Xóa người dùng', `Đã xóa người dùng: ${u.name}`, 'DANGER');
     } catch (error) {
       console.error('Error deleting user from Supabase:', error);
+      throw error;
     }
   };
 

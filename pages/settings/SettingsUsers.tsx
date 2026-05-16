@@ -17,8 +17,8 @@ interface SettingsUsersProps {
   handleAddUser: () => void;
   handleEditUser: (u: User) => void;
   handleDeleteUserClick: (u: User) => void;
-  handleConfirmDeleteUser: () => void;
-  handleSaveUser: (u: User) => void;
+  handleConfirmDeleteUser: () => void | Promise<void>;
+  handleSaveUser: (u: User) => void | Promise<void>;
   getRoleBadge: (role: Role) => React.ReactNode;
 }
 
@@ -34,14 +34,14 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
     <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
       <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
         <div>
-          <h2 className="text-lg font-bold text-slate-800">Quản lý nhân sự</h2>
-          <p className="text-xs text-slate-500 font-medium">Phân quyền và phạm vi quản lý kho bãi cho nhân viên.</p>
+          <h2 className="text-lg font-bold text-slate-800">Tài khoản hệ thống</h2>
+          <p className="text-xs text-slate-500 font-medium">Tài khoản đăng nhập phần mềm; chỉ gán quyền kho khi người dùng có nghiệp vụ kho.</p>
         </div>
         <button
           onClick={handleAddUser}
           className="flex items-center px-4 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition font-bold text-xs shadow-lg shadow-slate-900/20"
         >
-          <Plus className="w-4 h-4 mr-2" /> Thêm nhân sự
+          <Plus className="w-4 h-4 mr-2" /> Thêm tài khoản
         </button>
       </div>
 
@@ -84,10 +84,10 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
 
                 <div className="pt-4 border-t border-slate-50 space-y-2">
                   <div className="flex items-center text-[10px] text-slate-400 uppercase font-black tracking-widest">
-                    <MapPin size={12} className="mr-1" /> Phạm vi quản lý
+                    <MapPin size={12} className="mr-1" /> Kho phụ trách
                   </div>
                   <div className="font-bold text-xs text-slate-700">
-                    {assignedWarehouse ? assignedWarehouse.name : 'Toàn hệ thống'}
+                    {assignedWarehouse ? assignedWarehouse.name : 'Không gán kho'}
                   </div>
                 </div>
               </div>

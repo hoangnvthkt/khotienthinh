@@ -129,10 +129,14 @@ const Settings: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const base64 = event.target?.result as string;
-      updateUser({ ...currentUser, avatar: base64 });
-      alert("Đã cập nhật ảnh đại diện thành công!");
+      try {
+        await updateUser({ ...currentUser, avatar: base64 });
+        alert("Đã cập nhật ảnh đại diện thành công!");
+      } catch (error: any) {
+        alert(error?.message || 'Không thể cập nhật ảnh đại diện trên Supabase.');
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -349,21 +353,24 @@ const Settings: React.FC = () => {
     setIsUserDeleteModalOpen(true);
   };
 
-  const handleConfirmDeleteUser = () => {
+  const handleConfirmDeleteUser = async () => {
     if (deletingUser) {
-      removeUser(deletingUser.id);
-      setIsUserDeleteModalOpen(false);
-      setDeletingUser(null);
+      try {
+        await removeUser(deletingUser.id);
+        setIsUserDeleteModalOpen(false);
+        setDeletingUser(null);
+      } catch (error: any) {
+        alert(error?.message || 'Không thể xoá người dùng trên Supabase.');
+      }
     }
   };
 
-  const handleSaveUser = (userData: User) => {
+  const handleSaveUser = async (userData: User) => {
     if (editingUser) {
-      updateUser(userData);
+      await updateUser(userData);
     } else {
-      addUser(userData);
+      await addUser(userData);
     }
-    setIsUserModalOpen(false);
   };
 
 
@@ -372,7 +379,7 @@ const Settings: React.FC = () => {
     switch (role) {
       case Role.ADMIN: return <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-[10px] font-bold">ADMIN</span>;
       case Role.WAREHOUSE_KEEPER: return <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-[10px] font-bold">THỦ KHO</span>;
-      case Role.EMPLOYEE: return <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full text-[10px] font-bold">NHÂN VIÊN</span>;
+      case Role.EMPLOYEE: return <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full text-[10px] font-bold">TÀI KHOẢN THƯỜNG</span>;
       default: return <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-[10px] font-bold">{role}</span>;
     }
   };

@@ -10,7 +10,7 @@ interface EmployeeModalProps {
 }
 
 const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
-    const { addEmployee, updateEmployee, users, employees, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, leaveBalances, addHrmItem, updateHrmItem } = useApp();
+    const { addEmployee, updateEmployee, users, employees, warehouses, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, leaveBalances, addHrmItem, updateHrmItem } = useApp();
     const [formData, setFormData] = useState<Partial<Employee>>({
         fullName: '',
         title: '',
@@ -89,6 +89,25 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleLinkedUserChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const userId = e.target.value || undefined;
+        const linkedUser = users.find(u => u.id === userId);
+        if (!linkedUser) {
+            setFormData(prev => ({ ...prev, userId }));
+            return;
+        }
+
+        setFormData(prev => ({
+            ...prev,
+            userId,
+            fullName: linkedUser.name || prev.fullName,
+            email: linkedUser.email || prev.email,
+            phone: linkedUser.phone || prev.phone,
+            avatarUrl: linkedUser.avatar || prev.avatarUrl,
+        }));
+        if (linkedUser.avatar) setAvatarPreview(linkedUser.avatar);
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -496,23 +515,27 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                         {/* ===== ACCOUNT LINKING ===== */}
                         <div className="border-t border-slate-100 dark:border-slate-800 pt-6 mt-6">
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider text-purple-600 dark:text-purple-400">
-                                Liên kết Tài khoản phần mềm (WMS)
+                                Liên kết tài khoản hệ thống / kho (nếu có)
                             </label>
                             <p className="text-[10px] text-slate-400 mb-2">
-                                Chọn 1 tài khoản đăng nhập để theo dõi lịch sử giao dịch kho của nhân sự này.
+                                Chọn tài khoản đăng nhập để lấy sẵn họ tên, email, SĐT và liên kết lịch sử thao tác phần mềm.
                             </p>
                             <select
                                 name="userId"
                                 value={formData.userId || ''}
-                                onChange={handleChange}
+                                onChange={handleLinkedUserChange}
                                 className="w-full px-4 py-3 rounded-xl border border-purple-200 dark:border-purple-800/30 bg-purple-50 dark:bg-purple-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-purple-500"
                             >
                                 <option value="">-- Không liên kết --</option>
-                                {availableUsers.map(u => (
-                                    <option key={u.id} value={u.id}>
-                                        {u.name} ({u.email}) - Role: {u.role}
-                                    </option>
-                                ))}
+                                {availableUsers.map(u => {
+                                    const assignedWarehouse = warehouses.find(w => w.id === u.assignedWarehouseId);
+                                    const warehouseLabel = assignedWarehouse ? ` - Kho: ${assignedWarehouse.name}` : '';
+                                    return (
+                                        <option key={u.id} value={u.id}>
+                                            {u.name} ({u.email}) - Role: {u.role}{warehouseLabel}
+                                        </option>
+                                    );
+                                })}
                             </select>
                         </div>
                     </form>

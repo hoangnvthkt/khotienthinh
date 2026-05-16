@@ -6,7 +6,7 @@ import { User } from '../types';
 interface DeleteUserModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   targetUser: User | null;
 }
 

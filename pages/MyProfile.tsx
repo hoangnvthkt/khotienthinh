@@ -56,7 +56,7 @@ const MyProfile: React.FC = () => {
         setIsEditing(false);
     };
 
-    const saveEditing = () => {
+    const saveEditing = async () => {
         if (employee) {
             updateEmployee({
                 ...employee,
@@ -69,11 +69,16 @@ const MyProfile: React.FC = () => {
             });
         }
         if (editForm.fullName !== linkedUser.name || editForm.phone !== (linkedUser.phone || '')) {
-            updateUser({
-                ...linkedUser,
-                name: editForm.fullName,
-                phone: editForm.phone,
-            });
+            try {
+                await updateUser({
+                    ...linkedUser,
+                    name: editForm.fullName,
+                    phone: editForm.phone,
+                });
+            } catch (error: any) {
+                toast.error(error?.message || 'Không thể cập nhật tài khoản.');
+                return;
+            }
         }
         setIsEditing(false);
         toast.success('Đã cập nhật thông tin cá nhân!');

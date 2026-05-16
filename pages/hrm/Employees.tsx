@@ -1,17 +1,18 @@
-import React, { useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
-import { Employee, Role } from '../../types';
-import { Plus, Search, Edit2, Trash2, Phone, Mail, MapPin, Building, Briefcase, Users, LayoutGrid, List, User as UserIcon } from 'lucide-react';
+import { Employee, LeaveBalance, Role } from '../../types';
+import { Plus, Search, Edit2, Trash2, Phone, Mail, MapPin, Building, Briefcase, Users, LayoutGrid, List, User as UserIcon, Upload } from 'lucide-react';
 import EmployeeModal from '../../components/hrm/EmployeeModal';
 import EmployeeDetailModal from '../../components/hrm/EmployeeDetailModal';
 import ConfirmDeleteModal from '../../components/ConfirmDeleteModal';
 import Pagination from '../../components/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import { usePermission } from '../../hooks/usePermission';
+import { loadXlsx } from '../../lib/loadXlsx';
 
 const Employees: React.FC = () => {
-    const { employees, users, removeEmployee, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user } = useApp();
+    const { employees, users, addEmployee, removeEmployee, addHrmItem, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user } = useApp();
     const { canManage } = usePermission();
     const canCRUD = canManage('/hrm/employees');
     useModuleData('hrm');
@@ -20,6 +21,8 @@ const Employees: React.FC = () => {
     const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
     const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
     const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null);
+    const [importing, setImporting] = useState(false);
+    const importInputRef = useRef<HTMLInputElement>(null);
     const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => {
         return (localStorage.getItem('emp_view_mode') as 'grid' | 'table') || 'grid';
     });
@@ -52,6 +55,121 @@ const Employees: React.FC = () => {
     };
 
     const activeCount = employees.filter(e => e.status === 'Đang làm việc').length;
+
+    const pick = (row: Record<string, any>, keys: string[]) => {
+        for (const key of keys) {
+            const value = row[key];
+            if (value !== undefined && value !== null && String(value).trim() !== '') return String(value).trim();
+        }
+        return '';
+    };
+
+    const normalizeDate = (value: string) => {
+        if (!value) return '';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        return date.toISOString().slice(0, 10);
+    };
+
+    const normalizeGender = (value: string): Employee['gender'] => {
+        const normalized = value.trim().toLowerCase();
+        if (normalized === 'nữ' || normalized === 'nu' || normalized === 'female') return 'Nữ';
+        if (normalized === 'khác' || normalized === 'khac' || normalized === 'other') return 'Khác';
+        return 'Nam';
+    };
+
+    const normalizeStatus = (value: string): Employee['status'] => {
+        const normalized = value.trim().toLowerCase();
+        if (normalized === 'đã nghỉ việc' || normalized === 'da nghi viec' || normalized === 'nghỉ việc' || normalized === 'inactive') return 'Đã nghỉ việc';
+        return 'Đang làm việc';
+    };
+
+    const handleImportEmployees = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+
+        setImporting(true);
+        try {
+            const XLSX = await loadXlsx();
+            const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '' });
+            const existingKeys = new Set(employees.flatMap(emp => [emp.employeeCode, emp.email, emp.phone].filter(Boolean).map(v => String(v).toLowerCase())));
+            let imported = 0;
+            let skipped = 0;
+            const currentYear = new Date().getFullYear();
+            const currentMonth = new Date().getMonth() + 1;
+
+            for (const row of rows) {
+                const accountKey = pick(row, ['Tài khoản hệ thống', 'Tai khoan he thong', 'Tên đăng nhập', 'Ten dang nhap', 'username', 'userName', 'Email tài khoản', 'Email tai khoan', 'userEmail']);
+                const linkedUser = accountKey
+                    ? users.find(u =>
+                        u.id === accountKey ||
+                        u.username?.toLowerCase() === accountKey.toLowerCase() ||
+                        u.email.toLowerCase() === accountKey.toLowerCase()
+                    )
+                    : undefined;
+
+                const fullName = pick(row, ['Họ tên', 'Ho ten', 'Họ và tên', 'Ho va ten', 'Tên nhân sự', 'Ten nhan su', 'fullName', 'full_name']) || linkedUser?.name || '';
+                if (!fullName) {
+                    skipped++;
+                    continue;
+                }
+
+                const employeeCode = pick(row, ['Mã NV', 'Ma NV', 'Mã nhân sự', 'Ma nhan su', 'employeeCode', 'employee_code']);
+                const email = pick(row, ['Email', 'email']) || linkedUser?.email || '';
+                const phone = pick(row, ['SĐT', 'SDT', 'Số điện thoại', 'So dien thoai', 'phone']) || linkedUser?.phone || '';
+                const duplicateKeys = [employeeCode, email, phone].filter(Boolean).map(v => v.toLowerCase());
+                if (duplicateKeys.some(key => existingKeys.has(key))) {
+                    skipped++;
+                    continue;
+                }
+
+                const employeeId = crypto.randomUUID();
+                const newEmployee: Employee = {
+                    id: employeeId,
+                    employeeCode,
+                    fullName,
+                    title: pick(row, ['Chức danh', 'Chuc danh', 'Vị trí', 'Vi tri', 'title']),
+                    gender: normalizeGender(pick(row, ['Giới tính', 'Gioi tinh', 'gender'])),
+                    phone,
+                    email,
+                    dateOfBirth: normalizeDate(pick(row, ['Ngày sinh', 'Ngay sinh', 'dateOfBirth', 'date_of_birth'])),
+                    startDate: normalizeDate(pick(row, ['Ngày vào làm', 'Ngay vao lam', 'startDate', 'start_date'])),
+                    officialDate: normalizeDate(pick(row, ['Ngày chính thức', 'Ngay chinh thuc', 'officialDate', 'official_date'])),
+                    status: normalizeStatus(pick(row, ['Trạng thái', 'Trang thai', 'status'])),
+                    userId: linkedUser?.id,
+                    avatarUrl: linkedUser?.avatar,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                };
+
+                await addEmployee(newEmployee);
+                addHrmItem('hrm_leave_balances', {
+                    id: crypto.randomUUID(),
+                    employeeId,
+                    year: currentYear,
+                    initialDays: 12,
+                    monthlyAccrual: 1,
+                    accruedDays: currentMonth,
+                    usedPaidDays: 0,
+                    usedUnpaidDays: 0,
+                    lastAccrualMonth: currentMonth,
+                } as LeaveBalance);
+
+                duplicateKeys.forEach(key => existingKeys.add(key));
+                imported++;
+            }
+
+            alert(`Đã import ${imported} hồ sơ nhân sự.${skipped ? ` Bỏ qua ${skipped} dòng thiếu tên hoặc trùng dữ liệu.` : ''}`);
+        } catch (err: any) {
+            console.error('Import employees error:', err);
+            alert(`Import nhân sự thất bại: ${err.message || 'Lỗi không xác định'}`);
+        } finally {
+            setImporting(false);
+        }
+    };
 
     // Helper to get position name
     const getPositionName = (positionId?: string) => positionId ? hrmPositions.find(p => p.id === positionId)?.name : null;
@@ -95,10 +213,21 @@ const Employees: React.FC = () => {
                         </button>
                     </div>
                     {canCRUD && (
-                        <button onClick={handleAdd} className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg hover:shadow-indigo-500/30 text-sm font-bold flex-1 sm:flex-initial justify-center">
-                            <Plus size={18} />
-                            <span>Thêm Mới</span>
-                        </button>
+                        <>
+                            <input ref={importInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportEmployees} className="hidden" />
+                            <button
+                                onClick={() => importInputRef.current?.click()}
+                                disabled={importing}
+                                className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 px-4 py-2.5 rounded-xl transition-all hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-bold justify-center disabled:opacity-60"
+                            >
+                                <Upload size={16} />
+                                <span>{importing ? 'Đang nhập...' : 'Nhập Excel'}</span>
+                            </button>
+                            <button onClick={handleAdd} className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg hover:shadow-indigo-500/30 text-sm font-bold flex-1 sm:flex-initial justify-center">
+                                <Plus size={18} />
+                                <span>Thêm Mới</span>
+                            </button>
+                        </>
                     )}
                 </div>
             </div>

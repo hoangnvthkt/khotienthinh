@@ -5,7 +5,7 @@ import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 
 interface SettingsAccountProps {
   currentUser: User;
-  updateUser: (u: User) => void;
+  updateUser: (u: User) => void | Promise<void>;
   logout: () => void;
   avatarInputRef: React.RefObject<HTMLInputElement>;
   handleAvatarUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -54,7 +54,7 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
           setPassError(`Đổi mật khẩu thất bại: ${result.error}`);
           return;
         }
-        updateUser({ ...currentUser, password: passwords.new });
+        await updateUser({ ...currentUser, password: passwords.new });
         setPassSuccess('✅ Đã đổi mật khẩu thành công! Mật khẩu mới đã được cập nhật trên Supabase Auth.');
         setPasswords({ current: '', new: '', confirm: '' });
       } catch (err: any) {
@@ -65,7 +65,7 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
         setPassError('Mật khẩu hiện tại không chính xác.');
         return;
       }
-      updateUser({ ...currentUser, password: passwords.new });
+      await updateUser({ ...currentUser, password: passwords.new });
       setPassSuccess('✅ Đã đổi mật khẩu thành công!');
       setPasswords({ current: '', new: '', confirm: '' });
     }

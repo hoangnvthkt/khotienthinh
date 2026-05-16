@@ -65,7 +65,7 @@ const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }
 interface UserModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (user: User) => void;
+  onSave: (user: User) => void | Promise<void>;
   userToEdit?: User | null;
   warehouses: Warehouse[];
 }
@@ -91,7 +91,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     phone: '',
     role: Role.EMPLOYEE,
     assignedWarehouseId: '',
-    allowedModules: ALL_MODULES.map(m => m.key),
+    allowedModules: [],
     allowedSubModules: {},
     adminModules: [],
     adminSubModules: {},
@@ -113,7 +113,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
         phone: '',
         role: Role.EMPLOYEE,
         assignedWarehouseId: '',
-        allowedModules: ALL_MODULES.map(m => m.key),
+        allowedModules: [],
         allowedSubModules: {},
         adminModules: [],
       });
@@ -131,6 +131,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
   }, [toast]);
 
   if (!isOpen) return null;
+  const hasWmsAccess = formData.role === Role.ADMIN || formData.role === Role.WAREHOUSE_KEEPER || (formData.allowedModules || []).includes('WMS');
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -159,6 +160,8 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
 
     try {
       const hasPasswordChange = formData.password && formData.password.trim().length > 0;
+      const hasEmailChange = Boolean(userToEdit && formData.email && formData.email !== userToEdit.email);
+      let createdAuthUserId: string | undefined;
 
       // === NEW USER: Create Supabase Auth account first ===
       if (!userToEdit && isSupabaseConfigured && hasPasswordChange) {
@@ -181,6 +184,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
           if (result.error) {
             throw new Error(result.error);
           }
+          createdAuthUserId = result.userId || result.user?.id || result.id;
 
           console.log('✅ Supabase Auth user created:', result);
         } catch (authErr: any) {
@@ -190,16 +194,19 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
         }
       }
 
-      // === EDIT USER: Update password in Supabase Auth ===
-      if (userToEdit && hasPasswordChange && isSupabaseConfigured) {
+      // === EDIT USER: Update Auth email/password when profile credentials change ===
+      if (userToEdit && (hasPasswordChange || hasEmailChange) && isSupabaseConfigured) {
         try {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) throw new Error('Phiên đăng nhập hết hạn, vui lòng đăng nhập lại');
 
           const response = await supabase.functions.invoke('reset-password', {
             body: {
-              email: formData.email,
-              newPassword: formData.password,
+              email: userToEdit.email,
+              newEmail: hasEmailChange ? formData.email : undefined,
+              newPassword: hasPasswordChange ? formData.password : undefined,
+              userId: userToEdit.id,
+              authId: userToEdit.authId,
             },
           });
 
@@ -221,7 +228,8 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
       }
 
       const finalUser: User = {
-        id: userToEdit?.id || crypto.randomUUID(),
+        id: userToEdit?.id || createdAuthUserId || crypto.randomUUID(),
+        authId: userToEdit?.authId || createdAuthUserId,
         name: formData.name || '',
         email: formData.email || '',
         username: formData.username || '',
@@ -229,19 +237,18 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
         phone: formData.phone || '',
         role: formData.role as Role,
         avatar: formData.avatar || `https://i.pravatar.cc/150?u=${formData.email}`,
-        assignedWarehouseId: formData.assignedWarehouseId || undefined,
+        assignedWarehouseId: hasWmsAccess ? formData.assignedWarehouseId || undefined : undefined,
         allowedModules: formData.role === Role.ADMIN ? ALL_MODULES.map(m => m.key) : (formData.allowedModules || []),
         allowedSubModules: formData.role === Role.ADMIN ? {} : (formData.allowedSubModules || {}),
         adminModules: formData.role === Role.ADMIN ? [] : (formData.adminModules || []),
         adminSubModules: formData.role === Role.ADMIN ? {} : (formData.adminSubModules || {}),
       };
 
-      onSave(finalUser);
-      setSaving(false);
+      await onSave(finalUser);
 
       if (!userToEdit) {
         // New user created with Auth account
-        setToast({ type: 'success', message: `✅ Thêm nhân sự thành công! Tài khoản đăng nhập đã được tạo tự động.` });
+        setToast({ type: 'success', message: `✅ Thêm tài khoản hệ thống thành công! Tài khoản đăng nhập đã được tạo tự động.` });
         setTimeout(() => onClose(), 2500);
       } else if (hasPasswordChange) {
         // Password was changed — show success toast and keep modal open for 3 seconds
@@ -264,7 +271,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
       <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in duration-300 max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50 shrink-0">
           <h3 className="font-bold text-lg text-slate-800">
-            {userToEdit ? 'Cập nhật nhân sự' : 'Thêm nhân sự mới'}
+            {userToEdit ? 'Cập nhật tài khoản hệ thống' : 'Thêm tài khoản hệ thống'}
           </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
             <X size={24} />
@@ -363,43 +370,55 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Chức vụ */}
+            {/* System / warehouse role */}
             <div className="space-y-1">
               <label className="text-xs font-bold text-slate-500 uppercase flex items-center">
-                <Shield size={12} className="mr-1" /> Chức vụ
+                <Shield size={12} className="mr-1" /> Vai trò hệ thống / kho
               </label>
               <select
                 value={formData.role}
-                onChange={e => setFormData({ ...formData, role: e.target.value as Role })}
+                onChange={e => {
+                  const nextRole = e.target.value as Role;
+                  const nextModules = new Set(formData.allowedModules || []);
+                  if (nextRole === Role.WAREHOUSE_KEEPER) nextModules.add('WMS');
+                  setFormData({
+                    ...formData,
+                    role: nextRole,
+                    allowedModules: Array.from(nextModules),
+                    assignedWarehouseId: nextRole === Role.WAREHOUSE_KEEPER ? formData.assignedWarehouseId : formData.assignedWarehouseId,
+                  });
+                }}
                 className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-accent bg-white"
               >
                 <option value={Role.ADMIN}>Quản trị viên (Toàn quyền)</option>
-                <option value={Role.WAREHOUSE_KEEPER}>Thủ kho</option>
-                <option value={Role.EMPLOYEE}>Nhân viên</option>
+                <option value={Role.WAREHOUSE_KEEPER}>Tài khoản kho - Thủ kho</option>
+                <option value={Role.EMPLOYEE}>Tài khoản thường</option>
               </select>
             </div>
 
-            {/* Công trình/Kho */}
+            {/* Optional warehouse scope */}
             <div className="space-y-1">
               <label className="text-xs font-bold text-slate-500 uppercase flex items-center">
-                <Building size={12} className="mr-1" /> Làm việc tại
+                <Building size={12} className="mr-1" /> Kho phụ trách (nếu có)
               </label>
               <select
                 value={formData.assignedWarehouseId || ''}
                 onChange={e => setFormData({ ...formData, assignedWarehouseId: e.target.value })}
+                disabled={!hasWmsAccess}
                 className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-accent bg-white"
               >
-                <option value="">Toàn hệ thống (Tất cả các kho)</option>
+                <option value="">Không gán kho</option>
                 {warehouses.map(w => (
                   <option key={w.id} value={w.id}>{w.name}</option>
                 ))}
               </select>
+              {!hasWmsAccess && <p className="text-[10px] text-slate-400 font-medium">Chỉ gán kho khi tài khoản được cấp module WMS.</p>}
               {errors.assignedWarehouseId && <p className="text-[10px] text-red-500 font-bold">{errors.assignedWarehouseId}</p>}
             </div>
           </div>
 
           <p className="text-[10px] text-slate-400 italic">
-            (*) Admin có toàn quyền quản trị. Nhân viên được phân quyền theo module và kho làm việc do Admin chỉ định.
+            (*) Tài khoản hệ thống dùng để đăng nhập phần mềm. Hồ sơ HRM được tạo riêng trong module Nhân sự và có thể liên kết với tài khoản này.
           </p>
 
           {/* Module Permissions */}
@@ -434,7 +453,14 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                               setFormData({ ...formData, allowedModules: [...modules, mod.key], allowedSubModules: subMods });
                             } else {
                               delete subMods[mod.key];
-                              setFormData({ ...formData, allowedModules: modules.filter(m => m !== mod.key), allowedSubModules: subMods });
+                              const nextModules = modules.filter(m => m !== mod.key);
+                              setFormData({
+                                ...formData,
+                                role: mod.key === 'WMS' && formData.role === Role.WAREHOUSE_KEEPER ? Role.EMPLOYEE : formData.role,
+                                assignedWarehouseId: mod.key === 'WMS' ? undefined : formData.assignedWarehouseId,
+                                allowedModules: nextModules,
+                                allowedSubModules: subMods,
+                              });
                             }
                           }}
                           className="w-4 h-4 rounded accent-blue-600"

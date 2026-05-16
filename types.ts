@@ -45,6 +45,7 @@ export type WarehouseType = 'GENERAL' | 'SITE' | 'OFFICE'; // Tổng | Công tr�
 
 export interface User {
   id: string;
+  authId?: string; // Supabase Auth user id
   name: string;
   email: string;
   username?: string; // Tên đăng nhập

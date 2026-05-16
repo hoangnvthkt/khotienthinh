@@ -34,19 +34,23 @@ const UserManagement: React.FC = () => {
     setIsDeleteModalOpen(true);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deletingUser) {
-      removeUser(deletingUser.id);
-      setIsDeleteModalOpen(false);
-      setDeletingUser(null);
+      try {
+        await removeUser(deletingUser.id);
+        setIsDeleteModalOpen(false);
+        setDeletingUser(null);
+      } catch (error: any) {
+        alert(error?.message || 'Không thể xoá người dùng trên Supabase.');
+      }
     }
   };
 
-  const handleSaveUser = (userData: User) => {
+  const handleSaveUser = async (userData: User) => {
     if (editingUser) {
-      updateUser(userData);
+      await updateUser(userData);
     } else {
-      addUser(userData);
+      await addUser(userData);
     }
   };
 
@@ -54,7 +58,7 @@ const UserManagement: React.FC = () => {
     switch (role) {
       case Role.ADMIN: return <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-[10px] font-bold">ADMIN</span>;
       case Role.WAREHOUSE_KEEPER: return <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-[10px] font-bold">THỦ KHO</span>;
-      case Role.EMPLOYEE: return <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full text-[10px] font-bold">NHÂN VIÊN</span>;
+      case Role.EMPLOYEE: return <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full text-[10px] font-bold">TÀI KHOẢN THƯỜNG</span>;
       default: return <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-[10px] font-bold">{role}</span>;
     }
   };
@@ -88,14 +92,14 @@ const UserManagement: React.FC = () => {
 
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Quản lý người dùng</h1>
-          <p className="text-sm text-slate-500">Phân quyền nhân sự và phạm vi quản lý kho bãi.</p>
+          <h1 className="text-2xl font-bold text-slate-800">Tài khoản hệ thống</h1>
+          <p className="text-sm text-slate-500">Tài khoản đăng nhập phần mềm; chỉ gán quyền kho khi người dùng có nghiệp vụ kho.</p>
         </div>
         <button 
           onClick={handleAddUser}
           className="flex items-center px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition font-medium shadow-lg shadow-slate-900/20"
         >
-          <Plus size={18} className="mr-2" /> Thêm nhân sự
+          <Plus size={18} className="mr-2" /> Thêm tài khoản
         </button>
       </div>
 
@@ -138,10 +142,10 @@ const UserManagement: React.FC = () => {
 
                   <div className="pt-4 border-t border-slate-50 space-y-2">
                      <div className="flex items-center text-xs text-slate-400 uppercase font-bold tracking-wider">
-                        <MapPin size={12} className="mr-1" /> Phạm vi quản lý
+                        <MapPin size={12} className="mr-1" /> Kho phụ trách
                      </div>
                      <div className="font-bold text-xs text-slate-700">
-                        {assignedWarehouse ? assignedWarehouse.name : 'Tất cả các kho (Toàn hệ thống)'}
+                        {assignedWarehouse ? assignedWarehouse.name : 'Không gán kho'}
                      </div>
                   </div>
                </div>

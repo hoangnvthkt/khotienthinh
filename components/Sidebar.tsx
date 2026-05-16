@@ -87,7 +87,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   // Filter modules by user permissions, then sort by saved order
   const userModules = useMemo(() => {
-    let mods = (user.role === Role.ADMIN || !user.allowedModules || user.allowedModules.length === 0)
+    let mods = (user.role === Role.ADMIN || user.allowedModules === undefined)
       ? [...MODULE_CONFIG]
       : MODULE_CONFIG.filter(m => user.allowedModules!.includes(m.key));
     const order = getSavedOrder();
