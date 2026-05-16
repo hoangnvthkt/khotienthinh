@@ -108,7 +108,7 @@ interface AppContextType {
   addSupplier: (supplier: Supplier) => void;
   updateSupplier: (supplier: Supplier) => void;
   removeSupplier: (id: string) => void;
-  addEmployee: (employee: Employee) => void;
+  addEmployee: (employee: Employee) => Promise<void>;
   updateEmployee: (employee: Employee) => void;
   removeEmployee: (id: string) => void;
   updateAppSettings: (settings: AppSettings) => void;
@@ -1115,11 +1115,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addUser = async (u: User) => {
     setUsers(prev => [...prev, u]);
-    syncToSupabase('users', u);
+
+    // Await syncToSupabase để bắt lỗi kịp thời
+    const syncOk = await syncToSupabase('users', u);
+    if (!syncOk) {
+      console.error('❌ addUser: Không thể lưu user vào Supabase:', u.email);
+    } else {
+      console.log('✅ addUser: Đã lưu user vào Supabase:', u.email);
+    }
+
     logActivity('SYSTEM', 'Thêm người dùng', `Đã thêm người dùng mới: ${u.name}`, 'SUCCESS');
 
     // Auto-sync: tạo hồ sơ nhân sự từ thông tin người dùng (Họ tên, Email, SĐT)
-    const existingEmployee = employees.find(e => e.userId === u.id || e.email === u.email);
+    // Kiểm tra trực tiếp trên DB thay vì local state để tránh race condition
+    let existingEmployee = employees.find(e => e.userId === u.id || e.email === u.email);
+    if (!existingEmployee && isSupabaseConfigured) {
+      try {
+        const { data: empCheck } = await supabase
+          .from('employees')
+          .select('id')
+          .or(`email.eq.${u.email},user_id.eq.${u.id}`)
+          .maybeSingle();
+        if (empCheck) existingEmployee = { id: empCheck.id } as Employee; // already exists on DB
+      } catch (err) {
+        console.warn('⚠️ addUser: Không check được employee trên DB:', err);
+      }
+    }
+
     if (!existingEmployee) {
       // Lấy mã nhân viên từ PostgreSQL sequence (mã duy nhất vĩnh viễn, không bao giờ tái sử dụng)
       let employeeCode = `TT${String(employees.length + 1).padStart(3, '0')}`; // fallback
@@ -1598,9 +1620,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (oldSup) auditService.log({ tableName: 'suppliers', recordId: id, action: 'DELETE', oldData: oldSup as any, userId: user.id, userName: user.name || user.username });
   };
 
-  const addEmployee = (e: Employee) => {
+  const addEmployee = async (e: Employee) => {
     setEmployees(prev => [...prev, e]);
-    syncToSupabase('employees', e);
+    // Dùng upsert với conflict on email để tránh 409 khi email đã tồn tại
+    if (isSupabaseConfigured) {
+      try {
+        const payload = {
+          id: e.id,
+          employee_code: e.employeeCode || null,
+          full_name: e.fullName, title: e.title || null,
+          gender: e.gender || null, phone: e.phone || null, email: e.email || null,
+          date_of_birth: e.dateOfBirth || null,
+          start_date: e.startDate || null,
+          official_date: e.officialDate || null,
+          status: e.status || 'Đang làm việc',
+          user_id: e.userId || null,
+          area_id: e.areaId || null, office_id: e.officeId || null,
+          employee_type_id: e.employeeTypeId || null,
+          position_id: e.positionId || null,
+          salary_policy_id: e.salaryPolicyId || null,
+          work_schedule_id: e.workScheduleId || null,
+          construction_site_id: e.constructionSiteId || null,
+          department_id: e.departmentId || null,
+          factory_id: e.factoryId || null,
+          marital_status: e.maritalStatus || null,
+          avatar_url: e.avatarUrl || null,
+          org_unit_id: e.orgUnitId || null,
+        };
+        const { error } = await supabase
+          .from('employees')
+          .upsert(payload, { onConflict: 'email', ignoreDuplicates: false });
+        if (error) console.error('❌ addEmployee upsert error:', error.message);
+        else console.log('✅ addEmployee: Đã lưu hồ sơ nhân sự:', e.fullName);
+      } catch (err) {
+        console.error('❌ addEmployee exception:', err);
+      }
+    }
     logActivity('SYSTEM', 'Thêm nhân sự', `Đã thêm hồ sơ nhân sự mới: ${e.fullName}`, 'SUCCESS');
     auditService.log({ tableName: 'employees', recordId: e.id, action: 'INSERT', newData: e as any, userId: user.id, userName: user.name || user.username });
   };
