@@ -6,7 +6,7 @@ import {
   Building, MapPin, Plus, X, Save, Settings as SettingsIcon, Users,
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
-  Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot
+  Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot, FolderKanban
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
@@ -19,6 +19,8 @@ import SettingsAccount from './settings/SettingsAccount';
 import SettingsMaintenance from './settings/SettingsMaintenance';
 import SignaturePad from '../components/SignaturePad';
 import SettingsChibiBot from './settings/SettingsChibiBot';
+import SettingsProjectMasterData from './settings/SettingsProjectMasterData';
+import SettingsWorkGroups from './settings/SettingsWorkGroups';
 import { useModuleData } from '../hooks/useModuleData';
 
 const Settings: React.FC = () => {
@@ -378,6 +380,8 @@ const Settings: React.FC = () => {
     { id: 'general', label: 'Chung', icon: SettingsIcon, roles: [Role.ADMIN] },
     { id: 'warehouses', label: 'Kho bãi', icon: Building, roles: [Role.ADMIN] },
     { id: 'master-data', label: 'Dữ liệu gốc', icon: Database, roles: [Role.ADMIN] },
+    { id: 'project-master-data', label: 'Danh mục DA', icon: FolderKanban, roles: [Role.ADMIN] },
+    { id: 'work-groups', label: 'Nhóm làm việc', icon: Users, roles: [Role.ADMIN] },
     { id: 'org-chart', label: 'Sơ đồ tổ chức', icon: GitBranch, roles: [Role.ADMIN] },
     { id: 'loss-norms', label: 'Định mức hao hụt', icon: TrendingDown, roles: [Role.ADMIN] },
     { id: 'hrm-master-data', label: 'Dữ liệu gốc HRM', icon: Briefcase, roles: [Role.ADMIN] },
@@ -688,6 +692,14 @@ const Settings: React.FC = () => {
                 </div>
               )}
             </div>
+          )}
+
+          {activeTab === 'project-master-data' && (
+            <SettingsProjectMasterData />
+          )}
+
+          {activeTab === 'work-groups' && (
+            <SettingsWorkGroups />
           )}
 
           {activeTab === 'org-chart' && (

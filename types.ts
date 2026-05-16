@@ -223,6 +223,48 @@ export interface ProjectStaffPermission {
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed';
 export type ProjectProgressCalculationMode = 'gantt_weighted' | 'budget' | 'duration' | 'task_count' | 'manual';
 
+export interface ProjectMasterCategory {
+  id: string;
+  code?: string;
+  name: string;
+  description?: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ProjectGroup extends ProjectMasterCategory {}
+export interface ProjectTypeMaster extends ProjectMasterCategory {}
+export interface ProjectSector extends ProjectMasterCategory {}
+
+export type WorkGroupMemberRole = 'lead' | 'member';
+
+export interface WorkGroup {
+  id: string;
+  code?: string;
+  name: string;
+  description?: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface WorkGroupMember {
+  id: string;
+  groupId: string;
+  userId: string;
+  memberRole: WorkGroupMemberRole;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface WorkGroupWithMembers extends WorkGroup {
+  members: WorkGroupMember[];
+}
+
 export interface Project {
   id: string;
   code: string;
@@ -230,6 +272,10 @@ export interface Project {
   description?: string;
   clientName?: string;
   projectType: 'construction' | 'infrastructure' | 'maintenance' | 'other' | string;
+  projectGroupId?: string | null;
+  projectTypeId?: string | null;
+  projectSectorId?: string | null;
+  workflowTemplateId?: string | null;
   status: ProjectStatus | 'cancelled';
   constructionSiteId?: string | null;
   managerId?: string;

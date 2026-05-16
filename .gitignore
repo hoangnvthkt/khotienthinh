@@ -12,6 +12,28 @@ dist
 dist-ssr
 *.local
 
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Supabase local/link metadata
+supabase/.temp/
+
+# Private keys and local credentials
+*.pem
+*.key
+*.p8
+*.p12
+*.crt
+*.cer
+*.jks
+*.keystore
+service-account*.json
+*service*key*.json
+*secret*.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

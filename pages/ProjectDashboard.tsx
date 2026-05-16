@@ -1,9 +1,24 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Project, ProjectFinance, ProjectTransaction, ProjectCostCategory, ProjectTxType, ProjectTxSource, Attachment, ProjectProgressCalculationMode } from '../types';
+import {
+    Project,
+    ProjectFinance,
+    ProjectTransaction,
+    ProjectCostCategory,
+    ProjectTxType,
+    ProjectTxSource,
+    Attachment,
+    ProjectProgressCalculationMode,
+    ProjectGroup,
+    ProjectTypeMaster,
+    ProjectSector,
+    ProjectMasterCategory,
+    WorkGroupWithMembers,
+} from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { loadXlsx } from '../lib/loadXlsx';
 import { useModuleData } from '../hooks/useModuleData';
+import { useWorkflow } from '../context/WorkflowContext';
 import CashFlowTab from './project/CashFlowTab';
 import ContractTab from './project/ContractTab';
 import GanttTab from './project/GanttTab';
@@ -17,11 +32,15 @@ import ProjectOrgTab from './project/ProjectOrgTab';
 import { taskService } from '../lib/projectService';
 import { calculateProjectProgress } from '../lib/projectScheduleRules';
 import { projectMasterService } from '../lib/projectMasterService';
+import { projectMasterDataService } from '../lib/projectMasterDataService';
+import { projectPermissionTypeService, projectStaffService } from '../lib/projectStaffService';
+import { workGroupService } from '../lib/workGroupService';
 import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, FileText,
     Building2, HardHat, AlertCircle, ArrowUpRight, ArrowDownRight,
-    Upload, Download, Filter, Calendar, Tag, List, Paperclip, Eye, Image
+    Upload, Download, Filter, Calendar, Tag, List, Paperclip, Eye, Image,
+    Users, UserPlus
 } from 'lucide-react';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -82,9 +101,20 @@ const emptyFinance = (siteId: string): ProjectFinance => ({
 type ProjectFormState = {
     name: string;
     code: string;
+    projectGroupId: string;
+    projectTypeId: string;
+    projectSectorId: string;
+    workflowTemplateId: string;
     clientName: string;
     constructionSiteId: string;
     managerId: string;
+    adminUserIds: string[];
+    adminGroupIds: string[];
+    executorUserIds: string[];
+    executorGroupIds: string[];
+    watcherUserIds: string[];
+    watcherGroupIds: string[];
+    defaultPositionId: string;
     status: Project['status'];
     startDate: string;
     endDate: string;
@@ -96,9 +126,20 @@ type ProjectFormState = {
 const emptyProjectForm = (): ProjectFormState => ({
     name: '',
     code: '',
+    projectGroupId: '',
+    projectTypeId: '',
+    projectSectorId: '',
+    workflowTemplateId: '',
     clientName: '',
     constructionSiteId: '',
     managerId: '',
+    adminUserIds: [],
+    adminGroupIds: [],
+    executorUserIds: [],
+    executorGroupIds: [],
+    watcherUserIds: [],
+    watcherGroupIds: [],
+    defaultPositionId: '',
     status: 'planning',
     startDate: '',
     endDate: '',
@@ -125,8 +166,10 @@ const siteToProjectFallback = (site: { id: string; name: string; address?: strin
 const ProjectDashboard: React.FC = () => {
     const {
         hrmConstructionSites, projectFinances, addProjectFinance, updateProjectFinance, removeProjectFinance,
-        projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction, user, users
+        projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction,
+        user, users, employees, hrmPositions
     } = useApp();
+    const { templates: workflowTemplates } = useWorkflow();
     useModuleData('da');
     useModuleData('wms');
 
@@ -160,6 +203,15 @@ const ProjectDashboard: React.FC = () => {
     const [editingProject, setEditingProject] = useState<Project | null>(null);
     const [savingProject, setSavingProject] = useState(false);
     const [projectForm, setProjectForm] = useState<ProjectFormState>(emptyProjectForm);
+    const [projectGroups, setProjectGroups] = useState<ProjectGroup[]>([]);
+    const [projectTypes, setProjectTypes] = useState<ProjectTypeMaster[]>([]);
+    const [projectSectors, setProjectSectors] = useState<ProjectSector[]>([]);
+    const [projectMasterDataLoading, setProjectMasterDataLoading] = useState(false);
+    const [workGroups, setWorkGroups] = useState<WorkGroupWithMembers[]>([]);
+    const [workGroupsLoading, setWorkGroupsLoading] = useState(false);
+    const [showProjectAdvanced, setShowProjectAdvanced] = useState(false);
+    const [quickCategoryKind, setQuickCategoryKind] = useState<'group' | 'type' | 'sector' | null>(null);
+    const [quickCategoryForm, setQuickCategoryForm] = useState({ code: '', name: '', description: '' });
 
     useEffect(() => {
         let cancelled = false;
@@ -181,6 +233,44 @@ const ProjectDashboard: React.FC = () => {
         return () => { cancelled = true; };
     }, []);
 
+    const loadProjectMasterData = async () => {
+        setProjectMasterDataLoading(true);
+        try {
+            const [groups, types, sectors] = await Promise.all([
+                projectMasterDataService.listGroups(),
+                projectMasterDataService.listTypes(),
+                projectMasterDataService.listSectors(),
+            ]);
+            setProjectGroups(groups);
+            setProjectTypes(types);
+            setProjectSectors(sectors);
+        } catch (err: any) {
+            console.error('Project master data load failed', err);
+        } finally {
+            setProjectMasterDataLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadProjectMasterData();
+    }, []);
+
+    const loadWorkGroups = async () => {
+        setWorkGroupsLoading(true);
+        try {
+            const groups = await workGroupService.listGroupsWithMembers({ activeOnly: false, memberActiveOnly: false });
+            setWorkGroups(groups);
+        } catch (err: any) {
+            console.error('Work groups load failed', err);
+        } finally {
+            setWorkGroupsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadWorkGroups();
+    }, []);
+
     const projectRows = useMemo(() => {
         if (projects.length > 0) return projects;
         return hrmConstructionSites.map(siteToProjectFallback);
@@ -190,6 +280,15 @@ const ProjectDashboard: React.FC = () => {
         () => projectRows.find(project => project.id === selectedProjectId) || null,
         [projectRows, selectedProjectId]
     );
+    const projectGroupMap = useMemo(() => new Map(projectGroups.map(item => [item.id, item])), [projectGroups]);
+    const projectTypeMap = useMemo(() => new Map(projectTypes.map(item => [item.id, item])), [projectTypes]);
+    const projectSectorMap = useMemo(() => new Map(projectSectors.map(item => [item.id, item])), [projectSectors]);
+    const workflowTemplateMap = useMemo(() => new Map(workflowTemplates.map(item => [item.id, item])), [workflowTemplates]);
+    const workGroupMap = useMemo(() => new Map(workGroups.map(item => [item.id, item])), [workGroups]);
+    const activeProjectGroups = useMemo(() => projectGroups.filter(item => item.isActive || item.id === projectForm.projectGroupId), [projectGroups, projectForm.projectGroupId]);
+    const activeProjectTypes = useMemo(() => projectTypes.filter(item => item.isActive || item.id === projectForm.projectTypeId), [projectTypes, projectForm.projectTypeId]);
+    const activeProjectSectors = useMemo(() => projectSectors.filter(item => item.isActive || item.id === projectForm.projectSectorId), [projectSectors, projectForm.projectSectorId]);
+    const activeWorkflowTemplates = useMemo(() => workflowTemplates.filter(template => template.isActive || template.id === projectForm.workflowTemplateId), [workflowTemplates, projectForm.workflowTemplateId]);
 
     const effectiveSiteId = selectedProject?.constructionSiteId || selectedSiteId || null;
     const selectedSite = effectiveSiteId ? hrmConstructionSites.find(s => s.id === effectiveSiteId) || null : null;
@@ -223,6 +322,46 @@ const ProjectDashboard: React.FC = () => {
         if (txFilter !== 'all') txs = txs.filter(t => t.category === txFilter);
         return txs.sort((a, b) => b.date.localeCompare(a.date));
     }, [effectiveSiteId, projectTransactions, txFilter]);
+
+    const employeeByUserId = useMemo(() => {
+        const map = new Map<string, typeof employees[number]>();
+        employees.forEach(employee => {
+            if (employee.userId) map.set(employee.userId, employee);
+        });
+        return map;
+    }, [employees]);
+
+    const activeUsers = useMemo(() => users.filter(u => u.isActive !== false), [users]);
+    const activeUserIdSet = useMemo(() => new Set(activeUsers.map(u => u.id)), [activeUsers]);
+    const selectedWorkGroupIds = useMemo(() => new Set([
+        ...projectForm.adminGroupIds,
+        ...projectForm.executorGroupIds,
+        ...projectForm.watcherGroupIds,
+    ]), [projectForm.adminGroupIds, projectForm.executorGroupIds, projectForm.watcherGroupIds]);
+    const activeWorkGroups = useMemo(
+        () => workGroups.filter(group => group.isActive || selectedWorkGroupIds.has(group.id)),
+        [workGroups, selectedWorkGroupIds]
+    );
+    const sortedPositions = useMemo(() => [...hrmPositions].sort((a, b) => (a.level || 99) - (b.level || 99)), [hrmPositions]);
+
+    const expandParticipantUserIds = (manualUserIds: string[], groupIds: string[]): string[] => {
+        const userIds = new Set(manualUserIds.filter(Boolean));
+        groupIds.forEach(groupId => {
+            const group = workGroupMap.get(groupId);
+            group?.members
+                .filter(member => member.isActive && activeUserIdSet.has(member.userId))
+                .forEach(member => userIds.add(member.userId));
+        });
+        return [...userIds];
+    };
+
+    const getAllProjectParticipantUserIds = (): string[] => [
+        ...new Set([
+            ...expandParticipantUserIds(projectForm.adminUserIds, projectForm.adminGroupIds),
+            ...expandParticipantUserIds(projectForm.executorUserIds, projectForm.executorGroupIds),
+            ...expandParticipantUserIds(projectForm.watcherUserIds, projectForm.watcherGroupIds),
+        ]),
+    ];
 
     const financeSiteKey = useMemo(() =>
         projectFinances.map(p => `${p.constructionSiteId}:${p.progressPercent}`).sort().join('|'),
@@ -266,6 +405,19 @@ const ProjectDashboard: React.FC = () => {
         return taskProgressBySite[finance.constructionSiteId]?.progressPercent ?? finance.progressPercent;
     };
 
+    const getProjectMetaChips = (project: Project): { label: string; tone: string }[] => {
+        const group = project.projectGroupId ? projectGroupMap.get(project.projectGroupId) : undefined;
+        const type = project.projectTypeId ? projectTypeMap.get(project.projectTypeId) : undefined;
+        const sector = project.projectSectorId ? projectSectorMap.get(project.projectSectorId) : undefined;
+        const workflowTemplate = project.workflowTemplateId ? workflowTemplateMap.get(project.workflowTemplateId) : undefined;
+        return [
+            group ? { label: group.name, tone: 'bg-orange-50 text-orange-600 border-orange-100' } : null,
+            type ? { label: type.name, tone: 'bg-blue-50 text-blue-600 border-blue-100' } : null,
+            sector ? { label: sector.name, tone: 'bg-emerald-50 text-emerald-600 border-emerald-100' } : null,
+            workflowTemplate ? { label: workflowTemplate.name, tone: 'bg-violet-50 text-violet-600 border-violet-100' } : null,
+        ].filter(Boolean) as { label: string; tone: string }[];
+    };
+
     // === BUDGET CATEGORIES for chart ===
     const BUDGET_CATS = [
         { key: 'Materials', label: 'Vật tư', icon: '🧱', color: '#f97316', aggKey: 'actualMaterials' as const, filterKey: 'materials' as ProjectCostCategory },
@@ -297,7 +449,9 @@ const ProjectDashboard: React.FC = () => {
     const openCreateProject = () => {
         setEditingProject(null);
         setProjectForm(emptyProjectForm());
+        setShowProjectAdvanced(false);
         setShowProjectForm(true);
+        loadWorkGroups();
     };
 
     const openEditProject = (project: Project) => {
@@ -305,9 +459,20 @@ const ProjectDashboard: React.FC = () => {
         setProjectForm({
             name: project.name || '',
             code: project.code || '',
+            projectGroupId: project.projectGroupId || '',
+            projectTypeId: project.projectTypeId || '',
+            projectSectorId: project.projectSectorId || '',
+            workflowTemplateId: project.workflowTemplateId || '',
             clientName: project.clientName || '',
             constructionSiteId: project.constructionSiteId || '',
             managerId: project.managerId || '',
+            adminUserIds: [],
+            adminGroupIds: [],
+            executorUserIds: [],
+            executorGroupIds: [],
+            watcherUserIds: [],
+            watcherGroupIds: [],
+            defaultPositionId: '',
             status: project.status || 'planning',
             startDate: project.startDate || '',
             endDate: project.endDate || '',
@@ -315,15 +480,75 @@ const ProjectDashboard: React.FC = () => {
             manualProgressPercent: String(project.manualProgressPercent ?? 0),
             description: project.description || '',
         });
+        setShowProjectAdvanced(false);
         setShowProjectForm(true);
     };
 
-    const saveProject = async () => {
+    const selectedProjectType = () => projectForm.projectTypeId ? projectTypeMap.get(projectForm.projectTypeId) : undefined;
+
+    const seedProjectStaff = async (project: Project) => {
+        const roleRank: Record<'admin' | 'executor' | 'watcher', number> = { watcher: 1, executor: 2, admin: 3 };
+        const userRoles = new Map<string, 'admin' | 'executor' | 'watcher'>();
+        const mergeRole = (userId: string, role: 'admin' | 'executor' | 'watcher') => {
+            if (!userId) return;
+            const current = userRoles.get(userId);
+            if (!current || roleRank[role] > roleRank[current]) userRoles.set(userId, role);
+        };
+        expandParticipantUserIds(projectForm.watcherUserIds, projectForm.watcherGroupIds).forEach(id => mergeRole(id, 'watcher'));
+        expandParticipantUserIds(projectForm.executorUserIds, projectForm.executorGroupIds).forEach(id => mergeRole(id, 'executor'));
+        expandParticipantUserIds(projectForm.adminUserIds, projectForm.adminGroupIds).forEach(id => mergeRole(id, 'admin'));
+        if (userRoles.size === 0) return;
+
+        const missingPositionUsers = [...userRoles.keys()].filter(userId => !employeeByUserId.get(userId)?.positionId && !projectForm.defaultPositionId);
+        if (missingPositionUsers.length > 0) {
+            const names = missingPositionUsers
+                .map(userId => users.find(u => u.id === userId)?.name || users.find(u => u.id === userId)?.email || userId)
+                .join(', ');
+            throw new Error(`Các thành viên chưa có chức danh HRM: ${names}. Vui lòng chọn vị trí mặc định trong "Thông tin khác".`);
+        }
+
+        const permissionTypes = await projectPermissionTypeService.list();
+        const permissionIdByCode = new Map(permissionTypes.map(permission => [permission.code, permission.id]));
+        const codeSets: Record<'admin' | 'executor' | 'watcher', string[]> = {
+            admin: ['view', 'edit', 'submit', 'verify', 'confirm', 'approve'],
+            executor: ['view', 'edit', 'submit'],
+            watcher: ['view'],
+        };
+
+        for (const [userId, role] of userRoles.entries()) {
+            const permissionTypeIds = codeSets[role].map(code => permissionIdByCode.get(code)).filter(Boolean) as string[];
+            if (permissionTypeIds.length === 0) throw new Error('Chưa có dữ liệu quyền PBAC. Vui lòng kiểm tra migration project_permission_types.');
+            await projectStaffService.add({
+                projectId: project.id,
+                constructionSiteId: project.constructionSiteId || null,
+                userId,
+                positionId: employeeByUserId.get(userId)?.positionId || projectForm.defaultPositionId,
+                permissionTypeIds,
+                startDate: project.startDate || new Date().toISOString().slice(0, 10),
+                note: role === 'admin' ? 'Seed từ form tạo dự án: Quản trị dự án' : role === 'executor' ? 'Seed từ form tạo dự án: Thực hiện dự án' : 'Seed từ form tạo dự án: Người theo dõi',
+                grantedBy: user.id,
+                operatorName: user.name || user.username,
+            });
+        }
+    };
+
+    const saveProject = async (openAfterCreate = true) => {
         if (!projectForm.name.trim()) {
             alert('Vui lòng nhập tên dự án');
             return;
         }
+        if (!editingProject) {
+            const selectedUserIds = getAllProjectParticipantUserIds();
+            const hasMissingPosition = selectedUserIds.some(userId => !employeeByUserId.get(userId)?.positionId && !projectForm.defaultPositionId);
+            if (hasMissingPosition) {
+                alert('Có thành viên chưa liên kết chức danh HRM. Vui lòng chọn "Vị trí mặc định cho thành viên chưa có chức danh" trong Thông tin khác.');
+                setShowProjectAdvanced(true);
+                return;
+            }
+        }
         const manualProgressPercent = Math.max(0, Math.min(100, Number(projectForm.manualProgressPercent) || 0));
+        const projectType = selectedProjectType();
+        const adminUserIds = expandParticipantUserIds(projectForm.adminUserIds, projectForm.adminGroupIds);
         setSavingProject(true);
         try {
             if (editingProject) {
@@ -332,8 +557,13 @@ const ProjectDashboard: React.FC = () => {
                     name: projectForm.name.trim(),
                     code: projectForm.code.trim() || editingProject.code,
                     clientName: projectForm.clientName.trim() || undefined,
+                    projectType: projectType?.code || editingProject.projectType || 'construction',
+                    projectGroupId: projectForm.projectGroupId || null,
+                    projectTypeId: projectForm.projectTypeId || null,
+                    projectSectorId: projectForm.projectSectorId || null,
+                    workflowTemplateId: projectForm.workflowTemplateId || null,
                     constructionSiteId: projectForm.constructionSiteId || null,
-                    managerId: projectForm.managerId || undefined,
+                    managerId: adminUserIds[0] || projectForm.managerId || undefined,
                     status: projectForm.status,
                     startDate: projectForm.startDate || undefined,
                     endDate: projectForm.endDate || undefined,
@@ -350,8 +580,13 @@ const ProjectDashboard: React.FC = () => {
                     name: projectForm.name.trim(),
                     code: projectForm.code.trim() || undefined,
                     clientName: projectForm.clientName.trim() || undefined,
+                    projectType: projectType?.code || 'construction',
+                    projectGroupId: projectForm.projectGroupId || null,
+                    projectTypeId: projectForm.projectTypeId || null,
+                    projectSectorId: projectForm.projectSectorId || null,
+                    workflowTemplateId: projectForm.workflowTemplateId || null,
                     constructionSiteId: projectForm.constructionSiteId || null,
-                    managerId: projectForm.managerId || undefined,
+                    managerId: adminUserIds[0] || projectForm.managerId || undefined,
                     status: projectForm.status,
                     startDate: projectForm.startDate || undefined,
                     endDate: projectForm.endDate || undefined,
@@ -360,8 +595,9 @@ const ProjectDashboard: React.FC = () => {
                     description: projectForm.description.trim() || undefined,
                     createdBy: user.id,
                 });
+                await seedProjectStaff(created);
                 setProjects(prev => [created, ...prev.filter(p => p.id !== created.id)]);
-                openProjectDetail(created);
+                if (openAfterCreate) openProjectDetail(created);
             }
             setShowProjectForm(false);
             setEditingProject(null);
@@ -369,6 +605,36 @@ const ProjectDashboard: React.FC = () => {
             alert(`Lưu dự án thất bại: ${err?.message || 'Lỗi không xác định'}`);
         } finally {
             setSavingProject(false);
+        }
+    };
+
+    const openQuickCategory = (kind: 'group' | 'type' | 'sector') => {
+        setQuickCategoryKind(kind);
+        setQuickCategoryForm({ code: '', name: '', description: '' });
+    };
+
+    const saveQuickCategory = async () => {
+        if (!quickCategoryKind || !quickCategoryForm.name.trim()) return;
+        try {
+            let created: ProjectMasterCategory;
+            if (quickCategoryKind === 'group') {
+                created = await projectMasterDataService.createGroup(quickCategoryForm);
+                setProjectGroups(prev => [...prev, created as ProjectGroup]);
+                setProjectForm(prev => ({ ...prev, projectGroupId: created.id }));
+            } else if (quickCategoryKind === 'type') {
+                created = await projectMasterDataService.createType(quickCategoryForm);
+                setProjectTypes(prev => [...prev, created as ProjectTypeMaster]);
+                setProjectForm(prev => ({ ...prev, projectTypeId: created.id }));
+            } else {
+                created = await projectMasterDataService.createSector(quickCategoryForm);
+                setProjectSectors(prev => [...prev, created as ProjectSector]);
+                setProjectForm(prev => ({ ...prev, projectSectorId: created.id }));
+            }
+            setQuickCategoryKind(null);
+            setQuickCategoryForm({ code: '', name: '', description: '' });
+            await loadProjectMasterData();
+        } catch (err: any) {
+            alert(`Không thêm nhanh được danh mục: ${err?.message || 'Lỗi không xác định'}`);
         }
     };
 
@@ -722,138 +988,328 @@ const ProjectDashboard: React.FC = () => {
         const linkedSiteProject = projectForm.constructionSiteId
             ? projectRows.find(p => p.constructionSiteId === projectForm.constructionSiteId && p.id !== editingProject?.id)
             : null;
+        const inputCls = 'w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-orange-500 bg-white';
+        const labelCls = 'text-[10px] font-black text-slate-500 uppercase block mb-1';
+        const categoryTitle = quickCategoryKind === 'group'
+            ? 'Thêm nhóm dự án'
+            : quickCategoryKind === 'type'
+                ? 'Thêm loại dự án'
+                : 'Thêm lĩnh vực';
 
-        return (
-            <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-                    <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-700 to-slate-900 rounded-t-3xl flex items-center justify-between">
-                        <div className="text-white">
-                            <span className="font-bold text-lg block">{editingProject ? 'Cập nhật dự án' : 'Thêm dự án mới'}</span>
-                            <span className="text-white/70 text-sm">Tạo dự án trước, cấu hình nhân sự và quyền trong tab Tổ chức</span>
-                        </div>
-                        <button onClick={() => setShowProjectForm(false)} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><X size={18} /></button>
+        const renderCategorySelect = (
+            label: string,
+            value: string,
+            onChange: (value: string) => void,
+            items: ProjectMasterCategory[],
+            kind: 'group' | 'type' | 'sector',
+            placeholder: string,
+        ) => (
+            <div>
+                <div className="flex items-center justify-between mb-1">
+                    <label className={labelCls}>{label}</label>
+                    <button
+                        type="button"
+                        onClick={() => openQuickCategory(kind)}
+                        className="w-6 h-6 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-100 flex items-center justify-center"
+                        title={`Thêm ${label.toLowerCase()}`}
+                    >
+                        <Plus size={12} />
+                    </button>
+                </div>
+                <select value={value} onChange={e => onChange(e.target.value)} className={`${inputCls} font-bold`}>
+                    <option value="">{placeholder}</option>
+                    {items.map(item => (
+                        <option key={item.id} value={item.id}>{item.name}{item.isActive ? '' : ' (đã ẩn)'}</option>
+                    ))}
+                </select>
+            </div>
+        );
+
+        const renderUserMultiSelect = (
+            label: string,
+            selectedIds: string[],
+            onChange: (ids: string[]) => void,
+            icon: React.ReactNode,
+            selectedGroupIds: string[],
+            onGroupChange: (ids: string[]) => void,
+        ) => {
+            const selectedUsers = selectedIds.map(id => activeUsers.find(u => u.id === id)).filter(Boolean) as typeof activeUsers;
+            const availableUsers = activeUsers.filter(u => !selectedIds.includes(u.id));
+            const selectedGroups = selectedGroupIds.map(id => workGroupMap.get(id)).filter(Boolean) as WorkGroupWithMembers[];
+            const availableGroups = activeWorkGroups.filter(group => !selectedGroupIds.includes(group.id));
+            const expandedFromGroups = expandParticipantUserIds([], selectedGroupIds);
+            const getGroupMemberCount = (group: WorkGroupWithMembers) =>
+                group.members.filter(member => member.isActive && activeUserIdSet.has(member.userId)).length;
+
+            return (
+                <div>
+                    <div className="flex items-center justify-between mb-1">
+                        <label className={labelCls}>{label}</label>
+                        {selectedGroups.length > 0 && (
+                            <span className="text-[10px] font-black text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded-lg">
+                                {expandedFromGroups.length} người từ nhóm
+                            </span>
+                        )}
                     </div>
-
-                    <div className="p-6 space-y-5">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="md:col-span-2">
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Tên dự án</label>
-                                <input
-                                    value={projectForm.name}
-                                    onChange={e => setProjectForm({ ...projectForm, name: e.target.value })}
-                                    placeholder="VD: Dự án RICO"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none"
-                                />
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Mã dự án</label>
-                                <input
-                                    value={projectForm.code}
-                                    onChange={e => setProjectForm({ ...projectForm, code: e.target.value })}
-                                    placeholder="Tự sinh nếu bỏ trống"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none uppercase"
-                                />
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Chủ đầu tư / Khách hàng</label>
-                                <input
-                                    value={projectForm.clientName}
-                                    onChange={e => setProjectForm({ ...projectForm, clientName: e.target.value })}
-                                    placeholder="Tên chủ đầu tư"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-orange-500 outline-none"
-                                />
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Công trường HRM liên kết</label>
+                    <div className="rounded-xl border border-slate-200 bg-white px-2 py-2 min-h-[46px]">
+                        <div className="flex flex-wrap gap-2 mb-2">
+                            {selectedGroups.map(group => (
+                                <span key={group.id} className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-50 px-2 py-1 text-xs font-bold text-cyan-700 border border-cyan-100">
+                                    <Users size={12} />
+                                    <span>{group.name}</span>
+                                    <span className="text-[9px] text-cyan-500">{getGroupMemberCount(group)} người</span>
+                                    <button type="button" onClick={() => onGroupChange(selectedGroupIds.filter(id => id !== group.id))} className="text-cyan-400 hover:text-red-500">
+                                        <X size={11} />
+                                    </button>
+                                </span>
+                            ))}
+                            {selectedUsers.map(item => {
+                                const employee = employeeByUserId.get(item.id);
+                                const displayName = item.name || item.username || item.email;
+                                return (
+                                    <span key={item.id} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">
+                                        {item.avatar ? <img src={item.avatar} className="w-5 h-5 rounded-full object-cover" /> : <span className="w-5 h-5 rounded-full bg-white flex items-center justify-center text-[9px]">{displayName?.charAt(0) || '?'}</span>}
+                                        <span>{displayName}</span>
+                                        {employee?.positionId && <span className="text-[9px] text-slate-400">{hrmPositions.find(p => p.id === employee.positionId)?.name || ''}</span>}
+                                        <button type="button" onClick={() => onChange(selectedIds.filter(id => id !== item.id))} className="text-slate-400 hover:text-red-500">
+                                            <X size={11} />
+                                        </button>
+                                    </span>
+                                );
+                            })}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <div className="flex items-center gap-1 text-cyan-500 min-w-[170px] rounded-lg bg-cyan-50 px-2">
+                                <Users size={13} />
                                 <select
-                                    value={projectForm.constructionSiteId}
-                                    onChange={e => setProjectForm({ ...projectForm, constructionSiteId: e.target.value })}
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none"
+                                    value=""
+                                    onChange={e => {
+                                        if (e.target.value) onGroupChange([...selectedGroupIds, e.target.value]);
+                                        e.target.value = '';
+                                    }}
+                                    className="flex-1 min-w-0 bg-transparent text-xs font-bold outline-none py-2"
                                 >
-                                    <option value="">Không liên kết công trường</option>
-                                    {hrmConstructionSites.map(site => (
-                                        <option key={site.id} value={site.id}>{site.name}</option>
+                                    <option value="">{workGroupsLoading ? 'Đang tải nhóm...' : availableGroups.length === 0 ? 'Không còn nhóm' : 'Chọn nhóm làm việc'}</option>
+                                    {availableGroups.map(group => (
+                                        <option key={group.id} value={group.id}>{group.name} ({getGroupMemberCount(group)} người)</option>
                                     ))}
                                 </select>
-                                {linkedSiteProject && (
-                                    <p className="text-[10px] text-amber-600 font-bold mt-1">Công trường này đang được liên kết với {linkedSiteProject.name}</p>
-                                )}
                             </div>
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Quản lý dự án</label>
+                            <div className="flex items-center gap-1 text-slate-400 min-w-[170px] rounded-lg bg-slate-50 px-2">
+                                {icon}
                                 <select
-                                    value={projectForm.managerId}
-                                    onChange={e => setProjectForm({ ...projectForm, managerId: e.target.value })}
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                                    value=""
+                                    onChange={e => {
+                                        if (e.target.value) onChange([...selectedIds, e.target.value]);
+                                        e.target.value = '';
+                                    }}
+                                    className="flex-1 min-w-0 bg-transparent text-xs font-bold outline-none py-1"
                                 >
-                                    <option value="">Chưa chọn</option>
-                                    {users.map(u => <option key={u.id} value={u.id}>{u.name || u.username || u.email}</option>)}
+                                    <option value="">{availableUsers.length === 0 ? 'Không còn người dùng' : 'Chọn thành viên'}</option>
+                                    {availableUsers.map(item => (
+                                        <option key={item.id} value={item.id}>{item.name || item.username || item.email}</option>
+                                    ))}
                                 </select>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        return (
+            <>
+                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl mx-4 max-h-[92vh] overflow-y-auto">
+                        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ngày bắt đầu</label>
-                                <input type="date" value={projectForm.startDate} onChange={e => setProjectForm({ ...projectForm, startDate: e.target.value })}
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-orange-500 outline-none" />
+                                <span className="font-black text-2xl text-slate-800 block">{editingProject ? 'Cập nhật dự án' : 'Tạo dự án mới'}</span>
+                                <span className="text-slate-400 text-sm">
+                                    {editingProject ? 'Thông tin tổ chức dự án chỉnh tại tab Tổ chức' : 'Tạo dự án, gắn danh mục, quy trình và seed quyền dự án ngay từ đầu'}
+                                </span>
                             </div>
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ngày kết thúc dự kiến</label>
-                                <input type="date" value={projectForm.endDate} onChange={e => setProjectForm({ ...projectForm, endDate: e.target.value })}
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-orange-500 outline-none" />
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Trạng thái</label>
-                                <select value={projectForm.status} onChange={e => setProjectForm({ ...projectForm, status: e.target.value as Project['status'] })}
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none">
+                            <button onClick={() => setShowProjectForm(false)} className="w-9 h-9 rounded-xl hover:bg-slate-100 text-slate-400 flex items-center justify-center"><X size={20} /></button>
+                        </div>
+
+                        <div className="p-6 space-y-5">
+                            <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-x-6 gap-y-4 items-start">
+                                <label className="text-sm font-black text-slate-700 md:text-right pt-3">Mã dự án</label>
+                                <input value={projectForm.code} onChange={e => setProjectForm({ ...projectForm, code: e.target.value })}
+                                    placeholder="Nhập mã dự án" className={`${inputCls} font-bold uppercase`} />
+
+                                <label className="text-sm font-black text-slate-700 md:text-right pt-3">Tên dự án <span className="text-red-500">*</span></label>
+                                <input value={projectForm.name} onChange={e => setProjectForm({ ...projectForm, name: e.target.value })}
+                                    placeholder="Nhập tên dự án" className={`${inputCls} font-bold`} />
+
+                                <label className="text-sm font-black text-slate-700 md:text-right pt-3">Mô tả</label>
+                                <textarea value={projectForm.description} onChange={e => setProjectForm({ ...projectForm, description: e.target.value })}
+                                    rows={3} placeholder="Nhập mô tả dự án" className={`${inputCls} resize-y`} />
+
+                                <label className="text-sm font-black text-slate-700 md:text-right pt-3">Nhóm dự án</label>
+                                {renderCategorySelect('Nhóm dự án', projectForm.projectGroupId, value => setProjectForm({ ...projectForm, projectGroupId: value }), activeProjectGroups, 'group', projectMasterDataLoading ? 'Đang tải...' : 'Chọn nhóm dự án')}
+
+                                <label className="text-sm font-black text-slate-700 md:text-right pt-3">Loại dự án</label>
+                                {renderCategorySelect('Loại dự án', projectForm.projectTypeId, value => setProjectForm({ ...projectForm, projectTypeId: value }), activeProjectTypes, 'type', projectMasterDataLoading ? 'Đang tải...' : 'Chọn loại dự án')}
+
+                                <label className="text-sm font-black text-slate-700 md:text-right pt-3">Lĩnh vực</label>
+                                {renderCategorySelect('Lĩnh vực', projectForm.projectSectorId, value => setProjectForm({ ...projectForm, projectSectorId: value }), activeProjectSectors, 'sector', projectMasterDataLoading ? 'Đang tải...' : 'Chọn lĩnh vực')}
+
+                                <label className="text-sm font-black text-slate-700 md:text-right pt-3">Quy trình</label>
+                                <select value={projectForm.workflowTemplateId} onChange={e => setProjectForm({ ...projectForm, workflowTemplateId: e.target.value })} className={`${inputCls} font-bold`}>
+                                    <option value="">Chọn quy trình</option>
+                                    {activeWorkflowTemplates.map(template => <option key={template.id} value={template.id}>{template.name}</option>)}
+                                </select>
+
+                                {!editingProject ? (
+                                    <>
+                                        <label className="text-sm font-black text-slate-700 md:text-right pt-3">Quản trị dự án</label>
+                                        {renderUserMultiSelect('Quản trị dự án', projectForm.adminUserIds, ids => setProjectForm({ ...projectForm, adminUserIds: ids }), <Users size={13} />, projectForm.adminGroupIds, ids => setProjectForm({ ...projectForm, adminGroupIds: ids }))}
+
+                                        <label className="text-sm font-black text-slate-700 md:text-right pt-3">Thực hiện dự án</label>
+                                        {renderUserMultiSelect('Thực hiện dự án', projectForm.executorUserIds, ids => setProjectForm({ ...projectForm, executorUserIds: ids }), <UserPlus size={13} />, projectForm.executorGroupIds, ids => setProjectForm({ ...projectForm, executorGroupIds: ids }))}
+
+                                        <label className="text-sm font-black text-slate-700 md:text-right pt-3">Người theo dõi</label>
+                                        {renderUserMultiSelect('Người theo dõi', projectForm.watcherUserIds, ids => setProjectForm({ ...projectForm, watcherUserIds: ids }), <Eye size={13} />, projectForm.watcherGroupIds, ids => setProjectForm({ ...projectForm, watcherGroupIds: ids }))}
+                                    </>
+                                ) : (
+                                    <>
+                                        <label className="text-sm font-black text-slate-700 md:text-right pt-3">Tổ chức dự án</label>
+                                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-700">
+                                            Nhân sự, quyền PBAC và người theo dõi của dự án hiện hữu được chỉnh trong tab Tổ chức.
+                                        </div>
+                                    </>
+                                )}
+
+                                <label className="text-sm font-black text-slate-700 md:text-right pt-3">Trạng thái</label>
+                                <select value={projectForm.status} onChange={e => setProjectForm({ ...projectForm, status: e.target.value as Project['status'] })} className={`${inputCls} font-bold`}>
                                     {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                                 </select>
                             </div>
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Cách tính tiến độ</label>
-                                <select
-                                    value={projectForm.progressCalculationMode}
-                                    onChange={e => setProjectForm({ ...projectForm, progressCalculationMode: e.target.value as ProjectProgressCalculationMode })}
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none"
+
+                            <div className="border-t border-slate-100 pt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowProjectAdvanced(prev => !prev)}
+                                    className="ml-auto flex items-center gap-2 text-sm font-black text-teal-600 hover:text-teal-700"
                                 >
-                                    {PROGRESS_MODE_OPTIONS.map(option => (
-                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                    ))}
-                                </select>
+                                    Thông tin khác <ChevronDown size={16} className={`transition-transform ${showProjectAdvanced ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {showProjectAdvanced && (
+                                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 rounded-2xl bg-slate-50 border border-slate-100 p-4">
+                                        <div>
+                                            <label className={labelCls}>Chủ đầu tư / Khách hàng</label>
+                                            <input value={projectForm.clientName} onChange={e => setProjectForm({ ...projectForm, clientName: e.target.value })}
+                                                placeholder="Tên chủ đầu tư" className={inputCls} />
+                                        </div>
+                                        <div>
+                                            <label className={labelCls}>Công trường / Địa điểm thi công</label>
+                                            <select value={projectForm.constructionSiteId} onChange={e => setProjectForm({ ...projectForm, constructionSiteId: e.target.value })} className={`${inputCls} font-bold`}>
+                                                <option value="">Không liên kết công trường</option>
+                                                {hrmConstructionSites.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}
+                                            </select>
+                                            {linkedSiteProject && <p className="text-[10px] text-amber-600 font-bold mt-1">Công trường này đang được liên kết với {linkedSiteProject.name}</p>}
+                                        </div>
+                                        <div>
+                                            <label className={labelCls}>Ngày bắt đầu</label>
+                                            <input type="date" value={projectForm.startDate} onChange={e => setProjectForm({ ...projectForm, startDate: e.target.value })} className={inputCls} />
+                                        </div>
+                                        <div>
+                                            <label className={labelCls}>Ngày kết thúc dự kiến</label>
+                                            <input type="date" value={projectForm.endDate} onChange={e => setProjectForm({ ...projectForm, endDate: e.target.value })} className={inputCls} />
+                                        </div>
+                                        <div>
+                                            <label className={labelCls}>Cách tính tiến độ</label>
+                                            <select value={projectForm.progressCalculationMode} onChange={e => setProjectForm({ ...projectForm, progressCalculationMode: e.target.value as ProjectProgressCalculationMode })} className={`${inputCls} font-bold`}>
+                                                {PROGRESS_MODE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                            </select>
+                                        </div>
+                                        {projectForm.progressCalculationMode === 'manual' && (
+                                            <div>
+                                                <label className={labelCls}>Tiến độ thủ công (%)</label>
+                                                <input type="number" min={0} max={100} value={projectForm.manualProgressPercent}
+                                                    onChange={e => setProjectForm({ ...projectForm, manualProgressPercent: e.target.value })}
+                                                    className={`${inputCls} font-bold`} />
+                                            </div>
+                                        )}
+                                        {!editingProject && (
+                                            <div className={projectForm.progressCalculationMode === 'manual' ? '' : 'md:col-span-2'}>
+                                                <label className={labelCls}>Vị trí mặc định cho thành viên chưa có chức danh</label>
+                                                <select value={projectForm.defaultPositionId} onChange={e => setProjectForm({ ...projectForm, defaultPositionId: e.target.value })} className={`${inputCls} font-bold`}>
+                                                    <option value="">Chưa chọn</option>
+                                                    {sortedPositions.map(position => <option key={position.id} value={position.id}>{position.name}</option>)}
+                                                </select>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
-                            {projectForm.progressCalculationMode === 'manual' && (
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Tiến độ thủ công (%)</label>
-                                    <input
-                                        type="number"
-                                        min={0}
-                                        max={100}
-                                        value={projectForm.manualProgressPercent}
-                                        onChange={e => setProjectForm({ ...projectForm, manualProgressPercent: e.target.value })}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none"
-                                    />
-                                </div>
-                            )}
-                            <div className="md:col-span-2">
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ghi chú</label>
-                                <textarea
-                                    value={projectForm.description}
-                                    onChange={e => setProjectForm({ ...projectForm, description: e.target.value })}
-                                    rows={2}
-                                    placeholder="Phạm vi, địa điểm, ghi chú quản lý..."
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-orange-500 outline-none resize-none"
-                                />
+                        </div>
+
+                        <div className="px-6 py-4 border-t border-slate-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                            <button onClick={() => setShowProjectForm(false)} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 flex items-center gap-2 w-fit">
+                                <X size={15} /> Đóng
+                            </button>
+                            <div className="flex justify-end gap-2">
+                                {editingProject ? (
+                                    <button onClick={() => saveProject(true)} disabled={savingProject || !projectForm.name.trim()}
+                                        className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50">
+                                        {savingProject ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Đang lưu...</> : <><Save size={16} /> Lưu dự án</>}
+                                    </button>
+                                ) : (
+                                    <>
+                                        <button onClick={() => saveProject(false)} disabled={savingProject || !projectForm.name.trim()}
+                                            className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-teal-500 hover:bg-teal-600 shadow-lg flex items-center gap-2 disabled:opacity-50">
+                                            {savingProject ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Plus size={16} />}
+                                            Tạo dự án
+                                        </button>
+                                        <button onClick={() => saveProject(true)} disabled={savingProject || !projectForm.name.trim()}
+                                            className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50">
+                                            {savingProject ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Plus size={16} />}
+                                            Tạo và mở chi tiết
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         </div>
                     </div>
-
-                    <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
-                        <button onClick={() => setShowProjectForm(false)} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Huỷ</button>
-                        <button onClick={saveProject} disabled={savingProject || !projectForm.name.trim()}
-                            className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50">
-                            {savingProject ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Đang lưu...</> : <><Save size={16} /> Lưu dự án</>}
-                        </button>
-                    </div>
                 </div>
-            </div>
+
+                {quickCategoryKind && (
+                    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40">
+                        <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md mx-4 overflow-hidden">
+                            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                                <div className="text-base font-black text-slate-800">{categoryTitle}</div>
+                                <button onClick={() => setQuickCategoryKind(null)} className="w-8 h-8 rounded-xl hover:bg-slate-100 text-slate-400 flex items-center justify-center"><X size={16} /></button>
+                            </div>
+                            <div className="p-5 space-y-3">
+                                <div>
+                                    <label className={labelCls}>Tên</label>
+                                    <input value={quickCategoryForm.name} onChange={e => setQuickCategoryForm(prev => ({ ...prev, name: e.target.value }))}
+                                        className={inputCls} placeholder="Nhập tên danh mục" />
+                                </div>
+                                <div>
+                                    <label className={labelCls}>Mã</label>
+                                    <input value={quickCategoryForm.code} onChange={e => setQuickCategoryForm(prev => ({ ...prev, code: e.target.value }))}
+                                        className={inputCls} placeholder="Tự sinh nếu trống" />
+                                </div>
+                                <div>
+                                    <label className={labelCls}>Mô tả</label>
+                                    <textarea value={quickCategoryForm.description} onChange={e => setQuickCategoryForm(prev => ({ ...prev, description: e.target.value }))}
+                                        rows={3} className={`${inputCls} resize-none`} placeholder="Mô tả ngắn" />
+                                </div>
+                            </div>
+                            <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-2">
+                                <button onClick={() => setQuickCategoryKind(null)} className="px-4 py-2 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100">Hủy</button>
+                                <button onClick={saveQuickCategory} disabled={!quickCategoryForm.name.trim()}
+                                    className="px-5 py-2 rounded-xl text-sm font-black text-white bg-orange-500 hover:bg-orange-600 disabled:opacity-50 flex items-center gap-2">
+                                    <Plus size={14} /> Thêm
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </>
         );
     };
 
@@ -1098,6 +1554,7 @@ const ProjectDashboard: React.FC = () => {
         const budgetUsed = totalBudget > 0 ? (aggForRender.totalExpense / totalBudget * 100) : 0;
         const statusKey = financeForRender?.status || selectedProject.status || 'planning';
         const displayProgress = financeForRender ? getDisplayProgress(financeForRender) : 0;
+        const metaChips = getProjectMetaChips(selectedProject);
 
         // Chart max value
         const maxVal = Math.max(...BUDGET_CATS.map(c =>
@@ -1150,8 +1607,17 @@ const ProjectDashboard: React.FC = () => {
                             <div>
                                 <h2 className="text-2xl font-black">{selectedProject.name}</h2>
                                 <p className="text-white/70 text-sm">
-                                    {selectedSite ? `Công trường: ${selectedSite.name}` : 'Chưa liên kết công trường HRM'}
+                                    {selectedProject.code} • {selectedSite ? `Công trường: ${selectedSite.name}` : 'Chưa liên kết công trường HRM'}
                                 </p>
+                                {metaChips.length > 0 && (
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                        {metaChips.map(chip => (
+                                            <span key={chip.label} className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-white/20 text-white border border-white/20">
+                                                {chip.label}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <div className="text-right">
@@ -1488,6 +1954,7 @@ const ProjectDashboard: React.FC = () => {
                             const profit = finance ? finance.contractValue - agg.totalExpense : 0;
                             const displayProgress = finance ? getDisplayProgress(finance) : 0;
                             const status = finance?.status || project.status || 'planning';
+                            const metaChips = getProjectMetaChips(project);
 
                             return (
                                 <div key={project.id} className="flex items-center justify-between p-4 hover:bg-slate-50/50 transition-colors group">
@@ -1504,6 +1971,15 @@ const ProjectDashboard: React.FC = () => {
                                                 {site ? `Công trường: ${site.name}` : 'Chưa liên kết công trường HRM'}
                                                 {project.clientName ? ` • ${project.clientName}` : ''}
                                             </div>
+                                            {metaChips.length > 0 && (
+                                                <div className="mt-1 flex flex-wrap gap-1">
+                                                    {metaChips.map(chip => (
+                                                        <span key={chip.label} className={`px-1.5 py-0.5 rounded-md border text-[9px] font-black ${chip.tone}`}>
+                                                            {chip.label}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 

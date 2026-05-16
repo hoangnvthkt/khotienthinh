@@ -38,6 +38,10 @@ export const projectMasterService = {
     description?: string;
     clientName?: string;
     projectType?: Project['projectType'];
+    projectGroupId?: string | null;
+    projectTypeId?: string | null;
+    projectSectorId?: string | null;
+    workflowTemplateId?: string | null;
     status?: Project['status'];
     constructionSiteId?: string | null;
     managerId?: string;
@@ -55,6 +59,10 @@ export const projectMasterService = {
         description: input.description,
         clientName: input.clientName,
         projectType: input.projectType || 'construction',
+        projectGroupId: input.projectGroupId || null,
+        projectTypeId: input.projectTypeId || null,
+        projectSectorId: input.projectSectorId || null,
+        workflowTemplateId: input.workflowTemplateId || null,
         status: input.status || 'planning',
         constructionSiteId: input.constructionSiteId || null,
         managerId: input.managerId,
@@ -75,6 +83,10 @@ export const projectMasterService = {
       description: input.description || null,
       clientName: input.clientName || null,
       projectType: input.projectType || 'construction',
+      projectGroupId: input.projectGroupId || null,
+      projectTypeId: input.projectTypeId || null,
+      projectSectorId: input.projectSectorId || null,
+      workflowTemplateId: input.workflowTemplateId || null,
       status: input.status || 'planning',
       constructionSiteId: input.constructionSiteId || null,
       managerId: input.managerId || null,
@@ -103,6 +115,10 @@ export const projectMasterService = {
       description: project.description || null,
       clientName: project.clientName || null,
       projectType: project.projectType || 'construction',
+      projectGroupId: project.projectGroupId || null,
+      projectTypeId: project.projectTypeId || null,
+      projectSectorId: project.projectSectorId || null,
+      workflowTemplateId: project.workflowTemplateId || null,
       status: project.status || 'planning',
       constructionSiteId: project.constructionSiteId || null,
       managerId: project.managerId || null,
