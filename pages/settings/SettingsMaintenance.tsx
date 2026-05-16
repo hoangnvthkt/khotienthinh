@@ -1,13 +1,18 @@
 import React from 'react';
 import { AlertCircle, Trash2 } from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
+import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 
 interface SettingsMaintenanceProps {
-  triggerAction: (title: string, message: string, type: 'danger' | 'warning' | 'success', actionLabel: string, onConfirm: () => void, countdown?: boolean) => void;
-  clearAllData: () => void;
+  triggerAction: (title: string, message: string, type: 'danger' | 'warning' | 'success', actionLabel: string, onConfirm: () => void | Promise<void>, countdown?: boolean) => void;
+  clearAllData: () => Promise<void>;
 }
 
-const SettingsMaintenance: React.FC<SettingsMaintenanceProps> = ({ triggerAction, clearAllData }) => (
-  <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+const SettingsMaintenance: React.FC<SettingsMaintenanceProps> = ({ triggerAction, clearAllData }) => {
+  const toast = useToast();
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
     <div className="p-6 border-b border-slate-100 bg-red-50/30">
       <h2 className="text-lg font-bold text-red-800 flex items-center">
         <AlertCircle size={20} className="mr-2" /> Khu vực nguy hiểm
@@ -27,7 +32,15 @@ const SettingsMaintenance: React.FC<SettingsMaintenanceProps> = ({ triggerAction
               "Hành động này sẽ xóa toàn bộ vật tư và lịch sử giao dịch. Bạn sẽ không thể khôi phục lại dữ liệu này.",
               'danger',
               'XÓA VĨNH VIỄN',
-              () => { clearAllData(); alert("Đã xóa sạch dữ liệu vật tư và giao dịch."); },
+              async () => {
+                try {
+                  await clearAllData();
+                  toast.success('Đã xoá sạch dữ liệu vật tư và giao dịch');
+                } catch (error: any) {
+                  logApiError('settingsMaintenance.clearAllData', error);
+                  toast.error('Không thể xoá dữ liệu', getApiErrorMessage(error, 'Không thể xoá dữ liệu vật tư và giao dịch.'));
+                }
+              },
               true
             );
           }}
@@ -37,7 +50,8 @@ const SettingsMaintenance: React.FC<SettingsMaintenanceProps> = ({ triggerAction
         </button>
       </div>
     </div>
-  </div>
-);
+    </div>
+  );
+};
 
 export default SettingsMaintenance;

@@ -1,14 +1,15 @@
 import React from 'react';
-import { ArrowRightLeft, X, Check, AlertCircle } from 'lucide-react';
+import { ArrowRightLeft, X, Check, AlertCircle, Loader2 } from 'lucide-react';
 import { InventoryItem, Warehouse } from '../types';
 
 interface ConfirmTransferModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   sourceWarehouse?: Warehouse;
   targetWarehouse?: Warehouse;
   items: { product: InventoryItem; quantity: number }[];
+  isLoading?: boolean;
 }
 
 const ConfirmTransferModal: React.FC<ConfirmTransferModalProps> = ({ 
@@ -17,7 +18,8 @@ const ConfirmTransferModal: React.FC<ConfirmTransferModalProps> = ({
   onConfirm, 
   sourceWarehouse, 
   targetWarehouse, 
-  items 
+  items,
+  isLoading = false
 }) => {
   if (!isOpen) return null;
 
@@ -84,15 +86,17 @@ const ConfirmTransferModal: React.FC<ConfirmTransferModalProps> = ({
           <div className="grid grid-cols-2 gap-3">
             <button 
               onClick={onClose}
+              disabled={isLoading}
               className="py-3 px-4 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-colors"
             >
               Hủy thao tác
             </button>
             <button 
               onClick={onConfirm}
-              className="py-3 px-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center shadow-lg shadow-blue-500/30"
+              disabled={isLoading}
+              className="py-3 px-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center shadow-lg shadow-blue-500/30 disabled:opacity-60"
             >
-              <Check size={20} className="mr-2" /> Xác nhận chuyển
+              {isLoading ? <Loader2 size={20} className="mr-2 animate-spin" /> : <Check size={20} className="mr-2" />} {isLoading ? 'Đang gửi...' : 'Xác nhận chuyển'}
             </button>
           </div>
         </div>

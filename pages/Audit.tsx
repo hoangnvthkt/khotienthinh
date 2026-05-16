@@ -12,6 +12,7 @@ import { TransactionType, TransactionStatus, InventoryItem, Role, LossReason, LO
 import ScannerModal from '../components/ScannerModal';
 import { loadXlsx } from '../lib/loadXlsx';
 import { useModuleData } from '../hooks/useModuleData';
+import { getApiErrorMessage, logApiError } from '../lib/apiError';
 
 const Audit: React.FC = () => {
   const { items, warehouses, user, addTransaction, lossNorms, categories, auditSessions, addAuditSession } = useApp();
@@ -138,48 +139,48 @@ const Audit: React.FC = () => {
     const totalExceedNorm = sessionItems.filter(i => i.exceedsNorm).length;
     const totalLossValue = sessionItems.reduce((sum, i) => sum + (i.lossValue || 0), 0);
 
-    // Save audit session
-    const session: AuditSession = {
-      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-      warehouseId: selectedWhId,
-      warehouseName: whName,
-      date: now,
-      auditorId: user.id,
-      auditorName: user.name || user.username,
-      items: sessionItems,
-      totalItems: sessionItems.length,
-      totalDiscrepancies,
-      totalExceedNorm,
-      totalLossValue,
-      transactionId: txId
-    };
-    addAuditSession(session);
+    try {
+      // Save audit session
+      const session: AuditSession = {
+        id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        warehouseId: selectedWhId,
+        warehouseName: whName,
+        date: now,
+        auditorId: user.id,
+        auditorName: user.name || user.username,
+        items: sessionItems,
+        totalItems: sessionItems.length,
+        totalDiscrepancies,
+        totalExceedNorm,
+        totalLossValue,
+        transactionId: txId
+      };
+      await addAuditSession(session);
 
-    // Create adjustment transaction
-    const transactionItems = sessionItems.map(si => ({
-      itemId: si.itemId,
-      quantity: si.delta,
-      price: items.find(i => i.id === si.itemId)?.priceIn || 0
-    }));
+      // Create adjustment transaction
+      const transactionItems = sessionItems.map(si => ({
+        itemId: si.itemId,
+        quantity: si.delta,
+        price: items.find(i => i.id === si.itemId)?.priceIn || 0
+      }));
 
-    const reasonDetails = sessionItems
-      .filter(si => si.lossReason)
-      .map(si => `${si.itemName}: ${LOSS_REASON_LABELS[si.lossReason!]}${si.note ? ` - ${si.note}` : ''}`)
-      .join('; ');
+      const reasonDetails = sessionItems
+        .filter(si => si.lossReason)
+        .map(si => `${si.itemName}: ${LOSS_REASON_LABELS[si.lossReason!]}${si.note ? ` - ${si.note}` : ''}`)
+        .join('; ');
 
-    addTransaction({
-      id: txId,
-      type: TransactionType.ADJUSTMENT,
-      date: now,
-      items: transactionItems,
-      targetWarehouseId: selectedWhId,
-      requesterId: user.id,
-      approverId: user.id,
-      status: TransactionStatus.COMPLETED,
-      note: `Kiểm kê tại ${whName}${reasonDetails ? `. Chi tiết: ${reasonDetails}` : ''}`
-    });
+      await addTransaction({
+        id: txId,
+        type: TransactionType.ADJUSTMENT,
+        date: now,
+        items: transactionItems,
+        targetWarehouseId: selectedWhId,
+        requesterId: user.id,
+        approverId: user.id,
+        status: TransactionStatus.COMPLETED,
+        note: `Kiểm kê tại ${whName}${reasonDetails ? `. Chi tiết: ${reasonDetails}` : ''}`
+      });
 
-    setTimeout(() => {
       setIsSaving(false);
       setShowSuccess(true);
       setAuditData({});
@@ -187,7 +188,11 @@ const Audit: React.FC = () => {
       setAuditNotes({});
       toast.success('Kiểm kê thành công', 'Dữ liệu đã lưu. Xem tại tab "Lịch sử kiểm kê".');
       setTimeout(() => setShowSuccess(false), 3000);
-    }, 1000);
+    } catch (err: any) {
+      logApiError('audit.save', err);
+      toast.error('Không thể lưu kiểm kê', getApiErrorMessage(err, 'Không thể lưu phiên kiểm kê lên Supabase.'));
+      setIsSaving(false);
+    }
   };
 
   // ==================== EXCEL EXPORT ====================

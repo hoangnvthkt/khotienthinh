@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Trash2 } from 'lucide-react';
+import { AlertTriangle, Loader2, Trash2 } from 'lucide-react';
 
 interface ConfirmDeleteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   title?: string;
   /** Tên đối tượng sẽ bị xoá (hiện màu đỏ đậm) */
   targetName: string;
@@ -14,6 +14,7 @@ interface ConfirmDeleteModalProps {
   warningText?: string;
   /** Thời gian chờ trước khi nút Xoá được kích hoạt (giây, mặc định 3) */
   countdownSeconds?: number;
+  isDeleting?: boolean;
 }
 
 const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
@@ -25,6 +26,7 @@ const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
   subtitle,
   warningText = 'Hành động này không thể hoàn tác. Toàn bộ dữ liệu liên quan cũng sẽ bị xoá.',
   countdownSeconds = 3,
+  isDeleting = false,
 }) => {
   const [timeLeft, setTimeLeft] = useState(countdownSeconds);
 
@@ -81,7 +83,7 @@ const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
               Huỷ, giữ lại
             </button>
             <button
-              disabled={timeLeft > 0}
+              disabled={timeLeft > 0 || isDeleting}
               onClick={onConfirm}
               className={`flex-1 py-3 rounded-xl font-bold transition-all flex items-center justify-center ${
                 timeLeft > 0
@@ -89,7 +91,11 @@ const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
                   : 'bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-500/30'
               }`}
             >
-              {timeLeft > 0 ? (
+              {isDeleting ? (
+                <>
+                  <Loader2 size={18} className="mr-2 animate-spin" /> Đang xoá...
+                </>
+              ) : timeLeft > 0 ? (
                 <span>Chờ {timeLeft}s...</span>
               ) : (
                 <>

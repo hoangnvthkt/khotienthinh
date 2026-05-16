@@ -1,20 +1,21 @@
 
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, ShieldAlert, Trash2, Save, X, RotateCcw } from 'lucide-react';
+import { AlertTriangle, ShieldAlert, Trash2, Save, X, RotateCcw, Loader2 } from 'lucide-react';
 
 interface MasterDataConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   title: string;
   message: string;
   type: 'danger' | 'warning' | 'success';
   actionLabel: string;
   countdownRequired?: boolean;
+  isLoading?: boolean;
 }
 
 const MasterDataConfirmModal: React.FC<MasterDataConfirmModalProps> = ({ 
-  isOpen, onClose, onConfirm, title, message, type, actionLabel, countdownRequired = true 
+  isOpen, onClose, onConfirm, title, message, type, actionLabel, countdownRequired = true, isLoading = false
 }) => {
   const [timeLeft, setTimeLeft] = useState(6);
 
@@ -100,7 +101,7 @@ const MasterDataConfirmModal: React.FC<MasterDataConfirmModalProps> = ({
               <RotateCcw size={18} className="mr-2" /> Huỷ
             </button>
             <button 
-              disabled={timeLeft > 0}
+              disabled={timeLeft > 0 || isLoading}
               onClick={onConfirm}
               className={`flex-1 py-3 rounded-xl font-bold transition-all flex items-center justify-center text-white
                 ${timeLeft > 0 
@@ -108,7 +109,11 @@ const MasterDataConfirmModal: React.FC<MasterDataConfirmModalProps> = ({
                   : `${style.button} shadow-lg`
                 }`}
             >
-              {timeLeft > 0 ? (
+              {isLoading ? (
+                <>
+                  <Loader2 size={18} className="mr-2 animate-spin" /> Đang xử lý...
+                </>
+              ) : timeLeft > 0 ? (
                 <span>Đợi {timeLeft}s...</span>
               ) : (
                 <>{actionLabel}</>

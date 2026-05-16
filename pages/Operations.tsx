@@ -8,7 +8,7 @@ import {
   Plus, Trash2, ArrowRight, Save, Send, Clock,
   CheckCircle, XCircle, FileText, User, History,
   AlertTriangle, Flame, ShieldAlert, PackageSearch,
-  ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Inbox, Minus, Scale, Banknote, Lock
+  ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Inbox, Minus, Scale, Banknote, Lock, Loader2
 } from 'lucide-react';
 import ScannerModal from '../components/ScannerModal';
 import ItemSelectionModal from '../components/ItemSelectionModal';
@@ -21,6 +21,7 @@ import { usePagination } from '../hooks/usePagination';
 import { useReservedStock } from '../hooks/useReservedStock';
 import { useModuleData } from '../hooks/useModuleData';
 import { canApproveWmsTransaction, canReceiveWmsTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
+import { getApiErrorMessage, logApiError } from '../lib/apiError';
 
 const Operations: React.FC = () => {
   const location = useLocation();
@@ -60,6 +61,8 @@ const Operations: React.FC = () => {
   const [supplierId, setSupplierId] = useState(''); // Tùy chọn, không bắt buộc
   const [note, setNote] = useState('');
   const [txItems, setTxItems] = useState<TransactionItem[]>([]);
+  const [submittingTx, setSubmittingTx] = useState(false);
+  const [processingApproval, setProcessingApproval] = useState(false);
   // State lưu thông tin kế toán khi NHẬP KHO: itemId -> { accountingQty, accountingPrice }
   const [accountingData, setAccountingData] = useState<Record<string, { qty: string; price: string }>>({});
 
@@ -142,7 +145,8 @@ const Operations: React.FC = () => {
     }
   };
 
-  const executeSubmit = () => {
+  const executeSubmit = async () => {
+    if (submittingTx) return;
     // Không validate tồn kho - thủ kho được phép đề xuất bất kỳ số lượng nào
     // Chỉ validate logic kho nguồn/đích cho Chuyển kho
 
@@ -181,13 +185,21 @@ const Operations: React.FC = () => {
       supplierId: (activeTab === TransactionType.IMPORT && supplierId) ? supplierId : undefined,
     };
 
-    addTransaction(newTx);
-    setTxItems([]);
-    setAccountingData({});
-    setNote('');
-    setSupplierId('');
-    setShowConfirmTransfer(false);
-    toast.success('Đã gửi đề xuất', 'Phiếu của bạn đang chờ Admin phê duyệt.');
+    setSubmittingTx(true);
+    try {
+      await addTransaction(newTx);
+      setTxItems([]);
+      setAccountingData({});
+      setNote('');
+      setSupplierId('');
+      setShowConfirmTransfer(false);
+      toast.success('Đã gửi đề xuất', 'Phiếu của bạn đang chờ Admin phê duyệt.');
+    } catch (err: any) {
+      logApiError('operations.createTransaction', err);
+      toast.error('Không thể gửi đề xuất', getApiErrorMessage(err, 'Không thể lưu phiếu kho lên Supabase.'));
+    } finally {
+      setSubmittingTx(false);
+    }
   };
 
   const handleSubmit = () => {
@@ -198,7 +210,7 @@ const Operations: React.FC = () => {
     if (activeTab === TransactionType.TRANSFER) {
       setShowConfirmTransfer(true);
     } else {
-      executeSubmit();
+      void executeSubmit();
     }
   };
 
@@ -236,25 +248,34 @@ const Operations: React.FC = () => {
     }
   };
 
-  const handleConfirmAction = () => {
+  const handleConfirmAction = async () => {
     const tx = transactions.find(t => t.id === approvalModal.txId);
     if (!tx) return;
 
-    if (approvalModal.type === 'APPROVE') {
-      // Luồng mới: Nhập/Chuyển cần APPROVED trước khi COMPLETED
-      if (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) {
-        updateTransactionStatus(tx.id, TransactionStatus.APPROVED, user.id);
-      } else {
-        // Xuất/Hủy: Duyệt là COMPLETED luôn
-        updateTransactionStatus(tx.id, TransactionStatus.COMPLETED, user.id);
+    setProcessingApproval(true);
+    try {
+      if (approvalModal.type === 'APPROVE') {
+        // Luồng mới: Nhập/Chuyển cần APPROVED trước khi COMPLETED
+        if (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) {
+          await updateTransactionStatus(tx.id, TransactionStatus.APPROVED, user.id);
+        } else {
+          // Xuất/Hủy: Duyệt là COMPLETED luôn
+          await updateTransactionStatus(tx.id, TransactionStatus.COMPLETED, user.id);
+        }
+      } else if (approvalModal.type === 'RECEIVE') {
+        await updateTransactionStatus(tx.id, TransactionStatus.COMPLETED, user.id);
+      } else if (approvalModal.type === 'CANCEL') {
+        await updateTransactionStatus(tx.id, TransactionStatus.CANCELLED, user.id);
       }
-    } else if (approvalModal.type === 'RECEIVE') {
-      updateTransactionStatus(tx.id, TransactionStatus.COMPLETED, user.id);
-    } else if (approvalModal.type === 'CANCEL') {
-      updateTransactionStatus(tx.id, TransactionStatus.CANCELLED, user.id);
-    }
 
-    setApprovalModal(prev => ({ ...prev, isOpen: false }));
+      setApprovalModal(prev => ({ ...prev, isOpen: false }));
+      toast.success('Đã cập nhật phiếu kho');
+    } catch (err: any) {
+      logApiError('operations.updateTransactionStatus', err);
+      toast.error('Không thể cập nhật phiếu kho', getApiErrorMessage(err, 'Không thể cập nhật trạng thái phiếu kho.'));
+    } finally {
+      setProcessingApproval(false);
+    }
   };
 
   // Xác định filterWarehouseId cho ItemSelectionModal
@@ -295,7 +316,9 @@ const Operations: React.FC = () => {
       <WarningModal isOpen={warningState.isOpen} onClose={() => setWarningState(p => ({ ...p, isOpen: false }))} title={warningState.title} message={warningState.message} />
       <ConfirmTransferModal isOpen={showConfirmTransfer} onClose={() => setShowConfirmTransfer(false)} onConfirm={executeSubmit}
         sourceWarehouse={warehouses.find(w => w.id === selectedWarehouseId)} targetWarehouse={warehouses.find(w => w.id === targetWarehouseId)}
-        items={txItems.map(ti => ({ product: items.find(i => i.id === ti.itemId)!, quantity: ti.quantity }))} />
+        items={txItems.map(ti => ({ product: items.find(i => i.id === ti.itemId)!, quantity: ti.quantity }))}
+        isLoading={submittingTx}
+      />
 
       <TransactionDetailModal isOpen={!!viewingHistoryTx} onClose={() => setViewingHistoryTx(null)} transaction={viewingHistoryTx} />
 
@@ -308,6 +331,7 @@ const Operations: React.FC = () => {
         type={approvalModal.type === 'CANCEL' ? 'danger' : (approvalModal.type === 'RECEIVE' ? 'success' : 'warning')}
         actionLabel={approvalModal.type === 'APPROVE' ? 'Xác nhận Duyệt' : (approvalModal.type === 'RECEIVE' ? 'Xác nhận Nhận hàng' : 'Từ chối phiếu')}
         countdownRequired={approvalModal.type !== 'RECEIVE'}
+        isLoading={processingApproval}
       />
 
       <div className="flex justify-between items-center">
@@ -891,9 +915,10 @@ const Operations: React.FC = () => {
                 </div>
                 <button
                   onClick={handleSubmit}
-                  className="px-12 py-4 bg-accent text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-xl hover:bg-blue-700 transition-all flex items-center shadow-blue-500/20"
+                  disabled={submittingTx}
+                  className="px-12 py-4 bg-accent text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-xl hover:bg-blue-700 transition-all flex items-center shadow-blue-500/20 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <Send size={18} className="mr-2" /> Gửi đề xuất phê duyệt
+                  {submittingTx ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Send size={18} className="mr-2" />} {submittingTx ? 'Đang gửi...' : 'Gửi đề xuất phê duyệt'}
                 </button>
               </div>
             </>

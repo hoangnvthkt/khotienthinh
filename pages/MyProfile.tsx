@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import AchievementWall from '../components/AchievementWall';
+import { getApiErrorMessage, logApiError } from '../lib/apiError';
 
 type TabKey = 'personal' | 'work' | 'contact' | 'assets' | 'achievements';
 
@@ -26,6 +27,7 @@ const MyProfile: React.FC = () => {
 
     const [activeTab, setActiveTab] = useState<TabKey>('personal');
     const [isEditing, setIsEditing] = useState(false);
+    const [savingProfile, setSavingProfile] = useState(false);
 
     const employee = useMemo(() => {
         return employees.find(e => e.userId === user.id);
@@ -57,31 +59,34 @@ const MyProfile: React.FC = () => {
     };
 
     const saveEditing = async () => {
-        if (employee) {
-            updateEmployee({
-                ...employee,
-                fullName: editForm.fullName,
-                gender: editForm.gender,
-                dateOfBirth: editForm.dateOfBirth,
-                maritalStatus: editForm.maritalStatus,
-                phone: editForm.phone,
-                updatedAt: new Date().toISOString(),
-            });
-        }
-        if (editForm.fullName !== linkedUser.name || editForm.phone !== (linkedUser.phone || '')) {
-            try {
+        setSavingProfile(true);
+        try {
+            if (employee) {
+                await updateEmployee({
+                    ...employee,
+                    fullName: editForm.fullName,
+                    gender: editForm.gender,
+                    dateOfBirth: editForm.dateOfBirth,
+                    maritalStatus: editForm.maritalStatus,
+                    phone: editForm.phone,
+                    updatedAt: new Date().toISOString(),
+                });
+            }
+            if (editForm.fullName !== linkedUser.name || editForm.phone !== (linkedUser.phone || '')) {
                 await updateUser({
                     ...linkedUser,
                     name: editForm.fullName,
                     phone: editForm.phone,
                 });
-            } catch (error: any) {
-                toast.error(error?.message || 'Không thể cập nhật tài khoản.');
-                return;
             }
+            setIsEditing(false);
+            toast.success('Đã cập nhật thông tin cá nhân!');
+        } catch (error: any) {
+            logApiError('myProfile.saveEditing', error);
+            toast.error('Không thể cập nhật hồ sơ', getApiErrorMessage(error, 'Không thể cập nhật thông tin cá nhân.'));
+        } finally {
+            setSavingProfile(false);
         }
-        setIsEditing(false);
-        toast.success('Đã cập nhật thông tin cá nhân!');
     };
 
     const area = hrmAreas.find(a => a.id === employee?.areaId);
@@ -320,14 +325,14 @@ const MyProfile: React.FC = () => {
                                     </button>
                                 ) : (
                                     <>
-                                        <button onClick={cancelEditing} className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition-all border border-slate-200">
+                                        <button onClick={cancelEditing} disabled={savingProfile} className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition-all border border-slate-200 disabled:opacity-60">
                                             <X size={12} /> Hủy
                                         </button>
-                                        <button onClick={saveEditing}
-                                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 text-white shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40"
+                                        <button onClick={saveEditing} disabled={savingProfile}
+                                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 text-white shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 disabled:opacity-60"
                                             style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
                                         >
-                                            <Check size={12} /> Lưu
+                                            <Check size={12} /> {savingProfile ? 'Đang lưu...' : 'Lưu'}
                                         </button>
                                     </>
                                 )}

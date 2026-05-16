@@ -6,10 +6,19 @@ import { Mail, Shield, MapPin, MoreVertical, Plus, Phone, Trash2 } from 'lucide-
 import UserModal from '../components/UserModal';
 import DeleteUserModal from '../components/DeleteUserModal';
 import { useModuleData } from '../hooks/useModuleData';
+import { useToast } from '../context/ToastContext';
+import { useAsyncAction } from '../hooks/useAsyncAction';
 
 const UserManagement: React.FC = () => {
   const { users, warehouses, addUser, updateUser, removeUser, user: currentUser } = useApp();
   useModuleData('wms');
+  const toast = useToast();
+  const { loading: deletingUserLoading, run: runDeleteUser } = useAsyncAction({
+    successTitle: 'Đã xoá tài khoản',
+    errorTitle: 'Không thể xoá tài khoản',
+    fallbackError: 'Không thể xoá người dùng trên Supabase.',
+    logScope: 'userManagement.deleteUser',
+  });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -27,7 +36,7 @@ const UserManagement: React.FC = () => {
 
   const handleDeleteClick = (user: User) => {
     if (user.id === currentUser.id) {
-      alert("Bạn không thể tự xoá tài khoản của chính mình!");
+      toast.warning('Không thể tự xoá', 'Bạn không thể xoá tài khoản đang đăng nhập.');
       return;
     }
     setDeletingUser(user);
@@ -36,12 +45,13 @@ const UserManagement: React.FC = () => {
 
   const handleConfirmDelete = async () => {
     if (deletingUser) {
-      try {
+      const deleted = await runDeleteUser(async () => {
         await removeUser(deletingUser.id);
+        return true;
+      });
+      if (deleted) {
         setIsDeleteModalOpen(false);
         setDeletingUser(null);
-      } catch (error: any) {
-        alert(error?.message || 'Không thể xoá người dùng trên Supabase.');
       }
     }
   };
@@ -88,6 +98,7 @@ const UserManagement: React.FC = () => {
         onClose={() => setIsDeleteModalOpen(false)}
         onConfirm={handleConfirmDelete}
         targetUser={deletingUser}
+        isDeleting={deletingUserLoading}
       />
 
       <div className="flex justify-between items-center">

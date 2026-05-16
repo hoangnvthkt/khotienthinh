@@ -4,10 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { Lock, User as UserIcon, AlertCircle, Info, Eye, EyeOff, Zap } from 'lucide-react';
 import { xpService } from '../lib/xpService';
+import { useToast } from '../context/ToastContext';
+import { getApiErrorMessage, logApiError } from '../lib/apiError';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
   const { login } = useApp();
+  const toast = useToast();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -32,10 +35,15 @@ const Login: React.FC = () => {
         xpService.awardXP(loggedUser.id, 'daily_login').catch(() => {});
         navigate('/');
       } else {
-        setError('Tên đăng nhập hoặc mật khẩu không chính xác.');
+        const message = 'Tên đăng nhập hoặc mật khẩu không chính xác.';
+        setError(message);
+        toast.error('Đăng nhập thất bại', message);
       }
     } catch (err: any) {
-      setError(err.message || 'Thông tin đăng nhập không hợp lệ hoặc lỗi kết nối.');
+      logApiError('login', err);
+      const message = getApiErrorMessage(err, 'Thông tin đăng nhập không hợp lệ hoặc lỗi kết nối.');
+      setError(message);
+      toast.error('Đăng nhập thất bại', message);
     } finally {
       setIsLoading(false);
     }

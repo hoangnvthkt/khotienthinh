@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { Search, Filter, Plus, QrCode, Upload, FileSpreadsheet, Trash2, MoreHorizontal, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { Search, Filter, Plus, QrCode, Upload, FileSpreadsheet, Trash2, MoreHorizontal, ShieldAlert, AlertTriangle, Loader2 } from 'lucide-react';
 import ScannerModal from '../components/ScannerModal';
 import AddInventoryModal from '../components/AddInventoryModal';
 import InventoryDetailModal from '../components/InventoryDetailModal';
@@ -14,6 +14,7 @@ import { loadXlsx } from '../lib/loadXlsx';
 import { InventoryItem, Role, Transaction, TransactionType, TransactionStatus } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import { useModuleData } from '../hooks/useModuleData';
+import { getApiErrorMessage, logApiError } from '../lib/apiError';
 
 const Inventory: React.FC = () => {
   const location = useLocation();
@@ -46,6 +47,8 @@ const Inventory: React.FC = () => {
   const [isAddModalOpen, setAddModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [deletingItem, setDeletingItem] = useState(false);
 
   // Logic lọc vật tư theo yêu cầu bảo mật mới
   const filteredItems = useMemo(() => {
@@ -90,14 +93,23 @@ const Inventory: React.FC = () => {
     setSearchTerm(sku);
   };
 
-  const handleAddItem = (item: InventoryItem) => {
-    addItem(item);
+  const handleAddItem = async (item: InventoryItem) => {
+    await addItem(item);
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (itemToDelete) {
-      removeItem(itemToDelete.id);
-      setItemToDelete(null);
+      setDeletingItem(true);
+      try {
+        await removeItem(itemToDelete.id);
+        toast.success('Đã xoá vật tư', itemToDelete.name);
+        setItemToDelete(null);
+      } catch (err: any) {
+        logApiError('inventory.deleteItem', err);
+        toast.error('Không thể xoá vật tư', getApiErrorMessage(err, 'Không thể xoá vật tư trên Supabase.'));
+      } finally {
+        setDeletingItem(false);
+      }
     }
   };
 
@@ -119,14 +131,15 @@ const Inventory: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
+
+    setImporting(true);
+    try {
       const XLSX = await loadXlsx();
-      const bstr = evt.target?.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
       const rows = data.slice(1) as any[];
@@ -229,7 +242,7 @@ const Inventory: React.FC = () => {
       // Không gọi addItems ngay lập tức nữa
 
       // Tạo các phiếu nhập kho cho từng kho
-      Object.entries(stockRequestsByWh).forEach(([whId, itemsInWh]) => {
+      for (const [whId, itemsInWh] of Object.entries(stockRequestsByWh)) {
         // Lọc ra những metadata của các item mới có trong phiếu này
         const pendingItemsForThisTx = newItemsToCreate.filter(ni =>
           itemsInWh.some(ti => ti.itemId === ni.id)
@@ -249,12 +262,16 @@ const Inventory: React.FC = () => {
           note: `Nhập kho hàng loạt từ file Excel (${itemsInWh.length} mặt hàng)`,
           pendingItems: pendingItemsForThisTx
         };
-        addTransaction(tx);
-      });
+        await addTransaction(tx);
+      }
 
       toast.success('Import thành công', `Đã gửi ${Object.keys(stockRequestsByWh).length} yêu cầu nhập kho chờ Admin phê duyệt.`);
-    };
-    reader.readAsBinaryString(file);
+    } catch (err: any) {
+      logApiError('inventory.import', err);
+      toast.error('Import thất bại', getApiErrorMessage(err, 'Không thể import danh sách vật tư.'));
+    } finally {
+      setImporting(false);
+    }
   };
 
   return (
@@ -262,7 +279,7 @@ const Inventory: React.FC = () => {
       <ScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScan={handleScanResult} />
       <AddInventoryModal isOpen={isAddModalOpen} onClose={() => setAddModalOpen(false)} onAdd={handleAddItem} />
       <InventoryDetailModal isOpen={!!selectedItem} onClose={() => setSelectedItem(null)} item={selectedItem} />
-      <DeleteInventoryModal isOpen={!!itemToDelete} onClose={() => setItemToDelete(null)} targetItem={itemToDelete} onConfirm={handleDeleteConfirm} />
+      <DeleteInventoryModal isOpen={!!itemToDelete} onClose={() => setItemToDelete(null)} targetItem={itemToDelete} onConfirm={handleDeleteConfirm} isDeleting={deletingItem} />
 
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
         <div>
@@ -281,9 +298,10 @@ const Inventory: React.FC = () => {
               <button onClick={handleDownloadTemplate} className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition text-[10px] font-black uppercase tracking-widest">
                 <FileSpreadsheet className="w-4 h-4 mr-2 text-green-600" /> Mẫu
               </button>
-              <label className="flex-1 sm:flex-none cursor-pointer flex items-center justify-center px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition text-[10px] font-black uppercase tracking-widest">
-                <Upload className="w-4 h-4 mr-2 text-slate-500" /> Import
-                <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleFileUpload} />
+              <label className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition text-[10px] font-black uppercase tracking-widest ${importing ? 'opacity-60 pointer-events-none cursor-wait' : 'cursor-pointer'}`}>
+                {importing ? <Loader2 className="w-4 h-4 mr-2 text-slate-500 animate-spin" /> : <Upload className="w-4 h-4 mr-2 text-slate-500" />}
+                {importing ? 'Đang import...' : 'Import'}
+                <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleFileUpload} disabled={importing} />
               </label>
             </div>
           )}

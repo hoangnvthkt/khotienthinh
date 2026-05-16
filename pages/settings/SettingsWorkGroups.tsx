@@ -3,6 +3,8 @@ import { Archive, Edit2, Plus, Save, Trash2, UserPlus, Users, X } from 'lucide-r
 import { useApp } from '../../context/AppContext';
 import { WorkGroup, WorkGroupMember, WorkGroupMemberRole, WorkGroupWithMembers } from '../../types';
 import { workGroupService } from '../../lib/workGroupService';
+import { useToast } from '../../context/ToastContext';
+import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 
 const emptyGroup = (): WorkGroup => ({
   id: '',
@@ -15,6 +17,7 @@ const emptyGroup = (): WorkGroup => ({
 
 const SettingsWorkGroups: React.FC = () => {
   const { users } = useApp();
+  const toast = useToast();
   const [groups, setGroups] = useState<WorkGroupWithMembers[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [draft, setDraft] = useState<WorkGroup>(emptyGroup);
@@ -31,7 +34,8 @@ const SettingsWorkGroups: React.FC = () => {
       setGroups(rows);
       setActiveGroupId(current => current && rows.some(group => group.id === current) ? current : rows[0]?.id || null);
     } catch (error: any) {
-      alert(`Không tải được nhóm làm việc: ${error?.message || 'Lỗi không xác định'}`);
+      logApiError('settingsWorkGroups.load', error);
+      toast.error('Không tải được nhóm làm việc', getApiErrorMessage(error, 'Không tải được nhóm làm việc.'));
     } finally {
       setLoading(false);
     }
@@ -68,8 +72,10 @@ const SettingsWorkGroups: React.FC = () => {
       else await workGroupService.createGroup(draft);
       resetDraft();
       await load();
+      toast.success(editingId ? 'Đã cập nhật nhóm làm việc' : 'Đã thêm nhóm làm việc');
     } catch (error: any) {
-      alert(`Không lưu được nhóm làm việc: ${error?.message || 'Lỗi không xác định'}`);
+      logApiError('settingsWorkGroups.saveGroup', error);
+      toast.error('Không lưu được nhóm làm việc', getApiErrorMessage(error, 'Không lưu được nhóm làm việc.'));
     } finally {
       setSaving(false);
     }
@@ -79,8 +85,10 @@ const SettingsWorkGroups: React.FC = () => {
     try {
       await workGroupService.updateGroup({ ...group, isActive: !group.isActive });
       await load();
+      toast.success(group.isActive ? 'Đã ngưng sử dụng nhóm' : 'Đã kích hoạt nhóm');
     } catch (error: any) {
-      alert(`Không cập nhật trạng thái nhóm: ${error?.message || 'Lỗi không xác định'}`);
+      logApiError('settingsWorkGroups.toggleGroup', error);
+      toast.error('Không cập nhật trạng thái nhóm', getApiErrorMessage(error, 'Không cập nhật được trạng thái nhóm.'));
     }
   };
 
@@ -90,8 +98,10 @@ const SettingsWorkGroups: React.FC = () => {
       await workGroupService.removeGroup(group.id);
       if (editingId === group.id) resetDraft();
       await load();
+      toast.success('Đã xoá nhóm làm việc');
     } catch (error: any) {
-      alert(`Không xóa được nhóm làm việc: ${error?.message || 'Lỗi không xác định'}`);
+      logApiError('settingsWorkGroups.removeGroup', error);
+      toast.error('Không xoá được nhóm làm việc', getApiErrorMessage(error, 'Không xoá được nhóm làm việc.'));
     }
   };
 
@@ -102,8 +112,10 @@ const SettingsWorkGroups: React.FC = () => {
       setMemberUserId('');
       setMemberRole('member');
       await load();
+      toast.success('Đã thêm thành viên vào nhóm');
     } catch (error: any) {
-      alert(`Không thêm được thành viên: ${error?.message || 'Lỗi không xác định'}`);
+      logApiError('settingsWorkGroups.addMember', error);
+      toast.error('Không thêm được thành viên', getApiErrorMessage(error, 'Không thêm được thành viên vào nhóm.'));
     }
   };
 
@@ -111,8 +123,10 @@ const SettingsWorkGroups: React.FC = () => {
     try {
       await workGroupService.updateMember(member.id, updates);
       await load();
+      toast.success('Đã cập nhật thành viên');
     } catch (error: any) {
-      alert(`Không cập nhật được thành viên: ${error?.message || 'Lỗi không xác định'}`);
+      logApiError('settingsWorkGroups.updateMember', error);
+      toast.error('Không cập nhật được thành viên', getApiErrorMessage(error, 'Không cập nhật được thành viên.'));
     }
   };
 
@@ -122,8 +136,10 @@ const SettingsWorkGroups: React.FC = () => {
     try {
       await workGroupService.removeMember(member.id);
       await load();
+      toast.success('Đã xoá thành viên khỏi nhóm');
     } catch (error: any) {
-      alert(`Không xóa được thành viên: ${error?.message || 'Lỗi không xác định'}`);
+      logApiError('settingsWorkGroups.removeMember', error);
+      toast.error('Không xoá được thành viên', getApiErrorMessage(error, 'Không xoá được thành viên khỏi nhóm.'));
     }
   };
 

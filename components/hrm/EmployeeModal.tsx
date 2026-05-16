@@ -3,6 +3,8 @@ import { useApp } from '../../context/AppContext';
 import { Employee, LeaveBalance } from '../../types';
 import { X, Save, User as UserIcon, MapPinned, Building, Layers, HardHat, DollarSign, Calendar, Factory, FolderTree, CalendarDays, Camera, Loader2, GitBranch } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useToast } from '../../context/ToastContext';
+import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 
 interface EmployeeModalProps {
     employee: Employee | null;
@@ -11,6 +13,7 @@ interface EmployeeModalProps {
 
 const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
     const { addEmployee, updateEmployee, users, employees, warehouses, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, leaveBalances, addHrmItem, updateHrmItem } = useApp();
+    const toast = useToast();
     const [formData, setFormData] = useState<Partial<Employee>>({
         fullName: '',
         title: '',
@@ -37,6 +40,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
     });
     const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
+    const [saving, setSaving] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -47,8 +51,14 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
     }, [employee]);
 
     const handleAvatarUpload = async (file: File) => {
-        if (file.size > 2 * 1024 * 1024) { alert('Ảnh quá lớn! Tối đa 2MB.'); return; }
-        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { alert('Chỉ chấp nhận JPG, PNG, WEBP.'); return; }
+        if (file.size > 2 * 1024 * 1024) {
+            toast.warning('Ảnh quá lớn', 'Dung lượng tối đa là 2MB.');
+            return;
+        }
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+            toast.warning('File không hợp lệ', 'Chỉ chấp nhận JPG, PNG hoặc WEBP.');
+            return;
+        }
         setUploadingAvatar(true);
         try {
             const ext = file.name.split('.').pop();
@@ -59,9 +69,10 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
             const url = urlData.publicUrl;
             setAvatarPreview(url);
             setFormData(prev => ({ ...prev, avatarUrl: url }));
+            toast.success('Đã tải ảnh đại diện');
         } catch (err: any) {
-            console.error('Upload avatar error:', err);
-            alert('Lỗi upload ảnh: ' + (err.message || 'Unknown'));
+            logApiError('employeeModal.avatarUpload', err);
+            toast.error('Không thể tải ảnh đại diện', getApiErrorMessage(err, 'Không thể upload ảnh lên Supabase Storage.'));
         } finally {
             setUploadingAvatar(false);
         }
@@ -110,59 +121,71 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
         if (linkedUser.avatar) setAvatarPreview(linkedUser.avatar);
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.fullName) return;
-
-        if (employee && employee.id) {
-            updateEmployee(formData as Employee);
-        } else {
-            const newEmployee: Employee = {
-                ...formData,
-                id: crypto.randomUUID(), // Temp ID, will be overwritten by Supabase Realtime if necessary or respected
-                employeeCode: '', // Leave empty to let Supabase Sequence trigger
-            } as Employee;
-            addEmployee(newEmployee);
-            // Tạo leave balance cho nhân sự mới
-            const currentMonth = new Date().getMonth() + 1;
-            const newBalance: LeaveBalance = {
-                id: crypto.randomUUID(),
-                employeeId: newEmployee.id,
-                year: currentYear,
-                initialDays: initialDays,
-                monthlyAccrual: 1,
-                accruedDays: currentMonth, // Cộng dồn cho các tháng đã qua
-                usedPaidDays: 0,
-                usedUnpaidDays: 0,
-                lastAccrualMonth: currentMonth,
-            };
-            addHrmItem('hrm_leave_balances', newBalance);
+        if (!formData.fullName) {
+            toast.warning('Thiếu họ tên', 'Vui lòng nhập họ tên nhân sự.');
+            return;
         }
 
-        // Cập nhật leave balance nếu initialDays hoặc remainingDays thay đổi
-        if (employee && existingBalance) {
-            const newAccruedDays = remainingDays + existingBalance.usedPaidDays;
-            const hasChanges = existingBalance.initialDays !== initialDays || existingBalance.accruedDays !== newAccruedDays;
-            if (hasChanges) {
-                updateHrmItem('hrm_leave_balances', { ...existingBalance, initialDays, accruedDays: newAccruedDays });
+        setSaving(true);
+        try {
+            if (employee && employee.id) {
+                await updateEmployee(formData as Employee);
+            } else {
+                const newEmployee: Employee = {
+                    ...formData,
+                    id: crypto.randomUUID(), // Temp ID, will be overwritten by Supabase Realtime if necessary or respected
+                    employeeCode: '', // Leave empty to let Supabase Sequence trigger
+                } as Employee;
+                await addEmployee(newEmployee);
+                // Tạo leave balance cho nhân sự mới
+                const currentMonth = new Date().getMonth() + 1;
+                const newBalance: LeaveBalance = {
+                    id: crypto.randomUUID(),
+                    employeeId: newEmployee.id,
+                    year: currentYear,
+                    initialDays: initialDays,
+                    monthlyAccrual: 1,
+                    accruedDays: currentMonth, // Cộng dồn cho các tháng đã qua
+                    usedPaidDays: 0,
+                    usedUnpaidDays: 0,
+                    lastAccrualMonth: currentMonth,
+                };
+                addHrmItem('hrm_leave_balances', newBalance);
             }
-        } else if (employee && !existingBalance) {
-            // Tạo mới balance nếu chưa có
-            const currentMonth = new Date().getMonth() + 1;
-            const newBalance: LeaveBalance = {
-                id: crypto.randomUUID(),
-                employeeId: employee.id,
-                year: currentYear,
-                initialDays: initialDays,
-                monthlyAccrual: 1,
-                accruedDays: currentMonth,
-                usedPaidDays: 0,
-                usedUnpaidDays: 0,
-                lastAccrualMonth: currentMonth,
-            };
-            addHrmItem('hrm_leave_balances', newBalance);
+
+            // Cập nhật leave balance nếu initialDays hoặc remainingDays thay đổi
+            if (employee && existingBalance) {
+                const newAccruedDays = remainingDays + existingBalance.usedPaidDays;
+                const hasChanges = existingBalance.initialDays !== initialDays || existingBalance.accruedDays !== newAccruedDays;
+                if (hasChanges) {
+                    updateHrmItem('hrm_leave_balances', { ...existingBalance, initialDays, accruedDays: newAccruedDays });
+                }
+            } else if (employee && !existingBalance) {
+                // Tạo mới balance nếu chưa có
+                const currentMonth = new Date().getMonth() + 1;
+                const newBalance: LeaveBalance = {
+                    id: crypto.randomUUID(),
+                    employeeId: employee.id,
+                    year: currentYear,
+                    initialDays: initialDays,
+                    monthlyAccrual: 1,
+                    accruedDays: currentMonth,
+                    usedPaidDays: 0,
+                    usedUnpaidDays: 0,
+                    lastAccrualMonth: currentMonth,
+                };
+                addHrmItem('hrm_leave_balances', newBalance);
+            }
+            toast.success(employee ? 'Đã cập nhật hồ sơ nhân sự' : 'Đã thêm hồ sơ nhân sự');
+            onClose();
+        } catch (err: any) {
+            logApiError('employeeModal.save', err);
+            toast.error('Không thể lưu hồ sơ nhân sự', getApiErrorMessage(err, 'Không thể lưu hồ sơ nhân sự trên Supabase.'));
+        } finally {
+            setSaving(false);
         }
-        onClose();
     };
 
     return (
@@ -180,7 +203,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                             <p className="text-xs text-slate-500 font-medium">Bổ sung hoặc cập nhật thông tin nhân viên</p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all">
+                    <button onClick={onClose} disabled={saving} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all disabled:opacity-60">
                         <X size={20} />
                     </button>
                 </div>
@@ -190,8 +213,8 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                         {/* ===== AVATAR UPLOAD ===== */}
                         <div className="flex flex-col items-center gap-3">
                             <div
-                                onClick={() => fileInputRef.current?.click()}
-                                className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-indigo-400 dark:hover:border-indigo-500 cursor-pointer transition-all group bg-slate-100 dark:bg-slate-800"
+                                onClick={() => !uploadingAvatar && fileInputRef.current?.click()}
+                                className={`relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-indigo-400 dark:hover:border-indigo-500 transition-all group bg-slate-100 dark:bg-slate-800 ${uploadingAvatar ? 'cursor-wait opacity-80' : 'cursor-pointer'}`}
                             >
                                 {avatarPreview ? (
                                     <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover" />
@@ -204,7 +227,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                                     {uploadingAvatar ? <Loader2 size={20} className="text-white animate-spin" /> : <Camera size={20} className="text-white" />}
                                 </div>
                             </div>
-                            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleAvatarUpload(f); }} />
+                            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={uploadingAvatar} onChange={e => { const f = e.target.files?.[0]; if (f) handleAvatarUpload(f); }} />
                             <p className="text-[10px] text-slate-400">Click để tải ảnh đại diện (JPG, PNG, WEBP ≤ 2MB)</p>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -545,17 +568,19 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                     <button
                         type="button"
                         onClick={onClose}
-                        className="px-6 py-3 rounded-xl text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                        disabled={saving}
+                        className="px-6 py-3 rounded-xl text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors disabled:opacity-60"
                     >
                         Hủy
                     </button>
                     <button
                         type="submit"
                         form="employee-form"
-                        className="px-6 py-3 rounded-xl bg-accent hover:bg-blue-700 text-white font-bold flex items-center space-x-2 shadow-lg shadow-blue-500/30 transition-all"
+                        disabled={saving}
+                        className="px-6 py-3 rounded-xl bg-accent hover:bg-blue-700 text-white font-bold flex items-center space-x-2 shadow-lg shadow-blue-500/30 transition-all disabled:opacity-60"
                     >
-                        <Save size={18} />
-                        <span>Lưu Thông Tin</span>
+                        {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                        <span>{saving ? 'Đang lưu...' : 'Lưu Thông Tin'}</span>
                     </button>
                 </div>
             </div>

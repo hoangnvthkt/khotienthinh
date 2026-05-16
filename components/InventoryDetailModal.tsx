@@ -3,13 +3,14 @@ import React, { useMemo, useState, useEffect } from 'react';
 import {
   X, Package, MapPin, Tag, DollarSign, Ruler, ShieldAlert,
   PlusCircle, Send, Edit3, Save, RotateCcw, Trash2, Truck,
-  History, ArrowRight, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Flame, Printer
+  History, ArrowRight, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Flame, Printer, Loader2
 } from 'lucide-react';
 import { InventoryItem, Role, Transaction, TransactionType, TransactionStatus } from '../types';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import DeleteInventoryModal from './DeleteInventoryModal';
 import { QRCodeCanvas } from 'qrcode.react';
+import { getApiErrorMessage, logApiError } from '../lib/apiError';
 
 interface InventoryDetailModalProps {
   isOpen: boolean;
@@ -29,6 +30,8 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
   const [reqQty, setReqQty] = useState<number>(0);
   const [reqWarehouseId, setReqWarehouseId] = useState('');
   const [reqNote, setReqNote] = useState('');
+  const [requestSaving, setRequestSaving] = useState(false);
+  const [adminSaving, setAdminSaving] = useState(false);
 
   // State cho Chế độ sửa Admin
   const [isEditing, setIsEditing] = useState(false);
@@ -48,7 +51,7 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
     }
   }, [item, isOpen, warehouses, user]);
 
-  const handleSendRequest = () => {
+  const handleSendRequest = async () => {
     if (!item || reqQty <= 0 || !reqWarehouseId) {
       toast.error('Thiếu thông tin', 'Vui lòng nhập số lượng hợp lệ và chọn kho.');
       return;
@@ -66,25 +69,50 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
       note: `Đề xuất nhập kho trực tiếp: ${reqNote || 'Không có ghi chú'}`
     };
 
-    addTransaction(newTx);
-    logActivity('REQUEST', 'Đề xuất nhập kho', `Gửi đề xuất nhập ${reqQty} ${item.unit} "${item.name}" chờ Admin duyệt.`, 'INFO');
-    toast.success('Đã gửi đề xuất', `${reqQty} ${item.unit} "${item.name}" đang chờ Admin phê duyệt.`);
-    setShowRequestForm(false);
+    setRequestSaving(true);
+    try {
+      await addTransaction(newTx);
+      logActivity('REQUEST', 'Đề xuất nhập kho', `Gửi đề xuất nhập ${reqQty} ${item.unit} "${item.name}" chờ Admin duyệt.`, 'INFO');
+      toast.success('Đã gửi đề xuất', `${reqQty} ${item.unit} "${item.name}" đang chờ Admin phê duyệt.`);
+      setShowRequestForm(false);
+    } catch (err: any) {
+      logApiError('inventoryDetail.sendRequest', err);
+      toast.error('Không thể gửi đề xuất', getApiErrorMessage(err, 'Không thể lưu phiếu nhập kho lên Supabase.'));
+    } finally {
+      setRequestSaving(false);
+    }
   };
 
-  const handleAdminSave = () => {
+  const handleAdminSave = async () => {
     if (!item) return;
-    updateItem(editData as InventoryItem);
-    logActivity('SYSTEM', 'Sửa dữ liệu gốc', `Admin đã thay đổi thông tin vật tư "${item.name}" (${item.sku})`, 'WARNING');
-    setIsEditing(false);
-    toast.success('Cập nhật thành công', `Thông tin vật tư "${item.name}" đã được cập nhật.`);
+    setAdminSaving(true);
+    try {
+      await updateItem(editData as InventoryItem);
+      logActivity('SYSTEM', 'Sửa dữ liệu gốc', `Admin đã thay đổi thông tin vật tư "${item.name}" (${item.sku})`, 'WARNING');
+      setIsEditing(false);
+      toast.success('Cập nhật thành công', `Thông tin vật tư "${item.name}" đã được cập nhật.`);
+    } catch (err: any) {
+      logApiError('inventoryDetail.updateItem', err);
+      toast.error('Không thể cập nhật vật tư', getApiErrorMessage(err, 'Không thể cập nhật vật tư trên Supabase.'));
+    } finally {
+      setAdminSaving(false);
+    }
   };
 
-  const handleAdminDelete = () => {
+  const handleAdminDelete = async () => {
     if (item) {
-      removeItem(item.id);
-      setShowDeleteConfirm(false);
-      onClose();
+      setAdminSaving(true);
+      try {
+        await removeItem(item.id);
+        toast.success('Đã xoá vật tư', item.name);
+        setShowDeleteConfirm(false);
+        onClose();
+      } catch (err: any) {
+        logApiError('inventoryDetail.deleteItem', err);
+        toast.error('Không thể xoá vật tư', getApiErrorMessage(err, 'Không thể xoá vật tư trên Supabase.'));
+      } finally {
+        setAdminSaving(false);
+      }
     }
   };
 
@@ -136,6 +164,7 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
         onClose={() => setShowDeleteConfirm(false)}
         targetItem={item}
         onConfirm={handleAdminDelete}
+        isDeleting={adminSaving}
       />
 
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -228,15 +257,17 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                 <div className="flex gap-2">
                   <button
                     onClick={() => setIsEditing(false)}
-                    className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold flex items-center gap-1"
+                    disabled={adminSaving}
+                    className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold flex items-center gap-1 disabled:opacity-60"
                   >
                     <RotateCcw size={14} /> HỦY
                   </button>
                   <button
                     onClick={handleAdminSave}
-                    className="px-3 py-1.5 bg-orange-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-md shadow-orange-500/20"
+                    disabled={adminSaving}
+                    className="px-3 py-1.5 bg-orange-600 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-md shadow-orange-500/20 disabled:opacity-60"
                   >
-                    <Save size={14} /> LƯU THAY ĐỔI
+                    {adminSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {adminSaving ? 'ĐANG LƯU...' : 'LƯU THAY ĐỔI'}
                   </button>
                 </div>
               </div>
@@ -288,9 +319,10 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                     </div>
                     <button
                       onClick={handleSendRequest}
-                      className="w-full py-2 bg-accent text-white rounded-lg font-bold flex items-center justify-center hover:bg-blue-700"
+                      disabled={requestSaving}
+                      className="w-full py-2 bg-accent text-white rounded-lg font-bold flex items-center justify-center hover:bg-blue-700 disabled:opacity-60"
                     >
-                      <Send size={16} className="mr-2" /> Gửi đề xuất phê duyệt
+                      {requestSaving ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Send size={16} className="mr-2" />} {requestSaving ? 'Đang gửi...' : 'Gửi đề xuất phê duyệt'}
                     </button>
                   </div>
                 )}

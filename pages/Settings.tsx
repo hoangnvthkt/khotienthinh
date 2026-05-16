@@ -22,6 +22,9 @@ import SettingsChibiBot from './settings/SettingsChibiBot';
 import SettingsProjectMasterData from './settings/SettingsProjectMasterData';
 import SettingsWorkGroups from './settings/SettingsWorkGroups';
 import { useModuleData } from '../hooks/useModuleData';
+import { useToast } from '../context/ToastContext';
+import { useAsyncAction } from '../hooks/useAsyncAction';
+import { getApiErrorMessage, logApiError } from '../lib/apiError';
 
 const Settings: React.FC = () => {
   const {
@@ -41,6 +44,13 @@ const Settings: React.FC = () => {
   useModuleData('ts');
   useModuleData('ex');
   useModuleData('da');
+  const toast = useToast();
+  const { loading: deletingUserLoading, run: runDeleteUser } = useAsyncAction({
+    successTitle: 'Đã xoá tài khoản',
+    errorTitle: 'Không thể xoá tài khoản',
+    fallbackError: 'Không thể xoá người dùng trên Supabase.',
+    logScope: 'settings.deleteUser',
+  });
 
   const [activeTab, setActiveTab] = useState('general');
   const [showSignaturePad, setShowSignaturePad] = useState(false);
@@ -61,7 +71,7 @@ const Settings: React.FC = () => {
     message: string;
     type: 'danger' | 'warning' | 'success';
     actionLabel: string;
-    onConfirm: () => void;
+    onConfirm: () => void | Promise<void>;
     countdown: boolean;
   }>({
     isOpen: false, title: '', message: '', type: 'warning', actionLabel: '', onConfirm: () => { }, countdown: true
@@ -70,6 +80,8 @@ const Settings: React.FC = () => {
   // General settings form state
   const [appName, setAppName] = useState(appSettings.name);
   const [appLogo, setAppLogo] = useState(appSettings.logo);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [confirmProcessing, setConfirmProcessing] = useState(false);
 
   // Warehouse form state
   const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null);
@@ -114,7 +126,7 @@ const Settings: React.FC = () => {
     e.preventDefault();
     if (!appName.trim()) return;
     updateAppSettings({ name: appName, logo: appLogo });
-    alert("Đã cập nhật cấu hình ứng dụng!");
+    toast.success('Đã cập nhật cấu hình ứng dụng');
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -131,11 +143,15 @@ const Settings: React.FC = () => {
     const reader = new FileReader();
     reader.onload = async (event) => {
       const base64 = event.target?.result as string;
+      setAvatarUploading(true);
       try {
         await updateUser({ ...currentUser, avatar: base64 });
-        alert("Đã cập nhật ảnh đại diện thành công!");
+        toast.success('Đã cập nhật ảnh đại diện');
       } catch (error: any) {
-        alert(error?.message || 'Không thể cập nhật ảnh đại diện trên Supabase.');
+        logApiError('settings.avatarUpload', error);
+        toast.error('Không thể cập nhật ảnh đại diện', getApiErrorMessage(error, 'Không thể cập nhật ảnh đại diện trên Supabase.'));
+      } finally {
+        setAvatarUploading(false);
       }
     };
     reader.readAsDataURL(file);
@@ -198,10 +214,23 @@ const Settings: React.FC = () => {
     message: string,
     type: 'danger' | 'warning' | 'success',
     actionLabel: string,
-    onConfirm: () => void,
+    onConfirm: () => void | Promise<void>,
     countdown: boolean = true
   ) => {
     setConfirmModal({ isOpen: true, title, message, type, actionLabel, onConfirm, countdown });
+  };
+
+  const handleConfirmAction = async () => {
+    setConfirmProcessing(true);
+    try {
+      await confirmModal.onConfirm();
+      setConfirmModal(p => ({ ...p, isOpen: false }));
+    } catch (error: any) {
+      logApiError('settings.confirmAction', error);
+      toast.error('Không thể hoàn tất thao tác', getApiErrorMessage(error, 'Không thể hoàn tất thao tác. Vui lòng thử lại.'));
+    } finally {
+      setConfirmProcessing(false);
+    }
   };
 
   // CRUD for Categories
@@ -346,7 +375,7 @@ const Settings: React.FC = () => {
 
   const handleDeleteUserClick = (u: User) => {
     if (u.id === currentUser.id) {
-      alert("Bạn không thể tự xoá tài khoản của chính mình!");
+      toast.warning('Không thể tự xoá', 'Bạn không thể xoá tài khoản đang đăng nhập.');
       return;
     }
     setDeletingUser(u);
@@ -355,12 +384,13 @@ const Settings: React.FC = () => {
 
   const handleConfirmDeleteUser = async () => {
     if (deletingUser) {
-      try {
+      const deleted = await runDeleteUser(async () => {
         await removeUser(deletingUser.id);
+        return true;
+      });
+      if (deleted) {
         setIsUserDeleteModalOpen(false);
         setDeletingUser(null);
-      } catch (error: any) {
-        alert(error?.message || 'Không thể xoá người dùng trên Supabase.');
       }
     }
   };
@@ -411,7 +441,8 @@ const Settings: React.FC = () => {
       <MasterDataConfirmModal
         {...confirmModal}
         onClose={() => setConfirmModal(p => ({ ...p, isOpen: false }))}
-        onConfirm={() => { confirmModal.onConfirm(); setConfirmModal(p => ({ ...p, isOpen: false })); }}
+        onConfirm={handleConfirmAction}
+        isLoading={confirmProcessing}
       />
 
       <div className="flex justify-between items-center">
@@ -874,7 +905,10 @@ const Settings: React.FC = () => {
                                   <button type="button" onClick={() => {
                                     navigator.geolocation.getCurrentPosition(
                                       (pos) => { setNewHrmLat(String(pos.coords.latitude)); setNewHrmLng(String(pos.coords.longitude)); },
-                                      () => alert('Không thể lấy vị trí GPS'),
+                                      (error) => {
+                                        logApiError('settings.getCurrentPosition', error);
+                                        toast.error('Không thể lấy vị trí GPS', 'Vui lòng kiểm tra quyền truy cập vị trí của trình duyệt.');
+                                      },
                                       { enableHighAccuracy: true }
                                     );
                                   }} className="px-3 py-1.5 bg-blue-500 text-white rounded-xl text-[10px] font-black hover:bg-blue-600 transition flex items-center gap-1">
@@ -1014,6 +1048,7 @@ const Settings: React.FC = () => {
               handleConfirmDeleteUser={handleConfirmDeleteUser}
               handleSaveUser={handleSaveUser}
               getRoleBadge={getRoleBadge}
+              isDeletingUser={deletingUserLoading}
             />
           )}
 
@@ -1025,6 +1060,7 @@ const Settings: React.FC = () => {
                 logout={logout}
                 avatarInputRef={avatarInputRef}
                 handleAvatarUpload={handleAvatarUpload}
+                avatarUploading={avatarUploading}
               />
 
               {/* Digital Signature Section */}

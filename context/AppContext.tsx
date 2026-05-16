@@ -20,6 +20,7 @@ import {
 import { auditService } from '../lib/auditService';
 import { realtimeService, RealtimeStatus } from '../lib/realtimeService';
 import { notificationService } from '../lib/notificationService';
+import { logApiError } from '../lib/apiError';
 
 interface AppSettings {
   name: string;
@@ -117,11 +118,11 @@ interface AppContextType {
   addOrgUnit: (unit: OrgUnit) => void;
   updateOrgUnit: (unit: OrgUnit) => void;
   removeOrgUnit: (id: string) => void;
-  addItem: (item: InventoryItem) => void;
+  addItem: (item: InventoryItem) => Promise<void>;
   addItems: (items: InventoryItem[]) => void;
-  updateItem: (item: InventoryItem) => void;
-  removeItem: (itemId: string) => void;
-  addTransaction: (transaction: Transaction) => void;
+  updateItem: (item: InventoryItem) => Promise<void>;
+  removeItem: (itemId: string) => Promise<void>;
+  addTransaction: (transaction: Transaction) => Promise<void>;
   updateTransactionStatus: (id: string, status: TransactionStatus, approverId?: string) => Promise<void>;
   clearTransactionHistory: () => void;
   addWarehouse: (warehouse: Warehouse) => void;
@@ -140,11 +141,11 @@ interface AppContextType {
   updateSupplier: (supplier: Supplier) => void;
   removeSupplier: (id: string) => void;
   addEmployee: (employee: Employee) => Promise<void>;
-  updateEmployee: (employee: Employee) => void;
-  removeEmployee: (id: string) => void;
+  updateEmployee: (employee: Employee) => Promise<void>;
+  removeEmployee: (id: string) => Promise<void>;
   updateAppSettings: (settings: AppSettings) => void;
-  approvePartialTransaction: (id: string, selectedItemIds: string[], approverId: string) => void;
-  clearAllData: () => void;
+  approvePartialTransaction: (id: string, selectedItemIds: string[], approverId: string) => Promise<void>;
+  clearAllData: () => Promise<void>;
   // Digital Signature
   saveSignature: (userId: string, dataUrl: string) => Promise<boolean>;
   deleteSignature: (userId: string) => Promise<boolean>;
@@ -155,7 +156,7 @@ interface AppContextType {
   removeLossNorm: (id: string) => void;
   // Audit Sessions
   auditSessions: AuditSession[];
-  addAuditSession: (session: AuditSession) => void;
+  addAuditSession: (session: AuditSession) => Promise<void>;
   // Project Finances (DA)
   projectFinances: ProjectFinance[];
   addProjectFinance: (pf: ProjectFinance) => void;
@@ -1190,9 +1191,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const addItem = (item: InventoryItem) => {
+  const addItem = async (item: InventoryItem) => {
+    const syncOk = await syncToSupabase('items', item);
+    if (!syncOk) {
+      throw new Error('Không thể lưu vật tư lên Supabase.');
+    }
     setItems(prev => [...prev, item]);
-    syncToSupabase('items', item);
     logActivity('INVENTORY', 'Thêm vật tư', `Vật tư "${item.name}" được tạo mới`, 'SUCCESS');
     auditService.log({ tableName: 'items', recordId: item.id, action: 'INSERT', newData: item as any, userId: user.id, userName: user.name || user.username });
   };
@@ -1206,10 +1210,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const updateItem = (item: InventoryItem) => {
+  const updateItem = async (item: InventoryItem) => {
     const oldItem = items.find(i => i.id === item.id);
+    const syncOk = await syncToSupabase('items', item);
+    if (!syncOk) {
+      throw new Error('Không thể cập nhật vật tư trên Supabase.');
+    }
     setItems(prev => prev.map(i => i.id === item.id ? item : i));
-    syncToSupabase('items', item);
     auditService.log({ tableName: 'items', recordId: item.id, action: 'UPDATE', oldData: oldItem as any, newData: item as any, userId: user.id, userName: user.name || user.username });
   };
 
@@ -1217,40 +1224,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const oldItem = items.find(i => i.id === id);
     setItems(prev => prev.filter(i => i.id !== id));
     if (isSupabaseConfigured) {
-      await supabase.from('items').delete().eq('id', id);
+      const { error } = await supabase.from('items').delete().eq('id', id);
+      if (error) {
+        if (oldItem) setItems(prev => [...prev, oldItem]);
+        logApiError('removeItem', error);
+        throw error;
+      }
     }
     if (oldItem) auditService.log({ tableName: 'items', recordId: id, action: 'DELETE', oldData: oldItem as any, userId: user.id, userName: user.name || user.username });
   };
 
-  const applyStockChange = (tx: Transaction) => {
-    setItems(prevItems => {
-      const updatedItems = prevItems.map(item => {
-        const txItem = tx.items.find(ti => ti.itemId === item.id);
-        if (!txItem) return item;
+  const applyStockChange = async (tx: Transaction) => {
+    const changedItems: InventoryItem[] = [];
+    const baseItems = tx.pendingItems?.length
+      ? [
+          ...items,
+          ...tx.pendingItems.filter(pending => !items.some(item => item.id === pending.id)),
+        ]
+      : items;
 
-        const newStock = { ...item.stockByWarehouse };
-        const qty = txItem.quantity;
+    const nextItems = baseItems.map(item => {
+      const txItem = tx.items.find(ti => ti.itemId === item.id);
+      if (!txItem) return item;
 
-        if (tx.type === TransactionType.IMPORT && tx.targetWarehouseId) {
-          newStock[tx.targetWarehouseId] = (newStock[tx.targetWarehouseId] || 0) + qty;
-        } else if ((tx.type === TransactionType.EXPORT || tx.type === TransactionType.LIQUIDATION) && tx.sourceWarehouseId) {
-          newStock[tx.sourceWarehouseId] = Math.max(0, (newStock[tx.sourceWarehouseId] || 0) - qty);
-        } else if (tx.type === TransactionType.TRANSFER && tx.sourceWarehouseId && tx.targetWarehouseId) {
-          newStock[tx.sourceWarehouseId] = Math.max(0, (newStock[tx.sourceWarehouseId] || 0) - qty);
-          newStock[tx.targetWarehouseId] = (newStock[tx.targetWarehouseId] || 0) + qty;
-        } else if (tx.type === TransactionType.ADJUSTMENT && tx.targetWarehouseId) {
-          newStock[tx.targetWarehouseId] = (newStock[tx.targetWarehouseId] || 0) + qty;
-        }
+      const newStock = { ...item.stockByWarehouse };
+      const qty = txItem.quantity;
 
-        const updatedItem = { ...item, stockByWarehouse: newStock };
-        syncToSupabase('items', updatedItem);
-        return updatedItem;
-      });
-      return updatedItems;
+      if (tx.type === TransactionType.IMPORT && tx.targetWarehouseId) {
+        newStock[tx.targetWarehouseId] = (newStock[tx.targetWarehouseId] || 0) + qty;
+      } else if ((tx.type === TransactionType.EXPORT || tx.type === TransactionType.LIQUIDATION) && tx.sourceWarehouseId) {
+        newStock[tx.sourceWarehouseId] = Math.max(0, (newStock[tx.sourceWarehouseId] || 0) - qty);
+      } else if (tx.type === TransactionType.TRANSFER && tx.sourceWarehouseId && tx.targetWarehouseId) {
+        newStock[tx.sourceWarehouseId] = Math.max(0, (newStock[tx.sourceWarehouseId] || 0) - qty);
+        newStock[tx.targetWarehouseId] = (newStock[tx.targetWarehouseId] || 0) + qty;
+      } else if (tx.type === TransactionType.ADJUSTMENT && tx.targetWarehouseId) {
+        newStock[tx.targetWarehouseId] = (newStock[tx.targetWarehouseId] || 0) + qty;
+      }
+
+      const updatedItem = { ...item, stockByWarehouse: newStock };
+      changedItems.push(updatedItem);
+      return updatedItem;
     });
+
+    for (const item of changedItems) {
+      const synced = await syncToSupabase('items', item);
+      if (!synced) throw new Error(`Không thể cập nhật tồn kho cho vật tư "${item.name}".`);
+    }
+
+    setItems(nextItems);
   };
 
-  const addTransaction = (tx: Transaction) => {
+  const addTransaction = async (tx: Transaction) => {
+    if (isSupabaseConfigured) {
+      const synced = await syncToSupabase('transactions', tx);
+      if (!synced) {
+        throw new Error('Không thể lưu phiếu kho lên Supabase.');
+      }
+    }
+
     setTransactions(prev => [tx, ...prev]);
     const whId = tx.targetWarehouseId || tx.sourceWarehouseId;
 
@@ -1261,8 +1292,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     logActivity('TRANSACTION', `Tạo phiếu ${tx.type}`, `Phiếu mã ${tx.id.slice(-6)} đã được tạo`, 'INFO', whId);
-    if (tx.status === TransactionStatus.COMPLETED) applyStockChange(tx);
-    syncToSupabase('transactions', tx);
+    if (tx.status === TransactionStatus.COMPLETED) await applyStockChange(tx);
+    if (!isSupabaseConfigured) syncToSupabase('transactions', tx);
   };
 
   const updateTransactionStatus = async (id: string, status: TransactionStatus, approverId?: string) => {
@@ -1274,14 +1305,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         p_approver_id: approverId || user.id,
       });
       if (error) {
-        console.error('Error processing transaction status:', error);
-        return;
+        logApiError('updateTransactionStatus.process_transaction_status', error);
+        throw error;
       }
 
       if (data) setTransactions(prev => prev.map(t => t.id === id ? mapTransactionFromDb(data) : t));
 
       const { data: itemsData, error: itemsError } = await supabase.from('items').select('*');
-      if (itemsError) console.error('Error refreshing items after transaction:', itemsError);
+      if (itemsError) logApiError('updateTransactionStatus.refreshItems', itemsError);
       else if (itemsData) setItems(itemsData.map(mapInventoryItemFromDb));
 
       const whId = tx?.targetWarehouseId || tx?.sourceWarehouseId;
@@ -1301,7 +1332,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         logActivity('TRANSACTION', `Cập nhật phiếu`, `Phiếu mã ${tx.id.slice(-6)} chuyển sang ${status}`, status === TransactionStatus.COMPLETED ? 'SUCCESS' : 'INFO', whId);
-        if (status === TransactionStatus.COMPLETED) applyStockChange(updatedTx);
+        if (status === TransactionStatus.COMPLETED) void applyStockChange(updatedTx);
         syncToSupabase('transactions', updatedTx);
         return updatedTx;
       }
@@ -1309,40 +1340,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
-  const approvePartialTransaction = (id: string, selectedItemIds: string[], approverId: string) => {
-    setTransactions(prev => prev.map(tx => {
-      if (tx.id === id) {
-        const filteredItems = tx.items.filter(ti => selectedItemIds.includes(ti.itemId));
-        const isNeedReceipt = tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER;
-        const nextStatus = isNeedReceipt ? TransactionStatus.APPROVED : TransactionStatus.COMPLETED;
+  const approvePartialTransaction = async (id: string, selectedItemIds: string[], approverId: string) => {
+    const tx = transactions.find(t => t.id === id);
+    if (!tx) throw new Error('Không tìm thấy phiếu kho cần xử lý.');
 
-        if (tx.pendingItems && tx.pendingItems.length > 0) {
-          const selectedPendingItems = tx.pendingItems.filter(ni => selectedItemIds.includes(ni.id));
-          if (selectedPendingItems.length > 0) {
-            addItems(selectedPendingItems);
-          }
-        }
+    const filteredItems = tx.items.filter(ti => selectedItemIds.includes(ti.itemId));
+    const isNeedReceipt = tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER;
+    const nextStatus = isNeedReceipt ? TransactionStatus.APPROVED : TransactionStatus.COMPLETED;
 
-        const updatedTx = {
-          ...tx,
-          items: filteredItems,
-          status: nextStatus,
-          approverId: approverId,
-          note: selectedItemIds.length < tx.items.length
-            ? `${tx.note} (Đã lọc bớt ${tx.items.length - selectedItemIds.length} món)`
-            : tx.note,
-          pendingItems: []
-        };
-
-        const whId = tx.targetWarehouseId || tx.sourceWarehouseId;
-        logActivity('TRANSACTION', `Phê duyệt phiếu`, `Phiếu mã ${tx.id.slice(-6)} đã được phê duyệt một phần (${selectedItemIds.length}/${tx.items.length} món)`, 'SUCCESS', whId);
-
-        if (nextStatus === TransactionStatus.COMPLETED) applyStockChange(updatedTx);
-        syncToSupabase('transactions', updatedTx);
-        return updatedTx;
+    let selectedPendingItems: InventoryItem[] = [];
+    if (tx.pendingItems && tx.pendingItems.length > 0) {
+      selectedPendingItems = tx.pendingItems.filter(ni => selectedItemIds.includes(ni.id));
+      if (selectedPendingItems.length > 0) {
+        addItems(selectedPendingItems);
       }
-      return tx;
-    }));
+    }
+
+    const updatedTx = {
+      ...tx,
+      items: filteredItems,
+      status: nextStatus,
+      approverId: approverId,
+      note: selectedItemIds.length < tx.items.length
+        ? `${tx.note} (Đã lọc bớt ${tx.items.length - selectedItemIds.length} món)`
+        : tx.note,
+      pendingItems: []
+    };
+
+    const synced = await syncToSupabase('transactions', updatedTx);
+    if (!synced) {
+      throw new Error('Không thể cập nhật phiếu kho trên Supabase.');
+    }
+
+    setTransactions(prev => prev.map(item => item.id === id ? updatedTx : item));
+    const whId = tx.targetWarehouseId || tx.sourceWarehouseId;
+    logActivity('TRANSACTION', `Phê duyệt phiếu`, `Phiếu mã ${tx.id.slice(-6)} đã được phê duyệt một phần (${selectedItemIds.length}/${tx.items.length} món)`, 'SUCCESS', whId);
+
+    if (nextStatus === TransactionStatus.COMPLETED) await applyStockChange({ ...updatedTx, pendingItems: selectedPendingItems });
   };
 
   const clearTransactionHistory = async () => {
@@ -1379,7 +1413,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       logActivity('SYSTEM', 'Xóa dữ liệu', 'Toàn bộ dữ liệu vật tư và giao dịch đã được xóa sạch trên Cloud', 'DANGER');
     } catch (error) {
-      console.error("Error clearing all data:", error);
+      logApiError('clearAllData', error);
+      throw error;
     } finally {
       setIsLoading(false);
     }
@@ -1565,7 +1600,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         relatedRequestId: req.id
       };
       // addTransaction handles applying stock changes, logging the transaction, and syncing to DB
-      addTransaction(tx);
+      await addTransaction(tx);
     }
     return true;
   };
@@ -1623,8 +1658,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addEmployee = async (e: Employee) => {
-    setEmployees(prev => [...prev, e]);
-    // Dùng upsert với conflict on email để tránh 409 khi email đã tồn tại
     if (isSupabaseConfigured) {
       try {
         const payload = {
@@ -1652,20 +1685,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const { error } = await supabase
           .from('employees')
           .upsert(payload, { onConflict: 'email', ignoreDuplicates: false });
-        if (error) console.error('❌ addEmployee upsert error:', error.message);
-        else console.log('✅ addEmployee: Đã lưu hồ sơ nhân sự:', e.fullName);
+        if (error) throw error;
       } catch (err) {
-        console.error('❌ addEmployee exception:', err);
+        logApiError('addEmployee', err);
+        throw err;
       }
     }
+    setEmployees(prev => [...prev, e]);
     logActivity('SYSTEM', 'Thêm nhân sự', `Đã thêm hồ sơ nhân sự mới: ${e.fullName}`, 'SUCCESS');
     auditService.log({ tableName: 'employees', recordId: e.id, action: 'INSERT', newData: e as any, userId: user.id, userName: user.name || user.username });
   };
 
-  const updateEmployee = (e: Employee) => {
+  const updateEmployee = async (e: Employee) => {
     const oldEmp = employees.find(emp => emp.id === e.id);
+    const syncOk = await syncToSupabase('employees', e);
+    if (!syncOk) {
+      throw new Error('Không thể cập nhật hồ sơ nhân sự trên Supabase.');
+    }
     setEmployees(prev => prev.map(item => item.id === e.id ? e : item));
-    syncToSupabase('employees', e);
     logActivity('SYSTEM', 'Cập nhật nhân sự', `Đã cập nhật thông tin nhân sự: ${e.fullName}`, 'INFO');
     auditService.log({ tableName: 'employees', recordId: e.id, action: 'UPDATE', oldData: oldEmp as any, newData: e as any, userId: user.id, userName: user.name || user.username });
   };
@@ -1677,19 +1714,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (isSupabaseConfigured) {
         const { error } = await supabase.from('employees').delete().eq('id', id);
         if (error) {
-          // Restore employee back to state if delete failed
-          if (e) setEmployees(prev => [...prev, e]);
-          console.error('Error deleting employee from Supabase:', error.message);
-          alert(`Xoá nhân sự thất bại: ${error.message}`);
-          return;
+          logApiError('removeEmployee', error);
+          throw error;
         }
       }
       if (e) logActivity('SYSTEM', 'Xóa nhân sự', `Đã xóa hồ sơ nhân sự: ${e.fullName}`, 'DANGER');
     } catch (error: any) {
       // Restore employee back to state on exception
       if (e) setEmployees(prev => [...prev, e]);
-      console.error('Error deleting employee from Supabase:', error);
-      alert(`Xoá nhân sự thất bại: ${error.message || 'Lỗi không xác định'}`);
+      logApiError('removeEmployee', error);
+      throw error;
     }
   };
 
@@ -1842,12 +1876,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // ==================== AUDIT SESSIONS CRUD ====================
-  const addAuditSession = (session: AuditSession) => {
-    setAuditSessions(prev => [session, ...prev]);
+  const addAuditSession = async (session: AuditSession) => {
     if (isSupabaseConfigured) {
-      supabase.from('audit_sessions').upsert(session)
-        .then(({ error }) => { if (error) console.error('Error saving audit_session:', error); });
+      const { error } = await supabase.from('audit_sessions').upsert(session);
+      if (error) {
+        logApiError('addAuditSession', error);
+        throw error;
+      }
     }
+    setAuditSessions(prev => [session, ...prev]);
   };
 
   // ==================== PROJECT FINANCES CRUD ====================

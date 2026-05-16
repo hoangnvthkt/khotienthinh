@@ -20,6 +20,7 @@ interface SettingsUsersProps {
   handleConfirmDeleteUser: () => void | Promise<void>;
   handleSaveUser: (u: User) => void | Promise<void>;
   getRoleBadge: (role: Role) => React.ReactNode;
+  isDeletingUser?: boolean;
 }
 
 const SettingsUsers: React.FC<SettingsUsersProps> = ({
@@ -28,7 +29,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
   isUserDeleteModalOpen, setIsUserDeleteModalOpen,
   editingUser, deletingUser,
   handleAddUser, handleEditUser, handleDeleteUserClick,
-  handleConfirmDeleteUser, handleSaveUser, getRoleBadge
+  handleConfirmDeleteUser, handleSaveUser, getRoleBadge, isDeletingUser = false
 }) => (
   <>
     <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
@@ -129,6 +130,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
       onClose={() => setIsUserDeleteModalOpen(false)}
       onConfirm={handleConfirmDeleteUser}
       targetUser={deletingUser}
+      isDeleting={isDeletingUser}
     />
   </>
 );

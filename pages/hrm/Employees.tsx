@@ -10,18 +10,22 @@ import Pagination from '../../components/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import { usePermission } from '../../hooks/usePermission';
 import { loadXlsx } from '../../lib/loadXlsx';
+import { useToast } from '../../context/ToastContext';
+import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 
 const Employees: React.FC = () => {
     const { employees, users, addEmployee, removeEmployee, addHrmItem, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user } = useApp();
     const { canManage } = usePermission();
     const canCRUD = canManage('/hrm/employees');
     useModuleData('hrm');
+    const toast = useToast();
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
     const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
     const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null);
     const [importing, setImporting] = useState(false);
+    const [deleting, setDeleting] = useState(false);
     const importInputRef = useRef<HTMLInputElement>(null);
     const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => {
         return (localStorage.getItem('emp_view_mode') as 'grid' | 'table') || 'grid';
@@ -43,10 +47,19 @@ const Employees: React.FC = () => {
     const handleDelete = (emp: Employee) => {
         setDeletingEmployee(emp);
     };
-    const handleConfirmDelete = () => {
+    const handleConfirmDelete = async () => {
         if (deletingEmployee) {
-            removeEmployee(deletingEmployee.id);
-            setDeletingEmployee(null);
+            setDeleting(true);
+            try {
+                await removeEmployee(deletingEmployee.id);
+                toast.success('Đã xoá hồ sơ nhân sự', deletingEmployee.fullName);
+                setDeletingEmployee(null);
+            } catch (err: any) {
+                logApiError('employees.delete', err);
+                toast.error('Không thể xoá hồ sơ nhân sự', getApiErrorMessage(err, 'Không thể xoá hồ sơ nhân sự trên Supabase.'));
+            } finally {
+                setDeleting(false);
+            }
         }
     };
     const toggleView = (mode: 'grid' | 'table') => {
@@ -162,10 +175,10 @@ const Employees: React.FC = () => {
                 imported++;
             }
 
-            alert(`Đã import ${imported} hồ sơ nhân sự.${skipped ? ` Bỏ qua ${skipped} dòng thiếu tên hoặc trùng dữ liệu.` : ''}`);
+            toast.success('Import nhân sự thành công', `Đã import ${imported} hồ sơ.${skipped ? ` Bỏ qua ${skipped} dòng thiếu tên hoặc trùng dữ liệu.` : ''}`);
         } catch (err: any) {
-            console.error('Import employees error:', err);
-            alert(`Import nhân sự thất bại: ${err.message || 'Lỗi không xác định'}`);
+            logApiError('employees.import', err);
+            toast.error('Import nhân sự thất bại', getApiErrorMessage(err, 'Không thể import danh sách nhân sự.'));
         } finally {
             setImporting(false);
         }
@@ -432,6 +445,7 @@ const Employees: React.FC = () => {
                 subtitle={deletingEmployee ? `Mã NV: ${deletingEmployee.employeeCode}` : undefined}
                 warningText="Hành động này không thể hoàn tác. Toàn bộ dữ liệu liên quan (chấm công, phép, lương...) cũng sẽ bị xoá."
                 countdownSeconds={3}
+                isDeleting={deleting}
             />
         </div>
     );

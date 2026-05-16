@@ -1,19 +1,21 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Save, ShieldAlert, Truck, MapPin } from 'lucide-react';
+import { X, Save, ShieldAlert, Truck, MapPin, Loader2 } from 'lucide-react';
 import { InventoryItem, Role, Transaction, TransactionType, TransactionStatus } from '../types';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
+import { getApiErrorMessage, logApiError } from '../lib/apiError';
 
 interface AddInventoryModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (item: InventoryItem) => void;
+  onAdd: (item: InventoryItem) => void | Promise<void>;
 }
 
 const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, onAdd }) => {
   const { warehouses, categories, units, suppliers, user, addTransaction, logActivity } = useApp();
   const toast = useToast();
+  const [saving, setSaving] = useState(false);
 
   const [formData, setFormData] = useState({
     sku: '',
@@ -51,7 +53,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.sku || !formData.name || !formData.category || !formData.unit) {
       toast.error('Thiếu thông tin', 'Vui lòng nhập đầy đủ: Mã SKU, Tên, Danh mục, Đơn vị tính');
@@ -74,10 +76,12 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
       stockByWarehouse: {}
     };
 
-    onAdd(newItem);
+    setSaving(true);
+    try {
+      await onAdd(newItem);
 
-    // 2. Nếu có nhập số lượng ban đầu, tạo Transaction
-    if (formData.initialWarehouseId && formData.initialStock > 0) {
+      // 2. Nếu có nhập số lượng ban đầu, tạo Transaction
+      if (formData.initialWarehouseId && formData.initialStock > 0) {
       // Mọi tài khoản (kể cả Admin) đều phải qua bước duyệt phiếu khi nhập tồn kho ban đầu
       const status = TransactionStatus.PENDING;
 
@@ -93,20 +97,26 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
         note: `Nhập kho khởi tạo cho vật tư mới: ${newItem.name}`
       };
 
-      addTransaction(pendingTx);
-      logActivity('REQUEST', 'Đề xuất vật tư mới', `Tạo vật tư "${newItem.name}" và đề xuất nhập ${formData.initialStock} ${newItem.unit} vào kho.`, 'INFO');
-      toast.success('Đã tạo vật tư', `Số lượng ${formData.initialStock} ${newItem.unit} đang chờ Admin phê duyệt để vào kho.`);
-    } else {
-      logActivity('INVENTORY', 'Thêm danh mục', `Đã thêm vật tư mới "${newItem.name}" vào hệ thống.`, 'SUCCESS');
-      toast.success('Thêm vật tư thành công', `"${newItem.name}" đã được thêm vào danh mục.`);
-    }
+        await addTransaction(pendingTx);
+        logActivity('REQUEST', 'Đề xuất vật tư mới', `Tạo vật tư "${newItem.name}" và đề xuất nhập ${formData.initialStock} ${newItem.unit} vào kho.`, 'INFO');
+        toast.success('Đã tạo vật tư', `Số lượng ${formData.initialStock} ${newItem.unit} đang chờ Admin phê duyệt để vào kho.`);
+      } else {
+        logActivity('INVENTORY', 'Thêm danh mục', `Đã thêm vật tư mới "${newItem.name}" vào hệ thống.`, 'SUCCESS');
+        toast.success('Thêm vật tư thành công', `"${newItem.name}" đã được thêm vào danh mục.`);
+      }
 
-    onClose();
-    setFormData({
-      sku: '', name: '', category: '', unit: '', purchaseUnit: '', supplierId: '',
-      priceIn: 0, priceOut: 0, minStock: 0, location: '',
-      initialWarehouseId: '', initialStock: 0
-    });
+      onClose();
+      setFormData({
+        sku: '', name: '', category: '', unit: '', purchaseUnit: '', supplierId: '',
+        priceIn: 0, priceOut: 0, minStock: 0, location: '',
+        initialWarehouseId: '', initialStock: 0
+      });
+    } catch (err: any) {
+      logApiError('addInventory.save', err);
+      toast.error('Không thể thêm vật tư', getApiErrorMessage(err, 'Không thể lưu vật tư hoặc phiếu nhập kho lên Supabase.'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -302,15 +312,17 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
           <div className="mt-8 pt-4 border-t border-slate-100 flex justify-end gap-3">
             <button
               type="button" onClick={onClose}
-              className="px-6 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-slate-50 transition-colors"
+              disabled={saving}
+              className="px-6 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-slate-50 transition-colors disabled:opacity-60"
             >
               Hủy
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 bg-accent text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center shadow-lg shadow-blue-500/30"
+              disabled={saving}
+              className="px-6 py-2.5 bg-accent text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center shadow-lg shadow-blue-500/30 disabled:opacity-60"
             >
-              <Save size={18} className="mr-2" /> Lưu & Gửi đề xuất
+              {saving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />} {saving ? 'Đang lưu...' : 'Lưu & Gửi đề xuất'}
             </button>
           </div>
         </form>

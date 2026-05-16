@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Loader2, Trash2, X } from 'lucide-react';
 import { User } from '../types';
 
 interface DeleteUserModalProps {
@@ -8,9 +8,10 @@ interface DeleteUserModalProps {
   onClose: () => void;
   onConfirm: () => void | Promise<void>;
   targetUser: User | null;
+  isDeleting?: boolean;
 }
 
-const DeleteUserModal: React.FC<DeleteUserModalProps> = ({ isOpen, onClose, onConfirm, targetUser }) => {
+const DeleteUserModal: React.FC<DeleteUserModalProps> = ({ isOpen, onClose, onConfirm, targetUser, isDeleting = false }) => {
   const [timeLeft, setTimeLeft] = useState(6);
 
   useEffect(() => {
@@ -65,7 +66,7 @@ const DeleteUserModal: React.FC<DeleteUserModalProps> = ({ isOpen, onClose, onCo
               Huỷ, giữ lại
             </button>
             <button 
-              disabled={timeLeft > 0}
+              disabled={timeLeft > 0 || isDeleting}
               onClick={onConfirm}
               className={`flex-1 py-3 rounded-xl font-bold transition-all flex items-center justify-center
                 ${timeLeft > 0 
@@ -73,7 +74,11 @@ const DeleteUserModal: React.FC<DeleteUserModalProps> = ({ isOpen, onClose, onCo
                   : 'bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-500/30'
                 }`}
             >
-              {timeLeft > 0 ? (
+              {isDeleting ? (
+                <>
+                  <Loader2 size={18} className="mr-2 animate-spin" /> Đang xoá...
+                </>
+              ) : timeLeft > 0 ? (
                 <span>Chờ {timeLeft}s...</span>
               ) : (
                 <>

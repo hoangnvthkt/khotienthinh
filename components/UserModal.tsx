@@ -1,8 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, CheckCircle2, XCircle, Crown, Inbox, ChevronDown, ChevronRight, HardDrive, BookOpen, Bot, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard } from 'lucide-react';
+import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard } from 'lucide-react';
 import { Role, User, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { useToast } from '../context/ToastContext';
+import { getApiErrorMessage, logApiError } from '../lib/apiError';
 
 // Sub-app definitions per module (matches Sidebar's moduleNavMap)
 const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }[]> = {
@@ -71,6 +73,7 @@ interface UserModalProps {
 }
 
 const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEdit, warehouses }) => {
+  const toast = useToast();
   const ALL_MODULES = [
     { key: 'WMS', label: 'KHO - Vật tư', icon: Package, color: 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-700' },
     { key: 'HRM', label: 'NS - Nhân sự', icon: Briefcase, color: 'text-teal-600 bg-teal-50 border-teal-200 dark:bg-teal-900/30 dark:border-teal-700' },
@@ -99,7 +102,6 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
     if (userToEdit) {
@@ -119,16 +121,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
       });
     }
     setErrors({});
-    setToast(null);
   }, [userToEdit, isOpen]);
-
-  // Auto-hide toast after 5 seconds
-  useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(null), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [toast]);
 
   if (!isOpen) return null;
   const hasWmsAccess = formData.role === Role.ADMIN || formData.role === Role.WAREHOUSE_KEEPER || (formData.allowedModules || []).includes('WMS');
@@ -156,7 +149,6 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     if (!validate()) return;
 
     setSaving(true);
-    setToast(null);
 
     try {
       const hasPasswordChange = formData.password && formData.password.trim().length > 0;
@@ -185,11 +177,10 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
             throw new Error(result.error);
           }
           createdAuthUserId = result.userId || result.user?.id || result.id;
-
-          console.log('✅ Supabase Auth user created:', result);
         } catch (authErr: any) {
           setSaving(false);
-          setToast({ type: 'error', message: `❌ Tạo tài khoản Auth thất bại: ${authErr.message}` });
+          logApiError('userModal.createAuthUser', authErr);
+          toast.error('Tạo tài khoản đăng nhập thất bại', getApiErrorMessage(authErr, 'Không thể tạo tài khoản Auth trên Supabase.'));
           return; // Don't save user if Auth creation failed
         }
       }
@@ -218,11 +209,10 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
           if (result.error) {
             throw new Error(result.error);
           }
-
-          setToast({ type: 'success', message: `✅ Đổi mật khẩu Supabase Auth thành công cho ${formData.name}` });
         } catch (pwErr: any) {
           setSaving(false);
-          setToast({ type: 'error', message: `❌ Đổi mật khẩu thất bại: ${pwErr.message}` });
+          logApiError('userModal.resetPassword', pwErr);
+          toast.error('Không thể cập nhật thông tin đăng nhập', getApiErrorMessage(pwErr, 'Không thể đổi email hoặc mật khẩu trên Supabase Auth.'));
           return; // Don't save user if password change failed
         }
       }
@@ -247,20 +237,16 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
       await onSave(finalUser);
 
       if (!userToEdit) {
-        // New user created with Auth account
-        setToast({ type: 'success', message: `✅ Thêm tài khoản hệ thống thành công! Tài khoản đăng nhập đã được tạo tự động.` });
-        setTimeout(() => onClose(), 2500);
+        toast.success('Đã thêm tài khoản hệ thống', 'Tài khoản đăng nhập đã được tạo tự động.');
       } else if (hasPasswordChange) {
-        // Password was changed — show success toast and keep modal open for 3 seconds
-        setToast({ type: 'success', message: `✅ Đổi mật khẩu thành công cho ${formData.name}! Mật khẩu mới đã cập nhật trên Supabase Auth.` });
-        setTimeout(() => onClose(), 3000);
+        toast.success('Đã cập nhật tài khoản', 'Mật khẩu mới đã cập nhật trên Supabase Auth.');
       } else {
-        // No password change — close after brief toast
-        setToast({ type: 'success', message: '✅ Cập nhật thông tin thành công!' });
-        setTimeout(() => onClose(), 1500);
+        toast.success('Đã cập nhật tài khoản hệ thống');
       }
+      onClose();
     } catch (err: any) {
-      setToast({ type: 'error', message: `❌ Lỗi: ${err.message || 'Có lỗi xảy ra'}` });
+      logApiError('userModal.saveUser', err);
+      toast.error('Không thể lưu tài khoản', getApiErrorMessage(err, 'Không thể lưu tài khoản hệ thống.'));
     } finally {
       setSaving(false);
     }
@@ -277,16 +263,6 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
             <X size={24} />
           </button>
         </div>
-
-        {/* Toast notification */}
-        {toast && (
-          <div className={`mx-6 mt-4 p-3 rounded-xl flex items-center gap-2 text-sm font-bold animate-in slide-in-from-top-2 duration-300 ${toast.type === 'success' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-red-50 border border-red-200 text-red-700'
-            }`}>
-            {toast.type === 'success' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
-            <span className="text-xs">{toast.message}</span>
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
           {/* Họ tên */}
           <div className="space-y-1">

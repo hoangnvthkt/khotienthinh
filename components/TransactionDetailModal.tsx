@@ -1,10 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
 // Added CheckCircle to imports
-import { X, Calendar, User, Package, MapPin, Truck, ArrowRight, Tag, CheckCircle, Check, Square, CheckSquare } from 'lucide-react';
+import { X, Calendar, User, Package, MapPin, Truck, ArrowRight, Tag, CheckCircle, Check, Square, CheckSquare, Loader2 } from 'lucide-react';
 import { Transaction, TransactionStatus, TransactionType } from '../types';
 import { useApp } from '../context/AppContext';
 import { canApproveWmsTransaction } from '../lib/wmsPermissions';
+import { useToast } from '../context/ToastContext';
+import { getApiErrorMessage, logApiError } from '../lib/apiError';
 
 interface TransactionDetailModalProps {
   isOpen: boolean;
@@ -14,7 +16,9 @@ interface TransactionDetailModalProps {
 
 const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen, onClose, transaction }) => {
   const { items, warehouses, users, suppliers, user, updateTransactionStatus, approvePartialTransaction } = useApp();
+  const toast = useToast();
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
     if (transaction) {
@@ -49,22 +53,37 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
     }
   };
 
-  const handleApproveSelected = () => {
+  const handleApproveSelected = async () => {
     if (selectedItemIds.length === 0) {
-      alert("Vui lòng chọn ít nhất một vật tư để duyệt.");
+      toast.warning('Chưa chọn vật tư', 'Vui lòng chọn ít nhất một vật tư để duyệt.');
       return;
     }
 
-    approvePartialTransaction(transaction.id, selectedItemIds, user.id);
-    
-    onClose();
-    alert("Đã phê duyệt các vật tư được chọn.");
+    setProcessing(true);
+    try {
+      await approvePartialTransaction(transaction.id, selectedItemIds, user.id);
+      onClose();
+      toast.success('Đã phê duyệt vật tư', 'Các vật tư được chọn đã được xử lý.');
+    } catch (err: any) {
+      logApiError('transactionDetail.approvePartial', err);
+      toast.error('Không thể phê duyệt phiếu', getApiErrorMessage(err, 'Không thể cập nhật phiếu kho trên Supabase.'));
+    } finally {
+      setProcessing(false);
+    }
   };
 
-  const handleRejectAll = () => {
-    updateTransactionStatus(transaction.id, TransactionStatus.CANCELLED);
-    onClose();
-    alert("Đã từ chối phiếu.");
+  const handleRejectAll = async () => {
+    setProcessing(true);
+    try {
+      await updateTransactionStatus(transaction.id, TransactionStatus.CANCELLED);
+      onClose();
+      toast.success('Đã từ chối phiếu');
+    } catch (err: any) {
+      logApiError('transactionDetail.reject', err);
+      toast.error('Không thể từ chối phiếu', getApiErrorMessage(err, 'Không thể cập nhật trạng thái phiếu kho.'));
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const getStatusInfo = (status: TransactionStatus) => {
@@ -224,15 +243,17 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
               <>
                 <button 
                   onClick={handleRejectAll}
-                  className="px-6 py-2.5 bg-white border border-red-200 text-red-600 rounded-xl font-bold hover:bg-red-50 transition-all text-sm uppercase tracking-widest"
+                  disabled={processing}
+                  className="px-6 py-2.5 bg-white border border-red-200 text-red-600 rounded-xl font-bold hover:bg-red-50 transition-all text-sm uppercase tracking-widest disabled:opacity-60"
                 >
-                  Từ chối phiếu
+                  {processing ? 'Đang xử lý...' : 'Từ chối phiếu'}
                 </button>
                 <button 
                   onClick={handleApproveSelected}
-                  className="px-6 py-2.5 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-700 transition-all shadow-lg shadow-slate-900/20 text-sm uppercase tracking-widest flex items-center gap-2"
+                  disabled={processing}
+                  className="px-6 py-2.5 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-700 transition-all shadow-lg shadow-slate-900/20 text-sm uppercase tracking-widest flex items-center gap-2 disabled:opacity-60"
                 >
-                  <CheckCircle size={16} /> Duyệt {selectedItemIds.length} món
+                  {processing ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />} Duyệt {selectedItemIds.length} món
                 </button>
               </>
             )}

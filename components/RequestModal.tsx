@@ -1,12 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User } from 'lucide-react';
+import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { MaterialRequest, RequestStatus, InventoryItem, MaterialRequestFulfillmentMode } from '../types';
 import ItemSelectionModal from './ItemSelectionModal';
 import ScannerModal from './ScannerModal';
 import { useReservedStock } from '../hooks/useReservedStock';
 import { canApproveMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, isAdmin } from '../lib/wmsPermissions';
+import { useToast } from '../context/ToastContext';
+import { getApiErrorMessage, logApiError } from '../lib/apiError';
 
 interface RequestModalProps {
     isOpen: boolean;
@@ -18,6 +20,7 @@ interface RequestModalProps {
 const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, defaultSiteWarehouseId }) => {
     const { items, warehouses, user, users, addRequest, updateRequestStatus } = useApp();
     const { getStockSummary, getOnHandStock } = useReservedStock();
+    const toast = useToast();
     const [step, setStep] = useState<'CREATE' | 'APPROVE' | 'VIEW'>('CREATE');
     const [showApprovalPanel, setShowApprovalPanel] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -68,7 +71,7 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
     const handleAddItem = () => {
         if (items.length === 0) return;
         if (!sourceWarehouseId) {
-            alert("Vui lòng chọn Kho cung cấp trước khi chọn vật tư");
+            toast.warning('Thiếu kho cung cấp', 'Vui lòng chọn kho cung cấp trước khi chọn vật tư.');
             return;
         }
         setItemSelectOpen(true);
@@ -76,7 +79,7 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
 
     const handleSelectFromModal = (item: InventoryItem) => {
         if (reqItems.some(i => i.itemId === item.id)) {
-            alert("Vật tư này đã có trong danh sách đề xuất");
+            toast.warning('Vật tư đã tồn tại', 'Vật tư này đã có trong danh sách đề xuất.');
             return;
         }
         setReqItems([...reqItems, { itemId: item.id, qty: 1 }]);
@@ -97,7 +100,7 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
 
         // Ràng buộc 1: Không vượt quá tồn kho
         if (qty > sourceStock) {
-            alert(`Kho nguồn chỉ còn ${sourceStock} ${item?.unit}. Không thể duyệt vượt tồn kho.`);
+            toast.warning('Vượt tồn khả dụng', `Kho nguồn chỉ còn ${sourceStock} ${item?.unit || ''}.`);
             qty = sourceStock;
         }
 
@@ -113,7 +116,7 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
     const handleSubmitCreate = async () => {
         if (isSaving) return;
         if (!siteWarehouseId || !sourceWarehouseId || reqItems.length === 0) {
-            alert("Vui lòng chọn đầy đủ kho nhận, kho nguồn và ít nhất 1 vật tư");
+            toast.warning('Thiếu thông tin', 'Vui lòng chọn đầy đủ kho nhận, kho nguồn và ít nhất 1 vật tư.');
             return;
         }
 
@@ -148,10 +151,14 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
         try {
             const saved = await addRequest(newRequest);
             if (!saved) {
-                alert("Không lưu được phiếu đề xuất lên hệ thống. Vui lòng kiểm tra kết nối/quyền dữ liệu rồi thử lại.");
+                toast.error('Không thể gửi đề xuất', 'Không lưu được phiếu đề xuất lên hệ thống. Vui lòng thử lại.');
                 return;
             }
+            toast.success('Đã gửi đề xuất vật tư', 'Phiếu của bạn đang chờ xử lý.');
             onClose();
+        } catch (err: any) {
+            logApiError('requestModal.create', err);
+            toast.error('Không thể gửi đề xuất', getApiErrorMessage(err, 'Không lưu được phiếu đề xuất lên hệ thống.'));
         } finally {
             setIsSaving(false);
         }
@@ -180,11 +187,11 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                 .filter(line => Number(line.qty) > line.summary.available);
             if (stockShortages.length > 0) {
                 if (!isAdmin(user)) {
-                    alert('Thủ kho không thể duyệt vượt tồn khả dụng. Vui lòng giảm số lượng duyệt hoặc xử lý phiếu đang giữ chỗ trước.');
+                    toast.warning('Vượt tồn khả dụng', 'Thủ kho không thể duyệt vượt tồn khả dụng. Vui lòng giảm số lượng duyệt hoặc xử lý phiếu đang giữ chỗ trước.');
                     return;
                 }
                 if (!overrideReason.trim()) {
-                    alert('Admin duyệt vượt tồn khả dụng phải nhập lý do override.');
+                    toast.warning('Thiếu lý do override', 'Admin duyệt vượt tồn khả dụng phải nhập lý do override.');
                     return;
                 }
                 const shortageText = stockShortages.map(line => {
@@ -201,7 +208,7 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                 .map(line => ({ ...line, onHand: getOnHandStock(line.itemId, sourceWarehouseId) }))
                 .filter(line => Number(line.qty) > line.onHand);
             if (stockShortages.length > 0) {
-                alert('Tồn thực tế không đủ để xuất kho. Vui lòng kiểm tra lại tồn kho nguồn.');
+                toast.error('Không đủ tồn thực tế', 'Vui lòng kiểm tra lại tồn kho nguồn.');
                 return;
             }
         }
@@ -210,10 +217,14 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
         try {
             const saved = await updateRequestStatus(request.id, status, note, approvedItems, sourceWarehouseId, overrideReason.trim() || undefined);
             if (!saved) {
-                alert("Không cập nhật được trạng thái phiếu trên hệ thống. Vui lòng thử lại.");
+                toast.error('Không thể cập nhật phiếu', 'Không cập nhật được trạng thái phiếu trên hệ thống. Vui lòng thử lại.');
                 return;
             }
+            toast.success('Đã cập nhật phiếu', `Trạng thái mới: ${status}.`);
             onClose();
+        } catch (err: any) {
+            logApiError('requestModal.updateStatus', err);
+            toast.error('Không thể cập nhật phiếu', getApiErrorMessage(err, 'Không cập nhật được trạng thái phiếu trên hệ thống.'));
         } finally {
             setIsSaving(false);
         }
@@ -251,14 +262,14 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                                 onClick={() => handleAction(RequestStatus.REJECTED)}
                                 className="flex-1 py-4 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed transition-all flex items-center justify-center shadow-lg shadow-red-500/20"
                             >
-                                <XCircle size={20} className="mr-2" /> TỪ CHỐI
+                                {isSaving ? <Loader2 size={20} className="mr-2 animate-spin" /> : <XCircle size={20} className="mr-2" />} {isSaving ? 'ĐANG XỬ LÝ...' : 'TỪ CHỐI'}
                             </button>
                             <button
                                 disabled={isSaving}
                                 onClick={() => handleAction(RequestStatus.APPROVED)}
                                 className="flex-1 py-4 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition-all flex items-center justify-center shadow-lg shadow-emerald-500/20"
                             >
-                                <CheckCircle size={20} className="mr-2" /> PHÊ DUYỆT
+                                {isSaving ? <Loader2 size={20} className="mr-2 animate-spin" /> : <CheckCircle size={20} className="mr-2" />} {isSaving ? 'ĐANG XỬ LÝ...' : 'PHÊ DUYỆT'}
                             </button>
                         </div>
                         <button
@@ -578,7 +589,7 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
 
                         {isEditable && (
                             <button disabled={isSaving} onClick={handleSubmitCreate} className="px-6 py-2 rounded-lg bg-accent text-white font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20">
-                                <Send size={18} className="mr-2" /> Gửi đề xuất
+                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Send size={18} className="mr-2" />} {isSaving ? 'Đang gửi...' : 'Gửi đề xuất'}
                             </button>
                         )}
 
@@ -588,20 +599,20 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                                 onClick={() => setShowApprovalPanel(true)}
                                 className="px-6 py-2 rounded-lg bg-accent text-white font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20 transition-all"
                             >
-                                <AlertCircle size={18} className="mr-2" />
-                                XỬ LÝ ĐỀ XUẤT
+                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <AlertCircle size={18} className="mr-2" />}
+                                {isSaving ? 'ĐANG XỬ LÝ...' : 'XỬ LÝ ĐỀ XUẤT'}
                             </button>
                         )}
 
                         {canExport && (
                             <button disabled={isSaving} onClick={() => handleAction(RequestStatus.IN_TRANSIT)} className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-indigo-500/20">
-                                <Truck size={18} className="mr-2" /> Xác nhận xuất kho
+                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Truck size={18} className="mr-2" />} {isSaving ? 'Đang xử lý...' : 'Xác nhận xuất kho'}
                             </button>
                         )}
 
                         {canReceive && (
                             <button disabled={isSaving} onClick={() => handleAction(RequestStatus.COMPLETED)} className="px-6 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-emerald-500/20">
-                                <CheckCircle size={18} className="mr-2" /> {fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Xác nhận sử dụng' : 'Xác nhận nhận hàng'}
+                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <CheckCircle size={18} className="mr-2" />} {isSaving ? 'Đang xử lý...' : fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Xác nhận sử dụng' : 'Xác nhận nhận hàng'}
                             </button>
                         )}
                     </div>

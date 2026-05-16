@@ -3,6 +3,8 @@ import { Archive, Edit2, FolderKanban, Layers, Plus, Save, Tags, Trash2, X } fro
 import { Project, ProjectGroup, ProjectMasterCategory, ProjectSector, ProjectTypeMaster } from '../../types';
 import { projectMasterDataService } from '../../lib/projectMasterDataService';
 import { projectMasterService } from '../../lib/projectMasterService';
+import { useToast } from '../../context/ToastContext';
+import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 
 type CategoryKind = 'groups' | 'types' | 'sectors';
 type CategoryItem = ProjectGroup | ProjectTypeMaster | ProjectSector;
@@ -53,6 +55,7 @@ const colorClasses: Record<string, { icon: string; button: string; ring: string 
 };
 
 const SettingsProjectMasterData: React.FC = () => {
+  const toast = useToast();
   const [activeKind, setActiveKind] = useState<CategoryKind | null>(null);
   const [groups, setGroups] = useState<ProjectGroup[]>([]);
   const [types, setTypes] = useState<ProjectTypeMaster[]>([]);
@@ -77,7 +80,8 @@ const SettingsProjectMasterData: React.FC = () => {
       setSectors(sectorRows);
       setProjects(projectRows);
     } catch (error: any) {
-      alert(`Không tải được danh mục dự án: ${error?.message || 'Lỗi không xác định'}`);
+      logApiError('settingsProjectMasterData.load', error);
+      toast.error('Không tải được danh mục dự án', getApiErrorMessage(error, 'Không tải được danh mục dự án.'));
     } finally {
       setLoading(false);
     }
@@ -122,8 +126,10 @@ const SettingsProjectMasterData: React.FC = () => {
       }
       resetDraft();
       await load();
+      toast.success(editingId ? 'Đã cập nhật danh mục' : 'Đã thêm danh mục');
     } catch (error: any) {
-      alert(`Không lưu được danh mục: ${error?.message || 'Lỗi không xác định'}`);
+      logApiError('settingsProjectMasterData.save', error);
+      toast.error('Không lưu được danh mục', getApiErrorMessage(error, 'Không lưu được danh mục dự án.'));
     } finally {
       setSaving(false);
     }
@@ -136,8 +142,10 @@ const SettingsProjectMasterData: React.FC = () => {
       else if (kind === 'types') await projectMasterDataService.updateType(next as ProjectTypeMaster);
       else await projectMasterDataService.updateSector(next as ProjectSector);
       await load();
+      toast.success(isActive ? 'Đã kích hoạt danh mục' : 'Đã ngưng sử dụng danh mục');
     } catch (error: any) {
-      alert(`Không cập nhật trạng thái: ${error?.message || 'Lỗi không xác định'}`);
+      logApiError('settingsProjectMasterData.setActive', error);
+      toast.error('Không cập nhật trạng thái', getApiErrorMessage(error, 'Không cập nhật được trạng thái danh mục.'));
     }
   };
 
@@ -163,8 +171,10 @@ const SettingsProjectMasterData: React.FC = () => {
       }
       if (editingId === item.id) resetDraft();
       await load();
+      toast.success(used > 0 ? 'Đã ẩn danh mục' : 'Đã xoá danh mục');
     } catch (error: any) {
-      alert(`Không xử lý được danh mục: ${error?.message || 'Lỗi không xác định'}`);
+      logApiError('settingsProjectMasterData.removeOrArchive', error);
+      toast.error('Không xử lý được danh mục', getApiErrorMessage(error, 'Không xử lý được danh mục dự án.'));
     }
   };
 
