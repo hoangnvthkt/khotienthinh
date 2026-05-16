@@ -1,6 +1,7 @@
 
 export enum Role {
   ADMIN = 'ADMIN',
+  WAREHOUSE_KEEPER = 'WAREHOUSE_KEEPER',
   EMPLOYEE = 'EMPLOYEE', // Nhân viên
 }
 
@@ -33,6 +34,11 @@ export enum RequestStatus {
   COMPLETED = 'COMPLETED',   // Đã nhận hàng
   LEGACY_PENDING = 'pending',
   LEGACY_APPROVED = 'approved',
+}
+
+export enum MaterialRequestFulfillmentMode {
+  RECEIVE_TO_STOCK = 'RECEIVE_TO_STOCK',
+  DIRECT_CONSUMPTION = 'DIRECT_CONSUMPTION',
 }
 
 export type WarehouseType = 'GENERAL' | 'SITE' | 'OFFICE'; // Tổng | Công trường | Văn phòng
@@ -1057,6 +1063,7 @@ export interface AuditLog {
   userId: string;
   timestamp: string;
   note?: string;
+  overrideReason?: string;
 }
 
 // ==================== LOSS MANAGEMENT ====================
@@ -1156,6 +1163,9 @@ export interface MaterialRequest {
   date?: string;
   expectedDate: string;
   note?: string;
+  fulfillmentMode?: MaterialRequestFulfillmentMode;
+  overrideReason?: string;
+  relatedTransactionId?: string;
   logs: AuditLog[];
 }
 
@@ -1938,6 +1948,120 @@ export interface ExpenseRecord {
 
 // ==================== HD: HỢP ĐỒNG ====================
 
+export type PartnerClassification = 'owner' | 'contractor' | 'supplier';
+
+export interface BusinessPartner {
+  id: string;
+  code: string;
+  name: string;
+  ownerUserId?: string;
+  ownerName?: string;
+  createdDate?: string;
+  taxCode?: string;
+  address?: string;
+  classifications: PartnerClassification[];
+  phone?: string;
+  country?: string;
+  province?: string;
+  ward?: string;
+  email?: string;
+  website?: string;
+  bankName?: string;
+  bankAccount?: string;
+  contactName?: string;
+  contactTitle?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  isActive: boolean;
+  note?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type ContractTemplateFieldType =
+  | 'text'
+  | 'number'
+  | 'currency'
+  | 'percent'
+  | 'date'
+  | 'textarea'
+  | 'select'
+  | 'email'
+  | 'phone'
+  | 'url';
+
+export interface ContractTypeMetadata {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ContractTemplateField {
+  id: string;
+  templateId: string;
+  sectionId: string;
+  key: string;
+  label: string;
+  fieldType: ContractTemplateFieldType;
+  required: boolean;
+  placeholder?: string;
+  options?: Array<{ label: string; value: string }>;
+  defaultValue?: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ContractTemplateSection {
+  id: string;
+  templateId: string;
+  title: string;
+  description?: string;
+  sortOrder: number;
+  isActive: boolean;
+  fields?: ContractTemplateField[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ContractFormTemplate {
+  id: string;
+  contractTypeId: string;
+  name: string;
+  description?: string;
+  isDefault: boolean;
+  isActive: boolean;
+  sections?: ContractTemplateSection[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type ContractGuaranteeType = 'performance' | 'advance' | 'warranty' | 'other';
+export type ContractGuaranteeStatus = 'draft' | 'active' | 'released' | 'expired' | 'cancelled';
+
+export interface ContractGuarantee {
+  id: string;
+  contractId: string;
+  guaranteeType: ContractGuaranteeType;
+  name: string;
+  amount: number;
+  percent?: number;
+  bankName?: string;
+  guaranteeNumber?: string;
+  issueDate?: string;
+  expiryDate?: string;
+  status: ContractGuaranteeStatus;
+  note?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export type HdContractStatus =
   | 'draft'         // Nháp
   | 'negotiating'   // Đang đàm phán
@@ -1955,6 +2079,7 @@ export interface ContractAttachment {
   storagePath: string;    // Đường dẫn trong Supabase Storage
   fileType: string;       // pdf, docx, jpg...
   fileSize: number;
+  category?: 'contract' | 'other';
   uploadedAt: string;
   uploadedBy: string;
 }
@@ -1989,7 +2114,13 @@ export interface CustomerContract {
   id: string;
   code: string;                   // HD-KH-2025-001
   name: string;
-  type: 'construction' | 'supply' | 'design' | 'consulting' | 'implementation';
+  type: 'construction' | 'supply' | 'design' | 'consulting' | 'implementation' | string;
+  contractTypeId?: string;
+  ownerPartnerId?: string;
+  templateId?: string;
+  templateSnapshot?: ContractFormTemplate | null;
+  customData?: Record<string, any>;
+  counterpartySnapshot?: Partial<BusinessPartner> | null;
   customerName: string;
   customerTaxCode?: string;
   customerAddress?: string;

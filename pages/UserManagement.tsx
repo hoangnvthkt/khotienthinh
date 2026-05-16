@@ -53,6 +53,7 @@ const UserManagement: React.FC = () => {
   const getRoleBadge = (role: Role) => {
     switch (role) {
       case Role.ADMIN: return <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-[10px] font-bold">ADMIN</span>;
+      case Role.WAREHOUSE_KEEPER: return <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-[10px] font-bold">THỦ KHO</span>;
       case Role.EMPLOYEE: return <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full text-[10px] font-bold">NHÂN VIÊN</span>;
       default: return <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-[10px] font-bold">{role}</span>;
     }

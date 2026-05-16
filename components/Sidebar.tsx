@@ -7,7 +7,7 @@ import {
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
   Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
-  IdCard, Award, Trophy, Globe, Building2, HardHat
+  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import NotificationCenter from './NotificationCenter';
@@ -16,6 +16,7 @@ import { useTheme } from '../context/ThemeContext';
 import { RealtimeBadge } from './OfflineIndicator';
 import { useChat } from '../context/ChatContext';
 import { Role, TransactionStatus, RequestStatus } from '../types';
+import { canApproveMaterialRequest, canApproveWmsTransaction, canExportMaterialRequest, canReceiveMaterialRequest, canReceiveWmsTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -36,7 +37,7 @@ const MODULE_CONFIG = [
   { key: 'KB' as const, icon: BookOpen, label: 'Kho Kiến Thức', shortLabel: 'KT', gradient: 'from-amber-500 to-orange-600', shadow: 'shadow-amber-500/30', color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/30', border: 'border-amber-200 dark:border-amber-700', route: '/knowledge-base' },
   { key: 'AI' as const, icon: Bot, label: 'Trợ lý AI', shortLabel: 'AI', gradient: 'from-fuchsia-500 to-purple-600', shadow: 'shadow-fuchsia-500/30', color: 'text-fuchsia-600 dark:text-fuchsia-400', bg: 'bg-fuchsia-50 dark:bg-fuchsia-900/30', border: 'border-fuchsia-200 dark:border-fuchsia-700', route: '/ai' },
   { key: 'EP' as const, icon: IdCard, label: 'Hồ sơ NV', shortLabel: 'EP', gradient: 'from-sky-500 to-blue-600', shadow: 'shadow-sky-500/30', color: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50 dark:bg-sky-900/30', border: 'border-sky-200 dark:border-sky-700', route: '/ep' },
-  { key: 'HD' as const, icon: FileSignature, label: 'Hợp đồng', shortLabel: 'HĐ', gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/30', color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/30', border: 'border-blue-200 dark:border-blue-700', route: '/hd/supplier' },
+  { key: 'HD' as const, icon: FileSignature, label: 'Hợp đồng', shortLabel: 'HĐ', gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/30', color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/30', border: 'border-blue-200 dark:border-blue-700', route: '/hd/partners' },
 ] as const;
 
 type AppKey = typeof MODULE_CONFIG[number]['key'];
@@ -139,6 +140,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   const pendingTxCount = useMemo(() => {
     if (user.role === Role.ADMIN) return transactions.filter(t => t.status === TransactionStatus.PENDING).length;
+    if (isWarehouseKeeper(user)) {
+      return transactions.filter(t => t.status === TransactionStatus.PENDING && canApproveWmsTransaction(user, t)).length
+        + transactions.filter(t => t.status === TransactionStatus.APPROVED && canReceiveWmsTransaction(user, t)).length;
+    }
     if (user.assignedWarehouseId) {
       return transactions.filter(t => t.requesterId === user.id && t.status === TransactionStatus.PENDING).length
         + transactions.filter(t => t.targetWarehouseId === user.assignedWarehouseId && t.status === TransactionStatus.APPROVED).length;
@@ -148,6 +153,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   const pendingReqCount = useMemo(() => {
     if (user.role === Role.ADMIN) return requests.filter(r => r.status === RequestStatus.PENDING).length;
+    if (isWarehouseKeeper(user)) {
+      return requests.filter(r =>
+        (r.status === RequestStatus.PENDING && canApproveMaterialRequest(user, r)) ||
+        (r.status === RequestStatus.APPROVED && canExportMaterialRequest(user, r)) ||
+        (r.status === RequestStatus.IN_TRANSIT && canReceiveMaterialRequest(user, r)) ||
+        (r.requesterId === user.id && r.status === RequestStatus.PENDING)
+      ).length;
+    }
     if (user.assignedWarehouseId) {
       return requests.filter(r => r.requesterId === user.id && r.status === RequestStatus.PENDING).length
         + requests.filter(r =>
@@ -229,8 +242,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/ep', icon: IdCard, label: 'Tra cứu nhân viên' },
     ],
     HD: [
+      { to: '/hd/partners', icon: Handshake, label: 'Đối tác' },
+      { to: '/hd/contract-types', icon: Settings2, label: 'Loại HĐ & Mẫu' },
+      { to: '/hd/customer', icon: Users, label: 'HĐ Nhận thầu' },
       { to: '/hd/supplier', icon: Building2, label: 'HĐ Nhà cung cấp' },
-      { to: '/hd/customer', icon: Users, label: 'HĐ Khách hàng' },
       { to: '/hd/subcontractor', icon: HardHat, label: 'HĐ Thầu phụ' },
     ],
   };

@@ -50,6 +50,7 @@ interface RequestContextType {
 }
 
 const RequestContext = createContext<RequestContextType | undefined>(undefined);
+const REQUEST_INSTANCE_LIST_LIMIT = 300;
 
 // DB <-> TS mappers
 const mapCategoryFromDB = (row: any): RequestCategory => ({
@@ -106,15 +107,24 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const refreshData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const [catRes, reqRes, logRes, ptRes] = await Promise.all([
+            const [catRes, reqRes, ptRes] = await Promise.all([
                 supabase.from('request_categories').select('*').order('created_at', { ascending: false }),
-                supabase.from('request_instances').select('*').order('created_at', { ascending: false }),
-                supabase.from('request_logs').select('*').order('created_at', { ascending: true }),
+                supabase.from('request_instances').select('*').order('created_at', { ascending: false }).limit(REQUEST_INSTANCE_LIST_LIMIT),
                 supabase.from('request_print_templates').select('*').order('created_at', { ascending: false }),
             ]);
             if (catRes.data) setCategories(catRes.data.map(mapCategoryFromDB));
             if (reqRes.data) setRequests(reqRes.data.map(mapRequestFromDB));
-            if (logRes.data) setLogs(logRes.data.map(mapLogFromDB));
+            if (reqRes.data && reqRes.data.length > 0) {
+                const requestIds = reqRes.data.map((r: any) => r.id);
+                const { data: logData } = await supabase
+                    .from('request_logs')
+                    .select('*')
+                    .in('request_id', requestIds)
+                    .order('created_at', { ascending: true });
+                if (logData) setLogs(logData.map(mapLogFromDB));
+            } else {
+                setLogs([]);
+            }
             if (ptRes.data) setPrintTemplates(ptRes.data.map((r: any): RequestPrintTemplate => ({
                 id: r.id, categoryId: r.category_id, name: r.name, fileName: r.file_name,
                 storagePath: r.storage_path, createdAt: r.created_at, updatedAt: r.updated_at,
@@ -129,7 +139,7 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // Debounced refresh for realtime events
     const debouncedRefresh = useCallback(() => {
         if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
-        refreshTimeoutRef.current = setTimeout(() => refreshData(), 300);
+        refreshTimeoutRef.current = setTimeout(() => refreshData(), 1000);
     }, [refreshData]);
 
     useEffect(() => { refreshData(); }, [refreshData]);
@@ -142,7 +152,10 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
             .on('postgres_changes', { event: '*', schema: 'public', table: 'request_categories' }, () => debouncedRefresh())
             .subscribe();
 
-        return () => { supabase.removeChannel(channel); };
+        return () => {
+            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+            supabase.removeChannel(channel);
+        };
     }, [debouncedRefresh]);
 
     // ---- Helpers ----

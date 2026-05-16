@@ -52,6 +52,7 @@ interface WorkflowContextType {
 const WorkflowContext = createContext<WorkflowContextType | undefined>(undefined);
 
 const WORKFLOW_INSTANCE_LIST_SELECT = 'id, template_id, code, title, created_by, current_node_id, status, watchers, created_at, updated_at';
+const WORKFLOW_INSTANCE_LIST_LIMIT = 300;
 
 // DB snake_case <-> TS camelCase mappers
 const mapTemplateFromDB = (row: any): WorkflowTemplate => ({
@@ -130,19 +131,28 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const refreshData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const [tRes, nRes, eRes, iRes, lRes, ptRes] = await Promise.all([
+            const [tRes, nRes, eRes, iRes, ptRes] = await Promise.all([
                 supabase.from('workflow_templates').select('*').order('created_at', { ascending: false }),
                 supabase.from('workflow_nodes').select('*'),
                 supabase.from('workflow_edges').select('*'),
-                supabase.from('workflow_instances').select(WORKFLOW_INSTANCE_LIST_SELECT).order('created_at', { ascending: false }),
-                supabase.from('workflow_instance_logs').select('*').order('created_at', { ascending: true }),
+                supabase.from('workflow_instances').select(WORKFLOW_INSTANCE_LIST_SELECT).order('created_at', { ascending: false }).limit(WORKFLOW_INSTANCE_LIST_LIMIT),
                 supabase.from('workflow_print_templates').select('*').order('created_at', { ascending: false }),
             ]);
             if (tRes.data) setTemplates(tRes.data.map(mapTemplateFromDB));
             if (nRes.data) setNodes(nRes.data.map(mapNodeFromDB));
             if (eRes.data) setEdges(eRes.data.map(mapEdgeFromDB));
             if (iRes.data) setInstances(iRes.data.map(mapInstanceFromDB));
-            if (lRes.data) setLogs(lRes.data.map(mapLogFromDB));
+            if (iRes.data && iRes.data.length > 0) {
+                const instanceIds = iRes.data.map((i: any) => i.id);
+                const { data: logData } = await supabase
+                    .from('workflow_instance_logs')
+                    .select('*')
+                    .in('instance_id', instanceIds)
+                    .order('created_at', { ascending: true });
+                if (logData) setLogs(logData.map(mapLogFromDB));
+            } else {
+                setLogs([]);
+            }
             if (ptRes.data) setPrintTemplates(ptRes.data.map(mapPrintTemplateFromDB));
         } catch (err) {
             console.error('WorkflowContext fetch error:', err);

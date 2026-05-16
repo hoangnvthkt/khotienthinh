@@ -1,31 +1,31 @@
-
 import { useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { TransactionStatus, TransactionType } from '../types';
+import { RequestStatus, TransactionStatus, TransactionType } from '../types';
 
-/**
- * Reserved Stock Hook — Tính toán tồn giữ chỗ và tồn khả dụng
- *
- * Tồn giữ chỗ (Reserved): Tổng số lượng đang bị chiếm bởi các phiếu
- *   EXPORT / TRANSFER / LIQUIDATION ở trạng thái PENDING hoặc APPROVED.
- *
- * Tồn khả dụng (Available) = On-hand - Reserved
- */
+interface ReservationOptions {
+  excludeRequestId?: string;
+  excludeTransactionId?: string;
+}
+
+interface ReservationEntry {
+  itemId: string;
+  warehouseId: string;
+  quantity: number;
+  level: 'soft' | 'hard';
+  sourceType: 'transaction' | 'request';
+  sourceId: string;
+}
+
 export function useReservedStock() {
-  const { items, transactions } = useApp();
+  const { items, transactions, requests } = useApp();
 
-  /**
-   * Map: { `${itemId}::${warehouseId}` → reservedQty }
-   * Được tính 1 lần, tái sử dụng qua các lần gọi.
-   */
-  const reservedMap = useMemo(() => {
-    const map: Record<string, number> = {};
+  const reservations = useMemo<ReservationEntry[]>(() => {
+    const entries: ReservationEntry[] = [];
 
     transactions
       .filter(
         tx =>
-          (tx.status === TransactionStatus.PENDING ||
-            tx.status === TransactionStatus.APPROVED) &&
+          (tx.status === TransactionStatus.PENDING || tx.status === TransactionStatus.APPROVED) &&
           (tx.type === TransactionType.EXPORT ||
             tx.type === TransactionType.TRANSFER ||
             tx.type === TransactionType.LIQUIDATION) &&
@@ -33,47 +33,71 @@ export function useReservedStock() {
       )
       .forEach(tx => {
         tx.items.forEach(ti => {
-          const key = `${ti.itemId}::${tx.sourceWarehouseId}`;
-          map[key] = (map[key] || 0) + ti.quantity;
+          entries.push({
+            itemId: ti.itemId,
+            warehouseId: tx.sourceWarehouseId!,
+            quantity: Number(ti.quantity) || 0,
+            level: 'hard',
+            sourceType: 'transaction',
+            sourceId: tx.id,
+          });
         });
       });
 
-    return map;
-  }, [transactions]);
+    requests
+      .filter(req =>
+        !!req.sourceWarehouseId &&
+        (req.status === RequestStatus.PENDING ||
+          req.status === RequestStatus.APPROVED ||
+          req.status === RequestStatus.IN_TRANSIT)
+      )
+      .forEach(req => {
+        const level: 'soft' | 'hard' = req.status === RequestStatus.PENDING ? 'soft' : 'hard';
+        req.items.forEach(ri => {
+          const quantity = level === 'soft' ? ri.requestQty : ri.approvedQty;
+          if (!quantity || quantity <= 0) return;
+          entries.push({
+            itemId: ri.itemId,
+            warehouseId: req.sourceWarehouseId!,
+            quantity: Number(quantity) || 0,
+            level,
+            sourceType: 'request',
+            sourceId: req.id,
+          });
+        });
+      });
 
-  /**
-   * Số lượng đang bị giữ chỗ của 1 item trong 1 kho
-   */
-  const getReservedQty = (itemId: string, warehouseId: string): number => {
-    return reservedMap[`${itemId}::${warehouseId}`] || 0;
+    return entries;
+  }, [transactions, requests]);
+
+  const getEntries = (itemId: string, warehouseId: string, options: ReservationOptions = {}) => {
+    return reservations.filter(entry => {
+      if (entry.itemId !== itemId || entry.warehouseId !== warehouseId) return false;
+      if (options.excludeRequestId && entry.sourceType === 'request' && entry.sourceId === options.excludeRequestId) return false;
+      if (options.excludeTransactionId && entry.sourceType === 'transaction' && entry.sourceId === options.excludeTransactionId) return false;
+      return true;
+    });
   };
 
-  /**
-   * Tồn thực tế (On-hand) từ stockByWarehouse
-   */
+  const getReservedQty = (itemId: string, warehouseId: string, options?: ReservationOptions): number => {
+    return getEntries(itemId, warehouseId, options).reduce((sum, entry) => sum + entry.quantity, 0);
+  };
+
   const getOnHandStock = (itemId: string, warehouseId: string): number => {
     const item = items.find(i => i.id === itemId);
     return item?.stockByWarehouse[warehouseId] || 0;
   };
 
-  /**
-   * Tồn khả dụng = On-hand - Reserved (không âm)
-   */
-  const getAvailableStock = (itemId: string, warehouseId: string): number => {
+  const getAvailableStock = (itemId: string, warehouseId: string, options?: ReservationOptions): number => {
     const onHand = getOnHandStock(itemId, warehouseId);
-    const reserved = getReservedQty(itemId, warehouseId);
+    const reserved = getReservedQty(itemId, warehouseId, options);
     return Math.max(0, onHand - reserved);
   };
 
-  /**
-   * Danh sách các phiếu đang giữ chỗ của 1 item trong 1 kho
-   * Dùng để hiển thị tooltip chi tiết khi hover cảnh báo
-   */
   const getConflictingTxs = (itemId: string, warehouseId: string) => {
     return transactions.filter(
       tx =>
-        (tx.status === TransactionStatus.PENDING ||
-          tx.status === TransactionStatus.APPROVED) &&
+        (tx.status === TransactionStatus.PENDING || tx.status === TransactionStatus.APPROVED) &&
         (tx.type === TransactionType.EXPORT ||
           tx.type === TransactionType.TRANSFER ||
           tx.type === TransactionType.LIQUIDATION) &&
@@ -82,19 +106,25 @@ export function useReservedStock() {
     );
   };
 
-  /**
-   * Tổng hợp cho 1 item: { onHand, reserved, available, hasConflict }
-   */
-  const getStockSummary = (itemId: string, warehouseId: string) => {
+  const getReservationDetails = (itemId: string, warehouseId: string, options?: ReservationOptions) => {
+    return getEntries(itemId, warehouseId, options);
+  };
+
+  const getStockSummary = (itemId: string, warehouseId: string, options?: ReservationOptions) => {
     const onHand = getOnHandStock(itemId, warehouseId);
-    const reserved = getReservedQty(itemId, warehouseId);
+    const entries = getEntries(itemId, warehouseId, options);
+    const softReserved = entries.filter(entry => entry.level === 'soft').reduce((sum, entry) => sum + entry.quantity, 0);
+    const hardReserved = entries.filter(entry => entry.level === 'hard').reduce((sum, entry) => sum + entry.quantity, 0);
+    const reserved = softReserved + hardReserved;
     const available = Math.max(0, onHand - reserved);
     return {
       onHand,
+      softReserved,
+      hardReserved,
       reserved,
       available,
       hasConflict: reserved > 0,
-      isCritical: available === 0 && onHand > 0, // Bị chiếm hết
+      isCritical: available === 0 && onHand > 0,
     };
   };
 
@@ -103,6 +133,7 @@ export function useReservedStock() {
     getOnHandStock,
     getAvailableStock,
     getConflictingTxs,
+    getReservationDetails,
     getStockSummary,
   };
 }

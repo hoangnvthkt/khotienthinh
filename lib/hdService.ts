@@ -19,6 +19,8 @@ const mapKeys = (obj: any, fn: (k: string) => string): any => {
 };
 const toDb = (obj: any) => mapKeys(obj, toSnake);
 const fromDb = (obj: any) => mapKeys(obj, toCamel);
+const cleanUndefined = <T extends Record<string, any>>(value: T): T =>
+  Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
 
 // ==================== HĐ KHÁCH HÀNG ====================
 export const customerContractService = {
@@ -42,9 +44,22 @@ export const customerContractService = {
   },
 
   async upsert(item: CustomerContract): Promise<void> {
+    const payload = cleanUndefined(toDb({
+      ...item,
+      updatedAt: new Date().toISOString(),
+      createdAt: item.createdAt,
+    }));
     const { error } = await supabase
       .from('customer_contracts')
-      .upsert(toDb(item), { onConflict: 'id' });
+      .upsert(payload, { onConflict: 'id' });
+    if (error) throw error;
+  },
+
+  async updateAttachments(id: string, attachments: CustomerContract['attachments']): Promise<void> {
+    const { error } = await supabase
+      .from('customer_contracts')
+      .update({ attachments, updated_at: new Date().toISOString() })
+      .eq('id', id);
     if (error) throw error;
   },
 
@@ -81,7 +96,7 @@ export const subcontractorContractService = {
   async upsert(item: SubcontractorContract): Promise<void> {
     const { error } = await supabase
       .from('subcontractor_contracts')
-      .upsert(toDb(item), { onConflict: 'id' });
+      .upsert(cleanUndefined(toDb(item)), { onConflict: 'id' });
     if (error) throw error;
   },
 
@@ -108,7 +123,7 @@ export const supplierContractService = {
   async upsert(item: SupplierContract): Promise<void> {
     const { error } = await supabase
       .from('supplier_contracts')
-      .upsert(toDb(item), { onConflict: 'id' });
+      .upsert(cleanUndefined(toDb(item)), { onConflict: 'id' });
     if (error) throw error;
   },
 

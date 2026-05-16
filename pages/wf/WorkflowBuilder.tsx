@@ -516,6 +516,7 @@ const WorkflowBuilder: React.FC = () => {
                                                     >
                                                         <option value="">-- Không chỉ định --</option>
                                                         <option value={Role.ADMIN}>Quản trị</option>
+                                                        <option value={Role.WAREHOUSE_KEEPER}>Thủ kho</option>
                                                         <option value={Role.EMPLOYEE}>Nhân viên</option>
                                                     </select>
                                                 </div>

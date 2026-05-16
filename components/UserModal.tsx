@@ -142,6 +142,9 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
       newErrors.password = 'Mật khẩu phải có ít nhất 6 ký tự';
     }
     if (!formData.role) newErrors.role = 'Vui lòng chọn chức vụ';
+    if (formData.role === Role.WAREHOUSE_KEEPER && !formData.assignedWarehouseId) {
+      newErrors.assignedWarehouseId = 'Thủ kho phải được gán kho quản lý';
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -371,6 +374,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                 className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-accent bg-white"
               >
                 <option value={Role.ADMIN}>Quản trị viên (Toàn quyền)</option>
+                <option value={Role.WAREHOUSE_KEEPER}>Thủ kho</option>
                 <option value={Role.EMPLOYEE}>Nhân viên</option>
               </select>
             </div>
@@ -390,6 +394,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                   <option key={w.id} value={w.id}>{w.name}</option>
                 ))}
               </select>
+              {errors.assignedWarehouseId && <p className="text-[10px] text-red-500 font-bold">{errors.assignedWarehouseId}</p>}
             </div>
           </div>
 

@@ -2,8 +2,9 @@
 import React, { useState, useEffect } from 'react';
 // Added CheckCircle to imports
 import { X, Calendar, User, Package, MapPin, Truck, ArrowRight, Tag, CheckCircle, Check, Square, CheckSquare } from 'lucide-react';
-import { Transaction, TransactionStatus, TransactionType, Role } from '../types';
+import { Transaction, TransactionStatus, TransactionType } from '../types';
 import { useApp } from '../context/AppContext';
+import { canApproveWmsTransaction } from '../lib/wmsPermissions';
 
 interface TransactionDetailModalProps {
   isOpen: boolean;
@@ -23,9 +24,8 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
 
   if (!isOpen || !transaction) return null;
 
-  const isAdmin = user.role === Role.ADMIN;
   const isPending = transaction.status === TransactionStatus.PENDING;
-  const canApprove = isAdmin && isPending;
+  const canApprove = isPending && canApproveWmsTransaction(user, transaction);
 
   const requester = users.find(u => u.id === transaction.requesterId);
   const approver = users.find(u => u.id === transaction.approverId);

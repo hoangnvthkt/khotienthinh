@@ -2,9 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { MaterialRequest, RequestStatus, Role, InventoryItem } from '../types';
+import { MaterialRequest, RequestStatus, InventoryItem, MaterialRequestFulfillmentMode } from '../types';
 import ItemSelectionModal from './ItemSelectionModal';
 import ScannerModal from './ScannerModal';
+import { useReservedStock } from '../hooks/useReservedStock';
+import { canApproveMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, isAdmin } from '../lib/wmsPermissions';
 
 interface RequestModalProps {
     isOpen: boolean;
@@ -15,13 +17,17 @@ interface RequestModalProps {
 
 const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, defaultSiteWarehouseId }) => {
     const { items, warehouses, user, users, addRequest, updateRequestStatus } = useApp();
+    const { getStockSummary, getOnHandStock } = useReservedStock();
     const [step, setStep] = useState<'CREATE' | 'APPROVE' | 'VIEW'>('CREATE');
     const [showApprovalPanel, setShowApprovalPanel] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
 
     // Form State
     const [siteWarehouseId, setSiteWarehouseId] = useState('');
     const [sourceWarehouseId, setSourceWarehouseId] = useState('');
     const [note, setNote] = useState('');
+    const [fulfillmentMode, setFulfillmentMode] = useState<MaterialRequestFulfillmentMode>(MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
+    const [overrideReason, setOverrideReason] = useState('');
     const [reqItems, setReqItems] = useState<{ itemId: string, qty: number }[]>([]);
     const [approvedItems, setApprovedItems] = useState<{ itemId: string, qty: number }[]>([]);
 
@@ -31,8 +37,9 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
     useEffect(() => {
         if (isOpen) {
             setShowApprovalPanel(false);
+            setIsSaving(false);
             if (request) {
-                if (request.status === RequestStatus.PENDING && user.role === Role.ADMIN) {
+                if (request.status === RequestStatus.PENDING && canApproveMaterialRequest(user, request)) {
                     setStep('APPROVE');
                 } else {
                     setStep('VIEW');
@@ -41,6 +48,8 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                 setSiteWarehouseId(request.siteWarehouseId);
                 setSourceWarehouseId(request.sourceWarehouseId || '');
                 setNote(request.note || '');
+                setFulfillmentMode(request.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
+                setOverrideReason(request.overrideReason || '');
                 setReqItems(request.items.map(i => ({ itemId: i.itemId, qty: i.requestQty })));
                 setApprovedItems(request.items.map(i => ({ itemId: i.itemId, qty: i.approvedQty })));
             } else {
@@ -48,6 +57,8 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                 setSiteWarehouseId(defaultSiteWarehouseId || user.assignedWarehouseId || '');
                 setSourceWarehouseId('');
                 setNote('');
+                setFulfillmentMode(MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
+                setOverrideReason('');
                 setReqItems([]);
                 setApprovedItems([]);
             }
@@ -80,7 +91,9 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
 
     const handleUpdateApprovedItem = (itemId: string, qty: number) => {
         const item = items.find(i => i.id === itemId);
-        const sourceStock = item?.stockByWarehouse[sourceWarehouseId] || 0;
+        const stockSummary = getStockSummary(itemId, sourceWarehouseId, { excludeRequestId: request?.id });
+        const availableStock = stockSummary.available;
+        const sourceStock = isAdmin(user) ? Number.MAX_SAFE_INTEGER : availableStock;
 
         // Ràng buộc 1: Không vượt quá tồn kho
         if (qty > sourceStock) {
@@ -97,10 +110,23 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
         });
     };
 
-    const handleSubmitCreate = () => {
+    const handleSubmitCreate = async () => {
+        if (isSaving) return;
         if (!siteWarehouseId || !sourceWarehouseId || reqItems.length === 0) {
             alert("Vui lòng chọn đầy đủ kho nhận, kho nguồn và ít nhất 1 vật tư");
             return;
+        }
+
+        const shortages = reqItems
+            .map(line => ({ ...line, summary: getStockSummary(line.itemId, sourceWarehouseId) }))
+            .filter(line => Number(line.qty) > line.summary.available);
+        if (shortages.length > 0) {
+            const shortageText = shortages.map(line => {
+                const item = items.find(i => i.id === line.itemId);
+                const missing = Number(line.qty) - line.summary.available;
+                return `${item?.name || line.itemId}: khả dụng ${line.summary.available}, thiếu ${missing}`;
+            }).join('\n');
+            if (!window.confirm(`Một số vật tư vượt tồn khả dụng và sẽ chỉ ghi nhận nhu cầu chờ duyệt:\n${shortageText}`)) return;
         }
 
         const newRequest: MaterialRequest = {
@@ -113,15 +139,26 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
             createdDate: new Date().toISOString(),
             expectedDate: new Date(Date.now() + 86400000 * 3).toISOString(),
             note,
+            fulfillmentMode,
             items: reqItems.map(i => ({ itemId: i.itemId, requestQty: Number(i.qty), approvedQty: 0 })),
             logs: [{ action: 'CREATED', userId: user.id, timestamp: new Date().toISOString() }]
         };
 
-        addRequest(newRequest);
-        onClose();
+        setIsSaving(true);
+        try {
+            const saved = await addRequest(newRequest);
+            if (!saved) {
+                alert("Không lưu được phiếu đề xuất lên hệ thống. Vui lòng kiểm tra kết nối/quyền dữ liệu rồi thử lại.");
+                return;
+            }
+            onClose();
+        } finally {
+            setIsSaving(false);
+        }
     };
 
-    const handleAction = (status: RequestStatus) => {
+    const handleAction = async (status: RequestStatus) => {
+        if (isSaving) return;
         if (!request) return;
 
         // Ràng buộc 2: Kiểm tra duyệt vượt số lượng yêu cầu khi Phê duyệt
@@ -137,8 +174,49 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
             }
         }
 
-        updateRequestStatus(request.id, status, note, approvedItems, sourceWarehouseId);
-        onClose();
+        if (status === RequestStatus.APPROVED) {
+            const stockShortages = approvedItems
+                .map(line => ({ ...line, summary: getStockSummary(line.itemId, sourceWarehouseId, { excludeRequestId: request.id }) }))
+                .filter(line => Number(line.qty) > line.summary.available);
+            if (stockShortages.length > 0) {
+                if (!isAdmin(user)) {
+                    alert('Thủ kho không thể duyệt vượt tồn khả dụng. Vui lòng giảm số lượng duyệt hoặc xử lý phiếu đang giữ chỗ trước.');
+                    return;
+                }
+                if (!overrideReason.trim()) {
+                    alert('Admin duyệt vượt tồn khả dụng phải nhập lý do override.');
+                    return;
+                }
+                const shortageText = stockShortages.map(line => {
+                    const item = items.find(i => i.id === line.itemId);
+                    const missing = Number(line.qty) - line.summary.available;
+                    return `${item?.name || line.itemId}: khả dụng ${line.summary.available}, vượt ${missing}`;
+                }).join('\n');
+                if (!window.confirm(`Bạn đang duyệt vượt tồn khả dụng:\n${shortageText}\n\nTiếp tục với lý do override?`)) return;
+            }
+        }
+
+        if (status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) {
+            const stockShortages = approvedItems
+                .map(line => ({ ...line, onHand: getOnHandStock(line.itemId, sourceWarehouseId) }))
+                .filter(line => Number(line.qty) > line.onHand);
+            if (stockShortages.length > 0) {
+                alert('Tồn thực tế không đủ để xuất kho. Vui lòng kiểm tra lại tồn kho nguồn.');
+                return;
+            }
+        }
+
+        setIsSaving(true);
+        try {
+            const saved = await updateRequestStatus(request.id, status, note, approvedItems, sourceWarehouseId, overrideReason.trim() || undefined);
+            if (!saved) {
+                alert("Không cập nhật được trạng thái phiếu trên hệ thống. Vui lòng thử lại.");
+                return;
+            }
+            onClose();
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     if (!isOpen) return null;
@@ -147,8 +225,8 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
     const isApproving = step === 'APPROVE';
     const isViewing = step === 'VIEW';
 
-    const canExport = request?.status === RequestStatus.APPROVED && (user.role === Role.ADMIN || user.assignedWarehouseId === request.sourceWarehouseId);
-    const canReceive = request?.status === RequestStatus.IN_TRANSIT && (user.role === Role.ADMIN || user.assignedWarehouseId === request.siteWarehouseId);
+    const canExport = request ? canExportMaterialRequest(user, request) : false;
+    const canReceive = request ? canReceiveMaterialRequest(user, request) : false;
 
     const sourceWh = warehouses.find(w => w.id === sourceWarehouseId);
     const targetWh = warehouses.find(w => w.id === siteWarehouseId);
@@ -169,14 +247,16 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
 
                         <div className="flex gap-4 w-full max-w-md">
                             <button
+                                disabled={isSaving}
                                 onClick={() => handleAction(RequestStatus.REJECTED)}
-                                className="flex-1 py-4 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all flex items-center justify-center shadow-lg shadow-red-500/20"
+                                className="flex-1 py-4 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed transition-all flex items-center justify-center shadow-lg shadow-red-500/20"
                             >
                                 <XCircle size={20} className="mr-2" /> TỪ CHỐI
                             </button>
                             <button
+                                disabled={isSaving}
                                 onClick={() => handleAction(RequestStatus.APPROVED)}
-                                className="flex-1 py-4 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all flex items-center justify-center shadow-lg shadow-emerald-500/20"
+                                className="flex-1 py-4 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition-all flex items-center justify-center shadow-lg shadow-emerald-500/20"
                             >
                                 <CheckCircle size={20} className="mr-2" /> PHÊ DUYỆT
                             </button>
@@ -218,7 +298,7 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                             {request?.status === RequestStatus.PENDING ? 'Đang chờ thẩm định' :
                                 request?.status === RequestStatus.APPROVED ? 'Đã duyệt - Chờ xuất hàng' :
                                     request?.status === RequestStatus.IN_TRANSIT ? 'Đang trên đường vận chuyển' :
-                                        request?.status === RequestStatus.COMPLETED ? 'Đã nhập kho công trường thành công' :
+                                        request?.status === RequestStatus.COMPLETED ? (fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Đã cấp thẳng sử dụng' : 'Đã nhập kho công trường thành công') :
                                             request?.status === RequestStatus.REJECTED ? 'Đề xuất này đã bị từ chối' : 'Đề xuất đã đóng'}
                         </div>
                         <div className="font-mono">{new Date(request?.createdDate || '').toLocaleDateString('vi-VN')}</div>
@@ -287,6 +367,36 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                                 placeholder="Lý do hoặc chỉ dẫn..."
                             />
                         </div>
+                        <div className="bg-white p-4 rounded-xl border border-emerald-100 shadow-sm space-y-2">
+                            <label className="text-[10px] uppercase font-black text-emerald-500">Cách cấp vật tư</label>
+                            {isEditable ? (
+                                <select
+                                    value={fulfillmentMode}
+                                    onChange={(e) => setFulfillmentMode(e.target.value as MaterialRequestFulfillmentMode)}
+                                    className="w-full bg-transparent outline-none text-sm font-bold text-slate-700"
+                                >
+                                    <option value={MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK}>Nhập kho công trường</option>
+                                    <option value={MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION}>Cấp thẳng sử dụng</option>
+                                </select>
+                            ) : (
+                                <span className="text-sm font-bold text-slate-700">
+                                    {fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Cấp thẳng sử dụng' : 'Nhập kho công trường'}
+                                </span>
+                            )}
+                        </div>
+
+                        {isApproving && isAdmin(user) && (
+                            <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm space-y-2">
+                                <label className="text-[10px] uppercase font-black text-amber-600">Lý do override</label>
+                                <input
+                                    type="text"
+                                    value={overrideReason}
+                                    onChange={(e) => setOverrideReason(e.target.value)}
+                                    className="w-full bg-transparent outline-none text-sm text-slate-700"
+                                    placeholder="Bắt buộc nếu duyệt vượt tồn khả dụng"
+                                />
+                            </div>
+                        )}
                     </div>
 
                     {/* Desktop table view */}
@@ -311,7 +421,8 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                                     const itemId = row.itemId;
                                     const requestQty = isEditable ? row.qty : row.requestQty;
                                     const itemInfo = items.find(i => i.id === itemId);
-                                    const sourceStock = itemInfo?.stockByWarehouse[sourceWarehouseId] || 0;
+                                    const stockSummary = getStockSummary(itemId, sourceWarehouseId, { excludeRequestId: request?.id });
+                                    const sourceStock = stockSummary.available;
                                     const isExcess = !isEditable && (approvedItems.find(ai => ai.itemId === itemId)?.qty || 0) > requestQty;
 
                                     return (
@@ -339,6 +450,9 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                                                 <>
                                                     <td className="p-4 text-right font-bold text-blue-600">
                                                         {sourceStock.toLocaleString()}
+                                                        {stockSummary.reserved > 0 && (
+                                                            <div className="text-[9px] text-amber-600 font-bold">Giữ chỗ: {stockSummary.reserved}</div>
+                                                        )}
                                                     </td>
                                                     <td className="p-4 text-right">
                                                         {isApproving ? (
@@ -384,7 +498,8 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                             const itemId = row.itemId;
                             const requestQty = isEditable ? row.qty : row.requestQty;
                             const itemInfo = items.find(i => i.id === itemId);
-                            const sourceStock = itemInfo?.stockByWarehouse[sourceWarehouseId] || 0;
+                            const stockSummary = getStockSummary(itemId, sourceWarehouseId, { excludeRequestId: request?.id });
+                            const sourceStock = stockSummary.available;
                             const isExcess = !isEditable && (approvedItems.find(ai => ai.itemId === itemId)?.qty || 0) > requestQty;
 
                             return (
@@ -419,6 +534,7 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                                                 <div className="flex-1">
                                                     <div className="text-[9px] uppercase font-bold text-blue-400 mb-0.5">Tồn kho</div>
                                                     <div className="font-bold text-blue-600 text-sm">{sourceStock.toLocaleString()}</div>
+                                                    {stockSummary.reserved > 0 && <div className="text-[9px] text-amber-600 font-bold">Giữ chỗ: {stockSummary.reserved}</div>}
                                                 </div>
                                                 <div className="flex-1">
                                                     <div className="text-[9px] uppercase font-bold text-emerald-400 mb-0.5">Duyệt</div>
@@ -461,15 +577,16 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                         </button>
 
                         {isEditable && (
-                            <button onClick={handleSubmitCreate} className="px-6 py-2 rounded-lg bg-accent text-white font-bold hover:bg-blue-700 flex items-center shadow-lg shadow-blue-500/20">
+                            <button disabled={isSaving} onClick={handleSubmitCreate} className="px-6 py-2 rounded-lg bg-accent text-white font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20">
                                 <Send size={18} className="mr-2" /> Gửi đề xuất
                             </button>
                         )}
 
                         {isApproving && (
                             <button
+                                disabled={isSaving}
                                 onClick={() => setShowApprovalPanel(true)}
-                                className="px-6 py-2 rounded-lg bg-accent text-white font-bold hover:bg-blue-700 flex items-center shadow-lg shadow-blue-500/20 transition-all"
+                                className="px-6 py-2 rounded-lg bg-accent text-white font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20 transition-all"
                             >
                                 <AlertCircle size={18} className="mr-2" />
                                 XỬ LÝ ĐỀ XUẤT
@@ -477,14 +594,14 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                         )}
 
                         {canExport && (
-                            <button onClick={() => handleAction(RequestStatus.IN_TRANSIT)} className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 flex items-center shadow-lg shadow-indigo-500/20">
+                            <button disabled={isSaving} onClick={() => handleAction(RequestStatus.IN_TRANSIT)} className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-indigo-500/20">
                                 <Truck size={18} className="mr-2" /> Xác nhận xuất kho
                             </button>
                         )}
 
                         {canReceive && (
-                            <button onClick={() => handleAction(RequestStatus.COMPLETED)} className="px-6 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 flex items-center shadow-lg shadow-emerald-500/20">
-                                <CheckCircle size={18} className="mr-2" /> Xác nhận nhận hàng
+                            <button disabled={isSaving} onClick={() => handleAction(RequestStatus.COMPLETED)} className="px-6 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-emerald-500/20">
+                                <CheckCircle size={18} className="mr-2" /> {fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Xác nhận sử dụng' : 'Xác nhận nhận hàng'}
                             </button>
                         )}
                     </div>

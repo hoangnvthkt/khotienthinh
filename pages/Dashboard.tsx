@@ -18,6 +18,7 @@ import { usePagination } from '../hooks/usePagination';
 import { AnimatedNumber, Sparkline, LastUpdated } from '../components/LiveDashboardWidgets';
 import { useReservedStock } from '../hooks/useReservedStock';
 import { useModuleData } from '../hooks/useModuleData';
+import { canApproveWmsTransaction, canReceiveWmsTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
 
 const StatCard: React.FC<{
   title: string;
@@ -135,6 +136,10 @@ const Dashboard: React.FC = () => {
     });
 
     const pendingTx = transactions.filter(t => {
+      if (isWarehouseKeeper(user)) {
+        return (t.status === TransactionStatus.PENDING && canApproveWmsTransaction(user, t)) ||
+               (t.status === TransactionStatus.APPROVED && canReceiveWmsTransaction(user, t));
+      }
       if (hasAssignedWh) {
         return (t.requesterId === user.id && t.status === TransactionStatus.PENDING) ||
                (t.targetWarehouseId === user.assignedWarehouseId && t.status === TransactionStatus.APPROVED);

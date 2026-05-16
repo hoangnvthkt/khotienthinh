@@ -47,7 +47,7 @@ const KnowledgeBase: React.FC = () => {
   useEffect(() => {
     const hasProcessing = documents.some(d => d.status === 'processing');
     if (!hasProcessing) return;
-    const interval = setInterval(fetchDocuments, 5000);
+    const interval = setInterval(fetchDocuments, 15000);
     return () => clearInterval(interval);
   }, [documents, fetchDocuments]);
 

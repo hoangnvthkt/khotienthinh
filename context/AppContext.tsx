@@ -4,7 +4,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   InventoryItem, Transaction, User, Warehouse, Supplier,
   Role, TransactionStatus, TransactionType, MaterialRequest,
-  RequestStatus, AuditLog, GlobalActivity, ActivityType,
+  RequestStatus, AuditLog, GlobalActivity, ActivityType, MaterialRequestFulfillmentMode,
   ItemCategory, ItemUnit, Employee, MaterialLossNorm, AuditSession,
   HrmArea, HrmOffice, HrmEmployeeType, HrmPosition, HrmSalaryPolicy, HrmWorkSchedule, HrmConstructionSite,
   OrgUnit, ProjectFinance, ProjectTransaction,
@@ -19,6 +19,7 @@ import {
 } from '../constants';
 import { auditService } from '../lib/auditService';
 import { realtimeService, RealtimeStatus } from '../lib/realtimeService';
+import { notificationService } from '../lib/notificationService';
 
 interface AppSettings {
   name: string;
@@ -95,8 +96,8 @@ interface AppContextType {
   addWarehouse: (warehouse: Warehouse) => void;
   updateWarehouse: (warehouse: Warehouse) => void;
   removeWarehouse: (warehouseId: string) => void;
-  addRequest: (request: MaterialRequest) => void;
-  updateRequestStatus: (id: string, status: RequestStatus, note?: string, approvedItems?: { itemId: string, qty: number }[], sourceWarehouseId?: string) => void;
+  addRequest: (request: MaterialRequest) => Promise<boolean>;
+  updateRequestStatus: (id: string, status: RequestStatus, note?: string, approvedItems?: { itemId: string, qty: number }[], sourceWarehouseId?: string, overrideReason?: string) => Promise<boolean>;
   logActivity: (type: ActivityType, action: string, description: string, status?: GlobalActivity['status'], warehouseId?: string) => void;
   addCategory: (name: string) => void;
   updateCategory: (category: ItemCategory) => void;
@@ -193,6 +194,18 @@ const mapTransactionFromDb = (t: any): Transaction => ({
   approverId: t.approver_id,
   relatedRequestId: t.related_request_id,
   pendingItems: t.pending_items,
+});
+
+const mapMaterialRequestFromDb = (r: any): MaterialRequest => ({
+  ...r,
+  siteWarehouseId: r.site_warehouse_id,
+  sourceWarehouseId: r.source_warehouse_id,
+  requesterId: r.requester_id,
+  createdDate: r.created_date,
+  expectedDate: r.expected_date,
+  fulfillmentMode: r.fulfillment_mode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
+  overrideReason: r.override_reason || undefined,
+  relatedTransactionId: r.related_transaction_id || undefined,
 });
 
 const mapAssetLocationStockFromDb = (l: any): AssetLocationStock => ({
@@ -382,9 +395,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Set up Realtime via centralized service
     const CRITICAL_TABLES = [
-      'items', 'transactions', 'warehouses', 'suppliers', 'requests',
-      'activities', 'users', 'employees', 'categories', 'units',
-      'app_settings', 'org_units', 'notifications'
+      'items', 'transactions', 'warehouses', 'requests',
+      'users', 'app_settings'
     ];
 
     // Status tracking
@@ -466,10 +478,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // ── Requests ──
     const unsubReq = realtimeService.on('requests', (event) => {
       if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
-        const r = event.newRecord;
-        const mapped = {
-          ...r, siteWarehouseId: r.site_warehouse_id, sourceWarehouseId: r.source_warehouse_id, requesterId: r.requester_id, createdDate: r.created_date, expectedDate: r.expected_date
-        };
+        const mapped = mapMaterialRequestFromDb(event.newRecord);
         setRequests(prev => {
           const exists = prev.find(req => req.id === mapped.id);
           if (exists) return prev.map(req => req.id === mapped.id ? mapped : req);
@@ -641,14 +650,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (whData) setWarehouses(whData.map((w: any) => ({ ...w, isArchived: w.is_archived })));
         if (supData) setSuppliers(supData.map((s: any) => ({ ...s, contactPerson: s.contact_person })));
         if (txData) setTransactions(txData.map(mapTransactionFromDb));
-        if (reqData) setRequests(reqData.map((r: any) => ({
-          ...r,
-          siteWarehouseId: r.site_warehouse_id,
-          sourceWarehouseId: r.source_warehouse_id,
-          requesterId: r.requester_id,
-          createdDate: r.created_date,
-          expectedDate: r.expected_date,
-        })));
+        if (reqData) setRequests(reqData.map(mapMaterialRequestFromDb));
         if (actData) setActivities(actData.map((a: any) => ({
           ...a,
           userId: a.user_id,
@@ -884,9 +886,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   // Helper to sync a single table to Supabase
-  const syncToSupabase = async (table: string, data: any) => {
+  const syncToSupabase = async (table: string, data: any): Promise<boolean> => {
     try {
-      if (!isSupabaseConfigured) return;
+      if (!isSupabaseConfigured) return true;
 
       let payload = data;
 
@@ -916,7 +918,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         payload = {
           id: data.id, code: data.code, site_warehouse_id: data.siteWarehouseId, source_warehouse_id: data.sourceWarehouseId,
           requester_id: data.requesterId, status: data.status, items: data.items, created_date: data.createdDate,
-          expected_date: data.expectedDate, note: data.note, logs: data.logs
+          expected_date: data.expectedDate, note: data.note, logs: data.logs,
+          fulfillment_mode: data.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
+          override_reason: data.overrideReason || null,
+          related_transaction_id: data.relatedTransactionId || null
         };
       } else if (table === 'activities') {
         payload = {
@@ -1019,8 +1024,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const { error } = await supabase.from(table).upsert(payload);
       if (error) throw error;
+      return true;
     } catch (error) {
       console.error(`Error syncing ${table} to Supabase:`, error);
+      return false;
     }
   };
 
@@ -1389,21 +1396,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const addRequest = (r: MaterialRequest) => {
-    setRequests(prev => [r, ...prev]);
-    syncToSupabase('requests', r);
-    logActivity('REQUEST', 'Yêu cầu vật tư', `Phiếu yêu cầu ${r.code} đã được gửi`, 'INFO', r.siteWarehouseId);
+  const getMaterialRequestApproverIds = (request: MaterialRequest) => {
+    return users
+      .filter(u =>
+        u.role === Role.ADMIN ||
+        (u.role === Role.WAREHOUSE_KEEPER && !!request.sourceWarehouseId && u.assignedWarehouseId === request.sourceWarehouseId)
+      )
+      .map(u => u.id);
   };
 
-  const updateRequestStatus = (id: string, status: RequestStatus, note?: string, approvedItems?: { itemId: string, qty: number }[], sourceWarehouseId?: string) => {
+  const notifyWmsUsers = async (
+    recipientIds: string[],
+    notification: {
+      type: 'info' | 'warning' | 'success' | 'error';
+      title: string;
+      message: string;
+      severity: 'info' | 'warning' | 'critical';
+      sourceId: string;
+    }
+  ) => {
+    if (!isSupabaseConfigured) return;
+    const uniqueRecipients = [...new Set(recipientIds)].filter(id => id && id !== user.id);
+    try {
+      for (const userId of uniqueRecipients) {
+        await notificationService.create({
+          userId,
+          type: notification.type,
+          category: 'material',
+          title: notification.title,
+          message: notification.message,
+          icon: 'package',
+          link: '/requests',
+          severity: notification.severity,
+          sourceType: 'material_request',
+          sourceId: notification.sourceId,
+          metadata: {},
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to create WMS notification:', err);
+    }
+  };
+
+  const addRequest = async (r: MaterialRequest): Promise<boolean> => {
+    const requestToSave: MaterialRequest = {
+      ...r,
+      fulfillmentMode: r.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
+    };
+
+    const synced = await syncToSupabase('requests', requestToSave);
+    if (!synced) return false;
+
+    setRequests(prev => {
+      const exists = prev.some(req => req.id === requestToSave.id);
+      if (exists) return prev.map(req => req.id === requestToSave.id ? requestToSave : req);
+      return [requestToSave, ...prev];
+    });
+    logActivity('REQUEST', 'Yêu cầu vật tư', `Phiếu yêu cầu ${r.code} đã được gửi`, 'INFO', r.siteWarehouseId);
+    void notifyWmsUsers(getMaterialRequestApproverIds(requestToSave), {
+      type: 'info',
+      title: 'Phiếu vật tư chờ duyệt',
+      message: `Phiếu ${requestToSave.code} đang chờ Thủ kho/Admin duyệt.`,
+      severity: 'info',
+      sourceId: requestToSave.id,
+    });
+    return true;
+  };
+
+  const updateRequestStatus = async (id: string, status: RequestStatus, note?: string, approvedItems?: { itemId: string, qty: number }[], sourceWarehouseId?: string, overrideReason?: string): Promise<boolean> => {
     const req = requests.find(r => r.id === id);
-    if (!req) return;
+    if (!req) return false;
 
     const newLog: AuditLog = {
       action: status,
       userId: user.id,
       timestamp: new Date().toISOString(),
-      note: note
+      note: note,
+      overrideReason: overrideReason || undefined
     };
 
     let updatedItems = [...req.items];
@@ -1416,27 +1485,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const effectiveSourceWhId = sourceWarehouseId || req.sourceWarehouseId;
 
+    if ((status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && effectiveSourceWhId) {
+      const shortages = updatedItems.filter(line => {
+        const item = items.find(i => i.id === line.itemId);
+        const onHand = item?.stockByWarehouse[effectiveSourceWhId] || 0;
+        return (line.approvedQty || 0) > onHand;
+      });
+      if (shortages.length > 0) return false;
+    }
+
+    const shouldCreateTransaction = status === RequestStatus.COMPLETED && !req.relatedTransactionId;
+    const relatedTransactionId = shouldCreateTransaction
+      ? `tx-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
+      : req.relatedTransactionId;
+
     const updatedReq = {
       ...req,
       status,
       sourceWarehouseId: effectiveSourceWhId,
+      fulfillmentMode: req.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
+      overrideReason: overrideReason || req.overrideReason,
+      relatedTransactionId,
       items: updatedItems,
       logs: [...req.logs, newLog]
     };
 
+    const synced = await syncToSupabase('requests', updatedReq);
+    if (!synced) return false;
+
     setRequests(prev => prev.map(r => r.id === id ? updatedReq : r));
     logActivity('REQUEST', 'Cập nhật yêu cầu', `Yêu cầu ${req.code} chuyển sang ${status}`, 'INFO', req.siteWarehouseId);
-    syncToSupabase('requests', updatedReq);
+
+    void notifyWmsUsers([req.requesterId], {
+      type: status === RequestStatus.REJECTED ? 'warning' : 'info',
+      title: 'Phiếu vật tư được cập nhật',
+      message: `Phiếu ${req.code} chuyển sang trạng thái ${status}.`,
+      severity: status === RequestStatus.REJECTED ? 'warning' : 'info',
+      sourceId: req.id,
+    });
 
     // Generate Transaction when Request is fully received
-    if (status === RequestStatus.COMPLETED) {
+    if (shouldCreateTransaction && relatedTransactionId) {
+      const isDirectConsumption = updatedReq.fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION;
       const tx: Transaction = {
-        id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        type: TransactionType.TRANSFER,
+        id: relatedTransactionId,
+        type: isDirectConsumption ? TransactionType.EXPORT : TransactionType.TRANSFER,
         date: new Date().toISOString(),
-        items: updatedItems.map(i => ({ itemId: i.itemId, quantity: i.approvedQty })),
+        items: updatedItems.filter(i => (i.approvedQty || 0) > 0).map(i => ({ itemId: i.itemId, quantity: i.approvedQty })),
         sourceWarehouseId: effectiveSourceWhId,
-        targetWarehouseId: req.siteWarehouseId,
+        targetWarehouseId: isDirectConsumption ? undefined : req.siteWarehouseId,
         requesterId: req.requesterId,
         approverId: user.id,
         status: TransactionStatus.COMPLETED,
@@ -1446,6 +1543,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // addTransaction handles applying stock changes, logging the transaction, and syncing to DB
       addTransaction(tx);
     }
+    return true;
   };
 
   const addCategory = (name: string) => {

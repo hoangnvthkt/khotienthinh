@@ -26,6 +26,9 @@ class RealtimeService {
   private _lastEventTime: number = 0;
   private _eventCount: number = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private shouldReconnect = false;
+  private activeTablesKey = '';
+  private connectionId = 0;
 
   get status(): RealtimeStatus {
     return this._status;
@@ -85,7 +88,15 @@ class RealtimeService {
       return;
     }
 
+    const nextTablesKey = [...tables].sort().join('|');
+    if (this.activeTablesKey === nextTablesKey && (this._status === 'connected' || this._status === 'connecting')) {
+      return;
+    }
+
     this.disconnect(); // Clean up any existing channels
+    this.shouldReconnect = true;
+    this.activeTablesKey = nextTablesKey;
+    const connectionId = ++this.connectionId;
     this.setStatus('connecting');
 
     // Create one combined channel for all critical tables
@@ -113,16 +124,17 @@ class RealtimeService {
 
     // Track connection status
     channel.subscribe((status) => {
+      if (connectionId !== this.connectionId) return;
       if (status === 'SUBSCRIBED') {
         this.setStatus('connected');
         console.log('[Realtime] ✅ Connected to', tables.length, 'tables');
       } else if (status === 'CLOSED') {
         this.setStatus('disconnected');
-        this.scheduleReconnect(tables);
+        if (this.shouldReconnect) this.scheduleReconnect(tables);
       } else if (status === 'CHANNEL_ERROR') {
         this.setStatus('error');
         console.error('[Realtime] ❌ Channel error');
-        this.scheduleReconnect(tables);
+        if (this.shouldReconnect) this.scheduleReconnect(tables);
       }
     });
 
@@ -140,6 +152,9 @@ class RealtimeService {
 
   // Disconnect all channels
   disconnect() {
+    this.connectionId++;
+    this.shouldReconnect = false;
+    this.activeTablesKey = '';
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

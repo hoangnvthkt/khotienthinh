@@ -20,6 +20,7 @@ import Pagination from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
 import { useReservedStock } from '../hooks/useReservedStock';
 import { useModuleData } from '../hooks/useModuleData';
+import { canApproveWmsTransaction, canReceiveWmsTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
 
 const Operations: React.FC = () => {
   const location = useLocation();
@@ -48,6 +49,7 @@ const Operations: React.FC = () => {
 
   const hasAssignedWh = !!user.assignedWarehouseId;
   const isAdmin = user.role === Role.ADMIN;
+  const isKeeper = isWarehouseKeeper(user);
 
   // State quản lý kho bãi
   // - Nhập kho: selectedWarehouseId = kho nhận (kho của thủ kho)
@@ -95,15 +97,17 @@ const Operations: React.FC = () => {
   const pendingAdminTxs = useMemo(() => {
     const base = transactions.filter(t => t.status === TransactionStatus.PENDING);
     if (isAdmin) return base;
+    if (isKeeper) return base.filter(t => canApproveWmsTransaction(user, t));
     return base.filter(t => t.requesterId === user.id);
-  }, [transactions, isAdmin, user]);
+  }, [transactions, isAdmin, isKeeper, user]);
 
   // Lọc danh sách transaction đang chờ NHẬN (APPROVED - Chờ Kho đích)
   const pendingReceiptTxs = useMemo(() => {
     const base = transactions.filter(t => t.status === TransactionStatus.APPROVED);
     if (isAdmin) return base;
-    return base.filter(t => t.targetWarehouseId === user.assignedWarehouseId);
-  }, [transactions, isAdmin, user]);
+    if (isKeeper) return base.filter(t => canReceiveWmsTransaction(user, t));
+    return [];
+  }, [transactions, isAdmin, isKeeper, user]);
 
   // Lọc danh sách lịch sử đã xử lý
   const historyTransactions = useMemo(() => {
@@ -111,7 +115,7 @@ const Operations: React.FC = () => {
       t.status === TransactionStatus.COMPLETED || t.status === TransactionStatus.CANCELLED
     );
     if (isAdmin) return baseHistory;
-    if (user.assignedWarehouseId) {
+    if (isKeeper && user.assignedWarehouseId) {
       return baseHistory.filter(t =>
         t.targetWarehouseId === user.assignedWarehouseId ||
         t.sourceWarehouseId === user.assignedWarehouseId ||
@@ -119,7 +123,7 @@ const Operations: React.FC = () => {
       );
     }
     return baseHistory.filter(t => t.requesterId === user.id);
-  }, [transactions, isAdmin, user]);
+  }, [transactions, isAdmin, isKeeper, user]);
 
   const { paginatedItems: paginatedHistory, currentPage: histPage, totalPages: histTotalPages, totalItems: histTotal, pageSize: histPageSize, setPage: histSetPage, setPageSize: histSetPageSize, startIndex: histStart, endIndex: histEnd } = usePagination<Transaction>(historyTransactions, 15);
 
@@ -357,7 +361,7 @@ const Operations: React.FC = () => {
                       const stockConflicts = isExportType && tx.sourceWarehouseId
                         ? tx.items.map(ti => ({
                             ...ti,
-                            summary: getStockSummary(ti.itemId, tx.sourceWarehouseId!),
+                            summary: getStockSummary(ti.itemId, tx.sourceWarehouseId!, { excludeTransactionId: tx.id }),
                             product: items.find(i => i.id === ti.itemId),
                           })).filter(ti => ti.summary.reserved > 0 || ti.quantity > ti.summary.available)
                         : [];
@@ -424,7 +428,7 @@ const Operations: React.FC = () => {
                                 </div>
                               )}
                             </div>
-                            {isAdmin && (
+                            {canApproveWmsTransaction(user, tx) && (
                               <div className="flex md:flex-col gap-2 min-w-[140px] pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 md:pl-4" onClick={(e) => e.stopPropagation()}>
                                 <button onClick={() => triggerApproval(tx.id, 'APPROVE')} className="flex-1 py-2 bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-700">Duyệt Phiếu</button>
                                 <button onClick={() => triggerApproval(tx.id, 'CANCEL')} className="flex-1 py-2 bg-white border border-red-200 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50">Từ Chối</button>
@@ -475,7 +479,7 @@ const Operations: React.FC = () => {
                                 {tx.items.length > 2 && <div className="text-[10px] text-slate-400 mt-1 italic text-center">... và {tx.items.length - 2} hạng mục khác</div>}
                               </div>
                             </div>
-                            {(isAdmin || isMyWarehouse) && (
+                            {canReceiveWmsTransaction(user, tx) && (
                               <div className="flex md:flex-col gap-2 min-w-[160px] pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 md:pl-4" onClick={(e) => e.stopPropagation()}>
                                 <button onClick={() => triggerApproval(tx.id, 'RECEIVE')} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2">
                                   <CheckCircle size={14} /> XÁC NHẬN NHẬN
