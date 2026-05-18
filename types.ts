@@ -948,16 +948,31 @@ export interface PurchaseOrder {
   vendorId: string;
   vendorName?: string;       // cache tên NCC
   poNumber: string;          // PO-001
-  items: { name: string; unit: string; qty: number; unitPrice: number; receivedQty?: number }[];
+  items: PurchaseOrderItem[];
   totalAmount: number;
   orderDate: string;
   expectedDeliveryDate?: string;
   actualDeliveryDate?: string;
   status: POStatus;
+  qrToken?: string;
+  targetWarehouseId?: string;
+  receivedTransactionIds?: string[];
   materialRequestId?: string;
   deliveryNote?: string;     // Ghi chú giao hàng
   note?: string;
   createdAt: string;
+}
+
+export interface PurchaseOrderItem {
+  itemId: string;
+  sku: string;
+  name: string;
+  unit: string;
+  qty: number;
+  unitPrice: number;
+  receivedQty?: number;
+  neededDate?: string;
+  note?: string;
 }
 
 export type OrgUnitType = 'company' | 'department' | 'construction_site' | 'factory' | 'custom';

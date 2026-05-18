@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
@@ -8,13 +8,16 @@ import ScannerModal from '../components/ScannerModal';
 import AddInventoryModal from '../components/AddInventoryModal';
 import InventoryDetailModal from '../components/InventoryDetailModal';
 import DeleteInventoryModal from '../components/DeleteInventoryModal';
+import ReceivePurchaseOrderModal from '../components/ReceivePurchaseOrderModal';
 import Pagination from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
 import { loadXlsx } from '../lib/loadXlsx';
-import { InventoryItem, Role, Transaction, TransactionType, TransactionStatus } from '../types';
+import { InventoryItem, Role, Transaction, TransactionType, TransactionStatus, PurchaseOrder } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import { useModuleData } from '../hooks/useModuleData';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
+import { poService } from '../lib/projectService';
+import { extractPoToken, PO_QR_PARAM } from '../lib/poQr';
 
 const Inventory: React.FC = () => {
   const location = useLocation();
@@ -49,6 +52,9 @@ const Inventory: React.FC = () => {
   const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
   const [importing, setImporting] = useState(false);
   const [deletingItem, setDeletingItem] = useState(false);
+  const [receivingPo, setReceivingPo] = useState<PurchaseOrder | null>(null);
+  const [loadingPo, setLoadingPo] = useState(false);
+  const lastLoadedPoTokenRef = useRef<string | null>(null);
 
   // Logic lọc vật tư theo yêu cầu bảo mật mới
   const filteredItems = useMemo(() => {
@@ -89,9 +95,39 @@ const Inventory: React.FC = () => {
     return item.stockByWarehouse[filterWarehouse] || 0;
   };
 
-  const handleScanResult = (sku: string) => {
-    setSearchTerm(sku);
+  const loadPurchaseOrderFromQr = async (raw: string) => {
+    const token = extractPoToken(raw);
+    if (!token) {
+      toast.error('QR không hợp lệ', 'Mã QR không phải phiếu nhập NCC hợp lệ.');
+      return;
+    }
+
+    setLoadingPo(true);
+    try {
+      const po = await poService.getByQrToken(token);
+      if (!po) {
+        toast.error('Không tìm thấy PO', 'Mã QR không phải phiếu nhập NCC hợp lệ.');
+        return;
+      }
+      if (po.status === 'cancelled') {
+        toast.warning('PO đã huỷ', 'Không thể nhập kho từ phiếu đã huỷ.');
+        return;
+      }
+      setReceivingPo(po);
+    } catch (err: any) {
+      logApiError('inventory.loadPurchaseOrderQr', err);
+      toast.error('Không thể tải PO', getApiErrorMessage(err, 'Không thể tải phiếu nhập NCC từ Supabase.'));
+    } finally {
+      setLoadingPo(false);
+    }
   };
+
+  useEffect(() => {
+    const token = new URLSearchParams(location.search).get(PO_QR_PARAM);
+    if (!token || lastLoadedPoTokenRef.current === token) return;
+    lastLoadedPoTokenRef.current = token;
+    void loadPurchaseOrderFromQr(token);
+  }, [location.search]);
 
   const handleAddItem = async (item: InventoryItem) => {
     await addItem(item);
@@ -276,10 +312,23 @@ const Inventory: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <ScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScan={handleScanResult} />
+      <ScannerModal
+        isOpen={isScannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScan={loadPurchaseOrderFromQr}
+        title="Quét QR phiếu NCC"
+        description="Quét mã QR trên phiếu đặt hàng/phiếu giao hàng của nhà cung cấp để tự động tạo phiếu nhập kho."
+        manualPlaceholder="Nhập token PO..."
+      />
       <AddInventoryModal isOpen={isAddModalOpen} onClose={() => setAddModalOpen(false)} onAdd={handleAddItem} />
       <InventoryDetailModal isOpen={!!selectedItem} onClose={() => setSelectedItem(null)} item={selectedItem} />
       <DeleteInventoryModal isOpen={!!itemToDelete} onClose={() => setItemToDelete(null)} targetItem={itemToDelete} onConfirm={handleDeleteConfirm} isDeleting={deletingItem} />
+      <ReceivePurchaseOrderModal
+        isOpen={!!receivingPo}
+        po={receivingPo}
+        onClose={() => setReceivingPo(null)}
+        onReceived={(po) => setReceivingPo(po)}
+      />
 
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
         <div>
@@ -306,8 +355,13 @@ const Inventory: React.FC = () => {
             </div>
           )}
           <div className="flex gap-2 w-full sm:w-auto">
-            <button onClick={() => setScannerOpen(true)} className="flex-1 sm:flex-none flex items-center justify-center px-6 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition text-[10px] font-black uppercase tracking-widest">
-              <QrCode className="w-4 h-4 mr-2" /> Quét QR
+            <button
+              onClick={() => setScannerOpen(true)}
+              disabled={loadingPo}
+              className="flex-1 sm:flex-none flex items-center justify-center px-6 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60 disabled:cursor-wait"
+            >
+              {loadingPo ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <QrCode className="w-4 h-4 mr-2" />}
+              {loadingPo ? 'Đang tải PO...' : 'Quét QR PO'}
             </button>
 
             {(canCRUD || hasAssignedWh) && (

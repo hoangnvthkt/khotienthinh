@@ -1,14 +1,21 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import AiInsightPanel from '../../components/AiInsightPanel';
 import {
     Plus, Edit2, Trash2, X, Save, Truck, Star, Phone, Mail, MapPin,
     FileText, CheckCircle2, Clock, Ban, Send, Package, ChevronDown,
-    ChevronUp, Users, DollarSign, ShoppingCart, AlertTriangle
+    ChevronUp, Users, DollarSign, ShoppingCart, AlertTriangle, FileSpreadsheet,
+    Upload, Printer, QrCode, Loader2
 } from 'lucide-react';
-import { ProjectVendor, PurchaseOrder, POStatus } from '../../types';
+import { QRCodeSVG } from 'qrcode.react';
+import { ProjectVendor, PurchaseOrder, POStatus, PurchaseOrderItem, InventoryItem } from '../../types';
 import { vendorService, poService } from '../../lib/projectService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useApp } from '../../context/AppContext';
+import { loadXlsx } from '../../lib/loadXlsx';
+import { buildPoReceiveUrl, createPoQrToken } from '../../lib/poQr';
+import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -31,9 +38,53 @@ const PO_STATUS: Record<POStatus, { label: string; color: string; bg: string; ic
 
 const VENDOR_CATS = ['Xi măng', 'Thép', 'Cát & Đá', 'Gạch', 'Gỗ', 'Sơn', 'Ống/Phụ kiện nước', 'Dây & TB điện', 'VLXD khác'];
 
+const createEmptyPoItem = (): PurchaseOrderItem => ({
+    itemId: '',
+    sku: '',
+    name: '',
+    unit: '',
+    qty: 0,
+    unitPrice: 0,
+    neededDate: '',
+    note: '',
+});
+
+const normalizePoItem = (item: Partial<PurchaseOrderItem>, inventoryItems: InventoryItem[]): PurchaseOrderItem => {
+    const matched = inventoryItems.find(inv =>
+        inv.id === item.itemId ||
+        (!!item.sku && inv.sku.toLowerCase() === item.sku.toLowerCase()) ||
+        (!!item.name && inv.name.toLowerCase() === item.name.toLowerCase())
+    );
+
+    return {
+        itemId: item.itemId || matched?.id || '',
+        sku: item.sku || matched?.sku || '',
+        name: item.name || matched?.name || '',
+        unit: item.unit || matched?.unit || '',
+        qty: Number(item.qty) || 0,
+        unitPrice: Number(item.unitPrice) || 0,
+        receivedQty: Number(item.receivedQty) || 0,
+        neededDate: item.neededDate || '',
+        note: item.note || '',
+    };
+};
+
+const formatExcelDate = (XLSX: any, value: any): string => {
+    if (!value) return '';
+    if (typeof value === 'number') return XLSX.SSF.format('yyyy-mm-dd', value);
+    const text = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(text)) {
+        const [day, month, year] = text.split('/');
+        return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+    return text;
+};
+
 const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, projectId }) => {
     const toast = useToast();
     const confirm = useConfirm();
+    const { items: inventoryItems, warehouses } = useApp();
     const effectiveId = projectId || constructionSiteId || '';
     const [subTab, setSubTab] = useState<'vendor' | 'po'>('vendor');
 
@@ -68,10 +119,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     // PO Form
     const [pVendorId, setPVendorId] = useState('');
     const [pNum, setPNum] = useState('');
+    const [pTargetWarehouseId, setPTargetWarehouseId] = useState('');
     const [pDate, setPDate] = useState(new Date().toISOString().split('T')[0]);
     const [pExpDate, setPExpDate] = useState('');
-    const [pItems, setPItems] = useState<{ name: string; unit: string; qty: number; unitPrice: number }[]>([{ name: '', unit: '', qty: 0, unitPrice: 0 }]);
+    const [pItems, setPItems] = useState<PurchaseOrderItem[]>([createEmptyPoItem()]);
     const [pNote, setPNote] = useState('');
+    const [importingPo, setImportingPo] = useState(false);
+    const [printingPoId, setPrintingPoId] = useState<string | null>(null);
 
     // Vendor CRUD
     const resetVendorForm = () => {
@@ -106,33 +160,61 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const resetPoForm = () => {
         setEditingPo(null); setShowPoForm(false);
         setPVendorId(''); setPNum(''); setPDate(new Date().toISOString().split('T')[0]);
-        setPExpDate(''); setPItems([{ name: '', unit: '', qty: 0, unitPrice: 0 }]); setPNote('');
+        setPTargetWarehouseId(''); setPExpDate(''); setPItems([createEmptyPoItem()]); setPNote('');
     };
     const openEditPo = (po: PurchaseOrder) => {
         setEditingPo(po); setPVendorId(po.vendorId); setPNum(po.poNumber);
+        setPTargetWarehouseId(po.targetWarehouseId || '');
         setPDate(po.orderDate); setPExpDate(po.expectedDeliveryDate || '');
-        setPItems(po.items.map(i => ({ name: i.name, unit: i.unit, qty: i.qty, unitPrice: i.unitPrice })));
+        setPItems(po.items.map(i => normalizePoItem(i, inventoryItems)));
         setPNote(po.note || ''); setShowPoForm(true);
     };
     const handleSavePo = async () => {
-        if (!pVendorId || !pNum) return;
-        const validItems = pItems.filter(i => i.name);
+        if (!pVendorId || !pNum || !pTargetWarehouseId) {
+            toast.warning('Thiếu thông tin PO', 'Vui lòng chọn nhà cung cấp, số PO và kho nhận.');
+            return;
+        }
+        const validItems = pItems
+            .map(i => normalizePoItem(i, inventoryItems))
+            .filter(i => i.itemId && i.qty > 0);
+        if (validItems.length === 0) {
+            toast.warning('Chưa có vật tư', 'Vui lòng chọn ít nhất một vật tư WMS và nhập khối lượng đặt.');
+            return;
+        }
+        const duplicatedSku = validItems.find((line, index) => validItems.some((other, otherIndex) => otherIndex !== index && other.itemId === line.itemId));
+        if (duplicatedSku) {
+            toast.warning('Vật tư bị trùng', `SKU ${duplicatedSku.sku} đang xuất hiện nhiều dòng trong PO.`);
+            return;
+        }
+        const invalidReceivedQty = validItems.find(line => (Number(line.receivedQty) || 0) > (Number(line.qty) || 0));
+        if (invalidReceivedQty) {
+            toast.warning('Khối lượng đặt không hợp lệ', `SKU ${invalidReceivedQty.sku} có số đã nhận lớn hơn khối lượng đặt.`);
+            return;
+        }
         const totalAmount = validItems.reduce((s, i) => s + i.qty * i.unitPrice, 0);
         const vendor = vendors.find(v => v.id === pVendorId);
         const poItem: PurchaseOrder = editingPo ? {
             ...editingPo, vendorId: pVendorId, vendorName: vendor?.name,
             poNumber: pNum, items: validItems, totalAmount, orderDate: pDate,
-            expectedDeliveryDate: pExpDate || undefined, note: pNote || undefined,
+            expectedDeliveryDate: pExpDate || undefined, targetWarehouseId: pTargetWarehouseId,
+            qrToken: editingPo.qrToken || createPoQrToken(),
+            note: pNote || undefined,
         } : {
             id: crypto.randomUUID(), projectId: projectId || constructionSiteId || null, constructionSiteId: constructionSiteId || null, vendorId: pVendorId,
             vendorName: vendor?.name, poNumber: pNum, items: validItems,
             totalAmount, orderDate: pDate, expectedDeliveryDate: pExpDate || undefined,
-            status: 'draft', note: pNote || undefined, createdAt: new Date().toISOString(),
+            status: 'draft', targetWarehouseId: pTargetWarehouseId, qrToken: createPoQrToken(),
+            receivedTransactionIds: [], note: pNote || undefined, createdAt: new Date().toISOString(),
         };
-        await poService.upsert(poItem);
-        setPos(await poService.list(effectiveId, constructionSiteId || null));
-        toast.success(editingPo ? 'Cập nhật PO' : 'Tạo đơn hàng thành công');
-        resetPoForm();
+        try {
+            await poService.upsert(poItem);
+            setPos(await poService.list(effectiveId, constructionSiteId || null));
+            toast.success(editingPo ? 'Cập nhật PO' : 'Tạo đơn hàng thành công');
+            resetPoForm();
+        } catch (e: any) {
+            logApiError('supplyChain.savePo', e);
+            toast.error('Không thể lưu PO', getApiErrorMessage(e, 'Không thể lưu đơn hàng lên Supabase.'));
+        }
     };
 
     const updatePoStatus = async (id: string, status: POStatus) => {
@@ -168,6 +250,212 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             toast.success('Xoá PO thành công');
         } catch (e: any) {
             toast.error('Lỗi xoá', e?.message);
+        }
+    };
+
+    const updatePoItem = (index: number, patch: Partial<PurchaseOrderItem>) => {
+        setPItems(prev => prev.map((item, i) => i === index ? { ...item, ...patch } : item));
+    };
+
+    const selectPoInventoryItem = (index: number, itemId: string) => {
+        const selected = inventoryItems.find(item => item.id === itemId);
+        updatePoItem(index, {
+            itemId,
+            sku: selected?.sku || '',
+            name: selected?.name || '',
+            unit: selected?.unit || '',
+            unitPrice: selected?.priceIn || 0,
+        });
+    };
+
+    const handleDownloadPoTemplate = async () => {
+        const XLSX = await loadXlsx();
+        const headers = [['Mã SKU *', 'Tên vật tư', 'ĐVT', 'Khối lượng đặt *', 'Đơn giá', 'Ngày cần', 'Ghi chú']];
+        const sample = inventoryItems[0]
+            ? [[inventoryItems[0].sku, inventoryItems[0].name, inventoryItems[0].unit, 10, inventoryItems[0].priceIn || 0, new Date().toISOString().split('T')[0], '']]
+            : [];
+        const ws = XLSX.utils.aoa_to_sheet([...headers, ...sample]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'PO_Items');
+        const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'Vioo_PO_Template.xlsx';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleImportPoExcel = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+
+        setImportingPo(true);
+        try {
+            const XLSX = await loadXlsx();
+            const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(ws, { defval: '' }) as Record<string, any>[];
+            const imported: PurchaseOrderItem[] = [];
+            const errors: string[] = [];
+
+            rows.forEach((row, index) => {
+                const rowNumber = index + 2;
+                const sku = String(row['Mã SKU *'] || row['Mã SKU'] || '').trim();
+                const qty = Number(row['Khối lượng đặt *'] || row['Khối lượng đặt'] || 0);
+                if (!sku && !qty) return;
+                if (!sku) {
+                    errors.push(`Dòng ${rowNumber}: thiếu Mã SKU.`);
+                    return;
+                }
+                if (!qty || qty <= 0) {
+                    errors.push(`Dòng ${rowNumber}: Khối lượng đặt phải lớn hơn 0.`);
+                    return;
+                }
+
+                const item = inventoryItems.find(inv => inv.sku.toLowerCase() === sku.toLowerCase());
+                if (!item) {
+                    errors.push(`Dòng ${rowNumber}: SKU "${sku}" không tồn tại trong kho vật tư.`);
+                    return;
+                }
+
+                imported.push({
+                    itemId: item.id,
+                    sku: item.sku,
+                    name: item.name,
+                    unit: item.unit,
+                    qty,
+                    unitPrice: Number(row['Đơn giá'] || item.priceIn || 0),
+                    receivedQty: 0,
+                    neededDate: formatExcelDate(XLSX, row['Ngày cần']),
+                    note: String(row['Ghi chú'] || '').trim(),
+                });
+            });
+
+            if (errors.length > 0) {
+                toast.error(
+                    `Có ${errors.length} lỗi import PO`,
+                    errors.slice(0, 3).join(' | ') + (errors.length > 3 ? ` (+${errors.length - 3} lỗi khác)` : '')
+                );
+            }
+
+            if (imported.length > 0) {
+                setPItems(imported);
+                toast.success('Đã nạp file Excel', `Đã đưa ${imported.length} dòng hợp lệ vào PO.`);
+            } else if (errors.length === 0) {
+                toast.warning('File Excel trống', 'Không có dòng vật tư hợp lệ để import.');
+            }
+        } catch (e: any) {
+            logApiError('supplyChain.importPoExcel', e);
+            toast.error('Không thể import Excel', getApiErrorMessage(e, 'Không thể đọc file Excel PO.'));
+        } finally {
+            setImportingPo(false);
+        }
+    };
+
+    const escapeHtml = (value: unknown) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+
+    const handlePrintPo = async (po: PurchaseOrder) => {
+        setPrintingPoId(po.id);
+        try {
+            const printablePo = await poService.ensureQrToken(po);
+            if (!po.qrToken) {
+                setPos(prev => prev.map(item => item.id === po.id ? printablePo : item));
+            }
+            const receiveUrl = buildPoReceiveUrl(printablePo.qrToken!);
+            const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={132} level="H" includeMargin />);
+            const targetWh = warehouses.find(w => w.id === printablePo.targetWarehouseId);
+            const rowsHtml = printablePo.items.map((item, index) => `
+                <tr>
+                    <td>${index + 1}</td>
+                    <td>${escapeHtml(item.sku)}</td>
+                    <td>${escapeHtml(item.name)}</td>
+                    <td>${escapeHtml(item.unit)}</td>
+                    <td class="right">${Number(item.qty || 0).toLocaleString('vi-VN')}</td>
+                    <td class="right">${Number(item.unitPrice || 0).toLocaleString('vi-VN')}</td>
+                    <td>${escapeHtml(item.neededDate || printablePo.expectedDeliveryDate || '')}</td>
+                    <td>${escapeHtml(item.note || '')}</td>
+                </tr>
+            `).join('');
+            const html = `
+                <!doctype html>
+                <html>
+                <head>
+                    <meta charset="utf-8" />
+                    <title>${escapeHtml(printablePo.poNumber)}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; color: #0f172a; margin: 32px; }
+                        .header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
+                        h1 { margin: 0; font-size: 24px; letter-spacing: .02em; }
+                        .meta { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; font-size: 13px; }
+                        .label { color: #64748b; font-weight: 700; text-transform: uppercase; font-size: 10px; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 28px; font-size: 12px; }
+                        th, td { border: 1px solid #cbd5e1; padding: 8px; vertical-align: top; }
+                        th { background: #f1f5f9; text-transform: uppercase; font-size: 10px; letter-spacing: .04em; }
+                        .right { text-align: right; }
+                        .qr { text-align: center; font-size: 10px; color: #64748b; font-weight: 700; }
+                        .note { margin-top: 20px; font-size: 12px; color: #475569; }
+                        @media print { body { margin: 18mm; } }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <div>
+                            <div class="label">Phiếu đặt hàng nhà cung cấp</div>
+                            <h1>${escapeHtml(printablePo.poNumber)}</h1>
+                            <div class="meta">
+                                <div><div class="label">Nhà cung cấp</div>${escapeHtml(printablePo.vendorName || '')}</div>
+                                <div><div class="label">Kho nhận</div>${escapeHtml(targetWh?.name || '')}</div>
+                                <div><div class="label">Dự án/Công trường</div>${escapeHtml(printablePo.projectId || printablePo.constructionSiteId || '')}</div>
+                                <div><div class="label">Ngày đặt</div>${escapeHtml(printablePo.orderDate)}</div>
+                                <div><div class="label">Ngày cần</div>${escapeHtml(printablePo.expectedDeliveryDate || '')}</div>
+                            </div>
+                        </div>
+                        <div class="qr">${qrSvg}<div>Quét QR để nhập kho</div></div>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>STT</th>
+                                <th>Mã hàng hoá</th>
+                                <th>Tên hàng hoá</th>
+                                <th>ĐVT</th>
+                                <th>Khối lượng</th>
+                                <th>Đơn giá</th>
+                                <th>Ngày cần</th>
+                                <th>Ghi chú</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rowsHtml}</tbody>
+                    </table>
+                    ${printablePo.note ? `<div class="note"><strong>Ghi chú:</strong> ${escapeHtml(printablePo.note)}</div>` : ''}
+                </body>
+                </html>
+            `;
+
+            const printWindow = window.open('', '_blank', 'width=980,height=720');
+            if (!printWindow) {
+                toast.error('Không thể mở cửa sổ in', 'Trình duyệt đang chặn popup in/PDF.');
+                return;
+            }
+            printWindow.document.write(html);
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => printWindow.print(), 300);
+        } catch (e: any) {
+            logApiError('supplyChain.printPo', e);
+            toast.error('Không thể in PO', getApiErrorMessage(e, 'Không thể tạo phiếu PO có QR.'));
+        } finally {
+            setPrintingPoId(null);
         }
     };
 
@@ -300,16 +588,27 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                     <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><FileText size={16} className="text-blue-500" /> Đơn đặt hàng (PO)</h3>
-                        <button onClick={() => { resetPoForm(); setPNum(`PO-${String(pos.length + 1).padStart(3, '0')}`); setShowPoForm(true); }}
-                            disabled={vendors.length === 0}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed">
-                            <Plus size={12} /> Tạo PO
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button onClick={handleDownloadPoTemplate}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100">
+                                <FileSpreadsheet size={12} /> Mẫu Excel
+                            </button>
+                            <button onClick={() => { resetPoForm(); setPNum(`PO-${String(pos.length + 1).padStart(3, '0')}`); setShowPoForm(true); }}
+                                disabled={vendors.length === 0 || inventoryItems.length === 0 || warehouses.length === 0}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed">
+                                <Plus size={12} /> Tạo PO
+                            </button>
+                        </div>
                     </div>
                     {vendors.length === 0 ? (
                         <div className="p-8 text-center">
                             <AlertTriangle size={28} className="mx-auto mb-2 text-amber-300" />
                             <p className="text-xs font-bold text-slate-400">Thêm NCC trước khi tạo đơn hàng</p>
+                        </div>
+                    ) : inventoryItems.length === 0 || warehouses.length === 0 ? (
+                        <div className="p-8 text-center">
+                            <AlertTriangle size={28} className="mx-auto mb-2 text-amber-300" />
+                            <p className="text-xs font-bold text-slate-400">Cần có danh mục vật tư WMS và kho nhận trước khi tạo PO</p>
                         </div>
                     ) : pos.length === 0 ? (
                         <div className="p-12 text-center">
@@ -321,6 +620,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             {pos.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(po => {
                                 const stCfg = PO_STATUS[po.status];
                                 const isExpanded = expandedPoId === po.id;
+                                const targetWh = warehouses.find(w => w.id === po.targetWarehouseId);
                                 return (
                                     <div key={po.id}>
                                         <div className="px-5 py-4 hover:bg-slate-50/30 group cursor-pointer"
@@ -341,6 +641,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             NCC: <span className="font-bold text-slate-500">{po.vendorName || '—'}</span>
                                                             {' • '}{new Date(po.orderDate).toLocaleDateString('vi-VN')}
                                                             {' • '}{po.items.length} mục
+                                                            {targetWh && <>{' • '}Kho: <span className="font-bold text-slate-500">{targetWh.name}</span></>}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -355,13 +656,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     </div>
                                                     {/* Status actions */}
                                                     <div className="flex gap-1">
+                                                        <button onClick={e => { e.stopPropagation(); handlePrintPo(po); }} title="In/PDF có QR"
+                                                            disabled={printingPoId === po.id}
+                                                            className="w-7 h-7 rounded-lg flex items-center justify-center text-blue-400 hover:text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 disabled:opacity-50">
+                                                            {printingPoId === po.id ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
+                                                        </button>
                                                         {po.status === 'draft' && (
                                                             <button onClick={e => { e.stopPropagation(); updatePoStatus(po.id, 'sent'); }} title="Gửi đơn"
                                                                 className="w-7 h-7 rounded-lg flex items-center justify-center text-amber-400 hover:text-amber-600 hover:bg-amber-50 border border-transparent hover:border-amber-200"><Send size={13} /></button>
-                                                        )}
-                                                        {po.status === 'sent' && (
-                                                            <button onClick={e => { e.stopPropagation(); updatePoStatus(po.id, 'delivered'); }} title="Đã giao"
-                                                                className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50 border border-transparent hover:border-emerald-200"><Truck size={13} /></button>
                                                         )}
                                                     </div>
                                                     <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
@@ -382,6 +684,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             <th className="text-left py-2 px-2">Vật tư</th>
                                                             <th className="text-center py-2 px-2">ĐVT</th>
                                                             <th className="text-right py-2 px-2">SL</th>
+                                                            <th className="text-right py-2 px-2">Đã nhận</th>
                                                             <th className="text-right py-2 px-2">Đơn giá</th>
                                                             <th className="text-right py-2 px-2">Thành tiền</th>
                                                         </tr>
@@ -389,9 +692,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     <tbody className="divide-y divide-slate-100">
                                                         {po.items.map((item, i) => (
                                                             <tr key={i}>
-                                                                <td className="py-1.5 px-2 font-bold text-slate-700">{item.name}</td>
+                                                                <td className="py-1.5 px-2 font-bold text-slate-700">
+                                                                    {item.name}
+                                                                    {item.sku && <div className="text-[9px] font-mono text-slate-400">{item.sku}</div>}
+                                                                    {(item.neededDate || item.note) && <div className="text-[9px] text-slate-400 font-medium">{item.neededDate || ''}{item.neededDate && item.note ? ' • ' : ''}{item.note || ''}</div>}
+                                                                </td>
                                                                 <td className="py-1.5 px-2 text-center text-slate-500">{item.unit}</td>
                                                                 <td className="py-1.5 px-2 text-right text-slate-600">{item.qty.toLocaleString()}</td>
+                                                                <td className="py-1.5 px-2 text-right text-emerald-600 font-bold">{(item.receivedQty || 0).toLocaleString()}</td>
                                                                 <td className="py-1.5 px-2 text-right text-slate-500">{fmt(item.unitPrice)}</td>
                                                                 <td className="py-1.5 px-2 text-right font-bold text-slate-700">{fmt(item.qty * item.unitPrice)} đ</td>
                                                             </tr>
@@ -399,7 +707,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     </tbody>
                                                     <tfoot>
                                                         <tr className="font-black text-xs">
-                                                            <td colSpan={4} className="py-2 px-2 text-right text-slate-600">TỔNG:</td>
+                                                            <td colSpan={5} className="py-2 px-2 text-right text-slate-600">TỔNG:</td>
                                                             <td className="py-2 px-2 text-right text-slate-800">{fmt(po.totalAmount)} đ</td>
                                                         </tr>
                                                     </tfoot>
@@ -501,7 +809,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             {/* PO Form Modal */}
             {showPoForm && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto">
                         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-t-3xl flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editingPo ? <><Edit2 size={18} /> Sửa PO</> : <><Plus size={18} /> Tạo đơn hàng</>}
@@ -524,7 +832,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     </select>
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ngày đặt</label>
                                     <input type="date" value={pDate} onChange={e => setPDate(e.target.value)}
@@ -535,25 +843,78 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     <input type="date" value={pExpDate} onChange={e => setPExpDate(e.target.value)}
                                         className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                                 </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Kho nhận *</label>
+                                    <select value={pTargetWarehouseId} onChange={e => setPTargetWarehouseId(e.target.value)}
+                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none">
+                                        <option value="">— Chọn kho —</option>
+                                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                    </select>
+                                </div>
                             </div>
                             <div>
                                 <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
                                     <span>Danh sách vật tư</span>
-                                    <button onClick={() => setPItems([...pItems, { name: '', unit: '', qty: 0, unitPrice: 0 }])}
-                                        className="text-blue-500 hover:text-blue-700 flex items-center gap-0.5"><Plus size={10} /> Thêm dòng</button>
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={handleDownloadPoTemplate}
+                                            className="text-emerald-600 hover:text-emerald-700 flex items-center gap-0.5"><FileSpreadsheet size={10} /> Mẫu</button>
+                                        <label className={`text-blue-500 hover:text-blue-700 flex items-center gap-0.5 cursor-pointer ${importingPo ? 'opacity-60 pointer-events-none' : ''}`}>
+                                            {importingPo ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />} Import
+                                            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportPoExcel} disabled={importingPo} />
+                                        </label>
+                                        <button onClick={() => setPItems([...pItems, createEmptyPoItem()])}
+                                            className="text-blue-500 hover:text-blue-700 flex items-center gap-0.5"><Plus size={10} /> Thêm dòng</button>
+                                    </div>
                                 </label>
                                 <div className="space-y-2 mt-2">
                                     {pItems.map((item, i) => (
-                                        <div key={i} className="flex gap-1.5 items-center">
-                                            <input value={item.name} onChange={e => { const n=[...pItems]; n[i].name=e.target.value; setPItems(n); }}
-                                                placeholder="Tên" className="flex-1 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none" />
-                                            <input value={item.unit} onChange={e => { const n=[...pItems]; n[i].unit=e.target.value; setPItems(n); }}
-                                                placeholder="ĐVT" className="w-14 px-2 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none" />
-                                            <input type="number" value={item.qty||''} onChange={e => { const n=[...pItems]; n[i].qty=Number(e.target.value); setPItems(n); }}
-                                                placeholder="SL" className="w-14 px-2 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none" />
-                                            <input type="number" value={item.unitPrice||''} onChange={e => { const n=[...pItems]; n[i].unitPrice=Number(e.target.value); setPItems(n); }}
-                                                placeholder="Đơn giá" className="w-20 px-2 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none" />
-                                            {pItems.length > 1 && <button onClick={() => setPItems(pItems.filter((_,j) => j!==i))} className="text-red-300 hover:text-red-500"><X size={14} /></button>}
+                                        <div key={i} className="grid grid-cols-12 gap-2 items-start rounded-xl border border-slate-100 bg-slate-50/60 p-2">
+                                            <select
+                                                value={item.itemId}
+                                                onChange={e => selectPoInventoryItem(i, e.target.value)}
+                                                className="col-span-12 md:col-span-4 px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                            >
+                                                <option value="">Chọn SKU vật tư...</option>
+                                                {inventoryItems.map(inv => <option key={inv.id} value={inv.id}>{inv.sku} - {inv.name}</option>)}
+                                            </select>
+                                            <div className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-xs text-slate-500 font-bold truncate">
+                                                {item.unit || 'ĐVT'}
+                                            </div>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                step={1}
+                                                value={item.qty || ''}
+                                                onChange={e => updatePoItem(i, { qty: Number(e.target.value) || 0 })}
+                                                placeholder="SL"
+                                                className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                            />
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                value={item.unitPrice || ''}
+                                                onChange={e => updatePoItem(i, { unitPrice: Number(e.target.value) || 0 })}
+                                                placeholder="Đơn giá"
+                                                className="col-span-4 md:col-span-2 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                            />
+                                            <input
+                                                type="date"
+                                                value={item.neededDate || ''}
+                                                onChange={e => updatePoItem(i, { neededDate: e.target.value })}
+                                                className="col-span-6 md:col-span-2 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                            />
+                                            <input
+                                                value={item.note || ''}
+                                                onChange={e => updatePoItem(i, { note: e.target.value })}
+                                                placeholder="Ghi chú"
+                                                className="col-span-5 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                            />
+                                            <button
+                                                onClick={() => setPItems(pItems.length > 1 ? pItems.filter((_, j) => j !== i) : [createEmptyPoItem()])}
+                                                className="col-span-1 h-9 rounded-lg text-red-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center"
+                                            >
+                                                <X size={14} />
+                                            </button>
                                         </div>
                                     ))}
                                 </div>
@@ -572,7 +933,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         </div>
                         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
                             <button onClick={resetPoForm} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Huỷ</button>
-                            <button onClick={handleSavePo} disabled={!pVendorId || !pNum}
+                            <button onClick={handleSavePo} disabled={!pVendorId || !pNum || !pTargetWarehouseId}
                                 className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-blue-500 to-indigo-500 shadow-lg flex items-center gap-2 disabled:opacity-50">
                                 <Save size={16} /> {editingPo ? 'Lưu' : 'Tạo'}
                             </button>

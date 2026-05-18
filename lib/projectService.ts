@@ -7,6 +7,7 @@ import {
 import { auditService } from './auditService';
 import { dailyLogDetailService } from './dailyLogDetailService';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
+import { createPoQrToken } from './poQr';
 
 // ==================== HELPER ====================
 // snake_case ↔ camelCase mapping
@@ -258,6 +259,66 @@ export const poService = {
             .from('purchase_orders')
             .upsert(toDb(item), { onConflict: 'id' });
         if (error) throw error;
+    },
+    async getByQrToken(token: string): Promise<PurchaseOrder | null> {
+        const { data, error } = await supabase
+            .from('purchase_orders')
+            .select('*')
+            .eq('qr_token', token)
+            .maybeSingle();
+        if (error) throw error;
+        return data ? fromDb(data) as PurchaseOrder : null;
+    },
+    async ensureQrToken(item: PurchaseOrder): Promise<PurchaseOrder> {
+        if (item.qrToken) return item;
+        const next = { ...item, qrToken: createPoQrToken() };
+        await this.upsert(next);
+        return next;
+    },
+    async receivePo(
+        poId: string,
+        receiptLines: { itemId: string; quantity: number }[],
+        transactionId: string
+    ): Promise<PurchaseOrder> {
+        const { data, error } = await supabase
+            .from('purchase_orders')
+            .select('*')
+            .eq('id', poId)
+            .single();
+        if (error) throw error;
+
+        const po = fromDb(data) as PurchaseOrder;
+        const receiptMap = new Map(receiptLines.map(line => [line.itemId, Number(line.quantity) || 0]));
+        let hasReceipt = false;
+
+        const nextItems = po.items.map(item => {
+            const receiveQty = receiptMap.get(item.itemId) || 0;
+            const orderedQty = Number(item.qty) || 0;
+            const receivedQty = Number(item.receivedQty) || 0;
+            const remainingQty = Math.max(orderedQty - receivedQty, 0);
+
+            if (receiveQty <= 0) return item;
+            if (receiveQty > remainingQty) {
+                throw new Error(`Số lượng nhận của ${item.sku || item.name} vượt phần còn lại.`);
+            }
+
+            hasReceipt = true;
+            return { ...item, receivedQty: receivedQty + receiveQty };
+        });
+
+        if (!hasReceipt) throw new Error('Chưa có dòng vật tư nào có số lượng nhận.');
+
+        const isDelivered = nextItems.every(item => (Number(item.receivedQty) || 0) >= (Number(item.qty) || 0));
+        const updated: PurchaseOrder = {
+            ...po,
+            items: nextItems,
+            status: isDelivered ? 'delivered' : 'partial',
+            actualDeliveryDate: isDelivered ? new Date().toISOString().split('T')[0] : po.actualDeliveryDate,
+            receivedTransactionIds: [...(po.receivedTransactionIds || []), transactionId],
+        };
+
+        await this.upsert(updated);
+        return updated;
     },
     async remove(id: string): Promise<void> {
         const { error } = await supabase
