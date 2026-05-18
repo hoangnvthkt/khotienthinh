@@ -1416,10 +1416,10 @@ const ProjectDashboard: React.FC = () => {
                         {/* Type */}
                         <div>
                             <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Loại giao dịch</label>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
                                 {Object.entries(TX_TYPE_CONFIG).map(([k, v]) => (
                                     <button key={k} onClick={() => setTxType(k as ProjectTxType)}
-                                        className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${txType === k ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                                        className={`shrink-0 px-3 whitespace-nowrap py-2 rounded-xl text-xs font-bold border transition-all ${txType === k ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
                                         {v.label}
                                     </button>
                                 ))}

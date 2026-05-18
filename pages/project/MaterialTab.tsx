@@ -256,7 +256,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             </div>
 
             {/* Sub-tabs */}
-            <div className="flex gap-1 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm">
+            <div className="flex gap-1 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
                 {[
                     { key: 'summary' as const, label: '🔗 Tổng hợp', count: computedBoqItems.length },
                     { key: 'boq' as const, label: '📋 BOQ', count: computedBoqItems.length },
@@ -265,7 +265,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     { key: 'dashboard' as const, label: '📈 Dashboard', count: 0 },
                 ].map(t => (
                     <button key={t.key} onClick={() => setActiveSubTab(t.key)}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-xs font-bold transition-all ${
+                        className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                             activeSubTab === t.key ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'
                         }`}>
                         {t.label} {t.count > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] ${activeSubTab === t.key ? 'bg-white/20' : 'bg-slate-100'}`}>{t.count}</span>}

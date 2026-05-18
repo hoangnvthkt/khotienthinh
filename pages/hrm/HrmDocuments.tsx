@@ -310,11 +310,11 @@ const HrmDocuments: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-1">
+      <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
         {TAB_CONFIG.map(tab => (
           <button key={tab.key}
             onClick={() => { setActiveTab(tab.key); setFilterCategory('all'); }}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-black transition-all ${
+            className={`shrink-0 px-4 whitespace-nowrap flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-black transition-all ${
               activeTab === tab.key
                 ? `bg-gradient-to-r ${tab.color} text-white shadow-md`
                 : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'

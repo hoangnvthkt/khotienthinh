@@ -499,13 +499,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             </div>
 
             {/* Sub-tabs */}
-            <div className="flex gap-1 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm">
+            <div className="flex gap-1 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
                 {[
                     { key: 'vendor' as const, label: '🏢 Nhà cung cấp', count: vendors.length },
                     { key: 'po' as const, label: '📄 Đơn hàng (PO)', count: pos.length },
                 ].map(t => (
                     <button key={t.key} onClick={() => setSubTab(t.key)}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                        className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                             subTab === t.key ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'
                         }`}>
                         {t.label} {t.count > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] ${subTab === t.key ? 'bg-white/20' : 'bg-slate-100'}`}>{t.count}</span>}
