@@ -1631,7 +1631,7 @@ const ProjectDashboard: React.FC = () => {
                 </div>
 
                 {/* Overview Sub-tabs */}
-                <div className="flex gap-1 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm overflow-x-auto">
+                <div className="flex gap-1 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
                     {[
                         { key: 'org' as const, label: 'Tổ chức', icon: '👥' },
                         { key: 'budget' as const, label: 'Ngân sách', icon: '📊' },
@@ -1646,7 +1646,7 @@ const ProjectDashboard: React.FC = () => {
                         { key: 'report' as const, label: 'Báo cáo', icon: '📊' },
                     ].map(tab => (
                         <button key={tab.key} onClick={() => setOverviewTab(tab.key)}
-                            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                            className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                                 overviewTab === tab.key ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25' : 'text-slate-500 hover:bg-slate-50'
                             }`}>
                             <span>{tab.icon}</span> {tab.label}
