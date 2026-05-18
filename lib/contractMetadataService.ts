@@ -1,9 +1,15 @@
 import {
+  ContractCostItem,
+  ContractLaborCatalogItem,
+  ContractMachineCatalogItem,
+  ContractMaterialNormItem,
   ContractFormTemplate,
   ContractGuarantee,
+  ContractServiceCatalogItem,
   ContractTemplateField,
   ContractTemplateSection,
   ContractTypeMetadata,
+  InventoryItem,
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { isSupabaseConfigured, supabase } from './supabase';
@@ -16,6 +22,15 @@ const mapTemplate = (row: any): ContractFormTemplate => fromDb(row) as ContractF
 const mapSection = (row: any): ContractTemplateSection => fromDb(row) as ContractTemplateSection;
 const mapField = (row: any): ContractTemplateField => fromDb(row) as ContractTemplateField;
 const mapGuarantee = (row: any): ContractGuarantee => fromDb(row) as ContractGuarantee;
+const mapServiceCatalog = (row: any): ContractServiceCatalogItem => fromDb(row) as ContractServiceCatalogItem;
+const mapLaborCatalog = (row: any): ContractLaborCatalogItem => fromDb(row) as ContractLaborCatalogItem;
+const mapMachineCatalog = (row: any): ContractMachineCatalogItem => fromDb(row) as ContractMachineCatalogItem;
+const mapMaterialNorm = (row: any): ContractMaterialNormItem => fromDb(row) as ContractMaterialNormItem;
+const mapCostItem = (row: any): ContractCostItem => fromDb(row) as ContractCostItem;
+const mapInventoryItem = (row: any): InventoryItem => fromDb({
+  ...row,
+  stock_by_warehouse: row.stock_by_warehouse || {},
+}) as InventoryItem;
 
 const normalizeCode = (name: string) =>
   name
@@ -212,6 +227,148 @@ export const contractTemplateService = {
       .update({ is_active: false, updated_at: new Date().toISOString() })
       .eq('id', id);
     if (error) throw error;
+  },
+};
+
+const catalogList = async <T>(table: string, mapper: (row: any) => T): Promise<T[]> => {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from(table)
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data || []).map(mapper);
+};
+
+const catalogUpsert = async <T>(
+  table: string,
+  input: Record<string, any>,
+  mapper: (row: any) => T,
+): Promise<T> => {
+  const payload = cleanUndefined(toDb({
+    ...input,
+    id: input.id || crypto.randomUUID(),
+    code: input.code?.trim(),
+    name: input.name?.trim(),
+    workCode: input.workCode?.trim(),
+    materialName: input.materialName?.trim(),
+    status: input.status || 'active',
+    updatedAt: new Date().toISOString(),
+    createdAt: input.createdAt,
+  }));
+  if (!isSupabaseConfigured) return mapper(payload);
+  const { data, error } = await supabase
+    .from(table)
+    .upsert(payload, { onConflict: 'id' })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return mapper(data);
+};
+
+const catalogRemove = async (table: string, id: string): Promise<void> => {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase.from(table).delete().eq('id', id);
+  if (error) throw error;
+};
+
+export const contractServiceCatalogService = {
+  list: () => catalogList('contract_service_catalogs', mapServiceCatalog),
+  upsert: (input: Partial<ContractServiceCatalogItem> & { code: string; name: string }) =>
+    catalogUpsert('contract_service_catalogs', {
+      ...input,
+      unitPrice: Number(input.unitPrice || 0),
+    }, mapServiceCatalog),
+  remove: (id: string) => catalogRemove('contract_service_catalogs', id),
+};
+
+export const contractLaborCatalogService = {
+  list: () => catalogList('contract_labor_catalogs', mapLaborCatalog),
+  upsert: (input: Partial<ContractLaborCatalogItem> & { code: string; name: string }) =>
+    catalogUpsert('contract_labor_catalogs', input, mapLaborCatalog),
+  remove: (id: string) => catalogRemove('contract_labor_catalogs', id),
+};
+
+export const contractMachineCatalogService = {
+  list: () => catalogList('contract_machine_catalogs', mapMachineCatalog),
+  upsert: (input: Partial<ContractMachineCatalogItem> & { code: string; name: string }) =>
+    catalogUpsert('contract_machine_catalogs', input, mapMachineCatalog),
+  remove: (id: string) => catalogRemove('contract_machine_catalogs', id),
+};
+
+export const contractMaterialNormService = {
+  list: () => catalogList('contract_material_norms', mapMaterialNorm),
+  upsert: (input: Partial<ContractMaterialNormItem> & { workCode: string; materialName: string }) =>
+    catalogUpsert('contract_material_norms', {
+      ...input,
+      wastePercent: Number(input.wastePercent || 0),
+      norm: Number(input.norm || 0),
+    }, mapMaterialNorm),
+  remove: (id: string) => catalogRemove('contract_material_norms', id),
+};
+
+export const contractCostItemService = {
+  async list(): Promise<ContractCostItem[]> {
+    if (!isSupabaseConfigured) return [];
+    const { data, error } = await supabase
+      .from('contract_cost_items')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data || []).map(mapCostItem);
+  },
+
+  async upsert(input: Partial<ContractCostItem> & { symbol: string; name: string }): Promise<ContractCostItem> {
+    const payload = cleanUndefined(toDb({
+      id: input.id || crypto.randomUUID(),
+      parentId: input.parentId || null,
+      symbol: input.symbol.trim(),
+      name: input.name.trim(),
+      costType: input.costType || null,
+      description: input.description || null,
+      status: input.status || 'active',
+      sortOrder: Number(input.sortOrder || 0),
+      updatedAt: new Date().toISOString(),
+      createdAt: input.createdAt,
+    }));
+    if (!isSupabaseConfigured) return mapCostItem(payload);
+    const { data, error } = await supabase
+      .from('contract_cost_items')
+      .upsert(payload, { onConflict: 'id' })
+      .select('*')
+      .single();
+    if (error) throw error;
+    return mapCostItem(data);
+  },
+
+  async remove(id: string): Promise<void> {
+    if (!isSupabaseConfigured) return;
+    const { count, error: countError } = await supabase
+      .from('contract_cost_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('parent_id', id);
+    if (countError) throw countError;
+    if (count && count > 0) {
+      throw new Error('Khoản mục này đang có khoản mục con. Vui lòng xoá hoặc chuyển các khoản mục con trước.');
+    }
+    const { error } = await supabase
+      .from('contract_cost_items')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+  },
+};
+
+export const contractCatalogInventoryService = {
+  async listMaterials(): Promise<InventoryItem[]> {
+    if (!isSupabaseConfigured) return [];
+    const { data, error } = await supabase
+      .from('items')
+      .select('id, sku, name, category, unit, purchase_unit, price_in, price_out, min_stock, supplier_id, image_url, location, stock_by_warehouse')
+      .order('name', { ascending: true });
+    if (error) throw error;
+    return (data || []).map(mapInventoryItem);
   },
 };
 

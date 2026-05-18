@@ -346,6 +346,17 @@ export const paymentService = {
             .upsert(toDb(item), { onConflict: 'id' });
         if (error) throw error;
     },
+    async listByContract(contractId: string, contractType?: PaymentSchedule['contractType']): Promise<PaymentSchedule[]> {
+        let query = supabase
+            .from('payment_schedules')
+            .select('*')
+            .eq('contract_id', contractId)
+            .order('due_date', { ascending: true });
+        if (contractType) query = query.eq('contract_type', contractType);
+        const { data, error } = await query;
+        if (error) throw error;
+        return (data || []).map(fromDb);
+    },
     async remove(id: string): Promise<void> {
         const { error } = await supabase
             .from('payment_schedules')

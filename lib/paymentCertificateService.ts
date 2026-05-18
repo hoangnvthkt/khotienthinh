@@ -38,7 +38,7 @@ const normalizeCert = (row: any): PaymentCertificate => {
 
 const itemFromContract = (item: ContractItem, previousQuantity = 0): PaymentCertificateItem => {
   const revisedQuantity = item.revisedQuantity ?? item.quantity;
-  const unitPrice = item.unitPrice || 0;
+  const unitPrice = item.revisedUnitPrice ?? item.unitPrice ?? 0;
   return {
     contractItemId: item.id,
     contractItemCode: item.code,

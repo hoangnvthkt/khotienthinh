@@ -1,11 +1,11 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import AiInsightPanel from '../../components/AiInsightPanel';
 import {
     Plus, Edit2, Trash2, X, Save, Truck, Star, Phone, Mail, MapPin,
     FileText, CheckCircle2, Clock, Ban, Send, Package, ChevronDown,
     ChevronUp, Users, DollarSign, ShoppingCart, AlertTriangle, FileSpreadsheet,
-    Upload, Printer, QrCode, Loader2
+    Upload, Printer, QrCode, Loader2, RefreshCcw
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { ProjectVendor, PurchaseOrder, POStatus, PurchaseOrderItem, InventoryItem } from '../../types';
@@ -16,6 +16,8 @@ import { useApp } from '../../context/AppContext';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { buildPoReceiveUrl, createPoQrToken } from '../../lib/poQr';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
+import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -69,10 +71,9 @@ const normalizePoItem = (item: Partial<PurchaseOrderItem>, inventoryItems: Inven
     };
 };
 
-const formatExcelDate = (XLSX: any, value: any): string => {
-    if (!value) return '';
-    if (typeof value === 'number') return XLSX.SSF.format('yyyy-mm-dd', value);
-    const text = String(value).trim();
+const normalizePoImportDate = (value: string): string => {
+    const text = String(value || '').trim();
+    if (!text) return '';
     if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
     if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(text)) {
         const [day, month, year] = text.split('/');
@@ -125,7 +126,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [pItems, setPItems] = useState<PurchaseOrderItem[]>([createEmptyPoItem()]);
     const [pNote, setPNote] = useState('');
     const [importingPo, setImportingPo] = useState(false);
+    const [poImportMode, setPoImportMode] = useState<ExcelImportMode>('create');
+    const [poImportPreview, setPoImportPreview] = useState<ExcelImportPreview<PurchaseOrderItem> | null>(null);
     const [printingPoId, setPrintingPoId] = useState<string | null>(null);
+    const [savingPo, setSavingPo] = useState(false);
+    const poSubmitLockRef = useRef(false);
+    const poImportModeRef = useRef<ExcelImportMode>('create');
 
     // Vendor CRUD
     const resetVendorForm = () => {
@@ -170,6 +176,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setPNote(po.note || ''); setShowPoForm(true);
     };
     const handleSavePo = async () => {
+        if (poSubmitLockRef.current) return;
         if (!pVendorId || !pNum || !pTargetWarehouseId) {
             toast.warning('Thiếu thông tin PO', 'Vui lòng chọn nhà cung cấp, số PO và kho nhận.');
             return;
@@ -193,6 +200,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         }
         const totalAmount = validItems.reduce((s, i) => s + i.qty * i.unitPrice, 0);
         const vendor = vendors.find(v => v.id === pVendorId);
+        poSubmitLockRef.current = true;
+        setSavingPo(true);
         const poItem: PurchaseOrder = editingPo ? {
             ...editingPo, vendorId: pVendorId, vendorName: vendor?.name,
             poNumber: pNum, items: validItems, totalAmount, orderDate: pDate,
@@ -207,6 +216,20 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             receivedTransactionIds: [], note: pNote || undefined, createdAt: new Date().toISOString(),
         };
         try {
+            if (!editingPo) {
+                const ok = await confirm({
+                    title: 'Xác nhận tạo PO',
+                    targetName: pNum,
+                    confirmText: 'Bạn có chắc chắn muốn tạo đơn hàng PO',
+                    subtitle: `${validItems.length} dòng vật tư • Tổng ${fmt(totalAmount)} đ${vendor?.name ? ` • NCC: ${vendor.name}` : ''}`,
+                    warningText: 'PO sẽ được lưu vào hệ thống và dùng để in QR nhận hàng từ nhà cung cấp.',
+                    intent: 'success',
+                    actionLabel: 'Xác nhận tạo',
+                    cancelLabel: 'Kiểm tra lại',
+                    countdownSeconds: 1,
+                });
+                if (!ok) return;
+            }
             await poService.upsert(poItem);
             setPos(await poService.list(effectiveId, constructionSiteId || null));
             toast.success(editingPo ? 'Cập nhật PO' : 'Tạo đơn hàng thành công');
@@ -214,6 +237,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         } catch (e: any) {
             logApiError('supplyChain.savePo', e);
             toast.error('Không thể lưu PO', getApiErrorMessage(e, 'Không thể lưu đơn hàng lên Supabase.'));
+        } finally {
+            poSubmitLockRef.current = false;
+            setSavingPo(false);
         }
     };
 
@@ -276,7 +302,24 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             : [];
         const ws = XLSX.utils.aoa_to_sheet([...headers, ...sample]);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'PO_Items');
+        ws['!cols'] = [{ wch: 18 }, { wch: 32 }, { wch: 12 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 28 }];
+        XLSX.utils.book_append_sheet(wb, ws, 'Nhap_moi');
+
+        const updateWs = XLSX.utils.aoa_to_sheet([
+            ['Mã SKU *', 'Khối lượng đặt', 'Đơn giá', 'Ngày cần', 'Ghi chú'],
+            inventoryItems[0] ? [inventoryItems[0].sku, 20, inventoryItems[0].priceIn || 0, new Date().toISOString().split('T')[0], 'Cập nhật PO'] : ['STEEL-001', 20, 0, '', ''],
+        ]);
+        updateWs['!cols'] = [{ wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 28 }];
+        XLSX.utils.book_append_sheet(wb, updateWs, 'Cap_nhat');
+
+        const guideWs = XLSX.utils.aoa_to_sheet([
+            ['Chức năng', 'Cách dùng'],
+            ['Nhập mới', 'Dùng sheet Nhap_moi để nạp danh sách vật tư vào PO đang tạo/sửa. SKU trùng trong PO sẽ báo lỗi.'],
+            ['Cập nhật', 'Dùng sheet Cap_nhat hoặc file chỉ gồm Mã SKU và cột muốn sửa. SKU phải đang có trong PO form.'],
+            ['Ô trống', 'Trong chế độ Cập nhật, ô trống nghĩa là không đổi dữ liệu.'],
+        ]);
+        guideWs['!cols'] = [{ wch: 24 }, { wch: 100 }];
+        XLSX.utils.book_append_sheet(wb, guideWs, 'Huong_dan');
         const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
         const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const url = URL.createObjectURL(blob);
@@ -289,6 +332,68 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         URL.revokeObjectURL(url);
     };
 
+    const buildPoImportPreview = (mode: ExcelImportMode, rows: Record<string, unknown>[]) => {
+        const activeItems = pItems.map(item => normalizePoItem(item, inventoryItems)).filter(item => item.itemId);
+        const inventoryBySku = (sku: string) => inventoryItems.find(item => item.sku.toLowerCase() === sku.trim().toLowerCase());
+        return buildImportPreview<PurchaseOrderItem>({
+            mode,
+            keyLabel: 'Mã SKU',
+            keyAliases: ['Mã SKU *', 'Mã SKU', 'SKU'],
+            existingRecords: activeItems,
+            getRecordKey: item => item.sku,
+            validateKey: sku => inventoryBySku(sku) ? undefined : `SKU "${sku}" không tồn tại trong kho vật tư.`,
+            createBaseRecord: sku => {
+                const item = inventoryBySku(sku);
+                return {
+                    itemId: item?.id || '',
+                    sku: item?.sku || sku,
+                    name: item?.name || '',
+                    unit: item?.unit || '',
+                    qty: 0,
+                    unitPrice: item?.priceIn || 0,
+                    receivedQty: 0,
+                    neededDate: '',
+                    note: '',
+                };
+            },
+            fields: [
+                {
+                    key: 'qty',
+                    label: 'Khối lượng đặt',
+                    aliases: ['Khối lượng đặt *', 'Khối lượng đặt', 'Số lượng', 'KL'],
+                    requiredOnCreate: true,
+                    normalize: value => Number(value) || 0,
+                    validate: value => Number(value) > 0 ? undefined : 'Khối lượng đặt phải lớn hơn 0.',
+                },
+                {
+                    key: 'unitPrice',
+                    label: 'Đơn giá',
+                    aliases: ['Đơn giá', 'Giá'],
+                    normalize: value => Number(value) || 0,
+                    validate: value => Number(value) >= 0 ? undefined : 'Đơn giá không hợp lệ.',
+                },
+                {
+                    key: 'neededDate',
+                    label: 'Ngày cần',
+                    aliases: ['Ngày cần', 'Ngày giao', 'Ngày yêu cầu'],
+                    normalize: value => normalizePoImportDate(value),
+                    clearable: true,
+                },
+                {
+                    key: 'note',
+                    label: 'Ghi chú',
+                    aliases: ['Ghi chú', 'Ghi chu', 'Note'],
+                    clearable: true,
+                },
+            ],
+        }, rows);
+    };
+
+    const openPoImport = (mode: ExcelImportMode) => {
+        poImportModeRef.current = mode;
+        setPoImportMode(mode);
+    };
+
     const handleImportPoExcel = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         event.target.value = '';
@@ -296,65 +401,41 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
         setImportingPo(true);
         try {
-            const XLSX = await loadXlsx();
-            const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-            const ws = wb.Sheets[wb.SheetNames[0]];
-            const rows = XLSX.utils.sheet_to_json(ws, { defval: '' }) as Record<string, any>[];
-            const imported: PurchaseOrderItem[] = [];
-            const errors: string[] = [];
-
-            rows.forEach((row, index) => {
-                const rowNumber = index + 2;
-                const sku = String(row['Mã SKU *'] || row['Mã SKU'] || '').trim();
-                const qty = Number(row['Khối lượng đặt *'] || row['Khối lượng đặt'] || 0);
-                if (!sku && !qty) return;
-                if (!sku) {
-                    errors.push(`Dòng ${rowNumber}: thiếu Mã SKU.`);
-                    return;
-                }
-                if (!qty || qty <= 0) {
-                    errors.push(`Dòng ${rowNumber}: Khối lượng đặt phải lớn hơn 0.`);
-                    return;
-                }
-
-                const item = inventoryItems.find(inv => inv.sku.toLowerCase() === sku.toLowerCase());
-                if (!item) {
-                    errors.push(`Dòng ${rowNumber}: SKU "${sku}" không tồn tại trong kho vật tư.`);
-                    return;
-                }
-
-                imported.push({
-                    itemId: item.id,
-                    sku: item.sku,
-                    name: item.name,
-                    unit: item.unit,
-                    qty,
-                    unitPrice: Number(row['Đơn giá'] || item.priceIn || 0),
-                    receivedQty: 0,
-                    neededDate: formatExcelDate(XLSX, row['Ngày cần']),
-                    note: String(row['Ghi chú'] || '').trim(),
-                });
-            });
-
-            if (errors.length > 0) {
-                toast.error(
-                    `Có ${errors.length} lỗi import PO`,
-                    errors.slice(0, 3).join(' | ') + (errors.length > 3 ? ` (+${errors.length - 3} lỗi khác)` : '')
-                );
-            }
-
-            if (imported.length > 0) {
-                setPItems(imported);
-                toast.success('Đã nạp file Excel', `Đã đưa ${imported.length} dòng hợp lệ vào PO.`);
-            } else if (errors.length === 0) {
+            const rows = await parseExcelRows(file, poImportModeRef.current === 'create' ? 'Nhap_moi' : 'Cap_nhat');
+            const preview = buildPoImportPreview(poImportModeRef.current, rows);
+            if (preview.totalRows === 0) {
                 toast.warning('File Excel trống', 'Không có dòng vật tư hợp lệ để import.');
+                return;
             }
+            setPoImportPreview(preview);
         } catch (e: any) {
             logApiError('supplyChain.importPoExcel', e);
             toast.error('Không thể import Excel', getApiErrorMessage(e, 'Không thể đọc file Excel PO.'));
         } finally {
             setImportingPo(false);
         }
+    };
+
+    const handleConfirmPoImport = () => {
+        if (!poImportPreview) return;
+        const records = applyImportChanges(poImportPreview).map(item => normalizePoItem(item, inventoryItems));
+        if (records.length === 0) {
+            toast.warning('Không có dữ liệu cần ghi', 'File không có dòng PO hợp lệ để nạp.');
+            return;
+        }
+        if (poImportPreview.mode === 'create') {
+            setPItems(records);
+        } else {
+            setPItems(prev => prev.map(item => {
+                const patch = records.find(record => record.sku.toLowerCase() === item.sku.toLowerCase());
+                return patch ? normalizePoItem({ ...item, ...patch }, inventoryItems) : item;
+            }));
+        }
+        toast.success(
+            poImportPreview.mode === 'create' ? 'Đã nạp dòng PO' : 'Đã cập nhật dòng PO',
+            `${records.length} dòng hợp lệ đã được đưa vào PO form.`
+        );
+        setPoImportPreview(null);
     };
 
     const escapeHtml = (value: unknown) => String(value ?? '')
@@ -472,6 +553,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
     return (
         <div className="space-y-6">
+            {poImportPreview && (
+                <ExcelImportReviewModal
+                    title={poImportPreview.mode === 'create' ? 'Preview nhập mới dòng PO' : 'Preview cập nhật dòng PO'}
+                    preview={poImportPreview}
+                    loading={importingPo}
+                    onClose={() => setPoImportPreview(null)}
+                    onConfirm={handleConfirmPoImport}
+                />
+            )}
             {/* AI Analysis */}
             <div className="flex items-center justify-between">
                 <h3 className="text-sm font-black text-slate-700 dark:text-white">Cung ứng vật tư</h3>
@@ -814,7 +904,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editingPo ? <><Edit2 size={18} /> Sửa PO</> : <><Plus size={18} /> Tạo đơn hàng</>}
                             </span>
-                            <button onClick={resetPoForm} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><X size={18} /></button>
+                            <button onClick={savingPo ? undefined : resetPoForm} disabled={savingPo} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center disabled:opacity-50"><X size={18} /></button>
                         </div>
                         <div className="p-6 space-y-4">
                             <div className="grid grid-cols-2 gap-3">
@@ -858,8 +948,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     <div className="flex items-center gap-2">
                                         <button onClick={handleDownloadPoTemplate}
                                             className="text-emerald-600 hover:text-emerald-700 flex items-center gap-0.5"><FileSpreadsheet size={10} /> Mẫu</button>
-                                        <label className={`text-blue-500 hover:text-blue-700 flex items-center gap-0.5 cursor-pointer ${importingPo ? 'opacity-60 pointer-events-none' : ''}`}>
-                                            {importingPo ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />} Import
+                                        <label onClick={() => openPoImport('create')} className={`text-blue-500 hover:text-blue-700 flex items-center gap-0.5 cursor-pointer ${importingPo ? 'opacity-60 pointer-events-none' : ''}`}>
+                                            {importingPo && poImportMode === 'create' ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />} Nhập mới
+                                            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportPoExcel} disabled={importingPo} />
+                                        </label>
+                                        <label onClick={() => openPoImport('update')} className={`text-violet-500 hover:text-violet-700 flex items-center gap-0.5 cursor-pointer ${importingPo ? 'opacity-60 pointer-events-none' : ''}`}>
+                                            {importingPo && poImportMode === 'update' ? <Loader2 size={10} className="animate-spin" /> : <RefreshCcw size={10} />} Cập nhật
                                             <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportPoExcel} disabled={importingPo} />
                                         </label>
                                         <button onClick={() => setPItems([...pItems, createEmptyPoItem()])}
@@ -932,10 +1026,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             </div>
                         </div>
                         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
-                            <button onClick={resetPoForm} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Huỷ</button>
-                            <button onClick={handleSavePo} disabled={!pVendorId || !pNum || !pTargetWarehouseId}
+                            <button onClick={resetPoForm} disabled={savingPo} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50">Huỷ</button>
+                            <button onClick={handleSavePo} disabled={savingPo || !pVendorId || !pNum || !pTargetWarehouseId}
                                 className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-blue-500 to-indigo-500 shadow-lg flex items-center gap-2 disabled:opacity-50">
-                                <Save size={16} /> {editingPo ? 'Lưu' : 'Tạo'}
+                                {savingPo ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                                {savingPo ? (editingPo ? 'Đang lưu...' : 'Đang tạo...') : (editingPo ? 'Lưu' : 'Tạo')}
                             </button>
                         </div>
                     </div>

@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { ContractItem, ContractItemType } from '../types';
+import { ContractItem, ContractItemResource, ContractItemType } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 
@@ -9,6 +9,7 @@ import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 // ══════════════════════════════════════════════════════════════
 
 const TABLE = 'contract_items';
+const RESOURCE_TABLE = 'contract_item_resources';
 
 
 // Helpers
@@ -72,11 +73,14 @@ export const contractItemService = {
 
   /** Tạo mới hạng mục */
   async create(item: Omit<ContractItem, 'id' | 'createdAt'>): Promise<ContractItem> {
+    const existing = await this.findByCode(item.contractId, item.contractType, item.code);
+    if (existing) throw new Error(`Mã BOQ "${item.code}" đã tồn tại trong hợp đồng này.`);
     const dbItem = toDb({
       ...item,
       originalQuantity: item.originalQuantity ?? item.quantity,
       originalUnitPrice: item.originalUnitPrice ?? item.unitPrice,
       originalTotalPrice: item.originalTotalPrice ?? item.quantity * item.unitPrice,
+      revisedUnitPrice: item.revisedUnitPrice ?? item.unitPrice,
       revisedQuantity: item.revisedQuantity ?? item.quantity,
       totalPrice: item.quantity * item.unitPrice,
       revisedTotalPrice: item.revisedTotalPrice ?? item.quantity * item.unitPrice,
@@ -148,8 +152,30 @@ export const contractItemService = {
 
   /** Batch create (import Excel) */
   async batchCreate(items: Omit<ContractItem, 'id' | 'createdAt'>[]): Promise<ContractItem[]> {
+    const duplicateInFile = items.find((item, index) =>
+      items.some((other, otherIndex) => otherIndex !== index && other.code.trim().toLowerCase() === item.code.trim().toLowerCase())
+    );
+    if (duplicateInFile) throw new Error(`File import có mã BOQ bị trùng: ${duplicateInFile.code}`);
+    if (items.length > 0) {
+      const { data: existing, error: existingError } = await supabase
+        .from(TABLE)
+        .select('code')
+        .eq('contract_id', items[0].contractId)
+        .eq('contract_type', items[0].contractType)
+        .in('code', items.map(item => item.code));
+      if (existingError) throw existingError;
+      if (existing && existing.length > 0) {
+        throw new Error(`Mã BOQ đã tồn tại: ${existing.map(row => row.code).join(', ')}`);
+      }
+    }
     const dbItems = items.map(item => {
-      const d = toDb({ ...item, totalPrice: item.quantity * item.unitPrice });
+      const d = toDb({
+        ...item,
+        totalPrice: item.quantity * item.unitPrice,
+        revisedUnitPrice: item.revisedUnitPrice ?? item.unitPrice,
+        revisedQuantity: item.revisedQuantity ?? item.quantity,
+        revisedTotalPrice: item.revisedTotalPrice ?? item.quantity * item.unitPrice,
+      });
       delete d.id;
       return d;
     });
@@ -193,10 +219,24 @@ export const contractItemService = {
   },
 
 
-  async applyVariationDelta(id: string, quantityDelta: number, amountDelta: number): Promise<void> {
+  async findByCode(contractId: string, contractType: ContractItemType, code: string): Promise<ContractItem | null> {
+    const trimmed = code.trim();
+    if (!trimmed) return null;
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select('*')
+      .eq('contract_id', contractId)
+      .eq('contract_type', contractType)
+      .ilike('code', trimmed)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? fromDb(data) : null;
+  },
+
+  async applyVariationDelta(id: string, quantityDelta: number, amountDelta: number, revisedUnitPrice?: number): Promise<void> {
     const { data: current, error: readError } = await supabase
       .from(TABLE)
-      .select('quantity, total_price, variation_quantity, variation_amount')
+      .select('quantity, total_price, unit_price, revised_unit_price, variation_quantity, variation_amount')
       .eq('id', id)
       .single();
     if (readError) throw readError;
@@ -208,8 +248,60 @@ export const contractItemService = {
       variation_quantity: variationQuantity,
       variation_amount: variationAmount,
       revised_quantity: revisedQuantity,
+      revised_unit_price: revisedUnitPrice ?? current?.revised_unit_price ?? current?.unit_price ?? 0,
       revised_total_price: revisedTotalPrice,
     }).eq('id', id);
+    if (error) throw error;
+  },
+};
+
+export const contractItemResourceService = {
+  async listByItem(contractItemId: string): Promise<ContractItemResource[]> {
+    const { data, error } = await supabase
+      .from(RESOURCE_TABLE)
+      .select('*')
+      .eq('contract_item_id', contractItemId)
+      .order('order', { ascending: true });
+    if (error) throw error;
+    return (data || []).map(fromDb);
+  },
+
+  async listByItems(contractItemIds: string[]): Promise<Record<string, ContractItemResource[]>> {
+    const ids = Array.from(new Set(contractItemIds.filter(Boolean)));
+    if (ids.length === 0) return {};
+    const { data, error } = await supabase
+      .from(RESOURCE_TABLE)
+      .select('*')
+      .in('contract_item_id', ids)
+      .order('order', { ascending: true });
+    if (error) throw error;
+    return (data || []).reduce<Record<string, ContractItemResource[]>>((acc, row) => {
+      const item = fromDb(row) as ContractItemResource;
+      if (!acc[item.contractItemId]) acc[item.contractItemId] = [];
+      acc[item.contractItemId].push(item);
+      return acc;
+    }, {});
+  },
+
+  async replaceForItem(contractItemId: string, resources: Omit<ContractItemResource, 'id' | 'contractItemId' | 'createdAt'>[]): Promise<void> {
+    const { error: deleteError } = await supabase
+      .from(RESOURCE_TABLE)
+      .delete()
+      .eq('contract_item_id', contractItemId);
+    if (deleteError) throw deleteError;
+    if (resources.length === 0) return;
+    const rows = resources.map((resource, index) => {
+      const normalized = {
+        ...resource,
+        contractItemId,
+        order: resource.order ?? index,
+        totalPrice: resource.totalPrice || resource.quantity * resource.unitPrice,
+      };
+      const dbItem = toDb(normalized);
+      delete dbItem.id;
+      return dbItem;
+    });
+    const { error } = await supabase.from(RESOURCE_TABLE).insert(rows);
     if (error) throw error;
   },
 };

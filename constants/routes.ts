@@ -68,7 +68,10 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   // ── HỢP ĐỒNG ──────────────────────────────────────────
   '/hd/partners':      'HD',
   '/hd/contract-types': 'HD',
+  '/hd/catalogs':      'HD',
   '/hd/supplier':      'HD',
   '/hd/customer':      'HD',
+  '/hd/customer/:id':  'HD',
   '/hd/subcontractor': 'HD',
+  '/hd/subcontractor/:id': 'HD',
 };

@@ -1,12 +1,13 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Warehouse, WarehouseType, Supplier, ItemCategory, ItemUnit, LossReason, LOSS_REASON_LABELS, MaterialLossNorm } from '../types';
+import { Warehouse, WarehouseType, Supplier, ItemCategory, ItemUnit, LossReason, LOSS_REASON_LABELS, MaterialLossNorm, InventoryItem } from '../types';
 import {
   Building, MapPin, Plus, X, Save, Settings as SettingsIcon, Users,
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
-  Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot, FolderKanban
+  Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot, FolderKanban,
+  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
@@ -25,6 +26,33 @@ import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
+import { loadXlsx } from '../lib/loadXlsx';
+import ExcelImportReviewModal from '../components/ExcelImportReviewModal';
+import {
+  ExcelImportMode,
+  ExcelImportPreview,
+  applyImportChanges,
+  buildImportPreview,
+  parseExcelRows,
+} from '../lib/excelImport';
+
+type MaterialCatalogForm = {
+  sku: string;
+  name: string;
+  category: string;
+  unit: string;
+  purchaseUnit: string;
+};
+
+const emptyMaterialCatalogForm = (): MaterialCatalogForm => ({
+  sku: '',
+  name: '',
+  category: '',
+  unit: '',
+  purchaseUnit: '',
+});
+
+const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
 
 const Settings: React.FC = () => {
   const {
@@ -36,7 +64,7 @@ const Settings: React.FC = () => {
     users, addUser, updateUser, removeUser, user: currentUser, logout, isLoading, realtimeStatus, lastRealtimeEvent,
     hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
     addHrmItem, updateHrmItem, removeHrmItem,
-    items, lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
+    items, addItem, updateItem, removeItem, lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
     saveSignature, deleteSignature
   } = useApp();
   useModuleData('wms');
@@ -51,12 +79,19 @@ const Settings: React.FC = () => {
     fallbackError: 'Không thể xoá người dùng trên Supabase.',
     logScope: 'settings.deleteUser',
   });
+  const { loading: materialSaving, run: runMaterialAction } = useAsyncAction({
+    errorTitle: 'Không thể lưu danh mục vật tư',
+    fallbackError: 'Không thể cập nhật danh mục vật tư trên Supabase.',
+    logScope: 'settings.materialCatalog',
+  });
 
   const [activeTab, setActiveTab] = useState('general');
   const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [isWhModalOpen, setIsWhModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const materialImportInputRef = useRef<HTMLInputElement>(null);
+  const materialImportModeRef = useRef<ExcelImportMode>('create');
 
   // User Management States
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -90,7 +125,7 @@ const Settings: React.FC = () => {
   const [newWhType, setNewWhType] = useState<WarehouseType>('SITE');
 
   // Master data state management
-  const [activeMasterSection, setActiveMasterSection] = useState<'categories' | 'units' | 'suppliers' | null>(null);
+  const [activeMasterSection, setActiveMasterSection] = useState<'items' | 'categories' | 'units' | 'suppliers' | null>(null);
   const [activeHrmSection, setActiveHrmSection] = useState<'areas' | 'offices' | 'employee_types' | 'positions' | 'salary_policies' | 'work_schedules' | 'construction_sites' | null>(null);
   const [editingItem, setEditingItem] = useState<{ type: 'cat' | 'unit' | 'sup', data: any } | null>(null);
   const [editingHrmItem, setEditingHrmItem] = useState<any | null>(null);
@@ -110,6 +145,12 @@ const Settings: React.FC = () => {
   const [newCatName, setNewCatName] = useState('');
   const [newUnitName, setNewUnitName] = useState('');
   const [newSup, setNewSup] = useState({ name: '', contact: '', phone: '' });
+  const [editingMaterialItem, setEditingMaterialItem] = useState<InventoryItem | null>(null);
+  const [materialForm, setMaterialForm] = useState<MaterialCatalogForm>(emptyMaterialCatalogForm());
+  const [materialQuery, setMaterialQuery] = useState('');
+  const [materialImporting, setMaterialImporting] = useState(false);
+  const [materialImportMode, setMaterialImportMode] = useState<ExcelImportMode>('create');
+  const [materialImportPreview, setMaterialImportPreview] = useState<ExcelImportPreview<InventoryItem> | null>(null);
 
   // Loss Norms States
   const [isLossNormModalOpen, setIsLossNormModalOpen] = useState(false);
@@ -240,8 +281,8 @@ const Settings: React.FC = () => {
     if (editingItem && editingItem.type === 'cat') {
       const cat = editingItem.data as ItemCategory;
       triggerAction(
-        "Xác nhận sửa danh mục",
-        `Bạn đang thay đổi danh mục "${cat.name}" thành "${newCatName}". Điều này ảnh hưởng đến phân loại vật tư hiện có.`,
+        "Xác nhận sửa nhóm vật tư",
+        `Bạn đang thay đổi nhóm vật tư "${cat.name}" thành "${newCatName}". Điều này ảnh hưởng đến phân loại vật tư hiện có.`,
         'warning',
         'Lưu thay đổi',
         () => {
@@ -263,8 +304,8 @@ const Settings: React.FC = () => {
 
   const handleDeleteCat = (cat: ItemCategory) => {
     triggerAction(
-      "Xoá danh mục vật tư",
-      `Tất cả vật tư thuộc danh mục "${cat.name}" sẽ mất phân loại gốc. Bạn chắc chắn muốn xoá?`,
+      "Xoá nhóm vật tư",
+      `Tất cả vật tư thuộc nhóm "${cat.name}" sẽ mất phân loại gốc. Bạn chắc chắn muốn xoá?`,
       'danger',
       'Xoá vĩnh viễn',
       () => removeCategory(cat.id)
@@ -362,6 +403,284 @@ const Settings: React.FC = () => {
     );
   };
 
+  const resetMaterialForm = () => {
+    setEditingMaterialItem(null);
+    setMaterialForm(emptyMaterialCatalogForm());
+  };
+
+  const findCategoryName = (value: string) =>
+    categories.find(category => normalizeText(category.name) === normalizeText(value))?.name || '';
+
+  const findUnitName = (value: string) =>
+    units.find(unit => normalizeText(unit.name) === normalizeText(value))?.name || '';
+
+  const buildMaterialImportPreview = (mode: ExcelImportMode, rows: Record<string, unknown>[]) =>
+    buildImportPreview<InventoryItem>({
+      mode,
+      keyLabel: 'Mã SKU',
+      keyAliases: ['Mã SKU *', 'Mã SKU', 'SKU'],
+      existingRecords: items,
+      getRecordKey: item => item.sku,
+      createBaseRecord: (sku, _row, rowNumber) => ({
+        id: `it-${Date.now()}-${rowNumber}-${Math.random().toString(36).substring(2, 7)}`,
+        sku,
+        name: '',
+        category: '',
+        unit: '',
+        purchaseUnit: undefined,
+        priceIn: 0,
+        priceOut: 0,
+        minStock: 0,
+        stockByWarehouse: {},
+      }),
+      fields: [
+        {
+          key: 'name',
+          label: 'Tên vật tư',
+          aliases: ['Tên vật tư *', 'Tên vật tư', 'Tên'],
+          requiredOnCreate: true,
+        },
+        {
+          key: 'category',
+          label: 'Danh mục',
+          aliases: ['Danh mục *', 'Danh mục'],
+          requiredOnCreate: true,
+          normalize: value => findCategoryName(value),
+          validate: value => value ? undefined : 'Danh mục chưa tồn tại.',
+        },
+        {
+          key: 'unit',
+          label: 'ĐVT Chính',
+          aliases: ['ĐVT Chính *', 'ĐVT Chính', 'Đơn vị chính', 'Đơn vị tính'],
+          requiredOnCreate: true,
+          normalize: value => findUnitName(value),
+          validate: value => value ? undefined : 'ĐVT Chính chưa tồn tại.',
+        },
+        {
+          key: 'purchaseUnit',
+          label: 'Đơn vị phụ',
+          aliases: ['Đơn vị phụ (Đơn vị mua hàng)', 'Đơn vị phụ', 'Đơn vị mua hàng'],
+          clearable: true,
+          normalize: value => findUnitName(value),
+          validate: value => value === undefined || value ? undefined : 'Đơn vị phụ chưa tồn tại.',
+        },
+      ],
+    }, rows);
+
+  const handleSaveMaterialItem = async () => {
+    const sku = materialForm.sku.trim();
+    const name = materialForm.name.trim();
+    const category = findCategoryName(materialForm.category);
+    const unit = findUnitName(materialForm.unit);
+    const purchaseUnit = materialForm.purchaseUnit ? findUnitName(materialForm.purchaseUnit) : '';
+
+    if (!sku || !name || !category || !unit) {
+      toast.warning('Thiếu thông tin', 'Vui lòng nhập Mã SKU, Tên vật tư, Danh mục và ĐVT Chính.');
+      return;
+    }
+    if (materialForm.purchaseUnit && !purchaseUnit) {
+      toast.warning('Đơn vị phụ không hợp lệ', 'Đơn vị phụ phải nằm trong danh sách Đơn vị tính.');
+      return;
+    }
+    const duplicatedSku = items.find(item => normalizeText(item.sku) === normalizeText(sku) && item.id !== editingMaterialItem?.id);
+    if (duplicatedSku) {
+      toast.warning('SKU đã tồn tại', `Mã SKU "${sku}" đang được dùng cho vật tư "${duplicatedSku.name}".`);
+      return;
+    }
+
+    const saved = await runMaterialAction(async () => {
+      if (editingMaterialItem) {
+        await updateItem({
+          ...editingMaterialItem,
+          sku,
+          name,
+          category,
+          unit,
+          purchaseUnit: purchaseUnit && purchaseUnit !== unit ? purchaseUnit : undefined,
+        });
+      } else {
+        await addItem({
+          id: `it-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          sku,
+          name,
+          category,
+          unit,
+          purchaseUnit: purchaseUnit && purchaseUnit !== unit ? purchaseUnit : undefined,
+          priceIn: 0,
+          priceOut: 0,
+          minStock: 0,
+          stockByWarehouse: {},
+        });
+      }
+      return true;
+    }, {
+      successTitle: editingMaterialItem ? 'Đã cập nhật vật tư' : 'Đã thêm vật tư',
+      successMessage: `${sku} - ${name}`,
+    });
+    if (saved) resetMaterialForm();
+  };
+
+  const handleEditMaterialItem = (item: InventoryItem) => {
+    setEditingMaterialItem(item);
+    setMaterialForm({
+      sku: item.sku || '',
+      name: item.name || '',
+      category: item.category || '',
+      unit: item.unit || '',
+      purchaseUnit: item.purchaseUnit || '',
+    });
+  };
+
+  const handleDeleteMaterialItem = (item: InventoryItem) => {
+    triggerAction(
+      'Xoá vật tư',
+      `Bạn chắc chắn muốn xoá vật tư "${item.name}" (${item.sku}) khỏi danh mục? Nếu vật tư đã phát sinh giao dịch, Supabase có thể chặn xoá để bảo toàn dữ liệu.`,
+      'danger',
+      'Xoá vật tư',
+      async () => {
+        await removeItem(item.id);
+        toast.success('Đã xoá vật tư', `${item.sku} - ${item.name}`);
+        if (editingMaterialItem?.id === item.id) resetMaterialForm();
+      }
+    );
+  };
+
+  const handleExportMaterialTemplate = async () => {
+    try {
+      const XLSX = await loadXlsx();
+      const sampleCategory = categories[0]?.name || 'Vật liệu xây dựng';
+      const sampleUnit = units[0]?.name || 'Cái';
+      const samplePurchaseUnit = units.find(unit => unit.name !== sampleUnit)?.name || '';
+      const createRows = [
+        {
+          'Mã SKU *': 'STEEL-001',
+          'Tên vật tư *': 'Thép cuộn phi 6',
+          'Danh mục *': sampleCategory,
+          'ĐVT Chính *': sampleUnit,
+          'Đơn vị phụ (Đơn vị mua hàng)': samplePurchaseUnit,
+        },
+      ];
+      const wb = XLSX.utils.book_new();
+      const createSheet = XLSX.utils.json_to_sheet(createRows);
+      createSheet['!cols'] = [{ wch: 18 }, { wch: 32 }, { wch: 24 }, { wch: 16 }, { wch: 30 }];
+      XLSX.utils.book_append_sheet(wb, createSheet, 'Nhap_moi');
+
+      const updateRows = [
+        {
+          'Mã SKU *': items[0]?.sku || 'STEEL-001',
+          'ĐVT Chính': sampleUnit,
+          'Đơn vị phụ (Đơn vị mua hàng)': samplePurchaseUnit,
+        },
+      ];
+      const updateSheet = XLSX.utils.json_to_sheet(updateRows);
+      updateSheet['!cols'] = [{ wch: 18 }, { wch: 16 }, { wch: 30 }];
+      XLSX.utils.book_append_sheet(wb, updateSheet, 'Cap_nhat');
+
+      const guideSheet = XLSX.utils.aoa_to_sheet([
+        ['Chức năng', 'Cách dùng'],
+        ['Nhập mới', 'Dùng sheet Nhap_moi. SKU đã tồn tại sẽ bị báo lỗi.'],
+        ['Cập nhật', 'Dùng sheet Cap_nhat hoặc file chỉ gồm Mã SKU và các cột muốn sửa. Cột không có trong file sẽ giữ nguyên.'],
+        ['Ô trống', 'Trong chế độ Cập nhật, ô trống nghĩa là không đổi dữ liệu.'],
+        ['Xoá giá trị', 'Dùng __CLEAR__ cho field cho phép xoá, ví dụ Đơn vị phụ.'],
+        ['Danh mục / Đơn vị', 'Phải nhập đúng giá trị có trong các sheet danh mục hợp lệ.'],
+      ]);
+      guideSheet['!cols'] = [{ wch: 24 }, { wch: 100 }];
+      XLSX.utils.book_append_sheet(wb, guideSheet, 'Huong_dan');
+
+      const categorySheet = XLSX.utils.json_to_sheet(categories.map(category => ({ 'Danh mục hợp lệ': category.name })));
+      categorySheet['!cols'] = [{ wch: 28 }];
+      XLSX.utils.book_append_sheet(wb, categorySheet, 'Danh mục');
+
+      const unitSheet = XLSX.utils.json_to_sheet(units.map(unit => ({ 'Đơn vị hợp lệ': unit.name })));
+      unitSheet['!cols'] = [{ wch: 22 }];
+      XLSX.utils.book_append_sheet(wb, unitSheet, 'Đơn vị');
+
+      const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'Mau_Danh_muc_vat_tu.xlsx';
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success('Đã xuất file mẫu', 'File mẫu danh mục vật tư đã sẵn sàng để nhập dữ liệu.');
+    } catch (error) {
+      logApiError('settings.materialTemplateExport', error);
+      toast.error('Không thể xuất file mẫu', getApiErrorMessage(error, 'Không thể tạo file Excel mẫu.'));
+    }
+  };
+
+  const openMaterialImport = (mode: ExcelImportMode) => {
+    materialImportModeRef.current = mode;
+    setMaterialImportMode(mode);
+    materialImportInputRef.current?.click();
+  };
+
+  const handleImportMaterialExcel = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setMaterialImporting(true);
+    try {
+      const rows = await parseExcelRows(file, materialImportModeRef.current === 'create' ? 'Nhap_moi' : 'Cap_nhat');
+      if (rows.length === 0) {
+        toast.warning('File Excel trống', 'Không có dòng vật tư nào để nhập.');
+        return;
+      }
+      const preview = buildMaterialImportPreview(materialImportModeRef.current, rows);
+      if (preview.totalRows === 0) {
+        toast.warning('File Excel trống', 'Không có dòng vật tư hợp lệ để nhập.');
+        return;
+      }
+      setMaterialImportPreview(preview);
+    } catch (error) {
+      logApiError('settings.materialImport', error);
+      toast.error('Không thể nhập Excel', getApiErrorMessage(error, 'Không thể đọc hoặc lưu file Excel danh mục vật tư.'));
+    } finally {
+      setMaterialImporting(false);
+    }
+  };
+
+  const handleConfirmMaterialImport = async ({ validOnly }: { validOnly: boolean }) => {
+    if (!materialImportPreview) return;
+    const records = applyImportChanges(materialImportPreview);
+    if (records.length === 0) {
+      toast.warning('Không có dữ liệu cần ghi', 'File không có dòng thêm mới hoặc cập nhật hợp lệ.');
+      return;
+    }
+
+    setMaterialImporting(true);
+    try {
+      let created = 0;
+      let updated = 0;
+      for (const record of records) {
+        const normalizedRecord = {
+          ...record,
+          purchaseUnit: record.purchaseUnit && record.purchaseUnit !== record.unit ? record.purchaseUnit : undefined,
+        };
+        const existing = items.find(item => normalizeText(item.sku) === normalizeText(normalizedRecord.sku));
+        if (materialImportPreview.mode === 'create') {
+          await addItem(normalizedRecord);
+          created += 1;
+        } else if (existing) {
+          await updateItem(normalizedRecord);
+          updated += 1;
+        }
+      }
+      setMaterialImportPreview(null);
+      toast.success(
+        materialImportPreview.mode === 'create' ? 'Đã nhập mới danh mục vật tư' : 'Đã cập nhật danh mục vật tư',
+        `Thêm mới ${created}, cập nhật ${updated} vật tư${validOnly ? ' từ các dòng hợp lệ' : ''}.`
+      );
+    } catch (error) {
+      logApiError('settings.materialImport.confirm', error);
+      toast.error('Không thể ghi dữ liệu import', getApiErrorMessage(error, 'Không thể lưu dữ liệu import lên Supabase.'));
+    } finally {
+      setMaterialImporting(false);
+    }
+  };
+
   // User Handlers
   const handleAddUser = () => {
     setEditingUser(null);
@@ -429,6 +748,14 @@ const Settings: React.FC = () => {
     { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle, roles: [Role.ADMIN] },
   ].filter(tab => !tab.roles || tab.roles.includes(currentUser.role));
 
+  const filteredMaterialItems = useMemo(() => {
+    const keyword = materialQuery.trim().toLowerCase();
+    const rows = [...items].sort((a, b) => a.sku.localeCompare(b.sku, 'vi'));
+    if (!keyword) return rows;
+    return rows.filter(item => [item.sku, item.name, item.category, item.unit, item.purchaseUnit]
+      .some(value => String(value || '').toLowerCase().includes(keyword)));
+  }, [items, materialQuery]);
+
   useEffect(() => {
     // If current tab is not allowed, switch to account
     if (!tabs.find(t => t.id === activeTab)) {
@@ -444,6 +771,16 @@ const Settings: React.FC = () => {
         onConfirm={handleConfirmAction}
         isLoading={confirmProcessing}
       />
+
+      {materialImportPreview && (
+        <ExcelImportReviewModal
+          title={materialImportPreview.mode === 'create' ? 'Preview nhập mới danh mục vật tư' : 'Preview cập nhật danh mục vật tư'}
+          preview={materialImportPreview}
+          loading={materialImporting}
+          onClose={() => setMaterialImportPreview(null)}
+          onConfirm={handleConfirmMaterialImport}
+        />
+      )}
 
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-black text-slate-800 tracking-tight">Cấu hình hệ thống</h1>
@@ -508,14 +845,31 @@ const Settings: React.FC = () => {
               {!activeMasterSection ? (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <button
+                    onClick={() => setActiveMasterSection('items')}
+                    className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl hover:border-emerald-200 transition-all group text-left"
+                  >
+                    <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                      <Package size={28} />
+                    </div>
+                    <h3 className="text-xl font-black text-slate-800 mb-2">Danh mục vật tư</h3>
+                    <p className="text-sm text-slate-500 font-medium">Quản lý mã SKU, tên vật tư, nhóm vật tư và đơn vị mua hàng.</p>
+                    <div className="mt-6 flex items-center justify-between">
+                      <span className="text-emerald-600 font-bold text-xs uppercase tracking-widest flex items-center">
+                        Thiết lập ngay <Plus size={14} className="ml-1" />
+                      </span>
+                      <span className="text-xs font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-lg">{items.length} mục</span>
+                    </div>
+                  </button>
+
+                  <button
                     onClick={() => setActiveMasterSection('categories')}
                     className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl hover:border-accent/20 transition-all group text-left"
                   >
                     <div className="w-14 h-14 bg-blue-50 text-accent rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                       <Tag size={28} />
                     </div>
-                    <h3 className="text-xl font-black text-slate-800 mb-2">Danh mục vật tư</h3>
-                    <p className="text-sm text-slate-500 font-medium">Quản lý các nhóm phân loại vật tư trong hệ thống.</p>
+                    <h3 className="text-xl font-black text-slate-800 mb-2">Nhóm vật tư</h3>
+                    <p className="text-sm text-slate-500 font-medium">Quản lý các nhóm phân loại dùng cho danh mục vật tư.</p>
                     <div className="mt-6 flex items-center text-accent font-bold text-xs uppercase tracking-widest">
                       Thiết lập ngay <Plus size={14} className="ml-1" />
                     </div>
@@ -557,6 +911,8 @@ const Settings: React.FC = () => {
                         onClick={() => {
                           setActiveMasterSection(null);
                           setEditingItem(null);
+                          resetMaterialForm();
+                          setMaterialQuery('');
                           setNewCatName('');
                           setNewUnitName('');
                           setNewSup({ name: '', contact: '', phone: '' });
@@ -567,7 +923,8 @@ const Settings: React.FC = () => {
                       </button>
                       <div>
                         <h2 className="text-lg font-black text-slate-800">
-                          {activeMasterSection === 'categories' && 'Quản lý Danh mục vật tư'}
+                          {activeMasterSection === 'items' && 'Quản lý Danh mục vật tư'}
+                          {activeMasterSection === 'categories' && 'Quản lý Nhóm vật tư'}
                           {activeMasterSection === 'units' && 'Quản lý Đơn vị tính'}
                           {activeMasterSection === 'suppliers' && 'Quản lý Nhà cung cấp'}
                         </h2>
@@ -577,11 +934,189 @@ const Settings: React.FC = () => {
                   </div>
 
                   <div className="flex-1 p-8">
+                    {activeMasterSection === 'items' && (
+                      <div className="space-y-6">
+                        <input
+                          ref={materialImportInputRef}
+                          type="file"
+                          accept=".xlsx,.xls"
+                          className="hidden"
+                          onChange={handleImportMaterialExcel}
+                        />
+
+                        <div className="flex flex-col xl:flex-row gap-3 xl:items-center xl:justify-between">
+                          <div className="relative max-w-lg w-full">
+                            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input
+                              value={materialQuery}
+                              onChange={(event) => setMaterialQuery(event.target.value)}
+                              placeholder="Tìm SKU, tên vật tư, danh mục, đơn vị..."
+                              className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-11 pr-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-300 transition-all"
+                            />
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={handleExportMaterialTemplate}
+                              disabled={materialImporting}
+                              className="px-4 py-2.5 rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-black uppercase tracking-wider hover:bg-emerald-100 transition flex items-center gap-2 disabled:opacity-50"
+                            >
+                              <Download size={15} /> Xuất file mẫu
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openMaterialImport('create')}
+                              disabled={materialImporting || materialSaving}
+                              className="px-4 py-2.5 rounded-2xl border border-blue-200 bg-blue-50 text-blue-700 text-xs font-black uppercase tracking-wider hover:bg-blue-100 transition flex items-center gap-2 disabled:opacity-50"
+                            >
+                              {materialImporting && materialImportMode === 'create' ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />} Nhập mới
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openMaterialImport('update')}
+                              disabled={materialImporting || materialSaving}
+                              className="px-4 py-2.5 rounded-2xl border border-violet-200 bg-violet-50 text-violet-700 text-xs font-black uppercase tracking-wider hover:bg-violet-100 transition flex items-center gap-2 disabled:opacity-50"
+                            >
+                              {materialImporting && materialImportMode === 'update' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCcw size={15} />} Cập nhật
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 space-y-4">
+                          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                            <FileSpreadsheet size={14} /> {editingMaterialItem ? 'Cập nhật vật tư' : 'Thêm mới danh mục vật tư'}
+                          </h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                            <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Mã SKU *</label>
+                              <input
+                                value={materialForm.sku}
+                                onChange={event => setMaterialForm(prev => ({ ...prev, sku: event.target.value }))}
+                                placeholder="VD: STEEL-001"
+                                className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold font-mono outline-none focus:ring-2 focus:ring-emerald-500/20"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Tên vật tư *</label>
+                              <input
+                                value={materialForm.name}
+                                onChange={event => setMaterialForm(prev => ({ ...prev, name: event.target.value }))}
+                                placeholder="Nhập tên vật tư"
+                                className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Danh mục *</label>
+                              <select
+                                value={materialForm.category}
+                                onChange={event => setMaterialForm(prev => ({ ...prev, category: event.target.value }))}
+                                className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20"
+                              >
+                                <option value="">Chọn danh mục</option>
+                                {categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">ĐVT Chính *</label>
+                              <select
+                                value={materialForm.unit}
+                                onChange={event => setMaterialForm(prev => ({ ...prev, unit: event.target.value }))}
+                                className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20"
+                              >
+                                <option value="">Chọn ĐVT</option>
+                                {units.map(unit => <option key={unit.id} value={unit.name}>{unit.name}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Đơn vị phụ</label>
+                              <select
+                                value={materialForm.purchaseUnit}
+                                onChange={event => setMaterialForm(prev => ({ ...prev, purchaseUnit: event.target.value }))}
+                                className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20"
+                              >
+                                <option value="">Giống ĐVT chính</option>
+                                {units.map(unit => <option key={unit.id} value={unit.name}>{unit.name}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="flex flex-col sm:flex-row gap-3 justify-end">
+                            {editingMaterialItem && (
+                              <button
+                                type="button"
+                                onClick={resetMaterialForm}
+                                disabled={materialSaving}
+                                className="px-6 py-3 border border-slate-200 text-slate-500 rounded-2xl font-bold text-xs uppercase hover:bg-white transition-all disabled:opacity-50"
+                              >
+                                Hủy
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={handleSaveMaterialItem}
+                              disabled={materialSaving || materialImporting}
+                              className="px-8 py-3 rounded-2xl bg-emerald-600 text-white font-black text-xs uppercase tracking-widest hover:bg-emerald-700 transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                              {materialSaving ? <Loader2 size={16} className="animate-spin" /> : editingMaterialItem ? <Save size={16} /> : <Plus size={16} />}
+                              {editingMaterialItem ? 'Cập nhật' : 'Thêm mới'}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="overflow-x-auto rounded-3xl border border-slate-100">
+                          <table className="w-full text-sm">
+                            <thead className="bg-slate-50 text-[10px] uppercase font-black tracking-widest text-slate-400">
+                              <tr>
+                                <th className="px-4 py-3 text-left">Mã SKU</th>
+                                <th className="px-4 py-3 text-left">Tên vật tư</th>
+                                <th className="px-4 py-3 text-left">Danh mục</th>
+                                <th className="px-4 py-3 text-left">ĐVT Chính</th>
+                                <th className="px-4 py-3 text-left">Đơn vị phụ</th>
+                                <th className="px-4 py-3 text-right">Thao tác</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 bg-white">
+                              {filteredMaterialItems.length === 0 ? (
+                                <tr>
+                                  <td colSpan={6} className="py-12 text-center text-slate-400 text-sm font-bold">
+                                    Chưa có vật tư phù hợp.
+                                  </td>
+                                </tr>
+                              ) : filteredMaterialItems.map(item => (
+                                <tr key={item.id} className="hover:bg-slate-50 transition">
+                                  <td className="px-4 py-3 font-mono font-black text-emerald-600">{item.sku}</td>
+                                  <td className="px-4 py-3 font-bold text-slate-800">{item.name}</td>
+                                  <td className="px-4 py-3 text-slate-500">{item.category || '-'}</td>
+                                  <td className="px-4 py-3 text-slate-500 font-bold">{item.unit || '-'}</td>
+                                  <td className="px-4 py-3 text-slate-500">{item.purchaseUnit || item.unit || '-'}</td>
+                                  <td className="px-4 py-3">
+                                    <div className="flex items-center justify-end gap-1">
+                                      <button
+                                        onClick={() => handleEditMaterialItem(item)}
+                                        className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors"
+                                      >
+                                        <Edit2 size={15} />
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteMaterialItem(item)}
+                                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                                      >
+                                        <Trash2 size={15} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
                     {activeMasterSection === 'categories' && (
                       <div className="max-w-2xl mx-auto space-y-6">
                         <div className="flex gap-3">
                           <input
-                            type="text" placeholder="Nhập tên danh mục mới..." value={newCatName}
+                            type="text" placeholder="Nhập tên nhóm vật tư mới..." value={newCatName}
                             onChange={(e) => setNewCatName(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleAddCat()}
                             className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 text-sm font-bold outline-none focus:ring-2 focus:ring-accent transition-all"

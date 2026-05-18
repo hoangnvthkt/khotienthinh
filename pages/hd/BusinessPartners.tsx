@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Building2, Edit2, FileSpreadsheet, Loader2, Plus, Save, Search, Trash2, Upload, X } from 'lucide-react';
+import { Building2, Download, Edit2, FileSpreadsheet, Loader2, Plus, RefreshCcw, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import { BusinessPartner, PartnerClassification } from '../../types';
 import { partnerService } from '../../lib/partnerService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { loadXlsx } from '../../lib/loadXlsx';
+import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
+import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
+import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 
 const CLASSIFICATION_OPTIONS: Array<{ value: PartnerClassification; label: string }> = [
   { value: 'owner', label: 'Chủ đầu tư' },
@@ -104,15 +107,17 @@ const BusinessPartners: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<BusinessPartner | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [importRows, setImportRows] = useState<BusinessPartner[]>([]);
-  const [importErrors, setImportErrors] = useState<Record<number, string>>({});
+  const [importMode, setImportMode] = useState<ExcelImportMode>('create');
+  const [importPreview, setImportPreview] = useState<ExcelImportPreview<BusinessPartner> | null>(null);
+  const importModeRef = useRef<ExcelImportMode>('create');
 
   const loadPartners = async () => {
     setLoading(true);
     try {
       setPartners(await partnerService.list({ includeInactive: true }));
     } catch (error: any) {
-      toast.error('Lỗi tải đối tác', error?.message);
+      logApiError('partners.load', error);
+      toast.error('Lỗi tải đối tác', getApiErrorMessage(error, 'Không thể tải danh sách đối tác.'));
     } finally {
       setLoading(false);
     }
@@ -191,7 +196,8 @@ const BusinessPartners: React.FC = () => {
       resetForm();
       await loadPartners();
     } catch (error: any) {
-      toast.error('Lỗi lưu đối tác', error?.message);
+      logApiError('partners.save', error);
+      toast.error('Lỗi lưu đối tác', getApiErrorMessage(error, 'Không thể lưu đối tác.'));
     } finally {
       setSaving(false);
     }
@@ -209,63 +215,159 @@ const BusinessPartners: React.FC = () => {
       toast.success('Đã ngưng sử dụng đối tác');
       await loadPartners();
     } catch (error: any) {
-      toast.error('Lỗi cập nhật đối tác', error?.message);
+      logApiError('partners.delete', error);
+      toast.error('Lỗi cập nhật đối tác', getApiErrorMessage(error, 'Không thể ngưng sử dụng đối tác.'));
     }
   };
 
-  const handleImportFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const normalizePartnerDate = (value: unknown) => {
+    const raw = String(value || '').trim();
+    if (!raw) return new Date().toISOString().split('T')[0];
+    const parts = raw.split('/');
+    if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? raw : date.toISOString().split('T')[0];
+  };
+
+  const normalizeBoolean = (value: unknown) => {
+    const raw = String(value || '').trim().toLowerCase();
+    return !(raw === 'ngưng dùng' || raw === 'không hoạt động' || raw === 'inactive' || raw === 'false' || raw === '0');
+  };
+
+  const openPartnerImport = (mode: ExcelImportMode) => {
+    importModeRef.current = mode;
+    setImportMode(mode);
+    fileInputRef.current?.click();
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const XLSX = await loadXlsx();
+      const createHeaders = [
+        'Mã đối tác *', 'Tên đối tác *', 'Phân loại', 'Mã số thuế', 'Địa chỉ', 'Số điện thoại',
+        'Email', 'Website', 'Người phụ trách', 'Ngày tạo', 'Quốc gia', 'Tỉnh thành', 'Phường xã',
+        'Ngân hàng', 'Tài khoản', 'Tên liên hệ', 'Chức vụ', 'SĐT liên hệ', 'Email liên hệ',
+        'Trạng thái', 'Ghi chú',
+      ];
+      const createRows = [
+        ['DT-001', 'Công ty ABC', 'Chủ đầu tư, Nhà cung cấp', '0100000000', 'Hà Nội', '0900000000', 'contact@abc.vn', '', '', '2026-05-18', 'Việt Nam', '', '', '', '', '', '', '', '', 'Đang dùng', ''],
+      ];
+      const updateHeaders = ['Mã đối tác *', 'Tên đối tác', 'Mã số thuế', 'Số điện thoại', 'Email', 'Trạng thái', 'Ghi chú'];
+      const updateRows = [['DT-001', '', '', '0911111111', '', '', 'Cập nhật riêng số điện thoại']];
+      const guideRows = [
+        ['Nội dung', 'Hướng dẫn'],
+        ['Nhập mới', 'Dùng sheet Nhap_moi. Mã đối tác đã tồn tại sẽ bị báo lỗi.'],
+        ['Cập nhật', 'Dùng sheet Cap_nhat hoặc file chỉ gồm Mã đối tác và các cột muốn sửa.'],
+        ['Ô trống', 'Trong chế độ Cập nhật, ô trống nghĩa là không đổi dữ liệu.'],
+        ['Xóa giá trị', 'Dùng token __CLEAR__ cho các cột cho phép xoá như email, website, ghi chú.'],
+        ['Phân loại', 'Có thể nhập: Chủ đầu tư, Nhà thầu, Nhà cung cấp. Có thể nhập nhiều giá trị trong một ô.'],
+      ];
+      const wb = XLSX.utils.book_new();
+      const createWs = XLSX.utils.aoa_to_sheet([createHeaders, ...createRows]);
+      createWs['!cols'] = createHeaders.map(() => ({ wch: 20 }));
+      const updateWs = XLSX.utils.aoa_to_sheet([updateHeaders, ...updateRows]);
+      updateWs['!cols'] = updateHeaders.map(() => ({ wch: 22 }));
+      const guideWs = XLSX.utils.aoa_to_sheet(guideRows);
+      guideWs['!cols'] = [{ wch: 18 }, { wch: 90 }];
+      XLSX.utils.book_append_sheet(wb, createWs, 'Nhap_moi');
+      XLSX.utils.book_append_sheet(wb, updateWs, 'Cap_nhat');
+      XLSX.utils.book_append_sheet(wb, guideWs, 'Huong_dan');
+      const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'Mau_import_doi_tac.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success('Đã tải file mẫu đối tác');
+    } catch (error) {
+      logApiError('partners.template', error);
+      toast.error('Không thể tạo file mẫu', getApiErrorMessage(error, 'Không thể tạo file Excel mẫu đối tác.'));
+    }
+  };
+
+  const buildPartnerPreview = (mode: ExcelImportMode, rows: Record<string, unknown>[]) => buildImportPreview<BusinessPartner>({
+    mode,
+    keyLabel: 'Mã đối tác',
+    keyAliases: ['Mã đối tác *', 'Mã đối tác', 'Mã khách hàng', 'Ma khach hang', 'code'],
+    existingRecords: partners,
+    getRecordKey: partner => partner.code,
+    createBaseRecord: code => ({
+      id: crypto.randomUUID(),
+      ...EMPTY_FORM,
+      code,
+      classifications: ['owner'],
+      isActive: true,
+    }),
+    fields: [
+      { key: 'name', label: 'Tên đối tác', aliases: ['Tên đối tác *', 'Tên đối tác', 'Tên khách hàng', 'Ten khach hang', 'name'], requiredOnCreate: true },
+      { key: 'classifications', label: 'Phân loại', aliases: ['Phân loại', 'Phan loai'], normalize: parseClassifications },
+      { key: 'taxCode', label: 'Mã số thuế', aliases: ['Mã số thuế', 'Ma so thue', 'MST'], clearable: true },
+      { key: 'address', label: 'Địa chỉ', aliases: ['Địa chỉ', 'Dia chi'], clearable: true },
+      { key: 'phone', label: 'Số điện thoại', aliases: ['Số điện thoại', 'So dien thoai', 'SĐT', 'phone'], clearable: true },
+      { key: 'email', label: 'Email', aliases: ['Email', 'email'], clearable: true },
+      { key: 'website', label: 'Website', aliases: ['Website', 'website'], clearable: true },
+      { key: 'ownerName', label: 'Người phụ trách', aliases: ['Người phụ trách', 'Nguoi phu trach'], clearable: true },
+      { key: 'createdDate', label: 'Ngày tạo', aliases: ['Ngày tạo', 'Ngay tao'], normalize: normalizePartnerDate },
+      { key: 'country', label: 'Quốc gia', aliases: ['Quốc gia', 'Quoc gia'], clearable: true },
+      { key: 'province', label: 'Tỉnh thành', aliases: ['Tỉnh thành', 'Tinh thanh'], clearable: true },
+      { key: 'ward', label: 'Phường xã', aliases: ['Phường xã', 'Phuong xa'], clearable: true },
+      { key: 'bankName', label: 'Ngân hàng', aliases: ['Ngân hàng', 'Ngan hang'], clearable: true },
+      { key: 'bankAccount', label: 'Tài khoản', aliases: ['Tài khoản', 'Tai khoan'], clearable: true },
+      { key: 'contactName', label: 'Tên liên hệ', aliases: ['Tên liên hệ', 'Ten lien he'], clearable: true },
+      { key: 'contactTitle', label: 'Chức vụ', aliases: ['Chức vụ', 'Chuc vu'], clearable: true },
+      { key: 'contactPhone', label: 'SĐT liên hệ', aliases: ['SĐT liên hệ', 'Số điện thoại_1', 'So dien thoai_1'], clearable: true },
+      { key: 'contactEmail', label: 'Email liên hệ', aliases: ['Email liên hệ', 'email_1'], clearable: true },
+      { key: 'isActive', label: 'Trạng thái', aliases: ['Trạng thái', 'Trang thai'], normalize: normalizeBoolean },
+      { key: 'note', label: 'Ghi chú', aliases: ['Ghi chú', 'Ghi chu'], clearable: true },
+    ],
+  }, rows);
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async e => {
-      try {
-        const XLSX = await loadXlsx();
-        const workbook = XLSX.read(e.target?.result, { type: 'array' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '' });
-        const parsed: BusinessPartner[] = [];
-        const errors: Record<number, string> = {};
-
-        rows.forEach((row, index) => {
-          const partner: BusinessPartner = {
-            id: crypto.randomUUID(),
-            ...EMPTY_FORM,
-            classifications: ['owner'],
-            isActive: true,
-          };
-          Object.entries(row).forEach(([header, value]) => {
-            const key = HEADER_ALIASES[header.trim().toLowerCase()] || HEADER_ALIASES[normalizeHeader(header)];
-            if (key) (partner as any)[key] = String(value || '').trim();
-            if (normalizeHeader(header) === 'phan loai') partner.classifications = parseClassifications(value);
-          });
-          if (!partner.name?.trim()) errors[index] = 'Thiếu Tên khách hàng';
-          if (!partner.code?.trim()) partner.code = `DT-${String(index + 1).padStart(4, '0')}`;
-          parsed.push(partner);
-        });
-
-        setImportRows(parsed);
-        setImportErrors(errors);
-      } catch (error: any) {
-        toast.error('Lỗi import Excel', error?.message || 'File không hợp lệ');
-      } finally {
-        if (fileInputRef.current) fileInputRef.current.value = '';
+    setSaving(true);
+    try {
+      const rows = await parseExcelRows(file, importModeRef.current === 'create' ? 'Nhap_moi' : 'Cap_nhat');
+      if (rows.length === 0) {
+        toast.warning('File rỗng', 'File Excel không có dữ liệu đối tác.');
+        return;
       }
-    };
-    reader.readAsArrayBuffer(file);
+      setImportPreview(buildPartnerPreview(importModeRef.current, rows));
+    } catch (error) {
+      logApiError('partners.import.read', error);
+      toast.error('Lỗi import Excel', getApiErrorMessage(error, 'File Excel đối tác không hợp lệ.'));
+    } finally {
+      setSaving(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const commitImport = async () => {
-    const validRows = importRows.filter((_, index) => !importErrors[index]);
-    if (validRows.length === 0) return;
+    if (!importPreview) return;
+    const records = applyImportChanges(importPreview);
+    if (records.length === 0) {
+      toast.warning('Không có thay đổi', 'File không có dòng hợp lệ cần ghi dữ liệu.');
+      return;
+    }
     setSaving(true);
     try {
-      for (const row of validRows) await partnerService.upsert(row);
-      toast.success('Import đối tác thành công', `Đã nhập ${validRows.length} dòng`);
-      setImportRows([]);
-      setImportErrors({});
+      if (importPreview.mode === 'create') {
+        for (const row of records) await partnerService.upsert(row);
+        toast.success('Import đối tác thành công', `Đã nhập ${records.length} dòng.`);
+      } else {
+        const changedRows = importPreview.rows.filter(row => row.status === 'update' && row.existingRecord && row.nextRecord);
+        for (const row of changedRows) await partnerService.upsert({ ...row.existingRecord!, ...row.nextRecord! });
+        toast.success('Cập nhật đối tác thành công', `Đã cập nhật ${changedRows.length} dòng.`);
+      }
+      setImportPreview(null);
       await loadPartners();
-    } catch (error: any) {
-      toast.error('Lỗi ghi dữ liệu import', error?.message);
+    } catch (error) {
+      logApiError('partners.import.apply', error);
+      toast.error('Lỗi ghi dữ liệu import', getApiErrorMessage(error, 'Không thể ghi dữ liệu đối tác.'));
     } finally {
       setSaving(false);
     }
@@ -292,10 +394,25 @@ const BusinessPartners: React.FC = () => {
           {CLASSIFICATION_OPTIONS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
         <button
-          onClick={() => fileInputRef.current?.click()}
+          onClick={handleDownloadTemplate}
+          disabled={saving}
           className="flex items-center gap-2 px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-sm font-bold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition"
         >
-          <Upload size={15} /> Import
+          <Download size={15} /> Mẫu
+        </button>
+        <button
+          onClick={() => openPartnerImport('create')}
+          disabled={saving}
+          className="flex items-center gap-2 px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-sm font-bold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition disabled:opacity-60"
+        >
+          {saving && importMode === 'create' ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />} Nhập mới
+        </button>
+        <button
+          onClick={() => openPartnerImport('update')}
+          disabled={saving}
+          className="flex items-center gap-2 px-4 py-2 border border-amber-200 dark:border-amber-900/60 text-amber-700 dark:text-amber-300 text-sm font-bold rounded-xl hover:bg-amber-50 dark:hover:bg-amber-900/20 transition disabled:opacity-60"
+        >
+          {saving && importMode === 'update' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCcw size={15} />} Cập nhật
         </button>
         <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportFile} />
         <button
@@ -305,6 +422,16 @@ const BusinessPartners: React.FC = () => {
           <Plus size={15} /> Thêm đối tác
         </button>
       </div>
+
+      {importPreview && (
+        <ExcelImportReviewModal
+          title={importPreview.mode === 'create' ? 'Preview nhập mới đối tác' : 'Preview cập nhật đối tác'}
+          preview={importPreview}
+          loading={saving}
+          onClose={() => setImportPreview(null)}
+          onConfirm={commitImport}
+        />
+      )}
 
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
@@ -438,48 +565,6 @@ const BusinessPartners: React.FC = () => {
         </div>
       )}
 
-      {importRows.length > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden shadow-2xl flex flex-col">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2 font-black text-slate-800 dark:text-white"><FileSpreadsheet size={18} /> Preview import đối tác</div>
-              <button onClick={() => { setImportRows([]); setImportErrors({}); }} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
-            </div>
-            <div className="overflow-auto flex-1">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800 text-xs text-slate-500 uppercase">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Dòng</th>
-                    <th className="px-4 py-3 text-left">Mã</th>
-                    <th className="px-4 py-3 text-left">Tên</th>
-                    <th className="px-4 py-3 text-left">Phân loại</th>
-                    <th className="px-4 py-3 text-left">MST</th>
-                    <th className="px-4 py-3 text-left">Lỗi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {importRows.map((row, index) => (
-                    <tr key={row.id} className={importErrors[index] ? 'bg-red-50/60' : ''}>
-                      <td className="px-4 py-3">{index + 1}</td>
-                      <td className="px-4 py-3 font-mono">{row.code}</td>
-                      <td className="px-4 py-3 font-bold">{row.name || '-'}</td>
-                      <td className="px-4 py-3">{row.classifications.map(c => CLASSIFICATION_OPTIONS.find(item => item.value === c)?.label).join(', ')}</td>
-                      <td className="px-4 py-3">{row.taxCode || '-'}</td>
-                      <td className="px-4 py-3 text-red-600 font-bold">{importErrors[index] || '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
-              <button onClick={() => { setImportRows([]); setImportErrors({}); }} className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-bold text-slate-600">Hủy</button>
-              <button onClick={commitImport} disabled={saving || Object.keys(importErrors).length === importRows.length} className="px-4 py-2 rounded-xl bg-sky-600 text-white text-sm font-bold disabled:opacity-50">
-                Import {importRows.length - Object.keys(importErrors).length} dòng hợp lệ
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

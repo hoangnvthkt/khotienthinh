@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Plus, Search, Loader2, HardHat, Edit2, Trash2, Eye,
   Upload, X, Download, File, Save
@@ -43,6 +44,7 @@ const EMPTY_FORM: Omit<SubcontractorContract, 'id' | 'attachments' | 'createdAt'
 
 const SubcontractorContracts: React.FC = () => {
   const { user } = useApp();
+  const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -255,7 +257,7 @@ const SubcontractorContracts: React.FC = () => {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
-                        <button onClick={() => { setSelectedContract(c); setDetailTab('info'); }}
+                        <button onClick={() => navigate(`/hd/subcontractor/${c.id}`)}
                           className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"><Eye size={14} /></button>
                         <button onClick={() => handleEdit(c)}
                           className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"><Edit2 size={14} /></button>

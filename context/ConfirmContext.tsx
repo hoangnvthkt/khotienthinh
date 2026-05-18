@@ -14,6 +14,10 @@ interface ConfirmOptions {
   targetName: string;
   subtitle?: string;
   warningText?: string;
+  confirmText?: string;
+  actionLabel?: string;
+  cancelLabel?: string;
+  intent?: 'danger' | 'warning' | 'success';
   countdownSeconds?: number;
 }
 
@@ -55,6 +59,10 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
         targetName={opts.targetName}
         subtitle={opts.subtitle}
         warningText={opts.warningText}
+        confirmText={opts.confirmText}
+        actionLabel={opts.actionLabel}
+        cancelLabel={opts.cancelLabel}
+        intent={opts.intent}
         countdownSeconds={opts.countdownSeconds ?? 2}
       />
     </ConfirmContext.Provider>

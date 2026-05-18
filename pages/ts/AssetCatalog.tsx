@@ -7,7 +7,7 @@ import {
     Search, Plus, Filter, Trash2, Edit3, MoreHorizontal, QrCode,
     Landmark, Tag, Calendar, DollarSign, MapPin, User, X, Check,
     AlertTriangle, CheckCircle, Wrench, Ban, Package, Shield, XCircle, FileWarning,
-    Upload, Download, FileSpreadsheet, Table2, CheckCircle2, Loader2, ChevronDown, ChevronRight, Layers, LayoutGrid, ArrowLeftRight
+    Upload, Download, Table2, CheckCircle2, Loader2, ChevronDown, ChevronRight, Layers, LayoutGrid, ArrowLeftRight, RefreshCcw
 } from 'lucide-react';
 import { Asset, AssetStatus, ASSET_STATUS_LABELS, ASSET_CATEGORY_LABELS, AssetCategoryType, AssetLocationStock, AssetTransfer } from '../../types';
 import ScannerModal from '../../components/ScannerModal';
@@ -16,6 +16,9 @@ import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { loadXlsx } from '../../lib/loadXlsx';
 import Pagination from '../../components/Pagination';
 import { usePagination } from '../../hooks/usePagination';
+import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
+import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
+import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 
 const AssetCatalog: React.FC = () => {
     const navigate = useNavigate();
@@ -59,12 +62,11 @@ const AssetCatalog: React.FC = () => {
     });
 
     // Excel Import state
-    const [showImportModal, setShowImportModal] = useState(false);
-    const [importRows, setImportRows] = useState<Array<Record<string, any>>>([]);
-    const [importErrors, setImportErrors] = useState<Record<number, string>>({});
-    const [importWarnings, setImportWarnings] = useState<Record<number, string[]>>({});
     const [importing, setImporting] = useState(false);
+    const [importMode, setImportMode] = useState<ExcelImportMode>('create');
+    const [importPreview, setImportPreview] = useState<ExcelImportPreview<Asset> | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const importModeRef = useRef<ExcelImportMode>('create');
 
     // Form state
     const [form, setForm] = useState({
@@ -301,17 +303,60 @@ const AssetCatalog: React.FC = () => {
         'Bảo hành (tháng)', 'Giá trị thanh lý', 'Kho', 'Vị trí', 'Nhà cung cấp', 'Ghi chú',
     ];
 
+    const parseAssetNumber = (value: unknown): number => {
+        const normalized = String(value ?? '').replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+        const parsed = Number(normalized);
+        return Number.isFinite(parsed) ? parsed : NaN;
+    };
+
+    const parseAssetDate = (value: unknown) => {
+        const rawDate = String(value || '').trim();
+        if (!rawDate) return new Date().toISOString().split('T')[0];
+        const parts = rawDate.split('/');
+        if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        const d = new Date(rawDate);
+        return Number.isNaN(d.getTime()) ? rawDate : d.toISOString().split('T')[0];
+    };
+
+    const normalizeAssetType = (value: unknown): Asset['assetType'] => {
+        const assetTypeStr = String(value || '').trim().toLowerCase();
+        if (assetTypeStr === 'lô' || assetTypeStr === 'lo' || assetTypeStr === 'batch') return 'batch';
+        if (assetTypeStr === 'bộ' || assetTypeStr === 'bo' || assetTypeStr === 'bundle') return 'bundle';
+        return 'single';
+    };
+
+    const openAssetImport = (mode: ExcelImportMode) => {
+        importModeRef.current = mode;
+        setImportMode(mode);
+        fileInputRef.current?.click();
+    };
+
     const downloadTemplate = async () => {
         const XLSX = await loadXlsx();
+        const updateColumns = ['Mã TS', 'Tên tài sản', 'Loại tài sản', 'Nguyên giá', 'Kho', 'Vị trí', 'Ghi chú'];
         const ws = XLSX.utils.aoa_to_sheet([
-            EXCEL_COLUMNS,
+            EXCEL_COLUMNS.map(col => col === 'Mã TS' ? 'Mã TS *' : col === 'Tên tài sản' ? 'Tên tài sản *' : col),
             ['TS-001', 'Máy xúc CAT 320D', 'Máy móc', 'Đơn', '1', 'Cái', 'CAT', '320D', 'SN12345', '500000000', '17/03/2026', '10', '24', '50000000', '', '', '', ''],
             ['TS-002', 'Gạch xây', 'Vật tư', 'Lô', '1000', 'Viên', '', '', '', '1500', '17/03/2026', '1', '0', '0', '', '', '', ''],
         ]);
-        // column widths
         ws['!cols'] = EXCEL_COLUMNS.map(() => ({ wch: 18 }));
+        const updateWs = XLSX.utils.aoa_to_sheet([
+            updateColumns.map(col => col === 'Mã TS' ? 'Mã TS *' : col),
+            ['TS-001', '', '', '520000000', '', '', 'Chỉ cập nhật nguyên giá và ghi chú nếu có'],
+        ]);
+        updateWs['!cols'] = updateColumns.map(() => ({ wch: 22 }));
+        const guideWs = XLSX.utils.aoa_to_sheet([
+            ['Nội dung', 'Hướng dẫn'],
+            ['Nhập mới', 'Dùng sheet Nhap_moi. Mã TS đã tồn tại sẽ bị báo lỗi.'],
+            ['Cập nhật', 'Dùng sheet Cap_nhat hoặc file chỉ gồm Mã TS và các cột muốn sửa.'],
+            ['Ô trống', 'Trong chế độ Cập nhật, ô trống nghĩa là không đổi dữ liệu.'],
+            ['Xóa giá trị', 'Dùng token __CLEAR__ cho cột cho phép xoá như ghi chú, vị trí, model, serial.'],
+        ]);
+        guideWs['!cols'] = [{ wch: 18 }, { wch: 90 }];
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Mẫu nhập tài sản');
+        XLSX.utils.book_append_sheet(wb, ws, 'Nhap_moi');
+        XLSX.utils.book_append_sheet(wb, updateWs, 'Cap_nhat');
+        XLSX.utils.book_append_sheet(wb, guideWs, 'Huong_dan');
         const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
         const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const url = URL.createObjectURL(blob);
@@ -325,152 +370,134 @@ const AssetCatalog: React.FC = () => {
         toast.success('Tải mẫu', 'File mẫu Excel đã được tải về');
     };
 
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const buildAssetPreview = (mode: ExcelImportMode, rows: Record<string, unknown>[]) => buildImportPreview<Asset>({
+        mode,
+        keyLabel: 'Mã TS',
+        keyAliases: ['Mã TS *', 'Mã TS', 'Mã tài sản', 'Ma TS', 'assetCode', 'code'],
+        existingRecords: assets,
+        getRecordKey: asset => asset.code,
+        createBaseRecord: code => ({
+            id: `ast-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            code,
+            name: '',
+            categoryId: assetCategories[0]?.id || '',
+            status: AssetStatus.AVAILABLE,
+            assetType: 'single',
+            quantity: 1,
+            unit: 'Cái',
+            originalValue: 0,
+            purchaseDate: new Date().toISOString().split('T')[0],
+            depreciationYears: 5,
+            warrantyMonths: 0,
+            residualValue: 0,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        }),
+        fields: [
+            { key: 'name', label: 'Tên tài sản', aliases: ['Tên tài sản *', 'Tên tài sản', 'Tên TS', 'name'], requiredOnCreate: true },
+            {
+                key: 'categoryId',
+                label: 'Loại tài sản',
+                aliases: ['Loại tài sản', 'Danh mục tài sản', 'category'],
+                requiredOnCreate: true,
+                normalize: value => assetCategories.find(c => c.name.toLowerCase() === String(value).trim().toLowerCase())?.id || '',
+                validate: (value, row) => {
+                    const raw = String(row['Loại tài sản'] || row['Danh mục tài sản'] || row['category'] || '').trim();
+                    return raw && !value ? `Loại tài sản "${raw}" không tồn tại.` : undefined;
+                },
+            },
+            { key: 'assetType', label: 'Loại hình', aliases: ['Loại hình (Đơn/Lô/Bộ)', 'Loại hình'], normalize: normalizeAssetType },
+            { key: 'quantity', label: 'Số lượng', aliases: ['Số lượng', 'SL'], normalize: value => Math.max(1, parseAssetNumber(value)), validate: value => Number.isFinite(Number(value)) ? undefined : 'Số lượng phải là số.' },
+            { key: 'unit', label: 'Đơn vị tính', aliases: ['Đơn vị tính', 'ĐVT', 'Đơn vị'], clearable: true },
+            { key: 'brand', label: 'Nhãn hiệu', aliases: ['Nhãn hiệu', 'Thương hiệu'], clearable: true },
+            { key: 'model', label: 'Model', aliases: ['Model'], clearable: true },
+            { key: 'serialNumber', label: 'Số Serial', aliases: ['Số Serial', 'Serial'], clearable: true },
+            { key: 'originalValue', label: 'Nguyên giá', aliases: ['Nguyên giá'], normalize: parseAssetNumber, validate: value => Number.isFinite(Number(value)) && Number(value) >= 0 ? undefined : 'Nguyên giá phải là số không âm.', format: value => Number(value || 0).toLocaleString('vi-VN') },
+            { key: 'purchaseDate', label: 'Ngày mua', aliases: ['Ngày mua (DD/MM/YYYY)', 'Ngày mua'], normalize: parseAssetDate },
+            { key: 'depreciationYears', label: 'Khấu hao', aliases: ['Khấu hao (năm)', 'Khấu hao'], normalize: parseAssetNumber },
+            { key: 'warrantyMonths', label: 'Bảo hành', aliases: ['Bảo hành (tháng)', 'Bảo hành'], clearable: true, normalize: parseAssetNumber },
+            { key: 'residualValue', label: 'Giá trị thanh lý', aliases: ['Giá trị thanh lý'], clearable: true, normalize: parseAssetNumber, format: value => Number(value || 0).toLocaleString('vi-VN') },
+            {
+                key: 'warehouseId',
+                label: 'Kho',
+                aliases: ['Kho'],
+                clearable: true,
+                normalize: value => warehouses.find(w => w.name.toLowerCase() === String(value).trim().toLowerCase())?.id,
+                validate: (value, row) => {
+                    const raw = String(row['Kho'] || '').trim();
+                    return raw && !value ? `Kho "${raw}" không tồn tại.` : undefined;
+                },
+            },
+            { key: 'locationNote', label: 'Vị trí', aliases: ['Vị trí'], clearable: true },
+            {
+                key: 'supplierId',
+                label: 'Nhà cung cấp',
+                aliases: ['Nhà cung cấp'],
+                clearable: true,
+                normalize: value => suppliers.find(s => s.name.toLowerCase() === String(value).trim().toLowerCase())?.id,
+                validate: (value, row) => {
+                    const raw = String(row['Nhà cung cấp'] || '').trim();
+                    return raw && !value ? `Nhà cung cấp "${raw}" không tồn tại.` : undefined;
+                },
+            },
+            { key: 'note', label: 'Ghi chú', aliases: ['Ghi chú'], clearable: true },
+        ],
+    }, rows);
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = async (evt) => {
-            try {
-                const XLSX = await loadXlsx();
-                const data = new Uint8Array(evt.target?.result as ArrayBuffer);
-                const wb = XLSX.read(data, { type: 'array' });
-                const ws = wb.Sheets[wb.SheetNames[0]];
-                const jsonRows: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
-
-                // validate & map
-                const errors: Record<number, string> = {};
-                const warnings: Record<number, string[]> = {};
-                const mapped = jsonRows.map((row, i) => {
-                    const errs: string[] = [];
-                    const warns: string[] = [];
-                    
-                    const code = String(row['Mã TS'] || '').trim();
-                    const name = String(row['Tên tài sản'] || '').trim();
-                    const catName = String(row['Loại tài sản'] || '').trim();
-                    const originalValue = Number(row['Nguyên giá']) || 0;
-                    
-                    const assetTypeStr = String(row['Loại hình (Đơn/Lô/Bộ)'] || '').trim().toLowerCase();
-                    let assetType: 'single' | 'batch' | 'bundle' = 'single';
-                    if (assetTypeStr === 'lô') assetType = 'batch';
-                    else if (assetTypeStr === 'bộ') assetType = 'bundle';
-                    
-                    const quantity = Math.max(1, Number(row['Số lượng']) || 1);
-                    const unit = String(row['Đơn vị tính'] || '').trim() || 'Cái';
-                    
-                    const supplierNameInput = String(row['Nhà cung cấp'] || '').trim();
-                    const supplier = supplierNameInput ? suppliers.find(s => s.name.toLowerCase() === supplierNameInput.toLowerCase()) : undefined;
-
-                    if (!code) errs.push('Thiếu mã TS');
-                    if (!name) errs.push('Thiếu tên');
-                    if (originalValue <= 0) warns.push('Nguyên giá = 0 (nên cập nhật sau)');
-                    // Check duplicate code in existing assets
-                    if (code && assets.some(a => a.code === code)) errs.push('Mã đã tồn tại');
-
-                    // Parse date DD/MM/YYYY
-                    let purchaseDate = new Date().toISOString().split('T')[0];
-                    const rawDate = String(row['Ngày mua (DD/MM/YYYY)'] || '').trim();
-                    if (rawDate) {
-                        const parts = rawDate.split('/');
-                        if (parts.length === 3) {
-                            purchaseDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-                        } else {
-                            // try parsing as Excel serial number or ISO date
-                            const d = new Date(rawDate);
-                            if (!isNaN(d.getTime())) purchaseDate = d.toISOString().split('T')[0];
-                        }
-                    }
-
-                    // Find category
-                    const cat = assetCategories.find(c => c.name.toLowerCase() === catName.toLowerCase());
-                    if (catName && !cat) errs.push(`Loại "${catName}" không tồn tại`);
-
-                    if (errs.length > 0) errors[i] = errs.join('; ');
-                    if (warns.length > 0) warnings[i] = warns;
-
-                    return {
-                        _rowIndex: i,
-                        code,
-                        name,
-                        categoryId: cat?.id || assetCategories[0]?.id || '',
-                        categoryName: catName || assetCategories[0]?.name || '',
-                        brand: String(row['Nhãn hiệu'] || '').trim(),
-                        model: String(row['Model'] || '').trim(),
-                        serialNumber: String(row['Số Serial'] || '').trim(),
-                        originalValue,
-                        purchaseDate,
-                        depreciationYears: Number(row['Khấu hao (năm)']) || 5,
-                        warrantyMonths: Number(row['Bảo hành (tháng)']) || 0,
-                        residualValue: Number(row['Giá trị thanh lý']) || 0,
-                        warehouseId: (() => {
-                            const wName = String(row['Kho'] || '').trim();
-                            return warehouses.find(w => w.name.toLowerCase() === wName.toLowerCase())?.id || '';
-                        })(),
-                        locationNote: String(row['Vị trí'] || '').trim(),
-                        note: String(row['Ghi chú'] || '').trim(),
-                        assetType,
-                        quantity,
-                        unit,
-                        supplierId: supplier?.id || '',
-                        supplierName: supplier?.name || supplierNameInput || '',
-                    };
-                });
-
-                setImportRows(mapped);
-                setImportErrors(errors);
-                setImportWarnings(warnings);
-                setShowImportModal(true);
-            } catch (err) {
-                toast.error('Lỗi đọc file', 'File Excel không hợp lệ. Vui lòng dùng file mẫu.');
-            }
-        };
-        reader.readAsArrayBuffer(file);
-        // Reset input so same file can be re-selected
+        setImporting(true);
+        try {
+            const rows = await parseExcelRows(file, importModeRef.current === 'create' ? 'Nhap_moi' : 'Cap_nhat');
+            if (rows.length === 0) { toast.error('File rỗng', 'File Excel không có dữ liệu tài sản.'); return; }
+            setImportPreview(buildAssetPreview(importModeRef.current, rows));
+        } catch (err) {
+            logApiError('assets.import.read', err);
+            toast.error('Lỗi đọc file', getApiErrorMessage(err, 'File Excel không hợp lệ. Vui lòng dùng file mẫu.'));
+        } finally {
+            setImporting(false);
+        }
         e.target.value = '';
     };
 
     const handleBulkImport = async () => {
-        const validRows = importRows.filter((_, i) => !importErrors[i]);
-        if (validRows.length === 0) {
+        if (!importPreview) return;
+        const records = applyImportChanges(importPreview);
+        if (records.length === 0) {
             toast.error('Không có dữ liệu hợp lệ', 'Vui lòng kiểm tra lại file Excel');
             return;
         }
         setImporting(true);
         const now = new Date().toISOString();
         try {
-          for (const row of validRows) {
-            await addAssetWithInitialStock({
-                id: `ast-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-                code: row.code,
-                name: row.name,
-                categoryId: row.categoryId,
-                brand: row.brand,
-                model: row.model,
-                serialNumber: row.serialNumber,
-                originalValue: row.originalValue,
-                purchaseDate: row.purchaseDate,
-                depreciationYears: row.depreciationYears,
-                warrantyMonths: row.warrantyMonths,
-                residualValue: row.residualValue,
-                warehouseId: row.warehouseId,
-                locationNote: row.locationNote,
-                note: row.note,
-                assetType: row.assetType,
-                quantity: row.quantity,
-                unit: row.unit,
-                supplierId: row.supplierId || undefined,
-                supplierName: row.supplierName || undefined,
-                status: AssetStatus.AVAILABLE,
-                createdAt: now,
-                updatedAt: now,
-            });
+          if (importPreview.mode === 'create') {
+            for (const row of records) {
+                const supplierName = row.supplierId ? suppliers.find(s => s.id === row.supplierId)?.name : undefined;
+                await addAssetWithInitialStock({
+                    ...row,
+                    supplierId: row.supplierId || undefined,
+                    supplierName,
+                    status: AssetStatus.AVAILABLE,
+                    createdAt: row.createdAt || now,
+                    updatedAt: now,
+                });
+            }
+            toast.success('Nhập thành công', `Đã nhập ${records.length} tài sản từ file Excel`);
+          } else {
+            const changedRows = importPreview.rows.filter(row => row.status === 'update' && row.existingRecord && row.nextRecord);
+            for (const row of changedRows) {
+                const supplierName = row.nextRecord!.supplierId
+                    ? suppliers.find(s => s.id === row.nextRecord!.supplierId)?.name || row.nextRecord!.supplierName
+                    : undefined;
+                await updateAsset({ ...row.existingRecord!, ...row.nextRecord!, supplierName, updatedAt: now });
+            }
+            toast.success('Cập nhật thành công', `Đã cập nhật ${changedRows.length} tài sản từ file Excel`);
           }
-          toast.success('Nhập thành công', `Đã nhập ${validRows.length} tài sản từ file Excel`);
-          setShowImportModal(false);
-          setImportRows([]);
-          setImportErrors({});
-          setImportWarnings({});
+          setImportPreview(null);
         } catch (err: any) {
-          toast.error('Lỗi nhập Excel', err?.message || 'Không thể nhập danh sách tài sản');
+          logApiError('assets.import.apply', err);
+          toast.error('Lỗi nhập Excel', getApiErrorMessage(err, 'Không thể nhập danh sách tài sản'));
         } finally {
           setImporting(false);
         }
@@ -708,6 +735,15 @@ const AssetCatalog: React.FC = () => {
     return (
         <div className="space-y-6">
             <ScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScan={handleScanResult} />
+            {importPreview && (
+                <ExcelImportReviewModal
+                    title={importPreview.mode === 'create' ? 'Preview nhập mới tài sản' : 'Preview cập nhật tài sản'}
+                    preview={importPreview}
+                    loading={importing}
+                    onClose={() => setImportPreview(null)}
+                    onConfirm={handleBulkImport}
+                />
+            )}
 
             {/* Header */}
             <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
@@ -726,8 +762,11 @@ const AssetCatalog: React.FC = () => {
                     <button onClick={downloadTemplate} className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 transition text-[10px] font-black uppercase tracking-widest">
                         <Download className="w-4 h-4 mr-2" /> Tải mẫu
                     </button>
-                    <button onClick={() => fileInputRef.current?.click()} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-500 transition text-[10px] font-black uppercase tracking-widest">
-                        <Upload className="w-4 h-4 mr-2" /> Nhập Excel
+                    <button disabled={importing} onClick={() => openAssetImport('create')} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-500 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60">
+                        {importing && importMode === 'create' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />} Nhập mới
+                    </button>
+                    <button disabled={importing} onClick={() => openAssetImport('update')} className="flex items-center px-4 py-2 bg-amber-500 text-white rounded-xl hover:bg-amber-400 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60">
+                        {importing && importMode === 'update' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCcw className="w-4 h-4 mr-2" />} Cập nhật
                     </button>
                     <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileUpload} />
                     <button onClick={openAdd} className="flex items-center px-6 py-2 bg-gradient-to-r from-rose-500 to-pink-600 text-white rounded-xl hover:shadow-lg transition text-[10px] font-black uppercase tracking-widest shadow-lg shadow-rose-500/20">
@@ -1316,113 +1355,6 @@ const AssetCatalog: React.FC = () => {
                             <button onClick={handleBatchTransfer} className="px-5 py-2 rounded-xl text-sm font-bold bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 shadow-lg shadow-amber-500/30 transition-all flex items-center gap-2">
                                 <ArrowLeftRight size={14} /> Xác nhận
                             </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* ===================== EXCEL IMPORT PREVIEW MODAL ===================== */}
-            {showImportModal && (
-                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
-                        {/* Header */}
-                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-950/30 flex items-center justify-center">
-                                    <FileSpreadsheet size={20} className="text-blue-600" />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-black text-slate-800 dark:text-white">Xem trước dữ liệu nhập</h3>
-                                    <p className="text-xs text-slate-400">
-                                        {importRows.length} dòng •{' '}
-                                        <span className="text-emerald-500 font-bold">{importRows.length - Object.keys(importErrors).length} hợp lệ</span>
-                                        {Object.keys(importErrors).length > 0 && (
-                                            <> • <span className="text-red-500 font-bold">{Object.keys(importErrors).length} lỗi</span></>
-                                        )}
-                                        {Object.keys(importWarnings).length > 0 && (
-                                            <> • <span className="text-amber-500 font-bold">{Object.keys(importWarnings).length} cảnh báo (sẽ được nhập)</span></>
-                                        )}
-                                    </p>
-                                </div>
-                            </div>
-                            <button onClick={() => setShowImportModal(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
-                        </div>
-
-                        {/* Table */}
-                        <div className="flex-1 overflow-auto p-4">
-                            <table className="w-full text-left border-collapse min-w-[900px]">
-                                <thead>
-                                    <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-700 text-slate-500 text-[9px] uppercase font-black tracking-widest sticky top-0">
-                                        <th className="p-3 w-8">#</th>
-                                        <th className="p-3">Mã TS</th>
-                                        <th className="p-3">Tên tài sản</th>
-                                        <th className="p-3">Loại</th>
-                                        <th className="p-3 text-center">Loại hình</th>
-                                        <th className="p-3 text-right">Nguyên giá</th>
-                                        <th className="p-3">Ngày mua</th>
-                                        <th className="p-3">Nhà cung cấp</th>
-                                        <th className="p-3 text-center">Trạng thái</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
-                                    {importRows.map((row, i) => {
-                                        const hasError = !!importErrors[i];
-                                        const rowWarns = importWarnings[i];
-                                        return (
-                                            <tr key={i} className={hasError ? 'bg-red-50/50 dark:bg-red-950/10' : rowWarns ? 'bg-amber-50/30 dark:bg-amber-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'}>
-                                                <td className="p-3 text-slate-400 font-mono text-[10px]">{i + 1}</td>
-                                                <td className="p-3 font-mono font-bold text-slate-600 dark:text-slate-300">{row.code || '—'}</td>
-                                                <td className="p-3 font-bold text-slate-800 dark:text-white max-w-[200px] truncate">{row.name || '—'}</td>
-                                                <td className="p-3 text-slate-500">{row.categoryName || '—'}</td>
-                                                <td className="p-3 text-center">
-                                                    {row.assetType === 'batch' ? <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px] font-bold">LÔ (x{row.quantity} {row.unit})</span> :
-                                                     row.assetType === 'bundle' ? <span className="bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded text-[10px] font-bold">BỘ</span> :
-                                                     <span className="text-[10px] text-slate-400">Đơn ({row.unit})</span>}
-                                                </td>
-                                                <td className="p-3 text-right font-bold text-slate-800 dark:text-white">{row.originalValue > 0 ? row.originalValue.toLocaleString('vi-VN') + 'đ' : <span className="text-amber-500 font-bold">0đ</span>}</td>
-                                                <td className="p-3 text-slate-500">{row.purchaseDate ? new Date(row.purchaseDate).toLocaleDateString('vi-VN') : '—'}</td>
-                                                <td className="p-3 text-slate-500 truncate max-w-[150px]" title={row.supplierName}>{row.supplierName || '—'}</td>
-                                                <td className="p-3 text-center">
-                                                    {hasError ? (
-                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black text-red-600 bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800" title={importErrors[i]}>
-                                                            <XCircle size={10} /> {importErrors[i]}
-                                                        </span>
-                                                    ) : rowWarns ? (
-                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black text-amber-600 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800" title={rowWarns.join('; ')}>
-                                                            <AlertTriangle size={10} /> CẢNH BÁO
-                                                        </span>
-                                                    ) : (
-                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800">
-                                                            <CheckCircle2 size={10} /> OK
-                                                        </span>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                            {importRows.length === 0 && (
-                                <div className="p-16 text-center">
-                                    <FileSpreadsheet size={48} className="mx-auto text-slate-200 dark:text-slate-700 mb-3" />
-                                    <p className="text-slate-400 font-bold">Không có dữ liệu</p>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Footer */}
-                        <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
-                            <div className="text-xs text-slate-400">
-                                Chỉ nhập <strong className="text-emerald-600">{importRows.length - Object.keys(importErrors).length}</strong> dòng hợp lệ — bỏ qua {Object.keys(importErrors).length} dòng lỗi
-                            </div>
-                            <div className="flex gap-3">
-                                <button onClick={() => setShowImportModal(false)} className="px-6 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">Huỷ</button>
-                                <button onClick={handleBulkImport} disabled={importing || importRows.length - Object.keys(importErrors).length === 0}
-                                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold text-sm shadow-lg shadow-blue-500/20 hover:shadow-xl transition-all disabled:opacity-50 flex items-center gap-2">
-                                    {importing ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                                    Nhập {importRows.length - Object.keys(importErrors).length} tài sản
-                                </button>
-                            </div>
                         </div>
                     </div>
                 </div>

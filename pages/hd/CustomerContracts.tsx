@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Calendar,
   Download,
@@ -158,6 +159,7 @@ const getTemplateDefaults = (template: ContractFormTemplate | null): Record<stri
 
 const CustomerContracts: React.FC = () => {
   const { user } = useApp();
+  const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -603,7 +605,7 @@ const CustomerContracts: React.FC = () => {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
-                        <button onClick={() => { setSelectedContract(contract); setDetailTab('info'); }} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg"><Eye size={14} /></button>
+                        <button onClick={() => navigate(`/hd/customer/${contract.id}`)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg"><Eye size={14} /></button>
                         <button onClick={() => openEdit(contract)} className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg"><Edit2 size={14} /></button>
                         <button onClick={() => handleDelete(contract)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={14} /></button>
                       </div>

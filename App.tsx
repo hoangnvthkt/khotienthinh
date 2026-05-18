@@ -103,9 +103,11 @@ const OrgMap3D = React.lazy(() => import('./pages/orgmap/OrgMap3D'));
 const ContractLayout = React.lazy(() => import('./pages/hd/ContractLayout'));
 const BusinessPartners = React.lazy(() => import('./pages/hd/BusinessPartners'));
 const ContractTypes = React.lazy(() => import('./pages/hd/ContractTypes'));
+const ContractCatalogs = React.lazy(() => import('./pages/hd/ContractCatalogs'));
 const SupplierContracts = React.lazy(() => import('./pages/hd/SupplierContracts'));
 const CustomerContracts = React.lazy(() => import('./pages/hd/CustomerContracts'));
 const SubcontractorContracts = React.lazy(() => import('./pages/hd/SubcontractorContracts'));
+const ContractWorkspacePage = React.lazy(() => import('./pages/hd/ContractWorkspacePage'));
 
 // ── T1: ProtectedRoute — verify Supabase session thực sự ─────────────────────
 // Khi Supabase được cấu hình: check session JWT từ Supabase Auth.
@@ -241,9 +243,12 @@ const AppRoutes: React.FC = () => {
             <Route index element={<Navigate to="partners" replace />} />
             <Route path="partners" element={<BusinessPartners />} />
             <Route path="contract-types" element={<ContractTypes />} />
+            <Route path="catalogs" element={<ContractCatalogs />} />
             <Route path="supplier" element={<SupplierContracts />} />
             <Route path="customer" element={<CustomerContracts />} />
+            <Route path="customer/:id" element={<ContractWorkspacePage contractType="customer" />} />
             <Route path="subcontractor" element={<SubcontractorContracts />} />
+            <Route path="subcontractor/:id" element={<ContractWorkspacePage contractType="subcontractor" />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Route>

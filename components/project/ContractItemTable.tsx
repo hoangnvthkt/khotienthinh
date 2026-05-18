@@ -1,12 +1,18 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Plus, Trash2, Save, X, ChevronRight, ChevronDown, Upload,
-  Package, Edit2, GripVertical, FileSpreadsheet, AlertTriangle, CheckCircle2,
+  Package, Edit2, GripVertical, FileSpreadsheet, AlertTriangle, CheckCircle2, Loader2, Download, RefreshCcw,
 } from 'lucide-react';
 import { ContractItem, ContractItemType } from '../../types';
 import { contractItemService } from '../../lib/contractItemService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import ContractItemDetailModal from './ContractItemDetailModal';
+import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
+import ExcelImportReviewModal from '../ExcelImportReviewModal';
+import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
+import { loadXlsx } from '../../lib/loadXlsx';
 
 interface ContractItemTableProps {
   contractId: string;
@@ -27,20 +33,40 @@ const EMPTY_ITEM: Partial<ContractItem> = {
   code: '', name: '', unit: 'm2', quantity: 0, unitPrice: 0, totalPrice: 0, order: 0,
 };
 
+const parseImportNumber = (value: unknown): number => {
+  const normalized = String(value ?? '')
+    .replace(/\s/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : NaN;
+};
+
 const ContractItemTable: React.FC<ContractItemTableProps> = ({
   contractId, contractType, projectId, constructionSiteId, readOnly,
 }) => {
   const toast = useToast();
   const confirm = useConfirm();
+  const { loading: saving, run } = useAsyncAction({
+    errorTitle: 'Không thể cập nhật BOQ',
+    fallbackError: 'Không thể lưu hạng mục BOQ lên Supabase.',
+    logScope: 'contractItems.mutation',
+  });
   const [items, setItems] = useState<ContractItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<ContractItem>>({});
   const [showAddRow, setShowAddRow] = useState(false);
   const [newItem, setNewItem] = useState<Partial<ContractItem>>({ ...EMPTY_ITEM });
+  const [detailItem, setDetailItem] = useState<ContractItem | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [showImport, setShowImport] = useState(false);
+  const [importMode, setImportMode] = useState<ExcelImportMode>('create');
+  const [importPreview, setImportPreview] = useState<ExcelImportPreview<ContractItem> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importModeRef = useRef<ExcelImportMode>('create');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -50,7 +76,10 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
       // Auto-expand all groups
       const groups = new Set(data.filter(i => data.some(c => c.parentId === i.id)).map(i => i.id));
       setExpandedGroups(groups);
-    } catch (e: any) { toast.error('Lỗi tải BOQ', e?.message); }
+    } catch (error) {
+      logApiError('contractItems.load', error);
+      toast.error('Lỗi tải BOQ', getApiErrorMessage(error, 'Không thể tải danh sách BOQ.'));
+    }
     finally { setLoading(false); }
   }, [contractId, contractType]);
 
@@ -77,7 +106,7 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
   // CRUD handlers
   const handleAdd = async () => {
     if (!newItem.code || !newItem.name) { toast.warning('Thiếu thông tin', 'Nhập mã và tên hạng mục'); return; }
-    try {
+    await run(async () => {
       await contractItemService.create({
         ...newItem as any,
         contractId,
@@ -92,8 +121,7 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
       setShowAddRow(false);
       setNewItem({ ...EMPTY_ITEM });
       await load();
-      toast.success('Thêm hạng mục thành công');
-    } catch (e: any) { toast.error('Lỗi thêm', e?.message); }
+    }, { successTitle: 'Thêm hạng mục thành công', errorTitle: 'Không thể thêm hạng mục BOQ' });
   };
 
   const handleStartEdit = (item: ContractItem) => {
@@ -103,67 +131,263 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
 
   const handleSaveEdit = async () => {
     if (!editingId) return;
-    try {
+    await run(async () => {
       await contractItemService.update(editingId, editData);
       setEditingId(null);
       await load();
-      toast.success('Cập nhật thành công');
-    } catch (e: any) { toast.error('Lỗi cập nhật', e?.message); }
+    }, { successTitle: 'Cập nhật hạng mục thành công', errorTitle: 'Không thể cập nhật hạng mục BOQ' });
   };
 
   const handleDelete = async (item: ContractItem) => {
     const ok = await confirm({ targetName: `${item.code} — ${item.name}`, title: 'Xoá hạng mục BOQ' });
     if (!ok) return;
-    try {
+    await run(async () => {
       await contractItemService.remove(item.id);
       await load();
-      toast.success('Xoá hạng mục thành công');
-    } catch (e: any) { toast.error('Lỗi xoá', e?.message); }
+    }, { successTitle: 'Xoá hạng mục thành công', errorTitle: 'Không thể xoá hạng mục BOQ' });
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const XLSX = await loadXlsx();
+      const createHeaders = [
+        'Mã số *', 'Tên hạng mục *', 'Hạng mục cha', 'ĐVT *', 'Khối lượng *', 'Đơn giá *',
+        'Mô tả', 'Chủng loại', 'Thương hiệu', 'Xuất xứ', 'Thông số kỹ thuật',
+        'Chiều dài', 'Chiều rộng', 'Chiều cao', 'Đơn giá vật liệu', 'Đơn giá nhân công',
+        'Đơn giá MTC', 'Mã công tác', 'Ghi chú',
+      ];
+      const createRows = [
+        ['HM-001', 'Đào đất móng', '', 'm3', 100, 150000, 'Đào đất móng công trình', '', '', '', '', '', '', '', '', '', '', '', ''],
+        ['HM-002', 'Bê tông lót đá 4x6', '', 'm3', 25, 1200000, '', 'Bê tông', '', 'Việt Nam', '', '', '', '', 800000, 250000, 150000, '', ''],
+        ['HM-003', 'Cốt thép móng', 'HM-002', 'kg', 2500, 18000, '', 'Thép', 'Hòa Phát', 'Việt Nam', '', '', '', '', 16000, 1500, 500, '', ''],
+      ];
+      const updateHeaders = ['Mã số *', 'Tên hạng mục', 'ĐVT', 'Khối lượng', 'Đơn giá', 'Ghi chú'];
+      const updateRows = [
+        ['HM-001', '', '', 120, '', 'Cập nhật riêng khối lượng, các cột trống giữ nguyên'],
+      ];
+      const guideRows = [
+        ['Nội dung', 'Hướng dẫn'],
+        ['Nhập mới', 'Dùng sheet Nhap_moi. Mã số đã tồn tại trong hợp đồng sẽ bị báo lỗi.'],
+        ['Cập nhật', 'Dùng sheet Cap_nhat hoặc file chỉ gồm Mã số và các cột muốn sửa. Mã số phải tồn tại trong BOQ hiện tại.'],
+        ['Ô trống', 'Trong chế độ Cập nhật, ô trống nghĩa là không đổi dữ liệu.'],
+        ['Xóa giá trị', 'Dùng token __CLEAR__ cho các cột cho phép xoá như Ghi chú, Mô tả.'],
+        ['Hạng mục cha', 'Nhập mã hạng mục cha đã tồn tại trong BOQ. V1 chưa tự liên kết cha được tạo trong cùng file.'],
+        ['Số tiền', 'Nhập số thuần, không nhập kèm ký hiệu tiền tệ.'],
+      ];
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([createHeaders, ...createRows]);
+      ws['!cols'] = [
+        { wch: 16 },
+        { wch: 36 },
+        { wch: 18 },
+        { wch: 12 },
+        { wch: 16 },
+        { wch: 18 },
+        { wch: 32 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 28 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 16 },
+        { wch: 28 },
+      ];
+      const updateWs = XLSX.utils.aoa_to_sheet([updateHeaders, ...updateRows]);
+      updateWs['!cols'] = [{ wch: 16 }, { wch: 36 }, { wch: 12 }, { wch: 16 }, { wch: 18 }, { wch: 40 }];
+      const guide = XLSX.utils.aoa_to_sheet(guideRows);
+      guide['!cols'] = [{ wch: 18 }, { wch: 90 }];
+      XLSX.utils.book_append_sheet(wb, ws, 'Nhap_moi');
+      XLSX.utils.book_append_sheet(wb, updateWs, 'Cap_nhat');
+      XLSX.utils.book_append_sheet(wb, guide, 'Huong_dan');
+      const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'Mau_import_BOQ.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success('Đã tải file mẫu BOQ');
+    } catch (error) {
+      logApiError('contractItems.template', error);
+      toast.error('Không thể tạo file mẫu', getApiErrorMessage(error, 'Không thể tạo file Excel mẫu BOQ.'));
+    }
+  };
+
+  const buildBoqImportPreview = (mode: ExcelImportMode, sourceRows: Record<string, unknown>[]) => {
+    const parentByCode = new Map(items.map(item => [item.code.trim().toLowerCase(), item]));
+    return buildImportPreview<ContractItem>({
+      mode,
+      keyLabel: 'Mã số',
+      keyAliases: ['Mã số *', 'Mã số', 'Mã BOQ *', 'Mã BOQ', 'Mã'],
+      existingRecords: items,
+      getRecordKey: record => record.code,
+      createBaseRecord: (code, _row, rowNumber) => ({
+        id: '',
+        contractId,
+        contractType,
+        projectId: projectId || constructionSiteId || null,
+        constructionSiteId,
+        code,
+        name: '',
+        unit: 'm2',
+        quantity: 0,
+        unitPrice: 0,
+        totalPrice: 0,
+        revisedQuantity: 0,
+        revisedUnitPrice: 0,
+        revisedTotalPrice: 0,
+        order: items.length + rowNumber,
+      }),
+      validateKey: code => {
+        if (code.length > 50) return 'Mã số không được vượt quá 50 ký tự.';
+        return undefined;
+      },
+      fields: [
+        {
+          key: 'name',
+          label: 'Tên hạng mục',
+          aliases: ['Tên hạng mục *', 'Tên hạng mục', 'Hạng mục', 'Tên BOQ'],
+          requiredOnCreate: true,
+        },
+        {
+          key: 'parentId',
+          label: 'Hạng mục cha',
+          aliases: ['Hạng mục cha', 'Mã hạng mục cha', 'Mã cha'],
+          clearable: true,
+          normalize: value => {
+            const parentCode = String(value || '').trim().toLowerCase();
+            return parentByCode.get(parentCode)?.id;
+          },
+          validate: (value, row) => {
+            const raw = String(row['Hạng mục cha'] || row['Mã hạng mục cha'] || row['Mã cha'] || '').trim();
+            if (!raw) return undefined;
+            if (raw.toLowerCase() === String(row['Mã số *'] || row['Mã số'] || row['Mã BOQ'] || row['Mã'] || '').trim().toLowerCase()) {
+              return 'Hạng mục cha không được trùng với chính hạng mục.';
+            }
+            if (!value) return `Không tìm thấy hạng mục cha "${raw}" trong BOQ hiện tại.`;
+            return undefined;
+          },
+        },
+        {
+          key: 'unit',
+          label: 'ĐVT',
+          aliases: ['ĐVT *', 'ĐVT', 'Đơn vị', 'Đơn vị tính'],
+          requiredOnCreate: true,
+        },
+        {
+          key: 'quantity',
+          label: 'Khối lượng',
+          aliases: ['Khối lượng *', 'Khối lượng', 'KL'],
+          requiredOnCreate: true,
+          normalize: parseImportNumber,
+          validate: value => Number.isFinite(Number(value)) && Number(value) >= 0 ? undefined : 'Khối lượng phải là số không âm.',
+          format: value => Number(value || 0).toLocaleString('vi-VN'),
+        },
+        {
+          key: 'unitPrice',
+          label: 'Đơn giá',
+          aliases: ['Đơn giá *', 'Đơn giá', 'Giá'],
+          requiredOnCreate: true,
+          normalize: parseImportNumber,
+          validate: value => Number.isFinite(Number(value)) && Number(value) >= 0 ? undefined : 'Đơn giá phải là số không âm.',
+          format: value => Number(value || 0).toLocaleString('vi-VN'),
+        },
+        { key: 'description', label: 'Mô tả', aliases: ['Mô tả'], clearable: true },
+        { key: 'category', label: 'Chủng loại', aliases: ['Chủng loại'], clearable: true },
+        { key: 'brand', label: 'Thương hiệu', aliases: ['Thương hiệu'], clearable: true },
+        { key: 'origin', label: 'Xuất xứ', aliases: ['Xuất xứ'], clearable: true },
+        { key: 'technicalSpec', label: 'Thông số kỹ thuật', aliases: ['Thông số kỹ thuật'], clearable: true },
+        { key: 'length', label: 'Chiều dài', aliases: ['Chiều dài', 'Dài'], clearable: true, normalize: parseImportNumber },
+        { key: 'width', label: 'Chiều rộng', aliases: ['Chiều rộng', 'Rộng'], clearable: true, normalize: parseImportNumber },
+        { key: 'height', label: 'Chiều cao', aliases: ['Chiều cao', 'Cao'], clearable: true, normalize: parseImportNumber },
+        { key: 'materialUnitPrice', label: 'Đơn giá vật liệu', aliases: ['Đơn giá vật liệu'], clearable: true, normalize: parseImportNumber },
+        { key: 'laborUnitPrice', label: 'Đơn giá nhân công', aliases: ['Đơn giá nhân công'], clearable: true, normalize: parseImportNumber },
+        { key: 'machineUnitPrice', label: 'Đơn giá MTC', aliases: ['Đơn giá MTC', 'Đơn giá máy thi công'], clearable: true, normalize: parseImportNumber },
+        { key: 'workCode', label: 'Mã công tác', aliases: ['Mã công tác'], clearable: true },
+        { key: 'note', label: 'Ghi chú', aliases: ['Ghi chú', 'Ghi chu'], clearable: true },
+      ],
+    }, sourceRows);
+  };
+
+  const openImport = (mode: ExcelImportMode) => {
+    importModeRef.current = mode;
+    setImportMode(mode);
+    setShowImport(true);
+    fileInputRef.current?.click();
   };
 
   // Excel Import
   const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setImporting(true);
     try {
-      const XLSX = await import('xlsx');
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-
-      // Auto-detect columns (skip header row)
-      if (rows.length < 2) { toast.warning('File rỗng', 'File Excel không có dữ liệu'); return; }
-
-      const importItems: Omit<ContractItem, 'id' | 'createdAt'>[] = [];
-      for (let i = 1; i < rows.length; i++) {
-        const row = rows[i];
-        if (!row || !row[0]) continue;
-        importItems.push({
-          contractId,
-          contractType,
-          projectId: projectId || constructionSiteId || null,
-          constructionSiteId,
-          code: String(row[0] || ''),
-          name: String(row[1] || ''),
-          unit: String(row[2] || 'm2'),
-          quantity: Number(row[3]) || 0,
-          unitPrice: Number(row[4]) || 0,
-          totalPrice: (Number(row[3]) || 0) * (Number(row[4]) || 0),
-          order: items.length + i,
-        });
-      }
-
-      if (importItems.length === 0) { toast.warning('Không có dữ liệu', 'Không tìm thấy hạng mục hợp lệ'); return; }
-
-      await contractItemService.batchCreate(importItems);
-      await load();
-      toast.success('Import thành công', `${importItems.length} hạng mục đã được thêm`);
-      setShowImport(false);
-    } catch (err: any) {
-      toast.error('Lỗi import', err?.message);
+      const rows = await parseExcelRows(file, importModeRef.current === 'create' ? 'Nhap_moi' : 'Cap_nhat');
+      if (rows.length === 0) { toast.warning('File rỗng', 'File Excel không có dữ liệu'); return; }
+      setImportPreview(buildBoqImportPreview(importModeRef.current, rows));
+    } catch (error) {
+      logApiError('contractItems.import', error);
+      toast.error('Lỗi đọc file BOQ', getApiErrorMessage(error, 'Không thể đọc file Excel BOQ.'));
+    } finally {
+      setImporting(false);
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleConfirmImport = async () => {
+    if (!importPreview) return;
+    setImporting(true);
+    try {
+      const records = applyImportChanges(importPreview);
+      if (records.length === 0) {
+        toast.warning('Không có thay đổi', 'File không có dòng hợp lệ cần ghi dữ liệu.');
+        return;
+      }
+      if (importPreview.mode === 'create') {
+        const createItems = records.map(record => {
+          const { id, createdAt, ...rest } = record;
+          const quantity = Number(rest.quantity || 0);
+          const unitPrice = Number(rest.unitPrice || 0);
+          return {
+            ...rest,
+            quantity,
+            unitPrice,
+            totalPrice: quantity * unitPrice,
+            revisedQuantity: quantity,
+            revisedUnitPrice: unitPrice,
+            revisedTotalPrice: quantity * unitPrice,
+          };
+        });
+        await contractItemService.batchCreate(createItems);
+        toast.success('Import BOQ thành công', `${records.length} hạng mục đã được thêm.`);
+      } else {
+        const changedRows = importPreview.rows.filter(row => row.status === 'update' && row.existingRecord && row.nextRecord);
+        for (const row of changedRows) {
+          const patch = row.changes.reduce<Partial<ContractItem>>((acc, change) => {
+            acc[change.fieldKey as keyof ContractItem] = change.newValue as never;
+            return acc;
+          }, {});
+          await contractItemService.update(row.existingRecord!.id, patch);
+        }
+        toast.success('Cập nhật BOQ thành công', `${changedRows.length} hạng mục đã được cập nhật.`);
+      }
+      setImportPreview(null);
+      setShowImport(false);
+      await load();
+    } catch (error) {
+      logApiError('contractItems.import.apply', error);
+      toast.error('Không thể ghi dữ liệu BOQ', getApiErrorMessage(error, 'Không thể ghi dữ liệu import BOQ lên Supabase.'));
+    } finally {
+      setImporting(false);
+    }
   };
 
   // Render a single BOQ row
@@ -234,7 +458,9 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
                 onChange={e => setEditData({ ...editData, unitPrice: Number(e.target.value) })}
                 className="w-24 px-1 py-1 rounded border border-indigo-300 text-xs text-right outline-none" />
             ) : (
-              <span className="text-slate-700 dark:text-slate-200">{isGrp ? '' : fmt(item.unitPrice)}</span>
+              <span className="text-slate-700 dark:text-slate-200">
+                {isGrp ? '' : (item.revisedUnitPrice !== undefined && item.revisedUnitPrice !== item.unitPrice ? `${fmt(item.unitPrice)} → ${fmt(item.revisedUnitPrice)}` : fmt(item.unitPrice))}
+              </span>
             )}
           </td>
           {/* Thành tiền */}
@@ -263,8 +489,8 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
             {!readOnly && (
               isEditing ? (
                 <div className="flex gap-0.5 justify-center">
-                  <button onClick={handleSaveEdit} className="w-6 h-6 rounded flex items-center justify-center text-emerald-500 hover:bg-emerald-50">
-                    <Save size={12} />
+                  <button disabled={saving} onClick={handleSaveEdit} className="w-6 h-6 rounded flex items-center justify-center text-emerald-500 hover:bg-emerald-50 disabled:opacity-50">
+                    {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
                   </button>
                   <button onClick={() => setEditingId(null)} className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:bg-slate-100">
                     <X size={12} />
@@ -272,10 +498,10 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
                 </div>
               ) : (
                 <div className="flex gap-0.5 justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  {!item.isLocked && <button onClick={() => handleStartEdit(item)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50">
+                  {!item.isLocked && <button disabled={saving} onClick={() => { setDetailItem(item); setShowDetailModal(true); }} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50 disabled:opacity-50">
                     <Edit2 size={11} />
                   </button>}
-                  <button onClick={() => handleDelete(item)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50">
+                  <button disabled={saving} onClick={() => handleDelete(item)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-50">
                     <Trash2 size={11} />
                   </button>
                 </div>
@@ -310,13 +536,25 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
         </div>
         {!readOnly && (
           <div className="flex gap-2">
-            <button onClick={() => { setShowImport(true); fileInputRef.current?.click(); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-all">
-              <FileSpreadsheet size={12} /> Import Excel
+            <button disabled={saving || importing} onClick={handleDownloadTemplate}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-all disabled:opacity-50">
+              <Download size={12} /> Tải mẫu
             </button>
-            <button onClick={() => { setShowAddRow(true); setNewItem({ ...EMPTY_ITEM, order: items.length }); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 transition-all">
-              <Plus size={12} /> Thêm hạng mục
+            <button disabled={saving || importing} onClick={() => openImport('create')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-all disabled:opacity-50">
+              {importing && importMode === 'create' ? <Loader2 size={12} className="animate-spin" /> : <FileSpreadsheet size={12} />} Nhập mới
+            </button>
+            <button disabled={saving || importing} onClick={() => openImport('update')}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-all disabled:opacity-50">
+              {importing && importMode === 'update' ? <Loader2 size={12} className="animate-spin" /> : <RefreshCcw size={12} />} Cập nhật
+            </button>
+            <button disabled={saving || importing} onClick={() => { setDetailItem(null); setShowDetailModal(true); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold text-violet-600 bg-violet-50 border border-violet-200 hover:bg-violet-100 transition-all disabled:opacity-50">
+              <Plus size={12} /> Thêm chi tiết
+            </button>
+            <button disabled={saving || importing} onClick={() => { setShowAddRow(true); setNewItem({ ...EMPTY_ITEM, order: items.length }); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 transition-all disabled:opacity-50">
+              <Plus size={12} /> Thêm nhanh
             </button>
           </div>
         )}
@@ -386,8 +624,8 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
                     <td className="px-2 py-2"></td>
                     <td className="px-2 py-2 text-center">
                       <div className="flex gap-0.5 justify-center">
-                        <button onClick={handleAdd} className="w-6 h-6 rounded flex items-center justify-center text-emerald-500 hover:bg-emerald-50">
-                          <CheckCircle2 size={14} />
+                        <button disabled={saving} onClick={handleAdd} className="w-6 h-6 rounded flex items-center justify-center text-emerald-500 hover:bg-emerald-50 disabled:opacity-50">
+                          {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                         </button>
                         <button onClick={() => setShowAddRow(false)} className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:bg-slate-100">
                           <X size={14} />
@@ -428,10 +666,30 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
           <FileSpreadsheet size={14} className="text-emerald-500 shrink-0" />
           <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-            File Excel cần có 5 cột theo thứ tự: <strong>Mã | Tên hạng mục | ĐVT | Khối lượng | Đơn giá</strong>. Hàng đầu tiên là tiêu đề.
+            Chế độ <strong>{importMode === 'create' ? 'Nhập mới' : 'Cập nhật'}</strong> sẽ mở preview trước khi ghi dữ liệu. Với cập nhật, chỉ cần cột <strong>Mã số</strong> và các cột muốn sửa; ô trống được hiểu là không thay đổi.
           </p>
         </div>
       )}
+      {importPreview && (
+        <ExcelImportReviewModal
+          title={importPreview.mode === 'create' ? 'Preview nhập mới BOQ' : 'Preview cập nhật BOQ'}
+          preview={importPreview}
+          loading={importing}
+          onClose={() => setImportPreview(null)}
+          onConfirm={handleConfirmImport}
+        />
+      )}
+      <ContractItemDetailModal
+        isOpen={showDetailModal}
+        onClose={() => setShowDetailModal(false)}
+        onSaved={load}
+        contractId={contractId}
+        contractType={contractType}
+        projectId={projectId}
+        constructionSiteId={constructionSiteId}
+        parentOptions={items}
+        item={detailItem}
+      />
     </div>
   );
 };

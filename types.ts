@@ -356,7 +356,11 @@ export interface ProjectTransaction {
 export type PaymentScheduleStatus = 'pending' | 'paid' | 'overdue';
 export interface PaymentSchedule {
   id: string;
+  projectId?: string | null;
   constructionSiteId: string;
+  contractId?: string;
+  contractType?: ContractItemType;
+  appendixId?: string;
   description: string;         // "Đợt 1 - Tạm ứng 30%"
   amount: number;
   dueDate: string;
@@ -625,6 +629,7 @@ export interface ContractItem {
   unit: string;                 // Đơn vị: m3, kg, m2, md
   quantity: number;             // Khối lượng HĐ
   unitPrice: number;            // Đơn giá (VNĐ)
+  revisedUnitPrice?: number;     // Đơn giá hiện hành sau điều chỉnh
   totalPrice: number;           // Auto = quantity × unitPrice
   originalQuantity?: number;     // Snapshot khối lượng gốc
   originalUnitPrice?: number;    // Snapshot đơn giá gốc
@@ -635,12 +640,42 @@ export interface ContractItem {
   revisedTotalPrice?: number;    // GT hợp đồng sau phát sinh
   isLocked?: boolean;            // Đã phát sinh nghiệm thu/thanh toán
   lockedAt?: string;
+  description?: string;
+  category?: string;
+  brand?: string;
+  origin?: string;
+  technicalSpec?: string;
+  length?: number;
+  width?: number;
+  height?: number;
+  materialUnitPrice?: number;
+  laborUnitPrice?: number;
+  machineUnitPrice?: number;
+  workCode?: string;
   // Tracking KL
   completedQuantity?: number;   // KL hoàn thành lũy kế (auto từ nhật ký/nghiệm thu)
   completedPercent?: number;    // Auto = completedQuantity / quantity × 100
   // Metadata
   order: number;
   note?: string;
+  createdAt?: string;
+}
+
+export type ContractItemResourceType = 'material' | 'labor' | 'machine';
+
+export interface ContractItemResource {
+  id: string;
+  contractItemId: string;
+  resourceType: ContractItemResourceType;
+  code?: string;
+  name: string;
+  unit?: string;
+  norm: number;
+  coefficient: number;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  order: number;
   createdAt?: string;
 }
 
@@ -789,12 +824,20 @@ export interface ContractVariationItem {
   id?: string;
   variationId?: string;
   contractItemId?: string;
+  actionType?: 'update_quantity' | 'update_price' | 'add_item' | 'reduce_remove';
   code: string;
   name: string;
   unit: string;
   quantityDelta: number;
   unitPrice: number;
   amountDelta: number;
+  beforeQuantity?: number;
+  afterQuantity?: number;
+  beforeUnitPrice?: number;
+  afterUnitPrice?: number;
+  beforeAmount?: number;
+  afterAmount?: number;
+  metadata?: Record<string, any>;
   note?: string;
 }
 
@@ -807,6 +850,16 @@ export interface ContractVariation {
   title: string;
   status: ContractVariationStatus;
   reason?: string;
+  adjustmentDate?: string;
+  versionNumber?: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  overheadCost?: number;
+  vatPercent?: number;
+  vatAmount?: number;
+  contractValueAfter?: number;
+  attachments?: ContractAttachment[];
+  appendixId?: string;
   items: ContractVariationItem[];
   totalAmountDelta: number;
   submittedBy?: string;
@@ -817,6 +870,26 @@ export interface ContractVariation {
   rejectedAt?: string;
   rejectionReason?: string;
   createdAt: string;
+  updatedAt?: string;
+}
+
+export type ContractAppendixStatus = 'draft' | 'signed' | 'active' | 'cancelled';
+
+export interface ContractAppendix {
+  id: string;
+  contractId: string;
+  contractType: ContractItemType;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  appendixNumber: string;
+  name: string;
+  signedDate?: string;
+  value: number;
+  status: ContractAppendixStatus;
+  variationIds: string[];
+  attachments: ContractAttachment[];
+  note?: string;
+  createdAt?: string;
   updatedAt?: string;
 }
 
@@ -2054,6 +2127,73 @@ export interface ContractFormTemplate {
   isDefault: boolean;
   isActive: boolean;
   sections?: ContractTemplateSection[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type ContractCatalogStatus = 'active' | 'inactive';
+
+export interface ContractServiceCatalogItem {
+  id: string;
+  code: string;
+  name: string;
+  groupName?: string;
+  unit?: string;
+  unitPrice: number;
+  status: ContractCatalogStatus;
+  note?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ContractLaborCatalogItem {
+  id: string;
+  code: string;
+  name: string;
+  groupName?: string;
+  unit?: string;
+  status: ContractCatalogStatus;
+  note?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ContractMachineCatalogItem {
+  id: string;
+  code: string;
+  name: string;
+  groupName?: string;
+  unit?: string;
+  status: ContractCatalogStatus;
+  note?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ContractMaterialNormItem {
+  id: string;
+  workCode: string;
+  materialItemId?: string;
+  materialSku?: string;
+  materialName: string;
+  unit?: string;
+  wastePercent: number;
+  norm: number;
+  note?: string;
+  status: ContractCatalogStatus;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ContractCostItem {
+  id: string;
+  parentId?: string | null;
+  symbol: string;
+  name: string;
+  costType?: string;
+  description?: string;
+  status: ContractCatalogStatus;
+  sortOrder: number;
   createdAt?: string;
   updatedAt?: string;
 }

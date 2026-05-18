@@ -6,7 +6,6 @@ import {
   ContractVariationStatus,
   User,
 } from '../types';
-import { contractItemService } from './contractItemService';
 import { fromDb, toDb } from './dbMapping';
 import { auditService } from './auditService';
 import { approvalService } from './approvalService';
@@ -45,7 +44,7 @@ async function replaceItems(variationId: string, items: ContractVariationItem[])
   }
   if (items.length === 0) return;
   const rows = items.map(item => {
-    const amountDelta = item.amountDelta || item.quantityDelta * item.unitPrice;
+    const amountDelta = item.amountDelta ?? item.quantityDelta * item.unitPrice;
     const dbItem = toDb({ ...item, variationId, amountDelta });
     delete dbItem.id;
     return dbItem;
@@ -61,6 +60,7 @@ export const variationService = {
       .select('*')
       .eq('contract_id', contractId)
       .eq('contract_type', contractType)
+      .order('version_number', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false });
     if (error) throw error;
     const variations = (data || []).map(normalize);
@@ -69,18 +69,29 @@ export const variationService = {
   },
 
   async create(params: Omit<ContractVariation, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'totalAmountDelta'> & { status?: ContractVariationStatus }): Promise<ContractVariation> {
-    const totalAmountDelta = params.items.reduce((sum, item) => sum + (item.amountDelta || item.quantityDelta * item.unitPrice), 0);
+    const totalAmountDelta = params.items.reduce((sum, item) => sum + (item.amountDelta ?? item.quantityDelta * item.unitPrice), 0);
+    const { data: existing, error: versionError } = await supabase
+      .from(TABLE)
+      .select('version_number')
+      .eq('contract_id', params.contractId)
+      .eq('contract_type', params.contractType)
+      .order('version_number', { ascending: false, nullsFirst: false })
+      .limit(1);
+    if (versionError) throw versionError;
+    const versionNumber = params.versionNumber || Number(existing?.[0]?.version_number || 0) + 1;
     const dbItem = toDb({
       ...params,
       status: params.status || 'draft',
       totalAmountDelta,
+      versionNumber,
+      adjustmentDate: params.adjustmentDate || new Date().toISOString().slice(0, 10),
     });
     delete dbItem.id;
     delete dbItem.items; // 'items' là virtual field, lưu riêng trong contract_variation_items
     const { data, error } = await supabase.from(TABLE).insert(dbItem).select().single();
     if (error) throw error;
     await replaceItems(data.id, params.items);
-    return { ...normalize(data), items: params.items };
+    return { ...normalize(data), versionNumber, items: params.items };
   },
 
   async update(id: string, updates: Partial<ContractVariation>): Promise<void> {
@@ -92,7 +103,7 @@ export const variationService = {
     const next = {
       ...updates,
       totalAmountDelta: updates.items
-        ? updates.items.reduce((sum, item) => sum + (item.amountDelta || item.quantityDelta * item.unitPrice), 0)
+        ? updates.items.reduce((sum, item) => sum + (item.amountDelta ?? item.quantityDelta * item.unitPrice), 0)
         : updates.totalAmountDelta,
     };
     const dbNext = toDb(next);
@@ -126,12 +137,19 @@ export const variationService = {
     }
 
     const now = new Date().toISOString();
-    const updates: any = { status };
-    if (status === 'submitted') { updates.submittedBy = userId; updates.submittedAt = now; }
-    if (status === 'approved') { updates.approvedBy = userId; updates.approvedAt = now; }
-    if (status === 'rejected') { updates.rejectedBy = userId; updates.rejectedAt = now; updates.rejectionReason = reason; }
-    const { error } = await supabase.from(TABLE).update(toDb(updates)).eq('id', id);
-    if (error) throw error;
+    if (status === 'approved') {
+      const { error } = await supabase.rpc('approve_contract_variation', {
+        p_variation_id: id,
+        p_user_id: userId || null,
+      });
+      if (error) throw error;
+    } else {
+      const updates: any = { status };
+      if (status === 'submitted') { updates.submittedBy = userId; updates.submittedAt = now; }
+      if (status === 'rejected') { updates.rejectedBy = userId; updates.rejectedAt = now; updates.rejectionReason = reason; }
+      const { error } = await supabase.from(TABLE).update(toDb(updates)).eq('id', id);
+      if (error) throw error;
+    }
     await auditService.log({
       tableName: TABLE,
       recordId: id,
@@ -142,36 +160,6 @@ export const variationService = {
       userName: userId || 'system',
       description: `Chuyển trạng thái phát sinh ${variation.code}: ${variation.status} -> ${status}`,
     });
-
-    if (status === 'approved') {
-      for (const item of variation.items) {
-        const amountDelta = item.amountDelta || item.quantityDelta * item.unitPrice;
-        if (item.contractItemId) {
-          await contractItemService.applyVariationDelta(item.contractItemId, item.quantityDelta, amountDelta);
-        } else {
-          await contractItemService.create({
-            contractId: variation.contractId,
-            contractType: variation.contractType,
-            constructionSiteId: variation.constructionSiteId,
-            code: item.code,
-            name: item.name,
-            unit: item.unit,
-            quantity: item.quantityDelta,
-            unitPrice: item.unitPrice,
-            totalPrice: amountDelta,
-            originalQuantity: 0,
-            originalUnitPrice: item.unitPrice,
-            originalTotalPrice: 0,
-            variationQuantity: item.quantityDelta,
-            variationAmount: amountDelta,
-            revisedQuantity: item.quantityDelta,
-            revisedTotalPrice: amountDelta,
-            order: 9999,
-            note: `Tạo từ phát sinh ${variation.code}`,
-          });
-        }
-      }
-    }
   },
 
   async remove(id: string): Promise<void> {

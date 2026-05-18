@@ -16,6 +16,7 @@ import AdvancePaymentPanel from '../../components/project/AdvancePaymentPanel';
 import RetentionPanel from '../../components/project/RetentionPanel';
 import FinancialPipelineWidget from '../../components/project/FinancialPipelineWidget';
 import ApprovalMatrixPanel from '../../components/project/ApprovalMatrixPanel';
+import ContractWorkspace from '../../components/project/ContractWorkspace';
 
 interface ContractTabProps {
     constructionSiteId?: string;
@@ -197,6 +198,9 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
                             const stCfg = STATUS_CFG[c.status];
                             const tCfg = TYPE_CFG[c.type];
                             const isExpanded = expandedId === c.id;
+                            const sourceContract = c.type === 'customer'
+                                ? customerContracts.find(item => item.id === c.id)
+                                : subContracts.find(item => item.id === c.id);
                             return (
                                 <div key={c.id}>
                                     <div className="flex items-center justify-between px-5 py-3.5 hover:bg-slate-50/50 dark:hover:bg-slate-700/50 transition-colors group cursor-pointer"
@@ -228,101 +232,16 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
                                         </div>
                                     </div>
                                     {isExpanded && (
-                                        <div className="px-5 pb-4 bg-slate-50/50 dark:bg-slate-700/30 border-t border-slate-100 dark:border-slate-700">
-                                            {/* Sub-tabs */}
-                                            <div className="flex flex-wrap gap-1 pt-3 pb-2 border-b border-slate-100 dark:border-slate-600 mb-1">
-                                                {([
-                                                    { key: 'pipeline', label: 'Tài chính', icon: <TrendingUp size={12} /> },
-                                                    { key: 'boq', label: 'BOQ Hạng mục', icon: <Package size={12} /> },
-                                                    { key: 'variation', label: 'Phát sinh', icon: <FilePlus2 size={12} /> },
-                                                    { key: 'acceptance', label: 'Nghiệm thu', icon: <ClipboardCheck size={12} /> },
-                                                    { key: 'payment', label: 'Thanh toán', icon: <CreditCard size={12} /> },
-                                                    { key: 'advance', label: 'Tạm ứng', icon: <DollarSign size={12} /> },
-                                                    { key: 'retention', label: 'Giữ lại', icon: <ShieldCheck size={12} /> },
-                                                    { key: 'info', label: 'Chi tiết HĐ', icon: <List size={12} /> },
-                                                ] as const).map(tab => (
-                                                    <button key={tab.key}
-                                                        onClick={() => setActiveSubTab(tab.key)}
-                                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                                                            activeSubTab === tab.key
-                                                                ? 'text-indigo-700 bg-indigo-100 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700'
-                                                                : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-600'
-                                                        }`}>
-                                                        {tab.icon} {tab.label}
-                                                    </button>
-                                                ))}
-                                            </div>
-
-                                            {/* Sub-tab Content */}
-                                            {activeSubTab === 'pipeline' && (
-                                                <div className="pt-3">
-                                                    {hasSiteLink ? <FinancialPipelineWidget
-                                                        contractId={c.id}
-                                                        contractType={c.type as 'customer' | 'subcontractor'}
-                                                        constructionSiteId={constructionSiteId!}
-                                                    /> : renderSiteRequired('Pipeline tài chính')}
-                                                </div>
-                                            )}
-
-                                            {activeSubTab === 'info' && (
-                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-3 text-xs">
-                                                    <div><span className="text-slate-400 block">Loại</span><span className="font-bold">{tCfg.label}</span></div>
-                                                    <div><span className="text-slate-400 block">Hiệu lực</span><span className="font-bold">{c.effectiveDate ? new Date(c.effectiveDate).toLocaleDateString('vi-VN') : '—'}</span></div>
-                                                    <div><span className="text-slate-400 block">Kết thúc</span><span className="font-bold">{c.endDate ? new Date(c.endDate).toLocaleDateString('vi-VN') : '—'}</span></div>
-                                                    <div><span className="text-slate-400 block">Ghi chú</span><span className="font-bold">{c.note || '—'}</span></div>
-                                                </div>
-                                            )}
-
-                                            {activeSubTab === 'boq' && (
-                                                <ContractItemTable
-                                                    contractId={c.id}
+                                        <div className="px-5 py-4 bg-slate-50/50 dark:bg-slate-700/30 border-t border-slate-100 dark:border-slate-700">
+                                            {sourceContract ? (
+                                                <ContractWorkspace
+                                                    contract={sourceContract}
                                                     contractType={c.type as ContractItemType}
-                                                    projectId={projectId || constructionSiteId || null}
-                                                    constructionSiteId={constructionSiteId || null}
+                                                    embedded
                                                 />
+                                            ) : (
+                                                <div className="py-6 text-center text-xs font-bold text-slate-400">Không tìm thấy dữ liệu hợp đồng nguồn.</div>
                                             )}
-
-	                                            {activeSubTab === 'payment' && (
-	                                                hasSiteLink ? <PaymentCertificatePanel
-	                                                    contractId={c.id}
-	                                                    contractType={c.type as ContractItemType}
-	                                                    projectId={projectId}
-	                                                    constructionSiteId={constructionSiteId!}
-	                                                /> : renderSiteRequired('Thanh toán')
-	                                            )}
-
-	                                            {activeSubTab === 'variation' && (
-	                                                hasSiteLink ? <ContractVariationPanel
-	                                                    contractId={c.id}
-	                                                    contractType={c.type as ContractItemType}
-	                                                    projectId={projectId}
-	                                                    constructionSiteId={constructionSiteId!}
-	                                                /> : renderSiteRequired('Phát sinh')
-	                                            )}
-
-	                                            {activeSubTab === 'acceptance' && (
-	                                                hasSiteLink ? <QuantityAcceptancePanel
-	                                                    contractId={c.id}
-	                                                    contractType={c.type as ContractItemType}
-	                                                    projectId={projectId}
-	                                                    constructionSiteId={constructionSiteId!}
-	                                                /> : renderSiteRequired('Nghiệm thu')
-	                                            )}
-
-	                                            {activeSubTab === 'advance' && (
-	                                                hasSiteLink ? <AdvancePaymentPanel
-	                                                    contractId={c.id}
-	                                                    contractType={c.type as ContractItemType}
-	                                                    constructionSiteId={constructionSiteId!}
-	                                                /> : renderSiteRequired('Tạm ứng')
-	                                            )}
-
-	                                            {activeSubTab === 'retention' && (
-	                                                <RetentionPanel
-	                                                    contractId={c.id}
-	                                                    contractType={c.type as ContractItemType}
-	                                                />
-	                                            )}
                                         </div>
                                     )}
                                 </div>

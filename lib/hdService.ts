@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { CustomerContract, SubcontractorContract, SupplierContract } from '../types';
+import { ContractAppendix, CustomerContract, SubcontractorContract, SupplierContract } from '../types';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 
 // ══════════════════════════════════════════════════════════════
@@ -41,6 +41,16 @@ export const customerContractService = {
       .order('created_at', { ascending: false });
     if (error) throw error;
     return dedupeRowsById(data || []).map(fromDb);
+  },
+
+  async getById(id: string): Promise<CustomerContract | null> {
+    const { data, error } = await supabase
+      .from('customer_contracts')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? fromDb(data) : null;
   },
 
   async upsert(item: CustomerContract): Promise<void> {
@@ -93,6 +103,16 @@ export const subcontractorContractService = {
     return dedupeRowsById(data || []).map(fromDb);
   },
 
+  async getById(id: string): Promise<SubcontractorContract | null> {
+    const { data, error } = await supabase
+      .from('subcontractor_contracts')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? fromDb(data) : null;
+  },
+
   async upsert(item: SubcontractorContract): Promise<void> {
     const { error } = await supabase
       .from('subcontractor_contracts')
@@ -103,6 +123,42 @@ export const subcontractorContractService = {
   async remove(id: string): Promise<void> {
     const { error } = await supabase
       .from('subcontractor_contracts')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// ==================== PHỤ LỤC HỢP ĐỒNG ====================
+export const contractAppendixService = {
+  async listByContract(contractId: string, contractType: ContractAppendix['contractType']): Promise<ContractAppendix[]> {
+    const { data, error } = await supabase
+      .from('contract_appendices')
+      .select('*')
+      .eq('contract_id', contractId)
+      .eq('contract_type', contractType)
+      .order('signed_date', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(fromDb);
+  },
+
+  async upsert(item: ContractAppendix): Promise<void> {
+    const payload = cleanUndefined(toDb({
+      ...item,
+      variationIds: item.variationIds || [],
+      attachments: item.attachments || [],
+      updatedAt: new Date().toISOString(),
+    }));
+    const { error } = await supabase
+      .from('contract_appendices')
+      .upsert(payload, { onConflict: 'id' });
+    if (error) throw error;
+  },
+
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('contract_appendices')
       .delete()
       .eq('id', id);
     if (error) throw error;
