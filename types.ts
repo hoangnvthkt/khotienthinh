@@ -292,8 +292,29 @@ export interface Project {
   manualProgressPercent?: number;
   createdBy?: string;
   source?: 'manual' | 'backfill';
+  isHidden?: boolean;
+  hiddenAt?: string;
+  hiddenBy?: string;
+  hiddenReason?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface ProjectDeleteImpactItem {
+  key: string;
+  label: string;
+  count: number;
+  totalAmount: number;
+}
+
+export interface ProjectDeleteImpact {
+  projectId: string;
+  constructionSiteId?: string | null;
+  items: ProjectDeleteImpactItem[];
+  totalRows: number;
+  totalAmount: number;
+  hasImpact: boolean;
+  warnings: string[];
 }
 
 export interface ProjectFinance {

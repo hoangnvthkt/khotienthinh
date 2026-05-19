@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import {
     Project,
@@ -14,11 +14,16 @@ import {
     ProjectSector,
     ProjectMasterCategory,
     WorkGroupWithMembers,
+    ProjectDeleteImpact,
 } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { loadXlsx } from '../lib/loadXlsx';
+import ExcelImportReviewModal from '../components/ExcelImportReviewModal';
+import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, getExcelCell, parseExcelRows } from '../lib/excelImport';
 import { useModuleData } from '../hooks/useModuleData';
 import { useWorkflow } from '../context/WorkflowContext';
+import { useToast } from '../context/ToastContext';
+import { usePermission } from '../hooks/usePermission';
 import CashFlowTab from './project/CashFlowTab';
 import ContractTab from './project/ContractTab';
 import GanttTab from './project/GanttTab';
@@ -35,12 +40,13 @@ import { projectMasterService } from '../lib/projectMasterService';
 import { projectMasterDataService } from '../lib/projectMasterDataService';
 import { projectPermissionTypeService, projectStaffService } from '../lib/projectStaffService';
 import { workGroupService } from '../lib/workGroupService';
+import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, FileText,
     Building2, HardHat, AlertCircle, ArrowUpRight, ArrowDownRight,
     Upload, Download, Filter, Calendar, Tag, List, Paperclip, Eye, Image,
-    Users, UserPlus
+    Users, UserPlus, Loader2, RefreshCcw, Search, EyeOff, ArchiveRestore
 } from 'lucide-react';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -48,6 +54,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
     active: { label: 'Đang thi công', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
     paused: { label: 'Tạm dừng', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
     completed: { label: 'Hoàn thành', color: 'text-violet-600', bg: 'bg-violet-50 border-violet-200' },
+    cancelled: { label: 'Đã huỷ', color: 'text-slate-500', bg: 'bg-slate-50 border-slate-200' },
 };
 
 const CATEGORY_CONFIG: Record<ProjectCostCategory, { label: string; icon: string; color: string }> = {
@@ -123,6 +130,47 @@ type ProjectFormState = {
     description: string;
 };
 
+type ProjectImportRecord = Project & {
+    adminImportUsers?: string;
+    executorImportUsers?: string;
+    watcherImportUsers?: string;
+    defaultPositionImportId?: string;
+};
+
+type ProjectHiddenFilter = 'active' | 'hidden' | 'all';
+type ProjectSiteFilter = 'all' | 'linked' | 'unlinked';
+type ProjectSortKey = 'updatedAt' | 'code' | 'name' | 'startDate' | 'contractValue' | 'actualCost' | 'profit' | 'progress';
+
+type ProjectFilterState = {
+    query: string;
+    status: Project['status'] | 'all';
+    groupId: string;
+    typeId: string;
+    sectorId: string;
+    workflowId: string;
+    siteLink: ProjectSiteFilter;
+    startFrom: string;
+    startTo: string;
+    endFrom: string;
+    endTo: string;
+    hidden: ProjectHiddenFilter;
+};
+
+const emptyProjectFilters = (): ProjectFilterState => ({
+    query: '',
+    status: 'all',
+    groupId: 'all',
+    typeId: 'all',
+    sectorId: 'all',
+    workflowId: 'all',
+    siteLink: 'all',
+    startFrom: '',
+    startTo: '',
+    endFrom: '',
+    endTo: '',
+    hidden: 'active',
+});
+
 const emptyProjectForm = (): ProjectFormState => ({
     name: '',
     code: '',
@@ -148,6 +196,78 @@ const emptyProjectForm = (): ProjectFormState => ({
     description: '',
 });
 
+const normalizeLookup = (value: unknown): string =>
+    String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+
+const findByNameCodeId = <T extends { id: string; code?: string; name?: string }>(items: T[], value: unknown): T | undefined => {
+    const key = normalizeLookup(value);
+    if (!key) return undefined;
+    return items.find(item => [item.id, item.code, item.name].some(candidate => normalizeLookup(candidate) === key));
+};
+
+const parseProjectDate = (value: unknown): string | undefined => {
+    if (!value) return undefined;
+    if (typeof value === 'number') {
+        const date = new Date((value - 25569) * 86400 * 1000);
+        return Number.isNaN(date.getTime()) ? undefined : date.toISOString().slice(0, 10);
+    }
+    const raw = String(value).trim();
+    if (!raw) return undefined;
+    const dmy = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+    const ymd = raw.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    if (ymd) return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`;
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? raw : date.toISOString().slice(0, 10);
+};
+
+const parseProjectNumber = (value: unknown): number => {
+    if (typeof value === 'number') return value;
+    const cleaned = String(value || '').replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
+    return Number(cleaned) || 0;
+};
+
+const STATUS_IMPORT_ALIASES: Record<string, Project['status']> = {
+    planning: 'planning',
+    'lap ke hoach': 'planning',
+    active: 'active',
+    'dang thi cong': 'active',
+    paused: 'paused',
+    'tam dung': 'paused',
+    completed: 'completed',
+    'hoan thanh': 'completed',
+    cancelled: 'cancelled',
+    'da huy': 'cancelled',
+};
+
+const normalizeProjectStatus = (value: unknown): Project['status'] => {
+    const raw = normalizeLookup(value);
+    return STATUS_IMPORT_ALIASES[raw] || 'planning';
+};
+
+const PROGRESS_IMPORT_ALIASES: Record<string, ProjectProgressCalculationMode> = {
+    gantt_weighted: 'gantt_weighted',
+    gantt: 'gantt_weighted',
+    'theo gantt co trong so': 'gantt_weighted',
+    budget: 'budget',
+    'theo ngan sach cong viec': 'budget',
+    duration: 'duration',
+    'theo thoi gian thuc hien': 'duration',
+    task_count: 'task_count',
+    'theo so luong cong viec hoan thanh': 'task_count',
+    manual: 'manual',
+    'nhap thu cong': 'manual',
+};
+
+const normalizeProgressMode = (value: unknown): ProjectProgressCalculationMode => {
+    const raw = normalizeLookup(value);
+    return PROGRESS_IMPORT_ALIASES[raw] || 'gantt_weighted';
+};
+
 const siteToProjectFallback = (site: { id: string; name: string; address?: string; description?: string; managerId?: string; createdAt?: string }): Project => ({
     id: site.id,
     code: `PRJ-${site.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`,
@@ -169,6 +289,9 @@ const ProjectDashboard: React.FC = () => {
         projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction,
         user, users, employees, hrmPositions
     } = useApp();
+    const toast = useToast();
+    const { canManage, isAdmin } = usePermission();
+    const canManageProjects = canManage('/da');
     const { templates: workflowTemplates } = useWorkflow();
     useModuleData('da');
     useModuleData('wms');
@@ -181,8 +304,8 @@ const ProjectDashboard: React.FC = () => {
     const [budgetData, setBudgetData] = useState<ProjectFinance | null>(null);
     const [txFilter, setTxFilter] = useState<ProjectCostCategory | 'all'>('all');
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const txFileInputRef = useRef<HTMLInputElement>(null);
-
+    const projectImportInputRef = useRef<HTMLInputElement>(null);
+    const projectImportModeRef = useRef<ExcelImportMode>('create');
     // TX form state
     const [txType, setTxType] = useState<ProjectTxType>('expense');
     const [txCategory, setTxCategory] = useState<ProjectCostCategory>('materials');
@@ -198,6 +321,21 @@ const ProjectDashboard: React.FC = () => {
     const [projects, setProjects] = useState<Project[]>([]);
     const [projectsLoading, setProjectsLoading] = useState(false);
     const [projectLoadError, setProjectLoadError] = useState<string | null>(null);
+    const [projectFilters, setProjectFilters] = useState<ProjectFilterState>(emptyProjectFilters);
+    const [projectSort, setProjectSort] = useState<ProjectSortKey>('updatedAt');
+    const [projectSortAsc, setProjectSortAsc] = useState(false);
+    const [projectImportMode, setProjectImportMode] = useState<ExcelImportMode>('create');
+    const [projectImportPreview, setProjectImportPreview] = useState<ExcelImportPreview<ProjectImportRecord> | null>(null);
+    const [projectImporting, setProjectImporting] = useState(false);
+    const [projectExporting, setProjectExporting] = useState(false);
+    const [hideProjectTarget, setHideProjectTarget] = useState<Project | null>(null);
+    const [hideProjectImpact, setHideProjectImpact] = useState<ProjectDeleteImpact | null>(null);
+    const [hideProjectImpactLoading, setHideProjectImpactLoading] = useState(false);
+    const [hideProjectReason, setHideProjectReason] = useState('');
+    const [hideProjectCodeConfirm, setHideProjectCodeConfirm] = useState('');
+    const [hidingProject, setHidingProject] = useState(false);
+    const [restoringProjectId, setRestoringProjectId] = useState<string | null>(null);
+    const [deleteTxConfirmId, setDeleteTxConfirmId] = useState<string | null>(null);
     const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
     const [showProjectForm, setShowProjectForm] = useState(false);
     const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -213,25 +351,24 @@ const ProjectDashboard: React.FC = () => {
     const [quickCategoryKind, setQuickCategoryKind] = useState<'group' | 'type' | 'sector' | null>(null);
     const [quickCategoryForm, setQuickCategoryForm] = useState({ code: '', name: '', description: '' });
 
-    useEffect(() => {
-        let cancelled = false;
+    const loadProjects = useCallback(async () => {
         setProjectsLoading(true);
-        projectMasterService.list()
-            .then(data => {
-                if (cancelled) return;
-                setProjects(data);
-                setProjectLoadError(null);
-            })
-            .catch(err => {
-                if (cancelled) return;
-                setProjects([]);
-                setProjectLoadError(err?.message || 'Không tải được danh sách dự án');
-            })
-            .finally(() => {
-                if (!cancelled) setProjectsLoading(false);
-            });
-        return () => { cancelled = true; };
+        try {
+            const data = await projectMasterService.list({ includeHidden: true });
+            setProjects(data);
+            setProjectLoadError(null);
+        } catch (err) {
+            logApiError('ProjectDashboard.loadProjects', err);
+            setProjects([]);
+            setProjectLoadError(getApiErrorMessage(err, 'Không tải được danh sách dự án'));
+        } finally {
+            setProjectsLoading(false);
+        }
     }, []);
+
+    useEffect(() => {
+        loadProjects();
+    }, [loadProjects]);
 
     const loadProjectMasterData = async () => {
         setProjectMasterDataLoading(true);
@@ -245,7 +382,8 @@ const ProjectDashboard: React.FC = () => {
             setProjectTypes(types);
             setProjectSectors(sectors);
         } catch (err: any) {
-            console.error('Project master data load failed', err);
+            logApiError('ProjectDashboard.loadProjectMasterData', err);
+            toast.error('Không thể tải danh mục dự án', getApiErrorMessage(err, 'Không thể tải nhóm, loại hoặc lĩnh vực dự án.'));
         } finally {
             setProjectMasterDataLoading(false);
         }
@@ -261,7 +399,8 @@ const ProjectDashboard: React.FC = () => {
             const groups = await workGroupService.listGroupsWithMembers({ activeOnly: false, memberActiveOnly: false });
             setWorkGroups(groups);
         } catch (err: any) {
-            console.error('Work groups load failed', err);
+            logApiError('ProjectDashboard.loadWorkGroups', err);
+            toast.error('Không thể tải nhóm làm việc', getApiErrorMessage(err, 'Không thể tải nhóm làm việc để phân quyền dự án.'));
         } finally {
             setWorkGroupsLoading(false);
         }
@@ -314,6 +453,116 @@ const ProjectDashboard: React.FC = () => {
             txCount: txs.length,
         };
     };
+
+    const getDisplayProgress = (finance?: ProjectFinance | null) => {
+        if (!finance) return 0;
+        return taskProgressBySite[finance.constructionSiteId]?.progressPercent ?? finance.progressPercent;
+    };
+
+    const getProjectSite = (project: Project) =>
+        project.constructionSiteId ? hrmConstructionSites.find(site => site.id === project.constructionSiteId) || null : null;
+
+    const getProjectFinance = (project: Project) => {
+        const site = getProjectSite(project);
+        return projectFinances.find(finance =>
+            (project.id && finance.projectId === project.id) ||
+            (site && finance.constructionSiteId === site.id)
+        ) || null;
+    };
+
+    const getProjectAggregated = (project: Project) => {
+        const site = getProjectSite(project);
+        const txs = projectTransactions.filter(tx =>
+            (project.id && tx.projectId === project.id) ||
+            (site && tx.constructionSiteId === site.id)
+        );
+        return {
+            totalExpense: txs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0),
+            totalRevenue: txs.filter(t => t.type === 'revenue_received').reduce((s, t) => s + t.amount, 0),
+            txCount: txs.length,
+        };
+    };
+
+    const getProjectListMetrics = (project: Project) => {
+        const finance = getProjectFinance(project);
+        const site = getProjectSite(project);
+        const agg = getProjectAggregated(project);
+        const progress = finance ? getDisplayProgress(finance) : (project.progressCalculationMode === 'manual' ? Number(project.manualProgressPercent || 0) : 0);
+        const contractValue = finance?.contractValue || 0;
+        return {
+            site,
+            finance,
+            actualCost: agg.totalExpense,
+            totalRevenue: agg.totalRevenue,
+            txCount: agg.txCount,
+            contractValue,
+            profit: contractValue - agg.totalExpense,
+            progress,
+        };
+    };
+
+    useEffect(() => {
+        if (!isAdmin && projectFilters.hidden !== 'active') {
+            setProjectFilters(prev => ({ ...prev, hidden: 'active' }));
+        }
+    }, [isAdmin, projectFilters.hidden]);
+
+    const filteredProjectRows = useMemo(() => {
+        const keyword = normalizeLookup(projectFilters.query);
+        let rows = projectRows.filter(project => {
+            const metrics = getProjectListMetrics(project);
+            const haystack = [
+                project.code,
+                project.name,
+                project.clientName,
+                project.description,
+                metrics.site?.name,
+            ].map(normalizeLookup).join(' ');
+
+            if (!isAdmin && project.isHidden) return false;
+            if (isAdmin && projectFilters.hidden === 'active' && project.isHidden) return false;
+            if (isAdmin && projectFilters.hidden === 'hidden' && !project.isHidden) return false;
+            if (keyword && !haystack.includes(keyword)) return false;
+            if (projectFilters.status !== 'all' && project.status !== projectFilters.status) return false;
+            if (projectFilters.groupId !== 'all' && project.projectGroupId !== projectFilters.groupId) return false;
+            if (projectFilters.typeId !== 'all' && project.projectTypeId !== projectFilters.typeId) return false;
+            if (projectFilters.sectorId !== 'all' && project.projectSectorId !== projectFilters.sectorId) return false;
+            if (projectFilters.workflowId !== 'all' && project.workflowTemplateId !== projectFilters.workflowId) return false;
+            if (projectFilters.siteLink === 'linked' && !project.constructionSiteId) return false;
+            if (projectFilters.siteLink === 'unlinked' && project.constructionSiteId) return false;
+            if (projectFilters.startFrom && (!project.startDate || project.startDate < projectFilters.startFrom)) return false;
+            if (projectFilters.startTo && (!project.startDate || project.startDate > projectFilters.startTo)) return false;
+            if (projectFilters.endFrom && (!project.endDate || project.endDate < projectFilters.endFrom)) return false;
+            if (projectFilters.endTo && (!project.endDate || project.endDate > projectFilters.endTo)) return false;
+            return true;
+        });
+
+        rows = [...rows].sort((a, b) => {
+            const aMetrics = getProjectListMetrics(a);
+            const bMetrics = getProjectListMetrics(b);
+            const getSortValue = (project: Project, metrics: ReturnType<typeof getProjectListMetrics>) => {
+                switch (projectSort) {
+                    case 'code': return project.code || '';
+                    case 'name': return project.name || '';
+                    case 'startDate': return project.startDate || '';
+                    case 'contractValue': return metrics.contractValue;
+                    case 'actualCost': return metrics.actualCost;
+                    case 'profit': return metrics.profit;
+                    case 'progress': return metrics.progress;
+                    case 'updatedAt':
+                    default: return project.updatedAt || project.createdAt || '';
+                }
+            };
+            const aValue = getSortValue(a, aMetrics);
+            const bValue = getSortValue(b, bMetrics);
+            const result = typeof aValue === 'number' && typeof bValue === 'number'
+                ? aValue - bValue
+                : String(aValue).localeCompare(String(bValue), 'vi');
+            return projectSortAsc ? result : -result;
+        });
+
+        return rows;
+    }, [projectRows, projectFilters, projectSort, projectSortAsc, projectFinances, projectTransactions, hrmConstructionSites, isAdmin, taskProgressBySite]);
 
     const selectedAgg = effectiveSiteId ? getAggregated(effectiveSiteId) : null;
     const siteTxs = useMemo(() => {
@@ -400,11 +649,6 @@ const ProjectDashboard: React.FC = () => {
         return () => { cancelled = true; };
     }, [financeSiteKey, projectFinances]);
 
-    const getDisplayProgress = (finance?: ProjectFinance | null) => {
-        if (!finance) return 0;
-        return taskProgressBySite[finance.constructionSiteId]?.progressPercent ?? finance.progressPercent;
-    };
-
     const getProjectMetaChips = (project: Project): { label: string; tone: string }[] => {
         const group = project.projectGroupId ? projectGroupMap.get(project.projectGroupId) : undefined;
         const type = project.projectTypeId ? projectTypeMap.get(project.projectTypeId) : undefined;
@@ -430,13 +674,14 @@ const ProjectDashboard: React.FC = () => {
 
     // === ALL-PROJECT AGGREGATE ===
     const allStats = useMemo(() => {
-        const totalContract = projectFinances.reduce((s, p) => s + p.contractValue, 0);
-        const totalBudget = projectFinances.reduce((s, p) => s + p.budgetMaterials + p.budgetLabor + p.budgetSubcontract + p.budgetMachinery + p.budgetOverhead, 0);
-        const totalActual = projectTransactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-        const totalRevenue = projectTransactions.filter(t => t.type === 'revenue_received').reduce((s, t) => s + t.amount, 0);
-        const avgProgress = projectFinances.length > 0 ? projectFinances.reduce((s, p) => s + getDisplayProgress(p), 0) / projectFinances.length : 0;
+        const metrics = filteredProjectRows.map(getProjectListMetrics);
+        const totalContract = metrics.reduce((s, item) => s + item.contractValue, 0);
+        const totalBudget = metrics.reduce((s, item) => s + (item.finance ? item.finance.budgetMaterials + item.finance.budgetLabor + item.finance.budgetSubcontract + item.finance.budgetMachinery + item.finance.budgetOverhead : 0), 0);
+        const totalActual = metrics.reduce((s, item) => s + item.actualCost, 0);
+        const totalRevenue = metrics.reduce((s, item) => s + item.totalRevenue, 0);
+        const avgProgress = metrics.length > 0 ? metrics.reduce((s, item) => s + item.progress, 0) / metrics.length : 0;
         return { totalContract, totalBudget, totalActual, totalRevenue, avgProgress, profit: totalContract - totalActual };
-    }, [projectFinances, projectTransactions, taskProgressBySite]);
+    }, [filteredProjectRows, projectFinances, projectTransactions, taskProgressBySite]);
 
     // === HANDLERS ===
     const openProjectDetail = (project: Project) => {
@@ -532,16 +777,537 @@ const ProjectDashboard: React.FC = () => {
         }
     };
 
+    const findImportUser = (value: string) => {
+        const key = normalizeLookup(value);
+        return activeUsers.find(item => [item.id, item.email, item.username, item.name].some(candidate => normalizeLookup(candidate) === key));
+    };
+
+    const splitImportValues = (value?: string): string[] =>
+        String(value || '').split(/[;,]/).map(item => item.trim()).filter(Boolean);
+
+    const seedImportedProjectStaff = async (project: Project, record: ProjectImportRecord) => {
+        const roleRank: Record<'admin' | 'executor' | 'watcher', number> = { watcher: 1, executor: 2, admin: 3 };
+        const userRoles = new Map<string, 'admin' | 'executor' | 'watcher'>();
+        const mergeRole = (rawValue: string, role: 'admin' | 'executor' | 'watcher') => {
+            const matchedUser = findImportUser(rawValue);
+            if (!matchedUser) throw new Error(`Không tìm thấy user "${rawValue}" khi seed nhân sự dự án ${project.code}.`);
+            const current = userRoles.get(matchedUser.id);
+            if (!current || roleRank[role] > roleRank[current]) userRoles.set(matchedUser.id, role);
+        };
+
+        splitImportValues(record.watcherImportUsers).forEach(value => mergeRole(value, 'watcher'));
+        splitImportValues(record.executorImportUsers).forEach(value => mergeRole(value, 'executor'));
+        splitImportValues(record.adminImportUsers).forEach(value => mergeRole(value, 'admin'));
+        if (userRoles.size === 0) return;
+
+        const permissionTypes = await projectPermissionTypeService.list();
+        const permissionIdByCode = new Map(permissionTypes.map(permission => [permission.code, permission.id]));
+        const codeSets: Record<'admin' | 'executor' | 'watcher', string[]> = {
+            admin: ['view', 'edit', 'submit', 'verify', 'confirm', 'approve'],
+            executor: ['view', 'edit', 'submit'],
+            watcher: ['view'],
+        };
+
+        for (const [userId, role] of userRoles.entries()) {
+            const positionId = employeeByUserId.get(userId)?.positionId || record.defaultPositionImportId;
+            if (!positionId) {
+                const displayName = users.find(u => u.id === userId)?.name || users.find(u => u.id === userId)?.email || userId;
+                throw new Error(`User ${displayName} chưa có chức danh HRM. Vui lòng nhập cột "Vị trí mặc định".`);
+            }
+            const permissionTypeIds = codeSets[role].map(code => permissionIdByCode.get(code)).filter(Boolean) as string[];
+            if (permissionTypeIds.length === 0) throw new Error('Chưa có dữ liệu quyền PBAC. Vui lòng kiểm tra migration project_permission_types.');
+            await projectStaffService.add({
+                projectId: project.id,
+                constructionSiteId: project.constructionSiteId || null,
+                userId,
+                positionId,
+                permissionTypeIds,
+                startDate: project.startDate || new Date().toISOString().slice(0, 10),
+                note: `Seed từ import Excel dự án: ${role}`,
+                grantedBy: user.id,
+                operatorName: user.name || user.username,
+            });
+        }
+    };
+
+    const buildProjectImportPreview = (mode: ExcelImportMode, rows: Record<string, unknown>[]) => buildImportPreview<ProjectImportRecord>({
+        mode,
+        keyLabel: 'Mã dự án',
+        keyAliases: ['Mã dự án *', 'Mã dự án', 'Ma du an', 'Project Code', 'code'],
+        existingRecords: projectRows as ProjectImportRecord[],
+        getRecordKey: project => project.code,
+        createBaseRecord: code => ({
+            id: `import-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            code: code.trim().toUpperCase(),
+            name: '',
+            projectType: 'construction',
+            status: 'planning',
+            progressCalculationMode: 'gantt_weighted',
+            manualProgressPercent: 0,
+            source: 'manual',
+            isHidden: false,
+        }),
+        validateKey: value => {
+            const normalized = String(value || '').trim();
+            if (!normalized) return 'Mã dự án là bắt buộc.';
+            if (normalized.length > 60) return 'Mã dự án không nên dài quá 60 ký tự.';
+            return undefined;
+        },
+        fields: [
+            { key: 'name', label: 'Tên dự án', aliases: ['Tên dự án *', 'Tên dự án', 'Ten du an', 'Project Name', 'name'], requiredOnCreate: true },
+            { key: 'clientName', label: 'Khách hàng', aliases: ['Khách hàng', 'Chủ đầu tư', 'Chu dau tu', 'clientName'], clearable: true },
+            { key: 'description', label: 'Mô tả', aliases: ['Mô tả', 'Mo ta', 'description'], clearable: true },
+            {
+                key: 'projectGroupId',
+                label: 'Nhóm dự án',
+                aliases: ['Nhóm dự án', 'Nhom du an'],
+                clearable: true,
+                normalize: value => findByNameCodeId(projectGroups, value)?.id,
+                validate: (value, row) => {
+                    const raw = getExcelCell(row, ['Nhóm dự án', 'Nhom du an']);
+                    return raw && !value ? `Nhóm dự án "${raw}" không tồn tại.` : undefined;
+                },
+                format: value => projectGroupMap.get(String(value || ''))?.name || String(value || '-'),
+            },
+            {
+                key: 'projectTypeId',
+                label: 'Loại dự án',
+                aliases: ['Loại dự án', 'Loai du an'],
+                clearable: true,
+                normalize: value => findByNameCodeId(projectTypes, value)?.id,
+                validate: (value, row) => {
+                    const raw = getExcelCell(row, ['Loại dự án', 'Loai du an']);
+                    return raw && !value ? `Loại dự án "${raw}" không tồn tại.` : undefined;
+                },
+                format: value => projectTypeMap.get(String(value || ''))?.name || String(value || '-'),
+            },
+            {
+                key: 'projectSectorId',
+                label: 'Lĩnh vực',
+                aliases: ['Lĩnh vực', 'Linh vuc'],
+                clearable: true,
+                normalize: value => findByNameCodeId(projectSectors, value)?.id,
+                validate: (value, row) => {
+                    const raw = getExcelCell(row, ['Lĩnh vực', 'Linh vuc']);
+                    return raw && !value ? `Lĩnh vực "${raw}" không tồn tại.` : undefined;
+                },
+                format: value => projectSectorMap.get(String(value || ''))?.name || String(value || '-'),
+            },
+            {
+                key: 'workflowTemplateId',
+                label: 'Quy trình',
+                aliases: ['Quy trình', 'Quy trinh', 'Workflow'],
+                clearable: true,
+                normalize: value => findByNameCodeId(workflowTemplates.map(template => ({ ...template, code: template.id })), value)?.id,
+                validate: (value, row) => {
+                    const raw = getExcelCell(row, ['Quy trình', 'Quy trinh', 'Workflow']);
+                    return raw && !value ? `Quy trình "${raw}" không tồn tại.` : undefined;
+                },
+                format: value => workflowTemplateMap.get(String(value || ''))?.name || String(value || '-'),
+            },
+            {
+                key: 'constructionSiteId',
+                label: 'Công trường',
+                aliases: ['Công trường', 'Cong truong', 'Địa điểm thi công', 'Dia diem thi cong'],
+                clearable: true,
+                normalize: value => {
+                    const key = normalizeLookup(value);
+                    return hrmConstructionSites.find(site => normalizeLookup(site.id) === key || normalizeLookup(site.name) === key)?.id;
+                },
+                validate: (value, row) => {
+                    const raw = getExcelCell(row, ['Công trường', 'Cong truong', 'Địa điểm thi công', 'Dia diem thi cong']);
+                    return raw && !value ? `Công trường "${raw}" không tồn tại.` : undefined;
+                },
+                format: value => hrmConstructionSites.find(site => site.id === value)?.name || String(value || '-'),
+            },
+            { key: 'status', label: 'Trạng thái', aliases: ['Trạng thái', 'Trang thai', 'status'], normalize: normalizeProjectStatus, format: value => STATUS_CONFIG[String(value)]?.label || String(value || '-') },
+            { key: 'startDate', label: 'Ngày bắt đầu', aliases: ['Ngày bắt đầu', 'Ngay bat dau', 'startDate'], clearable: true, normalize: parseProjectDate },
+            { key: 'endDate', label: 'Ngày kết thúc', aliases: ['Ngày kết thúc', 'Ngay ket thuc', 'endDate'], clearable: true, normalize: parseProjectDate },
+            { key: 'progressCalculationMode', label: 'Cách tính tiến độ', aliases: ['Cách tính tiến độ', 'Cach tinh tien do', 'progressCalculationMode'], normalize: normalizeProgressMode, format: value => PROGRESS_MODE_OPTIONS.find(option => option.value === value)?.label || String(value || '-') },
+            {
+                key: 'manualProgressPercent',
+                label: '% tiến độ thủ công',
+                aliases: ['% tiến độ thủ công', 'Tien do thu cong', 'manualProgressPercent'],
+                normalize: parseProjectNumber,
+                validate: value => Number(value) >= 0 && Number(value) <= 100 ? undefined : 'Tiến độ thủ công phải nằm trong khoảng 0-100%.',
+                format: value => `${Number(value || 0)}%`,
+            },
+            ...(mode === 'create' ? [
+                {
+                    key: 'adminImportUsers' as const,
+                    label: 'Quản trị dự án',
+                    aliases: ['Quản trị dự án', 'Quan tri du an'],
+                    clearable: true,
+                    validate: (value: unknown) => {
+                        const missing = splitImportValues(String(value || '')).filter(item => !findImportUser(item));
+                        return missing.length > 0 ? `Không tìm thấy user: ${missing.join(', ')}.` : undefined;
+                    },
+                },
+                {
+                    key: 'executorImportUsers' as const,
+                    label: 'Thực hiện dự án',
+                    aliases: ['Thực hiện dự án', 'Thuc hien du an'],
+                    clearable: true,
+                    validate: (value: unknown) => {
+                        const missing = splitImportValues(String(value || '')).filter(item => !findImportUser(item));
+                        return missing.length > 0 ? `Không tìm thấy user: ${missing.join(', ')}.` : undefined;
+                    },
+                },
+                {
+                    key: 'watcherImportUsers' as const,
+                    label: 'Người theo dõi',
+                    aliases: ['Người theo dõi', 'Nguoi theo doi'],
+                    clearable: true,
+                    validate: (value: unknown) => {
+                        const missing = splitImportValues(String(value || '')).filter(item => !findImportUser(item));
+                        return missing.length > 0 ? `Không tìm thấy user: ${missing.join(', ')}.` : undefined;
+                    },
+                },
+                {
+                    key: 'defaultPositionImportId' as const,
+                    label: 'Vị trí mặc định',
+                    aliases: ['Vị trí mặc định', 'Vi tri mac dinh'],
+                    clearable: true,
+                    normalize: (value: unknown) => {
+                        const key = normalizeLookup(value);
+                        return hrmPositions.find(position => normalizeLookup(position.id) === key || normalizeLookup(position.name) === key)?.id;
+                    },
+                    validate: (value: unknown, row: Record<string, unknown>) => {
+                        const raw = getExcelCell(row, ['Vị trí mặc định', 'Vi tri mac dinh']);
+                        return raw && !value ? `Vị trí mặc định "${raw}" không tồn tại.` : undefined;
+                    },
+                    format: value => hrmPositions.find(position => position.id === value)?.name || String(value || '-'),
+                },
+            ] : []),
+        ],
+    }, rows);
+
+    const downloadBlob = (blob: Blob, fileName: string) => {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleDownloadProjectTemplate = async () => {
+        setProjectExporting(true);
+        try {
+            const XLSX = await loadXlsx();
+            const sampleGroup = projectGroups[0]?.name || 'Dự án thi công';
+            const sampleType = projectTypes[0]?.name || 'Thi công xây dựng';
+            const sampleSector = projectSectors[0]?.name || 'Dân dụng';
+            const sampleWorkflow = workflowTemplates[0]?.name || '';
+            const sampleSite = hrmConstructionSites[0]?.name || '';
+            const sampleUser = activeUsers[0]?.email || activeUsers[0]?.username || activeUsers[0]?.name || '';
+            const samplePosition = hrmPositions[0]?.name || '';
+
+            const createRows = [
+                {
+                    'Mã dự án *': 'DA-001',
+                    'Tên dự án *': 'Dự án mẫu',
+                    'Khách hàng': 'Công ty ABC',
+                    'Mô tả': 'Mô tả ngắn của dự án',
+                    'Nhóm dự án': sampleGroup,
+                    'Loại dự án': sampleType,
+                    'Lĩnh vực': sampleSector,
+                    'Quy trình': sampleWorkflow,
+                    'Công trường': sampleSite,
+                    'Trạng thái': 'Lập kế hoạch',
+                    'Ngày bắt đầu': '01/06/2026',
+                    'Ngày kết thúc': '31/12/2026',
+                    'Cách tính tiến độ': 'Theo Gantt có trọng số',
+                    '% tiến độ thủ công': 0,
+                    'Quản trị dự án': sampleUser,
+                    'Thực hiện dự án': '',
+                    'Người theo dõi': '',
+                    'Vị trí mặc định': samplePosition,
+                },
+            ];
+            const updateRows = [
+                {
+                    'Mã dự án *': projects[0]?.code || 'DA-001',
+                    'Tên dự án': '',
+                    'Khách hàng': 'Tên khách hàng mới',
+                    'Trạng thái': 'Đang thi công',
+                    'Ngày kết thúc': '31/12/2026',
+                },
+            ];
+            const guideRows = [
+                ['Chức năng', 'Cách dùng'],
+                ['Nhập mới', 'Dùng sheet Nhap_moi. Mã dự án đã tồn tại sẽ bị báo lỗi.'],
+                ['Cập nhật', 'Dùng sheet Cap_nhat hoặc file chỉ gồm Mã dự án và các cột muốn sửa.'],
+                ['Ô trống', 'Ở chế độ Cập nhật, ô trống nghĩa là không đổi dữ liệu.'],
+                ['Xoá giá trị', 'Dùng __CLEAR__ cho cột cho phép xoá như mô tả, khách hàng, công trường, ngày.'],
+                ['User dự án', 'Các cột Quản trị/Thực hiện/Người theo dõi chỉ dùng khi Nhập mới; nhập email, username, tên hoặc id, phân tách bằng dấu ;'],
+                ['Cập nhật tổ chức', 'Cập nhật Excel không chỉnh nhân sự/quyền dự án. Vui lòng dùng tab Tổ chức.'],
+            ];
+            const maxRows = Math.max(projectGroups.length, projectTypes.length, projectSectors.length, workflowTemplates.length, hrmConstructionSites.length, activeUsers.length, hrmPositions.length, Object.keys(STATUS_CONFIG).length, PROGRESS_MODE_OPTIONS.length, 1);
+            const catalogRows = Array.from({ length: maxRows }).map((_, index) => ({
+                'Nhóm dự án': projectGroups[index]?.name || '',
+                'Loại dự án': projectTypes[index]?.name || '',
+                'Lĩnh vực': projectSectors[index]?.name || '',
+                'Quy trình': workflowTemplates[index]?.name || '',
+                'Công trường': hrmConstructionSites[index]?.name || '',
+                'User hợp lệ': activeUsers[index] ? `${activeUsers[index].name || activeUsers[index].username || activeUsers[index].email} | ${activeUsers[index].email || activeUsers[index].username || activeUsers[index].id}` : '',
+                'Vị trí HRM': hrmPositions[index]?.name || '',
+                'Trạng thái': Object.values(STATUS_CONFIG)[index]?.label || '',
+                'Cách tính tiến độ': PROGRESS_MODE_OPTIONS[index]?.label || '',
+            }));
+
+            const wb = XLSX.utils.book_new();
+            const createSheet = XLSX.utils.json_to_sheet(createRows);
+            createSheet['!cols'] = Object.keys(createRows[0]).map(key => ({ wch: Math.max(18, key.length + 4) }));
+            XLSX.utils.book_append_sheet(wb, createSheet, 'Nhap_moi');
+            const updateSheet = XLSX.utils.json_to_sheet(updateRows);
+            updateSheet['!cols'] = Object.keys(updateRows[0]).map(key => ({ wch: Math.max(18, key.length + 4) }));
+            XLSX.utils.book_append_sheet(wb, updateSheet, 'Cap_nhat');
+            const guideSheet = XLSX.utils.aoa_to_sheet(guideRows);
+            guideSheet['!cols'] = [{ wch: 24 }, { wch: 110 }];
+            XLSX.utils.book_append_sheet(wb, guideSheet, 'Huong_dan');
+            const catalogSheet = XLSX.utils.json_to_sheet(catalogRows);
+            catalogSheet['!cols'] = Object.keys(catalogRows[0]).map(key => ({ wch: Math.max(20, key.length + 8) }));
+            XLSX.utils.book_append_sheet(wb, catalogSheet, 'Danh_muc');
+
+            const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            downloadBlob(new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'Mau_nhap_du_an.xlsx');
+            toast.success('Đã xuất file mẫu', 'File mẫu nhập/cập nhật dự án đã được tải về.');
+        } catch (error) {
+            logApiError('ProjectDashboard.downloadProjectTemplate', error);
+            toast.error('Không thể xuất file mẫu', getApiErrorMessage(error, 'Không thể tạo file Excel mẫu dự án.'));
+        } finally {
+            setProjectExporting(false);
+        }
+    };
+
+    const openProjectImport = (mode: ExcelImportMode) => {
+        projectImportModeRef.current = mode;
+        setProjectImportMode(mode);
+        projectImportInputRef.current?.click();
+    };
+
+    const handleProjectImportExcel = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        setProjectImporting(true);
+        try {
+            const rows = await parseExcelRows(file, projectImportModeRef.current === 'create' ? 'Nhap_moi' : 'Cap_nhat');
+            if (rows.length === 0) {
+                toast.warning('File Excel trống', 'Không có dòng dự án nào để nhập.');
+                return;
+            }
+            const preview = buildProjectImportPreview(projectImportModeRef.current, rows);
+            if (preview.totalRows === 0) {
+                toast.warning('File Excel trống', 'Không có dòng dự án hợp lệ để nhập.');
+                return;
+            }
+            setProjectImportPreview(preview);
+        } catch (error) {
+            logApiError('ProjectDashboard.projectImport.read', error);
+            toast.error('Không thể đọc file Excel', getApiErrorMessage(error, 'Không thể đọc file Excel dự án. Vui lòng dùng file mẫu.'));
+        } finally {
+            setProjectImporting(false);
+        }
+    };
+
+    const handleConfirmProjectImport = async ({ validOnly }: { validOnly: boolean }) => {
+        if (!projectImportPreview) return;
+        const records = applyImportChanges(projectImportPreview);
+        if (records.length === 0) {
+            toast.warning('Không có dữ liệu cần ghi', 'File không có dòng thêm mới hoặc cập nhật hợp lệ.');
+            return;
+        }
+
+        setProjectImporting(true);
+        try {
+            let created = 0;
+            let updated = 0;
+            if (projectImportPreview.mode === 'create') {
+                const createRows = projectImportPreview.rows.filter(row => row.status === 'create' && row.nextRecord);
+                for (const row of createRows) {
+                    const record = row.nextRecord!;
+                    const projectType = record.projectTypeId ? projectTypeMap.get(record.projectTypeId) : undefined;
+                    const createdProject = await projectMasterService.create({
+                        name: record.name,
+                        code: record.code,
+                        description: record.description,
+                        clientName: record.clientName,
+                        projectType: projectType?.code || record.projectType || 'construction',
+                        projectGroupId: record.projectGroupId || null,
+                        projectTypeId: record.projectTypeId || null,
+                        projectSectorId: record.projectSectorId || null,
+                        workflowTemplateId: record.workflowTemplateId || null,
+                        constructionSiteId: record.constructionSiteId || null,
+                        status: record.status,
+                        startDate: record.startDate,
+                        endDate: record.endDate,
+                        progressCalculationMode: record.progressCalculationMode,
+                        manualProgressPercent: Number(record.manualProgressPercent || 0),
+                        createdBy: user.id,
+                    });
+                    await seedImportedProjectStaff(createdProject, record);
+                    created += 1;
+                }
+            } else {
+                const updateRows = projectImportPreview.rows.filter(row => row.status === 'update' && row.existingRecord && row.nextRecord);
+                for (const row of updateRows) {
+                    const record = row.nextRecord!;
+                    const projectType = record.projectTypeId ? projectTypeMap.get(record.projectTypeId) : undefined;
+                    await projectMasterService.update({
+                        ...row.existingRecord!,
+                        ...record,
+                        projectType: projectType?.code || record.projectType || row.existingRecord!.projectType || 'construction',
+                    });
+                    updated += 1;
+                }
+            }
+            await loadProjects();
+            setProjectImportPreview(null);
+            toast.success(
+                projectImportPreview.mode === 'create' ? 'Đã nhập mới dự án' : 'Đã cập nhật dự án',
+                `Thêm mới ${created}, cập nhật ${updated} dự án${validOnly ? ' từ các dòng hợp lệ' : ''}.`
+            );
+        } catch (error) {
+            logApiError('ProjectDashboard.projectImport.apply', error);
+            toast.error('Không thể ghi dữ liệu dự án', getApiErrorMessage(error, 'Không thể lưu dữ liệu import dự án lên Supabase.'));
+        } finally {
+            setProjectImporting(false);
+        }
+    };
+
+    const handleExportProjectList = async () => {
+        setProjectExporting(true);
+        try {
+            const XLSX = await loadXlsx();
+            const rows = filteredProjectRows.map(project => {
+                const metrics = getProjectListMetrics(project);
+                return {
+                    'Mã dự án': project.code,
+                    'Tên dự án': project.name,
+                    'Khách hàng': project.clientName || '',
+                    'Nhóm dự án': project.projectGroupId ? projectGroupMap.get(project.projectGroupId)?.name || '' : '',
+                    'Loại dự án': project.projectTypeId ? projectTypeMap.get(project.projectTypeId)?.name || '' : '',
+                    'Lĩnh vực': project.projectSectorId ? projectSectorMap.get(project.projectSectorId)?.name || '' : '',
+                    'Quy trình': project.workflowTemplateId ? workflowTemplateMap.get(project.workflowTemplateId)?.name || '' : '',
+                    'Công trường': metrics.site?.name || '',
+                    'Trạng thái': STATUS_CONFIG[project.status]?.label || project.status,
+                    'Ngày bắt đầu': project.startDate || '',
+                    'Ngày kết thúc': project.endDate || '',
+                    'Giá trị HĐ': metrics.contractValue,
+                    'Tổng chi thực tế': metrics.actualCost,
+                    'Lợi nhuận tạm tính': metrics.profit,
+                    'Tiến độ (%)': metrics.progress,
+                    'Số giao dịch': metrics.txCount,
+                    'Trạng thái ẩn': project.isHidden ? 'Đã ẩn' : 'Đang hoạt động',
+                    'Lý do ẩn': project.hiddenReason || '',
+                };
+            });
+            const ws = XLSX.utils.json_to_sheet(rows);
+            ws['!cols'] = Object.keys(rows[0] || { 'Mã dự án': '' }).map(key => ({ wch: Math.max(16, key.length + 6) }));
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Danh_sach_du_an');
+            const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            downloadBlob(new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `Danh_sach_du_an_${new Date().toISOString().slice(0, 10)}.xlsx`);
+            toast.success('Đã xuất danh sách', `${rows.length} dự án theo bộ lọc hiện tại đã được xuất Excel.`);
+        } catch (error) {
+            logApiError('ProjectDashboard.exportProjectList', error);
+            toast.error('Không thể xuất danh sách', getApiErrorMessage(error, 'Không thể xuất danh sách dự án.'));
+        } finally {
+            setProjectExporting(false);
+        }
+    };
+
+    const openHideProject = async (project: Project) => {
+        setHideProjectTarget(project);
+        setHideProjectReason('');
+        setHideProjectCodeConfirm('');
+        setHideProjectImpact(null);
+        setHideProjectImpactLoading(true);
+        try {
+            const impact = await projectMasterService.getDeleteImpact(project.id, project.constructionSiteId);
+            setHideProjectImpact(impact);
+        } catch (error) {
+            logApiError('ProjectDashboard.hideImpact', error);
+            toast.error('Không thể kiểm tra phát sinh', getApiErrorMessage(error, 'Không thể kiểm tra dữ liệu phát sinh của dự án.'));
+        } finally {
+            setHideProjectImpactLoading(false);
+        }
+    };
+
+    const closeHideProject = () => {
+        setHideProjectTarget(null);
+        setHideProjectImpact(null);
+        setHideProjectReason('');
+        setHideProjectCodeConfirm('');
+    };
+
+    const handleConfirmHideProject = async () => {
+        if (!hideProjectTarget || !hideProjectImpact) return;
+        if (!hideProjectReason.trim()) {
+            toast.warning('Thiếu lý do', 'Vui lòng nhập lý do ẩn dự án.');
+            return;
+        }
+        if (hideProjectImpact.hasImpact && !isAdmin) {
+            toast.warning('Không thể xoá dự án', 'Dự án đã có phát sinh chi phí. Cần làm ngược các bước xoá chi phí trước.');
+            return;
+        }
+        if (hideProjectImpact.hasImpact && hideProjectCodeConfirm.trim() !== hideProjectTarget.code) {
+            toast.warning('Xác nhận chưa đúng', `Vui lòng nhập đúng mã dự án ${hideProjectTarget.code} để force ẩn.`);
+            return;
+        }
+
+        setHidingProject(true);
+        try {
+            const updated = await projectMasterService.hide(hideProjectTarget.id, {
+                reason: hideProjectReason,
+                hiddenBy: user.name || user.username || user.email || user.id,
+                force: isAdmin && hideProjectImpact.hasImpact,
+                constructionSiteId: hideProjectTarget.constructionSiteId,
+            });
+            setProjects(prev => prev.map(project => project.id === updated.id ? updated : project));
+            if (selectedProjectId === updated.id) {
+                setActiveView('list');
+                setSelectedProjectId(null);
+                setSelectedSiteId(null);
+            }
+            closeHideProject();
+            toast.success(updated.isHidden ? 'Đã ẩn dự án' : 'Đã cập nhật dự án', `${hideProjectTarget.code} đã được ẩn khỏi vận hành mặc định.`);
+        } catch (error) {
+            logApiError('ProjectDashboard.hideProject', error);
+            toast.error('Không thể ẩn dự án', getApiErrorMessage(error, 'Không thể ẩn dự án trên Supabase.'));
+        } finally {
+            setHidingProject(false);
+        }
+    };
+
+    const handleRestoreProject = async (project: Project) => {
+        setRestoringProjectId(project.id);
+        try {
+            const restored = await projectMasterService.restore(project.id);
+            setProjects(prev => prev.map(item => item.id === restored.id ? restored : item));
+            toast.success('Đã khôi phục dự án', `${project.code} đã hiển thị lại trong danh sách vận hành.`);
+        } catch (error) {
+            logApiError('ProjectDashboard.restoreProject', error);
+            toast.error('Không thể khôi phục dự án', getApiErrorMessage(error, 'Không thể khôi phục dự án trên Supabase.'));
+        } finally {
+            setRestoringProjectId(null);
+        }
+    };
+
     const saveProject = async (openAfterCreate = true) => {
         if (!projectForm.name.trim()) {
-            alert('Vui lòng nhập tên dự án');
+            toast.warning('Thiếu tên dự án', 'Vui lòng nhập tên dự án.');
             return;
         }
         if (!editingProject) {
             const selectedUserIds = getAllProjectParticipantUserIds();
             const hasMissingPosition = selectedUserIds.some(userId => !employeeByUserId.get(userId)?.positionId && !projectForm.defaultPositionId);
             if (hasMissingPosition) {
-                alert('Có thành viên chưa liên kết chức danh HRM. Vui lòng chọn "Vị trí mặc định cho thành viên chưa có chức danh" trong Thông tin khác.');
+                toast.warning('Thiếu chức danh HRM', 'Có thành viên chưa liên kết chức danh. Vui lòng chọn vị trí mặc định trong Thông tin khác.');
                 setShowProjectAdvanced(true);
                 return;
             }
@@ -575,6 +1341,7 @@ const ProjectDashboard: React.FC = () => {
                 if (selectedProjectId === updated.id) {
                     setSelectedSiteId(updated.constructionSiteId || null);
                 }
+                toast.success('Đã cập nhật dự án', updated.name);
             } else {
                 const created = await projectMasterService.create({
                     name: projectForm.name.trim(),
@@ -598,11 +1365,13 @@ const ProjectDashboard: React.FC = () => {
                 await seedProjectStaff(created);
                 setProjects(prev => [created, ...prev.filter(p => p.id !== created.id)]);
                 if (openAfterCreate) openProjectDetail(created);
+                toast.success('Đã tạo dự án', created.name);
             }
             setShowProjectForm(false);
             setEditingProject(null);
         } catch (err: any) {
-            alert(`Lưu dự án thất bại: ${err?.message || 'Lỗi không xác định'}`);
+            logApiError('ProjectDashboard.saveProject', err);
+            toast.error('Lưu dự án thất bại', getApiErrorMessage(err, 'Không thể lưu dự án trên Supabase.'));
         } finally {
             setSavingProject(false);
         }
@@ -633,8 +1402,10 @@ const ProjectDashboard: React.FC = () => {
             setQuickCategoryKind(null);
             setQuickCategoryForm({ code: '', name: '', description: '' });
             await loadProjectMasterData();
+            toast.success('Đã thêm danh mục dự án', created.name);
         } catch (err: any) {
-            alert(`Không thêm nhanh được danh mục: ${err?.message || 'Lỗi không xác định'}`);
+            logApiError('ProjectDashboard.saveQuickCategory', err);
+            toast.error('Không thêm nhanh được danh mục', getApiErrorMessage(err, 'Không thể thêm danh mục dự án.'));
         }
     };
 
@@ -742,55 +1513,69 @@ const ProjectDashboard: React.FC = () => {
     };
 
     const handleAddTx = async () => {
-        if (!effectiveSiteId || !txAmount || Number(txAmount) <= 0) return;
+        if (!effectiveSiteId || !txAmount || Number(txAmount) <= 0) {
+            toast.warning('Thiếu dữ liệu giao dịch', 'Vui lòng chọn dự án có công trường và nhập số tiền hợp lệ.');
+            return;
+        }
         setUploading(true);
-        let financeId = selectedFinance?.id;
-        if (!financeId) {
-            const newFin = emptyFinance(effectiveSiteId);
-            addProjectFinance(newFin);
-            financeId = newFin.id;
-        }
-        const newAttachments = await uploadFiles(txFiles);
-        const allAttachments = [...existingAttachments, ...newAttachments];
+        try {
+            let financeId = selectedFinance?.id;
+            if (!financeId) {
+                const newFin = emptyFinance(effectiveSiteId);
+                addProjectFinance(newFin);
+                financeId = newFin.id;
+            }
+            const newAttachments = await uploadFiles(txFiles);
+            const allAttachments = [...existingAttachments, ...newAttachments];
 
-        if (editingTx) {
-            // UPDATE existing transaction
-            const updated: ProjectTransaction = {
-                ...editingTx,
-                type: txType,
-                category: txCategory,
-                amount: Number(txAmount),
-                description: txDesc,
-                date: txDate,
-                attachments: allAttachments,
-            };
-            updateProjectTransaction(updated);
-        } else {
-            // CREATE new transaction
-            const tx: ProjectTransaction = {
-                id: crypto.randomUUID(),
-                projectFinanceId: financeId,
-                constructionSiteId: effectiveSiteId,
-                type: txType,
-                category: txCategory,
-                amount: Number(txAmount),
-                description: txDesc,
-                date: txDate,
-                source: 'manual',
-                attachments: allAttachments,
-                createdBy: user.id,
-                createdAt: new Date().toISOString(),
-            };
-            addProjectTransaction(tx);
+            if (editingTx) {
+                const updated: ProjectTransaction = {
+                    ...editingTx,
+                    type: txType,
+                    category: txCategory,
+                    amount: Number(txAmount),
+                    description: txDesc,
+                    date: txDate,
+                    attachments: allAttachments,
+                };
+                updateProjectTransaction(updated);
+                toast.success('Đã cập nhật giao dịch', txDesc || 'Giao dịch dự án đã được cập nhật.');
+            } else {
+                const tx: ProjectTransaction = {
+                    id: crypto.randomUUID(),
+                    projectId: selectedProject?.id || null,
+                    projectFinanceId: financeId,
+                    constructionSiteId: effectiveSiteId,
+                    type: txType,
+                    category: txCategory,
+                    amount: Number(txAmount),
+                    description: txDesc,
+                    date: txDate,
+                    source: 'manual',
+                    attachments: allAttachments,
+                    createdBy: user.id,
+                    createdAt: new Date().toISOString(),
+                };
+                addProjectTransaction(tx);
+                toast.success('Đã thêm giao dịch', txDesc || 'Giao dịch dự án đã được tạo.');
+            }
+            resetTxForm();
+        } catch (error) {
+            logApiError('ProjectDashboard.saveTransaction', error);
+            toast.error('Không thể lưu giao dịch', getApiErrorMessage(error, 'Không thể lưu giao dịch dự án.'));
+        } finally {
+            setUploading(false);
         }
-        resetTxForm();
-        setUploading(false);
     };
 
     const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (!effectiveSiteId) { alert('Dự án cần liên kết công trường trước khi import giao dịch'); return; }
+        if (!effectiveSiteId) {
+            toast.warning('Chưa liên kết công trường', 'Dự án cần liên kết công trường trước khi import giao dịch.');
+            e.target.value = '';
+            return;
+        }
         let financeId = selectedFinance?.id;
         if (!financeId) {
             const newFin = emptyFinance(effectiveSiteId);
@@ -843,7 +1628,10 @@ const ProjectDashboard: React.FC = () => {
                 }
 
                 if (rows.length > 0) console.log('[DA Import] First data row keys:', Object.keys(rows[0]), 'values:', rows[0]);
-                if (rows.length === 0) { alert('File rỗng hoặc không có dữ liệu'); return; }
+                if (rows.length === 0) {
+                    toast.warning('File rỗng', 'File không có dữ liệu giao dịch.');
+                    return;
+                }
 
                 // Fuzzy column finder
                 const findCol = (row: any, patterns: string[]) => {
@@ -922,6 +1710,7 @@ const ProjectDashboard: React.FC = () => {
                     return {
                         tx: {
                             id: crypto.randomUUID(),
+                            projectId: selectedProject?.id || null,
                             projectFinanceId: financeId!,
                             constructionSiteId: effectiveSiteId,
                             type: typeMap[rawType] || 'expense',
@@ -964,14 +1753,14 @@ const ProjectDashboard: React.FC = () => {
 
                 if (txs.length > 0) {
                     addProjectTransactions(txs);
-                    alert(`✅ Import thành công ${txs.length} giao dịch từ file "${file.name}"\n\n${importMode}`);
+                    toast.success(`Import thành công ${txs.length} giao dịch`, importMode);
                 } else {
                     const sampleKeys = rows.length > 0 ? Object.keys(rows[0]).join(', ') : 'N/A';
-                    alert(`❌ Không tìm thấy giao dịch hợp lệ (số tiền > 0).\n\nCột trong file: ${sampleKeys}\n\nCần ít nhất cột: Số tiền (hoặc Amount)\nTùy chọn: Hạng mục, Mô tả, Ngày, Loại`);
+                    toast.warning('Không tìm thấy giao dịch hợp lệ', `Cột trong file: ${sampleKeys}. Cần ít nhất cột Số tiền/Amount.`);
                 }
             } catch (err: any) {
-                console.error('[DA Import] Error:', err);
-                alert(`Lỗi đọc file: ${err.message}`);
+                logApiError('ProjectDashboard.transactionImport', err);
+                toast.error('Lỗi đọc file giao dịch', getApiErrorMessage(err, 'Không thể đọc file Excel giao dịch.'));
             }
         };
         reader.readAsArrayBuffer(file);
@@ -979,7 +1768,9 @@ const ProjectDashboard: React.FC = () => {
     };
 
     const handleDeleteTx = (id: string) => {
-        if (confirm('Xoá giao dịch này?')) removeProjectTransaction(id);
+        removeProjectTransaction(id);
+        setDeleteTxConfirmId(null);
+        toast.success('Đã xoá giao dịch', 'Giao dịch dự án đã được xoá.');
     };
 
     // ========== PROJECT FORM MODAL ==========
@@ -1528,6 +2319,135 @@ const ProjectDashboard: React.FC = () => {
         );
     };
 
+    const renderHideProjectModal = () => {
+        if (!hideProjectTarget) return null;
+        const hasImpact = Boolean(hideProjectImpact?.hasImpact);
+        const canConfirm = Boolean(hideProjectImpact) && !hideProjectImpactLoading && hideProjectReason.trim()
+            && (!hasImpact || (isAdmin && hideProjectCodeConfirm.trim() === hideProjectTarget.code));
+        return (
+            <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+                    <div className="px-6 py-5 border-b border-slate-100 flex items-start justify-between gap-4">
+                        <div>
+                            <div className="text-lg font-black text-slate-800 flex items-center gap-2">
+                                <EyeOff size={20} className="text-red-500" /> Ẩn / Xoá dự án
+                            </div>
+                            <p className="text-xs font-bold text-slate-400 mt-1">
+                                {hideProjectTarget.code} • {hideProjectTarget.name}
+                            </p>
+                        </div>
+                        <button onClick={closeHideProject} disabled={hidingProject} className="w-9 h-9 rounded-xl hover:bg-slate-100 text-slate-400 flex items-center justify-center disabled:opacity-50">
+                            <X size={18} />
+                        </button>
+                    </div>
+
+                    <div className="p-6 space-y-4 overflow-y-auto">
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                            <div className="font-black">Dữ liệu dự án sẽ không bị xoá vật lý.</div>
+                            <div className="text-xs font-bold mt-1">
+                                Dự án bị ẩn khỏi vận hành mặc định. Chi phí, nghiệm thu, PO, nhật ký và chứng từ liên quan vẫn được giữ nguyên để đối soát.
+                            </div>
+                        </div>
+
+                        {hideProjectImpactLoading ? (
+                            <div className="rounded-2xl border border-slate-100 p-6 text-center text-slate-400">
+                                <Loader2 size={24} className="animate-spin mx-auto mb-2 text-orange-500" />
+                                <p className="text-sm font-bold">Đang kiểm tra phát sinh chi phí...</p>
+                            </div>
+                        ) : hideProjectImpact ? (
+                            <div className="rounded-2xl border border-slate-100 overflow-hidden">
+                                <div className={`px-4 py-3 border-b border-slate-100 ${hasImpact ? 'bg-red-50' : 'bg-emerald-50'}`}>
+                                    <div className={`text-sm font-black ${hasImpact ? 'text-red-700' : 'text-emerald-700'}`}>
+                                        {hasImpact
+                                            ? `Dự án đã có ${hideProjectImpact.totalRows.toLocaleString('vi-VN')} phát sinh liên quan`
+                                            : 'Chưa phát hiện phát sinh chi phí liên quan'}
+                                    </div>
+                                    {hideProjectImpact.totalAmount > 0 && (
+                                        <div className="text-xs font-bold text-red-600 mt-0.5">
+                                            Tổng giá trị tham chiếu: {fmtFull(hideProjectImpact.totalAmount)}
+                                        </div>
+                                    )}
+                                </div>
+                                {hideProjectImpact.items.length > 0 && (
+                                    <div className="divide-y divide-slate-100">
+                                        {hideProjectImpact.items.map(item => (
+                                            <div key={item.key} className="px-4 py-3 flex items-center justify-between gap-3">
+                                                <div className="text-sm font-bold text-slate-700">{item.label}</div>
+                                                <div className="text-right">
+                                                    <div className="text-sm font-black text-slate-800">{item.count.toLocaleString('vi-VN')} dòng</div>
+                                                    {item.totalAmount > 0 && <div className="text-xs font-bold text-slate-400">{fmtFull(item.totalAmount)}</div>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {hideProjectImpact.warnings.length > 0 && (
+                                    <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 space-y-1">
+                                        {hideProjectImpact.warnings.map(warning => (
+                                            <div key={warning} className="text-xs font-bold text-slate-500 flex items-start gap-1.5">
+                                                <AlertCircle size={12} className="mt-0.5 shrink-0" /> {warning}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-600">
+                                Không kiểm tra được phát sinh. Vui lòng thử lại trước khi ẩn dự án.
+                            </div>
+                        )}
+
+                        {hasImpact && !isAdmin && (
+                            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                                Dự án đã phát sinh chi phí nên tài khoản thường không được xoá/ẩn. Cần làm ngược các bước xoá chi phí trước.
+                            </div>
+                        )}
+
+                        {hasImpact && isAdmin && (
+                            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-red-600 block mb-1">Xác nhận mã dự án</label>
+                                <input
+                                    value={hideProjectCodeConfirm}
+                                    onChange={e => setHideProjectCodeConfirm(e.target.value)}
+                                    placeholder={`Nhập đúng mã ${hideProjectTarget.code}`}
+                                    className="w-full px-3 py-2.5 rounded-xl border border-red-200 bg-white text-sm font-black outline-none focus:ring-2 focus:ring-red-400"
+                                />
+                                <p className="text-[11px] font-bold text-red-600 mt-2">
+                                    Admin đang force ẩn dự án có phát sinh. Đây là thao tác ẩn khỏi vận hành, không xoá chi phí.
+                                </p>
+                            </div>
+                        )}
+
+                        <div>
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Lý do ẩn dự án</label>
+                            <textarea
+                                value={hideProjectReason}
+                                onChange={e => setHideProjectReason(e.target.value)}
+                                rows={3}
+                                placeholder="Nhập lý do để sau này đối soát/khôi phục..."
+                                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="px-6 py-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between gap-3">
+                        <button onClick={closeHideProject} disabled={hidingProject} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 disabled:opacity-50">
+                            Huỷ
+                        </button>
+                        <button
+                            onClick={handleConfirmHideProject}
+                            disabled={!canConfirm || hidingProject || (hasImpact && !isAdmin)}
+                            className="px-6 py-2.5 rounded-xl text-sm font-black text-white bg-red-600 hover:bg-red-500 disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                            {hidingProject ? <Loader2 size={16} className="animate-spin" /> : <EyeOff size={16} />}
+                            {hasImpact && isAdmin ? 'Force ẩn dự án' : 'Ẩn dự án'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     // ========== OVERVIEW (project detail) ==========
     const renderOverview = () => {
         if (!selectedProject) return null;
@@ -1866,10 +2786,17 @@ const ProjectDashboard: React.FC = () => {
                                                 className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50 transition-all opacity-0 group-hover:opacity-100">
                                                 <Edit2 size={13} />
                                             </button>
-                                            <button onClick={() => handleDeleteTx(tx.id)}
-                                                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100">
-                                                <Trash2 size={14} />
-                                            </button>
+                                            {deleteTxConfirmId === tx.id ? (
+                                                <div className="flex items-center gap-1">
+                                                    <button onClick={() => handleDeleteTx(tx.id)} className="px-2 py-1 rounded-lg bg-red-500 text-white text-[10px] font-black">Xoá</button>
+                                                    <button onClick={() => setDeleteTxConfirmId(null)} className="px-2 py-1 rounded-lg bg-slate-100 text-slate-500 text-[10px] font-black">Huỷ</button>
+                                                </div>
+                                            ) : (
+                                                <button onClick={() => setDeleteTxConfirmId(tx.id)}
+                                                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100">
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 );
@@ -1886,13 +2813,12 @@ const ProjectDashboard: React.FC = () => {
     // ========== PROJECT LIST VIEW ==========
     const renderList = () => (
         <div className="space-y-6">
-            {/* Aggregate KPIs */}
             {projectRows.length > 0 && (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-lg">
                         <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">Tổng giá trị HĐ</div>
                         <div className="text-2xl font-black">{fmt(allStats.totalContract)}</div>
-                        <div className="text-xs opacity-60 mt-1">{projectRows.length} dự án</div>
+                        <div className="text-xs opacity-60 mt-1">{filteredProjectRows.length}/{projectRows.length} dự án</div>
                     </div>
                     <div className="bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl p-5 text-white shadow-lg">
                         <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">Tổng chi thực tế</div>
@@ -1911,19 +2837,116 @@ const ProjectDashboard: React.FC = () => {
                 </div>
             )}
 
-            {/* Project cards */}
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3">
+                <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
                     <div>
                         <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider">Danh sách dự án</h3>
                         <p className="text-xs text-slate-400 mt-0.5">
-                            {projectRows.length} dự án • {hrmConstructionSites.length} công trường HRM có thể liên kết
+                            {filteredProjectRows.length} đang hiển thị • {projectRows.length} tổng dự án • {hrmConstructionSites.length} công trường HRM có thể liên kết
                         </p>
                     </div>
-                    <button onClick={openCreateProject}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg shadow-orange-500/20 hover:shadow-xl transition-all">
-                        <Plus size={14} /> Thêm dự án
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                        <button onClick={handleDownloadProjectTemplate} disabled={projectExporting}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50">
+                            {projectExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Xuất mẫu
+                        </button>
+                        {canManageProjects && (
+                            <>
+                                <button onClick={() => openProjectImport('create')} disabled={projectImporting}
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 disabled:opacity-50">
+                                    {projectImporting && projectImportMode === 'create' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Nhập mới
+                                </button>
+                                <button onClick={() => openProjectImport('update')} disabled={projectImporting}
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 disabled:opacity-50">
+                                    {projectImporting && projectImportMode === 'update' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />} Cập nhật
+                                </button>
+                            </>
+                        )}
+                        <input ref={projectImportInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleProjectImportExcel} />
+                        <button onClick={handleExportProjectList} disabled={projectExporting}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-50">
+                            {projectExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Xuất danh sách
+                        </button>
+                        {canManageProjects && (
+                            <button onClick={openCreateProject}
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg shadow-orange-500/20 hover:shadow-xl transition-all">
+                                <Plus size={14} /> Thêm dự án
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                <div className="p-4 border-b border-slate-100 bg-white">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
+                        <div className="xl:col-span-2 relative">
+                            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
+                            <input
+                                value={projectFilters.query}
+                                onChange={e => setProjectFilters(prev => ({ ...prev, query: e.target.value }))}
+                                placeholder="Tìm mã, tên, khách hàng, công trường..."
+                                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-orange-500"
+                            />
+                        </div>
+                        <select value={projectFilters.status} onChange={e => setProjectFilters(prev => ({ ...prev, status: e.target.value as ProjectFilterState['status'] }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                            <option value="all">Tất cả trạng thái</option>
+                            {Object.entries(STATUS_CONFIG).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
+                        </select>
+                        <select value={projectFilters.groupId} onChange={e => setProjectFilters(prev => ({ ...prev, groupId: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                            <option value="all">Tất cả nhóm</option>
+                            {projectGroups.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                        </select>
+                        <select value={projectFilters.typeId} onChange={e => setProjectFilters(prev => ({ ...prev, typeId: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                            <option value="all">Tất cả loại</option>
+                            {projectTypes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                        </select>
+                        <select value={projectFilters.sectorId} onChange={e => setProjectFilters(prev => ({ ...prev, sectorId: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                            <option value="all">Tất cả lĩnh vực</option>
+                            {projectSectors.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                        </select>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-3 mt-3">
+                        <select value={projectFilters.workflowId} onChange={e => setProjectFilters(prev => ({ ...prev, workflowId: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                            <option value="all">Tất cả quy trình</option>
+                            {workflowTemplates.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                        </select>
+                        <select value={projectFilters.siteLink} onChange={e => setProjectFilters(prev => ({ ...prev, siteLink: e.target.value as ProjectSiteFilter }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                            <option value="all">Liên kết công trường</option>
+                            <option value="linked">Đã liên kết</option>
+                            <option value="unlinked">Chưa liên kết</option>
+                        </select>
+                        <input type="date" title="Ngày bắt đầu từ" value={projectFilters.startFrom} onChange={e => setProjectFilters(prev => ({ ...prev, startFrom: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
+                        <input type="date" title="Ngày bắt đầu đến" value={projectFilters.startTo} onChange={e => setProjectFilters(prev => ({ ...prev, startTo: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
+                        <input type="date" title="Ngày kết thúc từ" value={projectFilters.endFrom} onChange={e => setProjectFilters(prev => ({ ...prev, endFrom: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
+                        <input type="date" title="Ngày kết thúc đến" value={projectFilters.endTo} onChange={e => setProjectFilters(prev => ({ ...prev, endTo: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
+                        <select value={projectSort} onChange={e => setProjectSort(e.target.value as ProjectSortKey)} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                            <option value="updatedAt">Sắp xếp: Cập nhật mới</option>
+                            <option value="code">Mã dự án</option>
+                            <option value="name">Tên dự án</option>
+                            <option value="startDate">Ngày bắt đầu</option>
+                            <option value="contractValue">Giá trị HĐ</option>
+                            <option value="actualCost">Chi phí thực tế</option>
+                            <option value="profit">Lợi nhuận tạm tính</option>
+                            <option value="progress">Tiến độ</option>
+                        </select>
+                        <button onClick={() => setProjectSortAsc(prev => !prev)} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-black text-slate-600 hover:bg-slate-50">
+                            {projectSortAsc ? 'Tăng dần' : 'Giảm dần'}
+                        </button>
+                        <div className="flex gap-2">
+                            {isAdmin && (
+                                <select value={projectFilters.hidden} onChange={e => setProjectFilters(prev => ({ ...prev, hidden: e.target.value as ProjectHiddenFilter }))} className="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                                    <option value="active">Đang hoạt động</option>
+                                    <option value="hidden">Đã ẩn</option>
+                                    <option value="all">Tất cả</option>
+                                </select>
+                            )}
+                            <button onClick={() => setProjectFilters(emptyProjectFilters())} className="px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-black text-slate-500 hover:bg-slate-50">
+                                Xoá lọc
+                            </button>
+                        </div>
+                    </div>
+                    <div className="mt-2 text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                        <Filter size={12} /> Các ô ngày lần lượt là bắt đầu từ/đến và kết thúc từ/đến.
+                    </div>
                 </div>
 
                 {projectLoadError && projects.length === 0 && hrmConstructionSites.length > 0 && (
@@ -1943,33 +2966,37 @@ const ProjectDashboard: React.FC = () => {
                         <p className="text-sm font-bold text-slate-500">Chưa có dự án nào</p>
                         <p className="text-xs text-slate-400 mt-1">Bấm "Thêm dự án" để tạo dự án, sau đó cấu hình nhân sự tại tab Tổ chức.</p>
                     </div>
+                ) : filteredProjectRows.length === 0 ? (
+                    <div className="p-12 text-center">
+                        <Search size={40} className="mx-auto mb-3 text-slate-300" />
+                        <p className="text-sm font-bold text-slate-500">Không có dự án phù hợp bộ lọc</p>
+                        <p className="text-xs text-slate-400 mt-1">Thử xoá bớt điều kiện lọc hoặc chuyển trạng thái ẩn nếu là Admin.</p>
+                    </div>
                 ) : (
                     <div className="divide-y divide-slate-100">
-                        {projectRows.map(project => {
-                            const site = project.constructionSiteId
-                                ? hrmConstructionSites.find(s => s.id === project.constructionSiteId) || null
-                                : null;
-                            const finance = site ? projectFinances.find(pf => pf.constructionSiteId === site.id) || null : null;
-                            const agg = site ? getAggregated(site.id) : { totalExpense: 0, txCount: 0 };
-                            const profit = finance ? finance.contractValue - agg.totalExpense : 0;
-                            const displayProgress = finance ? getDisplayProgress(finance) : 0;
+                        {filteredProjectRows.map(project => {
+                            const metrics = getProjectListMetrics(project);
+                            const site = metrics.site;
+                            const finance = metrics.finance;
                             const status = finance?.status || project.status || 'planning';
                             const metaChips = getProjectMetaChips(project);
 
                             return (
-                                <div key={project.id} className="flex items-center justify-between p-4 hover:bg-slate-50/50 transition-colors group">
+                                <div key={project.id} className={`flex items-center justify-between p-4 transition-colors group ${project.isHidden ? 'bg-slate-50/70 hover:bg-slate-100/70' : 'hover:bg-slate-50/50'}`}>
                                     <div className="flex items-center gap-4 flex-1 min-w-0">
-                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${site ? 'bg-orange-50 text-orange-500' : 'bg-slate-100 text-slate-400'}`}>
-                                            {site ? <HardHat size={18} /> : <Building2 size={18} />}
+                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${project.isHidden ? 'bg-slate-200 text-slate-500' : site ? 'bg-orange-50 text-orange-500' : 'bg-slate-100 text-slate-400'}`}>
+                                            {project.isHidden ? <EyeOff size={18} /> : site ? <HardHat size={18} /> : <Building2 size={18} />}
                                         </div>
                                         <div className="min-w-0">
                                             <div className="flex items-center gap-2 min-w-0">
-                                                <div className="text-sm font-bold text-slate-800 truncate">{project.name}</div>
+                                                <div className={`text-sm font-bold truncate ${project.isHidden ? 'text-slate-500' : 'text-slate-800'}`}>{project.name}</div>
                                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-bold shrink-0">{project.code}</span>
+                                                {project.isHidden && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100 font-black shrink-0">Đã ẩn</span>}
                                             </div>
                                             <div className="text-xs text-slate-400 truncate">
                                                 {site ? `Công trường: ${site.name}` : 'Chưa liên kết công trường HRM'}
                                                 {project.clientName ? ` • ${project.clientName}` : ''}
+                                                {project.hiddenReason ? ` • Lý do ẩn: ${project.hiddenReason}` : ''}
                                             </div>
                                             {metaChips.length > 0 && (
                                                 <div className="mt-1 flex flex-wrap gap-1">
@@ -1983,27 +3010,41 @@ const ProjectDashboard: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center gap-4">
+                                    <div className="flex items-center gap-3">
                                         <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_CONFIG[status]?.bg || 'bg-slate-50 border-slate-200'} ${STATUS_CONFIG[status]?.color || 'text-slate-500'}`}>
                                             {STATUS_CONFIG[status]?.label || status}
                                         </div>
                                         <div className="text-right hidden md:block">
-                                            <div className="text-xs font-bold text-slate-600">{fmt(finance?.contractValue || 0)}</div>
-                                            <div className={`text-[10px] font-bold ${profit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                                                {site ? `${profit >= 0 ? '+' : ''}${fmt(profit)} (${agg.txCount} GD)` : 'Chưa có dữ liệu hiện trường'}
+                                            <div className="text-xs font-bold text-slate-600">{fmt(metrics.contractValue)}</div>
+                                            <div className={`text-[10px] font-bold ${metrics.profit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                                {site ? `${metrics.profit >= 0 ? '+' : ''}${fmt(metrics.profit)} (${metrics.txCount} GD)` : 'Chưa có dữ liệu hiện trường'}
                                             </div>
                                         </div>
                                         <div className="w-20 hidden lg:block">
-                                            <div className="text-[10px] font-bold text-slate-500 mb-0.5">{displayProgress}%</div>
+                                            <div className="text-[10px] font-bold text-slate-500 mb-0.5">{metrics.progress}%</div>
                                             <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                                <div className="h-full bg-orange-500 rounded-full" style={{ width: `${displayProgress}%` }} />
+                                                <div className="h-full bg-orange-500 rounded-full" style={{ width: `${metrics.progress}%` }} />
                                             </div>
                                         </div>
-                                        <button onClick={() => openEditProject(project)}
-                                            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 hover:text-slate-700 hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-all">
-                                            <Edit2 size={14} />
-                                        </button>
-                                        {site && !finance && (
+                                        {canManageProjects && !project.isHidden && (
+                                            <button onClick={() => openEditProject(project)}
+                                                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 hover:text-slate-700 hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-all" title="Sửa dự án">
+                                                <Edit2 size={14} />
+                                            </button>
+                                        )}
+                                        {canManageProjects && !project.isHidden && (
+                                            <button onClick={() => openHideProject(project)}
+                                                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all" title="Ẩn / xoá dự án">
+                                                <Trash2 size={14} />
+                                            </button>
+                                        )}
+                                        {isAdmin && project.isHidden && (
+                                            <button onClick={() => handleRestoreProject(project)} disabled={restoringProjectId === project.id}
+                                                className="w-8 h-8 rounded-lg flex items-center justify-center text-emerald-600 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50" title="Khôi phục dự án">
+                                                {restoringProjectId === project.id ? <Loader2 size={14} className="animate-spin" /> : <ArchiveRestore size={14} />}
+                                            </button>
+                                        )}
+                                        {site && !finance && !project.isHidden && (
                                             <button onClick={() => openBudgetForm(site.id)}
                                                 className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 opacity-0 group-hover:opacity-100 transition-all">
                                                 Ngân sách
@@ -2037,11 +3078,22 @@ const ProjectDashboard: React.FC = () => {
                 </div>
             </div>
 
+            {projectImportPreview && (
+                <ExcelImportReviewModal
+                    title={projectImportPreview.mode === 'create' ? 'Preview nhập mới dự án' : 'Preview cập nhật dự án'}
+                    preview={projectImportPreview}
+                    loading={projectImporting}
+                    onClose={() => setProjectImportPreview(null)}
+                    onConfirm={handleConfirmProjectImport}
+                />
+            )}
+
             {activeView === 'list' && renderList()}
             {activeView === 'overview' && renderOverview()}
             {renderProjectForm()}
             {renderBudgetForm()}
             {renderTxForm()}
+            {renderHideProjectModal()}
 
             {/* Lightbox Preview */}
             {previewUrl && (
