@@ -184,8 +184,9 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, onCard
 
         // Check permission
         const currentNode = orderedColumns[currentIdx];
+        const effectiveAssigneeUserId = instance.stepAssignees?.[currentNode.id] || currentNode.config.assigneeUserId;
         const canAct = user.role === Role.ADMIN ||
-            currentNode.config.assigneeUserId === user.id ||
+            effectiveAssigneeUserId === user.id ||
             currentNode.config.assigneeRole === user.role;
 
         if (!canAct) return;

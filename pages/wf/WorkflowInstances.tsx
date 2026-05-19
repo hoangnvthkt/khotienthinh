@@ -550,6 +550,10 @@ const WorkflowInstances: React.FC = () => {
     const [stepExcelData, setStepExcelData] = useState<{ sheets: Record<string, any[][]>; sheetNames: string[] } | null>(null);
 
     const activeTemplates = templates.filter(t => t.isActive);
+    const getEffectiveAssigneeUserId = useCallback((instance: WorkflowInstance, node?: { id: string; config: any } | null) => {
+        if (!node) return undefined;
+        return instance.stepAssignees?.[node.id] || node.config.assigneeUserId;
+    }, []);
 
     // Filter instances based on active tab
     const filteredInstances = useMemo(() => {
@@ -571,7 +575,7 @@ const WorkflowInstances: React.FC = () => {
                 if (i.status !== WorkflowInstanceStatus.RUNNING || !i.currentNodeId) return false;
                 const currentNode = nodes.find(n => n.id === i.currentNodeId);
                 if (!currentNode) return false;
-                if (currentNode.config.assigneeUserId === user.id) return true;
+                if (getEffectiveAssigneeUserId(i, currentNode) === user.id) return true;
                 if (currentNode.config.assigneeRole === user.role) return true;
                 if (user.role === Role.ADMIN) return true; // admin sees all
                 // Managers can also see pending instances for their templates
@@ -591,7 +595,7 @@ const WorkflowInstances: React.FC = () => {
         }
 
         return list;
-    }, [instances, activeTab, filterStatus, searchTerm, user, nodes, templates]);
+    }, [instances, activeTab, filterStatus, searchTerm, user, nodes, templates, getEffectiveAssigneeUserId]);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -969,7 +973,7 @@ const WorkflowInstances: React.FC = () => {
         // Managers can act on all instances of their templates
         const tmpl = templates.find(t => t.id === instance.templateId);
         if (tmpl?.managers?.includes(user.id)) return true;
-        if (currentNode.config.assigneeUserId === user.id) return true;
+        if (getEffectiveAssigneeUserId(instance, currentNode) === user.id) return true;
         if (currentNode.config.assigneeRole === user.role) return true;
         // Allow creator to act on first step after REVISION_REQUESTED
         if (instance.createdBy === user.id) {
@@ -1143,7 +1147,7 @@ const WorkflowInstances: React.FC = () => {
                             if (i.status !== WorkflowInstanceStatus.RUNNING || !i.currentNodeId) return false;
                             const cn = nodes.find(n => n.id === i.currentNodeId);
                             if (!cn) return false;
-                            if (user.role === Role.ADMIN || cn.config.assigneeUserId === user.id || cn.config.assigneeRole === user.role) return true;
+                            if (user.role === Role.ADMIN || getEffectiveAssigneeUserId(i, cn) === user.id || cn.config.assigneeRole === user.role) return true;
                             const tmpl = templates.find(t => t.id === i.templateId);
                             if (tmpl?.managers?.includes(user.id)) return true;
                             return false;
@@ -1153,7 +1157,7 @@ const WorkflowInstances: React.FC = () => {
                                         if (i.status !== WorkflowInstanceStatus.RUNNING || !i.currentNodeId) return false;
                                         const cn = nodes.find(n => n.id === i.currentNodeId);
                                         if (!cn) return false;
-                                        if (user.role === Role.ADMIN || cn.config.assigneeUserId === user.id || cn.config.assigneeRole === user.role) return true;
+                                        if (user.role === Role.ADMIN || getEffectiveAssigneeUserId(i, cn) === user.id || cn.config.assigneeRole === user.role) return true;
                                         const tmpl = templates.find(t => t.id === i.templateId);
                                         if (tmpl?.managers?.includes(user.id)) return true;
                                         return false;
@@ -1240,23 +1244,7 @@ const WorkflowInstances: React.FC = () => {
                                 await ensureInstanceFormData(instance);
                             }}
                             onDragComplete={async (instanceId, action, comment, assigneeId) => {
-                                if (assigneeId) {
-                                    // Update the target node's assignee for this instance
-                                    const inst = instances.find(i => i.id === instanceId);
-                                    if (inst) {
-                                        const tplNodes = nodes.filter(n => n.templateId === inst.templateId);
-                                        const tplEdges = edges.filter(e => e.templateId === inst.templateId);
-                                        const nextEdge = tplEdges.find(e => e.sourceNodeId === inst.currentNodeId);
-                                        if (nextEdge) {
-                                            const nextNode = tplNodes.find(n => n.id === nextEdge.targetNodeId);
-                                            if (nextNode) {
-                                                // Temporarily assign user to the next node for this action
-                                                nextNode.config.assigneeUserId = assigneeId;
-                                            }
-                                        }
-                                    }
-                                }
-                                const ok = await processInstance(instanceId, action, user.id, comment);
+                                const ok = await processInstance(instanceId, action, user.id, comment, assigneeId);
                                 if (!ok) showToast('error', 'Không xử lý được phiếu.');
                             }}
                         />

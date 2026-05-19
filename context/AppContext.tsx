@@ -1464,6 +1464,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .map(u => u.id);
   };
 
+  const getWarehouseKeeperIds = (...warehouseIds: Array<string | undefined>) => {
+    const whSet = new Set(warehouseIds.filter(Boolean) as string[]);
+    if (whSet.size === 0) return [];
+    return users
+      .filter(u =>
+        u.role === Role.ADMIN ||
+        (u.role === Role.WAREHOUSE_KEEPER && !!u.assignedWarehouseId && whSet.has(u.assignedWarehouseId))
+      )
+      .map(u => u.id);
+  };
+
   const notifyWmsUsers = async (
     recipientIds: string[],
     notification: {
@@ -1582,6 +1593,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       severity: status === RequestStatus.REJECTED ? 'warning' : 'info',
       sourceId: req.id,
     });
+
+    const keeperRecipients =
+      status === RequestStatus.APPROVED
+        ? getWarehouseKeeperIds(effectiveSourceWhId)
+        : status === RequestStatus.IN_TRANSIT
+          ? getWarehouseKeeperIds(req.siteWarehouseId)
+          : status === RequestStatus.COMPLETED
+            ? getWarehouseKeeperIds(effectiveSourceWhId, req.siteWarehouseId)
+            : [];
+    if (keeperRecipients.length > 0) {
+      void notifyWmsUsers(keeperRecipients, {
+        type: status === RequestStatus.COMPLETED ? 'success' : 'info',
+        title: 'Phiếu vật tư cần theo dõi',
+        message: `Phiếu ${req.code} chuyển sang ${status}; kho liên quan cần kiểm tra thao tác tiếp theo.`,
+        severity: 'info',
+        sourceId: `${req.id}_${status}_${Date.now()}`,
+      });
+    }
 
     // Generate Transaction when Request is fully received
     if (shouldCreateTransaction && relatedTransactionId) {

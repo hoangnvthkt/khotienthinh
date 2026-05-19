@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import React, { Suspense, useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import {
     Project,
@@ -24,16 +24,6 @@ import { useModuleData } from '../hooks/useModuleData';
 import { useWorkflow } from '../context/WorkflowContext';
 import { useToast } from '../context/ToastContext';
 import { usePermission } from '../hooks/usePermission';
-import CashFlowTab from './project/CashFlowTab';
-import ContractTab from './project/ContractTab';
-import GanttTab from './project/GanttTab';
-import DailyLogTab from './project/DailyLogTab';
-import SubcontractTab from './project/SubcontractTab';
-import MaterialTab from './project/MaterialTab';
-import SupplyChainTab from './project/SupplyChainTab';
-import ReportTab from './project/ReportTab';
-import DocumentsTab from './project/DocumentsTab';
-import ProjectOrgTab from './project/ProjectOrgTab';
 import { taskService } from '../lib/projectService';
 import { calculateProjectProgress } from '../lib/projectScheduleRules';
 import { projectMasterService } from '../lib/projectMasterService';
@@ -48,6 +38,17 @@ import {
     Upload, Download, Filter, Calendar, Tag, List, Paperclip, Eye, Image,
     Users, UserPlus, Loader2, RefreshCcw, Search, EyeOff, ArchiveRestore
 } from 'lucide-react';
+
+const CashFlowTab = React.lazy(() => import('./project/CashFlowTab'));
+const ContractTab = React.lazy(() => import('./project/ContractTab'));
+const GanttTab = React.lazy(() => import('./project/GanttTab'));
+const DailyLogTab = React.lazy(() => import('./project/DailyLogTab'));
+const SubcontractTab = React.lazy(() => import('./project/SubcontractTab'));
+const MaterialTab = React.lazy(() => import('./project/MaterialTab'));
+const SupplyChainTab = React.lazy(() => import('./project/SupplyChainTab'));
+const ReportTab = React.lazy(() => import('./project/ReportTab'));
+const DocumentsTab = React.lazy(() => import('./project/DocumentsTab'));
+const ProjectOrgTab = React.lazy(() => import('./project/ProjectOrgTab'));
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
     planning: { label: 'Lập kế hoạch', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
@@ -294,7 +295,6 @@ const ProjectDashboard: React.FC = () => {
     const canManageProjects = canManage('/da');
     const { templates: workflowTemplates } = useWorkflow();
     useModuleData('da');
-    useModuleData('wms');
 
     const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
     const [activeView, setActiveView] = useState<'list' | 'overview'>('list');
@@ -324,6 +324,7 @@ const ProjectDashboard: React.FC = () => {
     const [projectFilters, setProjectFilters] = useState<ProjectFilterState>(emptyProjectFilters);
     const [projectSort, setProjectSort] = useState<ProjectSortKey>('updatedAt');
     const [projectSortAsc, setProjectSortAsc] = useState(false);
+    const [showProjectAdvancedFilters, setShowProjectAdvancedFilters] = useState(false);
     const [projectImportMode, setProjectImportMode] = useState<ExcelImportMode>('create');
     const [projectImportPreview, setProjectImportPreview] = useState<ExcelImportPreview<ProjectImportRecord> | null>(null);
     const [projectImporting, setProjectImporting] = useState(false);
@@ -506,6 +507,24 @@ const ProjectDashboard: React.FC = () => {
             setProjectFilters(prev => ({ ...prev, hidden: 'active' }));
         }
     }, [isAdmin, projectFilters.hidden]);
+
+    const projectAdvancedFilterCount = useMemo(() => {
+        let count = 0;
+        if (projectFilters.status !== 'all') count += 1;
+        if (projectFilters.groupId !== 'all') count += 1;
+        if (projectFilters.typeId !== 'all') count += 1;
+        if (projectFilters.sectorId !== 'all') count += 1;
+        if (projectFilters.workflowId !== 'all') count += 1;
+        if (projectFilters.siteLink !== 'all') count += 1;
+        if (projectFilters.startFrom) count += 1;
+        if (projectFilters.startTo) count += 1;
+        if (projectFilters.endFrom) count += 1;
+        if (projectFilters.endTo) count += 1;
+        if (isAdmin && projectFilters.hidden !== 'active') count += 1;
+        if (projectSort !== 'updatedAt') count += 1;
+        if (projectSortAsc) count += 1;
+        return count;
+    }, [isAdmin, projectFilters, projectSort, projectSortAsc]);
 
     const filteredProjectRows = useMemo(() => {
         const keyword = normalizeLookup(projectFilters.query);
@@ -2574,40 +2593,46 @@ const ProjectDashboard: React.FC = () => {
                     ))}
                 </div>
 
-                {overviewTab === 'org' ? (
-                    <ProjectOrgTab projectId={selectedProject.id} constructionSiteId={effectiveSiteId} />
-                ) : overviewTab === 'cashflow' ? (
-                    hasSiteLink ? (
-                        <CashFlowTab
-                            constructionSiteId={effectiveSiteId!}
-                            transactions={projectTransactions.filter(t => t.constructionSiteId === effectiveSiteId)}
-                            contractValue={contractValue}
-                        />
-                    ) : renderSiteRequired('Dòng tiền')
-                ) : overviewTab === 'contract' ? (
-                    <ContractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
-                ) : overviewTab === 'gantt' ? (
-                    <GanttTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
-                ) : overviewTab === 'dailylog' ? (
-                    <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
-                ) : overviewTab === 'subcontract' ? (
-                    <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
-                ) : overviewTab === 'material' ? (
-                    <MaterialTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
-                ) : overviewTab === 'supply' ? (
-                    <SupplyChainTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
-                ) : overviewTab === 'report' ? (
-                    hasSiteLink ? (
-                        <ReportTab
-                            constructionSiteId={effectiveSiteId!}
-                            projectId={selectedProject.id}
-                            contractValue={contractValue}
-                            totalSpent={aggForRender.totalExpense}
-                        />
-                    ) : renderSiteRequired('Báo cáo')
-                ) : overviewTab === 'documents' ? (
-                    <DocumentsTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} uploadedBy={user?.name} />
-                ) : (
+                <Suspense fallback={
+                    <div className="rounded-2xl border border-slate-100 bg-white p-10 text-center text-sm font-bold text-slate-400">
+                        <Loader2 size={22} className="mx-auto mb-2 animate-spin text-orange-500" />
+                        Đang tải tab...
+                    </div>
+                }>
+                    {overviewTab === 'org' ? (
+                        <ProjectOrgTab projectId={selectedProject.id} constructionSiteId={effectiveSiteId} />
+                    ) : overviewTab === 'cashflow' ? (
+                        hasSiteLink ? (
+                            <CashFlowTab
+                                constructionSiteId={effectiveSiteId!}
+                                transactions={projectTransactions.filter(t => t.constructionSiteId === effectiveSiteId)}
+                                contractValue={contractValue}
+                            />
+                        ) : renderSiteRequired('Dòng tiền')
+                    ) : overviewTab === 'contract' ? (
+                        <ContractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
+                    ) : overviewTab === 'gantt' ? (
+                        <GanttTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
+                    ) : overviewTab === 'dailylog' ? (
+                        <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
+                    ) : overviewTab === 'subcontract' ? (
+                        <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
+                    ) : overviewTab === 'material' ? (
+                        <MaterialTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
+                    ) : overviewTab === 'supply' ? (
+                        <SupplyChainTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
+                    ) : overviewTab === 'report' ? (
+                        hasSiteLink ? (
+                            <ReportTab
+                                constructionSiteId={effectiveSiteId!}
+                                projectId={selectedProject.id}
+                                contractValue={contractValue}
+                                totalSpent={aggForRender.totalExpense}
+                            />
+                        ) : renderSiteRequired('Báo cáo')
+                    ) : overviewTab === 'documents' ? (
+                        <DocumentsTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} uploadedBy={user?.name} />
+                    ) : (
                 <>
                 {/* KPI Cards — AUTO-AGGREGATED */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2805,7 +2830,8 @@ const ProjectDashboard: React.FC = () => {
                     )}
                 </div>
                 </>
-                )}
+                    )}
+                </Suspense>
             </div>
         );
     };
@@ -2877,8 +2903,8 @@ const ProjectDashboard: React.FC = () => {
                 </div>
 
                 <div className="p-4 border-b border-slate-100 bg-white">
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
-                        <div className="xl:col-span-2 relative">
+                    <div className="flex flex-col lg:flex-row gap-3">
+                        <div className="relative flex-1 min-w-0">
                             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
                             <input
                                 value={projectFilters.query}
@@ -2887,66 +2913,129 @@ const ProjectDashboard: React.FC = () => {
                                 className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-orange-500"
                             />
                         </div>
-                        <select value={projectFilters.status} onChange={e => setProjectFilters(prev => ({ ...prev, status: e.target.value as ProjectFilterState['status'] }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                            <option value="all">Tất cả trạng thái</option>
-                            {Object.entries(STATUS_CONFIG).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
-                        </select>
-                        <select value={projectFilters.groupId} onChange={e => setProjectFilters(prev => ({ ...prev, groupId: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                            <option value="all">Tất cả nhóm</option>
-                            {projectGroups.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                        </select>
-                        <select value={projectFilters.typeId} onChange={e => setProjectFilters(prev => ({ ...prev, typeId: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                            <option value="all">Tất cả loại</option>
-                            {projectTypes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                        </select>
-                        <select value={projectFilters.sectorId} onChange={e => setProjectFilters(prev => ({ ...prev, sectorId: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                            <option value="all">Tất cả lĩnh vực</option>
-                            {projectSectors.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                        </select>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-3 mt-3">
-                        <select value={projectFilters.workflowId} onChange={e => setProjectFilters(prev => ({ ...prev, workflowId: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                            <option value="all">Tất cả quy trình</option>
-                            {workflowTemplates.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                        </select>
-                        <select value={projectFilters.siteLink} onChange={e => setProjectFilters(prev => ({ ...prev, siteLink: e.target.value as ProjectSiteFilter }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                            <option value="all">Liên kết công trường</option>
-                            <option value="linked">Đã liên kết</option>
-                            <option value="unlinked">Chưa liên kết</option>
-                        </select>
-                        <input type="date" title="Ngày bắt đầu từ" value={projectFilters.startFrom} onChange={e => setProjectFilters(prev => ({ ...prev, startFrom: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
-                        <input type="date" title="Ngày bắt đầu đến" value={projectFilters.startTo} onChange={e => setProjectFilters(prev => ({ ...prev, startTo: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
-                        <input type="date" title="Ngày kết thúc từ" value={projectFilters.endFrom} onChange={e => setProjectFilters(prev => ({ ...prev, endFrom: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
-                        <input type="date" title="Ngày kết thúc đến" value={projectFilters.endTo} onChange={e => setProjectFilters(prev => ({ ...prev, endTo: e.target.value }))} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
-                        <select value={projectSort} onChange={e => setProjectSort(e.target.value as ProjectSortKey)} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                            <option value="updatedAt">Sắp xếp: Cập nhật mới</option>
-                            <option value="code">Mã dự án</option>
-                            <option value="name">Tên dự án</option>
-                            <option value="startDate">Ngày bắt đầu</option>
-                            <option value="contractValue">Giá trị HĐ</option>
-                            <option value="actualCost">Chi phí thực tế</option>
-                            <option value="profit">Lợi nhuận tạm tính</option>
-                            <option value="progress">Tiến độ</option>
-                        </select>
-                        <button onClick={() => setProjectSortAsc(prev => !prev)} className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-black text-slate-600 hover:bg-slate-50">
-                            {projectSortAsc ? 'Tăng dần' : 'Giảm dần'}
-                        </button>
-                        <div className="flex gap-2">
-                            {isAdmin && (
-                                <select value={projectFilters.hidden} onChange={e => setProjectFilters(prev => ({ ...prev, hidden: e.target.value as ProjectHiddenFilter }))} className="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
-                                    <option value="active">Đang hoạt động</option>
-                                    <option value="hidden">Đã ẩn</option>
-                                    <option value="all">Tất cả</option>
-                                </select>
+                        <button
+                            type="button"
+                            onClick={() => setShowProjectAdvancedFilters(prev => !prev)}
+                            aria-expanded={showProjectAdvancedFilters}
+                            className="inline-flex h-[42px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-xs font-black text-slate-700 hover:bg-slate-100 lg:w-auto"
+                        >
+                            <Filter size={15} />
+                            Tìm kiếm nâng cao
+                            {projectAdvancedFilterCount > 0 && (
+                                <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[10px] text-white">
+                                    {projectAdvancedFilterCount}
+                                </span>
                             )}
-                            <button onClick={() => setProjectFilters(emptyProjectFilters())} className="px-3 py-2.5 rounded-xl border border-slate-200 text-xs font-black text-slate-500 hover:bg-slate-50">
-                                Xoá lọc
-                            </button>
+                            <ChevronDown size={15} className={`transition-transform ${showProjectAdvancedFilters ? 'rotate-180' : ''}`} />
+                        </button>
+                    </div>
+
+                    {showProjectAdvancedFilters && (
+                        <div className="mt-4 border-t border-slate-100 pt-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Trạng thái</label>
+                                    <select value={projectFilters.status} onChange={e => setProjectFilters(prev => ({ ...prev, status: e.target.value as ProjectFilterState['status'] }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                                        <option value="all">Tất cả trạng thái</option>
+                                        {Object.entries(STATUS_CONFIG).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Nhóm dự án</label>
+                                    <select value={projectFilters.groupId} onChange={e => setProjectFilters(prev => ({ ...prev, groupId: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                                        <option value="all">Tất cả nhóm</option>
+                                        {projectGroups.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Loại dự án</label>
+                                    <select value={projectFilters.typeId} onChange={e => setProjectFilters(prev => ({ ...prev, typeId: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                                        <option value="all">Tất cả loại</option>
+                                        {projectTypes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Lĩnh vực</label>
+                                    <select value={projectFilters.sectorId} onChange={e => setProjectFilters(prev => ({ ...prev, sectorId: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                                        <option value="all">Tất cả lĩnh vực</option>
+                                        {projectSectors.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Quy trình</label>
+                                    <select value={projectFilters.workflowId} onChange={e => setProjectFilters(prev => ({ ...prev, workflowId: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                                        <option value="all">Tất cả quy trình</option>
+                                        {workflowTemplates.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Công trường</label>
+                                    <select value={projectFilters.siteLink} onChange={e => setProjectFilters(prev => ({ ...prev, siteLink: e.target.value as ProjectSiteFilter }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                                        <option value="all">Liên kết công trường</option>
+                                        <option value="linked">Đã liên kết</option>
+                                        <option value="unlinked">Chưa liên kết</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Bắt đầu từ</label>
+                                    <input type="date" value={projectFilters.startFrom} onChange={e => setProjectFilters(prev => ({ ...prev, startFrom: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Bắt đầu đến</label>
+                                    <input type="date" value={projectFilters.startTo} onChange={e => setProjectFilters(prev => ({ ...prev, startTo: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Kết thúc từ</label>
+                                    <input type="date" value={projectFilters.endFrom} onChange={e => setProjectFilters(prev => ({ ...prev, endFrom: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Kết thúc đến</label>
+                                    <input type="date" value={projectFilters.endTo} onChange={e => setProjectFilters(prev => ({ ...prev, endTo: e.target.value }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500" />
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Sắp xếp</label>
+                                    <select value={projectSort} onChange={e => setProjectSort(e.target.value as ProjectSortKey)} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                                        <option value="updatedAt">Cập nhật mới</option>
+                                        <option value="code">Mã dự án</option>
+                                        <option value="name">Tên dự án</option>
+                                        <option value="startDate">Ngày bắt đầu</option>
+                                        <option value="contractValue">Giá trị HĐ</option>
+                                        <option value="actualCost">Chi phí thực tế</option>
+                                        <option value="profit">Lợi nhuận tạm tính</option>
+                                        <option value="progress">Tiến độ</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Thứ tự</label>
+                                    <button onClick={() => setProjectSortAsc(prev => !prev)} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-black text-slate-600 hover:bg-slate-50">
+                                        {projectSortAsc ? 'Tăng dần' : 'Giảm dần'}
+                                    </button>
+                                </div>
+                                {isAdmin && (
+                                    <div>
+                                        <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Dự án ẩn</label>
+                                        <select value={projectFilters.hidden} onChange={e => setProjectFilters(prev => ({ ...prev, hidden: e.target.value as ProjectHiddenFilter }))} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-orange-500">
+                                            <option value="active">Đang hoạt động</option>
+                                            <option value="hidden">Đã ẩn</option>
+                                            <option value="all">Tất cả</option>
+                                        </select>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="mt-4 flex justify-end">
+                                <button
+                                    onClick={() => {
+                                        setProjectFilters(emptyProjectFilters());
+                                        setProjectSort('updatedAt');
+                                        setProjectSortAsc(false);
+                                    }}
+                                    className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-black text-slate-500 hover:bg-slate-50"
+                                >
+                                    Xoá lọc
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                    <div className="mt-2 text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                        <Filter size={12} /> Các ô ngày lần lượt là bắt đầu từ/đến và kết thúc từ/đến.
-                    </div>
+                    )}
                 </div>
 
                 {projectLoadError && projects.length === 0 && hrmConstructionSites.length > 0 && (

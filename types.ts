@@ -1368,6 +1368,7 @@ export interface WorkflowInstance {
   status: WorkflowInstanceStatus;
   formData: Record<string, any>;
   watchers: string[];  // user IDs — view + comment only
+  stepAssignees?: Record<string, string>; // node id -> assigned user id for this instance
   createdAt: string;
   updatedAt: string;
 }

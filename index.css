@@ -409,3 +409,58 @@ button:disabled, [role="button"][aria-disabled="true"] {
 .animate-slide-up {
   animation: slideUp 0.3s ease-out both;
 }
+
+/* ============================
+   MINIMAL MOTION MODE
+   ============================ */
+
+button:not(:disabled),
+[role="button"]:not(:disabled) {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease,
+    box-shadow 160ms ease !important;
+}
+
+button:not(:disabled):active,
+[role="button"]:not(:disabled):active,
+[class*="active:scale"]:active,
+[class*="hover:scale"]:hover,
+.group:hover [class*="group-hover:scale"] {
+  transform: none !important;
+}
+
+.hover-lift,
+.glow-hover {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 160ms ease !important;
+}
+
+.hover-lift:hover,
+.glow-hover:hover,
+[class*="hover:shadow-xl"]:hover,
+[class*="hover:shadow-2xl"]:hover {
+  transform: none !important;
+  box-shadow: 0 8px 20px -16px rgba(15, 23, 42, 0.35) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .animate-spin {
+    animation-duration: 0.8s !important;
+    animation-iteration-count: infinite !important;
+  }
+}

@@ -130,7 +130,7 @@ const VoiceTextarea: React.FC<{
 const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId }) => {
     const toast = useToast();
     const confirm = useConfirm();
-    const { user } = useApp();
+    const { user, users } = useApp();
     const effectiveId = projectId || constructionSiteId || '';
     const [logs, setLogs] = useState<DailyLog[]>([]);
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
@@ -356,6 +356,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 	                status,
 	                verified: status === 'verified',
 	                submittedAt: status === 'submitted' ? now : log.submittedAt,
+	                submittedBy: status === 'submitted' ? user?.id : log.submittedBy,
 	                verifiedBy: status === 'verified' ? (user?.name || 'PM/QS') : log.verifiedBy,
 	                rejectedAt: status === 'rejected' ? now : log.rejectedAt,
 	                rejectionReason: status === 'rejected' ? 'Cần bổ sung/kiểm tra lại' : log.rejectionReason,
@@ -388,6 +389,28 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     });
                 } catch (err) {
                     console.error('Failed to notify verifiers:', err);
+                }
+            }
+
+            if (status === 'verified' || status === 'rejected') {
+                const ownerId = log.submittedBy ||
+                    (users.some(u => u.id === log.createdBy) ? log.createdBy : users.find(u => u.name === log.createdBy)?.id);
+                if (ownerId) {
+                    await notificationService.notifyProjectUsers({
+                        recipientIds: [ownerId],
+                        actorId: user?.id,
+                        type: status === 'verified' ? 'success' : 'warning',
+                        category: 'progress',
+                        title: status === 'verified' ? '✅ Nhật ký đã xác nhận' : '↩ Nhật ký cần bổ sung',
+                        message: `Nhật ký ngày ${new Date(log.date).toLocaleDateString('vi-VN')} ${status === 'verified' ? 'đã được xác nhận' : 'đã bị trả lại'}`,
+                        severity: status === 'verified' ? 'info' : 'warning',
+                        icon: status === 'verified' ? '✅' : '↩',
+                        link: '/da',
+                        sourceType: `dailylog_${status}`,
+                        sourceId: `dailylog_${status}_${log.id}_${Date.now()}`,
+                        constructionSiteId: constructionSiteId || undefined,
+                        metadata: { logId: log.id, date: log.date, projectId },
+                    });
                 }
             }
 
@@ -625,7 +648,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 	                                            {status === 'submitted' && userPerms.has('verify') && (
 	                                                <button onClick={() => handleStatusChange(l, 'verified')} title="Xác nhận" className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50"><CheckCircle2 size={13} /></button>
 	                                            )}
-	                                            {status === 'submitted' && userPerms.has('reject') && (
+		                                            {status === 'submitted' && userPerms.has('verify') && (
 	                                                <button onClick={() => handleStatusChange(l, 'rejected')} title="Trả lại" className="w-7 h-7 rounded-lg flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50"><RotateCcw size={13} /></button>
 	                                            )}
 	                                            <button onClick={() => openEdit(l)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50"><Edit2 size={13} /></button>

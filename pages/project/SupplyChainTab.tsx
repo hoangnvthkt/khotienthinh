@@ -85,7 +85,7 @@ const normalizePoImportDate = (value: string): string => {
 const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, projectId }) => {
     const toast = useToast();
     const confirm = useConfirm();
-    const { items: inventoryItems, warehouses } = useApp();
+    const { items: inventoryItems, warehouses, loadModuleData } = useApp();
     const effectiveId = projectId || constructionSiteId || '';
     const [subTab, setSubTab] = useState<'vendor' | 'po'>('vendor');
 
@@ -93,6 +93,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [vendors, setVendors] = useState<ProjectVendor[]>([]);
     // POs
     const [pos, setPos] = useState<PurchaseOrder[]>([]);
+
+    useEffect(() => {
+        loadModuleData('wms');
+    }, [loadModuleData]);
 
     useEffect(() => {
         if (!effectiveId) return;

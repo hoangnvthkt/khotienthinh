@@ -34,7 +34,7 @@ const REQ_STATUS_MAP: Record<string, { label: string; color: string; bg: string;
 };
 
 const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, siteWarehouseId }) => {
-    const { items: inventoryItems, requests: allRequests, warehouses, users } = useApp();
+    const { items: inventoryItems, requests: allRequests, warehouses, users, loadModuleData } = useApp();
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';
@@ -42,6 +42,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     // BOQ Data
     const [boqItems, setBoqItems] = useState<MaterialBudgetItem[]>([]);
+
+    useEffect(() => {
+        loadModuleData('wms');
+    }, [loadModuleData]);
 
     // Resolve siteWarehouseId: use prop or find warehouse named 'RICO'
     const resolvedWhId = useMemo(() => {

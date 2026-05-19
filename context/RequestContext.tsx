@@ -333,6 +333,7 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // ---- Actions ----
 
     const submitRequest = async (id: string, userId: string): Promise<boolean> => {
+        const req = requests.find(r => r.id === id);
         const { error } = await supabase.from('request_instances').update({
             status: 'PENDING', updated_at: new Date().toISOString(),
         }).eq('id', id);
@@ -341,6 +342,22 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
             request_id: id, action: 'SUBMITTED', acted_by: userId, comment: 'Gửi phiếu yêu cầu',
         });
         await refreshData();
+        const currentApprover = req ? getCurrentApproverStep(req) : null;
+        if (req && currentApprover?.userId && currentApprover.userId !== userId) {
+            notificationService.create({
+                userId: currentApprover.userId,
+                type: 'info',
+                category: 'system',
+                title: '📋 Yêu cầu cần duyệt',
+                message: `"${req.title}" (${req.code}) vừa được gửi lại và chờ bạn duyệt`,
+                severity: 'info',
+                icon: '📋',
+                link: '/rq',
+                sourceType: 'request',
+                sourceId: `rq_resubmitted_${id}_${Date.now()}`,
+                metadata: { requestId: id },
+            }).catch(err => console.error('RQ submit notification error:', err));
+        }
         return true;
     };
 
@@ -506,6 +523,21 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
             userName: userId,
             description: `Hoàn thành phiếu "${compReq?.title || ''}" (${compReq?.code || ''})`,
         });
+        if (compReq?.createdBy && compReq.createdBy !== userId) {
+            notificationService.create({
+                userId: compReq.createdBy,
+                type: 'success',
+                category: 'system',
+                title: '✅ Yêu cầu đã hoàn thành',
+                message: `"${compReq.title}" (${compReq.code}) đã được hoàn thành`,
+                severity: 'info',
+                icon: '✅',
+                link: '/rq',
+                sourceType: 'request',
+                sourceId: `rq_completed_${id}_${Date.now()}`,
+                metadata: { requestId: id },
+            }).catch(err => console.error('RQ complete notification error:', err));
+        }
         return true;
     };
 
@@ -531,6 +563,21 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
             userName: userId,
             description: `Hủy phiếu "${canReq?.title || ''}" (${canReq?.code || ''})`,
         });
+        if (canReq?.createdBy && canReq.createdBy !== userId) {
+            notificationService.create({
+                userId: canReq.createdBy,
+                type: 'warning',
+                category: 'system',
+                title: '⚠️ Yêu cầu đã bị hủy',
+                message: `"${canReq.title}" (${canReq.code}) đã bị hủy${comment ? ': ' + comment : ''}`,
+                severity: 'warning',
+                icon: '⚠️',
+                link: '/rq',
+                sourceType: 'request',
+                sourceId: `rq_cancelled_${id}_${Date.now()}`,
+                metadata: { requestId: id },
+            }).catch(err => console.error('RQ cancel notification error:', err));
+        }
         return true;
     };
 

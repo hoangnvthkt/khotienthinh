@@ -4,6 +4,7 @@ import {
     RefreshCw, ChevronDown, ExternalLink, Clock
 } from 'lucide-react';
 import { notificationService, AppNotification, NOTIFICATION_CATEGORIES } from '../lib/notificationService';
+import { webPushService } from '../lib/webPushService';
 
 interface NotificationCenterProps {
     userId?: string;
@@ -28,6 +29,9 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [checking, setChecking] = useState(false);
     const [filterCategory, setFilterCategory] = useState<string>('all');
+    const [browserPermission, setBrowserPermission] = useState<NotificationPermission>(
+        typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied'
+    );
     const bellRef = useRef<HTMLButtonElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
     const [panelPos, setPanelPos] = useState({ top: 0, left: 0 });
@@ -51,7 +55,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
             if (!n.isRead) setUnreadCount(c => c + 1);
 
             // Browser Push Notification — show when tab not focused
-            if (!document.hasFocus() && Notification.permission === 'granted') {
+            if ('Notification' in window && !document.hasFocus() && Notification.permission === 'granted') {
                 const browserNotif = new Notification(n.title, {
                     body: n.message,
                     icon: '/vite.svg',
@@ -87,18 +91,12 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
         return () => { notificationService.unsubscribe(channel); };
     }, [userId]);
 
-    // Request browser notification permission
     useEffect(() => {
-        if ('Notification' in window && Notification.permission === 'default') {
-            // Don't immediately prompt — wait for user interaction
-            const requestOnInteraction = () => {
-                Notification.requestPermission();
-                document.removeEventListener('click', requestOnInteraction);
-            };
-            document.addEventListener('click', requestOnInteraction);
-            return () => document.removeEventListener('click', requestOnInteraction);
+        if ('Notification' in window) setBrowserPermission(Notification.permission);
+        if (userId && webPushService.isSupported() && Notification.permission === 'granted') {
+            webPushService.ensureSubscription(userId).catch(err => console.error('Web push subscription error:', err));
         }
-    }, []);
+    }, [userId]);
 
     // Auto-check alerts on mount + every 5 minutes
     useEffect(() => {
@@ -176,6 +174,15 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
         setChecking(false);
     };
 
+    const handleRequestBrowserPermission = async () => {
+        if (!('Notification' in window)) return;
+        const permission = await Notification.requestPermission();
+        setBrowserPermission(permission);
+        if (permission === 'granted') {
+            webPushService.ensureSubscription(userId).catch(err => console.error('Web push subscription error:', err));
+        }
+    };
+
     const filtered = filterCategory === 'all'
         ? notifications
         : notifications.filter(n => n.category === filterCategory);
@@ -224,6 +231,12 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
                                 )}
                             </h3>
                             <div className="flex items-center gap-1">
+                                {browserPermission === 'default' && (
+                                    <button onClick={handleRequestBrowserPermission}
+                                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-slate-400 hover:text-blue-500" title="Bật thông báo trình duyệt">
+                                        <Bell size={12} />
+                                    </button>
+                                )}
                                 <button onClick={handleRunChecks} disabled={checking}
                                     className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-slate-400 hover:text-indigo-500" title="Kiểm tra cảnh báo">
                                     <RefreshCw size={12} className={checking ? 'animate-spin' : ''} />

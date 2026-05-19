@@ -474,6 +474,33 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         }
     }, [projectId, constructionSiteId, user?.id]);
 
+    const notifyTaskAssignment = useCallback(async (task: ProjectTask, previousTask?: ProjectTask | null) => {
+        const previousAssignee = previousTask?.assigneeUserId;
+        const previousWatchers = new Set(previousTask?.watchers || []);
+        const recipientIds = [
+            task.assigneeUserId && task.assigneeUserId !== previousAssignee ? task.assigneeUserId : undefined,
+            ...(task.watchers || []).filter(uid => !previousWatchers.has(uid)),
+        ].filter(Boolean) as string[];
+
+        if (recipientIds.length === 0) return;
+
+        await notificationService.notifyProjectUsers({
+            recipientIds,
+            actorId: user?.id,
+            type: 'info',
+            category: 'progress',
+            title: '📌 Bạn được giao hạng mục',
+            message: `"${task.name}" đã được giao hoặc tag theo dõi`,
+            severity: 'info',
+            icon: '📌',
+            link: '/da',
+            sourceType: 'task_assignment',
+            sourceId: `task_assignment_${task.id}_${Date.now()}`,
+            constructionSiteId: constructionSiteId || undefined,
+            metadata: { taskId: task.id, taskName: task.name, projectId },
+        });
+    }, [constructionSiteId, projectId, user?.id]);
+
     const syncProjectFinanceProgress = useCallback((nextTasks: ProjectTask[]) => {
         const summary = calculateProjectProgress(nextTasks);
         if (summary.leafTaskCount === 0) return;
@@ -608,6 +635,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 	            return acc;
 	        }, {}));
         syncProjectFinanceProgress(nextTasks);
+        await notifyTaskAssignment(item, editing);
         resetForm();
         if (item.progress >= 100 && item.gateStatus === 'pending') {
             toast.info('Đã chuyển sang chờ nghiệm thu', 'Hạng mục 100% cần được duyệt trước khi tính là hoàn thành.');

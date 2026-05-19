@@ -74,4 +74,18 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/hd/customer/:id':  'HD',
   '/hd/subcontractor': 'HD',
   '/hd/subcontractor/:id': 'HD',
+
+  // ── ROUTE NHẠY CẢM / MODULE BỔ SUNG ───────────────────
+  '/settings': 'SETTINGS',
+  '/users': 'SETTINGS',
+  '/chat': 'CHAT',
+  '/storage': 'STORAGE',
+  '/knowledge-base': 'KB',
+  '/ai': 'AI',
+  '/ai/executive': 'AI',
+  '/ai/reports': 'AI',
+  '/audit-trail': 'AUDIT_TRAIL',
+  '/analytics': 'ANALYTICS',
+  '/custom-dashboard': 'CUSTOM_DASHBOARD',
+  '/org-map': 'HRM',
 };
