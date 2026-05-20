@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 import {
     ProjectTask, DailyLog, AcceptanceRecord,
     MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor,
-    PurchaseOrder, PaymentSchedule, ProjectBaseline
+    PurchaseOrder, PaymentSchedule, ProjectBaseline, ProjectWorkBoqItem
 } from '../types';
 import { auditService } from './auditService';
 import { dailyLogDetailService } from './dailyLogDetailService';
@@ -130,6 +130,23 @@ export const dailyLogService = {
         });
     },
 
+    async updateStatus(input: {
+        logId: string;
+        status: NonNullable<DailyLog['status']>;
+        requestedVerifierId?: string | null;
+        requestedVerifierName?: string | null;
+        rejectionReason?: string | null;
+    }): Promise<void> {
+        const { error } = await supabase.rpc('transition_daily_log_status', {
+            p_log_id: input.logId,
+            p_status: input.status,
+            p_requested_verifier_id: input.requestedVerifierId || null,
+            p_requested_verifier_name: input.requestedVerifierName || null,
+            p_rejection_reason: input.rejectionReason || null,
+        });
+        if (error) throw error;
+    },
+
     async remove(id: string): Promise<void> {
         const { error } = await supabase
             .from('daily_logs')
@@ -187,6 +204,144 @@ export const boqService = {
             .from('material_budget_items')
             .delete()
             .eq('id', id);
+        if (error) throw error;
+    },
+};
+
+export interface WorkBoqSyncPreview {
+    created: number;
+    updated: number;
+    skipped: number;
+    orphaned: number;
+}
+
+const newId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const normalizeText = (value?: string | null) => (value || '').trim();
+
+const sameWorkBoqMetadata = (a: ProjectWorkBoqItem, b: ProjectWorkBoqItem): boolean =>
+    normalizeText(a.wbsCode) === normalizeText(b.wbsCode) &&
+    normalizeText(a.name) === normalizeText(b.name) &&
+    normalizeText(a.parentId) === normalizeText(b.parentId) &&
+    Number(a.sortOrder || 0) === Number(b.sortOrder || 0) &&
+    a.syncStatus === b.syncStatus;
+
+const buildWorkBoqRowsFromTasks = (
+    projectIdOrSiteId: string,
+    constructionSiteId: string | null | undefined,
+    tasks: ProjectTask[],
+    existingItems: ProjectWorkBoqItem[],
+): { rows: ProjectWorkBoqItem[]; preview: WorkBoqSyncPreview } => {
+    const taskById = new Map(tasks.map(task => [task.id, task]));
+    const existingByTaskId = new Map(
+        existingItems
+            .filter(item => item.sourceTaskId)
+            .map(item => [item.sourceTaskId as string, item])
+    );
+    const idByTaskId = new Map<string, string>();
+    tasks.forEach(task => idByTaskId.set(task.id, existingByTaskId.get(task.id)?.id || newId()));
+
+    const preview: WorkBoqSyncPreview = { created: 0, updated: 0, skipped: 0, orphaned: 0 };
+    const rows: ProjectWorkBoqItem[] = [];
+
+    tasks
+        .slice()
+        .sort((a, b) => (a.order || 0) - (b.order || 0))
+        .forEach((task, index) => {
+            const existing = existingByTaskId.get(task.id);
+            const parentTask = task.parentId ? taskById.get(task.parentId) : undefined;
+            const parentId = parentTask ? idByTaskId.get(parentTask.id) || null : null;
+            const next: ProjectWorkBoqItem = {
+                id: idByTaskId.get(task.id) || newId(),
+                projectId: projectIdOrSiteId,
+                constructionSiteId: constructionSiteId || null,
+                sourceTaskId: task.id,
+                parentId,
+                wbsCode: task.wbsCode || null,
+                name: task.name,
+                unit: existing?.unit ?? task.fallbackUnit ?? '',
+                plannedQty: existing?.plannedQty ?? task.provisionalQuantity ?? 0,
+                unitPrice: existing?.unitPrice ?? 0,
+                totalAmount: (existing?.plannedQty ?? task.provisionalQuantity ?? 0) * (existing?.unitPrice ?? 0),
+                sortOrder: task.order ?? index,
+                syncStatus: 'synced',
+                notes: existing?.notes || null,
+                createdAt: existing?.createdAt,
+            };
+            rows.push(next);
+            if (!existing) preview.created += 1;
+            else if (sameWorkBoqMetadata(existing, next)) preview.skipped += 1;
+            else preview.updated += 1;
+        });
+
+    existingItems
+        .filter(item => item.sourceTaskId && !taskById.has(item.sourceTaskId))
+        .forEach(item => {
+            if (item.syncStatus !== 'orphaned') preview.orphaned += 1;
+            else preview.skipped += 1;
+            rows.push({ ...item, syncStatus: 'orphaned' });
+        });
+
+    return { rows, preview };
+};
+
+const workBoqToDb = (item: ProjectWorkBoqItem): any => {
+    const row = toDb(item);
+    delete row.total_amount;
+    delete row.created_at;
+    delete row.updated_at;
+    return row;
+};
+
+// ==================== WORK BOQ (TỪ TIẾN ĐỘ) ====================
+export const workBoqService = {
+    async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectWorkBoqItem[]> {
+        const { data, error } = await supabase
+            .from('project_work_boq_items')
+            .select('*')
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
+            .order('sort_order', { ascending: true });
+        if (error) throw error;
+        return dedupeRowsById(data || []).map(fromDb);
+    },
+
+    previewSync(tasks: ProjectTask[], existingItems: ProjectWorkBoqItem[]): WorkBoqSyncPreview {
+        return buildWorkBoqRowsFromTasks('', null, tasks, existingItems).preview;
+    },
+
+    async syncFromTasks(
+        projectIdOrSiteId: string,
+        constructionSiteId: string | null | undefined,
+        tasks: ProjectTask[],
+        existingItems: ProjectWorkBoqItem[],
+    ): Promise<WorkBoqSyncPreview> {
+        const { rows, preview } = buildWorkBoqRowsFromTasks(projectIdOrSiteId, constructionSiteId, tasks, existingItems);
+        if (rows.length > 0) {
+            const { error } = await supabase
+                .from('project_work_boq_items')
+                .upsert(rows.map(workBoqToDb), { onConflict: 'id' });
+            if (error) throw error;
+        }
+        return preview;
+    },
+
+    async upsert(item: ProjectWorkBoqItem): Promise<void> {
+        const { error } = await supabase
+            .from('project_work_boq_items')
+            .upsert(workBoqToDb(item), { onConflict: 'id' });
+        if (error) throw error;
+    },
+
+    async upsertMany(items: ProjectWorkBoqItem[]): Promise<void> {
+        if (items.length === 0) return;
+        const { error } = await supabase
+            .from('project_work_boq_items')
+            .upsert(items.map(workBoqToDb), { onConflict: 'id' });
+        if (error) throw error;
+    },
+
+    async remove(id: string): Promise<void> {
+        const { error } = await supabase.from('project_work_boq_items').delete().eq('id', id);
         if (error) throw error;
     },
 };

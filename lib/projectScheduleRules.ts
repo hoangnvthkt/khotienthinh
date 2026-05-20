@@ -1,4 +1,4 @@
-import type { DailyLog, GateStatus, ProjectTask, TaskDependencyType } from '../types';
+import type { DailyLog, GateStatus, ProjectTask, ProjectTaskCompletionRequest, TaskDependencyType } from '../types';
 
 export type ProjectTaskStatus = 'not_started' | 'in_progress' | 'pending_gate' | 'completed' | 'overdue';
 
@@ -110,6 +110,113 @@ export const getGateBlockedTaskIds = (tasks: ProjectTask[]): Set<string> => {
   }
 
   return blocked;
+};
+
+export const deriveProjectTaskProgress = (
+  tasks: ProjectTask[],
+  completionRequests: ProjectTaskCompletionRequest[],
+  dailyLogs: DailyLog[] = [],
+  todayIso = new Date().toISOString().split('T')[0]
+): ProjectTask[] => {
+  const childrenByParent = new Map<string, ProjectTask[]>();
+  for (const task of tasks) {
+    if (!task.parentId) continue;
+    const children = childrenByParent.get(task.parentId) || [];
+    children.push(task);
+    childrenByParent.set(task.parentId, children);
+  }
+
+  const approvedQtyByTask = new Map<string, number>();
+  for (const request of completionRequests) {
+    if (request.status !== 'approved') continue;
+    const acceptedQuantity = Number(request.acceptedQuantity || request.proposedQuantity || 0);
+    approvedQtyByTask.set(request.taskId, (approvedQtyByTask.get(request.taskId) || 0) + Math.max(0, acceptedQuantity));
+  }
+
+  const verifiedDailyQtyByTask = new Map<string, number>();
+  for (const log of dailyLogs) {
+    const verified = log.status === 'verified' || log.verified;
+    if (!verified) continue;
+    for (const volume of log.volumes || []) {
+      if (!volume.taskId) continue;
+      const quantity = Number(volume.quantity || 0);
+      verifiedDailyQtyByTask.set(volume.taskId, (verifiedDailyQtyByTask.get(volume.taskId) || 0) + Math.max(0, quantity));
+    }
+  }
+
+  const taskById = new Map(tasks.map(task => [task.id, task]));
+  const calculated = new Map<string, ProjectTask>();
+
+  const getDerived = (taskId: string): ProjectTask => {
+    if (calculated.has(taskId)) return calculated.get(taskId)!;
+    const source = taskById.get(taskId);
+    if (!source) throw new Error(`Missing task ${taskId}`);
+
+    const children = (childrenByParent.get(taskId) || []).map(child => getDerived(child.id));
+    let next: ProjectTask = { ...source };
+
+    if (children.length > 0) {
+      const allChildrenWeighted = children.every(child => Number(child.provisionalQuantity || 0) > 0);
+      const nextProgress = allChildrenWeighted
+        ? Math.round(children.reduce((sum, child) => sum + clampProgress(child.progress) * Number(child.provisionalQuantity || 0), 0) /
+            children.reduce((sum, child) => sum + Number(child.provisionalQuantity || 0), 0))
+        : Math.round(children.reduce((sum, child) => sum + clampProgress(child.progress), 0) / children.length);
+
+      next = {
+        ...next,
+        progress: clampProgress(nextProgress),
+        progressMode: 'children_auto',
+      };
+    } else if (
+      (next.progressMode === 'daily_log' || verifiedDailyQtyByTask.has(taskId)) &&
+      next.progressMode !== 'completion_request' &&
+      next.progressMode !== 'derived_from_acceptance'
+    ) {
+      const plannedQuantity = Number(next.provisionalQuantity || 0);
+      const verifiedQuantity = verifiedDailyQtyByTask.get(taskId) || 0;
+      const nextProgress = plannedQuantity > 0
+        ? Math.round((verifiedQuantity / plannedQuantity) * 100)
+        : clampProgress(next.progress);
+
+      next = {
+        ...next,
+        progress: plannedQuantity > 0 ? clampProgress(nextProgress) : clampProgress(next.progress),
+        progressMode: 'daily_log',
+      };
+    } else if (next.progressMode === 'completion_request' || approvedQtyByTask.has(taskId)) {
+      const plannedQuantity = Number(next.provisionalQuantity || 0);
+      const approvedQuantity = approvedQtyByTask.get(taskId) || 0;
+      const nextProgress = plannedQuantity > 0
+        ? Math.round((approvedQuantity / plannedQuantity) * 100)
+        : approvedQuantity > 0 ? 100 : 0;
+
+      next = {
+        ...next,
+        progress: clampProgress(nextProgress),
+        progressMode: 'completion_request',
+      };
+    }
+
+    if (next.progress >= 100) {
+      next = {
+        ...next,
+        gateStatus: 'approved',
+        actualEndDate: next.actualEndDate || todayIso,
+      };
+    } else if (next.progressMode === 'children_auto' || next.progressMode === 'completion_request' || next.progressMode === 'daily_log') {
+      next = {
+        ...next,
+        gateStatus: next.gateStatus === 'pending' || next.gateStatus === 'approved' ? 'none' : next.gateStatus,
+        gateApprovedBy: next.gateStatus === 'pending' || next.gateStatus === 'approved' ? undefined : next.gateApprovedBy,
+        gateApprovedAt: next.gateStatus === 'pending' || next.gateStatus === 'approved' ? undefined : next.gateApprovedAt,
+      };
+    }
+
+    calculated.set(taskId, next);
+    return next;
+  };
+
+  return tasks.map(task => getDerived(task.id));
 };
 
 export const applyProgressGateTransition = (task: ProjectTask, progress: number): ProjectTask => {

@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
 import {
@@ -501,6 +502,7 @@ const FileFieldInput: React.FC<{
 };
 
 const WorkflowInstances: React.FC = () => {
+    const location = useLocation();
     const { templates, instances, nodes, edges, logs, createInstance, loadInstanceFormData, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates, updateInstanceWatchers } = useWorkflow();
     const { user, users } = useApp();
     const { celebrate, showToast: celebrationToast } = useCelebration();
@@ -511,7 +513,9 @@ const WorkflowInstances: React.FC = () => {
     const [boardTemplateId, setBoardTemplateId] = useState<string>('');
     const [boardDetailInstanceId, setBoardDetailInstanceId] = useState<string | null>(null);
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const instanceRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const loadedFormDataIdsRef = useRef<Set<string>>(new Set());
+    const targetInstanceId = useMemo(() => new URLSearchParams(location.search).get('instanceId'), [location.search]);
 
     // File preview state
     const [previewFile, setPreviewFile] = useState<any>(null);
@@ -991,6 +995,26 @@ const WorkflowInstances: React.FC = () => {
         }
         return false;
     };
+
+    useEffect(() => {
+        if (!targetInstanceId) return;
+        const target = instances.find(instance => instance.id === targetInstanceId);
+        if (!target) return;
+
+        setViewMode('list');
+        setFilterStatus('ALL');
+        setSearchTerm('');
+        setExpandedId(target.id);
+
+        if (canActOnInstance(target)) setActiveTab('pending');
+        else if (target.watchers?.includes(user.id)) setActiveTab('watching');
+        else setActiveTab('mine');
+
+        ensureInstanceFormData(target).catch(console.error);
+        window.requestAnimationFrame(() => {
+            instanceRefs.current[target.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+    }, [ensureInstanceFormData, instances, targetInstanceId, user.id]);
 
     // Check if current step is the first step and was sent back for revision
     const isRevisionAtFirstStep = (instance: WorkflowInstance): boolean => {
@@ -1612,7 +1636,13 @@ const WorkflowInstances: React.FC = () => {
                     const running = isRunning(instance);
 
                     return (
-                        <div key={instance.id} className="glass-card rounded-2xl overflow-hidden transition-all">
+                        <div
+                            key={instance.id}
+                            ref={el => { instanceRefs.current[instance.id] = el; }}
+                            className={`glass-card rounded-2xl overflow-hidden transition-all ${
+                                targetInstanceId === instance.id ? 'ring-2 ring-amber-400 ring-offset-2' : ''
+                            }`}
+                        >
                             {/* Header Row */}
                             <div
                                 className="p-4 cursor-pointer hover:bg-white/30 dark:hover:bg-slate-700/30 transition"

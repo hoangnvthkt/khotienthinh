@@ -1,12 +1,16 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import AiInsightPanel from '../../components/AiInsightPanel';
-import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight } from 'lucide-react';
-import { DailyLog, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, ContractItem, DailyLogStatus } from '../../types';
+import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight, Loader2, UserCheck } from 'lucide-react';
+import { DailyLog, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, DailyLogStatus, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectTaskCompletionRequest, ProjectStaff, BusinessPartner } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { dailyLogService, taskService } from '../../lib/projectService';
-import { contractItemService } from '../../lib/contractItemService';
+import { contractLaborCatalogService, contractMachineCatalogService } from '../../lib/contractMetadataService';
+import { partnerService } from '../../lib/partnerService';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
 import { notificationService } from '../../lib/notificationService';
+import { taskCompletionRequestService } from '../../lib/projectTaskCompletionService';
+import { deriveProjectTaskProgress } from '../../lib/projectScheduleRules';
 import { useVoiceInput } from '../../hooks/useVoiceInput';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -62,6 +66,18 @@ const shiftMonth = (monthKey: string, delta: number): string => {
 };
 
 const getLogStatus = (log: DailyLog): DailyLogStatus => (log.status || (log.verified ? 'verified' : 'draft')) as DailyLogStatus;
+
+const getWorkerCountFromLabor = (rows: DailyLogLabor[]): number =>
+    rows.reduce((sum, row) => sum + Math.max(0, Number(row.count || 0)), 0);
+
+const uniqueStaffByUser = (rows: ProjectStaff[]): ProjectStaff[] => {
+    const map = new Map<string, ProjectStaff>();
+    rows.forEach(staff => {
+        if (!staff.userId || map.has(staff.userId)) return;
+        map.set(staff.userId, staff);
+    });
+    return [...map.values()];
+};
 
 const buildCalendarCells = (monthKey: string) => {
     const [year, month] = monthKey.split('-').map(Number);
@@ -128,13 +144,28 @@ const VoiceTextarea: React.FC<{
 };
 
 const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId }) => {
+    const location = useLocation();
     const toast = useToast();
     const confirm = useConfirm();
     const { user, users } = useApp();
     const effectiveId = projectId || constructionSiteId || '';
     const [logs, setLogs] = useState<DailyLog[]>([]);
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
-    const [contractItems, setContractItems] = useState<ContractItem[]>([]);
+    const [completionRequests, setCompletionRequests] = useState<ProjectTaskCompletionRequest[]>([]);
+    const [laborCatalogs, setLaborCatalogs] = useState<ContractLaborCatalogItem[]>([]);
+    const [machineCatalogs, setMachineCatalogs] = useState<ContractMachineCatalogItem[]>([]);
+    const [businessPartners, setBusinessPartners] = useState<BusinessPartner[]>([]);
+    const [savingLog, setSavingLog] = useState(false);
+    const savingLogRef = useRef(false);
+    const statusBusyRef = useRef<Set<string>>(new Set());
+    const logRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const [busyLogIds, setBusyLogIds] = useState<Set<string>>(new Set());
+    const [highlightLogId, setHighlightLogId] = useState<string | null>(null);
+    const [submitTarget, setSubmitTarget] = useState<DailyLog | null>(null);
+    const [verifierOptions, setVerifierOptions] = useState<ProjectStaff[]>([]);
+    const [selectedVerifier, setSelectedVerifier] = useState<ProjectStaff | null>(null);
+    const [verifierSearch, setVerifierSearch] = useState('');
+    const [loadingVerifiers, setLoadingVerifiers] = useState(false);
 
     // ── PBAC: Load user permissions ──
     const [userPerms, setUserPerms] = useState<Set<string>>(new Set());
@@ -183,6 +214,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     }, [effectiveId, user?.id, constructionSiteId, projectId]);
 
     const ensureDailyLogPermission = useCallback((code: ProjectPermissionCode, actionLabel: string) => {
+        if (user?.role === 'ADMIN') return true;
         if (!pbacLoaded) {
             toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
             return false;
@@ -192,13 +224,25 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             return false;
         }
         return true;
-    }, [pbacLoaded, toast, userPerms]);
+    }, [pbacLoaded, toast, user?.role, userPerms]);
 
     useEffect(() => {
         if (!effectiveId) return;
-        dailyLogService.list(effectiveId, constructionSiteId || null).then(setLogs).catch(console.error);
-        taskService.list(effectiveId, constructionSiteId || null).then(setTasks).catch(console.error);
-        contractItemService.listBySite(effectiveId, undefined, constructionSiteId || null).then(setContractItems).catch(console.error);
+        Promise.all([
+            dailyLogService.list(effectiveId, constructionSiteId || null),
+            taskService.list(effectiveId, constructionSiteId || null),
+            taskCompletionRequestService.list(effectiveId, constructionSiteId || null),
+            contractLaborCatalogService.list(),
+            contractMachineCatalogService.list(),
+            partnerService.list(),
+        ]).then(([logRows, taskRows, completionRows, laborRows, machineRows, partnerRows]) => {
+            setLogs(logRows);
+            setTasks(deriveProjectTaskProgress(taskRows, completionRows, logRows));
+            setCompletionRequests(completionRows);
+            setLaborCatalogs(laborRows);
+            setMachineCatalogs(machineRows);
+            setBusinessPartners(partnerRows);
+        }).catch(console.error);
     }, [effectiveId, constructionSiteId]);
 
     const [showForm, setShowForm] = useState(false);
@@ -211,7 +255,6 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     // Form state
     const [fDate, setFDate] = useState(new Date().toISOString().split('T')[0]);
     const [fWeather, setFWeather] = useState<WeatherType>('sunny');
-    const [fWorkers, setFWorkers] = useState('');
     const [fDesc, setFDesc] = useState('');
     const [fIssues, setFIssues] = useState('');
 
@@ -230,10 +273,38 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [fLabor, setFLabor] = useState<DailyLogLabor[]>([]);
     const [fMachines, setFMachines] = useState<DailyLogMachine[]>([]);
 
+    const targetDailyLogId = useMemo(() => new URLSearchParams(location.search).get('dailyLogId'), [location.search]);
+
+    const buildDailyLogLink = useCallback((logId: string) => {
+        const params = new URLSearchParams();
+        if (projectId) params.set('projectId', projectId);
+        if (constructionSiteId) params.set('siteId', constructionSiteId);
+        params.set('tab', 'dailylog');
+        params.set('dailyLogId', logId);
+        return `/da?${params.toString()}`;
+    }, [constructionSiteId, projectId]);
+
+    const isAdminUser = user?.role === 'ADMIN';
+
+    const isDailyLogOwner = useCallback((log: DailyLog) => {
+        if (!user?.id) return false;
+        return log.createdById === user.id
+            || log.submittedById === user.id
+            || log.submittedBy === user.id
+            || log.createdBy === user.id
+            || (!!user.name && log.createdBy === user.name);
+    }, [user?.id, user?.name]);
+
+    const canEditDailyLog = useCallback((log: DailyLog) => {
+        if (isAdminUser) return true;
+        return userPerms.has('edit') && isDailyLogOwner(log) && ['draft', 'rejected'].includes(getLogStatus(log));
+    }, [isAdminUser, isDailyLogOwner, userPerms]);
+
     const resetForm = () => {
+        if (savingLogRef.current) return;
         setEditing(null);
         setFDate(new Date().toISOString().split('T')[0]);
-        setFWeather('sunny'); setFWorkers(''); setFDesc(''); setFIssues('');
+        setFWeather('sunny'); setFDesc(''); setFIssues('');
         setGpsCoords(null);
         setFPhotos([]);
         setPhotoRequired(true);
@@ -243,8 +314,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     };
 
     const openEdit = (l: DailyLog) => {
+        if (!canEditDailyLog(l)) {
+            toast.info('Phiếu đã khoá', 'Chỉ người lập được sửa nhật ký ở trạng thái nháp hoặc bị trả lại.');
+            return;
+        }
         setEditing(l);
-        setFDate(l.date); setFWeather(l.weather); setFWorkers(String(l.workerCount));
+        setFDate(l.date); setFWeather(l.weather);
         setFDesc(l.description); setFIssues(l.issues || '');
         setGpsCoords(l.gpsLat && l.gpsLng ? { lat: l.gpsLat, lng: l.gpsLng, accuracy: l.gpsAccuracy || 0 } : null);
         setFPhotos(l.photos || []);
@@ -254,6 +329,20 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setFLabor(l.laborDetails || []); setFMachines(l.machines || []);
         setShowForm(true);
     };
+
+    useEffect(() => {
+        if (!targetDailyLogId || logs.length === 0) return;
+        const target = logs.find(log => log.id === targetDailyLogId);
+        if (!target) return;
+        setViewMode('list');
+        setFilterMonth(target.date.slice(0, 7));
+        setHighlightLogId(targetDailyLogId);
+        window.requestAnimationFrame(() => {
+            logRefs.current[targetDailyLogId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+        const timeout = window.setTimeout(() => setHighlightLogId(null), 5000);
+        return () => window.clearTimeout(timeout);
+    }, [logs, targetDailyLogId]);
 
     const openCreateForDate = (date: string) => {
         resetForm();
@@ -307,17 +396,42 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         }
     };
 
+    const recalculateTaskProgress = useCallback(async (nextLogs: DailyLog[], currentTasks = tasks) => {
+        const derivedTasks = deriveProjectTaskProgress(currentTasks, completionRequests, nextLogs);
+        const changed = derivedTasks.filter(next => {
+            const prev = currentTasks.find(task => task.id === next.id);
+            return !!prev && (
+                prev.progress !== next.progress ||
+                prev.progressMode !== next.progressMode ||
+                prev.gateStatus !== next.gateStatus ||
+                prev.actualEndDate !== next.actualEndDate ||
+                prev.gateApprovedBy !== next.gateApprovedBy ||
+                prev.gateApprovedAt !== next.gateApprovedAt
+            );
+        });
+        if (changed.length > 0) await taskService.upsertMany(changed);
+        setTasks(derivedTasks);
+    }, [completionRequests, tasks]);
+
     const handleSave = async () => {
+        if (savingLogRef.current) return;
         if (!fDate || !fDesc) return;
         if (!ensureDailyLogPermission('edit', editing ? 'cập nhật nhật ký' : 'tạo nhật ký')) return;
+        if (editing && !canEditDailyLog(editing)) {
+            toast.error('Phiếu đã khoá', 'Nhật ký đã gửi đi chỉ được sửa khi bị trả lại.');
+            return;
+        }
         if (photoRequired && fPhotos.length === 0) {
             toast.error('Cần ít nhất 1 ảnh công trường');
             return;
         }
 
+        savingLogRef.current = true;
+        setSavingLog(true);
         try {
+            const workerCount = getWorkerCountFromLabor(fLabor);
 	        const baseItem = {
-	            date: fDate, weather: fWeather, workerCount: Number(fWorkers) || 0,
+	            date: fDate, weather: fWeather, workerCount,
 	            description: fDesc, issues: fIssues || undefined,
 	            gpsLat: gpsCoords?.lat, gpsLng: gpsCoords?.lng, gpsAccuracy: gpsCoords?.accuracy,
 	            photos: fPhotos, photoRequired, delayTasks: fDelayTasks,
@@ -330,70 +444,112 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 	            ...editing, ...baseItem
 	        } : {
 	            id: crypto.randomUUID(), projectId: projectId || constructionSiteId || null, constructionSiteId: constructionSiteId || null, ...baseItem,
-	            createdBy: user?.name || 'admin', createdAt: new Date().toISOString(),
+	            createdBy: user?.name || user?.id || 'admin', createdById: user?.id, createdAt: new Date().toISOString(),
 		    };
 	        await dailyLogService.upsert(item);
-	        setLogs(await dailyLogService.list(effectiveId, constructionSiteId || null));
+	        const nextLogs = await dailyLogService.list(effectiveId, constructionSiteId || null);
+	        setLogs(nextLogs);
+            if (item.status === 'verified' || item.verified) await recalculateTaskProgress(nextLogs);
 	        toast.success(editing ? 'Cập nhật nhật ký' : 'Ghi nhật ký thành công');
 	        resetForm();
         } catch (e: any) {
             toast.error('Lỗi lưu nhật ký', e?.message);
+        } finally {
+            savingLogRef.current = false;
+            setSavingLog(false);
         }
 	    };
 
-	    const handleStatusChange = async (log: DailyLog, status: DailyLogStatus) => {
+        const beginStatusAction = (logId: string) => {
+            if (statusBusyRef.current.has(logId)) return false;
+            statusBusyRef.current.add(logId);
+            setBusyLogIds(new Set(statusBusyRef.current));
+            return true;
+        };
+
+        const endStatusAction = (logId: string) => {
+            statusBusyRef.current.delete(logId);
+            setBusyLogIds(new Set(statusBusyRef.current));
+        };
+
+	    const handleStatusChange = async (log: DailyLog, status: DailyLogStatus, requestedVerifier?: ProjectStaff): Promise<boolean> => {
+            if (!beginStatusAction(log.id)) return false;
 	        // ── PBAC Check ──
 	        const permCode = DAILY_LOG_STATUS_PERMISSION[status];
             if (permCode && !ensureDailyLogPermission(
                 permCode,
                 status === 'submitted' ? 'gửi nhật ký' : status === 'verified' ? 'xác nhận nhật ký' : 'trả lại nhật ký',
-            )) return;
+            )) {
+                endStatusAction(log.id);
+                return false;
+            }
 
             try {
-	            const now = new Date().toISOString();
-	            const updated: DailyLog = {
-	                ...log,
+                if (status === 'submitted') {
+                    if (!requestedVerifier?.userId) {
+                        throw new Error('Vui lòng chọn người xác nhận từ Tổ chức dự án.');
+                    }
+                    if (requestedVerifier.userId === user?.id && !isAdminUser) {
+                        throw new Error('Người xác nhận phải khác người gửi để hệ thống gửi được thông báo.');
+                    }
+                    const permissionCheck = projectId
+                        ? await projectStaffService.checkProjectPermission(requestedVerifier.userId, projectId, 'verify', constructionSiteId)
+                        : constructionSiteId
+                            ? await projectStaffService.checkPermission(requestedVerifier.userId, constructionSiteId, 'verify')
+                            : { allowed: false };
+                    if (!permissionCheck.allowed) {
+                        throw new Error(`${requestedVerifier.userName || 'Người được chọn'} chưa có quyền verify trong Tổ chức dự án.`);
+                    }
+                }
+
+	            await dailyLogService.updateStatus({
+	                logId: log.id,
 	                status,
-	                verified: status === 'verified',
-	                submittedAt: status === 'submitted' ? now : log.submittedAt,
-	                submittedBy: status === 'submitted' ? user?.id : log.submittedBy,
-	                verifiedBy: status === 'verified' ? (user?.name || 'PM/QS') : log.verifiedBy,
-	                rejectedAt: status === 'rejected' ? now : log.rejectedAt,
-	                rejectionReason: status === 'rejected' ? 'Cần bổ sung/kiểm tra lại' : log.rejectionReason,
-	            };
-	            await dailyLogService.upsert(updated);
-	            setLogs(await dailyLogService.list(effectiveId, constructionSiteId || null));
+	                requestedVerifierId: status === 'submitted' ? requestedVerifier?.userId : undefined,
+	                requestedVerifierName: status === 'submitted' ? (requestedVerifier?.userName || requestedVerifier?.userId) : undefined,
+	                rejectionReason: status === 'rejected' ? 'Cần bổ sung/kiểm tra lại' : undefined,
+	            });
+	            const nextLogs = await dailyLogService.list(effectiveId, constructionSiteId || null);
+	            setLogs(nextLogs);
+                if (status === 'verified' || status === 'rejected') await recalculateTaskProgress(nextLogs);
 
             // Notify if submitted
             if (status === 'submitted') {
                 try {
-                    const verifiers = await projectStaffService.listProjectStaffWithPermissions(
-                        projectId,
-                        constructionSiteId,
-                        ['verify'],
-                    );
-                    await notificationService.notifyProjectUsers({
-                        recipientIds: verifiers.map(v => v.userId),
+                    const recipientId = requestedVerifier?.userId;
+                    const notifiedIds = await notificationService.notifyProjectUsers({
+                        recipientIds: [recipientId],
                         actorId: user?.id,
                         type: 'info',
                         category: 'progress',
                         title: '📝 Nhật ký chờ xác nhận',
-                        message: `${user?.name || 'Nhân viên'} đã gửi nhật ký ngày ${new Date(log.date).toLocaleDateString('vi-VN')}`,
+                        message: `${user?.name || 'Nhân viên'} đã gửi nhật ký ngày ${new Date(log.date).toLocaleDateString('vi-VN')} cho bạn xác nhận`,
                         severity: 'info',
                         icon: '📝',
-                        link: '/da',
+                        link: buildDailyLogLink(log.id),
                         sourceType: 'dailylog_submitted',
-                        sourceId: `dailylog_${log.id}`,
+                        sourceId: `dailylog_submitted_${log.id}_${recipientId}_${Date.now()}`,
                         constructionSiteId: constructionSiteId || undefined,
-                        metadata: { logId: log.id, date: log.date, projectId, submittedBy: user?.name },
+                        metadata: {
+                            logId: log.id,
+                            date: log.date,
+                            projectId,
+                            constructionSiteId,
+                            submittedBy: user?.name,
+                            requestedVerifierId: recipientId,
+                            requestedVerifierName: requestedVerifier?.userName,
+                        },
                     });
+                    if (recipientId !== user?.id && (!recipientId || !notifiedIds.includes(recipientId))) {
+                        throw new Error('Không tạo được thông báo cho người xác nhận đã chọn.');
+                    }
                 } catch (err) {
-                    console.error('Failed to notify verifiers:', err);
+                    throw err;
                 }
             }
 
             if (status === 'verified' || status === 'rejected') {
-                const ownerId = log.submittedBy ||
+                const ownerId = log.submittedById || log.submittedBy || log.createdById ||
                     (users.some(u => u.id === log.createdBy) ? log.createdBy : users.find(u => u.name === log.createdBy)?.id);
                 if (ownerId) {
                     await notificationService.notifyProjectUsers({
@@ -405,11 +561,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         message: `Nhật ký ngày ${new Date(log.date).toLocaleDateString('vi-VN')} ${status === 'verified' ? 'đã được xác nhận' : 'đã bị trả lại'}`,
                         severity: status === 'verified' ? 'info' : 'warning',
                         icon: status === 'verified' ? '✅' : '↩',
-                        link: '/da',
+                        link: buildDailyLogLink(log.id),
                         sourceType: `dailylog_${status}`,
                         sourceId: `dailylog_${status}_${log.id}_${Date.now()}`,
                         constructionSiteId: constructionSiteId || undefined,
-                        metadata: { logId: log.id, date: log.date, projectId },
+                        metadata: { logId: log.id, date: log.date, projectId, constructionSiteId },
                     });
                 }
             }
@@ -419,19 +575,87 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 	            status === 'verified' ? 'Đã xác nhận nhật ký' :
 	            status === 'rejected' ? 'Đã trả lại nhật ký' : 'Đã cập nhật trạng thái'
 	        );
+            return true;
             } catch (e: any) {
                 toast.error('Lỗi cập nhật trạng thái', e?.message);
+                return false;
+            } finally {
+                endStatusAction(log.id);
             }
 	    };
+
+    const filteredVerifierOptions = useMemo(() => {
+        const keyword = verifierSearch.trim().toLowerCase();
+        if (!keyword) return verifierOptions;
+        return verifierOptions.filter(staff =>
+            [staff.userName, staff.positionName, staff.userId]
+                .some(value => (value || '').toLowerCase().includes(keyword))
+        );
+    }, [verifierOptions, verifierSearch]);
+
+    const openSubmitVerifierPicker = async (log: DailyLog) => {
+        if (!ensureDailyLogPermission('submit', 'gửi nhật ký')) return;
+        if (!canEditDailyLog(log)) {
+            toast.error('Phiếu đã khoá', 'Chỉ người lập được gửi lại nhật ký nháp hoặc bị trả lại.');
+            return;
+        }
+        setSubmitTarget(log);
+        setVerifierSearch('');
+        setSelectedVerifier(null);
+        setVerifierOptions([]);
+        setLoadingVerifiers(true);
+        try {
+            const rows = await projectStaffService.listProjectStaffWithPermissions(projectId, constructionSiteId, ['verify']);
+            const options = uniqueStaffByUser(rows)
+                .filter(staff => isAdminUser || staff.userId !== user?.id)
+                .sort((a, b) =>
+                    (a.positionLevel || 99) - (b.positionLevel || 99)
+                    || (a.userName || '').localeCompare(b.userName || '', 'vi')
+                );
+            setVerifierOptions(options);
+            if (options.length === 0) {
+                toast.warning('Chưa có người xác nhận phù hợp', 'Tổ chức dự án chưa có người khác bạn được cấp quyền verify.');
+            }
+        } catch (error: any) {
+            toast.error('Không thể tải người xác nhận', error?.message || 'Vui lòng kiểm tra Tổ chức dự án.');
+            setSubmitTarget(null);
+        } finally {
+            setLoadingVerifiers(false);
+        }
+    };
+
+    const closeSubmitVerifierPicker = () => {
+        if (submitTarget && busyLogIds.has(submitTarget.id)) return;
+        setSubmitTarget(null);
+        setVerifierOptions([]);
+        setSelectedVerifier(null);
+        setVerifierSearch('');
+    };
+
+    const confirmSubmitWithVerifier = async () => {
+        if (!submitTarget) return;
+        if (!selectedVerifier) {
+            toast.warning('Chọn người xác nhận', 'Vui lòng chọn một người có quyền verify trong Tổ chức dự án.');
+            return;
+        }
+        const ok = await handleStatusChange(submitTarget, 'submitted', selectedVerifier);
+        if (ok) closeSubmitVerifierPicker();
+    };
 
     const handleDelete = async (id: string) => {
         if (!ensureDailyLogPermission('edit', 'xoá nhật ký')) return;
         const log = logs.find(l => l.id === id);
+        if (log && !canEditDailyLog(log)) {
+            toast.error('Phiếu đã khoá', 'Chỉ người lập được xoá nhật ký ở trạng thái nháp hoặc bị trả lại.');
+            return;
+        }
         const ok = await confirm({ targetName: log ? new Date(log.date).toLocaleDateString('vi-VN') : 'nhật ký này', title: 'Xoá nhật ký công trường' });
         if (!ok) return;
         try {
             await dailyLogService.remove(id);
-            setLogs(await dailyLogService.list(effectiveId, constructionSiteId || null));
+            const nextLogs = await dailyLogService.list(effectiveId, constructionSiteId || null);
+            setLogs(nextLogs);
+            if (log && getLogStatus(log) === 'verified') await recalculateTaskProgress(nextLogs);
             toast.success('Xoá nhật ký thành công');
         } catch (e: any) {
             toast.error('Lỗi xoá', e?.message);
@@ -472,6 +696,19 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         }
         return map;
     }, [logs]);
+
+    const verifiedQuantityByTaskId = useMemo(() => {
+        const totals: Record<string, number> = {};
+        logs.forEach(log => {
+            if (editing && log.id === editing.id) return;
+            if (getLogStatus(log) !== 'verified' && !log.verified) return;
+            (log.volumes || []).forEach(volume => {
+                if (!volume.taskId) return;
+                totals[volume.taskId] = (totals[volume.taskId] || 0) + Math.max(0, Number(volume.quantity || 0));
+            });
+        });
+        return totals;
+    }, [editing, logs]);
 
     const calendarCells = useMemo(() => buildCalendarCells(calendarMonth), [calendarMonth]);
     const calendarTitle = useMemo(() => {
@@ -555,7 +792,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             </select>
                         )}
                         <button onClick={() => { resetForm(); setShowForm(true); }}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-teal-600 bg-teal-50 border border-teal-200 hover:bg-teal-100 transition-all">
+                            disabled={pbacLoaded && !userPerms.has('edit') && !isAdminUser}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-teal-600 bg-teal-50 border border-teal-200 hover:bg-teal-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                             <Plus size={12} /> Ghi nhật ký
                         </button>
                     </div>
@@ -617,8 +855,19 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 	                            const w = WEATHER[l.weather];
 	                            const status = (l.status || (l.verified ? 'verified' : 'draft')) as DailyLogStatus;
 	                            const statusCfg = STATUS_CFG[status];
+                                const busy = busyLogIds.has(l.id);
+                                const canReviewSubmitted = status === 'submitted'
+                                    && (isAdminUser || userPerms.has('verify'))
+                                    && (!l.requestedVerifierId || l.requestedVerifierId === user?.id);
+                                const canEditCurrentLog = canEditDailyLog(l);
 	                            return (
-	                                <div key={l.id} className="px-5 py-4 hover:bg-slate-50/50 transition-colors group">
+	                                <div
+                                        key={l.id}
+                                        ref={el => { logRefs.current[l.id] = el; }}
+                                        className={`px-5 py-4 hover:bg-slate-50/50 transition-colors group ${
+                                            highlightLogId === l.id ? 'bg-amber-50/80 ring-2 ring-amber-300 ring-inset' : ''
+                                        }`}
+                                    >
 	                                    <div className="flex items-start justify-between gap-3">
                                         <div className="flex items-start gap-3 flex-1 min-w-0">
                                             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-50 to-cyan-50 border border-teal-100 flex flex-col items-center justify-center shrink-0">
@@ -633,6 +882,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 	                                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${statusCfg.cls}`}>{statusCfg.label}</span>
 	                                                </div>
                                                 <p className="text-xs text-slate-600 leading-relaxed">{l.description}</p>
+                                                {status === 'submitted' && l.requestedVerifierName && (
+                                                    <div className="mt-1 text-[10px] font-bold text-amber-600 flex items-center gap-1">
+                                                        <UserCheck size={11} /> Chờ {l.requestedVerifierName} xác nhận
+                                                    </div>
+                                                )}
                                                 {l.issues && (
                                                     <div className="mt-1.5 flex items-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-50 border border-red-100">
                                                         <AlertTriangle size={12} className="text-red-400 shrink-0 mt-0.5" />
@@ -642,17 +896,27 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                             </div>
                                         </div>
 	                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-	                                            {status === 'draft' && userPerms.has('submit') && (
-	                                                <button onClick={() => handleStatusChange(l, 'submitted')} title="Gửi xác nhận" className="w-7 h-7 rounded-lg flex items-center justify-center text-amber-400 hover:text-amber-600 hover:bg-amber-50"><Send size={13} /></button>
+	                                            {['draft', 'rejected'].includes(status) && canEditCurrentLog && (isAdminUser || userPerms.has('submit')) && (
+	                                                <button disabled={busy} onClick={() => openSubmitVerifierPicker(l)} title="Gửi xác nhận" className="w-7 h-7 rounded-lg flex items-center justify-center text-amber-400 hover:text-amber-600 hover:bg-amber-50 disabled:opacity-50">
+                                                        {busy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                                                    </button>
 	                                            )}
-	                                            {status === 'submitted' && userPerms.has('verify') && (
-	                                                <button onClick={() => handleStatusChange(l, 'verified')} title="Xác nhận" className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50"><CheckCircle2 size={13} /></button>
+	                                            {canReviewSubmitted && (
+	                                                <button disabled={busy} onClick={() => handleStatusChange(l, 'verified')} title="Xác nhận" className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50 disabled:opacity-50">
+                                                        {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+                                                    </button>
 	                                            )}
-		                                            {status === 'submitted' && userPerms.has('verify') && (
-	                                                <button onClick={() => handleStatusChange(l, 'rejected')} title="Trả lại" className="w-7 h-7 rounded-lg flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50"><RotateCcw size={13} /></button>
+		                                            {canReviewSubmitted && (
+	                                                <button disabled={busy} onClick={() => handleStatusChange(l, 'rejected')} title="Trả lại" className="w-7 h-7 rounded-lg flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-50">
+                                                        {busy ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+                                                    </button>
 	                                            )}
-	                                            <button onClick={() => openEdit(l)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50"><Edit2 size={13} /></button>
-	                                            <button onClick={() => handleDelete(l.id)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={13} /></button>
+	                                            {canEditCurrentLog && (
+                                                    <>
+                                                        <button onClick={() => openEdit(l)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50"><Edit2 size={13} /></button>
+                                                        <button onClick={() => handleDelete(l.id)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={13} /></button>
+                                                    </>
+                                                )}
 	                                        </div>
                                     </div>
                                 </div>
@@ -661,6 +925,76 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     </div>
                 )}
             </div>
+
+            {submitTarget && (
+                <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/30 backdrop-blur-sm px-4" onClick={e => e.target === e.currentTarget && closeSubmitVerifierPicker()}>
+                    <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-100 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                            <div>
+                                <p className="text-sm font-black text-slate-800 flex items-center gap-2">
+                                    <UserCheck size={16} className="text-amber-500" /> Chọn người xác nhận
+                                </p>
+                                <p className="text-[10px] font-bold text-slate-400">Nguồn dữ liệu: Dự án &gt; Tổ chức, chỉ hiện người có quyền verify.</p>
+                            </div>
+                            <button onClick={closeSubmitVerifierPicker} disabled={busyLogIds.has(submitTarget.id)}
+                                className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors disabled:opacity-50">
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-3">
+                            <input
+                                value={verifierSearch}
+                                onChange={e => setVerifierSearch(e.target.value)}
+                                placeholder="Gõ tên, chức danh hoặc mã người dùng..."
+                                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-amber-400"
+                                autoFocus
+                            />
+                            <div className="max-h-[320px] overflow-y-auto rounded-2xl border border-slate-100">
+                                {loadingVerifiers ? (
+                                    <div className="p-8 text-center text-xs font-bold text-slate-400">
+                                        <Loader2 size={16} className="inline animate-spin mr-2" />Đang tải Tổ chức dự án...
+                                    </div>
+                                ) : filteredVerifierOptions.length === 0 ? (
+                                    <div className="p-8 text-center text-xs font-bold text-slate-400">
+                                        Không có người xác nhận phù hợp.
+                                    </div>
+                                ) : filteredVerifierOptions.map(staff => {
+                                    const selected = selectedVerifier?.userId === staff.userId;
+                                    return (
+                                        <button
+                                            key={staff.userId}
+                                            type="button"
+                                            onClick={() => setSelectedVerifier(staff)}
+                                            className={`w-full px-4 py-3 text-left border-b border-slate-100 last:border-b-0 transition-colors ${
+                                                selected ? 'bg-amber-50' : 'hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="text-sm font-black text-slate-800 truncate">{staff.userName || staff.userId}</div>
+                                                    <div className="text-[11px] font-bold text-slate-400 truncate">{staff.positionName || 'Thành viên dự án'} • quyền verify</div>
+                                                </div>
+                                                {selected && <CheckCircle2 size={16} className="text-amber-500 shrink-0" />}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-3">
+                            <button onClick={closeSubmitVerifierPicker} disabled={busyLogIds.has(submitTarget.id)}
+                                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50">
+                                Huỷ
+                            </button>
+                            <button onClick={confirmSubmitWithVerifier} disabled={!selectedVerifier || loadingVerifiers || busyLogIds.has(submitTarget.id)}
+                                className="px-5 py-2 rounded-xl text-sm font-bold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 flex items-center gap-2">
+                                {busyLogIds.has(submitTarget.id) ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                                Gửi xác nhận
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {dayLogPicker && (
                 <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/30 backdrop-blur-sm px-4" onClick={e => e.target === e.currentTarget && setDayLogPicker(null)}>
@@ -705,12 +1039,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             {/* Form Modal */}
             {showForm && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg mx-4 max-h-[92vh] flex flex-col">
+                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-[95vw] h-[90vh] sm:w-[80vw] sm:h-[80vh] max-w-[1280px] min-w-[320px] flex flex-col">
                         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-t-3xl flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editing ? <><Edit2 size={18} /> Sửa nhật ký</> : <><Plus size={18} /> Ghi nhật ký</>}
                             </span>
-                            <button onClick={resetForm} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><X size={18} /></button>
+                            <button onClick={resetForm} disabled={savingLog} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center disabled:opacity-50"><X size={18} /></button>
                         </div>
                         <div className="p-6 space-y-4 overflow-y-auto flex-1">
                             <div className="grid grid-cols-2 gap-3">
@@ -720,9 +1054,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-teal-500 outline-none" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Số công nhân</label>
-                                    <input type="number" value={fWorkers} onChange={e => setFWorkers(e.target.value)} placeholder="0"
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-teal-500 outline-none" />
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nhân công</label>
+                                    <div className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-black text-slate-700">
+                                        {getWorkerCountFromLabor(fLabor)} người
+                                    </div>
+                                    <p className="mt-1 text-[10px] font-medium text-slate-400">Tự cộng từ Chi tiết thi công &gt; Nhân công.</p>
                                 </div>
                             </div>
                             <div>
@@ -877,14 +1213,18 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 laborDetails={fLabor} machines={fMachines}
                                 onVolumesChange={setFVolumes} onMaterialsChange={setFMaterials}
                                 onLaborChange={setFLabor} onMachinesChange={setFMachines}
-                                contractItems={contractItems}
+                                tasks={tasks}
+                                laborCatalogs={laborCatalogs}
+                                machineCatalogs={machineCatalogs}
+                                businessPartners={businessPartners}
+                                verifiedQuantityByTaskId={verifiedQuantityByTaskId}
                             />
                         </div>
                         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
-                            <button onClick={resetForm} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Huỷ</button>
-                            <button onClick={handleSave} disabled={!fDate || !fDesc || (photoRequired && fPhotos.length === 0)}
+                            <button onClick={resetForm} disabled={savingLog} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50">Huỷ</button>
+                            <button onClick={handleSave} disabled={savingLog || !fDate || !fDesc || (photoRequired && fPhotos.length === 0)}
                                 className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-teal-500 to-cyan-500 shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50">
-                                <Save size={16} /> {editing ? 'Lưu' : 'Ghi nhật ký'}
+                                {savingLog ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {savingLog ? 'Đang lưu...' : editing ? 'Lưu' : 'Ghi nhật ký'}
                             </button>
                         </div>
                     </div>

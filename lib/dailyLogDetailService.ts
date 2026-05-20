@@ -23,11 +23,27 @@ const emptyDetails = (): DailyLogDetails => ({
   machines: [],
 });
 
+const emptyToNullKeys = new Set([
+  'contract_item_id',
+  'task_id',
+  'material_id',
+  'catalog_item_id',
+  'partner_id',
+]);
+
+const sanitizeDetailRow = (row: Record<string, any>) => {
+  const next = { ...row };
+  for (const key of emptyToNullKeys) {
+    if (next[key] === '') next[key] = null;
+  }
+  return next;
+};
+
 const attachMeta = (items: any[], dailyLogId: string, projectId: string | null, constructionSiteId: string | null) =>
   items.map((item, sourceIndex) => {
     const row = toDb({ ...item, dailyLogId, projectId, constructionSiteId, sourceIndex });
     delete row.id;
-    return row;
+    return sanitizeDetailRow(row);
   });
 
 async function replaceTable(table: DetailTable, dailyLogId: string, rows: any[]): Promise<void> {
@@ -81,6 +97,7 @@ export const dailyLogDetailService = {
       ]);
     } catch (error: any) {
       console.warn('Cannot write normalized daily log details yet; JSONB copy remains available', error?.message || error);
+      throw error;
     }
   },
 };

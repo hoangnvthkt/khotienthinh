@@ -3,7 +3,9 @@ import {
     Bell, X, Check, CheckCheck, Trash2, AlertTriangle, Info, CheckCircle2, XCircle,
     RefreshCw, ChevronDown, ExternalLink, Clock
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { notificationService, AppNotification, NOTIFICATION_CATEGORIES } from '../lib/notificationService';
+import { resolveNotificationPath, toHashRoute } from '../lib/notificationRoutes';
 import { webPushService } from '../lib/webPushService';
 
 interface NotificationCenterProps {
@@ -24,6 +26,7 @@ const TYPE_ICONS = {
 };
 
 const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
+    const navigate = useNavigate();
     const [notifications, setNotifications] = useState<AppNotification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [isOpen, setIsOpen] = useState(false);
@@ -64,7 +67,11 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
                 });
                 browserNotif.onclick = () => {
                     window.focus();
-                    if (n.link) window.location.hash = n.link;
+                    const target = resolveNotificationPath(n);
+                    if (target) {
+                        if (/^https?:\/\//i.test(target)) window.open(target, '_blank', 'noopener,noreferrer');
+                        else window.location.hash = toHashRoute(target);
+                    }
                     browserNotif.close();
                 };
             }
@@ -165,6 +172,19 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
         await notificationService.dismissAll(userId);
         setNotifications([]);
         setUnreadCount(0);
+    };
+
+    const handleNotificationClick = async (n: AppNotification) => {
+        if (!n.isRead) {
+            await handleMarkRead(n.id);
+        }
+
+        const target = resolveNotificationPath(n);
+        if (target) {
+            setIsOpen(false);
+            if (/^https?:\/\//i.test(target)) window.open(target, '_blank', 'noopener,noreferrer');
+            else navigate(target);
+        }
     };
 
     const handleRunChecks = async () => {
@@ -295,7 +315,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
                                         <div
                                             key={n.id}
                                             className={`relative group px-4 py-3 transition-all cursor-pointer border-l-[3px] ${severity.border} ${!n.isRead ? severity.bg : 'hover:bg-slate-50/50 dark:hover:bg-slate-700/20'}`}
-                                            onClick={() => !n.isRead && handleMarkRead(n.id)}
+                                            onClick={() => handleNotificationClick(n)}
                                         >
                                             <div className="flex items-start gap-2.5">
                                                 {/* Icon */}

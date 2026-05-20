@@ -1,5 +1,6 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useRequest } from '../../context/RequestContext';
 import { useApp } from '../../context/AppContext';
 import { RQStatus, RQPriority, Role, RequestInstance, WorkflowCustomField, RequestApprover, RequestPrintTemplate } from '../../types';
@@ -116,6 +117,7 @@ const ApprovalProgress: React.FC<{ approvers: RequestApprover[]; users: any[] }>
 };
 
 const RequestList: React.FC = () => {
+    const location = useLocation();
     const { categories, requests, createRequest, updateRequest, deleteRequest,
         approveRequest, rejectRequest, completeRequest, cancelRequest,
         getRequestLogs, getCurrentApproverStep, getRQPrintTemplates } = useRequest();
@@ -128,6 +130,7 @@ const RequestList: React.FC = () => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
     const [boardSelectedId, setBoardSelectedId] = useState<string | null>(null);
+    const requestRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
     // Batch operations
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -167,6 +170,27 @@ const RequestList: React.FC = () => {
         const currentStep = getCurrentApproverStep(r);
         return currentStep ? currentStep.userId === user.id : false;
     };
+
+    const targetRequestId = useMemo(() => new URLSearchParams(location.search).get('requestId'), [location.search]);
+
+    useEffect(() => {
+        if (!targetRequestId) return;
+        const target = requests.find(request => request.id === targetRequestId);
+        if (!target) return;
+
+        setViewMode('list');
+        setFilterStatus('ALL');
+        setSearchTerm('');
+        setExpandedId(target.id);
+
+        if (canApprove(target)) setActiveTab('pending');
+        else if (target.createdBy === user.id) setActiveTab('mine');
+        else if (user.role === Role.ADMIN) setActiveTab('all');
+
+        window.requestAnimationFrame(() => {
+            requestRefs.current[target.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+    }, [requests, targetRequestId, user.id, user.role]);
 
     const filteredRequests = useMemo(() => {
         let list = requests;
@@ -744,7 +768,13 @@ const RequestList: React.FC = () => {
                     const reqLogs = getRequestLogs(req.id);
 
                     return (
-                        <div key={req.id} className={`glass-card rounded-2xl overflow-hidden transition-all hover:shadow-md ${selectedIds.has(req.id) ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}`}>
+                        <div
+                            key={req.id}
+                            ref={el => { requestRefs.current[req.id] = el; }}
+                            className={`glass-card rounded-2xl overflow-hidden transition-all hover:shadow-md ${
+                                targetRequestId === req.id ? 'ring-2 ring-amber-400 ring-offset-2' : selectedIds.has(req.id) ? 'ring-2 ring-indigo-400 ring-offset-1' : ''
+                            }`}
+                        >
                             {/* Card Header */}
                             <div className="flex items-center gap-4 px-5 py-4 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : req.id)}>
                                 {/* Batch Checkbox */}

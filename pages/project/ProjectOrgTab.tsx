@@ -8,6 +8,8 @@ import { projectStaffService, projectPermissionTypeService } from '../../lib/pro
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { supabase } from '../../lib/supabase';
+import { fromDb } from '../../lib/dbMapping';
 
 interface Props {
   projectId: string;
@@ -40,6 +42,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
 
   const [staff, setStaff] = useState<ProjectStaff[]>([]);
   const [permTypes, setPermTypes] = useState<ProjectPermissionType[]>([]);
+  const [positions, setPositions] = useState<HrmPosition[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingStaff, setEditingStaff] = useState<ProjectStaff | null>(null);
@@ -61,12 +64,20 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
       ]);
       setStaff(staffData);
       setPermTypes(permData.filter(p => p.isActive));
+      const { data: positionRows, error: positionError } = await supabase
+        .from('hrm_positions')
+        .select('*')
+        .order('level', { ascending: true })
+        .order('name', { ascending: true });
+      if (positionError) throw positionError;
+      setPositions((positionRows || []).map(row => fromDb(row) as HrmPosition));
     } catch (e: any) {
       toast.error('Lỗi tải dữ liệu', e?.message);
+      setPositions(prev => prev.length > 0 ? prev : hrmPositions);
     } finally {
       setLoading(false);
     }
-  }, [projectId, constructionSiteId]);
+  }, [projectId, constructionSiteId, hrmPositions, toast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -83,8 +94,9 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
 
   // Sorted positions for dropdown
   const sortedPositions = useMemo(() =>
-    [...hrmPositions].sort((a, b) => (a.level || 0) - (b.level || 0)),
-  [hrmPositions]);
+    [...(positions.length > 0 ? positions : hrmPositions)].sort((a, b) =>
+      (a.level || 0) - (b.level || 0) || a.name.localeCompare(b.name, 'vi')),
+  [hrmPositions, positions]);
 
   // Filter users for search
   const filteredUsers = useMemo(() => {
@@ -407,6 +419,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
                     </option>
                   ))}
                 </select>
+                <p className="mt-1 text-[10px] font-medium text-slate-400">Lấy từ Dữ liệu gốc HRM &gt; Vị trí công việc.</p>
               </div>
 
               {/* Start Date + Note */}

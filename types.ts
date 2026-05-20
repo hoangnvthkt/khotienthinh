@@ -416,7 +416,8 @@ export interface ProjectContract {
 
 // ==================== TIẾN ĐỘ (Gantt) ====================
 export type TaskDependencyType = 'FS' | 'SS' | 'FF' | 'SF';
-export type ProjectTaskProgressMode = 'manual' | 'derived_from_acceptance';
+export type ProjectTaskProgressMode = 'manual' | 'derived_from_acceptance' | 'completion_request' | 'daily_log' | 'children_auto';
+export type ProjectTaskCompletionStatus = 'submitted' | 'verified' | 'approved' | 'returned' | 'cancelled';
 
 export type DelayCategory = 'material' | 'weather' | 'drawing' | 'labor' | 'other';
 export type ResourceType = 'worker' | 'machine' | 'specialist';
@@ -467,6 +468,7 @@ export interface ProjectTask {
   // WBS & đơn vị
   wbsCode?: string;           // Mã WBS: "1.1.3"
   fallbackUnit?: string;      // Đơn vị tính fallback (khi chưa liên kết BOQ)
+  provisionalQuantity?: number; // Khối lượng tạm tính nội bộ cho tiến độ/BOQ triển khai
   watchers?: string[];        // User IDs theo dõi hạng mục
   // FastCons: BOQ Integration — DEPRECATED, dùng task_contract_items thay thế
   // Xem taskContractItemService.ts + TaskContractItem type
@@ -484,6 +486,52 @@ export interface ProjectTask {
   completedQuantity?: number; // KL hoàn thành thực tế (cộng dồn từ nhật ký)
   contractItemId?: string;    // FK → ContractItem.id (liên kết hạng mục HĐ)
 
+}
+
+export interface ProjectTaskCompletionRequest {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  taskId: string;
+  status: ProjectTaskCompletionStatus;
+  proposedQuantity: number;
+  acceptedQuantity: number;
+  note?: string | null;
+  returnReason?: string | null;
+  attachments: Attachment[];
+  submittedBy?: string | null;
+  submittedAt: string;
+  verifiedBy?: string | null;
+  verifiedAt?: string | null;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  returnedBy?: string | null;
+  returnedAt?: string | null;
+  cancelledBy?: string | null;
+  cancelledAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ProjectWorkBoqSyncStatus = 'synced' | 'manual' | 'orphaned';
+
+export interface ProjectWorkBoqItem {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  sourceTaskId?: string | null;
+  parentId?: string | null;
+  wbsCode?: string | null;
+  name: string;
+  unit: string;
+  plannedQty: number;
+  unitPrice: number;
+  totalAmount?: number;
+  sortOrder: number;
+  syncStatus: ProjectWorkBoqSyncStatus;
+  notes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface TaskContractItem {
@@ -525,10 +573,12 @@ export interface DailyLogVolume {
   contractItemId: string;     // FK → ContractItem hoặc ProjectTask
   contractItemName?: string;  // Cache tên hạng mục
   taskId?: string;            // FK → ProjectTask (nếu liên kết Gantt)
+  taskName?: string;          // Cache tên hạng mục tiến độ
   quantity: number;           // KL thực hiện trong ngày
   unit: string;               // Đơn vị tính
   note?: string;
   photoUrl?: string;
+  attachments?: Attachment[]; // Bằng chứng khối lượng trong nhật ký
 }
 
 export interface DailyLogMaterial {
@@ -549,7 +599,15 @@ export const LABOR_TYPE_LABELS: Record<LaborType, string> = {
 };
 
 export interface DailyLogLabor {
-  laborType: LaborType;
+  laborType: LaborType | string;
+  catalogItemId?: string;
+  catalogCode?: string;
+  catalogName?: string;
+  groupName?: string;
+  partnerId?: string;
+  partnerName?: string;
+  taskId?: string;
+  taskName?: string;
   count: number;              // Số lượng
   hours?: number;             // Giờ làm (default 8)
   unitCost?: number;          // Đơn giá / ngày
@@ -570,7 +628,13 @@ export const MACHINE_TYPE_LABELS: Record<MachineType, string> = {
 
 export interface DailyLogMachine {
   machineName: string;        // Tên máy cụ thể
-  machineType: MachineType;
+  machineType: MachineType | string;
+  catalogItemId?: string;
+  catalogCode?: string;
+  catalogName?: string;
+  groupName?: string;
+  taskId?: string;
+  taskName?: string;
   shifts: number;             // Số ca (0.5, 1, 1.5, 2)
   unitCost?: number;          // Đơn giá / ca
   totalCost?: number;         // Auto = shifts × unitCost
@@ -594,13 +658,21 @@ export interface DailyLog {
   photoRequired?: boolean;
   verified?: boolean;
   verifiedBy?: string;
+  verifiedById?: string;
+  verifiedAt?: string;
   status?: DailyLogStatus;
   submittedBy?: string;
+  submittedById?: string;
   submittedAt?: string;
+  submittedToUserId?: string;
+  requestedVerifierId?: string;
+  requestedVerifierName?: string;
   rejectedBy?: string;
+  rejectedById?: string;
   rejectedAt?: string;
   rejectionReason?: string;
   createdBy: string;
+  createdById?: string;
   createdAt: string;
   // FastCons: Chi tiết nhật ký gộp
   volumes?: DailyLogVolume[];      // Khối lượng thi công theo hạng mục
@@ -974,6 +1046,7 @@ export interface MaterialBudgetItem {
   id: string;
   projectId?: string | null;
   constructionSiteId?: string | null;
+  workBoqItemId?: string | null;  // Link toi dau muc BOQ trien khai
   inventoryItemId?: string;       // Link tới InventoryItem.id trong module Kho
   materialCode?: string;        // Mã vật tư chuẩn: VT_CT_1-Thep_phi22
   category: string;             // Nhóm: Xi măng, Thép, Cát...
@@ -994,6 +1067,7 @@ export interface MaterialBudgetItem {
   stockBalance?: number;        // Tồn kho = Nhập - Xuất
   budgetOverPercent?: number;   // % vượt ngân sách = (LK_YC - NS) / NS * 100
   autoAlert?: string;           // Cảnh báo tự động
+  sortOrder?: number;
   notes?: string;
 }
 
@@ -2173,6 +2247,8 @@ export interface ContractLaborCatalogItem {
   code: string;
   name: string;
   groupName?: string;
+  partnerId?: string;
+  partnerName?: string;
   unit?: string;
   status: ContractCatalogStatus;
   note?: string;

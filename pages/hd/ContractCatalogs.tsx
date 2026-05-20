@@ -22,6 +22,7 @@ import {
   ContractMachineCatalogItem,
   ContractMaterialNormItem,
   ContractServiceCatalogItem,
+  BusinessPartner,
   InventoryItem,
 } from '../../types';
 import {
@@ -32,6 +33,7 @@ import {
   contractMaterialNormService,
   contractServiceCatalogService,
 } from '../../lib/contractMetadataService';
+import { partnerService } from '../../lib/partnerService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
@@ -197,6 +199,7 @@ const ContractCatalogs: React.FC = () => {
   const [materialNorms, setMaterialNorms] = useState<ContractMaterialNormItem[]>([]);
   const [costItems, setCostItems] = useState<ContractCostItem[]>([]);
   const [materials, setMaterials] = useState<InventoryItem[]>([]);
+  const [contractorPartners, setContractorPartners] = useState<BusinessPartner[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [simpleForm, setSimpleForm] = useState<SimpleCatalogItem | null>(null);
@@ -207,13 +210,14 @@ const ContractCatalogs: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [serviceRows, laborRows, machineRows, normRows, costRows, materialRows] = await Promise.all([
+      const [serviceRows, laborRows, machineRows, normRows, costRows, materialRows, partnerRows] = await Promise.all([
         contractServiceCatalogService.list(),
         contractLaborCatalogService.list(),
         contractMachineCatalogService.list(),
         contractMaterialNormService.list(),
         contractCostItemService.list(),
         contractCatalogInventoryService.listMaterials(),
+        partnerService.list(),
       ]);
       setServices(serviceRows);
       setLabor(laborRows);
@@ -221,6 +225,7 @@ const ContractCatalogs: React.FC = () => {
       setMaterialNorms(normRows);
       setCostItems(costRows);
       setMaterials(materialRows);
+      setContractorPartners(partnerRows);
     } catch (error) {
       logApiError('contractCatalogs.load', error);
       toast.error('Không thể tải danh mục', getApiErrorMessage(error, 'Không thể tải dữ liệu danh mục hợp đồng.'));
@@ -241,8 +246,10 @@ const ContractCatalogs: React.FC = () => {
 
   const groupOptions = useMemo(() => {
     const source = activeTab === 'services' ? services : activeTab === 'labor' ? labor : activeTab === 'machines' ? machines : [];
-    return Array.from(new Set(source.map(item => item.groupName).filter(Boolean) as string[])).sort();
-  }, [activeTab, services, labor, machines]);
+    const groups = source.map(item => item.groupName).filter(Boolean) as string[];
+    if (activeTab === 'labor') groups.push(...contractorPartners.map(partner => partner.name));
+    return Array.from(new Set(groups)).sort();
+  }, [activeTab, services, labor, machines, contractorPartners]);
 
   const openCreate = () => {
     if (activeTab === 'services') setSimpleForm(emptyService());
@@ -476,6 +483,8 @@ const ContractCatalogs: React.FC = () => {
           codeLabel={'unitPrice' in simpleForm ? 'Mã dịch vụ' : activeTab === 'labor' ? 'Mã nhân công' : 'Mã máy thi công'}
           groupLabel={'unitPrice' in simpleForm ? 'Nhóm dịch vụ' : activeTab === 'labor' ? 'Nhóm nhân công' : 'Nhóm máy thi công'}
           groupOptions={groupOptions}
+          contractorPartners={activeTab === 'labor' ? contractorPartners : []}
+          allowContractorGroup={activeTab === 'labor'}
           onChange={setSimpleForm}
           onClose={() => setSimpleForm(null)}
           onSave={saveSimple}
@@ -681,6 +690,85 @@ const StatusBadge: React.FC<{ status: ContractCatalogStatus }> = ({ status }) =>
   </span>
 );
 
+const partnerClassLabel: Record<string, string> = {
+  owner: 'Chủ đầu tư',
+  contractor: 'Nhà thầu',
+  supplier: 'Nhà cung cấp',
+};
+
+const describePartner = (partner: BusinessPartner) =>
+  (partner.classifications || []).map(value => partnerClassLabel[value] || value).join(', ') || 'Đối tác';
+
+const ContractorGroupPicker: React.FC<{
+  value: string;
+  partners: BusinessPartner[];
+  groupOptions: string[];
+  onChange: (value: string, partner?: BusinessPartner) => void;
+}> = ({ value, partners, groupOptions, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const keyword = value.trim().toLowerCase();
+  const options = useMemo(() => {
+    const partnerOptions = partners.map(partner => ({
+      key: `partner-${partner.id}`,
+      label: partner.name,
+      meta: [partner.code, partner.phone, describePartner(partner)].filter(Boolean).join(' • '),
+      partner,
+    }));
+    const customOptions = groupOptions
+      .filter(group => !partners.some(partner => partner.name === group))
+      .map(group => ({
+        key: `group-${group}`,
+        label: group,
+        meta: 'Nhóm đã khai báo',
+        partner: undefined,
+      }));
+    const merged = [...partnerOptions, ...customOptions];
+    if (!keyword) return merged.slice(0, 8);
+    return merged
+      .filter(option => `${option.label} ${option.meta}`.toLowerCase().includes(keyword))
+      .slice(0, 8);
+  }, [groupOptions, keyword, partners]);
+
+  return (
+    <label className="block">
+      <span className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nhóm nhân công</span>
+      <div className="relative">
+        <input
+          value={value}
+          onFocus={() => setOpen(true)}
+          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+          onChange={event => {
+            onChange(event.target.value);
+            setOpen(true);
+          }}
+          placeholder="Gõ để tìm NCC/thầu phụ hoặc nhập tổ đội"
+          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 dark:text-white text-sm outline-none focus:ring-2 focus:ring-emerald-500/20"
+        />
+        {open && options.length > 0 && (
+          <div className="absolute z-30 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:bg-slate-900 dark:border-slate-700">
+            {options.map(option => (
+              <button
+                key={option.key}
+                type="button"
+                onMouseDown={event => event.preventDefault()}
+                onClick={() => {
+                  onChange(option.label, option.partner);
+                  setOpen(false);
+                }}
+                className="w-full px-3 py-2 text-left text-xs hover:bg-emerald-50 dark:hover:bg-slate-800 border-b border-slate-50 dark:border-slate-800 last:border-b-0"
+              >
+                <div className="font-bold text-slate-700 dark:text-white truncate">{option.label}</div>
+                <div className="text-[10px] text-slate-400 truncate">{option.meta}</div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <span className="mt-1 block text-[10px] font-medium text-slate-400">Có thể chọn từ toàn bộ Danh sách HĐ đối tác hoặc nhập tự do.</span>
+    </label>
+  );
+};
+
 const SimpleCatalogModal: React.FC<{
   title: string;
   codeLabel: string;
@@ -688,34 +776,58 @@ const SimpleCatalogModal: React.FC<{
   groupLabel: string;
   item: SimpleCatalogItem;
   groupOptions: string[];
+  contractorPartners?: BusinessPartner[];
+  allowContractorGroup?: boolean;
   saving: boolean;
   onChange: (item: SimpleCatalogItem) => void;
   onClose: () => void;
   onSave: () => void;
-}> = ({ title, codeLabel, nameLabel, groupLabel, item, groupOptions, saving, onChange, onClose, onSave }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-    <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
-      <ModalHeader title={title} onClose={onClose} />
-      <div className="p-5 space-y-4">
-        <Field label={codeLabel} value={item.code} onChange={value => onChange({ ...item, code: value })} placeholder={codeLabel} />
-        <Field label={nameLabel} value={item.name} onChange={value => onChange({ ...item, name: value })} placeholder={nameLabel.replace(' *', '')} />
-        <Field label={groupLabel} value={item.groupName || ''} onChange={value => onChange({ ...item, groupName: value })} placeholder={`Chọn ${groupLabel.toLowerCase()}`} listId="contract-catalog-groups" />
-        <datalist id="contract-catalog-groups">
-          {groupOptions.map(group => <option key={group} value={group} />)}
-        </datalist>
-        <Field label="Đơn vị" value={item.unit || ''} onChange={value => onChange({ ...item, unit: value })} placeholder="Đơn vị" />
-        {'unitPrice' in item && (
-          <Field label="Đơn giá" type="number" value={String(item.unitPrice || 0)} onChange={value => onChange({ ...item, unitPrice: Number(value) } as SimpleCatalogItem)} placeholder="Đơn giá" />
-        )}
-        <SelectField label="Trạng thái" value={item.status} onChange={value => onChange({ ...item, status: value as ContractCatalogStatus })}>
-          <option value="active">Hoạt động</option>
-          <option value="inactive">Ngưng dùng</option>
-        </SelectField>
+}> = ({ title, codeLabel, nameLabel, groupLabel, item, groupOptions, contractorPartners = [], allowContractorGroup = false, saving, onChange, onClose, onSave }) => {
+  const changeGroup = (value: string, partner?: BusinessPartner) => {
+    onChange({
+      ...item,
+      groupName: value,
+      partnerId: partner?.id,
+      partnerName: partner?.name,
+    } as SimpleCatalogItem);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+        <ModalHeader title={title} onClose={onClose} />
+        <div className="p-5 space-y-4">
+          <Field label={codeLabel} value={item.code} onChange={value => onChange({ ...item, code: value })} placeholder={codeLabel} />
+          <Field label={nameLabel} value={item.name} onChange={value => onChange({ ...item, name: value })} placeholder={nameLabel.replace(' *', '')} />
+          {allowContractorGroup ? (
+            <ContractorGroupPicker
+              value={item.groupName || ''}
+              partners={contractorPartners}
+              groupOptions={groupOptions}
+              onChange={changeGroup}
+            />
+          ) : (
+            <>
+              <Field label={groupLabel} value={item.groupName || ''} onChange={value => onChange({ ...item, groupName: value })} placeholder={`Chọn ${groupLabel.toLowerCase()}`} listId="contract-catalog-groups" />
+              <datalist id="contract-catalog-groups">
+                {groupOptions.map(group => <option key={group} value={group} />)}
+              </datalist>
+            </>
+          )}
+          <Field label="Đơn vị" value={item.unit || ''} onChange={value => onChange({ ...item, unit: value })} placeholder="Đơn vị" />
+          {'unitPrice' in item && (
+            <Field label="Đơn giá" type="number" value={String(item.unitPrice || 0)} onChange={value => onChange({ ...item, unitPrice: Number(value) } as SimpleCatalogItem)} placeholder="Đơn giá" />
+          )}
+          <SelectField label="Trạng thái" value={item.status} onChange={value => onChange({ ...item, status: value as ContractCatalogStatus })}>
+            <option value="active">Hoạt động</option>
+            <option value="inactive">Ngưng dùng</option>
+          </SelectField>
+        </div>
+        <ModalFooter saving={saving} onClose={onClose} onSave={onSave} />
       </div>
-      <ModalFooter saving={saving} onClose={onClose} onSave={onSave} />
     </div>
-  </div>
-);
+  );
+};
 
 const MaterialNormModal: React.FC<{
   item: ContractMaterialNormItem;

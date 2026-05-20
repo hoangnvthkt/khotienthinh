@@ -1,4 +1,5 @@
 import React, { Suspense, useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
     Project,
@@ -285,6 +286,7 @@ const siteToProjectFallback = (site: { id: string; name: string; address?: strin
 });
 
 const ProjectDashboard: React.FC = () => {
+    const location = useLocation();
     const {
         hrmConstructionSites, projectFinances, addProjectFinance, updateProjectFinance, removeProjectFinance,
         projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction,
@@ -415,6 +417,31 @@ const ProjectDashboard: React.FC = () => {
         if (projects.length > 0) return projects;
         return hrmConstructionSites.map(siteToProjectFallback);
     }, [projects, hrmConstructionSites]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const tab = params.get('tab') as typeof overviewTab | null;
+        const projectIdParam = params.get('projectId');
+        const siteIdParam = params.get('siteId') || params.get('constructionSiteId');
+        const validTabs = new Set(['org', 'budget', 'cashflow', 'contract', 'gantt', 'dailylog', 'subcontract', 'material', 'supply', 'report', 'documents']);
+        if (!projectIdParam && !siteIdParam && (!tab || !validTabs.has(tab))) return;
+
+        const targetProject = projectIdParam
+            ? projectRows.find(project => project.id === projectIdParam)
+            : siteIdParam
+                ? projectRows.find(project => project.constructionSiteId === siteIdParam || project.id === siteIdParam)
+                : null;
+
+        if (targetProject) {
+            setSelectedProjectId(targetProject.id);
+            setSelectedSiteId(targetProject.constructionSiteId || siteIdParam || null);
+        } else if (siteIdParam) {
+            setSelectedSiteId(siteIdParam);
+        }
+
+        if (tab && validTabs.has(tab)) setOverviewTab(tab);
+        setActiveView('overview');
+    }, [location.search, projectRows]);
 
     const selectedProject = useMemo(
         () => projectRows.find(project => project.id === selectedProjectId) || null,

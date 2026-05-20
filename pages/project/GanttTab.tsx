@@ -9,15 +9,18 @@ import {
     Circle, PlayCircle, ArrowUpDown, ChevronUp, Copy,
     Anchor, Link2, Shield, Wrench, Users, Zap, Lock, Bell,
     FlaskConical, Lightbulb, RotateCcw, Check,
-    Upload, Download, FileSpreadsheet, Loader2, XCircle, Eye
+    Upload, Download, FileSpreadsheet, Loader2, XCircle, Eye,
+    Paperclip, ClipboardCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus, ProjectTaskProgressMode, ContractItem, ProjectStaff } from '../../types';
+import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus, ProjectTaskProgressMode, ContractItem, ProjectStaff, ProjectTaskCompletionRequest, Attachment } from '../../types';
 import { taskService, baselineService, dailyLogService } from '../../lib/projectService';
+import { taskCompletionRequestService } from '../../lib/projectTaskCompletionService';
 import { contractItemService } from '../../lib/contractItemService';
 import { taskContractItemService } from '../../lib/taskContractItemService';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
 import { notificationService } from '../../lib/notificationService';
+import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { computeCriticalPath, getDelayDays, rippleEffect, type CriticalPathResult } from '../../lib/criticalPathEngine';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -25,6 +28,7 @@ import {
     applyProgressGateTransition,
     calculateProjectProgress,
     collectDescendantTaskIds,
+    deriveProjectTaskProgress,
     getGateBlockedTaskIds,
     getProjectTaskStatus,
     getTaskRelatedPhotoLog,
@@ -44,7 +48,7 @@ const WEATHER_ICONS: Record<string, string> = { sunny: '☀️', cloudy: '⛅', 
 const WEATHER_COLORS: Record<string, string> = { sunny: '', cloudy: '', rainy: 'bg-blue-200/60 dark:bg-blue-800/40', storm: 'bg-red-200/60 dark:bg-red-800/40' };
 // Row height must be identical on BOTH the table (left) and Gantt bars (right) to stay aligned
 const ROW_HEIGHT = 44; // px
-const GANTT_HEADER_HEIGHT = 53; // px — must match left <thead> height
+const GANTT_HEADER_HEIGHT = 64; // px — month + day rows
 
 type ViewMode = 'table' | 'gantt' | 'split';
 type TaskStatus = ProjectTaskStatus;
@@ -106,6 +110,34 @@ const parseProgress = (value: unknown): number => {
     return Math.max(0, Math.min(100, Math.round(progress)));
 };
 
+const parseNonNegativeNumber = (value: unknown): number => {
+    const raw = typeof value === 'string' ? value.replace(',', '.').trim() : value;
+    const n = Number(raw || 0);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return n;
+};
+
+const formatQuantity = (value?: number | null): string => {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n)) return '0';
+    return n.toLocaleString('vi-VN', { maximumFractionDigits: 3 });
+};
+
+const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+});
+
+const safeStorageFileName = (name: string): string => {
+    const safe = name.normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    return safe || 'evidence-file';
+};
+
 const getTaskUnit = (task: ProjectTask, linkedIds: string[], contractItems: ContractItem[]): string => {
     if (linkedIds.length === 1) {
         const ci = contractItems.find(c => c.id === linkedIds[0]);
@@ -121,6 +153,23 @@ const getTaskUnit = (task: ProjectTask, linkedIds: string[], contractItems: Cont
 const getTaskUnitTitle = (task: ProjectTask, linkedIds: string[], contractItems: ContractItem[]): string => {
     if (linkedIds.length <= 1) return '';
     return linkedIds.map(id => contractItems.find(c => c.id === id)?.unit).filter(Boolean).join(', ');
+};
+
+const isValidWbsCode = (value: string) => /^\d+(\.\d+)*$/.test(value.trim());
+
+const getNextWbsCode = (tasks: ProjectTask[], parentId?: string): string => {
+    const siblings = tasks.filter(task => (task.parentId || '') === (parentId || ''));
+    const parent = parentId ? tasks.find(task => task.id === parentId) : undefined;
+    const prefix = parent?.wbsCode ? `${parent.wbsCode}.` : '';
+    const nextNumber = siblings.reduce((max, task) => {
+        const raw = task.wbsCode || '';
+        if (prefix && !raw.startsWith(prefix)) return max;
+        if (!prefix && raw.includes('.')) return max;
+        const tail = prefix ? raw.slice(prefix.length) : raw;
+        const n = Number(tail);
+        return Number.isInteger(n) ? Math.max(max, n) : max;
+    }, 0) + 1;
+    return `${prefix}${nextNumber}`;
 };
 
 const deriveActualDates = (task: ProjectTask, allLogs: DailyLog[], linkedContractItemIds: string[] = []) => {
@@ -163,6 +212,14 @@ const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string; bg: stri
 
 const getStatusLabel = (status: TaskStatus) => STATUS_CONFIG[status]?.label || 'Không rõ';
 
+const COMPLETION_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+    submitted: { label: 'Chờ kỹ thuật', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+    verified: { label: 'Chờ duyệt', className: 'bg-blue-50 text-blue-700 border-blue-200' },
+    approved: { label: 'Đã duyệt', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    returned: { label: 'Trả lại', className: 'bg-red-50 text-red-700 border-red-200' },
+    cancelled: { label: 'Đã hủy', className: 'bg-slate-50 text-slate-500 border-slate-200' },
+};
+
 const ALL_PROJECT_PERMISSION_CODES: ProjectPermissionCode[] = ['view', 'edit', 'submit', 'verify', 'confirm', 'approve'];
 
 const PROJECT_PERMISSION_HINTS: Record<ProjectPermissionCode, string> = {
@@ -188,12 +245,13 @@ const StatusBadge: React.FC<{ status: TaskStatus }> = ({ status }) => {
 };
 
 /** Progress bar with inline edit */
-const ProgressCell: React.FC<{ value: number; onChange: (v: number) => void }> = ({ value, onChange }) => {
+const ProgressCell: React.FC<{ value: number; onChange: (v: number) => void; disabled?: boolean; hint?: string }> = ({ value, onChange, disabled, hint }) => {
     const color = value >= 100 ? '#10b981' : value > 0 ? '#3b82f6' : '#cbd5e1';
     return (
-        <div className="flex items-center gap-2 w-full">
-            <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden cursor-pointer group relative"
+        <div className="flex items-center gap-2 w-full" title={hint}>
+            <div className={`flex-1 h-2 bg-slate-100 rounded-full overflow-hidden group relative ${disabled ? 'cursor-default opacity-80' : 'cursor-pointer'}`}
                 onClick={e => {
+                    if (disabled) return;
                     const rect = e.currentTarget.getBoundingClientRect();
                     const pct = Math.round(((e.clientX - rect.left) / rect.width) * 100);
                     onChange(Math.max(0, Math.min(100, Math.round(pct / 5) * 5)));
@@ -220,6 +278,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const [contractItems, setContractItems] = useState<ContractItem[]>([]);
     const [taskContractLinks, setTaskContractLinks] = useState<Record<string, string[]>>({});
     const [projectStaff, setProjectStaff] = useState<ProjectStaff[]>([]);
+    const [completionRequests, setCompletionRequests] = useState<ProjectTaskCompletionRequest[]>([]);
     const [projectPerms, setProjectPerms] = useState<Set<ProjectPermissionCode>>(new Set());
     const [pbacLoaded, setPbacLoaded] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -238,7 +297,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     // GĐ2: Set of task IDs whose predecessor gate is blocking them
     const gateBlockedIds = useMemo(() => getGateBlockedTaskIds(tasks), [tasks]);
 
-    useEffect(() => {
+    const loadScheduleData = useCallback(async () => {
         if (!effectiveId) {
             setTasks([]);
             setBaselines([]);
@@ -246,27 +305,39 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             setContractItems([]);
             setTaskContractLinks({});
             setProjectStaff([]);
+            setCompletionRequests([]);
             setLoading(false);
             return;
         }
         setLoading(true);
-        Promise.all([
-            taskService.list(effectiveId, constructionSiteId || null),
-            baselineService.list(effectiveId, constructionSiteId || null),
-            dailyLogService.list(effectiveId, constructionSiteId || null),
-            contractItemService.listBySite(effectiveId, undefined, constructionSiteId || null),
-            taskContractItemService.listBySite(effectiveId, constructionSiteId || null),
-            projectId
-                ? projectStaffService.listByProject(projectId, constructionSiteId)
-                : constructionSiteId
-                    ? projectStaffService.listBySite(constructionSiteId)
-                    : Promise.resolve([]),
-        ]).then(([taskData, baselineData, logData, contractItemData, linkData, staffData]) => {
-            setTasks(taskData);
+        try {
+            const [
+                taskData,
+                baselineData,
+                logData,
+                contractItemData,
+                linkData,
+                staffData,
+                completionData,
+            ] = await Promise.all([
+                taskService.list(effectiveId, constructionSiteId || null),
+                baselineService.list(effectiveId, constructionSiteId || null),
+                dailyLogService.list(effectiveId, constructionSiteId || null),
+                contractItemService.listBySite(effectiveId, undefined, constructionSiteId || null),
+                taskContractItemService.listBySite(effectiveId, constructionSiteId || null),
+                projectId
+                    ? projectStaffService.listByProject(projectId, constructionSiteId)
+                    : constructionSiteId
+                        ? projectStaffService.listBySite(constructionSiteId)
+                        : Promise.resolve([]),
+                taskCompletionRequestService.list(effectiveId, constructionSiteId || null),
+            ]);
+            setTasks(deriveProjectTaskProgress(taskData, completionData, logData));
             setBaselines(baselineData);
             setDailyLogs(logData);
             setContractItems(contractItemData);
             setProjectStaff(staffData);
+            setCompletionRequests(completionData);
             setTaskContractLinks(linkData.reduce<Record<string, string[]>>((acc, link) => {
                 if (!acc[link.taskId]) acc[link.taskId] = [];
                 acc[link.taskId].push(link.contractItemId);
@@ -274,8 +345,15 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             }, {}));
             if (baselineData.length > 0) setActiveBaseline(baselineData[0]);
             setLoading(false);
-        }).catch(e => { console.error(e); setLoading(false); });
+        } catch (e) {
+            console.error(e);
+            setLoading(false);
+        }
     }, [effectiveId, constructionSiteId, projectId]);
+
+    useEffect(() => {
+        loadScheduleData();
+    }, [loadScheduleData]);
 
     useEffect(() => {
         setPbacLoaded(false);
@@ -348,7 +426,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const [fStart, setFStart] = useState('');
     const [fEnd, setFEnd] = useState('');
     const [fProgress, setFProgress] = useState('0');
-    const [fProgressMode, setFProgressMode] = useState<ProjectTaskProgressMode>('manual');
+    const [fProgressMode, setFProgressMode] = useState<ProjectTaskProgressMode>('daily_log');
     const [fAssignee, setFAssignee] = useState('');
     const [fAssigneeUserId, setFAssigneeUserId] = useState('');
     const [fParentId, setFParentId] = useState('');
@@ -364,9 +442,19 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const [fContractItemIds, setFContractItemIds] = useState<string[]>([]);
     const [fWbsCode, setFWbsCode] = useState('');
     const [fFallbackUnit, setFFallbackUnit] = useState('');
+    const [fProvisionalQuantity, setFProvisionalQuantity] = useState('0');
     const [fActualStart, setFActualStart] = useState('');
     const [fActualEnd, setFActualEnd] = useState('');
     const [fWatchers, setFWatchers] = useState<string[]>([]);
+
+    // Phiếu hoàn thành công việc
+    const [completionModalTask, setCompletionModalTask] = useState<ProjectTask | null>(null);
+    const [completionQty, setCompletionQty] = useState('1');
+    const [completionNote, setCompletionNote] = useState('');
+    const [completionFiles, setCompletionFiles] = useState<File[]>([]);
+    const [completionReturnRequest, setCompletionReturnRequest] = useState<ProjectTaskCompletionRequest | null>(null);
+    const [completionReturnReason, setCompletionReturnReason] = useState('');
+    const [submittingCompletion, setSubmittingCompletion] = useState(false);
 
     // Excel Import State
     const [showImportModal, setShowImportModal] = useState(false);
@@ -396,6 +484,48 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const getWatcherNames = useCallback((watchers?: string[]) => {
         return (watchers || []).map(id => staffUserMap.get(id)?.name || id).join(', ');
     }, [staffUserMap]);
+
+    const childCountByTaskId = useMemo(() => {
+        const map = new Map<string, number>();
+        for (const task of tasks) {
+            if (!task.parentId) continue;
+            map.set(task.parentId, (map.get(task.parentId) || 0) + 1);
+        }
+        return map;
+    }, [tasks]);
+
+    const completionRequestsByTaskId = useMemo(() => {
+        const map = new Map<string, ProjectTaskCompletionRequest[]>();
+        for (const request of completionRequests) {
+            const rows = map.get(request.taskId) || [];
+            rows.push(request);
+            map.set(request.taskId, rows);
+        }
+        for (const rows of map.values()) {
+            rows.sort((a, b) => new Date(b.createdAt || b.submittedAt).getTime() - new Date(a.createdAt || a.submittedAt).getTime());
+        }
+        return map;
+    }, [completionRequests]);
+
+    const getApprovedCompletionQuantity = useCallback((taskId: string) => {
+        return (completionRequestsByTaskId.get(taskId) || [])
+            .filter(request => request.status === 'approved')
+            .reduce((sum, request) => sum + Math.max(0, Number(request.acceptedQuantity || request.proposedQuantity || 0)), 0);
+    }, [completionRequestsByTaskId]);
+
+    const getRemainingCompletionQuantity = useCallback((task: ProjectTask) => {
+        const planned = Number(task.provisionalQuantity || 0);
+        if (planned <= 0) return 1;
+        return Math.max(0, planned - getApprovedCompletionQuantity(task.id));
+    }, [getApprovedCompletionQuantity]);
+
+    const getProgressHint = useCallback((task: ProjectTask, hasChildren: boolean) => {
+        if (hasChildren) return 'Tự tính từ các hạng mục con';
+        if (task.progressMode === 'daily_log') return (task.provisionalQuantity || 0) > 0 ? 'Tự tính từ nhật ký thi công đã xác nhận' : 'Chưa có KL tạm tính để tính từ nhật ký';
+        if (task.progressMode === 'completion_request') return 'Tự tính từ phiếu hoàn thành đã duyệt';
+        if (task.progressMode === 'derived_from_acceptance') return 'Tự tính từ nghiệm thu khối lượng';
+        return 'Click để chỉnh tiến độ thủ công';
+    }, []);
 
     const notifyTaskWatchers = useCallback(async (task: ProjectTask, gateStatus: GateStatus, excludeUserIds: string[] = []) => {
         const excluded = new Set([user?.id, ...excludeUserIds].filter(Boolean) as string[]);
@@ -501,6 +631,113 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         });
     }, [constructionSiteId, projectId, user?.id]);
 
+    const uploadCompletionEvidence = useCallback(async (requestId: string, files: File[]): Promise<Attachment[]> => {
+        const results: Attachment[] = [];
+        for (const file of files) {
+            let uploaded = false;
+            if (isSupabaseConfigured) {
+                try {
+                    const path = `task-completions/${effectiveId}/${requestId}/${Date.now()}_${safeStorageFileName(file.name)}`;
+                    const { error } = await supabase.storage.from('project-attachments').upload(path, file, {
+                        cacheControl: '3600',
+                        upsert: false,
+                    });
+                    if (!error) {
+                        const { data } = supabase.storage.from('project-attachments').getPublicUrl(path);
+                        results.push({
+                            id: crypto.randomUUID(),
+                            name: file.name,
+                            fileName: file.name,
+                            url: data.publicUrl,
+                            fileType: file.type,
+                            fileSize: file.size,
+                            category: 'task_completion',
+                            uploadedAt: new Date().toISOString(),
+                            uploadedBy: user?.id,
+                        });
+                        uploaded = true;
+                    } else {
+                        console.error('Task completion upload failed:', error.message);
+                    }
+                } catch (err) {
+                    console.error('Task completion upload exception:', err);
+                }
+            }
+
+            if (!uploaded) {
+                results.push({
+                    id: crypto.randomUUID(),
+                    name: file.name,
+                    fileName: file.name,
+                    url: await fileToBase64(file),
+                    fileType: file.type,
+                    fileSize: file.size,
+                    category: 'task_completion',
+                    uploadedAt: new Date().toISOString(),
+                    uploadedBy: user?.id,
+                });
+            }
+        }
+        return results;
+    }, [effectiveId, user?.id]);
+
+    const notifyCompletionReviewers = useCallback(async (
+        task: ProjectTask,
+        permissionCodes: ProjectPermissionCode[],
+        title: string,
+        message: string,
+        sourceType: string,
+        sourceId: string,
+    ) => {
+        try {
+            const reviewers = await projectStaffService.listProjectStaffWithPermissions(projectId, constructionSiteId, permissionCodes);
+            return notificationService.notifyProjectUsers({
+                recipientIds: reviewers.map(staff => staff.userId),
+                actorId: user?.id,
+                type: 'warning',
+                category: 'progress',
+                title,
+                message,
+                severity: 'warning',
+                icon: '📋',
+                link: '/da',
+                sourceType,
+                sourceId,
+                constructionSiteId: constructionSiteId || undefined,
+                metadata: { taskId: task.id, taskName: task.name, projectId },
+            });
+        } catch (err) {
+            console.error('Failed to notify completion reviewers:', err);
+            return [];
+        }
+    }, [constructionSiteId, projectId, user?.id]);
+
+    const notifyCompletionResult = useCallback(async (
+        request: ProjectTaskCompletionRequest,
+        task: ProjectTask,
+        status: 'approved' | 'returned',
+        reason?: string,
+    ) => {
+        const recipientIds = [request.submittedBy, task.assigneeUserId, ...(task.watchers || [])];
+        await notificationService.notifyProjectUsers({
+            recipientIds,
+            actorId: user?.id,
+            type: status === 'approved' ? 'success' : 'warning',
+            category: 'progress',
+            title: status === 'approved' ? '✅ Phiếu hoàn thành đã được duyệt' : '⚠️ Phiếu hoàn thành bị trả lại',
+            message: status === 'approved'
+                ? `"${task.name}" đã được duyệt khối lượng hoàn thành`
+                : `"${task.name}" cần bổ sung: ${reason || 'Chưa đạt yêu cầu'}`,
+            severity: status === 'approved' ? 'info' : 'warning',
+            icon: status === 'approved' ? '✅' : '⚠️',
+            link: '/da',
+            sourceType: 'task_completion_result',
+            sourceId: `task_completion_${status}_${request.id}`,
+            constructionSiteId: constructionSiteId || undefined,
+            metadata: { taskId: task.id, taskName: task.name, requestId: request.id, projectId, status },
+        });
+    }, [constructionSiteId, projectId, user?.id]);
+
     const syncProjectFinanceProgress = useCallback((nextTasks: ProjectTask[]) => {
         const summary = calculateProjectProgress(nextTasks);
         if (summary.leafTaskCount === 0) return;
@@ -516,16 +753,201 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         });
     }, [constructionSiteId, projectFinances, updateProjectFinance]);
 
+    const persistDerivedProgress = useCallback(async (nextRequests: ProjectTaskCompletionRequest[]) => {
+        const derived = deriveProjectTaskProgress(tasks, nextRequests, dailyLogs);
+        const changed = derived.filter(next => {
+            const prev = tasks.find(task => task.id === next.id);
+            return !!prev && (
+                prev.progress !== next.progress ||
+                prev.progressMode !== next.progressMode ||
+                prev.gateStatus !== next.gateStatus ||
+                prev.actualEndDate !== next.actualEndDate ||
+                prev.gateApprovedBy !== next.gateApprovedBy ||
+                prev.gateApprovedAt !== next.gateApprovedAt
+            );
+        });
+        if (changed.length > 0) await taskService.upsertMany(changed);
+        setTasks(derived);
+        syncProjectFinanceProgress(derived);
+        return derived;
+    }, [dailyLogs, syncProjectFinanceProgress, tasks]);
+
+    const openCompletionRequestModal = useCallback((task: ProjectTask) => {
+        if (childCountByTaskId.get(task.id)) {
+            toast.warning('Hạng mục cha tự tính tiến độ', 'Hãy báo hoàn thành ở các công việc con bên dưới.');
+            return;
+        }
+        if (!task.assigneeUserId || task.assigneeUserId !== user?.id) {
+            if (!ensureProjectPermission('submit', 'gửi phiếu hoàn thành công việc')) return;
+        }
+        const remaining = getRemainingCompletionQuantity(task);
+        setCompletionModalTask(task);
+        setCompletionQty(String(remaining > 0 ? remaining : 1));
+        setCompletionNote('');
+        setCompletionFiles([]);
+    }, [childCountByTaskId, ensureProjectPermission, getRemainingCompletionQuantity, toast, user?.id]);
+
+    const handleSubmitCompletionRequest = useCallback(async () => {
+        if (!completionModalTask) return;
+        if (!completionModalTask.assigneeUserId || completionModalTask.assigneeUserId !== user?.id) {
+            if (!ensureProjectPermission('submit', 'gửi phiếu hoàn thành công việc')) return;
+        }
+        const proposedQuantity = parseNonNegativeNumber(completionQty);
+        if (proposedQuantity <= 0) {
+            toast.error('Không thể gửi phiếu', 'Khối lượng hoàn thành phải lớn hơn 0.');
+            return;
+        }
+        setSubmittingCompletion(true);
+        try {
+            const now = new Date().toISOString();
+            const requestId = crypto.randomUUID();
+            const attachments = await uploadCompletionEvidence(requestId, completionFiles);
+            const request: ProjectTaskCompletionRequest = {
+                id: requestId,
+                projectId: projectId || null,
+                constructionSiteId: constructionSiteId || null,
+                taskId: completionModalTask.id,
+                status: 'submitted',
+                proposedQuantity,
+                acceptedQuantity: 0,
+                note: completionNote || null,
+                returnReason: null,
+                attachments,
+                submittedBy: user?.id || null,
+                submittedAt: now,
+                createdAt: now,
+                updatedAt: now,
+            };
+            await taskCompletionRequestService.upsert(request);
+            const taskWithMode = {
+                ...completionModalTask,
+                progressMode: 'completion_request' as ProjectTaskProgressMode,
+            };
+            await taskService.upsert(taskWithMode);
+            const nextRequests = [request, ...completionRequests];
+            setCompletionRequests(nextRequests);
+            setTasks(prev => prev.map(task => task.id === taskWithMode.id ? taskWithMode : task));
+            await notifyCompletionReviewers(
+                taskWithMode,
+                ['verify'],
+                '📋 Phiếu hoàn thành chờ xác nhận kỹ thuật',
+                `"${taskWithMode.name}" đã gửi phiếu hoàn thành cần Kỹ thuật xác nhận`,
+                'task_completion_submitted',
+                `task_completion_submitted_${requestId}`,
+            );
+            setCompletionModalTask(null);
+            setCompletionFiles([]);
+            setCompletionNote('');
+            toast.success('Đã gửi phiếu hoàn thành', 'Kỹ thuật sẽ nhận thông báo để xác nhận.');
+        } catch (err: any) {
+            toast.error('Không thể gửi phiếu', err?.message || 'Vui lòng thử lại.');
+        } finally {
+            setSubmittingCompletion(false);
+        }
+    }, [
+        completionFiles,
+        completionModalTask,
+        completionNote,
+        completionQty,
+        completionRequests,
+        constructionSiteId,
+        ensureProjectPermission,
+        notifyCompletionReviewers,
+        projectId,
+        toast,
+        uploadCompletionEvidence,
+        user?.id,
+    ]);
+
+    const handleCompletionTransition = useCallback(async (
+        request: ProjectTaskCompletionRequest,
+        nextStatus: 'verified' | 'approved' | 'returned',
+        reason?: string,
+    ) => {
+        const task = tasks.find(item => item.id === request.taskId);
+        if (!task) return;
+
+        if (nextStatus === 'verified' && !ensureProjectPermission('verify', 'xác nhận kỹ thuật phiếu hoàn thành')) return;
+        if (nextStatus === 'approved' && !ensureProjectPermission('approve', 'duyệt phiếu hoàn thành')) return;
+        if (nextStatus === 'returned' && !projectPerms.has('verify') && !projectPerms.has('approve')) {
+            toast.error('Không có quyền', 'Bạn cần quyền verify hoặc approve để trả lại phiếu.');
+            return;
+        }
+
+        try {
+            const now = new Date().toISOString();
+            const patch: Partial<ProjectTaskCompletionRequest> = nextStatus === 'verified'
+                ? {
+                    status: 'verified',
+                    acceptedQuantity: request.acceptedQuantity || request.proposedQuantity,
+                    verifiedBy: user?.id || null,
+                    verifiedAt: now,
+                    returnReason: null,
+                }
+                : nextStatus === 'approved'
+                    ? {
+                        status: 'approved',
+                        acceptedQuantity: request.acceptedQuantity || request.proposedQuantity,
+                        approvedBy: user?.id || null,
+                        approvedAt: now,
+                        returnReason: null,
+                    }
+                    : {
+                        status: 'returned',
+                        returnReason: reason || 'Cần bổ sung bằng chứng hoặc chỉnh lại khối lượng.',
+                        returnedBy: user?.id || null,
+                        returnedAt: now,
+                    };
+            await taskCompletionRequestService.update(request.id, patch);
+            const nextRequests = completionRequests.map(item => item.id === request.id ? { ...item, ...patch, updatedAt: now } : item);
+            setCompletionRequests(nextRequests);
+
+            if (nextStatus === 'verified') {
+                await notifyCompletionReviewers(
+                    task,
+                    ['approve'],
+                    '📋 Phiếu hoàn thành chờ Chỉ huy trưởng duyệt',
+                    `"${task.name}" đã được Kỹ thuật xác nhận`,
+                    'task_completion_verified',
+                    `task_completion_verified_${request.id}`,
+                );
+                toast.success('Đã xác nhận kỹ thuật');
+            } else if (nextStatus === 'approved') {
+                await persistDerivedProgress(nextRequests);
+                await notifyCompletionResult({ ...request, ...patch, updatedAt: now }, task, 'approved');
+                toast.success('Đã duyệt phiếu hoàn thành', 'Tiến độ đã được tính lại tự động.');
+            } else {
+                await notifyCompletionResult({ ...request, ...patch, updatedAt: now }, task, 'returned', reason);
+                toast.success('Đã trả lại phiếu');
+            }
+            setCompletionReturnRequest(null);
+            setCompletionReturnReason('');
+        } catch (err: any) {
+            toast.error('Không thể xử lý phiếu', err?.message || 'Vui lòng thử lại.');
+        }
+    }, [
+        completionRequests,
+        ensureProjectPermission,
+        notifyCompletionResult,
+        notifyCompletionReviewers,
+        persistDerivedProgress,
+        projectPerms,
+        tasks,
+        toast,
+        user?.id,
+    ]);
+
     useEffect(() => {
         if (!loading && tasks.length > 0) syncProjectFinanceProgress(tasks);
     }, [loading, tasks, syncProjectFinanceProgress]);
 
     // ====== CRUD operations ======
     const resetForm = () => {
-        setEditing(null); setFName(''); setFStart(''); setFEnd(''); setFProgress('0'); setFProgressMode('manual');
+        setEditing(null); setFName(''); setFStart(''); setFEnd(''); setFProgress('0'); setFProgressMode('daily_log');
         setFAssignee(''); setFAssigneeUserId(''); setFParentId(''); setFMilestone(false); setFNotes(''); setFColor('');
         setFDeps([]); setFLagTime('0'); setFResourceCount('1'); setFResourceType('worker'); setFCostPerDay('0');
         setFContractItemIds([]); setFWbsCode(''); setFFallbackUnit(''); setFActualStart(''); setFActualEnd('');
+        setFProvisionalQuantity('0');
         setFWatchers([]);
         setShowForm(false);
     };
@@ -534,6 +956,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         if (!ensureProjectPermission('edit', 'tạo hạng mục tiến độ')) return;
         resetForm();
         if (parentId) setFParentId(parentId);
+        setFWbsCode(getNextWbsCode(tasks, parentId));
         const t = today();
         setFStart(t);
         setFEnd(addDays(t, 14));
@@ -544,7 +967,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         if (!ensureProjectPermission('edit', 'sửa hạng mục tiến độ')) return;
         setEditing(t);
         setFName(t.name); setFStart(t.startDate); setFEnd(t.endDate);
-        setFProgress(String(t.progress)); setFProgressMode(t.progressMode || 'manual'); setFAssignee(t.assignee || ''); setFAssigneeUserId(t.assigneeUserId || '');
+        setFProgress(String(t.progress)); setFProgressMode(tasks.some(task => task.parentId === t.id) ? 'children_auto' : (t.progressMode || 'manual')); setFAssignee(t.assignee || ''); setFAssigneeUserId(t.assigneeUserId || '');
         setFParentId(t.parentId || ''); setFMilestone(t.isMilestone);
         setFNotes(t.notes || ''); setFColor(t.color || '');
         setFDeps(t.dependencies || []); setFLagTime(String(t.lagTime || 0));
@@ -552,6 +975,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         setFCostPerDay(String(t.estimatedCostPerDay || 0));
         setFContractItemIds(taskContractLinks[t.id] || []);
         setFWbsCode(t.wbsCode || ''); setFFallbackUnit(t.fallbackUnit || '');
+        setFProvisionalQuantity(String(t.provisionalQuantity || 0));
         setFActualStart(t.actualStartDate || ''); setFActualEnd(t.actualEndDate || '');
         setFWatchers(t.watchers || []);
         setShowForm(true);
@@ -564,6 +988,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         setFProgress('0'); setFAssignee(t.assignee || ''); setFAssigneeUserId(t.assigneeUserId || '');
         setFParentId(t.parentId || ''); setFMilestone(t.isMilestone);
         setFNotes(t.notes || ''); setFColor(t.color || '');
+        setFWbsCode(getNextWbsCode(tasks, t.parentId));
+        setFFallbackUnit(t.fallbackUnit || '');
+        setFProvisionalQuantity(String(t.provisionalQuantity || 0));
         setFWatchers([]);
         setShowForm(true);
     };
@@ -588,13 +1015,26 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             toast.error('Không thể lưu tiến độ', 'Ngày kết thúc thực tế không được trước ngày bắt đầu thực tế.');
             return;
         }
+        const normalizedWbs = fWbsCode.trim();
+        if (normalizedWbs && !isValidWbsCode(normalizedWbs)) {
+            toast.error('Không thể lưu tiến độ', 'Mã WBS chỉ được dùng dạng 1, 1.1, 1.1.1.');
+            return;
+        }
+        if (normalizedWbs && tasks.some(task => task.id !== editing?.id && task.wbsCode?.trim().toLowerCase() === normalizedWbs.toLowerCase())) {
+            toast.error('Không thể lưu tiến độ', `Mã WBS "${normalizedWbs}" đã tồn tại.`);
+            return;
+        }
         if (!ensureProjectPermission('edit', editing ? 'sửa hạng mục tiến độ' : 'tạo hạng mục tiến độ')) return;
 
         try {
-            const duration = fMilestone ? 0 : daysBetween(fStart, fEnd);
+            const duration = daysBetween(fStart, fEnd);
+            const taskHasChildren = editing ? tasks.some(task => task.parentId === editing.id) : false;
+            const normalizedProgressMode: ProjectTaskProgressMode = taskHasChildren ? 'children_auto' : (fProgressMode === 'children_auto' ? 'manual' : fProgressMode);
+            const normalizedProgress = normalizedProgressMode === 'manual' ? Number(fProgress) : Number(editing?.progress ?? fProgress);
+            const provisionalQuantity = parseNonNegativeNumber(fProvisionalQuantity);
             const baseItem: ProjectTask = editing ? {
                 ...editing, name: fName, startDate: fStart, endDate: fEnd, duration,
-                progress: Number(fProgress), progressMode: fProgressMode, assignee: fAssignee || undefined,
+                progress: normalizedProgress, progressMode: normalizedProgressMode, assignee: fAssignee || undefined,
                 assigneeUserId: fAssigneeUserId || undefined,
                 parentId: fParentId || undefined, isMilestone: fMilestone,
                 notes: fNotes || undefined, color: fColor || undefined,
@@ -603,13 +1043,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 resourceCount: Number(fResourceCount) || 1,
                 resourceType: fResourceType,
                 estimatedCostPerDay: Number(fCostPerDay) || 0,
-                wbsCode: fWbsCode || undefined, fallbackUnit: fFallbackUnit || undefined,
+                wbsCode: normalizedWbs || undefined, fallbackUnit: fFallbackUnit || undefined,
+                provisionalQuantity,
                 actualStartDate: fActualStart || undefined, actualEndDate: fActualEnd || undefined,
                 watchers: fWatchers,
             } : {
                 id: crypto.randomUUID(), projectId: projectId || constructionSiteId || null, constructionSiteId: constructionSiteId || null,
                 name: fName, startDate: fStart, endDate: fEnd, duration,
-                progress: Number(fProgress), progressMode: fProgressMode, assignee: fAssignee || undefined,
+                progress: normalizedProgress, progressMode: normalizedProgressMode, assignee: fAssignee || undefined,
                 assigneeUserId: fAssigneeUserId || undefined,
                 parentId: fParentId || undefined, isMilestone: fMilestone,
                 notes: fNotes || undefined, color: fColor || undefined,
@@ -619,14 +1060,26 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 resourceCount: Number(fResourceCount) || 1,
                 resourceType: fResourceType,
                 estimatedCostPerDay: Number(fCostPerDay) || 0,
-                wbsCode: fWbsCode || undefined, fallbackUnit: fFallbackUnit || undefined,
+                wbsCode: normalizedWbs || undefined, fallbackUnit: fFallbackUnit || undefined,
+                provisionalQuantity,
                 actualStartDate: fActualStart || undefined, actualEndDate: fActualEnd || undefined,
                 watchers: fWatchers,
             };
-	        const item = applyProgressGateTransition(baseItem, Number(fProgress));
+	        const item = normalizedProgressMode === 'manual' ? applyProgressGateTransition(baseItem, normalizedProgress) : baseItem;
 	        await taskService.upsert(item);
 	        await taskContractItemService.replaceForTask(item.id, effectiveId, constructionSiteId || null, fContractItemIds);
-	        const nextTasks = await taskService.list(effectiveId, constructionSiteId || null);
+            const rawNextTasks = await taskService.list(effectiveId, constructionSiteId || null);
+	        const nextTasks = deriveProjectTaskProgress(rawNextTasks, completionRequests, dailyLogs);
+            const derivedChanges = nextTasks.filter(next => {
+                const prev = rawNextTasks.find(task => task.id === next.id);
+                return !!prev && (
+                    prev.progress !== next.progress ||
+                    prev.progressMode !== next.progressMode ||
+                    prev.gateStatus !== next.gateStatus ||
+                    prev.actualEndDate !== next.actualEndDate
+                );
+            });
+            if (derivedChanges.length > 0) await taskService.upsertMany(derivedChanges);
 	        const nextLinks = await taskContractItemService.listBySite(effectiveId, constructionSiteId || null);
 	        setTasks(nextTasks);
 	        setTaskContractLinks(nextLinks.reduce<Record<string, string[]>>((acc, link) => {
@@ -679,8 +1132,16 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         const task = tasks.find(t => t.id === id);
         if (!task) return;
         if (!ensureProjectPermission('edit', 'cập nhật tiến độ hạng mục')) return;
+        if (childCountByTaskId.get(id)) {
+            toast.warning('Tiến độ tự động', 'Hạng mục cha được tính từ các công việc con, không chỉnh tay.');
+            return;
+        }
         if (task.progressMode === 'derived_from_acceptance') {
             toast.warning('Tiến độ lấy từ nghiệm thu', 'Hạng mục này cần cập nhật qua nghiệm thu khối lượng thay vì chỉnh tay.');
+            return;
+        }
+        if (task.progressMode === 'completion_request' || task.progressMode === 'children_auto' || task.progressMode === 'daily_log') {
+            toast.warning('Tiến độ tự động', 'Hạng mục này cập nhật qua nhật ký thi công, phiếu hoàn thành hoặc công việc con.');
             return;
         }
         if (gateBlockedIds.has(id) && progress > task.progress) {
@@ -718,8 +1179,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 'Bắt đầu thực tế': '',
                 'Kết thúc thực tế': '',
                 'Đơn vị': 'm3',
+                'Khối lượng tạm tính': 100,
                 'Tiến độ (%)': 0,
-                'Công việc cha (Mã WBS)': '1'
+                'Mã cha': '1'
             }
         ]);
         ws['!cols'] = [
@@ -731,6 +1193,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             { wch: 15 }, // Actual Start
             { wch: 15 }, // Actual End
             { wch: 10 }, // Unit
+            { wch: 18 }, // Provisional quantity
             { wch: 10 }, // Progress
             { wch: 20 }  // Parent
         ];
@@ -752,20 +1215,27 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 const data = XLSX.utils.sheet_to_json<ExcelImportRow>(ws, { defval: '', raw: true });
 
                 const errors: Record<number, string> = {};
+                const seenWbs = new Set<string>();
                 data.forEach((row, idx) => {
                     const start = parseExcelDate(row['Bắt đầu KH (*)']);
                     const end = parseExcelDate(row['Kết thúc KH (*)']);
                     const actualStart = parseExcelDate(row['Bắt đầu thực tế']);
                     const actualEnd = parseExcelDate(row['Kết thúc thực tế']);
                     const rawProgress = row['Tiến độ (%)'] === '' ? 0 : Number(row['Tiến độ (%)']);
+                    const rawProvisionalQty = row['Khối lượng tạm tính'] === '' ? 0 : Number(row['Khối lượng tạm tính']);
+                    const wbs = row['Mã WBS'] ? String(row['Mã WBS']).trim() : '';
                     if (!row['Công việc (*)']) errors[idx] = 'Thiếu tên công việc';
+                    else if (wbs && !isValidWbsCode(wbs)) errors[idx] = 'Mã WBS không hợp lệ';
+                    else if (wbs && (seenWbs.has(wbs.toLowerCase()) || tasks.some(t => t.wbsCode?.trim().toLowerCase() === wbs.toLowerCase()))) errors[idx] = 'Mã WBS bị trùng';
                     else if (!start) errors[idx] = 'Thiếu/sai ngày BĐ kế hoạch';
                     else if (!end) errors[idx] = 'Thiếu/sai ngày KT kế hoạch';
                     else if (start > end) {
                         errors[idx] = 'Ngày kết thúc KH phải sau ngày BĐ KH';
                     }
                     else if (actualStart && actualEnd && actualStart > actualEnd) errors[idx] = 'Ngày thực tế không hợp lệ';
+                    else if (!Number.isFinite(rawProvisionalQty) || rawProvisionalQty < 0) errors[idx] = 'Khối lượng tạm tính không hợp lệ';
                     else if (!Number.isFinite(rawProgress) || rawProgress < 0 || rawProgress > 100) errors[idx] = 'Tiến độ không hợp lệ';
+                    if (wbs && !errors[idx]) seenWbs.add(wbs.toLowerCase());
                 });
                 setImportRows(data);
                 setImportErrors(errors);
@@ -804,13 +1274,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                     endDate: end,
                     duration: daysBetween(start, end),
                     progress: parseProgress(row['Tiến độ (%)']),
-                    progressMode: 'manual',
+                    progressMode: 'daily_log',
                     assignee: row['Người thực hiện'] ? String(row['Người thực hiện']) : undefined,
                     wbsCode: wbs,
                     fallbackUnit: row['Đơn vị'] ? String(row['Đơn vị']) : undefined,
+                    provisionalQuantity: parseNonNegativeNumber(row['Khối lượng tạm tính']),
                     actualStartDate: parseExcelDate(row['Bắt đầu thực tế']) || undefined,
                     actualEndDate: parseExcelDate(row['Kết thúc thực tế']) || undefined,
-                    parentId: row['Công việc cha (Mã WBS)'] ? String(row['Công việc cha (Mã WBS)']) : undefined,
+                    parentId: (row['Mã cha'] || row['Công việc cha (Mã WBS)']) ? String(row['Mã cha'] || row['Công việc cha (Mã WBS)']) : undefined,
                     order: tasks.length + newTasks.length,
                     isMilestone: false,
                 });
@@ -834,7 +1305,12 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 await taskService.upsert(applyProgressGateTransition(t, t.progress));
             }
 
-            const nextTasks = [...tasks, ...newTasks];
+            const nextTasks = deriveProjectTaskProgress([...tasks, ...newTasks], completionRequests, dailyLogs);
+            const changedImportedTasks = nextTasks.filter(next => {
+                const saved = newTasks.find(task => task.id === next.id);
+                return !!saved && (saved.progress !== next.progress || saved.progressMode !== next.progressMode || saved.gateStatus !== next.gateStatus);
+            });
+            if (changedImportedTasks.length > 0) await taskService.upsertMany(changedImportedTasks);
             setTasks(nextTasks);
             syncProjectFinanceProgress(nextTasks);
             toast.success('Thành công', `Đã nhập ${validRows.length} hạng mục thi công`);
@@ -864,8 +1340,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 'Bắt đầu thực tế': derivedStart ? fmtDate(derivedStart) : '',
                 'Kết thúc thực tế': derivedEnd ? fmtDate(derivedEnd) : '',
                 'Đơn vị': getTaskUnit(task, linkedIds, contractItems),
+                'Khối lượng tạm tính': task.provisionalQuantity || 0,
                 'Tiến độ (%)': task.progress,
                 'Trạng thái': getStatusLabel(status),
+                'Mã cha': task.parentId ? tasks.find(t => t.id === task.parentId)?.wbsCode || '' : '',
                 'Công việc cha': parentName
             };
         });
@@ -873,7 +1351,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         const ws = XLSX.utils.json_to_sheet(rows);
         ws['!cols'] = [
             { wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
-            { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 20 }
+            { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 18 }, { wch: 10 }, { wch: 15 }, { wch: 20 }
         ];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'TienDo');
@@ -1185,29 +1663,46 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     }, [tasks, dailyLogs]);
 
     // ====== Timeline ======
-    const { timelineStart, totalDays, months } = useMemo(() => {
+    const { timelineStart, totalDays, months, days } = useMemo(() => {
         if (filteredTasks.length === 0) {
             const s = addDays(today(), -7);
-            return { timelineStart: s, totalDays: 90, months: [] as { label: string; startDay: number; days: number }[] };
+            return {
+                timelineStart: s,
+                totalDays: 90,
+                months: [] as { label: string; startDay: number; days: number }[],
+                days: Array.from({ length: 91 }, (_, i) => {
+                    const date = addDays(s, i);
+                    const dt = new Date(date);
+                    return { date, label: fmtShort(date), startDay: i, isWeekend: dt.getDay() === 0 || dt.getDay() === 6 };
+                }),
+            };
         }
         const dates = filteredTasks.flatMap(t => [t.startDate, t.endDate]).sort();
         const s = addDays(dates[0], -7);
         const e = addDays(dates[dates.length - 1], 14);
         const td = daysBetween(s, e);
         const ms: { label: string; startDay: number; days: number }[] = [];
+        const ds: { date: string; label: string; startDay: number; isWeekend: boolean }[] = [];
         const cur = new Date(s);
         while (cur <= new Date(e)) {
             const monthStart = new Date(cur.getFullYear(), cur.getMonth(), 1);
             const monthEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
-            const startDay = Math.max(0, daysBetween(s, monthStart.toISOString().split('T')[0]));
-            const endDay = Math.min(td, daysBetween(s, monthEnd.toISOString().split('T')[0]));
+            const startDay = Math.max(0, daysBetween(s, toIsoDate(monthStart)));
+            const endDay = Math.min(td, daysBetween(s, toIsoDate(monthEnd)));
             ms.push({ label: `T${cur.getMonth() + 1}/${cur.getFullYear()}`, startDay, days: endDay - startDay + 1 });
             cur.setMonth(cur.getMonth() + 1);
         }
-        return { timelineStart: s, totalDays: td, months: ms };
+        for (let i = 0; i <= td; i++) {
+            const date = addDays(s, i);
+            const dt = new Date(date);
+            ds.push({ date, label: fmtShort(date), startDay: i, isWeekend: dt.getDay() === 0 || dt.getDay() === 6 });
+        }
+        return { timelineStart: s, totalDays: td, months: ms, days: ds };
     }, [filteredTasks]);
 
     const todayOffset = useMemo(() => daysBetween(timelineStart, today()), [timelineStart]);
+    const formTaskHasChildren = !!(editing && childCountByTaskId.get(editing.id));
+    const formProgressReadOnly = formTaskHasChildren || fProgressMode !== 'manual';
 
     // ====== Sort icon helper ======
     const SortIcon: React.FC<{ field: SortField }> = ({ field }) => {
@@ -1578,9 +2073,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                         {/* ====== TABLE VIEW ====== */}
                         {(viewMode === 'table' || viewMode === 'split') && (
                             <div className={`${viewMode === 'split' ? 'w-full lg:w-[520px] shrink-0 lg:border-r border-b lg:border-b-0 border-slate-100 dark:border-slate-700' : 'flex-1'} overflow-auto`}>
-                                <table className={`${viewMode === 'table' ? 'w-full min-w-[760px] lg:min-w-[1180px] table-fixed' : 'w-full min-w-[500px]'} text-xs`}>
+                                <table className={`${viewMode === 'table' ? 'w-full min-w-[760px] lg:min-w-[1280px] table-fixed' : 'w-full min-w-[500px]'} text-xs`}>
                                     <thead>
-                                        <tr className="bg-slate-50/80 dark:bg-slate-700/50 border-b border-slate-100 dark:border-slate-700">
+                                        <tr className="bg-slate-50/80 dark:bg-slate-700/50 border-b border-slate-100 dark:border-slate-700" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
                                             {viewMode === 'table' && (
                                                 <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[40px]">
                                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">STT</span>
@@ -1633,6 +2128,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                     <th className="hidden lg:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[86px]">
                                                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">KT thực tế</span>
                                                     </th>
+                                                    <th className="hidden lg:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[102px]">
+                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">KL tạm tính</span>
+                                                    </th>
                                                 </>
                                             )}
                                             <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[120px]">
@@ -1664,6 +2162,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                             const { derivedStart, derivedEnd } = deriveActualDates(task, dailyLogs, linkedIds);
                                             const unitLabel = getTaskUnit(task, linkedIds, contractItems);
                                             const unitTitle = getTaskUnitTitle(task, linkedIds, contractItems);
+                                            const rowHasChildren = hasChildren || !!childCountByTaskId.get(task.id);
+                                            const progressReadOnly = rowHasChildren || task.progressMode === 'daily_log' || task.progressMode === 'completion_request' || task.progressMode === 'children_auto' || task.progressMode === 'derived_from_acceptance';
+                                            const requestCount = completionRequestsByTaskId.get(task.id)?.length || 0;
                                             return (
                                                 <tr key={task.id}
                                                     style={{ height: `${ROW_HEIGHT}px` }}
@@ -1710,6 +2211,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                                 {task.assignee && <span>{task.assignee}</span>}
                                                                 <span>{fmtShort(task.startDate)}→{fmtShort(task.endDate)}</span>
                                                                 {unitLabel !== '–' && <span>{unitLabel}</span>}
+                                                                {(task.provisionalQuantity || 0) > 0 && <span>KL {formatQuantity(task.provisionalQuantity)}</span>}
                                                                 {(task.watchers || []).length > 0 && <span>{task.watchers?.length} theo dõi</span>}
                                                             </div>
                                                         )}
@@ -1746,11 +2248,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                             <td className="hidden lg:table-cell px-2 py-2.5 text-emerald-600 font-medium" title={task.actualEndDate ? "Nhập tay" : derivedEnd ? "Tính tự động" : ""}>
                                                                 {derivedEnd ? fmtShort(derivedEnd) : <span className="text-slate-300">–</span>}
                                                             </td>
+                                                            <td className="hidden lg:table-cell px-2 py-2.5 text-slate-600 font-bold">
+                                                                {formatQuantity(task.provisionalQuantity)}
+                                                            </td>
                                                         </>
                                                     )}
                                                     {/* Progress */}
                                                     <td className="px-2 py-2.5">
-                                                        <ProgressCell value={task.progress} onChange={v => updateProgress(task.id, v)} />
+                                                        <ProgressCell value={task.progress} onChange={v => updateProgress(task.id, v)} disabled={progressReadOnly} hint={getProgressHint(task, rowHasChildren)} />
                                                     </td>
                                                     {/* Unit (table mode only) */}
                                                     {viewMode === 'table' && (
@@ -1773,6 +2278,16 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                                 className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors">
                                                                 <Copy size={12} />
                                                             </button>
+                                                            <button onClick={() => openAdd(task.id)} title="Thêm hạng mục con"
+                                                                className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
+                                                                <Plus size={12} />
+                                                            </button>
+                                                            {!rowHasChildren && (
+                                                                <button onClick={() => openCompletionRequestModal(task)} title={requestCount > 0 ? `Báo hoàn thành (${requestCount} phiếu)` : 'Báo hoàn thành'}
+                                                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors">
+                                                                    <ClipboardCheck size={12} />
+                                                                </button>
+                                                            )}
                                                             <button onClick={() => setDeleteTarget(task)} title="Xoá"
                                                                 className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
                                                                 <Trash2 size={12} />
@@ -1796,15 +2311,27 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                         {/* ====== GANTT VIEW ====== */}
                         {(viewMode === 'gantt' || viewMode === 'split') && (
                             <div className="flex-1 overflow-x-auto overflow-y-hidden relative">
-                                <div className="relative" style={{ width: `${totalDays * zoom}px`, minWidth: '100%' }}>
-                                    {/* Month headers */}
-                                    <div className="flex border-b border-slate-100 dark:border-slate-700 relative bg-slate-50/50 dark:bg-slate-700/30" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
+                                <div className="relative" style={{ width: `${(totalDays + 1) * zoom}px`, minWidth: '100%' }}>
+                                    {/* Month + day headers */}
+                                    <div className="border-b border-slate-100 dark:border-slate-700 relative bg-slate-50/50 dark:bg-slate-700/30" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
                                         {months.map((m, i) => (
-                                            <div key={i} className="absolute top-0 h-full flex flex-col justify-center border-r border-slate-100 dark:border-slate-700"
+                                            <div key={i} className="absolute top-0 h-[30px] flex items-center border-r border-slate-100 dark:border-slate-700"
                                                 style={{ left: `${m.startDay * zoom}px`, width: `${m.days * zoom}px` }}>
                                                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider px-2 truncate">{m.label}</span>
                                             </div>
                                         ))}
+                                        <div className="absolute left-0 right-0 top-[30px] h-[34px] border-t border-slate-100 dark:border-slate-700">
+                                            {days.map(day => {
+                                                const showLabel = zoom >= 26 || day.startDay % Math.ceil(28 / zoom) === 0;
+                                                return (
+                                                    <div key={day.date}
+                                                        className={`absolute top-0 h-full border-r border-slate-100 dark:border-slate-700 flex items-center justify-center ${day.isWeekend ? 'bg-slate-100/60 dark:bg-slate-800/40' : ''}`}
+                                                        style={{ left: `${day.startDay * zoom}px`, width: `${zoom}px` }}>
+                                                        {showLabel && <span className="text-[8px] font-bold text-slate-400 whitespace-nowrap">{day.label}</span>}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                         {todayOffset >= 0 && todayOffset <= totalDays && (
                                             <div className="absolute top-0 h-full w-[2px] bg-red-500 z-10" style={{ left: `${todayOffset * zoom}px` }}>
                                                 <div className="absolute top-0 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-b bg-red-500 text-white text-[8px] font-bold whitespace-nowrap">
@@ -1812,6 +2339,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                 </div>
                                             </div>
                                         )}
+                                    </div>
+
+                                    <div className="absolute left-0 pointer-events-none z-0" style={{ top: `${GANTT_HEADER_HEIGHT}px`, height: `${taskTree.length * ROW_HEIGHT}px`, width: `${(totalDays + 1) * zoom}px` }}>
+                                        {days.map(day => (
+                                            <div key={`grid-${day.date}`}
+                                                className={`absolute top-0 h-full border-r border-slate-100/70 dark:border-slate-700/60 ${day.isWeekend ? 'bg-slate-100/45 dark:bg-slate-800/30' : ''}`}
+                                                style={{ left: `${day.startDay * zoom}px`, width: `${zoom}px` }} />
+                                        ))}
                                     </div>
 
                                     {/* Gantt-only task labels */}
@@ -1841,7 +2376,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     {/* Task bars + Baseline shadows + Critical Path + GĐ2: Ghost + Gate Block */}
                                     {taskTree.map(({ task }, idx) => {
                                         const left = daysBetween(timelineStart, task.startDate) * zoom;
-                                        const width = Math.max(task.duration * zoom, zoom);
+                                        const displayDuration = Math.max(task.duration || 0, daysBetween(task.startDate, task.endDate));
+                                        const width = Math.max((displayDuration || 1) * zoom, zoom);
+                                        const isPointMilestone = task.isMilestone && (displayDuration <= 0 || task.startDate === task.endDate);
                                         const color = task.color || COLORS[idx % COLORS.length];
                                         const status = getStatus(task);
                                         const isCrit = criticalPathResult?.criticalPath.includes(task.id);
@@ -1886,7 +2423,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         }} />
                                                 )}
 
-                                                {task.isMilestone ? (
+                                                {isPointMilestone ? (
                                                     <div className="absolute top-1/2 -translate-y-1/2 z-10" style={{ left: `${left}px` }}>
                                                         <div className={`w-4 h-4 rotate-45 rounded-sm shadow-md ${isCrit ? 'ring-2 ring-red-500 ring-offset-1' : ''}`} style={{ backgroundColor: color }} />
                                                     </div>
@@ -1919,7 +2456,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         {width > 50 && (
                                                             <span className="absolute inset-0 flex items-center px-2 text-[9px] font-bold truncate z-10"
                                                                 style={{ color: task.progress > 50 ? '#fff' : (isGateBlocked ? '#64748b' : (isCrit ? '#ef4444' : color)) }}>
-                                                                {isGateBlocked && '🔒 '}{task.name}
+                                                                {isGateBlocked && '🔒 '}{task.isMilestone && <Flag size={9} className="mr-1 shrink-0" />}{task.name}
                                                             </span>
                                                         )}
                                                         {/* GĐ2: Drag delta indicator */}
@@ -2047,6 +2584,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                             if (!task.dependencies || task.dependencies.length === 0) return null;
                                             const succY = GANTT_HEADER_HEIGHT + idx * ROW_HEIGHT + ROW_HEIGHT / 2; // center of this row
                                             const succLeft = daysBetween(timelineStart, task.startDate) * zoom;
+                                            const succWidth = Math.max((Math.max(task.duration || 0, daysBetween(task.startDate, task.endDate)) || 1) * zoom, zoom);
 
                                             return task.dependencies.map(dep => {
                                                 const predIdx = taskTree.findIndex(t => t.task.id === dep.taskId);
@@ -2062,8 +2600,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                 let x1: number, x2: number;
                                                 if (dep.type === 'FS') { x1 = predRight; x2 = succLeft; }
                                                 else if (dep.type === 'SS') { x1 = predLeft; x2 = succLeft; }
-                                                else if (dep.type === 'FF') { x1 = predRight; x2 = succLeft + Math.max(task.duration * zoom, zoom); }
-                                                else { x1 = predLeft; x2 = succLeft + Math.max(task.duration * zoom, zoom); }
+                                                else if (dep.type === 'FF') { x1 = predRight; x2 = succLeft + succWidth; }
+                                                else { x1 = predLeft; x2 = succLeft + succWidth; }
 
                                                 // Draw an L-shaped path
                                                 const midX = (x1 + x2) / 2;
@@ -2084,7 +2622,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 
                                     {/* GĐ2: Weather Overlay */}
                                     <div className="absolute top-0 left-0 h-full w-full pointer-events-none z-[5]">
-                                        {Array.from({ length: totalDays }, (_, i) => {
+                                        {Array.from({ length: totalDays + 1 }, (_, i) => {
                                             const d = addDays(timelineStart, i);
                                             const w = weatherMap.get(d);
                                             if (!w || w === 'sunny' || w === 'cloudy') return null;
@@ -2331,8 +2869,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm font-bold bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" autoFocus />
                             </div>
 
-                            {/* WBS Code + Unit */}
-                            <div className="grid grid-cols-2 gap-3">
+                            {/* WBS Code + Unit + Provisional quantity */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Mã WBS</label>
                                     <input value={fWbsCode} onChange={e => setFWbsCode(e.target.value)} placeholder="VD: 1.1.3"
@@ -2341,6 +2879,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Đơn vị</label>
                                     <input value={fFallbackUnit} onChange={e => setFFallbackUnit(e.target.value)} placeholder="m³, kg, m²..."
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">KL tạm tính</label>
+                                    <input type="number" min={0} step="0.001" value={fProvisionalQuantity} onChange={e => setFProvisionalQuantity(e.target.value)} placeholder="0"
                                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                                 </div>
                             </div>
@@ -2386,11 +2929,16 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 	                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">
 	                                        Tiến độ: <span className="text-orange-600">{fProgress}%</span>
 	                                    </label>
-	                                    <input type="range" min={0} max={100} step={5} value={fProgress} disabled={fProgressMode === 'derived_from_acceptance'} onChange={e => setFProgress(e.target.value)}
+	                                    <input type="range" min={0} max={100} step={5} value={fProgress} disabled={formProgressReadOnly} onChange={e => setFProgress(e.target.value)}
 	                                        className="w-full accent-orange-500 disabled:opacity-40" />
 	                                    <div className="flex justify-between text-[9px] text-slate-400 mt-0.5">
 	                                        <span>0%</span><span>50%</span><span>100%</span>
 	                                    </div>
+                                        {formProgressReadOnly && (
+                                            <p className="mt-1 text-[9px] font-bold text-blue-500">
+                                                {formTaskHasChildren ? 'Tự tính từ công việc con' : 'Tự tính theo nguồn tiến độ đã chọn'}
+                                            </p>
+                                        )}
 	                                </div>
 	                                <div>
                                     <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><User size={10} /> Người phụ trách</label>
@@ -2449,8 +2997,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 	                                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Nguồn tiến độ</label>
 	                                <select value={fProgressMode} onChange={e => setFProgressMode(e.target.value as ProjectTaskProgressMode)}
 	                                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none">
+                                        <option value="daily_log">Nhật ký thi công đã xác nhận</option>
 	                                    <option value="manual">Nhập tay theo kế hoạch thi công</option>
 	                                    <option value="derived_from_acceptance">Tự tính từ nghiệm thu khối lượng</option>
+                                        <option value="completion_request">Tự tính từ phiếu hoàn thành</option>
+                                        {formTaskHasChildren && <option value="children_auto">Tự tính từ công việc con</option>}
 	                                </select>
 	                            </div>
 
@@ -2577,6 +3128,74 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                             </div>
 
+                            {editing && (
+                                <div className="border border-amber-100 dark:border-amber-900/50 rounded-xl p-3 bg-amber-50/30 dark:bg-amber-900/10">
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                        <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-1">
+                                            <ClipboardCheck size={11} className="text-amber-600" /> Phiếu hoàn thành
+                                        </label>
+                                        {!formTaskHasChildren && (
+                                            <button onClick={() => openCompletionRequestModal(editing)}
+                                                className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-amber-700 bg-white border border-amber-200 hover:bg-amber-100 transition-colors">
+                                                Báo hoàn thành
+                                            </button>
+                                        )}
+                                    </div>
+                                    {formTaskHasChildren ? (
+                                        <p className="text-[10px] text-slate-500">Hạng mục cha tự tính từ các công việc con, không tạo phiếu trực tiếp.</p>
+                                    ) : (completionRequestsByTaskId.get(editing.id) || []).length === 0 ? (
+                                        <p className="text-[10px] text-slate-500">Chưa có phiếu hoàn thành nào.</p>
+                                    ) : (
+                                        <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                                            {(completionRequestsByTaskId.get(editing.id) || []).map(request => {
+                                                const cfg = COMPLETION_STATUS_CONFIG[request.status] || COMPLETION_STATUS_CONFIG.submitted;
+                                                return (
+                                                    <div key={request.id} className="rounded-xl border border-white/70 bg-white/80 dark:bg-slate-800/80 dark:border-slate-700 p-2">
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className={`px-2 py-0.5 rounded-full border text-[9px] font-black ${cfg.className}`}>{cfg.label}</span>
+                                                                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                                                                        KL: {formatQuantity(request.acceptedQuantity || request.proposedQuantity)}
+                                                                    </span>
+                                                                </div>
+                                                                {request.note && <p className="text-[10px] text-slate-500 mt-1 line-clamp-2">{request.note}</p>}
+                                                                {request.returnReason && <p className="text-[10px] text-red-500 mt-1 line-clamp-2">Lý do: {request.returnReason}</p>}
+                                                                {request.attachments.length > 0 && (
+                                                                    <div className="flex items-center gap-1 mt-1 text-[9px] font-bold text-blue-500">
+                                                                        <Paperclip size={9} /> {request.attachments.length} bằng chứng
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex items-center gap-1 shrink-0">
+                                                                {request.status === 'submitted' && projectPerms.has('verify') && (
+                                                                    <button onClick={() => handleCompletionTransition(request, 'verified')}
+                                                                        className="px-2 py-1 rounded-lg text-[9px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-100">
+                                                                        Xác nhận
+                                                                    </button>
+                                                                )}
+                                                                {request.status === 'verified' && projectPerms.has('approve') && (
+                                                                    <button onClick={() => handleCompletionTransition(request, 'approved')}
+                                                                        className="px-2 py-1 rounded-lg text-[9px] font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100">
+                                                                        Duyệt
+                                                                    </button>
+                                                                )}
+                                                                {(request.status === 'submitted' || request.status === 'verified') && (projectPerms.has('verify') || projectPerms.has('approve')) && (
+                                                                    <button onClick={() => { setCompletionReturnRequest(request); setCompletionReturnReason(''); }}
+                                                                        className="px-2 py-1 rounded-lg text-[9px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-100">
+                                                                        Trả lại
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Notes */}
                             <div>
                                 <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Ghi chú</label>
@@ -2602,6 +3221,108 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     <Save size={14} /> {editing ? 'Cập nhật' : 'Thêm mới'}
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {completionModalTask && (
+                <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && setCompletionModalTask(null)}>
+                    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md mx-4 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <ClipboardCheck size={18} className="text-amber-600 shrink-0" />
+                                <div className="min-w-0">
+                                    <h4 className="text-sm font-black text-slate-800 dark:text-white truncate">Báo hoàn thành công việc</h4>
+                                    <p className="text-[10px] text-slate-500 truncate">{completionModalTask.name}</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setCompletionModalTask(null)} className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div className="grid grid-cols-3 gap-2">
+                                <div className="rounded-xl bg-slate-50 dark:bg-slate-700/40 p-2">
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase">KL tạm tính</p>
+                                    <p className="text-sm font-black text-slate-700 dark:text-slate-200">{formatQuantity(completionModalTask.provisionalQuantity)}</p>
+                                </div>
+                                <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 p-2">
+                                    <p className="text-[9px] font-bold text-emerald-500 uppercase">Đã duyệt</p>
+                                    <p className="text-sm font-black text-emerald-700 dark:text-emerald-300">{formatQuantity(getApprovedCompletionQuantity(completionModalTask.id))}</p>
+                                </div>
+                                <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 p-2">
+                                    <p className="text-[9px] font-bold text-amber-500 uppercase">Còn lại</p>
+                                    <p className="text-sm font-black text-amber-700 dark:text-amber-300">{formatQuantity(getRemainingCompletionQuantity(completionModalTask))}</p>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Khối lượng hoàn thành</label>
+                                <input type="number" min={0} step="0.001" value={completionQty} onChange={e => setCompletionQty(e.target.value)}
+                                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-amber-500 outline-none" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Ghi chú</label>
+                                <textarea value={completionNote} onChange={e => setCompletionNote(e.target.value)} rows={3}
+                                    placeholder="Mô tả phần việc đã hoàn thành, vị trí, điều kiện thi công..."
+                                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-amber-500 outline-none resize-none" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Bằng chứng</label>
+                                <label className="flex items-center justify-center gap-2 px-3 py-3 rounded-xl border border-dashed border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10 text-xs font-bold text-amber-700 cursor-pointer hover:bg-amber-100/70 transition-colors">
+                                    <Paperclip size={14} /> Chọn ảnh/file
+                                    <input type="file" multiple className="hidden" onChange={e => setCompletionFiles(Array.from(e.target.files || []))} />
+                                </label>
+                                {completionFiles.length > 0 && (
+                                    <div className="mt-2 space-y-1">
+                                        {completionFiles.map(file => (
+                                            <div key={`${file.name}-${file.size}`} className="flex items-center justify-between gap-2 text-[10px] font-bold text-slate-500 bg-slate-50 dark:bg-slate-700/40 rounded-lg px-2 py-1">
+                                                <span className="truncate">{file.name}</span>
+                                                <span className="shrink-0">{Math.round(file.size / 1024)} KB</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="px-5 py-4 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2">
+                            <button onClick={() => setCompletionModalTask(null)} className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
+                                Huỷ
+                            </button>
+                            <button onClick={handleSubmitCompletionRequest} disabled={submittingCompletion || parseNonNegativeNumber(completionQty) <= 0}
+                                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                                {submittingCompletion ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCheck size={14} />}
+                                Gửi phiếu
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {completionReturnRequest && (
+                <div className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && setCompletionReturnRequest(null)}>
+                    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-sm mx-4 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                            <h4 className="text-sm font-black text-slate-800 dark:text-white">Trả lại phiếu hoàn thành</h4>
+                            <button onClick={() => setCompletionReturnRequest(null)} className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <div className="p-5">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Lý do trả lại</label>
+                            <textarea value={completionReturnReason} onChange={e => setCompletionReturnReason(e.target.value)} rows={4}
+                                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-red-500 outline-none resize-none"
+                                placeholder="Ví dụ: thiếu ảnh nghiệm thu, khối lượng chưa đúng, cần bổ sung biên bản..." />
+                        </div>
+                        <div className="px-5 py-4 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2">
+                            <button onClick={() => setCompletionReturnRequest(null)} className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
+                                Huỷ
+                            </button>
+                            <button onClick={() => handleCompletionTransition(completionReturnRequest, 'returned', completionReturnReason)}
+                                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700">
+                                Trả lại
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -2677,6 +3398,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                 <th className="px-3 py-2 border-b border-slate-200">Công việc</th>
                                                 <th className="px-3 py-2 border-b border-slate-200">BĐ Kế hoạch</th>
                                                 <th className="px-3 py-2 border-b border-slate-200">KT Kế hoạch</th>
+                                                <th className="px-3 py-2 border-b border-slate-200">KL tạm tính</th>
                                                 <th className="px-3 py-2 border-b border-slate-200">Tiến độ</th>
                                                 <th className="px-3 py-2 border-b border-slate-200">Trạng thái</th>
                                             </tr>
@@ -2696,6 +3418,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 	                                                        <td className="px-3 py-2 font-semibold text-slate-700">{taskPreview}</td>
                                                         <td className="px-3 py-2 text-slate-600">{plannedStart ? fmtDate(plannedStart) : '-'}</td>
                                                         <td className="px-3 py-2 text-slate-600">{plannedEnd ? fmtDate(plannedEnd) : '-'}</td>
+                                                        <td className="px-3 py-2 text-slate-600">{formatQuantity(parseNonNegativeNumber(row['Khối lượng tạm tính']))}</td>
                                                         <td className="px-3 py-2">
 	                                                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-bold">{progressPreview}%</span>
                                                         </td>
