@@ -68,12 +68,16 @@ const getPartyName = (contract: CustomerContract | SubcontractorContract, contra
 const getEndDate = (contract: CustomerContract | SubcontractorContract, contractType: ContractItemType) =>
   contractType === 'customer' ? (contract as CustomerContract).endDate : (contract as SubcontractorContract).completionDate;
 
+const isOriginalBoqReadOnly = (status: HdContractStatus) =>
+  ['signed', 'active', 'completed', 'expired', 'cancelled'].includes(status);
+
 const ContractWorkspace: React.FC<Props> = ({ contract, contractType, embedded, onBack }) => {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('info');
   const projectId = contract.projectId || null;
   const constructionSiteId = contract.constructionSiteId || null;
   const hasSiteLink = Boolean(constructionSiteId);
   const partyName = getPartyName(contract, contractType);
+  const originalBoqLocked = isOriginalBoqReadOnly(contract.status);
 
   const tabs: { key: WorkspaceTab; label: string; icon: React.ReactNode; siteRequired?: boolean }[] = [
     { key: 'info', label: 'Thông tin HĐ', icon: <Info size={13} /> },
@@ -155,6 +159,12 @@ const ContractWorkspace: React.FC<Props> = ({ contract, contractType, embedded, 
               contractType={contractType}
               projectId={projectId}
               constructionSiteId={constructionSiteId}
+              readOnly={originalBoqLocked}
+              readOnlyReason={
+                originalBoqLocked
+                  ? 'BOQ gốc của hợp đồng đã ký/hiệu lực là bản thương mại bất biến. Các thay đổi cần đi qua tab Điều chỉnh BOQ hoặc Phụ lục.'
+                  : undefined
+              }
             />
           )}
           {activeTab === 'variation' && (

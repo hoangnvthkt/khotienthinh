@@ -2,12 +2,13 @@ import { supabase } from './supabase';
 import {
     ProjectTask, DailyLog, AcceptanceRecord,
     MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor,
-    PurchaseOrder, PaymentSchedule, ProjectBaseline, ProjectWorkBoqItem
+    PurchaseOrder, PaymentSchedule, ProjectBaseline, ProjectWorkBoqItem, PurchaseOrderRequestLineLink
 } from '../types';
 import { auditService } from './auditService';
 import { dailyLogDetailService } from './dailyLogDetailService';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 import { createPoQrToken } from './poQr';
+import { projectTransactionService } from './projectTransactionService';
 
 // ==================== HELPER ====================
 // snake_case ↔ camelCase mapping
@@ -293,6 +294,19 @@ const workBoqToDb = (item: ProjectWorkBoqItem): any => {
     return row;
 };
 
+const poToDb = (po: PurchaseOrder): any => {
+    const row = toDb(po);
+    row.items = po.items || [];
+    row.received_transaction_ids = po.receivedTransactionIds || [];
+    return row;
+};
+
+const poRequestLineLinkToDb = (link: PurchaseOrderRequestLineLink): any => {
+    const row = toDb(link);
+    delete row.created_at;
+    return row;
+};
+
 // ==================== WORK BOQ (TỪ TIẾN ĐỘ) ====================
 export const workBoqService = {
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectWorkBoqItem[]> {
@@ -412,7 +426,39 @@ export const poService = {
     async upsert(item: PurchaseOrder): Promise<void> {
         const { error } = await supabase
             .from('purchase_orders')
-            .upsert(toDb(item), { onConflict: 'id' });
+            .upsert(poToDb(item), { onConflict: 'id' });
+        if (error) throw error;
+    },
+    async listStockOrders(): Promise<PurchaseOrder[]> {
+        const { data, error } = await supabase
+            .from('purchase_orders')
+            .select('*')
+            .eq('source_mode', 'proactive_stock')
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+        return (data || []).map(fromDb);
+    },
+    async listRequestLineLinks(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<PurchaseOrderRequestLineLink[]> {
+        const { data, error } = await supabase
+            .from('purchase_order_request_lines')
+            .select('*')
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+        return dedupeRowsById(data || []).map(fromDb);
+    },
+    async replaceRequestLineLinks(purchaseOrderId: string, links: PurchaseOrderRequestLineLink[]): Promise<void> {
+        const { error: deleteError } = await supabase
+            .from('purchase_order_request_lines')
+            .delete()
+            .eq('purchase_order_id', purchaseOrderId);
+        if (deleteError) throw deleteError;
+        if (links.length === 0) return;
+        const { error } = await supabase
+            .from('purchase_order_request_lines')
+            .upsert(links.map(poRequestLineLinkToDb), {
+                onConflict: 'purchase_order_id,purchase_order_line_id,material_request_id,request_line_id',
+            });
         if (error) throw error;
     },
     async getByQrToken(token: string): Promise<PurchaseOrder | null> {
@@ -500,6 +546,18 @@ export const paymentService = {
             .from('payment_schedules')
             .upsert(toDb(item), { onConflict: 'id' });
         if (error) throw error;
+        if (item.status === 'paid') {
+            await projectTransactionService.ensureWorkflowTransaction({
+                sourceRef: `payment_schedule:${item.id}`,
+                projectId: item.projectId || null,
+                constructionSiteId: item.constructionSiteId,
+                type: item.type === 'receivable' ? 'revenue_received' : 'expense',
+                category: item.type === 'receivable' ? 'other' : item.contractType === 'subcontractor' ? 'subcontract' : 'materials',
+                amount: Number(item.paidAmount || item.amount || 0),
+                description: `${item.type === 'receivable' ? 'Thu' : 'Chi'} lịch thanh toán: ${item.description}`,
+                date: item.paidDate || new Date().toISOString().slice(0, 10),
+            });
+        }
     },
     async listByContract(contractId: string, contractType?: PaymentSchedule['contractType']): Promise<PaymentSchedule[]> {
         let query = supabase

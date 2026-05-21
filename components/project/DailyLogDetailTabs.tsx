@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Plus, X, Package, Users, Wrench, Layers, Paperclip, ClipboardCheck } from 'lucide-react';
 import {
   DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine,
-  Attachment, BusinessPartner, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectTask,
+  Attachment, BusinessPartner, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectTask, ProjectWorkBoqItem,
 } from '../../types';
 
 interface Props {
@@ -15,6 +15,7 @@ interface Props {
   onLaborChange: (v: DailyLogLabor[]) => void;
   onMachinesChange: (v: DailyLogMachine[]) => void;
   tasks?: ProjectTask[];
+  workBoqItems?: ProjectWorkBoqItem[];
   laborCatalogs?: ContractLaborCatalogItem[];
   machineCatalogs?: ContractMachineCatalogItem[];
   businessPartners?: BusinessPartner[];
@@ -138,6 +139,7 @@ const DailyLogDetailTabs: React.FC<Props> = ({
   volumes, materials, laborDetails, machines,
   onVolumesChange, onMaterialsChange, onLaborChange, onMachinesChange,
   tasks = [],
+  workBoqItems = [],
   laborCatalogs = [],
   machineCatalogs = [],
   businessPartners = [],
@@ -150,6 +152,13 @@ const DailyLogDetailTabs: React.FC<Props> = ({
     label: `${task.wbsCode ? `${task.wbsCode} - ` : ''}${task.name}`,
     meta: [task.fallbackUnit, task.assignee].filter(Boolean).join(' • '),
   })), [tasks]);
+  const workBoqOptions = useMemo<SearchOption<ProjectWorkBoqItem>[]>(() => workBoqItems.map(item => ({
+    item,
+    label: `${item.wbsCode ? `${item.wbsCode} - ` : ''}${item.name}`,
+    meta: [item.unit, item.sourceTaskId ? 'Từ tiến độ' : 'Nhập tay'].filter(Boolean).join(' • '),
+  })), [workBoqItems]);
+  const workBoqByTaskId = useMemo(() => new Map(workBoqItems.filter(item => item.sourceTaskId).map(item => [item.sourceTaskId as string, item])), [workBoqItems]);
+  const taskById = useMemo(() => new Map(tasks.map(task => [task.id, task])), [tasks]);
   const laborOptions = useMemo<SearchOption<ContractLaborCatalogItem>[]>(() => laborCatalogs
     .filter(item => item.status !== 'inactive')
     .map(item => ({
@@ -211,7 +220,7 @@ const DailyLogDetailTabs: React.FC<Props> = ({
                     <div className="min-w-0">
                       <div className="text-[11px] font-black text-slate-700 truncate">Khối lượng hoàn thành</div>
                       <div className="text-[10px] font-bold text-slate-400 truncate">
-                        {v.taskName || v.contractItemName || 'Chưa chọn hạng mục tiến độ'}
+                        {v.workBoqItemName || v.taskName || v.contractItemName || 'Chưa chọn hạng mục tiến độ'}
                       </div>
                     </div>
                   </div>
@@ -232,6 +241,8 @@ const DailyLogDetailTabs: React.FC<Props> = ({
                         ...v,
                         taskId: undefined,
                         taskName: value,
+                        workBoqItemId: undefined,
+                        workBoqItemName: undefined,
                         contractItemId: undefined,
                         contractItemName: value,
                       };
@@ -239,15 +250,45 @@ const DailyLogDetailTabs: React.FC<Props> = ({
                     }}
                     onPick={task => {
                       const updated = [...volumes];
+                      const matchedWorkBoq = workBoqByTaskId.get(task.id);
                       updated[i] = {
                         ...v,
                         taskId: task.id,
                         taskName: task.name,
+                        workBoqItemId: matchedWorkBoq?.id,
+                        workBoqItemName: matchedWorkBoq?.name,
                         contractItemId: undefined,
                         contractItemName: task.name,
-                        unit: task.fallbackUnit || v.unit,
+                        unit: matchedWorkBoq?.unit || task.fallbackUnit || v.unit,
                       };
                       onVolumesChange(updated);
+                    }}
+                  />
+
+                  <SearchablePicker
+                    value={v.workBoqItemName || ''}
+                    placeholder="Gắn đầu mục BOQ thi công để đối chiếu hợp đồng..."
+                    options={workBoqOptions}
+                    onTextChange={value => {
+                      const u = [...volumes];
+                      u[i] = {
+                        ...v,
+                        workBoqItemId: undefined,
+                        workBoqItemName: value,
+                      };
+                      onVolumesChange(u);
+                    }}
+                    onPick={item => {
+                      const u = [...volumes];
+                      u[i] = {
+                        ...v,
+                        workBoqItemId: item.id,
+                        workBoqItemName: item.name,
+                        taskId: item.sourceTaskId || v.taskId,
+                        taskName: item.sourceTaskId ? taskById.get(item.sourceTaskId)?.name || v.taskName : v.taskName,
+                        unit: item.unit || v.unit,
+                      };
+                      onVolumesChange(u);
                     }}
                   />
 
@@ -341,7 +382,7 @@ const DailyLogDetailTabs: React.FC<Props> = ({
               </div>
             );
           })}
-          <button onClick={() => onVolumesChange([...volumes, { taskId: '', taskName: '', contractItemId: undefined, contractItemName: '', quantity: 0, unit: 'm2', attachments: [] }])}
+          <button onClick={() => onVolumesChange([...volumes, { taskId: '', taskName: '', workBoqItemId: undefined, workBoqItemName: '', contractItemId: undefined, contractItemName: '', quantity: 0, unit: 'm2', attachments: [] }])}
             className="flex items-center gap-1 text-[10px] font-bold text-teal-600 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg border border-teal-200">
             <Plus size={10} /> Thêm khối lượng
           </button>

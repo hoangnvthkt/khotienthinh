@@ -25,6 +25,7 @@ const emptyDetails = (): DailyLogDetails => ({
 
 const emptyToNullKeys = new Set([
   'contract_item_id',
+  'work_boq_item_id',
   'task_id',
   'material_id',
   'catalog_item_id',

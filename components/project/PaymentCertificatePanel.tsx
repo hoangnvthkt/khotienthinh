@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Plus, FileText, CheckCircle2, Clock, DollarSign, AlertTriangle,
-  ChevronDown, ChevronRight, X, Send, Check, CreditCard,
+  ChevronDown, ChevronRight, X, Send, Check, CreditCard, XCircle,
 } from 'lucide-react';
 import { PaymentCertificate, PaymentCertificateStatus, ContractItemType, AdvancePayment } from '../../types';
 import { paymentCertificateService, calculatePayableAmount } from '../../lib/paymentCertificateService';
@@ -82,8 +82,11 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
   };
 
   const handleStatusChange = async (cert: PaymentCertificate, newStatus: PaymentCertificateStatus) => {
-    const labels: Record<string, string> = { submitted: 'Gửi duyệt', returned: 'Trả lại', approved: 'Phê duyệt', paid: 'Xác nhận thanh toán' };
-    const ok = await confirm({ title: labels[newStatus] || newStatus, targetName: `Đợt ${cert.periodNumber}` });
+    const labels: Record<string, string> = { submitted: 'Gửi duyệt', returned: 'Trả lại', approved: 'Phê duyệt', paid: 'Xác nhận thanh toán', cancelled: 'Huỷ/Rollback chứng từ' };
+    const warningText = newStatus === 'cancelled'
+      ? 'Rollback chứng từ sẽ hủy trạng thái thanh toán/phê duyệt và mở khóa BOQ liên quan nếu không còn chứng từ paid khác dùng cùng hạng mục.'
+      : undefined;
+    const ok = await confirm({ title: labels[newStatus] || newStatus, targetName: `Đợt ${cert.periodNumber}`, warningText });
     if (!ok) return;
     try {
       const requiredPermission = STATUS_PERMISSION[newStatus];
@@ -109,6 +112,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
       return {
         ...item,
         currentQuantity: currentQty,
+        certifiedQuantity: currentQty,
         cumulativeQuantity: cumQty,
         currentAmount: currentQty * item.unitPrice,
         cumulativeAmount: cumQty * item.unitPrice,
@@ -278,7 +282,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
                       </div>
                     </div>
                     <div className="text-right">
-	                      <div className="text-sm font-black text-emerald-600">{fmtM(cert.payableThisPeriod ?? cert.currentPayableAmount)}</div>
+                      <div className="text-sm font-black text-emerald-600">{fmtM(cert.payableThisPeriod ?? cert.currentPayableAmount)}</div>
                       <div className="text-[10px] text-slate-400">GT đợt này</div>
                     </div>
                   </div>
@@ -324,6 +328,13 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
                                 <td className="px-2 py-1.5 text-[10px] text-right font-bold text-emerald-600">{fmtM(item.currentAmount)}</td>
                               </tr>
                             ))}
+                            {cert.items.length === 0 && (
+                              <tr>
+                                <td colSpan={9} className="px-3 py-4 text-center text-[10px] font-bold text-amber-600">
+                                  Chứng từ này chưa có hạng mục. Cần tạo lại sau khi có BOQ/nghiệm thu hợp lệ.
+                                </td>
+                              </tr>
+                            )}
                           </tbody>
                         </table>
                       </div>
@@ -347,13 +358,13 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
                         ))}
                         <div className="border-t-2 border-indigo-200 dark:border-indigo-800 pt-2 mt-2 flex items-center justify-between">
                           <span className="text-xs font-black text-indigo-700 dark:text-indigo-300 uppercase">GT thanh toán đợt này</span>
-	                          <span className="text-lg font-black text-indigo-700 dark:text-indigo-300">{fmtM(cert.payableThisPeriod ?? cert.currentPayableAmount)}</span>
+                          <span className="text-lg font-black text-indigo-700 dark:text-indigo-300">{fmtM(cert.payableThisPeriod ?? cert.currentPayableAmount)}</span>
                         </div>
                       </div>
 
                       {/* Actions */}
                       <div className="flex gap-2 justify-end">
-	                        {(cert.status === 'draft' || cert.status === 'returned') && (
+                        {(cert.status === 'draft' || cert.status === 'returned') && (
                           <>
                             <button onClick={() => handleDeleteCert(cert)} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-red-500 hover:bg-red-50 border border-red-200">Xoá</button>
                             <button onClick={() => handleStatusChange(cert, 'submitted')} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white bg-amber-500 hover:bg-amber-600 flex items-center gap-1">
@@ -361,19 +372,29 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
                             </button>
                           </>
                         )}
-	                        {cert.status === 'submitted' && (
-	                          <>
-	                            <button onClick={() => handleStatusChange(cert, 'returned')} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 flex items-center gap-1">
-	                              <AlertTriangle size={10} /> Trả lại
-	                            </button>
-	                            <button onClick={() => handleStatusChange(cert, 'approved')} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white bg-blue-500 hover:bg-blue-600 flex items-center gap-1">
-	                              <Check size={10} /> Phê duyệt
-	                            </button>
-	                          </>
-	                        )}
+                        {cert.status === 'submitted' && (
+                          <>
+                            <button onClick={() => handleStatusChange(cert, 'returned')} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 flex items-center gap-1">
+                              <AlertTriangle size={10} /> Trả lại
+                            </button>
+                            <button onClick={() => handleStatusChange(cert, 'approved')} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white bg-blue-500 hover:bg-blue-600 flex items-center gap-1">
+                              <Check size={10} /> Phê duyệt
+                            </button>
+                          </>
+                        )}
                         {cert.status === 'approved' && (
-                          <button onClick={() => handleStatusChange(cert, 'paid')} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white bg-emerald-500 hover:bg-emerald-600 flex items-center gap-1">
-                            <CreditCard size={10} /> Xác nhận thanh toán
+                          <>
+                            <button onClick={() => handleStatusChange(cert, 'cancelled')} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 flex items-center gap-1">
+                              <XCircle size={10} /> Huỷ/Rollback
+                            </button>
+                            <button onClick={() => handleStatusChange(cert, 'paid')} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white bg-emerald-500 hover:bg-emerald-600 flex items-center gap-1">
+                              <CreditCard size={10} /> Xác nhận thanh toán
+                            </button>
+                          </>
+                        )}
+                        {cert.status === 'paid' && (
+                          <button onClick={() => handleStatusChange(cert, 'cancelled')} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 flex items-center gap-1">
+                            <XCircle size={10} /> Huỷ/Rollback
                           </button>
                         )}
                       </div>

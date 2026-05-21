@@ -14,6 +14,7 @@ import { calculatePaymentCertificate } from './projectPaymentRules';
 import { fromDb, toDb } from './dbMapping';
 import { auditService } from './auditService';
 import { approvalService } from './approvalService';
+import { projectTransactionService } from './projectTransactionService';
 import { User } from '../types';
 
 const TABLE = 'payment_certificates';
@@ -245,6 +246,9 @@ export const paymentCertificateService = {
       previousRetentionCumulative,
       previousAdvanceRecoveryCumulative,
     });
+    if (calculation.items.length === 0) {
+      throw new Error('Không thể tạo đợt thanh toán vì chưa có hạng mục BOQ/nghiệm thu hợp lệ.');
+    }
 
     const newCert: Partial<PaymentCertificate> = {
       contractId,
@@ -282,7 +286,12 @@ export const paymentCertificateService = {
     delete dbItem.items; // lưu riêng qua replaceItems(), tránh double-write vào JSONB column
     const { data, error } = await supabase.from(TABLE).insert(dbItem).select().single();
     if (error) throw error;
-    await replaceItems(data.id, calculation.items);
+    try {
+      await replaceItems(data.id, calculation.items);
+    } catch (insertItemsError) {
+      await supabase.from(TABLE).delete().eq('id', data.id);
+      throw insertItemsError;
+    }
     return { ...normalizeCert(data), items: calculation.items };
   },
 
@@ -302,6 +311,9 @@ export const paymentCertificateService = {
 
     const itemMap = await fetchItemsByCertIds([id]);
     const baseItems = updates.items || itemMap[id] || currentCert.items || [];
+    if (baseItems.length === 0) {
+      throw new Error('Chứng từ chưa có hạng mục, không thể cập nhật.');
+    }
     const calculation = calculatePaymentCertificate({
       items: baseItems,
       advances,
@@ -312,6 +324,9 @@ export const paymentCertificateService = {
       previousAdvanceRecoveryCumulative,
     });
     if (calculation.errors.length > 0) throw new Error(calculation.errors[0]);
+    if (calculation.items.length === 0) {
+      throw new Error('Chứng từ chưa có hạng mục, không thể cập nhật.');
+    }
 
     const next: Partial<PaymentCertificate> = {
       ...updates,
@@ -354,6 +369,9 @@ export const paymentCertificateService = {
     }
     if (cert.status === 'paid' && status !== 'cancelled') {
       throw new Error('Chứng từ đã thanh toán. Chỉ có thể chuyển sang Hủy để rollback.');
+    }
+    if ((status === 'submitted' || status === 'approved' || status === 'paid') && cert.items.length === 0) {
+      throw new Error('Chứng từ chưa có hạng mục, không thể gửi duyệt/phê duyệt/thanh toán.');
     }
     if ((status === 'approved' || status === 'paid') && (cert.payableThisPeriod ?? cert.currentPayableAmount ?? 0) <= 0 && !options?.allowZeroOrNegativePayable) {
       throw new Error('Giá trị thanh toán kỳ này không dương. Cần chỉnh chứng từ hoặc xác nhận bù trừ riêng.');
@@ -417,6 +435,17 @@ export const paymentCertificateService = {
       const recoveries = await fetchRecoveries(id);
       await advancePaymentService.applyRecoveries(recoveries);
       await contractItemService.lockItems(cert.items.map(i => i.contractItemId));
+      await projectTransactionService.ensureWorkflowTransaction({
+        sourceRef: `payment_certificate:${id}`,
+        projectId: (cert as any).projectId || null,
+        constructionSiteId: cert.constructionSiteId,
+        type: cert.contractType === 'customer' ? 'revenue_received' : 'expense',
+        category: cert.contractType === 'customer' ? 'other' : 'subcontract',
+        amount: cert.payableThisPeriod ?? cert.currentPayableAmount ?? 0,
+        description: `${cert.contractType === 'customer' ? 'Thu' : 'Chi'} chứng từ thanh toán đợt ${cert.periodNumber}`,
+        date: now.slice(0, 10),
+        createdBy: userId,
+      });
     }
     if (status === 'approved') {
       await contractItemService.lockItems(cert.items.map(i => i.contractItemId));

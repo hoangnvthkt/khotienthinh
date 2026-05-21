@@ -1,5 +1,6 @@
 import {
   AdvancePayment,
+  BoqReconciliationGroup,
   ContractItem,
   ContractItemType,
   DailyLog,
@@ -9,6 +10,7 @@ import {
   Project,
   ProjectProgressCalculationMode,
   ProjectTask,
+  ProjectWorkBoqItem,
   ProjectTransaction,
   PurchaseOrder,
   QuantityAcceptance,
@@ -24,7 +26,9 @@ import {
   paymentService,
   poService,
   taskService,
+  workBoqService,
 } from './projectService';
+import { boqReconciliationService } from './boqReconciliationService';
 import { paymentCertificateService } from './paymentCertificateService';
 import { projectFinancialService, ProjectFinancialKPIs } from './projectFinancialService';
 import { projectMasterService } from './projectMasterService';
@@ -270,19 +274,35 @@ const buildPartyMetric = (
   contractType: ContractItemType,
   contractItems: ContractItem[],
   logs: DailyLog[],
+  workBoqItems: ProjectWorkBoqItem[],
+  reconciliationGroups: BoqReconciliationGroup[],
   acceptances: QuantityAcceptance[],
   certs: PaymentCertificate[],
   advances: AdvancePayment[],
 ): PartyDashboardMetric => {
   const items = getLeafItems(contractItems.filter(item => item.contractType === contractType));
   const itemMap = new Map(items.map(item => [item.id, item]));
+  const workBoqByTaskId = new Map(workBoqItems.filter(item => item.sourceTaskId).map(item => [item.sourceTaskId as string, item.id]));
+  const factorsByWorkBoqItem = boqReconciliationService
+    .buildWorkContractFactors(reconciliationGroups)
+    .reduce<Map<string, ReturnType<typeof boqReconciliationService.buildWorkContractFactors>>>((acc, factor) => {
+      if (!acc.has(factor.workBoqItemId)) acc.set(factor.workBoqItemId, []);
+      acc.get(factor.workBoqItemId)!.push(factor);
+      return acc;
+    }, new Map());
   const contractValue = sum(items, revisedItemValue);
   const verifiedLogs = getVerifiedLogs(logs);
   const performedFromLogs = verifiedLogs.reduce((total, log) => {
     return total + sum(log.volumes || [], volume => {
-      const item = itemMap.get(volume.contractItemId);
-      if (!item) return 0;
-      return Number(volume.quantity || 0) * Number(item.unitPrice || 0);
+      const directItem = volume.contractItemId ? itemMap.get(volume.contractItemId) : undefined;
+      if (directItem) return Number(volume.quantity || 0) * Number(directItem.unitPrice || 0);
+      const workBoqItemId = volume.workBoqItemId || (volume.taskId ? workBoqByTaskId.get(volume.taskId) : undefined);
+      if (!workBoqItemId) return 0;
+      return sum(factorsByWorkBoqItem.get(workBoqItemId) || [], factor => {
+        const item = itemMap.get(factor.contractItemId);
+        if (!item) return 0;
+        return Number(volume.quantity || 0) * Number(factor.quantityFactor || 0) * Number(item.unitPrice || 0);
+      });
     });
   }, 0);
   const performedFromItems = sum(items, item => Number(item.completedQuantity || 0) * Number(item.unitPrice || 0));
@@ -470,6 +490,7 @@ export const projectDashboardMetricsService = {
     const warnings: string[] = [];
     const sourceNotes = [
       'Dữ liệu chủ đầu tư và nhà thầu ưu tiên BOQ, nghiệm thu, chứng chỉ thanh toán, tạm ứng.',
+      'Khối lượng thi công từ Daily Log chỉ quy đổi sang BOQ hợp đồng qua nhóm đối chiếu đã rà soát/khóa.',
       'Dữ liệu NCC ưu tiên PO và giao dịch chi vật tư để tránh tạo model trùng khi chưa có tạm ứng NCC riêng.',
       'Chi phí thầu phụ ưu tiên chứng chỉ thanh toán/tạm ứng; giao dịch chi thầu phụ chỉ dùng làm fallback.',
     ];
@@ -486,6 +507,7 @@ export const projectDashboardMetricsService = {
     const [
       tasks,
       logs,
+      workBoqItems,
       customerItems,
       subcontractorItems,
       taskLinks,
@@ -497,9 +519,12 @@ export const projectDashboardMetricsService = {
       materialBudgets,
       paymentSchedules,
       financialKPIs,
+      customerReconciliationGroups,
+      subcontractorReconciliationGroups,
     ] = await Promise.all([
       safeLoad('project_tasks', warnings, () => taskService.list(projectScopeId, constructionSiteId), [] as ProjectTask[]),
       safeLoad('daily_logs', warnings, () => dailyLogService.list(projectScopeId, constructionSiteId), [] as DailyLog[]),
+      safeLoad('project_work_boq_items', warnings, () => workBoqService.list(projectScopeId, constructionSiteId), [] as ProjectWorkBoqItem[]),
       safeLoad('contract_items customer', warnings, () => contractItemService.listBySite(projectScopeId, 'customer', constructionSiteId), [] as ContractItem[]),
       safeLoad('contract_items subcontractor', warnings, () => contractItemService.listBySite(projectScopeId, 'subcontractor', constructionSiteId), [] as ContractItem[]),
       safeLoad('task_contract_items', warnings, () => taskContractItemService.listBySite(projectScopeId, constructionSiteId), [] as TaskContractItem[]),
@@ -511,11 +536,13 @@ export const projectDashboardMetricsService = {
       safeLoad('material_budget_items', warnings, () => boqService.list(projectScopeId, constructionSiteId), [] as MaterialBudgetItem[]),
       safeLoad('payment_schedules', warnings, () => paymentService.list(projectScopeId, constructionSiteId), [] as PaymentSchedule[]),
       safeLoad('financial_kpis', warnings, () => projectFinancialService.getKPIs(constructionSiteId), undefined as ProjectFinancialKPIs | undefined),
+      safeLoad('boq_reconciliation customer', warnings, () => boqReconciliationService.listOfficialByProject(projectScopeId, constructionSiteId, 'customer'), []),
+      safeLoad('boq_reconciliation subcontractor', warnings, () => boqReconciliationService.listOfficialByProject(projectScopeId, constructionSiteId, 'subcontractor'), []),
     ]);
 
     const allContractItems = [...customerItems, ...subcontractorItems];
-    const owner = buildPartyMetric('customer', allContractItems, logs, acceptances, certs, advances);
-    const subcontractor = buildPartyMetric('subcontractor', allContractItems, logs, acceptances, certs, advances);
+    const owner = buildPartyMetric('customer', allContractItems, logs, workBoqItems, customerReconciliationGroups, acceptances, certs, advances);
+    const subcontractor = buildPartyMetric('subcontractor', allContractItems, logs, workBoqItems, subcontractorReconciliationGroups, acceptances, certs, advances);
     const supplier = buildSupplierMetric(purchaseOrders, transactions);
     const cashFlow = buildCashFlowMetric(transactions, paymentSchedules, owner, subcontractor, supplier);
     const constructionCost = buildConstructionCostMetric(owner, subcontractor, supplier, transactions);

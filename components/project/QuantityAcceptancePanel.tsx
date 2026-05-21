@@ -1,7 +1,19 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Check, ClipboardCheck, CreditCard, Plus, RotateCcw, Send, XCircle } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCheck,
+  CreditCard,
+  Plus,
+  RotateCcw,
+  Send,
+  Trash2,
+  XCircle,
+} from 'lucide-react';
 import { ContractItemType, QuantityAcceptance } from '../../types';
-import { quantityAcceptanceService } from '../../lib/quantityAcceptanceService';
+import { quantityAcceptanceService, QuantityAcceptanceUnmappedVolume } from '../../lib/quantityAcceptanceService';
 import { paymentCertificateService } from '../../lib/paymentCertificateService';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
 import { useToast } from '../../context/ToastContext';
@@ -33,12 +45,25 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
   const [periodStart, setPeriodStart] = useState(today().slice(0, 8) + '01');
   const [periodEnd, setPeriodEnd] = useState(today());
   const [creating, setCreating] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [unmapped, setUnmapped] = useState<QuantityAcceptanceUnmappedVolume[]>([]);
 
   const load = useCallback(async () => {
     setItems(await quantityAcceptanceService.listByContract(contractId, contractType));
   }, [contractId, contractType]);
 
+  const loadUnmapped = useCallback(async () => {
+    setUnmapped(await quantityAcceptanceService.listUnmappedVerifiedVolumes({
+      contractId,
+      contractType,
+      constructionSiteId,
+      periodStart,
+      periodEnd,
+    }));
+  }, [contractId, contractType, constructionSiteId, periodStart, periodEnd]);
+
   useEffect(() => { load().catch(console.error); }, [load]);
+  useEffect(() => { loadUnmapped().catch(console.error); }, [loadUnmapped]);
 
   const createDraft = async () => {
     setCreating(true);
@@ -51,8 +76,10 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
         periodEnd,
       });
       await load();
+      await loadUnmapped();
       toast.success('Đã tạo nghiệm thu nháp', `${acceptance.items.length} hạng mục từ nhật ký đã xác nhận`);
     } catch (e: any) {
+      await loadUnmapped().catch(console.error);
       toast.error('Không tạo được nghiệm thu', e?.message);
     } finally {
       setCreating(false);
@@ -90,6 +117,44 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
       toast.success(`${labels[status]} thành công`);
     } catch (e: any) {
       toast.error('Lỗi', e?.message);
+    }
+  };
+
+  const handleDelete = async (item: QuantityAcceptance) => {
+    if (item.status !== 'draft') {
+      toast.warning('Không thể xoá', 'Chỉ xoá được phiếu nghiệm thu ở trạng thái Nháp.');
+      return;
+    }
+    const ok = await confirm({ title: 'Xoá nghiệm thu', targetName: `Đợt ${item.periodNumber}` });
+    if (!ok) return;
+    try {
+      await quantityAcceptanceService.remove(item.id);
+      if (expandedId === item.id) setExpandedId(null);
+      await load();
+      toast.success('Đã xoá nghiệm thu');
+    } catch (e: any) {
+      toast.error('Không thể xoá nghiệm thu', e?.message);
+    }
+  };
+
+  const handleUpdateLine = async (acceptance: QuantityAcceptance, itemIdx: number, acceptedQuantity: number) => {
+    if (acceptance.status !== 'draft' && acceptance.status !== 'returned') return;
+    const updatedItems = acceptance.items.map((line, idx) => {
+      if (idx !== itemIdx) return line;
+      const safeQty = Math.max(0, Number(acceptedQuantity || 0));
+      const cumulativeAcceptedQuantity = line.previousAcceptedQuantity + safeQty;
+      return {
+        ...line,
+        acceptedQuantity: safeQty,
+        cumulativeAcceptedQuantity,
+        acceptedAmount: safeQty * line.unitPrice,
+      };
+    });
+    try {
+      await quantityAcceptanceService.update(acceptance.id, { items: updatedItems });
+      await load();
+    } catch (e: any) {
+      toast.error('Không thể cập nhật nghiệm thu', e?.message);
     }
   };
 
@@ -139,7 +204,9 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
     <div className="space-y-3 mt-3">
       <div className="rounded-xl border border-slate-100 bg-white overflow-hidden">
         <div className="p-3 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-          <h4 className="text-xs font-black text-slate-700 flex items-center gap-1.5"><ClipboardCheck size={13} className="text-emerald-500" /> Nghiệm thu khối lượng</h4>
+          <h4 className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+            <ClipboardCheck size={13} className="text-emerald-500" /> Nghiệm thu khối lượng
+          </h4>
           <div className="flex items-center gap-2">
             <input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} className="px-2 py-1.5 rounded-lg border border-slate-200 text-[10px]" />
             <input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} className="px-2 py-1.5 rounded-lg border border-slate-200 text-[10px]" />
@@ -148,14 +215,44 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
             </button>
           </div>
         </div>
+
+        {unmapped.length > 0 && (
+          <div className="m-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-500" />
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-black text-amber-700">Có {unmapped.length} dòng khối lượng verified chưa đối chiếu BOQ</div>
+                <div className="mt-0.5 text-[10px] font-medium text-amber-700">Các dòng này chưa được đưa vào nghiệm thu cho tới khi thuộc nhóm đối chiếu reviewed/locked.</div>
+                <div className="mt-2 divide-y divide-amber-100 rounded-lg bg-white/60">
+                  {unmapped.slice(0, 5).map((row, idx) => (
+                    <div key={`${row.dailyLogId}-${idx}`} className="flex items-center justify-between gap-3 px-2 py-1.5 text-[10px]">
+                      <div className="min-w-0">
+                        <div className="truncate font-bold text-slate-700">{row.workBoqItemName || row.taskName || row.taskId || 'Chưa rõ đầu mục'}</div>
+                        <div className="truncate text-slate-400">{new Date(row.dailyLogDate).toLocaleDateString('vi-VN')} • {row.reason}</div>
+                      </div>
+                      <div className="shrink-0 font-black text-amber-700">{fmt(row.quantity)} {row.unit || ''}</div>
+                    </div>
+                  ))}
+                  {unmapped.length > 5 && (
+                    <div className="px-2 py-1 text-center text-[9px] font-bold text-amber-600">+{unmapped.length - 5} dòng khác</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="divide-y divide-slate-50">
           {items.map(item => (
             <div key={item.id} className="p-3">
               <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-xs font-bold text-slate-800">Đợt {item.periodNumber} • {item.description}</div>
-                  <div className="text-[10px] text-slate-400">{new Date(item.periodStart).toLocaleDateString('vi-VN')} - {new Date(item.periodEnd).toLocaleDateString('vi-VN')} • {item.items.length} hạng mục</div>
-                </div>
+                <button onClick={() => setExpandedId(expandedId === item.id ? null : item.id)} className="min-w-0 flex flex-1 items-start gap-2 text-left">
+                  {expandedId === item.id ? <ChevronDown size={13} className="mt-0.5 text-slate-400" /> : <ChevronRight size={13} className="mt-0.5 text-slate-400" />}
+                  <div className="min-w-0">
+                    <div className="truncate text-xs font-bold text-slate-800">Đợt {item.periodNumber} • {item.description}</div>
+                    <div className="text-[10px] text-slate-400">{new Date(item.periodStart).toLocaleDateString('vi-VN')} - {new Date(item.periodEnd).toLocaleDateString('vi-VN')} • {item.items.length} hạng mục</div>
+                  </div>
+                </button>
                 <div className="flex items-center gap-2">
                   <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${
                     item.status === 'approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
@@ -164,9 +261,19 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
                     'bg-slate-50 text-slate-600 border-slate-200'
                   }`}>{item.status === 'cancelled' ? 'Đã huỷ' : item.status}</span>
                   <span className="text-xs font-black text-emerald-600">{fmt(item.totalAcceptedAmount)} đ</span>
-                  {item.status === 'draft' && (
+                  {(item.status === 'draft' || item.status === 'returned') && (
                     <button onClick={() => handleSetStatus(item, 'submitted')} title="Gửi duyệt" className="text-amber-500 hover:text-amber-700 transition-colors">
                       <Send size={13} />
+                    </button>
+                  )}
+                  {item.status === 'draft' && (
+                    <button onClick={() => handleDelete(item)} title="Xoá nghiệm thu" className="text-slate-400 hover:text-red-600 transition-colors">
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                  {item.status === 'returned' && (
+                    <button onClick={() => handleSetStatus(item, 'cancelled')} title="Huỷ nghiệm thu" className="text-slate-400 hover:text-red-600 transition-colors">
+                      <XCircle size={13} />
                     </button>
                   )}
                   {item.status === 'submitted' && (
@@ -191,17 +298,30 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
                   )}
                 </div>
               </div>
-              {item.items.length > 0 && (
+
+              {expandedId === item.id && item.items.length > 0 && (
                 <div className="mt-2 rounded-lg bg-slate-50 overflow-hidden">
-                  {item.items.slice(0, 5).map((line, idx) => (
+                  {item.items.map((line, idx) => (
                     <div key={idx} className="px-2 py-1 flex items-center justify-between text-[10px] border-b border-white">
                       <span className="font-bold text-slate-600">{line.contractItemCode} - {line.contractItemName}</span>
-                      <span>{fmt(line.acceptedQuantity)} {line.unit}</span>
+                      {(item.status === 'draft' || item.status === 'returned') ? (
+                        <input
+                          type="number"
+                          min={0}
+                          value={line.acceptedQuantity || ''}
+                          onChange={e => handleUpdateLine(item, idx, Number(e.target.value))}
+                          className="w-24 rounded border border-emerald-200 bg-white px-1 py-0.5 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-emerald-300"
+                        />
+                      ) : (
+                        <span>{fmt(line.acceptedQuantity)} {line.unit}</span>
+                      )}
                     </div>
                   ))}
-                  {item.items.length > 5 && (
-                    <div className="px-2 py-1 text-[9px] text-slate-400 text-center">+{item.items.length - 5} hạng mục khác</div>
-                  )}
+                </div>
+              )}
+              {expandedId === item.id && item.items.length === 0 && (
+                <div className="mt-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-[10px] font-bold text-amber-700">
+                  Phiếu này chưa có hạng mục. Cần tạo lại sau khi hoàn tất đối chiếu BOQ.
                 </div>
               )}
             </div>

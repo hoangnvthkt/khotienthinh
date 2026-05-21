@@ -10,8 +10,9 @@ import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
-import { SupplierContract, HdContractStatus, ContractAttachment } from '../../types';
+import { SupplierContract, HdContractStatus, ContractAttachment, Project } from '../../types';
 import { useModuleData } from '../../hooks/useModuleData';
+import { projectMasterService } from '../../lib/projectMasterService';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatCurrency = (v: number, currency = 'VND') =>
@@ -52,6 +53,7 @@ const PAYMENT_METHODS = [
 
 const EMPTY_FORM: Omit<SupplierContract, 'id' | 'attachments' | 'createdAt' | 'updatedAt'> = {
   code: '', name: '', type: 'purchase', supplierId: '', supplierName: '',
+  projectId: '', constructionSiteId: '',
   supplierRepresentative: '', value: 0, currency: 'VND', paymentMethod: 'bank_transfer',
   paymentTerms: '', guaranteeInfo: '', purchaseOrderNumber: '',
   signedDate: '', effectiveDate: '', expiryDate: '',
@@ -68,6 +70,7 @@ const SupplierContracts: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [contracts, setContracts] = useState<SupplierContract[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -89,6 +92,7 @@ const SupplierContracts: React.FC = () => {
   // ── fetch ────────────────────────────────────────────────────────────────────
   const fetchContracts = async () => {
     setLoading(true);
+    projectMasterService.list().then(setProjects).catch(console.error);
     if (!isSupabaseConfigured) {
       setContracts([]);
       setLoading(false);
@@ -103,6 +107,7 @@ const SupplierContracts: React.FC = () => {
         id: r.id, code: r.code, name: r.name, type: r.type,
         supplierId: r.supplier_id, supplierName: r.supplier_name,
         supplierRepresentative: r.supplier_representative,
+        projectId: r.project_id || undefined, constructionSiteId: r.construction_site_id || undefined,
         value: Number(r.value), currency: r.currency,
         paymentMethod: r.payment_method, paymentTerms: r.payment_terms,
         guaranteeInfo: r.guarantee_info, purchaseOrderNumber: r.purchase_order_number,
@@ -122,9 +127,12 @@ const SupplierContracts: React.FC = () => {
   const handleSave = async () => {
     if (!form.code.trim() || !form.name.trim()) return;
     setSaving(true);
+    const project = projects.find(item => item.id === form.projectId);
     const payload = {
       id: editingId || crypto.randomUUID(),
       code: form.code.trim(), name: form.name.trim(), type: form.type,
+      project_id: form.projectId || null,
+      construction_site_id: project?.constructionSiteId || form.constructionSiteId || null,
       supplier_id: form.supplierId || null, supplier_name: form.supplierName || null,
       supplier_representative: form.supplierRepresentative || null,
       value: form.value, currency: form.currency,
@@ -159,6 +167,7 @@ const SupplierContracts: React.FC = () => {
   const handleEdit = (c: SupplierContract) => {
     setForm({
       code: c.code, name: c.name, type: c.type,
+      projectId: c.projectId || '', constructionSiteId: c.constructionSiteId || '',
       supplierId: c.supplierId || '', supplierName: c.supplierName || '',
       supplierRepresentative: c.supplierRepresentative || '',
       value: c.value, currency: c.currency,
@@ -382,6 +391,16 @@ const SupplierContracts: React.FC = () => {
                 <input value={form.name} onChange={e => setForm({...form, name: e.target.value})}
                   className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30"
                   placeholder="Mô tả ngắn về hợp đồng" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dự án</label>
+                <select value={form.projectId || ''} onChange={e => {
+                  const project = projects.find(item => item.id === e.target.value);
+                  setForm({ ...form, projectId: e.target.value, constructionSiteId: project?.constructionSiteId || '' });
+                }} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 dark:text-white outline-none">
+                  <option value="">— Chọn dự án —</option>
+                  {projects.map(project => <option key={project.id} value={project.id}>{project.code ? `${project.code} - ` : ''}{project.name}</option>)}
+                </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

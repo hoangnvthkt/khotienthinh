@@ -1,8 +1,17 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { MaterialRequest, RequestStatus, InventoryItem, MaterialRequestFulfillmentMode } from '../types';
+import {
+    MaterialBudgetItem,
+    MaterialRequest,
+    MaterialRequestFulfillmentMode,
+    MaterialRequestOrigin,
+    ProjectWorkBoqItem,
+    RequestItem,
+    RequestStatus,
+    InventoryItem,
+} from '../types';
 import ItemSelectionModal from './ItemSelectionModal';
 import ScannerModal from './ScannerModal';
 import { useReservedStock } from '../hooks/useReservedStock';
@@ -15,10 +24,60 @@ interface RequestModalProps {
     onClose: () => void;
     request?: MaterialRequest;
     defaultSiteWarehouseId?: string; // Pre-fill when opened from Project module
+    projectId?: string | null;
+    constructionSiteId?: string | null;
+    requestOrigin?: MaterialRequestOrigin;
+    workBoqItems?: ProjectWorkBoqItem[];
+    materialBudgetItems?: MaterialBudgetItem[];
 }
 
-const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, defaultSiteWarehouseId }) => {
-    const { items, warehouses, user, users, addRequest, updateRequestStatus } = useApp();
+type RequestLineDraft = {
+    lineId: string;
+    itemId: string;
+    qty: number;
+    workBoqItemId?: string | null;
+    workBoqItemName?: string | null;
+    materialBudgetItemId?: string | null;
+    materialBudgetItemName?: string | null;
+    neededDate?: string;
+    note?: string;
+    overBudgetReason?: string;
+};
+
+const activeBudgetStatuses = new Set<RequestStatus | string>([
+    RequestStatus.PENDING,
+    RequestStatus.APPROVED,
+    RequestStatus.IN_TRANSIT,
+    RequestStatus.COMPLETED,
+    RequestStatus.LEGACY_PENDING,
+    RequestStatus.LEGACY_APPROVED,
+]);
+
+const toDraftLine = (item: RequestItem): RequestLineDraft => ({
+    lineId: item.lineId || crypto.randomUUID(),
+    itemId: item.itemId,
+    qty: Number(item.requestQty || 0),
+    workBoqItemId: item.workBoqItemId || null,
+    workBoqItemName: item.workBoqItemName || null,
+    materialBudgetItemId: item.materialBudgetItemId || null,
+    materialBudgetItemName: item.materialBudgetItemName || null,
+    neededDate: item.neededDate || '',
+    note: item.note || '',
+    overBudgetReason: item.overBudgetReason || '',
+});
+
+const RequestModal: React.FC<RequestModalProps> = ({
+    isOpen,
+    onClose,
+    request,
+    defaultSiteWarehouseId,
+    projectId,
+    constructionSiteId,
+    requestOrigin,
+    workBoqItems = [],
+    materialBudgetItems = [],
+}) => {
+    const { items, warehouses, user, users, requests, addRequest, updateRequestStatus } = useApp();
     const { getStockSummary, getOnHandStock } = useReservedStock();
     const toast = useToast();
     const [step, setStep] = useState<'CREATE' | 'APPROVE' | 'VIEW'>('CREATE');
@@ -31,11 +90,61 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
     const [note, setNote] = useState('');
     const [fulfillmentMode, setFulfillmentMode] = useState<MaterialRequestFulfillmentMode>(MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
     const [overrideReason, setOverrideReason] = useState('');
-    const [reqItems, setReqItems] = useState<{ itemId: string, qty: number }[]>([]);
-    const [approvedItems, setApprovedItems] = useState<{ itemId: string, qty: number }[]>([]);
+    const [reqItems, setReqItems] = useState<RequestLineDraft[]>([]);
+    const [approvedItems, setApprovedItems] = useState<{ lineId?: string, itemId: string, qty: number }[]>([]);
+    const [draftWorkBoqItemId, setDraftWorkBoqItemId] = useState('');
+    const [draftMaterialBudgetItemId, setDraftMaterialBudgetItemId] = useState('');
+    const [draftQty, setDraftQty] = useState('');
+    const [draftNeededDate, setDraftNeededDate] = useState('');
+    const [draftLineNote, setDraftLineNote] = useState('');
 
     const [isItemSelectOpen, setItemSelectOpen] = useState(false);
     const [isScannerOpen, setScannerOpen] = useState(false);
+
+    const isProjectRequest = requestOrigin === 'project' || request?.requestOrigin === 'project' || !!projectId || !!constructionSiteId;
+    const effectiveProjectId = projectId || request?.projectId || null;
+    const effectiveConstructionSiteId = constructionSiteId || request?.constructionSiteId || null;
+    const workBoqMap = useMemo(() => new Map(workBoqItems.map(item => [item.id, item])), [workBoqItems]);
+    const materialBudgetMap = useMemo(() => new Map(materialBudgetItems.map(item => [item.id, item])), [materialBudgetItems]);
+    const budgetOptions = useMemo(
+        () => materialBudgetItems.filter(item => !draftWorkBoqItemId || item.workBoqItemId === draftWorkBoqItemId),
+        [draftWorkBoqItemId, materialBudgetItems],
+    );
+
+    const getBudgetRequestedQty = (materialBudgetItemId?: string | null, excludeRequestId?: string) => {
+        if (!materialBudgetItemId) return 0;
+        return requests
+            .filter(req => req.id !== excludeRequestId)
+            .filter(req => !effectiveConstructionSiteId || req.constructionSiteId === effectiveConstructionSiteId)
+            .filter(req => activeBudgetStatuses.has(req.status))
+            .flatMap(req => req.items || [])
+            .filter(line => line.materialBudgetItemId === materialBudgetItemId)
+            .reduce((sum, line) => sum + Number(line.requestQty || 0), 0);
+    };
+
+    const getDraftRequestedQty = (materialBudgetItemId?: string | null, excludeLineId?: string) => {
+        if (!materialBudgetItemId) return 0;
+        return reqItems
+            .filter(line => line.lineId !== excludeLineId && line.materialBudgetItemId === materialBudgetItemId)
+            .reduce((sum, line) => sum + Number(line.qty || 0), 0);
+    };
+
+    const buildLineBudgetSnapshot = (line: RequestLineDraft, excludeRequestId?: string) => {
+        const budget = line.materialBudgetItemId ? materialBudgetMap.get(line.materialBudgetItemId) : undefined;
+        const previousRequested = getBudgetRequestedQty(line.materialBudgetItemId, excludeRequestId);
+        const draftRequested = getDraftRequestedQty(line.materialBudgetItemId, line.lineId);
+        const totalRequested = previousRequested + draftRequested + Number(line.qty || 0);
+        const budgetQty = Number(budget?.budgetQty || 0);
+        const overBudgetQty = budgetQty > 0 ? Math.max(0, totalRequested - budgetQty) : 0;
+        return {
+            budget,
+            previousRequested,
+            totalRequested,
+            budgetQty,
+            overBudgetQty,
+            overBudgetPercent: budgetQty > 0 ? (overBudgetQty / budgetQty) * 100 : 0,
+        };
+    };
 
     useEffect(() => {
         if (isOpen) {
@@ -53,8 +162,8 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                 setNote(request.note || '');
                 setFulfillmentMode(request.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
                 setOverrideReason(request.overrideReason || '');
-                setReqItems(request.items.map(i => ({ itemId: i.itemId, qty: i.requestQty })));
-                setApprovedItems(request.items.map(i => ({ itemId: i.itemId, qty: i.approvedQty })));
+                setReqItems(request.items.map(toDraftLine));
+                setApprovedItems(request.items.map(i => ({ lineId: i.lineId, itemId: i.itemId, qty: i.approvedQty })));
             } else {
                 setStep('CREATE');
                 setSiteWarehouseId(defaultSiteWarehouseId || user.assignedWarehouseId || '');
@@ -64,9 +173,14 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                 setOverrideReason('');
                 setReqItems([]);
                 setApprovedItems([]);
+                setDraftWorkBoqItemId('');
+                setDraftMaterialBudgetItemId('');
+                setDraftQty('');
+                setDraftNeededDate('');
+                setDraftLineNote('');
             }
         }
-    }, [isOpen, request, user, items]);
+    }, [isOpen, request, user, items, defaultSiteWarehouseId]);
 
     const handleAddItem = () => {
         if (items.length === 0) return;
@@ -78,21 +192,27 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
     };
 
     const handleSelectFromModal = (item: InventoryItem) => {
-        if (reqItems.some(i => i.itemId === item.id)) {
+        if (!isProjectRequest && reqItems.some(i => i.itemId === item.id)) {
             toast.warning('Vật tư đã tồn tại', 'Vật tư này đã có trong danh sách đề xuất.');
             return;
         }
-        setReqItems([...reqItems, { itemId: item.id, qty: 1 }]);
+        setReqItems([...reqItems, {
+            lineId: crypto.randomUUID(),
+            itemId: item.id,
+            qty: 1,
+            overBudgetReason: isProjectRequest ? '' : undefined,
+        }]);
         setItemSelectOpen(false);
     };
 
-    const handleUpdateItem = (index: number, field: 'itemId' | 'qty', value: any) => {
+    const handleUpdateItem = (index: number, field: keyof RequestLineDraft, value: any) => {
         const newItems = [...reqItems];
         newItems[index] = { ...newItems[index], [field]: value };
         setReqItems(newItems);
     };
 
-    const handleUpdateApprovedItem = (itemId: string, qty: number) => {
+    const handleUpdateApprovedItem = (line: RequestItem, qty: number) => {
+        const itemId = line.itemId;
         const item = items.find(i => i.id === itemId);
         const stockSummary = getStockSummary(itemId, sourceWarehouseId, { excludeRequestId: request?.id });
         const availableStock = stockSummary.available;
@@ -105,12 +225,50 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
         }
 
         setApprovedItems(prev => {
-            const existing = prev.find(i => i.itemId === itemId);
+            const existing = prev.find(i => (line.lineId && i.lineId === line.lineId) || (!line.lineId && i.itemId === itemId));
             if (existing) {
-                return prev.map(i => i.itemId === itemId ? { ...i, qty } : i);
+                return prev.map(i => ((line.lineId && i.lineId === line.lineId) || (!line.lineId && i.itemId === itemId)) ? { ...i, qty } : i);
             }
-            return [...prev, { itemId, qty }];
+            return [...prev, { lineId: line.lineId, itemId, qty }];
         });
+    };
+
+    const handleAddBudgetLine = () => {
+        const budget = materialBudgetMap.get(draftMaterialBudgetItemId);
+        if (!budget) {
+            toast.warning('Chưa chọn vật tư BOQ', 'Vui lòng chọn dòng vật tư/định mức thuộc BOQ triển khai.');
+            return;
+        }
+        const inventoryItem = items.find(item =>
+            item.id === budget.inventoryItemId ||
+            (!!budget.materialCode && item.sku.toLowerCase() === budget.materialCode.toLowerCase()) ||
+            item.name.toLowerCase() === budget.itemName.toLowerCase()
+        );
+        if (!inventoryItem) {
+            toast.warning('Chưa liên kết vật tư WMS', 'Dòng BOQ này chưa có SKU trong kho. Vui lòng liên kết mã vật tư trước hoặc chọn vật tư ngoài BOQ kèm lý do.');
+            return;
+        }
+        const qty = Math.max(0, Number(draftQty || 0));
+        if (qty <= 0) {
+            toast.warning('Thiếu khối lượng', 'Vui lòng nhập khối lượng đề xuất lớn hơn 0.');
+            return;
+        }
+        const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
+        setReqItems(prev => [...prev, {
+            lineId: crypto.randomUUID(),
+            itemId: inventoryItem.id,
+            qty,
+            workBoqItemId: budget.workBoqItemId || draftWorkBoqItemId || null,
+            workBoqItemName: work?.name || '',
+            materialBudgetItemId: budget.id,
+            materialBudgetItemName: budget.itemName,
+            neededDate: draftNeededDate || '',
+            note: draftLineNote || '',
+            overBudgetReason: '',
+        }]);
+        setDraftMaterialBudgetItemId('');
+        setDraftQty('');
+        setDraftLineNote('');
     };
 
     const handleSubmitCreate = async () => {
@@ -118,6 +276,19 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
         if (!siteWarehouseId || !sourceWarehouseId || reqItems.length === 0) {
             toast.warning('Thiếu thông tin', 'Vui lòng chọn đầy đủ kho nhận, kho nguồn và ít nhất 1 vật tư.');
             return;
+        }
+
+        if (isProjectRequest) {
+            const invalidLine = reqItems.find(line => {
+                const snapshot = buildLineBudgetSnapshot(line);
+                const outsideBoq = !line.materialBudgetItemId;
+                return (outsideBoq || snapshot.overBudgetQty > 0) && !line.overBudgetReason?.trim();
+            });
+            if (invalidLine) {
+                const item = items.find(i => i.id === invalidLine.itemId);
+                toast.warning('Thiếu lý do vượt/ngoài BOQ', `${item?.name || invalidLine.itemId} cần nhập lý do để gửi đề xuất.`);
+                return;
+            }
         }
 
         const shortages = reqItems
@@ -135,6 +306,9 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
         const newRequest: MaterialRequest = {
             id: `mr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
             code: `MR-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`,
+            projectId: effectiveProjectId,
+            constructionSiteId: effectiveConstructionSiteId,
+            requestOrigin: isProjectRequest ? 'project' : 'wms',
             siteWarehouseId,
             sourceWarehouseId: sourceWarehouseId,
             requesterId: user.id,
@@ -143,7 +317,27 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
             expectedDate: new Date(Date.now() + 86400000 * 3).toISOString(),
             note,
             fulfillmentMode,
-            items: reqItems.map(i => ({ itemId: i.itemId, requestQty: Number(i.qty), approvedQty: 0 })),
+            items: reqItems.map(i => {
+                const snapshot = buildLineBudgetSnapshot(i);
+                const work = i.workBoqItemId ? workBoqMap.get(i.workBoqItemId) : undefined;
+                return {
+                    lineId: i.lineId,
+                    itemId: i.itemId,
+                    requestQty: Number(i.qty),
+                    approvedQty: 0,
+                    workBoqItemId: i.workBoqItemId || null,
+                    workBoqItemName: i.workBoqItemName || work?.name || null,
+                    materialBudgetItemId: i.materialBudgetItemId || null,
+                    materialBudgetItemName: i.materialBudgetItemName || snapshot.budget?.itemName || null,
+                    neededDate: i.neededDate || undefined,
+                    note: i.note || undefined,
+                    budgetQtySnapshot: snapshot.budgetQty,
+                    previousRequestedQtySnapshot: snapshot.previousRequested,
+                    overBudgetQtySnapshot: snapshot.overBudgetQty,
+                    overBudgetPercentSnapshot: snapshot.overBudgetPercent,
+                    overBudgetReason: i.overBudgetReason || undefined,
+                };
+            }),
             logs: [{ action: 'CREATED', userId: user.id, timestamp: new Date().toISOString() }]
         };
 
@@ -171,7 +365,10 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
         // Ràng buộc 2: Kiểm tra duyệt vượt số lượng yêu cầu khi Phê duyệt
         if (status === RequestStatus.APPROVED) {
             const itemsWithExcess = approvedItems.filter(ai => {
-                const originalReq = request.items.find(ri => ri.itemId === ai.itemId);
+                const originalReq = request.items.find(ri =>
+                    (ri.lineId && ai.lineId === ri.lineId) ||
+                    (!ri.lineId && ri.itemId === ai.itemId)
+                );
                 return originalReq && ai.qty > originalReq.requestQty;
             });
 
@@ -410,6 +607,61 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                         )}
                     </div>
 
+                    {isEditable && isProjectRequest && (
+                        <div className="mb-5 rounded-xl border border-amber-100 bg-amber-50/40 p-4">
+                            <div className="flex items-center justify-between gap-3 mb-3">
+                                <div>
+                                    <div className="text-xs font-black text-slate-700">Thêm vật tư theo BOQ triển khai</div>
+                                    <div className="text-[10px] font-bold text-slate-400">Warning tính theo định mức vật tư trong BOQ triển khai, gồm cả phiếu đang chờ duyệt.</div>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+                                <select
+                                    value={draftWorkBoqItemId}
+                                    onChange={event => {
+                                        setDraftWorkBoqItemId(event.target.value);
+                                        setDraftMaterialBudgetItemId('');
+                                    }}
+                                    className="md:col-span-4 px-3 py-2 rounded-xl border border-amber-100 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300"
+                                >
+                                    <option value="">Chọn đầu mục BOQ triển khai...</option>
+                                    {workBoqItems.map(item => <option key={item.id} value={item.id}>{item.wbsCode ? `${item.wbsCode} - ` : ''}{item.name}</option>)}
+                                </select>
+                                <select
+                                    value={draftMaterialBudgetItemId}
+                                    onChange={event => setDraftMaterialBudgetItemId(event.target.value)}
+                                    className="md:col-span-4 px-3 py-2 rounded-xl border border-amber-100 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300"
+                                >
+                                    <option value="">Chọn vật tư/định mức...</option>
+                                    {budgetOptions.map(item => <option key={item.id} value={item.id}>{item.itemName} • Còn {Math.max(0, Number(item.budgetQty || 0) - getBudgetRequestedQty(item.id)).toLocaleString('vi-VN')} {item.unit}</option>)}
+                                </select>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    value={draftQty}
+                                    onChange={event => setDraftQty(event.target.value)}
+                                    placeholder="Số lượng"
+                                    className="md:col-span-1 px-3 py-2 rounded-xl border border-amber-100 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300"
+                                />
+                                <input
+                                    type="date"
+                                    value={draftNeededDate}
+                                    onChange={event => setDraftNeededDate(event.target.value)}
+                                    className="md:col-span-2 px-3 py-2 rounded-xl border border-amber-100 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300"
+                                />
+                                <button onClick={handleAddBudgetLine} className="md:col-span-1 px-3 py-2 rounded-xl bg-amber-500 text-white text-xs font-black hover:bg-amber-600">
+                                    Thêm
+                                </button>
+                                <input
+                                    value={draftLineNote}
+                                    onChange={event => setDraftLineNote(event.target.value)}
+                                    placeholder="Ghi chú dòng..."
+                                    className="md:col-span-12 px-3 py-2 rounded-xl border border-amber-100 bg-white text-xs outline-none focus:ring-2 focus:ring-amber-300"
+                                />
+                            </div>
+                        </div>
+                    )}
+
                     {/* Desktop table view */}
                     <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden hidden md:block">
                         <table className="w-full text-left text-sm">
@@ -434,7 +686,11 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                                     const itemInfo = items.find(i => i.id === itemId);
                                     const stockSummary = getStockSummary(itemId, sourceWarehouseId, { excludeRequestId: request?.id });
                                     const sourceStock = stockSummary.available;
-                                    const isExcess = !isEditable && (approvedItems.find(ai => ai.itemId === itemId)?.qty || 0) > requestQty;
+                                    const lineId = row.lineId;
+                                    const approvedQty = approvedItems.find(ai => (lineId && ai.lineId === lineId) || (!lineId && ai.itemId === itemId))?.qty || 0;
+                                    const isExcess = !isEditable && approvedQty > requestQty;
+                                    const budgetSnapshot = buildLineBudgetSnapshot(row as RequestLineDraft);
+                                    const needsReason = isEditable && isProjectRequest && (!row.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0);
 
                                     return (
                                         <tr key={idx} className={`transition-colors ${isExcess ? 'bg-orange-50/50' : 'hover:bg-slate-50/50'}`}>
@@ -442,6 +698,27 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                                                 <div>
                                                     <div className="font-bold text-slate-800">{itemInfo?.name}</div>
                                                     <div className="text-[10px] font-mono text-slate-400">{itemInfo?.sku}</div>
+                                                    {isProjectRequest && (
+                                                        <div className="mt-1 space-y-1">
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {(row.workBoqItemName || row.materialBudgetItemName) && (
+                                                                    <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 text-[9px] font-bold">
+                                                                        {row.workBoqItemName || 'BOQ'}{row.materialBudgetItemName ? ` • ${row.materialBudgetItemName}` : ''}
+                                                                    </span>
+                                                                )}
+                                                                {!row.materialBudgetItemId && <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100 text-[9px] font-bold">Ngoài BOQ</span>}
+                                                                {budgetSnapshot.overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 border border-orange-100 text-[9px] font-bold">Vượt {budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}</span>}
+                                                            </div>
+                                                            {needsReason && (
+                                                                <input
+                                                                    value={(row as RequestLineDraft).overBudgetReason || ''}
+                                                                    onChange={event => handleUpdateItem(idx, 'overBudgetReason', event.target.value)}
+                                                                    placeholder={!row.materialBudgetItemId ? 'Lý do ngoài BOQ/ngoài định mức...' : 'Lý do đề xuất vượt định mức...'}
+                                                                    className="w-full px-2 py-1 rounded-lg border border-orange-200 text-[10px] outline-none focus:ring-1 focus:ring-orange-300"
+                                                                />
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </td>
                                             <td className="p-4 text-center text-slate-500 font-medium">{itemInfo?.unit || '-'}</td>
@@ -470,8 +747,8 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                                                             <div className="flex flex-col items-end">
                                                                 <input
                                                                     type="number" min="0" max={sourceStock}
-                                                                    value={approvedItems.find(i => i.itemId === itemId)?.qty || 0}
-                                                                    onChange={(e) => handleUpdateApprovedItem(itemId, Number(e.target.value))}
+                                                                    value={approvedQty}
+                                                                    onChange={(e) => handleUpdateApprovedItem(row as RequestItem, Number(e.target.value))}
                                                                     className={`w-20 text-right p-1 border rounded font-bold bg-white focus:ring-2 outline-none transition-colors ${isExcess ? 'border-orange-400 text-orange-700 focus:ring-orange-500' : 'border-emerald-200 text-emerald-700 focus:ring-emerald-500'}`}
                                                                 />
                                                                 {isExcess && <span className="text-[9px] text-orange-600 font-bold mt-1 uppercase">Duyệt vượt mức</span>}
@@ -498,7 +775,7 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                         </table>
                         {isEditable && (
                             <button onClick={handleAddItem} className="w-full py-4 text-accent font-bold hover:bg-slate-50 transition-colors border-t border-dashed border-slate-200 flex items-center justify-center">
-                                <Plus size={16} className="mr-2" /> Thêm vật tư vào đề xuất
+                                <Plus size={16} className="mr-2" /> {isProjectRequest ? 'Thêm vật tư ngoài BOQ' : 'Thêm vật tư vào đề xuất'}
                             </button>
                         )}
                     </div>
@@ -511,7 +788,11 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                             const itemInfo = items.find(i => i.id === itemId);
                             const stockSummary = getStockSummary(itemId, sourceWarehouseId, { excludeRequestId: request?.id });
                             const sourceStock = stockSummary.available;
-                            const isExcess = !isEditable && (approvedItems.find(ai => ai.itemId === itemId)?.qty || 0) > requestQty;
+                            const lineId = row.lineId;
+                            const approvedQty = approvedItems.find(ai => (lineId && ai.lineId === lineId) || (!lineId && ai.itemId === itemId))?.qty || 0;
+                            const isExcess = !isEditable && approvedQty > requestQty;
+                            const budgetSnapshot = buildLineBudgetSnapshot(row as RequestLineDraft);
+                            const needsReason = isEditable && isProjectRequest && (!row.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0);
 
                             return (
                                 <div key={idx} className={`bg-white rounded-xl p-3 border ${isExcess ? 'border-orange-200 bg-orange-50/50' : 'border-slate-200'} shadow-sm`}>
@@ -519,6 +800,13 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                                         <div className="min-w-0 flex-1">
                                             <div className="font-bold text-sm text-slate-800 truncate">{itemInfo?.name}</div>
                                             <div className="text-[10px] font-mono text-slate-400">{itemInfo?.sku} • {itemInfo?.unit || '-'}</div>
+                                            {isProjectRequest && (row.workBoqItemName || row.materialBudgetItemName || !row.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0) && (
+                                                <div className="mt-1 flex flex-wrap gap-1">
+                                                    {(row.workBoqItemName || row.materialBudgetItemName) && <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 text-[9px] font-bold">{row.workBoqItemName || 'BOQ'}{row.materialBudgetItemName ? ` • ${row.materialBudgetItemName}` : ''}</span>}
+                                                    {!row.materialBudgetItemId && <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100 text-[9px] font-bold">Ngoài BOQ</span>}
+                                                    {budgetSnapshot.overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 border border-orange-100 text-[9px] font-bold">Vượt {budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}</span>}
+                                                </div>
+                                            )}
                                         </div>
                                         {isEditable && (
                                             <button onClick={() => setReqItems(reqItems.filter((_, i) => i !== idx))} className="p-1.5 text-red-400 hover:text-red-600 shrink-0">
@@ -526,6 +814,14 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                                             </button>
                                         )}
                                     </div>
+                                    {needsReason && (
+                                        <input
+                                            value={(row as RequestLineDraft).overBudgetReason || ''}
+                                            onChange={event => handleUpdateItem(idx, 'overBudgetReason', event.target.value)}
+                                            placeholder={!row.materialBudgetItemId ? 'Lý do ngoài BOQ/ngoài định mức...' : 'Lý do đề xuất vượt định mức...'}
+                                            className="mt-2 w-full px-2 py-1.5 rounded-lg border border-orange-200 text-xs outline-none focus:ring-1 focus:ring-orange-300"
+                                        />
+                                    )}
                                     <div className="flex items-center gap-3">
                                         <div className="flex-1">
                                             <div className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">SL yêu cầu</div>
@@ -552,8 +848,8 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                                                     {isApproving ? (
                                                         <input
                                                             type="number" min="0" max={sourceStock}
-                                                            value={approvedItems.find(i => i.itemId === itemId)?.qty || 0}
-                                                            onChange={(e) => handleUpdateApprovedItem(itemId, Number(e.target.value))}
+                                                            value={approvedQty}
+                                                            onChange={(e) => handleUpdateApprovedItem(row as RequestItem, Number(e.target.value))}
                                                             className={`w-full text-center p-2 border rounded-lg font-bold text-sm ${isExcess ? 'border-orange-400 text-orange-700' : 'border-emerald-200 text-emerald-700'}`}
                                                         />
                                                     ) : (
@@ -570,7 +866,7 @@ const RequestModal: React.FC<RequestModalProps> = ({ isOpen, onClose, request, d
                         })}
                         {isEditable && (
                             <button onClick={handleAddItem} className="w-full py-3 text-accent font-bold rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center active:scale-95 transition-all">
-                                <Plus size={16} className="mr-2" /> Thêm vật tư
+                                <Plus size={16} className="mr-2" /> {isProjectRequest ? 'Thêm vật tư ngoài BOQ' : 'Thêm vật tư'}
                             </button>
                         )}
                     </div>

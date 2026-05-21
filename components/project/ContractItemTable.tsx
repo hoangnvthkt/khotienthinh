@@ -20,6 +20,7 @@ interface ContractItemTableProps {
   projectId?: string | null;
   constructionSiteId?: string | null;
   readOnly?: boolean;
+  readOnlyReason?: string;
 }
 
 const fmt = (n: number) => n.toLocaleString('vi-VN');
@@ -43,7 +44,7 @@ const parseImportNumber = (value: unknown): number => {
 };
 
 const ContractItemTable: React.FC<ContractItemTableProps> = ({
-  contractId, contractType, projectId, constructionSiteId, readOnly,
+  contractId, contractType, projectId, constructionSiteId, readOnly, readOnlyReason,
 }) => {
   const toast = useToast();
   const confirm = useConfirm();
@@ -396,6 +397,7 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
     const isGrp = isGroup(item.id);
     const expanded = expandedGroups.has(item.id);
     const children = getChildren(item.id);
+    const itemLocked = Boolean(item.isLocked);
     const pct = item.quantity > 0 && item.completedQuantity
       ? Math.min((item.completedQuantity / item.quantity) * 100, 100) : 0;
 
@@ -498,12 +500,12 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
                 </div>
               ) : (
                 <div className="flex gap-0.5 justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  {!item.isLocked && <button disabled={saving} onClick={() => { setDetailItem(item); setShowDetailModal(true); }} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50 disabled:opacity-50">
+                  {!itemLocked && <button disabled={saving} onClick={() => { setDetailItem(item); setShowDetailModal(true); }} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50 disabled:opacity-50">
                     <Edit2 size={11} />
                   </button>}
-                  <button disabled={saving} onClick={() => handleDelete(item)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-50">
+                  {!itemLocked && <button disabled={saving} onClick={() => handleDelete(item)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-50">
                     <Trash2 size={11} />
-                  </button>
+                  </button>}
                 </div>
               )
             )}
@@ -517,6 +519,15 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
 
   return (
     <div className="space-y-3 mt-3">
+      {readOnly && readOnlyReason && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-700">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <div>
+            <div className="font-black">BOQ gốc đang ở chế độ chỉ xem</div>
+            <div className="mt-0.5 font-medium">{readOnlyReason}</div>
+          </div>
+        </div>
+      )}
       {/* Header KPI */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-4">

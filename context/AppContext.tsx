@@ -129,7 +129,7 @@ interface AppContextType {
   updateWarehouse: (warehouse: Warehouse) => void;
   removeWarehouse: (warehouseId: string) => void;
   addRequest: (request: MaterialRequest) => Promise<boolean>;
-  updateRequestStatus: (id: string, status: RequestStatus, note?: string, approvedItems?: { itemId: string, qty: number }[], sourceWarehouseId?: string, overrideReason?: string) => Promise<boolean>;
+  updateRequestStatus: (id: string, status: RequestStatus, note?: string, approvedItems?: { lineId?: string, itemId: string, qty: number }[], sourceWarehouseId?: string, overrideReason?: string) => Promise<boolean>;
   logActivity: (type: ActivityType, action: string, description: string, status?: GlobalActivity['status'], warehouseId?: string) => void;
   addCategory: (name: string) => void;
   updateCategory: (category: ItemCategory) => void;
@@ -230,6 +230,9 @@ const mapTransactionFromDb = (t: any): Transaction => ({
 
 const mapMaterialRequestFromDb = (r: any): MaterialRequest => ({
   ...r,
+  projectId: r.project_id ?? r.projectId ?? null,
+  constructionSiteId: r.construction_site_id ?? r.constructionSiteId ?? null,
+  requestOrigin: r.request_origin ?? r.requestOrigin ?? 'wms',
   siteWarehouseId: r.site_warehouse_id,
   sourceWarehouseId: r.source_warehouse_id,
   requesterId: r.requester_id,
@@ -948,6 +951,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else if (table === 'requests') {
         payload = {
           id: data.id, code: data.code, site_warehouse_id: data.siteWarehouseId, source_warehouse_id: data.sourceWarehouseId,
+          project_id: data.projectId || null,
+          construction_site_id: data.constructionSiteId || null,
+          request_origin: data.requestOrigin || 'wms',
           requester_id: data.requesterId, status: data.status, items: data.items, created_date: data.createdDate,
           expected_date: data.expectedDate, note: data.note, logs: data.logs,
           fulfillment_mode: data.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
@@ -1533,7 +1539,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
-  const updateRequestStatus = async (id: string, status: RequestStatus, note?: string, approvedItems?: { itemId: string, qty: number }[], sourceWarehouseId?: string, overrideReason?: string): Promise<boolean> => {
+  const updateRequestStatus = async (id: string, status: RequestStatus, note?: string, approvedItems?: { lineId?: string, itemId: string, qty: number }[], sourceWarehouseId?: string, overrideReason?: string): Promise<boolean> => {
     const req = requests.find(r => r.id === id);
     if (!req) return false;
 
@@ -1548,7 +1554,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let updatedItems = [...req.items];
     if (status === RequestStatus.APPROVED && approvedItems) {
       updatedItems = req.items.map(item => {
-        const approved = approvedItems.find(i => i.itemId === item.itemId);
+        const approved = approvedItems.find(i =>
+          (item.lineId && i.lineId === item.lineId) ||
+          (!item.lineId && i.itemId === item.itemId)
+        );
         return approved ? { ...item, approvedQty: approved.qty } : item;
       });
     }

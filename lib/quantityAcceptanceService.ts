@@ -8,6 +8,7 @@ import {
 } from '../types';
 import { contractItemService } from './contractItemService';
 import { dailyLogDetailService } from './dailyLogDetailService';
+import { boqReconciliationService } from './boqReconciliationService';
 import { fromDb, toDb } from './dbMapping';
 import { auditService } from './auditService';
 import { approvalService } from './approvalService';
@@ -16,6 +17,18 @@ import { User } from '../types';
 const TABLE = 'quantity_acceptances';
 const ITEM_TABLE = 'quantity_acceptance_items';
 const APPROVED: QuantityAcceptanceStatus[] = ['approved'];
+
+export interface QuantityAcceptanceUnmappedVolume {
+  dailyLogId: string;
+  dailyLogDate: string;
+  taskId?: string | null;
+  taskName?: string | null;
+  workBoqItemId?: string | null;
+  workBoqItemName?: string | null;
+  quantity: number;
+  unit?: string | null;
+  reason: string;
+}
 
 const normalize = (row: any): QuantityAcceptance => ({
   ...fromDb(row),
@@ -88,6 +101,123 @@ const buildAcceptanceItem = (
   };
 };
 
+async function collectVerifiedVolumeMapping(params: {
+  contractType: ContractItemType;
+  constructionSiteId: string;
+  periodStart: string;
+  periodEnd: string;
+}, contractItems: ContractItem[]) {
+  const contractItemIds = new Set(contractItems.map(item => item.id));
+  const { data: logs, error } = await supabase
+    .from('daily_logs')
+    .select('*')
+    .eq('construction_site_id', params.constructionSiteId)
+    .eq('status', 'verified')
+    .gte('date', params.periodStart)
+    .lte('date', params.periodEnd);
+  if (error) throw error;
+
+  const [officialGroups, workBoqRows] = await Promise.all([
+    boqReconciliationService.listOfficialByProject(
+      params.constructionSiteId,
+      params.constructionSiteId,
+      params.contractType,
+    ),
+    supabase
+      .from('project_work_boq_items')
+      .select('id, name, source_task_id')
+      .eq('construction_site_id', params.constructionSiteId),
+  ]);
+  if (workBoqRows.error) throw workBoqRows.error;
+
+  const taskToWorkBoqItemId = new Map<string, string>();
+  const workBoqItemNameById = new Map<string, string>();
+  for (const row of workBoqRows.data || []) {
+    workBoqItemNameById.set(row.id, row.name || row.id);
+    if (row.source_task_id) taskToWorkBoqItemId.set(row.source_task_id, row.id);
+  }
+
+  const factorsByWorkBoqItem = boqReconciliationService
+    .buildWorkContractFactors(officialGroups)
+    .reduce<Map<string, ReturnType<typeof boqReconciliationService.buildWorkContractFactors>>>((acc, item) => {
+      if (!acc.has(item.workBoqItemId)) acc.set(item.workBoqItemId, []);
+      acc.get(item.workBoqItemId)!.push(item);
+      return acc;
+    }, new Map());
+
+  const logIds = (logs || []).map((l: any) => l.id);
+  const detailMap = await dailyLogDetailService.listByLogIds(logIds);
+  const grouped = new Map<string, { quantity: number; volumeIds: string[] }>();
+  const unmapped: QuantityAcceptanceUnmappedVolume[] = [];
+  let positiveVolumeCount = 0;
+
+  for (const rawLog of logs || []) {
+    const logId = rawLog.id;
+    const fallbackVolumes = fromDb(rawLog).volumes || [];
+    const volumes = detailMap[logId]?.volumes?.length ? detailMap[logId].volumes : fallbackVolumes;
+    for (const volume of volumes) {
+      const quantity = Math.max(0, Number(volume.quantity || 0));
+      if (quantity <= 0) continue;
+      positiveVolumeCount += 1;
+
+      const directContractItemId = volume.contractItemId;
+      const volumeId = (volume as any).id;
+      const workBoqItemId = volume.workBoqItemId || (volume.taskId ? taskToWorkBoqItemId.get(volume.taskId) : undefined);
+      const pushUnmapped = (reason: string) => {
+        unmapped.push({
+          dailyLogId: logId,
+          dailyLogDate: rawLog.date,
+          taskId: volume.taskId || null,
+          taskName: volume.taskName || null,
+          workBoqItemId: workBoqItemId || null,
+          workBoqItemName: volume.workBoqItemName || (workBoqItemId ? workBoqItemNameById.get(workBoqItemId) : null) || null,
+          quantity,
+          unit: volume.unit || null,
+          reason,
+        });
+      };
+
+      if (directContractItemId) {
+        if (!contractItemIds.has(directContractItemId)) {
+          pushUnmapped('Dòng nhật ký đang gắn BOQ hợp đồng không thuộc hợp đồng này.');
+          continue;
+        }
+        const row = grouped.get(directContractItemId) || { quantity: 0, volumeIds: [] };
+        row.quantity += quantity;
+        if (volumeId) row.volumeIds.push(volumeId);
+        grouped.set(directContractItemId, row);
+        continue;
+      }
+
+      if (!workBoqItemId) {
+        pushUnmapped('Chưa gắn BOQ thi công hoặc task không có BOQ thi công tương ứng.');
+        continue;
+      }
+
+      const factors = factorsByWorkBoqItem.get(workBoqItemId) || [];
+      if (factors.length === 0) {
+        pushUnmapped('BOQ thi công chưa thuộc nhóm đối chiếu BOQ reviewed/locked.');
+        continue;
+      }
+
+      let applied = false;
+      for (const factor of factors) {
+        if (!contractItemIds.has(factor.contractItemId)) continue;
+        const row = grouped.get(factor.contractItemId) || { quantity: 0, volumeIds: [] };
+        row.quantity += quantity * factor.quantityFactor;
+        if (volumeId) row.volumeIds.push(volumeId);
+        grouped.set(factor.contractItemId, row);
+        applied = true;
+      }
+      if (!applied) {
+        pushUnmapped('Nhóm đối chiếu không có dòng BOQ hợp đồng thuộc hợp đồng này.');
+      }
+    }
+  }
+
+  return { grouped, unmapped, positiveVolumeCount, verifiedLogCount: (logs || []).length };
+}
+
 export const quantityAcceptanceService = {
   async listByContract(contractId: string, contractType: ContractItemType): Promise<QuantityAcceptance[]> {
     const { data, error } = await supabase
@@ -114,6 +244,18 @@ export const quantityAcceptanceService = {
     return acceptances.map(a => ({ ...a, items: itemMap[a.id] || a.items || [] }));
   },
 
+  async listUnmappedVerifiedVolumes(params: {
+    contractId: string;
+    contractType: ContractItemType;
+    constructionSiteId: string;
+    periodStart: string;
+    periodEnd: string;
+  }): Promise<QuantityAcceptanceUnmappedVolume[]> {
+    const contractItems = await contractItemService.listByContract(params.contractId, params.contractType);
+    const source = await collectVerifiedVolumeMapping(params, contractItems);
+    return source.unmapped;
+  },
+
   async createDraftFromVerifiedLogs(params: {
     contractId: string;
     contractType: ContractItemType;
@@ -127,16 +269,6 @@ export const quantityAcceptanceService = {
       this.listByContract(params.contractId, params.contractType),
     ]);
     const contractItemMap = new Map(contractItems.map(item => [item.id, item]));
-    const contractItemIds = new Set(contractItems.map(item => item.id));
-
-    const { data: logs, error } = await supabase
-      .from('daily_logs')
-      .select('*')
-      .eq('construction_site_id', params.constructionSiteId)
-      .eq('status', 'verified')
-      .gte('date', params.periodStart)
-      .lte('date', params.periodEnd);
-    if (error) throw error;
 
     // M1: Guard — kiểm tra overlap kỳ nghiệm thu
     const overlapping = previousAcceptances.find(a =>
@@ -151,30 +283,23 @@ export const quantityAcceptanceService = {
       );
     }
 
+    const source = await collectVerifiedVolumeMapping(params, contractItems);
 
-    const logIds = (logs || []).map((l: any) => l.id);
-    const detailMap = await dailyLogDetailService.listByLogIds(logIds);
-    const grouped = new Map<string, { quantity: number; volumeIds: string[] }>();
-
-    for (const rawLog of logs || []) {
-      const logId = rawLog.id;
-      const fallbackVolumes = fromDb(rawLog).volumes || [];
-      const volumes = detailMap[logId]?.volumes?.length ? detailMap[logId].volumes : fallbackVolumes;
-      for (const volume of volumes) {
-        const contractItemId = volume.contractItemId;
-        if (!contractItemId || !contractItemIds.has(contractItemId)) continue;
-        const row = grouped.get(contractItemId) || { quantity: 0, volumeIds: [] };
-        row.quantity += volume.quantity || 0;
-        if ((volume as any).id) row.volumeIds.push((volume as any).id);
-        grouped.set(contractItemId, row);
-      }
-    }
-
-    const items = Array.from(grouped.entries()).map(([contractItemId, value]) => {
+    const items = Array.from(source.grouped.entries()).map(([contractItemId, value]) => {
       const contractItem = contractItemMap.get(contractItemId)!;
       const previousAcceptedQuantity = getPreviousAcceptedQty(previousAcceptances, contractItemId);
       return buildAcceptanceItem(contractItem, value.quantity, previousAcceptedQuantity, value.volumeIds);
     }).filter(item => item.proposedQuantity > 0);
+
+    if (items.length === 0) {
+      if (source.positiveVolumeCount > 0) {
+        throw new Error(
+          `Có ${source.positiveVolumeCount} dòng khối lượng từ nhật ký verified nhưng chưa quy đổi được sang BOQ hợp đồng. ` +
+          `Vui lòng hoàn tất nhóm đối chiếu BOQ ở trạng thái reviewed/locked trước khi tạo nghiệm thu.`
+        );
+      }
+      throw new Error(`Không có khối lượng nhật ký verified trong kỳ ${params.periodStart} - ${params.periodEnd}.`);
+    }
 
     for (const item of items) {
       const contractItem = contractItemMap.get(item.contractItemId);
@@ -246,6 +371,9 @@ export const quantityAcceptanceService = {
     }
     if (acceptance.status === 'approved' && status !== 'cancelled') {
       throw new Error('Nghiệm thu đã duyệt. Chỉ có thể chuyển sang Hủy để rollback.');
+    }
+    if ((status === 'submitted' || status === 'approved') && acceptance.items.length === 0) {
+      throw new Error('Phiếu nghiệm thu chưa có hạng mục. Cần đối chiếu BOQ và tạo lại phiếu trước khi gửi duyệt.');
     }
 
     // T5: Approval Matrix check — kiểm tra quyền duyệt

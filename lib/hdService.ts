@@ -176,6 +176,16 @@ export const supplierContractService = {
     return (data || []).map(fromDb);
   },
 
+  async listBySite(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<SupplierContract[]> {
+    const { data, error } = await supabase
+      .from('supplier_contracts')
+      .select('*')
+      .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return dedupeRowsById(data || []).map(fromDb);
+  },
+
   async upsert(item: SupplierContract): Promise<void> {
     const { error } = await supabase
       .from('supplier_contracts')

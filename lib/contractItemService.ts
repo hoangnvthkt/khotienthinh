@@ -11,6 +11,38 @@ import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 const TABLE = 'contract_items';
 const RESOURCE_TABLE = 'contract_item_resources';
 
+async function getUsageCounts(id: string): Promise<{ paymentCount: number; acceptanceCount: number }> {
+  const [paymentResult, acceptanceResult] = await Promise.all([
+    supabase
+      .from('payment_certificate_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('contract_item_id', id),
+    supabase
+      .from('quantity_acceptance_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('contract_item_id', id),
+  ]);
+  if (paymentResult.error) throw paymentResult.error;
+  if (acceptanceResult.error) throw acceptanceResult.error;
+  return {
+    paymentCount: paymentResult.count || 0,
+    acceptanceCount: acceptanceResult.count || 0,
+  };
+}
+
+function assertNoUsage(id: string, usage: { paymentCount: number; acceptanceCount: number }) {
+  if (usage.paymentCount > 0) {
+    throw new Error(
+      `Không thể xóa hạng mục này vì đã có ${usage.paymentCount} chứng chỉ thanh toán liên kết. Vui lòng rollback hoặc xóa chứng chỉ thanh toán trước.`
+    );
+  }
+  if (usage.acceptanceCount > 0) {
+    throw new Error(
+      `Không thể xóa hạng mục này vì đã có ${usage.acceptanceCount} phiếu nghiệm thu khối lượng liên kết. Vui lòng rollback hoặc xóa nghiệm thu trước.`
+    );
+  }
+}
+
 
 // Helpers
 const buildTree = (items: ContractItem[]): ContractItem[] => {
@@ -104,6 +136,10 @@ export const contractItemService = {
       if (lockInfo?.is_locked) {
         throw new Error('BOQ đã có nghiệm thu/thanh toán, chỉ được điều chỉnh qua phát sinh hợp đồng.');
       }
+      const usage = await getUsageCounts(id);
+      if (usage.paymentCount > 0 || usage.acceptanceCount > 0) {
+        throw new Error('BOQ đã có nghiệm thu/thanh toán liên kết, chỉ được điều chỉnh qua phát sinh hợp đồng.');
+      }
     }
     // Auto-calculate totalPrice if quantity or unitPrice changed
     if (updates.quantity !== undefined || updates.unitPrice !== undefined) {
@@ -124,27 +160,7 @@ export const contractItemService = {
 
   /** Xóa hạng mục */
   async remove(id: string): Promise<void> {
-    // Guard: kiểm tra chứng chỉ thanh toán liên quan
-    const { count: payCount } = await supabase
-      .from('payment_certificate_items')
-      .select('*', { count: 'exact', head: true })
-      .eq('contract_item_id', id);
-    if (payCount && payCount > 0) {
-      throw new Error(
-        `Không thể xóa hạng mục này vì đã có ${payCount} chứng chỉ thanh toán liên kết. Vui lòng xóa chứng chỉ thanh toán trước.`
-      );
-    }
-
-    // Guard: kiểm tra phiếu nghiệm thu liên quan
-    const { count: qaCount } = await supabase
-      .from('quantity_acceptance_items')
-      .select('*', { count: 'exact', head: true })
-      .eq('contract_item_id', id);
-    if (qaCount && qaCount > 0) {
-      throw new Error(
-        `Không thể xóa hạng mục này vì đã có ${qaCount} phiếu nghiệm thu khối lượng liên kết. Vui lòng xóa nghiệm thu trước.`
-      );
-    }
+    assertNoUsage(id, await getUsageCounts(id));
 
     const { error } = await supabase.from(TABLE).delete().eq('id', id);
     if (error) throw error;

@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import AiInsightPanel from '../../components/AiInsightPanel';
-import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight, Loader2, UserCheck } from 'lucide-react';
-import { DailyLog, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, DailyLogStatus, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectTaskCompletionRequest, ProjectStaff, BusinessPartner } from '../../types';
+import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight, Loader2, UserCheck, Eye, Layers, Package, Wrench, Paperclip } from 'lucide-react';
+import { DailyLog, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, DailyLogStatus, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectTaskCompletionRequest, ProjectStaff, BusinessPartner, ProjectWorkBoqItem } from '../../types';
 import { supabase } from '../../lib/supabase';
-import { dailyLogService, taskService } from '../../lib/projectService';
+import { dailyLogService, taskService, workBoqService } from '../../lib/projectService';
 import { contractLaborCatalogService, contractMachineCatalogService } from '../../lib/contractMetadataService';
 import { partnerService } from '../../lib/partnerService';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
@@ -69,6 +69,12 @@ const getLogStatus = (log: DailyLog): DailyLogStatus => (log.status || (log.veri
 
 const getWorkerCountFromLabor = (rows: DailyLogLabor[]): number =>
     rows.reduce((sum, row) => sum + Math.max(0, Number(row.count || 0)), 0);
+
+const formatNumber = (value?: number | null) =>
+    Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
+
+const formatMoney = (value?: number | null) =>
+    Number(value || 0).toLocaleString('vi-VN');
 
 const uniqueStaffByUser = (rows: ProjectStaff[]): ProjectStaff[] => {
     const map = new Map<string, ProjectStaff>();
@@ -143,6 +149,254 @@ const VoiceTextarea: React.FC<{
     );
 };
 
+interface DailyLogViewerProps {
+    log: DailyLog;
+    status: DailyLogStatus;
+    statusClassName: string;
+    weatherLabel: string;
+    weatherEmoji: string;
+    canEdit: boolean;
+    canReview: boolean;
+    busy: boolean;
+    onClose: () => void;
+    onEdit: () => void;
+    onVerify: () => void;
+    onReject: () => void;
+}
+
+const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
+    log,
+    status,
+    statusClassName,
+    weatherLabel,
+    weatherEmoji,
+    canEdit,
+    canReview,
+    busy,
+    onClose,
+    onEdit,
+    onVerify,
+    onReject,
+}) => {
+    const totalMaterial = (log.materials || []).reduce((sum, row) => sum + Number((row as any).totalCost || 0), 0);
+    const totalLabor = (log.laborDetails || []).reduce((sum, row) => sum + Number(row.totalCost || (Number(row.count || 0) * Number(row.unitCost || 0))), 0);
+    const totalMachine = (log.machines || []).reduce((sum, row) => sum + Number(row.totalCost || (Number(row.shifts || 0) * Number(row.unitCost || 0))), 0);
+
+    return (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm px-3" onClick={e => e.target === e.currentTarget && onClose()}>
+            <div className="w-[96vw] h-[92vh] max-w-[1180px] rounded-3xl bg-white shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <h3 className="text-lg font-black text-slate-800">Nhật ký công trường</h3>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusClassName}`}>{STATUS_CFG[status].label}</span>
+                            <span className="text-sm">{weatherEmoji}</span>
+                        </div>
+                        <p className="text-xs font-bold text-slate-500">
+                            {new Date(log.date).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                            <span className="mx-2 text-slate-300">•</span>{weatherLabel}
+                            <span className="mx-2 text-slate-300">•</span>{log.workerCount || 0} nhân công
+                        </p>
+                    </div>
+                    <button onClick={onClose} className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-100 shrink-0">
+                        <X size={18} />
+                    </button>
+                </div>
+
+                <div className="p-6 overflow-y-auto flex-1 space-y-5">
+                    <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-4">
+                        <div className="rounded-2xl border border-slate-100 p-4">
+                            <div className="text-[10px] font-black text-slate-400 uppercase mb-2">Nội dung công việc</div>
+                            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{log.description || 'Không có nội dung.'}</p>
+                            {log.issues && (
+                                <div className="mt-4 rounded-xl border border-red-100 bg-red-50 p-3">
+                                    <div className="text-[10px] font-black text-red-500 uppercase mb-1 flex items-center gap-1"><AlertTriangle size={11} /> Vấn đề / Sự cố</div>
+                                    <p className="text-sm text-red-600 whitespace-pre-wrap">{log.issues}</p>
+                                </div>
+                            )}
+                        </div>
+                        <div className="rounded-2xl border border-slate-100 p-4 space-y-3">
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="rounded-xl bg-slate-50 p-3">
+                                    <div className="text-[9px] font-black text-slate-400 uppercase">Người lập</div>
+                                    <div className="text-sm font-bold text-slate-700 truncate">{log.createdBy || log.submittedBy || 'Không rõ'}</div>
+                                </div>
+                                <div className="rounded-xl bg-slate-50 p-3">
+                                    <div className="text-[9px] font-black text-slate-400 uppercase">Người xác nhận</div>
+                                    <div className="text-sm font-bold text-slate-700 truncate">{log.requestedVerifierName || log.verifiedBy || 'Chưa có'}</div>
+                                </div>
+                            </div>
+                            {log.gpsLat && log.gpsLng && (
+                                <div className="rounded-xl border border-teal-100 bg-teal-50 p-3 text-xs font-bold text-teal-700 flex items-center gap-2">
+                                    <MapPin size={14} /> {log.gpsLat.toFixed(5)}, {log.gpsLng.toFixed(5)}
+                                    {log.gpsAccuracy ? <span className="text-teal-500">±{Math.round(log.gpsAccuracy)}m</span> : null}
+                                </div>
+                            )}
+                            <div className="grid grid-cols-3 gap-2">
+                                <div className="rounded-xl bg-amber-50 p-3">
+                                    <div className="text-[9px] font-black text-amber-500 uppercase">Vật tư</div>
+                                    <div className="text-sm font-black text-amber-700">{formatMoney(totalMaterial)}</div>
+                                </div>
+                                <div className="rounded-xl bg-blue-50 p-3">
+                                    <div className="text-[9px] font-black text-blue-500 uppercase">Nhân công</div>
+                                    <div className="text-sm font-black text-blue-700">{formatMoney(totalLabor)}</div>
+                                </div>
+                                <div className="rounded-xl bg-purple-50 p-3">
+                                    <div className="text-[9px] font-black text-purple-500 uppercase">Máy TC</div>
+                                    <div className="text-sm font-black text-purple-700">{formatMoney(totalMachine)}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {(log.photos || []).length > 0 && (
+                        <section className="rounded-2xl border border-slate-100 p-4">
+                            <h4 className="text-xs font-black text-slate-600 uppercase mb-3 flex items-center gap-1"><Camera size={13} /> Ảnh công trường</h4>
+                            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
+                                {(log.photos || []).map((photo, index) => (
+                                    <a key={`${photo.url}-${index}`} href={photo.url} target="_blank" rel="noreferrer" className="group">
+                                        <img src={photo.url} alt={photo.name || `Ảnh ${index + 1}`} className="w-full aspect-square object-cover rounded-xl border border-slate-100 group-hover:border-teal-300 transition-colors" />
+                                        <div className="mt-1 text-[10px] font-bold text-slate-400 truncate">{photo.name}</div>
+                                    </a>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    <section className="rounded-2xl border border-amber-100 p-4">
+                        <h4 className="text-xs font-black text-slate-600 uppercase mb-3 flex items-center gap-1"><Layers size={13} className="text-amber-600" /> Khối lượng</h4>
+                        {(log.volumes || []).length === 0 ? (
+                            <p className="text-xs font-bold text-slate-400">Chưa có khối lượng.</p>
+                        ) : (
+                            <div className="space-y-2">
+                                {(log.volumes || []).map((row, index) => {
+                                    const attachments = row.attachments || [];
+                                    return (
+                                        <div key={index} className="rounded-xl bg-amber-50/50 border border-amber-100 p-3">
+                                            <div className="flex flex-wrap items-start justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <div className="text-sm font-black text-slate-800 truncate">{row.workBoqItemName || row.taskName || row.contractItemName || 'Hạng mục chưa đặt tên'}</div>
+                                                    {row.workBoqItemName && row.taskName && row.workBoqItemName !== row.taskName && (
+                                                        <div className="text-[10px] font-bold text-slate-400 truncate">Tiến độ: {row.taskName}</div>
+                                                    )}
+                                                    {row.note && <p className="mt-1 text-xs text-slate-500 whitespace-pre-wrap">{row.note}</p>}
+                                                </div>
+                                                <div className="text-right shrink-0">
+                                                    <div className="text-base font-black text-amber-700">{formatNumber(row.quantity)} {row.unit}</div>
+                                                </div>
+                                            </div>
+                                            {attachments.length > 0 && (
+                                                <div className="mt-2 flex flex-wrap gap-2">
+                                                    {attachments.map(file => (
+                                                        <a key={file.id || file.url} href={file.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-blue-600 border border-blue-100 hover:bg-blue-50">
+                                                            <Paperclip size={10} /> {file.name || file.fileName || 'Bằng chứng'}
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </section>
+
+                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                        <section className="rounded-2xl border border-orange-100 p-4">
+                            <h4 className="text-xs font-black text-slate-600 uppercase mb-3 flex items-center gap-1"><Package size={13} className="text-orange-500" /> Vật tư</h4>
+                            {(log.materials || []).length === 0 ? <p className="text-xs font-bold text-slate-400">Chưa có vật tư.</p> : (
+                                <div className="space-y-2">
+                                    {(log.materials || []).map((row, index) => (
+                                        <div key={index} className="flex items-start justify-between gap-2 text-xs rounded-xl bg-orange-50/50 p-2">
+                                            <div className="min-w-0">
+                                                <div className="font-black text-slate-700 truncate">{row.itemName}</div>
+                                                {row.note && <div className="text-slate-400 truncate">{row.note}</div>}
+                                            </div>
+                                            <div className="font-black text-orange-700 shrink-0">{formatNumber(row.quantity)} {row.unit}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+                        <section className="rounded-2xl border border-blue-100 p-4">
+                            <h4 className="text-xs font-black text-slate-600 uppercase mb-3 flex items-center gap-1"><Users size={13} className="text-blue-500" /> Nhân công</h4>
+                            {(log.laborDetails || []).length === 0 ? <p className="text-xs font-bold text-slate-400">Chưa có nhân công.</p> : (
+                                <div className="space-y-2">
+                                    {(log.laborDetails || []).map((row, index) => (
+                                        <div key={index} className="text-xs rounded-xl bg-blue-50/50 p-2">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <div className="font-black text-slate-700 truncate">{row.catalogName || row.partnerName || row.groupName || row.laborType}</div>
+                                                    <div className="text-slate-400 truncate">{row.taskName || 'Chưa gắn hạng mục'}</div>
+                                                </div>
+                                                <div className="font-black text-blue-700 shrink-0">{formatNumber(row.count)} người</div>
+                                            </div>
+                                            <div className="mt-1 text-[10px] text-slate-400">Giờ: {formatNumber(row.hours || 0)} • Đơn giá: {formatMoney(row.unitCost)}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+                        <section className="rounded-2xl border border-purple-100 p-4">
+                            <h4 className="text-xs font-black text-slate-600 uppercase mb-3 flex items-center gap-1"><Wrench size={13} className="text-purple-500" /> Máy thi công</h4>
+                            {(log.machines || []).length === 0 ? <p className="text-xs font-bold text-slate-400">Chưa có máy thi công.</p> : (
+                                <div className="space-y-2">
+                                    {(log.machines || []).map((row, index) => (
+                                        <div key={index} className="text-xs rounded-xl bg-purple-50/50 p-2">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <div className="font-black text-slate-700 truncate">{row.catalogName || row.machineName}</div>
+                                                    <div className="text-slate-400 truncate">{row.taskName || row.groupName || 'Chưa gắn hạng mục'}</div>
+                                                </div>
+                                                <div className="font-black text-purple-700 shrink-0">{formatNumber(row.shifts)} ca</div>
+                                            </div>
+                                            <div className="mt-1 text-[10px] text-slate-400">Đơn giá: {formatMoney(row.unitCost)}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+                    </div>
+
+                    {(log.delayTasks || []).length > 0 && (
+                        <section className="rounded-2xl border border-red-100 p-4">
+                            <h4 className="text-xs font-black text-slate-600 uppercase mb-3 flex items-center gap-1"><Clock size={13} className="text-red-500" /> Ghi nhận trễ tiến độ</h4>
+                            <div className="space-y-2">
+                                {(log.delayTasks || []).map((row, index) => (
+                                    <div key={index} className="rounded-xl bg-red-50/50 p-3 text-xs">
+                                        <div className="font-black text-slate-700">{row.taskName}</div>
+                                        <div className="text-red-600 font-bold">{row.delayDays} ngày • {row.category}</div>
+                                        {row.reason && <div className="mt-1 text-slate-500">{row.reason}</div>}
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+                </div>
+
+                <div className="px-6 py-4 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
+                    {canReview && (
+                        <>
+                            <button onClick={onReject} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 flex items-center gap-1.5">
+                                {busy ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />} Trả lại
+                            </button>
+                            <button onClick={onVerify} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5">
+                                {busy ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Xác nhận
+                            </button>
+                        </>
+                    )}
+                    {canEdit && (
+                        <button onClick={onEdit} className="px-4 py-2 rounded-xl text-sm font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 flex items-center gap-1.5">
+                            <Edit2 size={15} /> Sửa phiếu
+                        </button>
+                    )}
+                    <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Đóng</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId }) => {
     const location = useLocation();
     const toast = useToast();
@@ -151,6 +405,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const effectiveId = projectId || constructionSiteId || '';
     const [logs, setLogs] = useState<DailyLog[]>([]);
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
+    const [workBoqItems, setWorkBoqItems] = useState<ProjectWorkBoqItem[]>([]);
     const [completionRequests, setCompletionRequests] = useState<ProjectTaskCompletionRequest[]>([]);
     const [laborCatalogs, setLaborCatalogs] = useState<ContractLaborCatalogItem[]>([]);
     const [machineCatalogs, setMachineCatalogs] = useState<ContractMachineCatalogItem[]>([]);
@@ -159,6 +414,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const savingLogRef = useRef(false);
     const statusBusyRef = useRef<Set<string>>(new Set());
     const logRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const autoOpenedLogIdRef = useRef<string | null>(null);
     const [busyLogIds, setBusyLogIds] = useState<Set<string>>(new Set());
     const [highlightLogId, setHighlightLogId] = useState<string | null>(null);
     const [submitTarget, setSubmitTarget] = useState<DailyLog | null>(null);
@@ -231,13 +487,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         Promise.all([
             dailyLogService.list(effectiveId, constructionSiteId || null),
             taskService.list(effectiveId, constructionSiteId || null),
+            workBoqService.list(effectiveId, constructionSiteId || null),
             taskCompletionRequestService.list(effectiveId, constructionSiteId || null),
             contractLaborCatalogService.list(),
             contractMachineCatalogService.list(),
             partnerService.list(),
-        ]).then(([logRows, taskRows, completionRows, laborRows, machineRows, partnerRows]) => {
+        ]).then(([logRows, taskRows, workBoqRows, completionRows, laborRows, machineRows, partnerRows]) => {
             setLogs(logRows);
             setTasks(deriveProjectTaskProgress(taskRows, completionRows, logRows));
+            setWorkBoqItems(workBoqRows);
             setCompletionRequests(completionRows);
             setLaborCatalogs(laborRows);
             setMachineCatalogs(machineRows);
@@ -251,6 +509,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
     const [calendarMonth, setCalendarMonth] = useState(monthKeyFromDate(new Date()));
     const [dayLogPicker, setDayLogPicker] = useState<{ date: string; logs: DailyLog[] } | null>(null);
+    const [viewLogId, setViewLogId] = useState<string | null>(null);
 
     // Form state
     const [fDate, setFDate] = useState(new Date().toISOString().split('T')[0]);
@@ -330,6 +589,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setShowForm(true);
     };
 
+    const openView = (l: DailyLog) => {
+        setViewLogId(l.id);
+        setDayLogPicker(null);
+    };
+
+    const viewingLog = useMemo(() => (
+        viewLogId ? logs.find(log => log.id === viewLogId) || null : null
+    ), [logs, viewLogId]);
+
     useEffect(() => {
         if (!targetDailyLogId || logs.length === 0) return;
         const target = logs.find(log => log.id === targetDailyLogId);
@@ -337,6 +605,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setViewMode('list');
         setFilterMonth(target.date.slice(0, 7));
         setHighlightLogId(targetDailyLogId);
+        if (autoOpenedLogIdRef.current !== targetDailyLogId) {
+            autoOpenedLogIdRef.current = targetDailyLogId;
+            setViewLogId(targetDailyLogId);
+        }
         window.requestAnimationFrame(() => {
             logRefs.current[targetDailyLogId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         });
@@ -358,7 +630,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         }
         if (dayLogs.length === 1) {
             setDayLogPicker(null);
-            openEdit(dayLogs[0]);
+            openView(dayLogs[0]);
             return;
         }
         setDayLogPicker({ date, logs: dayLogs });
@@ -716,6 +988,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         return new Date(year, month - 1, 1).toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' });
     }, [calendarMonth]);
 
+    const viewingLogStatus = viewingLog ? getLogStatus(viewingLog) : 'draft';
+    const canReviewViewingLog = !!viewingLog
+        && viewingLogStatus === 'submitted'
+        && (isAdminUser || userPerms.has('verify'))
+        && (!viewingLog.requestedVerifierId || viewingLog.requestedVerifierId === user?.id);
+
     return (
         <div className="space-y-6">
             {/* AI Analysis */}
@@ -895,7 +1173,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                 )}
                                             </div>
                                         </div>
-	                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+	                                        <div className="flex gap-1 opacity-100 transition-opacity shrink-0">
+                                                <button onClick={() => openView(l)} title="Xem chi tiết" className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-teal-600 hover:bg-teal-50">
+                                                    <Eye size={13} />
+                                                </button>
 	                                            {['draft', 'rejected'].includes(status) && canEditCurrentLog && (isAdminUser || userPerms.has('submit')) && (
 	                                                <button disabled={busy} onClick={() => openSubmitVerifierPicker(l)} title="Gửi xác nhận" className="w-7 h-7 rounded-lg flex items-center justify-center text-amber-400 hover:text-amber-600 hover:bg-amber-50 disabled:opacity-50">
                                                         {busy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
@@ -1012,7 +1293,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             {dayLogPicker.logs.map(log => {
                                 const status = getLogStatus(log);
                                 return (
-                                    <button key={log.id} onClick={() => { setDayLogPicker(null); openEdit(log); }}
+                                    <button key={log.id} onClick={() => openView(log)}
                                         className="w-full text-left p-3 rounded-xl border border-slate-100 hover:border-teal-200 hover:bg-teal-50/50 transition-colors">
                                         <div className="flex items-center justify-between gap-2 mb-1">
                                             <div className="flex items-center gap-2">
@@ -1034,6 +1315,26 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         </div>
                     </div>
                 </div>
+            )}
+
+            {viewingLog && (
+                <DailyLogViewer
+                    log={viewingLog}
+                    status={viewingLogStatus}
+                    statusClassName={STATUS_CFG[viewingLogStatus].cls}
+                    weatherLabel={WEATHER[viewingLog.weather]?.label || ''}
+                    weatherEmoji={WEATHER[viewingLog.weather]?.emoji || ''}
+                    canEdit={canEditDailyLog(viewingLog)}
+                    canReview={canReviewViewingLog}
+                    busy={busyLogIds.has(viewingLog.id)}
+                    onClose={() => setViewLogId(null)}
+                    onEdit={() => {
+                        setViewLogId(null);
+                        openEdit(viewingLog);
+                    }}
+                    onVerify={() => handleStatusChange(viewingLog, 'verified')}
+                    onReject={() => handleStatusChange(viewingLog, 'rejected')}
+                />
             )}
 
             {/* Form Modal */}
@@ -1214,6 +1515,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 onVolumesChange={setFVolumes} onMaterialsChange={setFMaterials}
                                 onLaborChange={setFLabor} onMachinesChange={setFMachines}
                                 tasks={tasks}
+                                workBoqItems={workBoqItems}
                                 laborCatalogs={laborCatalogs}
                                 machineCatalogs={machineCatalogs}
                                 businessPartners={businessPartners}

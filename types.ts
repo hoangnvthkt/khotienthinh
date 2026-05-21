@@ -41,6 +41,8 @@ export enum MaterialRequestFulfillmentMode {
   DIRECT_CONSUMPTION = 'DIRECT_CONSUMPTION',
 }
 
+export type MaterialRequestOrigin = 'wms' | 'project';
+
 export type WarehouseType = 'GENERAL' | 'SITE' | 'OFFICE'; // Tổng | Công trường | Văn phòng
 
 export interface User {
@@ -534,6 +536,73 @@ export interface ProjectWorkBoqItem {
   updatedAt?: string;
 }
 
+export type BoqReconciliationStatus = 'draft' | 'submitted' | 'reviewed' | 'locked';
+
+export interface BoqReconciliationContractLine {
+  id?: string;
+  groupId: string;
+  contractItemId: string;
+  contractId?: string | null;
+  contractType: ContractItemType;
+  originalQuantity: number;
+  originalUnit?: string | null;
+  allocatedQuantity: number;
+  allocatedPercent?: number | null;
+  convertedQuantity: number;
+  convertedUnit?: string | null;
+  conversionFactor: number;
+  conversionFormula?: string | null;
+  unitPriceSnapshot: number;
+  amountSnapshot: number;
+  note?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface BoqReconciliationWorkLine {
+  id?: string;
+  groupId: string;
+  workBoqItemId: string;
+  sourceTaskId?: string | null;
+  originalQuantity: number;
+  originalUnit?: string | null;
+  allocatedQuantity: number;
+  allocatedPercent?: number | null;
+  convertedQuantity: number;
+  convertedUnit?: string | null;
+  conversionFactor: number;
+  conversionFormula?: string | null;
+  unitPriceSnapshot: number;
+  amountSnapshot: number;
+  note?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface BoqReconciliationGroup {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  contractType: ContractItemType;
+  contractId?: string | null;
+  code?: string | null;
+  name: string;
+  description?: string | null;
+  status: BoqReconciliationStatus;
+  preparedById?: string | null;
+  preparedByName?: string | null;
+  reviewedById?: string | null;
+  reviewedByName?: string | null;
+  reviewedAt?: string | null;
+  lockedById?: string | null;
+  lockedByName?: string | null;
+  lockedAt?: string | null;
+  contractLines?: BoqReconciliationContractLine[];
+  workLines?: BoqReconciliationWorkLine[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface TaskContractItem {
   id: string;
   taskId: string;
@@ -570,10 +639,12 @@ export interface DelayTaskEntry {
 
 // FastCons: Chi tiết nhật ký (gộp KL/VT/NC/Máy vào 1 DailyLog)
 export interface DailyLogVolume {
-  contractItemId: string;     // FK → ContractItem hoặc ProjectTask
+  contractItemId?: string;    // FK → ContractItem khi đã đối chiếu/nghiệm thu
   contractItemName?: string;  // Cache tên hạng mục
   taskId?: string;            // FK → ProjectTask (nếu liên kết Gantt)
   taskName?: string;          // Cache tên hạng mục tiến độ
+  workBoqItemId?: string;     // FK → ProjectWorkBoqItem để gom thực tế theo BOQ thi công
+  workBoqItemName?: string;   // Cache tên đầu mục BOQ thi công
   quantity: number;           // KL thực hiện trong ngày
   unit: string;               // Đơn vị tính
   note?: string;
@@ -1089,7 +1160,8 @@ export interface ProjectMaterialRequest {
 }
 
 // ==================== CUNG ỨNG ====================
-export type POStatus = 'draft' | 'sent' | 'partial' | 'delivered' | 'cancelled';
+export type POStatus = 'draft' | 'sent' | 'confirmed' | 'in_transit' | 'partial' | 'delivered' | 'closed' | 'cancelled';
+export type PurchaseOrderSourceMode = 'from_request' | 'proactive_project' | 'proactive_stock';
 
 export interface ProjectVendor {
   id: string;
@@ -1122,6 +1194,7 @@ export interface PurchaseOrder {
   expectedDeliveryDate?: string;
   actualDeliveryDate?: string;
   status: POStatus;
+  sourceMode?: PurchaseOrderSourceMode;
   qrToken?: string;
   targetWarehouseId?: string;
   receivedTransactionIds?: string[];
@@ -1132,6 +1205,7 @@ export interface PurchaseOrder {
 }
 
 export interface PurchaseOrderItem {
+  lineId?: string;
   itemId: string;
   sku: string;
   name: string;
@@ -1140,7 +1214,40 @@ export interface PurchaseOrderItem {
   unitPrice: number;
   receivedQty?: number;
   neededDate?: string;
+  workBoqItemId?: string | null;
+  workBoqItemName?: string | null;
+  materialBudgetItemId?: string | null;
+  materialBudgetItemName?: string | null;
+  requestId?: string | null;
+  requestCode?: string | null;
+  requestLineId?: string | null;
+  budgetQtySnapshot?: number;
+  previousRequestedQtySnapshot?: number;
+  previousOrderedQtySnapshot?: number;
+  previousReceivedQtySnapshot?: number;
+  overBudgetQtySnapshot?: number;
+  overBudgetPercentSnapshot?: number;
+  overBudgetReason?: string;
   note?: string;
+}
+
+export interface PurchaseOrderRequestLineLink {
+  id?: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  purchaseOrderId: string;
+  purchaseOrderLineId: string;
+  materialRequestId: string;
+  materialRequestCode?: string | null;
+  requestLineId: string;
+  itemId: string;
+  workBoqItemId?: string | null;
+  materialBudgetItemId?: string | null;
+  requestedQty: number;
+  orderedQty: number;
+  unit?: string | null;
+  note?: string | null;
+  createdAt?: string;
 }
 
 export type OrgUnitType = 'company' | 'department' | 'construction_site' | 'factory' | 'custom';
@@ -1329,14 +1436,31 @@ export interface GlobalActivity {
 }
 
 export interface RequestItem {
+  lineId?: string;
   itemId: string;
   requestQty: number;
   approvedQty: number; // Thực xuất (Bộ phận tiếp nhận quyết định)
+  workBoqItemId?: string | null;
+  workBoqItemName?: string | null;
+  materialBudgetItemId?: string | null;
+  materialBudgetItemName?: string | null;
+  neededDate?: string;
+  note?: string;
+  budgetQtySnapshot?: number;
+  previousRequestedQtySnapshot?: number;
+  previousOrderedQtySnapshot?: number;
+  previousReceivedQtySnapshot?: number;
+  overBudgetQtySnapshot?: number;
+  overBudgetPercentSnapshot?: number;
+  overBudgetReason?: string;
 }
 
 export interface MaterialRequest {
   id: string;
   code: string; // e.g., MR-2023-001
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  requestOrigin?: MaterialRequestOrigin;
   siteWarehouseId: string; // Kho công trường yêu cầu
   sourceWarehouseId?: string; // Kho cung cấp (thường là kho tổng)
   requesterId: string;
@@ -2346,6 +2470,8 @@ export interface SupplierContract {
   supplierId?: string;
   supplierName?: string;
   supplierRepresentative?: string;
+  projectId?: string;
+  constructionSiteId?: string;
   value: number;
   currency: 'VND' | 'USD';
   paymentMethod?: 'bank_transfer' | 'cash' | 'credit';

@@ -24,6 +24,7 @@ export const getApiErrorMessage = (
   fallbackMessage = 'Không thể xử lý yêu cầu. Vui lòng thử lại.'
 ) => {
   const err = asErrorLike(error);
+  const originalMessage = err.message?.trim();
   const rawMessage = [err.message, err.details, err.hint, err.code, err.name]
     .filter(Boolean)
     .join(' ')
@@ -51,6 +52,16 @@ export const getApiErrorMessage = (
   }
   if (rawMessage.includes('foreign key') || rawMessage.includes('23503') || rawMessage.includes('referenced from table')) {
     return 'Dữ liệu đang được sử dụng ở nơi khác nên chưa thể xoá.';
+  }
+
+  if (
+    originalMessage &&
+    !err.code &&
+    !err.details &&
+    !err.hint &&
+    (error instanceof Error || typeof error === 'string' || /[À-ỹ]/.test(originalMessage))
+  ) {
+    return originalMessage;
   }
 
   return fallbackMessage;

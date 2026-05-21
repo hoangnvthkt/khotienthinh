@@ -967,7 +967,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         if (!ensureProjectPermission('edit', 'sửa hạng mục tiến độ')) return;
         setEditing(t);
         setFName(t.name); setFStart(t.startDate); setFEnd(t.endDate);
-        setFProgress(String(t.progress)); setFProgressMode(tasks.some(task => task.parentId === t.id) ? 'children_auto' : (t.progressMode || 'manual')); setFAssignee(t.assignee || ''); setFAssigneeUserId(t.assigneeUserId || '');
+        const sourceMode = t.progressMode === 'completion_request' ? 'daily_log' : (t.progressMode || 'manual');
+        setFProgress(String(t.progress)); setFProgressMode(tasks.some(task => task.parentId === t.id) ? 'children_auto' : sourceMode); setFAssignee(t.assignee || ''); setFAssigneeUserId(t.assigneeUserId || '');
         setFParentId(t.parentId || ''); setFMilestone(t.isMilestone);
         setFNotes(t.notes || ''); setFColor(t.color || '');
         setFDeps(t.dependencies || []); setFLagTime(String(t.lagTime || 0));
@@ -985,7 +986,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         if (!ensureProjectPermission('edit', 'nhân bản hạng mục tiến độ')) return;
         setEditing(null);
         setFName(t.name + ' (Bản sao)'); setFStart(t.startDate); setFEnd(t.endDate);
-        setFProgress('0'); setFAssignee(t.assignee || ''); setFAssigneeUserId(t.assigneeUserId || '');
+        setFProgress('0'); setFProgressMode('daily_log'); setFAssignee(t.assignee || ''); setFAssigneeUserId(t.assigneeUserId || '');
         setFParentId(t.parentId || ''); setFMilestone(t.isMilestone);
         setFNotes(t.notes || ''); setFColor(t.color || '');
         setFWbsCode(getNextWbsCode(tasks, t.parentId));
@@ -2164,7 +2165,6 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                             const unitTitle = getTaskUnitTitle(task, linkedIds, contractItems);
                                             const rowHasChildren = hasChildren || !!childCountByTaskId.get(task.id);
                                             const progressReadOnly = rowHasChildren || task.progressMode === 'daily_log' || task.progressMode === 'completion_request' || task.progressMode === 'children_auto' || task.progressMode === 'derived_from_acceptance';
-                                            const requestCount = completionRequestsByTaskId.get(task.id)?.length || 0;
                                             return (
                                                 <tr key={task.id}
                                                     style={{ height: `${ROW_HEIGHT}px` }}
@@ -2282,12 +2282,6 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                                 className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
                                                                 <Plus size={12} />
                                                             </button>
-                                                            {!rowHasChildren && (
-                                                                <button onClick={() => openCompletionRequestModal(task)} title={requestCount > 0 ? `Báo hoàn thành (${requestCount} phiếu)` : 'Báo hoàn thành'}
-                                                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors">
-                                                                    <ClipboardCheck size={12} />
-                                                                </button>
-                                                            )}
                                                             <button onClick={() => setDeleteTarget(task)} title="Xoá"
                                                                 className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
                                                                 <Trash2 size={12} />
@@ -3000,7 +2994,6 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                         <option value="daily_log">Nhật ký thi công đã xác nhận</option>
 	                                    <option value="manual">Nhập tay theo kế hoạch thi công</option>
 	                                    <option value="derived_from_acceptance">Tự tính từ nghiệm thu khối lượng</option>
-                                        <option value="completion_request">Tự tính từ phiếu hoàn thành</option>
                                         {formTaskHasChildren && <option value="children_auto">Tự tính từ công việc con</option>}
 	                                </select>
 	                            </div>
@@ -3031,7 +3024,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 
 	                            {contractItems.length > 0 && (
 	                                <div className="border border-slate-100 dark:border-slate-700 rounded-xl p-3">
-	                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-2">Liên kết BOQ hợp đồng</label>
+	                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1">Liên kết BOQ hợp đồng tham khảo</label>
+	                                    <p className="text-[10px] text-slate-400 mb-2">Đối chiếu chính thức nằm ở BOQ triển khai &gt; Đối chiếu BOQ hợp đồng.</p>
 	                                    <div className="max-h-28 overflow-y-auto space-y-1">
 	                                        {contractItems.map(item => (
 	                                            <label key={item.id} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
@@ -3099,102 +3093,6 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     <Plus size={10} /> Thêm phụ thuộc
                                 </button>
                             </div>
-
-                            {/* GĐ1: Lag Time + Resources */}
-                            <div className="grid grid-cols-3 gap-3">
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Clock size={10} /> Lag (ngày)</label>
-                                    <input type="number" min={0} value={fLagTime} onChange={e => setFLagTime(e.target.value)}
-                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Users size={10} /> Nhân lực</label>
-                                    <input type="number" min={1} value={fResourceCount} onChange={e => setFResourceCount(e.target.value)}
-                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Wrench size={10} /> Loại TN</label>
-                                    <select value={fResourceType} onChange={e => setFResourceType(e.target.value as ResourceType)}
-                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none">
-                                        <option value="worker">Nhân công</option>
-                                        <option value="machine">Máy móc</option>
-                                        <option value="specialist">Chuyên gia</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Zap size={10} /> Chi phí/ngày (VNĐ)</label>
-                                <input type="number" min={0} step={100000} value={fCostPerDay} onChange={e => setFCostPerDay(e.target.value)}
-                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
-                            </div>
-
-                            {editing && (
-                                <div className="border border-amber-100 dark:border-amber-900/50 rounded-xl p-3 bg-amber-50/30 dark:bg-amber-900/10">
-                                    <div className="flex items-center justify-between gap-2 mb-2">
-                                        <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-1">
-                                            <ClipboardCheck size={11} className="text-amber-600" /> Phiếu hoàn thành
-                                        </label>
-                                        {!formTaskHasChildren && (
-                                            <button onClick={() => openCompletionRequestModal(editing)}
-                                                className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-amber-700 bg-white border border-amber-200 hover:bg-amber-100 transition-colors">
-                                                Báo hoàn thành
-                                            </button>
-                                        )}
-                                    </div>
-                                    {formTaskHasChildren ? (
-                                        <p className="text-[10px] text-slate-500">Hạng mục cha tự tính từ các công việc con, không tạo phiếu trực tiếp.</p>
-                                    ) : (completionRequestsByTaskId.get(editing.id) || []).length === 0 ? (
-                                        <p className="text-[10px] text-slate-500">Chưa có phiếu hoàn thành nào.</p>
-                                    ) : (
-                                        <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
-                                            {(completionRequestsByTaskId.get(editing.id) || []).map(request => {
-                                                const cfg = COMPLETION_STATUS_CONFIG[request.status] || COMPLETION_STATUS_CONFIG.submitted;
-                                                return (
-                                                    <div key={request.id} className="rounded-xl border border-white/70 bg-white/80 dark:bg-slate-800/80 dark:border-slate-700 p-2">
-                                                        <div className="flex items-start justify-between gap-2">
-                                                            <div className="min-w-0">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className={`px-2 py-0.5 rounded-full border text-[9px] font-black ${cfg.className}`}>{cfg.label}</span>
-                                                                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
-                                                                        KL: {formatQuantity(request.acceptedQuantity || request.proposedQuantity)}
-                                                                    </span>
-                                                                </div>
-                                                                {request.note && <p className="text-[10px] text-slate-500 mt-1 line-clamp-2">{request.note}</p>}
-                                                                {request.returnReason && <p className="text-[10px] text-red-500 mt-1 line-clamp-2">Lý do: {request.returnReason}</p>}
-                                                                {request.attachments.length > 0 && (
-                                                                    <div className="flex items-center gap-1 mt-1 text-[9px] font-bold text-blue-500">
-                                                                        <Paperclip size={9} /> {request.attachments.length} bằng chứng
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                            <div className="flex items-center gap-1 shrink-0">
-                                                                {request.status === 'submitted' && projectPerms.has('verify') && (
-                                                                    <button onClick={() => handleCompletionTransition(request, 'verified')}
-                                                                        className="px-2 py-1 rounded-lg text-[9px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-100">
-                                                                        Xác nhận
-                                                                    </button>
-                                                                )}
-                                                                {request.status === 'verified' && projectPerms.has('approve') && (
-                                                                    <button onClick={() => handleCompletionTransition(request, 'approved')}
-                                                                        className="px-2 py-1 rounded-lg text-[9px] font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100">
-                                                                        Duyệt
-                                                                    </button>
-                                                                )}
-                                                                {(request.status === 'submitted' || request.status === 'verified') && (projectPerms.has('verify') || projectPerms.has('approve')) && (
-                                                                    <button onClick={() => { setCompletionReturnRequest(request); setCompletionReturnReason(''); }}
-                                                                        className="px-2 py-1 rounded-lg text-[9px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-100">
-                                                                        Trả lại
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
 
                             {/* Notes */}
                             <div>

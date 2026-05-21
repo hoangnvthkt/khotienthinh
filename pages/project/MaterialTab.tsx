@@ -11,6 +11,7 @@ import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, Proj
 import { boqService, taskService, workBoqService, WorkBoqSyncPreview } from '../../lib/projectService';
 import { useApp } from '../../context/AppContext';
 import RequestModal from '../../components/RequestModal';
+import BoqReconciliationPanel from '../../components/project/BoqReconciliationPanel';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { taskContractItemService } from '../../lib/taskContractItemService';
@@ -89,8 +90,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     // Material Requests — filtered to this site's warehouse
     const requests = useMemo(() => {
-        return allRequests.filter(r => r.siteWarehouseId === resolvedWhId);
-    }, [allRequests, resolvedWhId]);
+        const scoped = allRequests.filter(r => {
+            const projectMatch = projectId && r.projectId === projectId;
+            const siteMatch = constructionSiteId && r.constructionSiteId === constructionSiteId;
+            if (r.requestOrigin === 'project' || r.projectId || r.constructionSiteId) return !!(projectMatch || siteMatch);
+            return r.siteWarehouseId === resolvedWhId;
+        });
+        return scoped;
+    }, [allRequests, constructionSiteId, projectId, resolvedWhId]);
 
     // Request Modal state
     const [isReqModalOpen, setReqModalOpen] = useState(false);
@@ -186,10 +193,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             // Sum approvedQty from completed/in_transit requests
             let totalApproved = 0;
             let totalRequested = 0;
-            requests.forEach(r => {
+            requests.filter(r => r.status !== RequestStatus.REJECTED).forEach(r => {
                 const rItems = r.items || [];
                 rItems.forEach((ri: any) => {
-                    if (ri.itemId === b.inventoryItemId) {
+                    const sameBudgetLine = ri.materialBudgetItemId && ri.materialBudgetItemId === b.id;
+                    const legacySameItem = !ri.materialBudgetItemId && ri.itemId === b.inventoryItemId;
+                    if (sameBudgetLine || legacySameItem) {
                         totalRequested += (ri.requestQty || 0);
                         if (r.status === RequestStatus.COMPLETED || r.status === RequestStatus.IN_TRANSIT) {
                             totalApproved += (ri.approvedQty || 0);
@@ -688,6 +697,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
             {/* BOQ Tab */}
             {activeSubTab === 'boq' && (
+                <div className="space-y-4">
+                <BoqReconciliationPanel projectId={projectId || null} constructionSiteId={constructionSiteId || null} />
                 <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                     <div className="p-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                         <div>
@@ -836,6 +847,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         </div>
                     )}
                 </div>
+                </div>
             )}
 
             {/* Material Request Tab — using MaterialRequest from Inventory module */}
@@ -885,9 +897,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                     <div className="flex flex-wrap gap-1">
                                                         {reqItems.slice(0, 3).map((ri: any, idx: number) => {
                                                             const inv = inventoryItems.find(i => i.id === ri.itemId);
+                                                            const work = ri.workBoqItemId ? workBoqItems.find(item => item.id === ri.workBoqItemId) : undefined;
                                                             return (
                                                                 <span key={idx} className="px-1.5 py-0.5 rounded text-[9px] bg-slate-50 border border-slate-100 text-slate-600 font-medium">
-                                                                    {inv?.name || ri.itemId} ({ri.requestQty})
+                                                                    {work?.wbsCode ? `${work.wbsCode} • ` : ''}{inv?.name || ri.itemId} ({ri.requestQty})
+                                                                    {ri.overBudgetQtySnapshot > 0 ? <span className="ml-1 text-orange-600 font-black">Vượt</span> : null}
                                                                 </span>
                                                             );
                                                         })}
@@ -1228,6 +1242,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     onClose={() => { setReqModalOpen(false); setSelectedRequest(undefined); }}
                     request={selectedRequest}
                     defaultSiteWarehouseId={resolvedWhId}
+                    projectId={projectId || null}
+                    constructionSiteId={constructionSiteId || null}
+                    requestOrigin="project"
+                    workBoqItems={workBoqItems}
+                    materialBudgetItems={boqItems}
                 />
             )}
 
