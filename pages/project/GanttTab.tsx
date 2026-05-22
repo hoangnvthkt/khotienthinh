@@ -408,6 +408,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 
     // View
     const [viewMode, setViewMode] = useState<ViewMode>('split');
+    const [splitTableWidth, setSplitTableWidth] = useState(520); // px
     const [zoom, setZoom] = useState(28);
     const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
     const [searchQuery, setSearchQuery] = useState('');
@@ -2073,8 +2074,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                     <div className="flex flex-col lg:flex-row overflow-hidden">
                         {/* ====== TABLE VIEW ====== */}
                         {(viewMode === 'table' || viewMode === 'split') && (
-                            <div className={`${viewMode === 'split' ? 'w-full lg:w-[520px] shrink-0 lg:border-r border-b lg:border-b-0 border-slate-100 dark:border-slate-700' : 'flex-1'} overflow-auto`}>
-                                <table className={`${viewMode === 'table' ? 'w-full min-w-[760px] lg:min-w-[1280px] table-fixed' : 'w-full min-w-[500px]'} text-xs`}>
+                            <div 
+                                style={{ width: viewMode === 'split' ? `${splitTableWidth}px` : undefined }}
+                                className={`${viewMode === 'split' ? 'shrink-0 lg:border-r border-b lg:border-b-0 border-slate-100 dark:border-slate-700' : 'flex-1'} overflow-auto`}>
+                                <table className={`${viewMode === 'table' ? 'w-full min-w-[760px] lg:min-w-[1280px] table-fixed' : 'w-full min-w-[680px] table-fixed'} text-xs`}>
                                     <thead>
                                         <tr className="bg-slate-50/80 dark:bg-slate-700/50 border-b border-slate-100 dark:border-slate-700" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
                                             {viewMode === 'table' && (
@@ -2087,7 +2090,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Mã WBS</span>
                                                 </th>
                                             )}
-                                            <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-3 py-2.5 text-left">
+                                            <th className={`sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-3 py-2.5 text-left ${viewMode === 'split' ? 'w-[220px]' : ''}`}>
                                                 <button onClick={() => handleSort('name')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
                                                     Công việc <SortIcon field="name" />
                                                 </button>
@@ -2184,8 +2187,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         </td>
                                                     )}
                                                     {/* Name */}
-                                                    <td className="px-3 py-2.5">
-                                                        <div className="flex items-center gap-1" style={{ paddingLeft: viewMode === 'split' ? `${level * 16}px` : 0 }}>
+                                                    <td className={`px-3 ${viewMode === 'split' ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
+                                                        style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
+                                                        <div className="flex items-center gap-1 min-w-0 h-full" style={{ paddingLeft: viewMode === 'split' ? `${level * 16}px` : 0 }}>
                                                             {viewMode === 'split' && hasChildren ? (
                                                                 <button onClick={() => toggleCollapse(task.id)} className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-orange-500 shrink-0 rounded hover:bg-orange-50 transition-colors">
                                                                     {collapsedParents.has(task.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
@@ -2218,7 +2222,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                     </td>
                                                     {/* Status */}
                                                     {viewMode === 'split' && (
-                                                        <td className="px-2 py-0 overflow-hidden" style={{ maxWidth: "95px" }}><StatusBadge status={status} /></td>
+                                                        <td className="px-2 py-0 overflow-hidden whitespace-nowrap" style={{ maxWidth: "95px", height: `${ROW_HEIGHT}px` }}>
+                                                            <div className="flex items-center h-full">
+                                                                <StatusBadge status={status} />
+                                                            </div>
+                                                        </td>
                                                     )}
                                                     {/* Assignee */}
                                                     {viewMode === 'table' && (
@@ -2237,8 +2245,18 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         <td className="hidden lg:table-cell px-2 py-2.5 text-center font-bold text-slate-500">{task.duration}</td>
                                                     )}
                                                     {/* Planned Dates */}
-                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 py-2.5 text-slate-500 font-medium`}>{fmtShort(task.startDate)}</td>
-                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 py-2.5 text-slate-500 font-medium`}>{fmtShort(task.endDate)}</td>
+                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${viewMode === 'split' ? 'py-0' : 'py-2.5'} text-slate-500 font-medium whitespace-nowrap`}
+                                                        style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
+                                                        <div className="flex items-center h-full">
+                                                            {fmtShort(task.startDate)}
+                                                        </div>
+                                                    </td>
+                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${viewMode === 'split' ? 'py-0' : 'py-2.5'} text-slate-500 font-medium whitespace-nowrap`}
+                                                        style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
+                                                        <div className="flex items-center h-full">
+                                                            {fmtShort(task.endDate)}
+                                                        </div>
+                                                    </td>
                                                     {/* Actual Dates (table mode only) */}
                                                     {viewMode === 'table' && (
                                                         <>
@@ -2254,8 +2272,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         </>
                                                     )}
                                                     {/* Progress */}
-                                                    <td className="px-2 py-2.5">
-                                                        <ProgressCell value={task.progress} onChange={v => updateProgress(task.id, v)} disabled={progressReadOnly} hint={getProgressHint(task, rowHasChildren)} />
+                                                    <td className={`px-2 ${viewMode === 'split' ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
+                                                        style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
+                                                        <div className="flex items-center h-full">
+                                                            <ProgressCell value={task.progress} onChange={v => updateProgress(task.id, v)} disabled={progressReadOnly} hint={getProgressHint(task, rowHasChildren)} />
+                                                        </div>
                                                     </td>
                                                     {/* Unit (table mode only) */}
                                                     {viewMode === 'table' && (
@@ -2268,8 +2289,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         <td className="px-2 py-0 overflow-hidden" style={{ maxWidth: "96px" }}><StatusBadge status={status} /></td>
                                                     )}
                                                     {/* Actions */}
-                                                    <td className="px-2 py-2.5">
-                                                        <div className="flex items-center justify-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                                    <td className={`px-2 ${viewMode === 'split' ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
+                                                        style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
+                                                        <div className="flex items-center justify-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity h-full">
                                                             <button onClick={() => openEdit(task)} title="Sửa"
                                                                 className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
                                                                 <Edit2 size={12} />
