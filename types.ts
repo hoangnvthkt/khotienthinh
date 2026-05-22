@@ -55,7 +55,7 @@ export interface User {
   phone?: string; // SĐT nhân viên
   role: Role;
   avatar?: string;
-  assignedWarehouseId?: string; // ID kho được giao quản lý (null = Toàn quyền)
+  assignedWarehouseId?: string; // ID kho được giao quản lý; WAREHOUSE_KEEPER không gán kho = phòng vật tư/toàn bộ kho
   allowedModules?: string[]; // Danh sách module được phép sử dụng (VD: ['WMS', 'TS'])
   adminModules?: string[]; // Danh sách module mà user là Quản trị viên ứng dụng
   allowedSubModules?: Record<string, string[]>; // Module key -> danh sách route sub-app được phép (VD: { "HRM": ["/hrm/attendance", "/hrm/leave"] })
@@ -1228,6 +1228,11 @@ export interface PurchaseOrderItem {
   overBudgetQtySnapshot?: number;
   overBudgetPercentSnapshot?: number;
   overBudgetReason?: string;
+  isManualItem?: boolean;
+  itemNameSnapshot?: string;
+  unitSnapshot?: string;
+  specification?: string;
+  manualReason?: string;
   note?: string;
 }
 
@@ -1453,6 +1458,12 @@ export interface RequestItem {
   overBudgetQtySnapshot?: number;
   overBudgetPercentSnapshot?: number;
   overBudgetReason?: string;
+  isManualItem?: boolean;
+  itemNameSnapshot?: string;
+  unitSnapshot?: string;
+  skuSnapshot?: string;
+  specification?: string;
+  manualReason?: string;
 }
 
 export interface MaterialRequest {

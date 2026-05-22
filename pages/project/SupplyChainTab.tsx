@@ -114,6 +114,11 @@ const normalizePoItem = (item: Partial<PurchaseOrderItem>, inventoryItems: Inven
         overBudgetQtySnapshot: Number(item.overBudgetQtySnapshot || 0),
         overBudgetPercentSnapshot: Number(item.overBudgetPercentSnapshot || 0),
         overBudgetReason: item.overBudgetReason || '',
+        isManualItem: item.isManualItem || (!matched && !!item.itemId?.startsWith('manual-')),
+        itemNameSnapshot: item.itemNameSnapshot || item.name || matched?.name || '',
+        unitSnapshot: item.unitSnapshot || item.unit || matched?.unit || '',
+        specification: item.specification || '',
+        manualReason: item.manualReason || '',
         note: item.note || '',
     };
 };
@@ -367,9 +372,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             return normalizePoItem({
                 lineId: crypto.randomUUID(),
                 itemId: row.line.itemId,
-                sku: inventory?.sku || '',
-                name: inventory?.name || row.line.materialBudgetItemName || '',
-                unit: inventory?.unit || budget?.unit || '',
+                sku: inventory?.sku || row.line.skuSnapshot || '',
+                name: inventory?.name || row.line.itemNameSnapshot || row.line.materialBudgetItemName || '',
+                unit: inventory?.unit || row.line.unitSnapshot || budget?.unit || '',
                 qty: remainingQty,
                 unitPrice: inventory?.priceIn || budget?.budgetUnitPrice || 0,
                 receivedQty: 0,
@@ -386,6 +391,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 overBudgetQtySnapshot: row.line.overBudgetQtySnapshot,
                 overBudgetPercentSnapshot: row.line.overBudgetPercentSnapshot,
                 overBudgetReason: row.line.overBudgetReason,
+                isManualItem: row.line.isManualItem || !inventory,
+                itemNameSnapshot: row.line.itemNameSnapshot,
+                unitSnapshot: row.line.unitSnapshot,
+                specification: row.line.specification,
+                manualReason: row.line.manualReason,
                 note: row.line.note || `Từ đề xuất ${row.request.code}`,
             }, inventoryItems);
         });
@@ -423,9 +433,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 overBudgetPercentSnapshot: 0,
                 overBudgetReason: '',
             } : buildPoBudgetSnapshot(i))
-            .filter(i => i.itemId && i.qty > 0);
+            .filter(i => i.itemId && i.qty > 0 && (i.isManualItem || i.sku || i.name));
         if (validItems.length === 0) {
-            toast.warning('Chưa có vật tư', 'Vui lòng chọn ít nhất một vật tư WMS và nhập khối lượng đặt.');
+            toast.warning('Chưa có vật tư', 'Vui lòng chọn hoặc nhập ít nhất một dòng vật tư và khối lượng đặt.');
             return;
         }
         const duplicatedSku = validItems.find((line, index) => {
@@ -578,6 +588,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             name: selected?.name || '',
             unit: selected?.unit || '',
             unitPrice: selected?.priceIn || 0,
+            isManualItem: false,
+            itemNameSnapshot: selected?.name || '',
+            unitSnapshot: selected?.unit || '',
         });
     };
 
@@ -603,11 +616,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
         const inventory = findInventoryForBudget(budget);
         updatePoItem(index, {
-            itemId: inventory?.id || pItems[index]?.itemId || '',
+            itemId: inventory?.id || pItems[index]?.itemId || `manual-${crypto.randomUUID()}`,
             sku: inventory?.sku || budget.materialCode || pItems[index]?.sku || '',
             name: inventory?.name || budget.itemName,
             unit: inventory?.unit || budget.unit,
             unitPrice: inventory?.priceIn || budget.budgetUnitPrice || pItems[index]?.unitPrice || 0,
+            isManualItem: !inventory,
+            itemNameSnapshot: inventory?.name || budget.itemName,
+            unitSnapshot: inventory?.unit || budget.unit,
             workBoqItemId: budget.workBoqItemId || null,
             workBoqItemName: work?.name || null,
             materialBudgetItemId: budget.id,
@@ -1199,6 +1215,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         const inv = inventoryItems.find(item => item.id === row.line.itemId);
                                         const work = row.line.workBoqItemId ? workBoqMap.get(row.line.workBoqItemId) : undefined;
                                         const remaining = Math.max(0, Number(row.line.requestQty || 0) - row.orderedQty);
+                                        const lineName = inv?.name || row.line.itemNameSnapshot || row.line.materialBudgetItemName || row.line.itemId;
                                         return (
                                             <tr key={row.key} className="hover:bg-amber-50/40">
                                                 <td className="px-4 py-3 text-center">
@@ -1214,11 +1231,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     <div className="text-[10px] text-slate-400">{new Date(row.request.createdDate).toLocaleDateString('vi-VN')}</div>
                                                 </td>
                                                 <td className="px-4 py-3">
-                                                    <div className="font-bold text-slate-700">{inv?.name || row.line.itemId}</div>
+                                                    <div className="font-bold text-slate-700">{lineName}</div>
                                                     <div className="text-[10px] text-slate-400">
                                                         {work?.wbsCode ? `${work.wbsCode} - ` : ''}{row.line.workBoqItemName || work?.name || 'Ngoài BOQ'}
                                                         {row.line.materialBudgetItemName ? ` • ${row.line.materialBudgetItemName}` : ''}
                                                     </div>
+                                                    {row.line.isManualItem ? <div className="text-[10px] font-bold text-amber-600">Vật tư viết tay/chưa có mã kho</div> : null}
                                                     {row.line.overBudgetQtySnapshot ? <div className="text-[10px] font-bold text-orange-600">Vượt định mức: {row.line.overBudgetReason || 'Đã nhập lý do'}</div> : null}
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-bold">{Number(row.line.requestQty || 0).toLocaleString('vi-VN')}</td>
@@ -1429,17 +1447,35 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     })}
                                                 </select>
                                             )}
-                                            <select
-                                                value={item.itemId}
-                                                onChange={e => selectPoInventoryItem(i, e.target.value)}
-                                                className="col-span-12 md:col-span-4 px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none"
-                                            >
-                                                <option value="">Chọn SKU vật tư...</option>
-                                                {inventoryItems.map(inv => <option key={inv.id} value={inv.id}>{inv.sku} - {inv.name}</option>)}
-                                            </select>
-                                            <div className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-xs text-slate-500 font-bold truncate">
-                                                {item.unit || 'ĐVT'}
-                                            </div>
+                                            {item.isManualItem ? (
+                                                <input
+                                                    value={item.name || item.itemNameSnapshot || ''}
+                                                    onChange={e => updatePoItem(i, { name: e.target.value, itemNameSnapshot: e.target.value })}
+                                                    placeholder="Tên vật tư viết tay"
+                                                    className="col-span-12 md:col-span-4 px-2.5 py-2 rounded-lg border border-amber-200 bg-amber-50/40 text-xs font-bold focus:ring-2 focus:ring-amber-300 outline-none"
+                                                />
+                                            ) : (
+                                                <select
+                                                    value={item.itemId}
+                                                    onChange={e => selectPoInventoryItem(i, e.target.value)}
+                                                    className="col-span-12 md:col-span-4 px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                                >
+                                                    <option value="">Chọn SKU vật tư...</option>
+                                                    {inventoryItems.map(inv => <option key={inv.id} value={inv.id}>{inv.sku} - {inv.name}</option>)}
+                                                </select>
+                                            )}
+                                            {item.isManualItem ? (
+                                                <input
+                                                    value={item.unit || item.unitSnapshot || ''}
+                                                    onChange={e => updatePoItem(i, { unit: e.target.value, unitSnapshot: e.target.value })}
+                                                    placeholder="ĐVT"
+                                                    className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-amber-200 bg-white text-xs text-slate-600 font-bold focus:ring-2 focus:ring-amber-300 outline-none"
+                                                />
+                                            ) : (
+                                                <div className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-xs text-slate-500 font-bold truncate">
+                                                    {item.unit || 'ĐVT'}
+                                                </div>
+                                            )}
                                             <input
                                                 type="number"
                                                 min={0}

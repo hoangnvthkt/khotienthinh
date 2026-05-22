@@ -10,7 +10,7 @@ interface ItemSelectionModalProps {
   onSelect: (item: InventoryItem) => void;
   onOpenScanner: () => void;
   filterWarehouseId?: string; // ID kho để lọc vật tư (cho xuất/chuyển/hủy)
-  allowAllItems?: boolean;    // true = hiển thị tất cả vật tư (cho nhập kho)
+  allowAllItems?: boolean;    // true = hiển thị tất cả vật tư (cho nhập kho/đề xuất nhu cầu)
 }
 
 const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
@@ -60,10 +60,15 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
         <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
           <div>
             <h3 className="font-bold text-lg text-slate-800">Chọn vật tư</h3>
-            {allowAllItems ? (
+            {allowAllItems && targetWarehouse ? (
+              <p className="text-xs text-blue-600 font-bold flex items-center mt-1 uppercase tracking-tighter">
+                <Filter size={12} className="mr-1" />
+                Tất cả vật tư hệ thống — xem tồn tại: {targetWarehouse.name}
+              </p>
+            ) : allowAllItems ? (
               <p className="text-xs text-emerald-600 font-bold flex items-center mt-1 uppercase tracking-tighter">
                 <Search size={12} className="mr-1" />
-                Tìm theo mã SKU hoặc tên — tất cả vật tư hệ thống
+                Tìm theo mã SKU hoặc tên — tổng tồn tất cả kho
               </p>
             ) : targetWarehouse ? (
               <p className="text-xs text-blue-600 font-bold flex items-center mt-1 uppercase tracking-tighter">
@@ -105,7 +110,7 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
               <tr>
                 <th className="p-4">Mã SKU</th>
                 <th className="p-4">Tên vật tư</th>
-                <th className="p-4 text-right">{allowAllItems ? 'Tổng tồn' : 'Số lượng tồn'}</th>
+                <th className="p-4 text-right">{targetWarehouse ? 'Tồn kho đang xem' : 'Tổng tồn'}</th>
                 <th className="p-4 text-center">Hành động</th>
               </tr>
             </thead>
