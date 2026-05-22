@@ -11,6 +11,7 @@ import { ProjectPermissionCode, projectStaffService } from '../../lib/projectSta
 import { notificationService } from '../../lib/notificationService';
 import { taskCompletionRequestService } from '../../lib/projectTaskCompletionService';
 import { deriveProjectTaskProgress } from '../../lib/projectScheduleRules';
+import { delayEventService } from '../../lib/projectScheduleForecastService';
 import { useVoiceInput } from '../../hooks/useVoiceInput';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -75,6 +76,51 @@ const formatNumber = (value?: number | null) =>
 
 const formatMoney = (value?: number | null) =>
     Number(value || 0).toLocaleString('vi-VN');
+
+const ATTACHMENT_MIME_BY_EXTENSION: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    bmp: 'image/bmp',
+};
+
+const inferAttachmentMimeType = (file: { fileType?: string; fileName?: string; name?: string }) => {
+    if (file.fileType) return file.fileType;
+    const name = file.fileName || file.name || '';
+    const ext = name.split('.').pop()?.toLowerCase() || '';
+    return ATTACHMENT_MIME_BY_EXTENSION[ext] || '';
+};
+
+const normalizeAttachmentUrl = (file: { fileType?: string; fileName?: string; name?: string; url?: string }) => {
+    const url = file.url || '';
+    if (!url.startsWith('data:')) return url;
+    const mimeType = inferAttachmentMimeType(file);
+    if (!mimeType) return url;
+    const commaIndex = url.indexOf(',');
+    if (commaIndex === -1) return url;
+    const prefix = url.slice(0, commaIndex);
+    const needsMime = /^data:(?:;base64)?$/i.test(prefix) || /^data:application\/octet-stream(?:;base64)?$/i.test(prefix);
+    return needsMime ? `data:${mimeType};base64${url.slice(commaIndex)}` : url;
+};
+
+const isImageAttachment = (file: { fileType?: string; fileName?: string; name?: string; url?: string }) => {
+    const name = file.fileName || file.name || '';
+    return /^image\//i.test(inferAttachmentMimeType(file)) || /^data:image\//i.test(normalizeAttachmentUrl(file)) || /\.(jpe?g|png|gif|webp|bmp)$/i.test(name);
+};
+
+const normalizeLookupText = (value?: string | null) =>
+    String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd')
+        .replace(/Đ/g, 'D')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+
+const SITE_WAREHOUSE_STOP_WORDS = new Set(['kho', 'cong', 'truong', 'du', 'an', 'ct', 'tai', 'khu']);
 
 const uniqueStaffByUser = (rows: ProjectStaff[]): ProjectStaff[] => {
     const map = new Map<string, ProjectStaff>();
@@ -287,11 +333,23 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                             </div>
                                             {attachments.length > 0 && (
                                                 <div className="mt-2 flex flex-wrap gap-2">
-                                                    {attachments.map(file => (
-                                                        <a key={file.id || file.url} href={file.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-blue-600 border border-blue-100 hover:bg-blue-50">
-                                                            <Paperclip size={10} /> {file.name || file.fileName || 'Bằng chứng'}
-                                                        </a>
-                                                    ))}
+                                                    {attachments.map(file => {
+                                                        const label = file.name || file.fileName || 'Bằng chứng';
+                                                        const attachmentUrl = normalizeAttachmentUrl(file);
+                                                        if (attachmentUrl && isImageAttachment({ ...file, url: attachmentUrl })) {
+                                                            return (
+                                                                <a key={file.id || attachmentUrl} href={attachmentUrl} target="_blank" rel="noreferrer" className="group w-24">
+                                                                    <img src={attachmentUrl} alt={label} className="w-24 h-20 object-cover rounded-lg border border-white shadow-sm group-hover:border-blue-200" />
+                                                                    <div className="mt-1 text-[10px] font-bold text-blue-600 truncate">{label}</div>
+                                                                </a>
+                                                            );
+                                                        }
+                                                        return (
+                                                            <a key={file.id || attachmentUrl || label} href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-blue-600 border border-blue-100 hover:bg-blue-50">
+                                                                <Paperclip size={10} /> {label}
+                                                            </a>
+                                                        );
+                                                    })}
                                                 </div>
                                             )}
                                         </div>
@@ -401,7 +459,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const location = useLocation();
     const toast = useToast();
     const confirm = useConfirm();
-    const { user, users } = useApp();
+    const { user, users, items: inventoryItems, warehouses, hrmConstructionSites, loadModuleData } = useApp();
     const effectiveId = projectId || constructionSiteId || '';
     const [logs, setLogs] = useState<DailyLog[]>([]);
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
@@ -426,6 +484,29 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     // ── PBAC: Load user permissions ──
     const [userPerms, setUserPerms] = useState<Set<string>>(new Set());
     const [pbacLoaded, setPbacLoaded] = useState(false);
+
+    useEffect(() => {
+        loadModuleData('wms');
+    }, [loadModuleData]);
+
+    const siteWarehouse = useMemo(() => {
+        const activeSiteWarehouses = warehouses.filter(warehouse => !warehouse.isArchived && warehouse.type === 'SITE');
+        if (activeSiteWarehouses.length === 0) return undefined;
+        const site = constructionSiteId ? hrmConstructionSites.find(item => item.id === constructionSiteId) : undefined;
+        const siteName = normalizeLookupText(site?.name);
+        if (!siteName) return undefined;
+        const exactName = activeSiteWarehouses.find(warehouse => normalizeLookupText(warehouse.name).includes(siteName));
+        if (exactName) return exactName;
+        const tokens = siteName.split(' ').filter(token => token.length > 1 && !SITE_WAREHOUSE_STOP_WORDS.has(token));
+        if (tokens.length === 0) return undefined;
+        return activeSiteWarehouses.find(warehouse => {
+            const warehouseName = normalizeLookupText(warehouse.name);
+            return tokens.every(token => warehouseName.includes(token));
+        }) || activeSiteWarehouses.find(warehouse => {
+            const warehouseName = normalizeLookupText(warehouse.name);
+            return tokens.some(token => warehouseName.includes(token));
+        });
+    }, [constructionSiteId, hrmConstructionSites, warehouses]);
 
     useEffect(() => {
         setPbacLoaded(false);
@@ -697,6 +778,34 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             toast.error('Cần ít nhất 1 ảnh công trường');
             return;
         }
+        const overLimitVolume = fVolumes.find(volume => {
+            const task = volume.taskId ? tasks.find(item => item.id === volume.taskId) : undefined;
+            const workBoq = volume.workBoqItemId ? workBoqItems.find(item => item.id === volume.workBoqItemId) : undefined;
+            const plannedQty = Number(task?.provisionalQuantity || 0) > 0
+                ? Number(task?.provisionalQuantity || 0)
+                : Number(workBoq?.plannedQty || 0);
+            if (plannedQty <= 0) return false;
+            const verifiedQty = Math.max(
+                volume.taskId ? Number(verifiedQuantityByTaskId[volume.taskId] || 0) : 0,
+                volume.workBoqItemId ? Number(verifiedQuantityByWorkBoqItemId[volume.workBoqItemId] || 0) : 0,
+            );
+            const remainingQty = Math.max(0, plannedQty - verifiedQty);
+            return Number(volume.quantity || 0) > remainingQty + 0.000001;
+        });
+        if (overLimitVolume) {
+            toast.error('Khối lượng vượt phần còn lại', 'Phần vượt cần tách sang phát sinh hoặc đầu mục BOQ/tiến độ khác để đối chiếu đúng thực tế.');
+            return;
+        }
+        const overStockMaterial = siteWarehouse ? fMaterials.find(material => {
+            const item = material.materialId ? inventoryItems.find(inventory => inventory.id === material.materialId) : undefined;
+            if (!item) return false;
+            const siteStock = Number(item.stockByWarehouse?.[siteWarehouse.id] || 0);
+            return Number(material.quantity || 0) > siteStock + 0.000001;
+        }) : undefined;
+        if (overStockMaterial) {
+            toast.error('Vật tư vượt tồn kho công trường', `${overStockMaterial.itemName} đang vượt tồn tại ${siteWarehouse.name}. Vui lòng kiểm tra lại phiếu cấp vật tư hoặc kho công trường.`);
+            return;
+        }
 
         savingLogRef.current = true;
         setSavingLog(true);
@@ -781,6 +890,14 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 	                requestedVerifierName: status === 'submitted' ? (requestedVerifier?.userName || requestedVerifier?.userId) : undefined,
 	                rejectionReason: status === 'rejected' ? 'Cần bổ sung/kiểm tra lại' : undefined,
 	            });
+                if (status === 'verified' && (log.delayTasks || []).length > 0) {
+                    try {
+                        await delayEventService.createFromDailyLog({ ...log, status: 'verified', verified: true }, user?.id || null);
+                    } catch (delayError: any) {
+                        console.warn('Cannot create schedule delay events from daily log', delayError?.message || delayError);
+                        toast.warning('Chưa ghi được sự kiện chậm tiến độ', 'Nhật ký vẫn đã xác nhận; kiểm tra migration forecast trước khi dùng bảng dự báo.');
+                    }
+                }
 	            const nextLogs = await dailyLogService.list(effectiveId, constructionSiteId || null);
 	            setLogs(nextLogs);
                 if (status === 'verified' || status === 'rejected') await recalculateTaskProgress(nextLogs);
@@ -977,6 +1094,19 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             (log.volumes || []).forEach(volume => {
                 if (!volume.taskId) return;
                 totals[volume.taskId] = (totals[volume.taskId] || 0) + Math.max(0, Number(volume.quantity || 0));
+            });
+        });
+        return totals;
+    }, [editing, logs]);
+
+    const verifiedQuantityByWorkBoqItemId = useMemo(() => {
+        const totals: Record<string, number> = {};
+        logs.forEach(log => {
+            if (editing && log.id === editing.id) return;
+            if (getLogStatus(log) !== 'verified' && !log.verified) return;
+            (log.volumes || []).forEach(volume => {
+                if (!volume.workBoqItemId) return;
+                totals[volume.workBoqItemId] = (totals[volume.workBoqItemId] || 0) + Math.max(0, Number(volume.quantity || 0));
             });
         });
         return totals;
@@ -1519,7 +1649,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 laborCatalogs={laborCatalogs}
                                 machineCatalogs={machineCatalogs}
                                 businessPartners={businessPartners}
+                                inventoryItems={inventoryItems}
+                                siteWarehouseId={siteWarehouse?.id}
+                                siteWarehouseName={siteWarehouse?.name}
                                 verifiedQuantityByTaskId={verifiedQuantityByTaskId}
+                                verifiedQuantityByWorkBoqItemId={verifiedQuantityByWorkBoqItemId}
                             />
                         </div>
                         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">

@@ -625,6 +625,57 @@ export interface ProjectBaseline {
   createdAt?: string;
 }
 
+export type ProjectDelayEventStatus = 'reported' | 'accepted' | 'applied' | 'resolved' | 'void';
+
+export interface ProjectDelayEvent {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  sourceDailyLogId?: string | null;
+  taskId?: string | null;
+  taskNameSnapshot: string;
+  category: DelayCategory;
+  reason?: string | null;
+  impactDays: number;
+  status: ProjectDelayEventStatus;
+  responsibility?: string | null;
+  occurredOn: string;
+  createdBy?: string | null;
+  acceptedBy?: string | null;
+  acceptedAt?: string | null;
+  resolvedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ProjectScheduleRevision {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  reason?: string | null;
+  sourceDelayEventIds: string[];
+  appliedBy?: string | null;
+  appliedAt: string;
+  createdAt?: string;
+}
+
+export interface ProjectScheduleRevisionTask {
+  id?: string;
+  revisionId: string;
+  taskId?: string | null;
+  taskNameSnapshot: string;
+  beforeStart: string;
+  beforeEnd: string;
+  beforeDuration: number;
+  afterStart: string;
+  afterEnd: string;
+  afterDuration: number;
+  deltaDays: number;
+  wasCritical: boolean;
+  floatBefore: number;
+  createdAt?: string;
+}
+
 // ==================== NHẬT KÝ CÔNG TRƯỜNG ====================
 export type WeatherType = 'sunny' | 'cloudy' | 'rainy' | 'storm';
 export type DailyLogStatus = 'draft' | 'submitted' | 'verified' | 'rejected';
@@ -653,7 +704,7 @@ export interface DailyLogVolume {
 }
 
 export interface DailyLogMaterial {
-  materialId?: string;        // FK → MaterialBudgetItem.id
+  materialId?: string;        // FK → MaterialBudgetItem.id hoặc InventoryItem.id khi chọn từ tồn kho công trường
   itemName: string;           // Tên vật tư
   unit: string;               // Đơn vị: kg, m3, bao...
   quantity: number;           // SL sử dụng trong ngày

@@ -13,9 +13,11 @@ import {
     Paperclip, ClipboardCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus, ProjectTaskProgressMode, ContractItem, ProjectStaff, ProjectTaskCompletionRequest, Attachment } from '../../types';
+import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus, ProjectTaskProgressMode, ContractItem, ProjectStaff, ProjectTaskCompletionRequest, Attachment, ProjectDelayEvent, ProjectDelayEventStatus, ProjectScheduleRevision, ProjectScheduleRevisionTask } from '../../types';
 import { taskService, baselineService, dailyLogService } from '../../lib/projectService';
 import { taskCompletionRequestService } from '../../lib/projectTaskCompletionService';
+import { buildScheduleForecast } from '../../lib/projectScheduleForecast';
+import { delayEventService, scheduleRevisionService } from '../../lib/projectScheduleForecastService';
 import { contractItemService } from '../../lib/contractItemService';
 import { taskContractItemService } from '../../lib/taskContractItemService';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
@@ -220,6 +222,22 @@ const COMPLETION_STATUS_CONFIG: Record<string, { label: string; className: strin
     cancelled: { label: 'Đã hủy', className: 'bg-slate-50 text-slate-500 border-slate-200' },
 };
 
+const DELAY_CATEGORY_LABELS: Record<string, string> = {
+    material: 'Vật tư',
+    weather: 'Thời tiết',
+    drawing: 'Bản vẽ',
+    labor: 'Nhân công',
+    other: 'Khác',
+};
+
+const DELAY_STATUS_LABELS: Record<ProjectDelayEventStatus, string> = {
+    reported: 'Mới ghi nhận',
+    accepted: 'Đã chấp nhận',
+    applied: 'Đã áp dụng',
+    resolved: 'Đã xử lý',
+    void: 'Bỏ qua',
+};
+
 const ALL_PROJECT_PERMISSION_CODES: ProjectPermissionCode[] = ['view', 'edit', 'submit', 'verify', 'confirm', 'approve'];
 
 const PROJECT_PERMISSION_HINTS: Record<ProjectPermissionCode, string> = {
@@ -274,6 +292,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
     const [baselines, setBaselines] = useState<ProjectBaseline[]>([]);
     const [activeBaseline, setActiveBaseline] = useState<ProjectBaseline | null>(null);
+    const [delayEvents, setDelayEvents] = useState<ProjectDelayEvent[]>([]);
+    const [scheduleRevisions, setScheduleRevisions] = useState<ProjectScheduleRevision[]>([]);
     const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
     const [contractItems, setContractItems] = useState<ContractItem[]>([]);
     const [taskContractLinks, setTaskContractLinks] = useState<Record<string, string[]>>({});
@@ -283,6 +303,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const [pbacLoaded, setPbacLoaded] = useState(false);
     const [loading, setLoading] = useState(true);
     const [showBaselinePanel, setShowBaselinePanel] = useState(false);
+    const [showForecastPanel, setShowForecastPanel] = useState(false);
+    const [applyingForecast, setApplyingForecast] = useState(false);
     // GĐ2: Drag state for ripple + ghosting
     const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
     const [dragGhost, setDragGhost] = useState<{ taskId: string; origLeft: number; origWidth: number; deltaDays: number; weatherWarn: string | null } | null>(null);
@@ -301,6 +323,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         if (!effectiveId) {
             setTasks([]);
             setBaselines([]);
+            setDelayEvents([]);
+            setScheduleRevisions([]);
             setDailyLogs([]);
             setContractItems([]);
             setTaskContractLinks({});
@@ -314,6 +338,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             const [
                 taskData,
                 baselineData,
+                delayEventData,
+                scheduleRevisionData,
                 logData,
                 contractItemData,
                 linkData,
@@ -322,6 +348,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             ] = await Promise.all([
                 taskService.list(effectiveId, constructionSiteId || null),
                 baselineService.list(effectiveId, constructionSiteId || null),
+                delayEventService.list(effectiveId, constructionSiteId || null),
+                scheduleRevisionService.list(effectiveId, constructionSiteId || null),
                 dailyLogService.list(effectiveId, constructionSiteId || null),
                 contractItemService.listBySite(effectiveId, undefined, constructionSiteId || null),
                 taskContractItemService.listBySite(effectiveId, constructionSiteId || null),
@@ -334,6 +362,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             ]);
             setTasks(deriveProjectTaskProgress(taskData, completionData, logData));
             setBaselines(baselineData);
+            setDelayEvents(delayEventData);
+            setScheduleRevisions(scheduleRevisionData);
             setDailyLogs(logData);
             setContractItems(contractItemData);
             setProjectStaff(staffData);
@@ -1434,6 +1464,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         return computeCriticalPath(tasks);
     }, [tasks]);
 
+    const scheduleForecast = useMemo(() => buildScheduleForecast(tasks, delayEvents), [tasks, delayEvents]);
+    const activeDelayEventCount = scheduleForecast.activeDelayEvents.length;
+
     // Map baseline tasks by ID for quick lookup (shadow bars)
     const baselineMap = useMemo(() => {
         if (!activeBaseline) return new Map<string, ProjectTask>();
@@ -1616,6 +1649,113 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         setSandboxTasks([]);
     }, [sandboxTasks, syncProjectFinanceProgress, tasks]);
 
+    const ensureScheduleChangePermission = useCallback((actionLabel: string) => {
+        if (!pbacLoaded) {
+            toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
+            return false;
+        }
+        if (!projectPerms.has('edit') && !projectPerms.has('approve')) {
+            toast.error('Không có quyền', `Bạn cần quyền edit hoặc approve để ${actionLabel}.`);
+            return false;
+        }
+        return true;
+    }, [pbacLoaded, projectPerms, toast]);
+
+    const handleDelayEventStatus = useCallback(async (event: ProjectDelayEvent, status: ProjectDelayEventStatus) => {
+        if (!ensureScheduleChangePermission('cập nhật sự kiện chậm tiến độ')) return;
+        try {
+            await delayEventService.markStatus(event.id, status, user?.id || null);
+            const now = new Date().toISOString();
+            setDelayEvents(prev => prev.map(item => item.id === event.id ? {
+                ...item,
+                status,
+                acceptedBy: status === 'accepted' ? user?.id || null : item.acceptedBy,
+                acceptedAt: status === 'accepted' ? now : item.acceptedAt,
+                resolvedAt: status === 'resolved' || status === 'void' ? now : status === 'accepted' ? null : item.resolvedAt,
+            } : item));
+            toast.success('Đã cập nhật sự kiện chậm tiến độ');
+        } catch (err: any) {
+            toast.error('Không thể cập nhật sự kiện', err?.message || 'Vui lòng thử lại.');
+        }
+    }, [ensureScheduleChangePermission, toast, user?.id]);
+
+    const applyScheduleForecast = useCallback(async () => {
+        if (!ensureScheduleChangePermission('áp dụng dự báo tiến độ')) return;
+        if (scheduleForecast.changedTasks.length === 0) {
+            toast.info('Không có thay đổi forecast', 'Chưa có hạng mục nào cần điều chỉnh theo sự kiện chậm tiến độ.');
+            return;
+        }
+
+        const sourceDelayEventIds = [...new Set(scheduleForecast.activeDelayEvents.map(event => event.id))];
+        const now = new Date().toISOString();
+        const revisionId = crypto.randomUUID();
+        const revision: ProjectScheduleRevision = {
+            id: revisionId,
+            projectId: projectId || constructionSiteId || null,
+            constructionSiteId: constructionSiteId || null,
+            reason: `Áp dụng forecast từ ${sourceDelayEventIds.length} sự kiện chậm tiến độ`,
+            sourceDelayEventIds,
+            appliedBy: user?.id || null,
+            appliedAt: now,
+            createdAt: now,
+        };
+        const revisionTasks: ProjectScheduleRevisionTask[] = scheduleForecast.changedTasks.map(nextTask => {
+            const prevTask = tasks.find(task => task.id === nextTask.id)!;
+            const meta = scheduleForecast.taskForecastMeta.get(nextTask.id);
+            return {
+                id: crypto.randomUUID(),
+                revisionId,
+                taskId: nextTask.id,
+                taskNameSnapshot: nextTask.name,
+                beforeStart: prevTask.startDate,
+                beforeEnd: prevTask.endDate,
+                beforeDuration: Number(prevTask.duration || 0),
+                afterStart: nextTask.startDate,
+                afterEnd: nextTask.endDate,
+                afterDuration: Number(nextTask.duration || 0),
+                deltaDays: meta?.deltaDays || daysBetween(prevTask.endDate, nextTask.endDate),
+                wasCritical: !!meta?.wasCritical,
+                floatBefore: meta?.floatBefore || 0,
+                createdAt: now,
+            };
+        });
+
+        setApplyingForecast(true);
+        try {
+            await scheduleRevisionService.createAndApply({
+                revision,
+                revisionTasks,
+                updatedTasks: scheduleForecast.changedTasks,
+                sourceDelayEventIds,
+            });
+            const forecastById = scheduleForecast.forecastTaskMap;
+            const nextTasks = tasks.map(task => forecastById.get(task.id) || task);
+            setTasks(nextTasks);
+            setScheduleRevisions(prev => [revision, ...prev]);
+            const appliedIds = new Set(sourceDelayEventIds);
+            setDelayEvents(prev => prev.map(event => appliedIds.has(event.id) ? {
+                ...event,
+                status: 'applied',
+                resolvedAt: now,
+            } : event));
+            syncProjectFinanceProgress(nextTasks);
+            toast.success('Đã áp dụng forecast tiến độ', `${revisionTasks.length} hạng mục đã được cập nhật vào kế hoạch điều hành.`);
+        } catch (err: any) {
+            toast.error('Không thể áp dụng forecast', err?.message || 'Vui lòng thử lại.');
+        } finally {
+            setApplyingForecast(false);
+        }
+    }, [
+        constructionSiteId,
+        ensureScheduleChangePermission,
+        projectId,
+        scheduleForecast,
+        syncProjectFinanceProgress,
+        tasks,
+        toast,
+        user?.id,
+    ]);
+
     // ====== GĐ5: AI Risk Analysis (Rule-based) ======
     const aiInsights = useMemo(() => {
         const insights: { icon: string; title: string; desc: string; severity: 'high' | 'medium' | 'low' }[] = [];
@@ -1679,7 +1819,12 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 }),
             };
         }
-        const dates = filteredTasks.flatMap(t => [t.startDate, t.endDate]).sort();
+        const dates = filteredTasks.flatMap(t => {
+            const forecastTask = scheduleForecast.forecastTaskMap.get(t.id);
+            return forecastTask
+                ? [t.startDate, t.endDate, forecastTask.startDate, forecastTask.endDate]
+                : [t.startDate, t.endDate];
+        }).sort();
         const s = addDays(dates[0], -7);
         const e = addDays(dates[dates.length - 1], 14);
         const td = daysBetween(s, e);
@@ -1700,7 +1845,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             ds.push({ date, label: date.split('-')[2], startDay: i, isWeekend: dt.getDay() === 0 || dt.getDay() === 6 });
         }
         return { timelineStart: s, totalDays: td, months: ms, days: ds };
-    }, [filteredTasks]);
+    }, [filteredTasks, scheduleForecast.forecastTaskMap]);
 
     const todayOffset = useMemo(() => daysBetween(timelineStart, today()), [timelineStart]);
     const formTaskHasChildren = !!(editing && childCountByTaskId.get(editing.id));
@@ -1780,6 +1925,20 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                             <BarChart3 size={13} /> So sánh BL
                         </button>
                     )}
+                    <button onClick={() => setShowForecastPanel(v => !v)}
+                        className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+                            showForecastPanel
+                                ? 'border-red-400 bg-red-50 dark:bg-red-900/20 text-red-700'
+                                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                        }`}
+                        title="Dự báo tác động chậm tiến độ">
+                        <AlertTriangle size={13} /> Dự báo
+                        {activeDelayEventCount > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center">
+                                {activeDelayEventCount}
+                            </span>
+                        )}
+                    </button>
                     {/* GĐ5: Sandbox Toggle */}
                     <button onClick={toggleSandbox}
                         className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${isSandboxMode
@@ -1835,6 +1994,129 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                             <Check size={12} /> Áp dụng thật
                         </button>
                     </div>
+                </div>
+            )}
+
+            {/* Schedule Forecast Panel */}
+            {showForecastPanel && (
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-red-100 dark:border-red-900/60 shadow-sm overflow-hidden">
+                    <div className="px-5 py-3 border-b border-red-100 dark:border-red-900/60 flex items-center justify-between bg-red-50/50 dark:bg-red-900/10">
+                        <div className="flex items-center gap-2">
+                            <AlertTriangle size={15} className="text-red-500" />
+                            <div>
+                                <h4 className="text-sm font-black text-slate-800 dark:text-white">Dự báo tác động chậm tiến độ</h4>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                                    {activeDelayEventCount} sự kiện đang tính forecast • {scheduleForecast.changedTasks.length} hạng mục bị đổi lịch
+                                    {scheduleForecast.projectEndDeltaDays !== 0 && (
+                                        <span className={scheduleForecast.projectEndDeltaDays > 0 ? ' text-red-600 font-black' : ' text-emerald-600 font-black'}>
+                                            {' '}• Dự án {scheduleForecast.projectEndDeltaDays > 0 ? 'trễ' : 'sớm'} {Math.abs(scheduleForecast.projectEndDeltaDays)} ngày
+                                        </span>
+                                    )}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {scheduleRevisions.length > 0 && (
+                                <span className="text-[10px] font-bold text-slate-400">Revision: {scheduleRevisions.length}</span>
+                            )}
+                            <button onClick={applyScheduleForecast}
+                                disabled={applyingForecast || scheduleForecast.changedTasks.length === 0}
+                                className="px-3 py-1.5 rounded-lg text-[10px] font-black text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
+                                {applyingForecast ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} Áp dụng forecast
+                            </button>
+                            <button onClick={() => setShowForecastPanel(false)}
+                                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+                                <X size={14} />
+                            </button>
+                        </div>
+                    </div>
+
+                    {activeDelayEventCount === 0 ? (
+                        <div className="p-6 text-center">
+                            <CheckCircle2 size={26} className="text-emerald-400 mx-auto mb-2" />
+                            <p className="text-xs font-bold text-emerald-600">Chưa có sự kiện chậm tiến độ đang ảnh hưởng forecast.</p>
+                            <p className="text-[10px] text-slate-400 mt-1">Daily Log đã xác nhận có hạng mục trễ sẽ tự tạo sự kiện ở đây.</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-0">
+                            <div className="p-4 border-b xl:border-b-0 xl:border-r border-slate-100 dark:border-slate-700">
+                                <div className="text-[10px] font-black text-slate-400 uppercase mb-2">Sự kiện chậm</div>
+                                <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
+                                    {scheduleForecast.activeDelayEvents.map(event => (
+                                        <div key={event.id} className="rounded-xl border border-red-100 dark:border-red-900/50 bg-red-50/40 dark:bg-red-900/10 p-3">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">{event.taskNameSnapshot}</div>
+                                                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-slate-500">
+                                                        <span>{fmtShort(event.occurredOn)}</span>
+                                                        <span>•</span>
+                                                        <span>{DELAY_CATEGORY_LABELS[event.category] || event.category}</span>
+                                                        <span className="rounded-full bg-red-100 text-red-700 px-2 py-0.5">+{event.impactDays} ngày</span>
+                                                        <span className="rounded-full bg-white/80 text-slate-500 px-2 py-0.5 border border-red-100">{DELAY_STATUS_LABELS[event.status]}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1 shrink-0">
+                                                    {event.status === 'reported' && (
+                                                        <button onClick={() => handleDelayEventStatus(event, 'accepted')}
+                                                            className="px-2 py-1 rounded-lg text-[9px] font-black text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-100">
+                                                            Chấp nhận
+                                                        </button>
+                                                    )}
+                                                    <button onClick={() => handleDelayEventStatus(event, 'resolved')}
+                                                        className="px-2 py-1 rounded-lg text-[9px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 hover:bg-emerald-100">
+                                                        Đã xử lý
+                                                    </button>
+                                                    <button onClick={() => handleDelayEventStatus(event, 'void')}
+                                                        className="px-2 py-1 rounded-lg text-[9px] font-black text-slate-500 bg-white border border-slate-200 hover:bg-slate-50">
+                                                        Bỏ qua
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            {event.reason && <p className="mt-2 text-[10px] text-slate-500 leading-relaxed">{event.reason}</p>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="p-4">
+                                <div className="text-[10px] font-black text-slate-400 uppercase mb-2">
+                                    Hạng mục bị ảnh hưởng • downstream: {scheduleForecast.impactedTaskIds.size}
+                                </div>
+                                <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
+                                    {scheduleForecast.changedTasks.length === 0 ? (
+                                        <div className="rounded-xl bg-slate-50 dark:bg-slate-700/30 p-4 text-center text-xs font-bold text-slate-500">
+                                            Các sự kiện hiện tại chưa làm đổi lịch điều hành.
+                                        </div>
+                                    ) : scheduleForecast.changedTasks.slice(0, 12).map(task => {
+                                        const original = tasks.find(item => item.id === task.id);
+                                        const meta = scheduleForecast.taskForecastMeta.get(task.id);
+                                        if (!original) return null;
+                                        return (
+                                            <div key={task.id} className="rounded-xl border border-slate-100 dark:border-slate-700 p-3 bg-slate-50/50 dark:bg-slate-700/20">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="min-w-0">
+                                                        <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">{task.name}</div>
+                                                        <div className="mt-1 text-[10px] text-slate-500">
+                                                            {fmtShort(original.startDate)}-{fmtShort(original.endDate)} → <span className="font-black text-red-600">{fmtShort(task.startDate)}-{fmtShort(task.endDate)}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                        <span className="rounded-full bg-red-100 text-red-700 px-2 py-0.5 text-[9px] font-black">+{meta?.deltaDays || 0}d</span>
+                                                        {meta?.wasCritical && <span className="rounded-full bg-red-500 text-white px-2 py-0.5 text-[9px] font-black">Găng</span>}
+                                                        {!!meta && meta.floatBefore > 0 && <span className="rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 px-2 py-0.5 text-[9px] font-black">Float {meta.floatBefore}d</span>}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                    {scheduleForecast.changedTasks.length > 12 && (
+                                        <div className="text-[10px] font-bold text-slate-400 text-center">
+                                            Còn {scheduleForecast.changedTasks.length - 12} hạng mục khác trong forecast.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -2401,6 +2683,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                         const scheduleInfo = criticalPathResult?.taskSchedule.get(task.id);
                                         const floatVal = scheduleInfo?.float ?? 0;
                                         const baselineTask = baselineMap.get(task.id);
+                                        const forecastTask = scheduleForecast.forecastTaskMap.get(task.id);
+                                        const forecastMeta = scheduleForecast.taskForecastMeta.get(task.id);
+                                        const hasForecastShift = !!forecastTask && (forecastTask.startDate !== task.startDate || forecastTask.endDate !== task.endDate);
                                         const delayDays = getDelayDays(task);
                                         const isGateBlocked = gateBlockedIds.has(task.id);
                                         const isDragging = draggingTaskId === task.id;
@@ -2413,6 +2698,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                         // Baseline shadow position
                                         const blLeft = baselineTask ? daysBetween(timelineStart, baselineTask.startDate) * zoom : 0;
                                         const blWidth = baselineTask ? Math.max(baselineTask.duration * zoom, zoom) : 0;
+                                        const forecastLeft = forecastTask ? daysBetween(timelineStart, forecastTask.startDate) * zoom : 0;
+                                        const forecastDuration = forecastTask ? Math.max(forecastTask.duration || 0, daysBetween(forecastTask.startDate, forecastTask.endDate)) : 0;
+                                        const forecastWidth = forecastTask ? Math.max((forecastDuration || 1) * zoom, zoom) : 0;
 
                                         return (
                                             <div key={task.id} className="w-full relative border-b border-slate-50 dark:border-slate-700/50" style={{ height: `${ROW_HEIGHT}px` }}>
@@ -2425,6 +2713,12 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                     <div className="absolute top-[10px] h-[16px] rounded bg-slate-300/30 dark:bg-slate-500/20 z-[1] pointer-events-none border border-dashed border-slate-300/50"
                                                         style={{ left: `${blLeft}px`, width: `${blWidth}px` }}
                                                         title={`Baseline: ${fmtShort(baselineTask.startDate)} → ${fmtShort(baselineTask.endDate)}`} />
+                                                )}
+
+                                                {hasForecastShift && forecastTask && forecastWidth > 0 && (
+                                                    <div className="absolute top-[34px] h-[6px] rounded-full bg-red-400/20 border border-red-400/60 z-[3] pointer-events-none"
+                                                        style={{ left: `${forecastLeft}px`, width: `${forecastWidth}px` }}
+                                                        title={`Forecast: ${fmtShort(forecastTask.startDate)} → ${fmtShort(forecastTask.endDate)}${forecastMeta ? ` | +${forecastMeta.deltaDays} ngày` : ''}`} />
                                                 )}
 
                                                 {/* GĐ2: Ghost Bar — fixed at original position during drag */}
@@ -2499,6 +2793,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         {!isDragging && delayDays > 0 && (
                                                             <span className="absolute -top-3.5 left-0 text-[8px] font-bold text-red-500 bg-red-50 dark:bg-red-900/30 px-1 rounded animate-pulse">
                                                                 -{delayDays}d
+                                                            </span>
+                                                        )}
+                                                        {!isDragging && hasForecastShift && forecastMeta && (
+                                                            <span className="absolute -bottom-3.5 right-0 text-[8px] font-black text-red-600 bg-red-50 dark:bg-red-900/30 px-1 rounded border border-red-100">
+                                                                forecast +{forecastMeta.deltaDays}d
                                                             </span>
                                                         )}
                                                         {/* GĐ2: Gate State Machine Badge */}

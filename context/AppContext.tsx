@@ -27,9 +27,15 @@ interface AppSettings {
   logo: string;
 }
 
+const normalizeDbRole = (role: any): Role => {
+  if (role === 'KEEPER') return Role.WAREHOUSE_KEEPER;
+  return role as Role;
+};
+
 const mapUserFromDb = (row: any): User => ({
   ...row,
   authId: row.auth_id ?? row.authId,
+  role: normalizeDbRole(row.role),
   assignedWarehouseId: row.assigned_warehouse_id ?? row.assignedWarehouseId,
   allowedModules: row.allowed_modules ?? row.allowedModules ?? undefined,
   adminModules: row.admin_modules ?? row.adminModules ?? undefined,
