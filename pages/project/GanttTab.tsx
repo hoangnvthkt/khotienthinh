@@ -1673,8 +1673,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 months: [] as { label: string; startDay: number; days: number }[],
                 days: Array.from({ length: 91 }, (_, i) => {
                     const date = addDays(s, i);
-                    const dt = new Date(date);
-                    return { date, label: fmtShort(date), startDay: i, isWeekend: dt.getDay() === 0 || dt.getDay() === 6 };
+                    const dt = new Date(date + 'T00:00:00');
+                    return { date, label: date.split('-')[2], startDay: i, isWeekend: dt.getDay() === 0 || dt.getDay() === 6 };
                 }),
             };
         }
@@ -1695,8 +1695,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         }
         for (let i = 0; i <= td; i++) {
             const date = addDays(s, i);
-            const dt = new Date(date);
-            ds.push({ date, label: fmtShort(date), startDay: i, isWeekend: dt.getDay() === 0 || dt.getDay() === 6 });
+            const dt = new Date(date + 'T00:00:00');
+            ds.push({ date, label: date.split('-')[2], startDay: i, isWeekend: dt.getDay() === 0 || dt.getDay() === 6 });
         }
         return { timelineStart: s, totalDays: td, months: ms, days: ds };
     }, [filteredTasks]);
@@ -2309,9 +2309,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                     {/* Month + day headers */}
                                     <div className="border-b border-slate-100 dark:border-slate-700 relative bg-slate-50/50 dark:bg-slate-700/30" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
                                         {months.map((m, i) => (
-                                            <div key={i} className="absolute top-0 h-[30px] flex items-center border-r border-slate-100 dark:border-slate-700"
+                                            <div key={i} className="absolute top-0 h-[30px] flex items-center justify-center border-r border-slate-100 dark:border-slate-700"
                                                 style={{ left: `${m.startDay * zoom}px`, width: `${m.days * zoom}px` }}>
-                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider px-2 truncate">{m.label}</span>
+                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider px-2 truncate text-center w-full">{m.label}</span>
                                             </div>
                                         ))}
                                         <div className="absolute left-0 right-0 top-[30px] h-[34px] border-t border-slate-100 dark:border-slate-700">
