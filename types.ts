@@ -1728,10 +1728,43 @@ export interface RequestPrintTemplate {
 }
 
 // ==================== CHAT ====================
+export type ChatConversationType = 'direct' | 'group' | 'channel_text' | 'channel_voice';
+export type ChatChannelKind = 'text' | 'voice';
+export type ChatWorkspaceRole = 'owner' | 'admin' | 'member';
+export type ChatUserStatus = 'online' | 'busy' | 'away' | 'offline';
+
+export interface ChatWorkspace {
+  id: string;
+  name: string;
+  iconText?: string | null;
+  color?: string | null;
+  description?: string | null;
+  isPublic?: boolean;
+  sortOrder?: number;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+  members?: ChatWorkspaceMember[];
+}
+
+export interface ChatWorkspaceMember {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  role: ChatWorkspaceRole;
+  joinedAt: string;
+  leftAt?: string | null;
+}
+
 export interface ChatConversation {
   id: string;
-  type: 'direct' | 'group';
+  type: ChatConversationType;
   name?: string;
+  workspaceId?: string | null;
+  channelKind?: ChatChannelKind | null;
+  description?: string | null;
+  sortOrder?: number;
   avatarUrl?: string;
   createdBy?: string;
   createdAt: string;
@@ -1770,6 +1803,17 @@ export interface ChatMessage {
 }
 
 export type ChatThemeName = 'discord' | 'light' | 'rose' | 'cyberpunk';
+
+export interface ChatUserSettings {
+  userId: string;
+  theme: ChatThemeName;
+  soundEnabled: boolean;
+  notificationsEnabled: boolean;
+  defaultMuted: boolean;
+  defaultDeafened: boolean;
+  status: ChatUserStatus;
+  lastWorkspaceId?: string | null;
+}
 
 export interface ChatCallSession {
   id: string;

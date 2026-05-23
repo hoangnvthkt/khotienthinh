@@ -78,7 +78,6 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   // ── ROUTE NHẠY CẢM / MODULE BỔ SUNG ───────────────────
   '/settings': 'SETTINGS',
   '/users': 'SETTINGS',
-  '/chat': 'CHAT',
   '/storage': 'STORAGE',
   '/knowledge-base': 'KB',
   '/ai': 'AI',

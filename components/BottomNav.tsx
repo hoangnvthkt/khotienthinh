@@ -49,8 +49,10 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { key: 'AI', to: '/ai', iconName: 'Bot', label: 'Trợ lý AI', shortLabel: 'AI', matchPrefix: '/ai', color: 'text-fuchsia-500' },
 ];
 
-const DEFAULT_KEYS = ['HOME', 'WMS', 'HRM', 'DA', 'TS'];
+const DEFAULT_KEYS = ['HOME', 'WMS', 'HRM', 'DA', 'CHAT'];
 const STORAGE_KEY = 'vioo_btm_nav';
+const STORAGE_VERSION_KEY = 'vioo_btm_nav_version';
+const CHAT_NAV_VERSION = 'chat-v1';
 const MAX_ITEMS = 5;
 
 const BottomNav: React.FC = () => {
@@ -73,6 +75,20 @@ const BottomNav: React.FC = () => {
       return saved ? JSON.parse(saved) : DEFAULT_KEYS;
     } catch { return DEFAULT_KEYS; }
   });
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(STORAGE_VERSION_KEY) === CHAT_NAV_VERSION) return;
+      setEnabledKeys(prev => {
+        localStorage.setItem(STORAGE_VERSION_KEY, CHAT_NAV_VERSION);
+        if (prev.includes('CHAT')) return prev;
+        if (prev.length < MAX_ITEMS) return [...prev, 'CHAT'];
+        return [...prev.slice(0, MAX_ITEMS - 1), 'CHAT'];
+      });
+    } catch {
+      // localStorage can be unavailable in restricted browser contexts.
+    }
+  }, []);
 
   const [showEditor, setShowEditor] = useState(false);
   const [dragIdx, setDragIdx] = useState<number | null>(null);

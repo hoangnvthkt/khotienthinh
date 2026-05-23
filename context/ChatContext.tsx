@@ -1,9 +1,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useApp } from './AppContext';
-import { ChatConversation, ChatMember, ChatMessage } from '../types';
+import { ChatChannelKind, ChatConversation, ChatMember, ChatMessage, ChatWorkspace, ChatWorkspaceMember } from '../types';
 
 interface ChatContextType {
+    workspaces: ChatWorkspace[];
     conversations: ChatConversation[];
     messages: Record<string, ChatMessage[]>;
     activeConversationId: string | null;
@@ -21,6 +22,13 @@ interface ChatContextType {
     ) => Promise<void>;
     createDirectConversation: (targetUserId: string) => Promise<string>;
     createGroupConversation: (name: string, memberIds: string[]) => Promise<string>;
+    createWorkspace: (name: string, description?: string) => Promise<string>;
+    updateWorkspace: (workspaceId: string, updates: { name?: string; description?: string | null; iconText?: string | null; color?: string | null }) => Promise<void>;
+    deleteWorkspace: (workspaceId: string) => Promise<void>;
+    addWorkspaceMember: (workspaceId: string, userId: string) => Promise<void>;
+    removeWorkspaceMember: (workspaceId: string, userId: string) => Promise<void>;
+    createChannel: (workspaceId: string, name: string, kind: ChatChannelKind) => Promise<string>;
+    updateChannel: (conversationId: string, name: string) => Promise<void>;
     addMember: (conversationId: string, userId: string) => Promise<void>;
     removeMember: (conversationId: string, userId: string) => Promise<void>;
     updateGroupName: (conversationId: string, name: string) => Promise<void>;
@@ -72,6 +80,30 @@ const mapMember = (m: any): ChatMember => ({
     leftAt: m.left_at || null,
 });
 
+const mapWorkspaceMember = (m: any): ChatWorkspaceMember => ({
+    id: m.id,
+    workspaceId: m.workspace_id,
+    userId: m.user_id,
+    role: m.role,
+    joinedAt: m.joined_at,
+    leftAt: m.left_at || null,
+});
+
+const mapWorkspace = (w: any, members: ChatWorkspaceMember[] = []): ChatWorkspace => ({
+    id: w.id,
+    name: w.name,
+    iconText: w.icon_text || null,
+    color: w.color || 'indigo',
+    description: w.description || null,
+    isPublic: w.is_public ?? true,
+    sortOrder: w.sort_order || 0,
+    createdBy: w.created_by || null,
+    createdAt: w.created_at,
+    updatedAt: w.updated_at,
+    deletedAt: w.deleted_at || null,
+    members,
+});
+
 const errorMessage = (error: any, fallback: string) => {
     if (!error) return fallback;
     return error.message || error.details || fallback;
@@ -86,6 +118,7 @@ const formatDuration = (durationSeconds: number) => {
 
 export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { user, users } = useApp();
+    const [workspaces, setWorkspaces] = useState<ChatWorkspace[]>([]);
     const [conversations, setConversations] = useState<ChatConversation[]>([]);
     const [messages, setMessages] = useState<Record<string, ChatMessage[]>>({});
     const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -95,6 +128,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const channelRef = useRef<any>(null);
     const presenceRef = useRef<any>(null);
     const conversationsRef = useRef<ChatConversation[]>([]);
+    const workspacesRef = useRef<ChatWorkspace[]>([]);
     const processedMsgIds = useRef<Set<string>>(new Set());
 
     const isAppAdmin = String(user?.role || '') === 'ADMIN';
@@ -102,6 +136,73 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => {
         conversationsRef.current = conversations;
     }, [conversations]);
+
+    useEffect(() => {
+        workspacesRef.current = workspaces;
+    }, [workspaces]);
+
+    const loadWorkspaces = useCallback(async () => {
+        if (!isSupabaseConfigured || !user?.id) {
+            setWorkspaces([]);
+            return;
+        }
+
+        let workspaceIds: string[] | null = null;
+        if (!isAppAdmin) {
+            const { data: memberRows, error: memberError } = await supabase
+                .from('chat_workspace_members')
+                .select('workspace_id')
+                .eq('user_id', user.id)
+                .is('left_at', null);
+
+            if (memberError) {
+                console.error('Error loading chat workspace memberships:', memberError);
+                setWorkspaces([]);
+                return;
+            }
+
+            workspaceIds = Array.from(new Set((memberRows || []).map(row => row.workspace_id)));
+            if (workspaceIds.length === 0) {
+                setWorkspaces([]);
+                return;
+            }
+        }
+
+        let workspaceQuery = supabase
+            .from('chat_workspaces')
+            .select('*')
+            .is('deleted_at', null)
+            .order('sort_order', { ascending: true })
+            .order('created_at', { ascending: true });
+
+        if (workspaceIds) workspaceQuery = workspaceQuery.in('id', workspaceIds);
+
+        const { data: workspaceRows, error: workspaceError } = await workspaceQuery;
+        if (workspaceError) {
+            console.error('Error loading chat workspaces:', workspaceError);
+            setWorkspaces([]);
+            return;
+        }
+
+        const visibleIds = (workspaceRows || []).map(row => row.id);
+        if (visibleIds.length === 0) {
+            setWorkspaces([]);
+            return;
+        }
+
+        const { data: memberRows, error: membersError } = await supabase
+            .from('chat_workspace_members')
+            .select('*')
+            .in('workspace_id', visibleIds)
+            .is('left_at', null);
+
+        if (membersError) console.error('Error loading chat workspace members:', membersError);
+
+        const members = (memberRows || []).map(mapWorkspaceMember);
+        setWorkspaces((workspaceRows || []).map(row => (
+            mapWorkspace(row, members.filter(member => member.workspaceId === row.id))
+        )));
+    }, [isAppAdmin, user?.id]);
 
     const loadConversations = useCallback(async () => {
         if (!isSupabaseConfigured || !user?.id) {
@@ -174,12 +275,16 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const convMessages = (lastMessages || []).filter(m => m.conversation_id === c.id);
             const lastMsg = convMessages[0];
             const myLastRead = myMembership?.last_read_at || '1970-01-01T00:00:00.000Z';
-            const unreadCount = convMessages.filter(m => m.created_at > myLastRead && m.sender_id !== user.id).length;
+            const unreadCount = c.type === 'channel_voice' ? 0 : convMessages.filter(m => m.created_at > myLastRead && m.sender_id !== user.id).length;
 
             return {
                 id: c.id,
                 type: c.type,
                 name: c.name || undefined,
+                workspaceId: c.workspace_id || null,
+                channelKind: c.channel_kind || null,
+                description: c.description || null,
+                sortOrder: c.sort_order || 0,
                 avatarUrl: c.avatar_url || undefined,
                 createdBy: c.created_by || undefined,
                 createdAt: c.created_at,
@@ -250,14 +355,41 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const ensureGroupAdmin = useCallback(async (conversationId: string, actionLabel: string) => {
         if (!user?.id || isAppAdmin) return;
         const conv = conversationsRef.current.find(c => c.id === conversationId);
-        if (conv && conv.type !== 'group') return;
+        if (conv?.type === 'direct') return;
+        if (conv?.createdBy === user.id) return;
 
         const members = await getActiveMembers(conversationId);
         const currentMember = members.find(m => m.userId === user.id);
         if (currentMember?.role !== 'admin') {
-            throw new Error(`Chỉ trưởng nhóm mới được ${actionLabel}.`);
+            throw new Error(`Chỉ quản trị viên kênh/nhóm mới được ${actionLabel}.`);
         }
     }, [getActiveMembers, isAppAdmin, user?.id]);
+
+    const getActiveWorkspaceMembers = useCallback(async (workspaceId: string): Promise<ChatWorkspaceMember[]> => {
+        const cached = workspacesRef.current.find(w => w.id === workspaceId)?.members?.filter(m => !m.leftAt);
+        if (cached && cached.length > 0) return cached;
+
+        const { data, error } = await supabase
+            .from('chat_workspace_members')
+            .select('*')
+            .eq('workspace_id', workspaceId)
+            .is('left_at', null);
+
+        if (error) throw new Error(errorMessage(error, 'Không thể tải thành viên kênh chat.'));
+        return (data || []).map(mapWorkspaceMember);
+    }, []);
+
+    const ensureWorkspaceAdmin = useCallback(async (workspaceId: string, actionLabel: string) => {
+        if (!user?.id || isAppAdmin) return;
+        const workspace = workspacesRef.current.find(w => w.id === workspaceId);
+        if (workspace?.createdBy === user.id) return;
+
+        const members = await getActiveWorkspaceMembers(workspaceId);
+        const currentMember = members.find(m => m.userId === user.id);
+        if (!currentMember || !['owner', 'admin'].includes(currentMember.role)) {
+            throw new Error(`Chỉ quản trị viên kênh chat mới được ${actionLabel}.`);
+        }
+    }, [getActiveWorkspaceMembers, isAppAdmin, user?.id]);
 
     const findExistingDirectConversation = useCallback(async (targetUserId: string) => {
         if (!user?.id) return null;
@@ -422,6 +554,288 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return conv.id;
     }, [insertSystemMessage, loadConversations, user?.id]);
 
+    const createChannel = useCallback(async (workspaceId: string, name: string, kind: ChatChannelKind): Promise<string> => {
+        if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
+        const cleanWorkspaceId = workspaceId.trim();
+        const cleanName = name.trim();
+        if (!cleanWorkspaceId || cleanWorkspaceId === 'dm') throw new Error('Workspace tạo kênh không hợp lệ.');
+        if (!cleanName) throw new Error('Tên kênh không được để trống.');
+        await ensureWorkspaceAdmin(cleanWorkspaceId, 'tạo phòng trong kênh');
+
+        const workspaceMembers = await getActiveWorkspaceMembers(cleanWorkspaceId);
+        const memberIds = Array.from(new Set(
+            (workspaceMembers.length > 0 ? workspaceMembers.map(member => member.userId) : users.filter(u => u.isActive !== false).map(u => u.id))
+                .concat(user.id)
+                .filter(Boolean)
+        ));
+        const type = kind === 'voice' ? 'channel_voice' : 'channel_text';
+
+        const { data: conv, error: convError } = await supabase
+            .from('chat_conversations')
+            .insert({
+                type,
+                name: cleanName,
+                workspace_id: cleanWorkspaceId,
+                channel_kind: kind,
+                created_by: user.id,
+            })
+            .select()
+            .single();
+
+        if (convError || !conv) throw new Error(errorMessage(convError, 'Không thể tạo kênh chat.'));
+
+        const { error: memberError } = await supabase.from('chat_members').insert(
+            memberIds.map(uid => ({
+                conversation_id: conv.id,
+                user_id: uid,
+                role: uid === user.id ? 'admin' : 'member',
+            }))
+        );
+
+        if (memberError) {
+            await supabase.from('chat_conversations').update({
+                deleted_at: new Date().toISOString(),
+                deleted_by: user.id,
+            }).eq('id', conv.id);
+            throw new Error(errorMessage(memberError, 'Không thể cấp thành viên cho kênh chat.'));
+        }
+
+        await insertSystemMessage(conv.id, `Kênh ${kind === 'voice' ? 'âm thanh' : 'văn bản'} "${cleanName}" đã được tạo`);
+        await loadConversations();
+        return conv.id;
+    }, [ensureWorkspaceAdmin, getActiveWorkspaceMembers, insertSystemMessage, loadConversations, user?.id, users]);
+
+    const createWorkspace = useCallback(async (name: string, description?: string): Promise<string> => {
+        if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
+        const cleanName = name.trim();
+        if (!cleanName) throw new Error('Tên kênh chat không được để trống.');
+
+        const memberIds = [user.id];
+        const iconText = cleanName
+            .split(/\s+/)
+            .map(part => part[0])
+            .join('')
+            .slice(0, 2)
+            .toUpperCase();
+
+        const { data: workspace, error: workspaceError } = await supabase
+            .from('chat_workspaces')
+            .insert({
+                name: cleanName,
+                description: description?.trim() || null,
+                icon_text: iconText || cleanName.slice(0, 2).toUpperCase(),
+                created_by: user.id,
+            })
+            .select()
+            .single();
+
+        if (workspaceError || !workspace) throw new Error(errorMessage(workspaceError, 'Không thể tạo kênh chat.'));
+
+        const { error: memberError } = await supabase.from('chat_workspace_members').insert(
+            memberIds.map(uid => ({
+                workspace_id: workspace.id,
+                user_id: uid,
+                role: uid === user.id ? 'owner' : 'member',
+            }))
+        );
+
+        if (memberError) {
+            await supabase
+                .from('chat_workspaces')
+                .update({ deleted_at: new Date().toISOString(), deleted_by: user.id })
+                .eq('id', workspace.id);
+            throw new Error(errorMessage(memberError, 'Không thể cấp thành viên cho kênh chat.'));
+        }
+
+        await loadWorkspaces();
+        await loadConversations();
+        return workspace.id;
+    }, [loadConversations, loadWorkspaces, user?.id]);
+
+    const updateWorkspace = useCallback(async (
+        workspaceId: string,
+        updates: { name?: string; description?: string | null; iconText?: string | null; color?: string | null }
+    ) => {
+        if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
+        await ensureWorkspaceAdmin(workspaceId, 'cập nhật kênh chat');
+
+        const payload: any = {};
+        if (updates.name !== undefined) {
+            const cleanName = updates.name.trim();
+            if (!cleanName) throw new Error('Tên kênh chat không được để trống.');
+            payload.name = cleanName;
+        }
+        if (updates.description !== undefined) payload.description = updates.description?.trim() || null;
+        if (updates.iconText !== undefined) payload.icon_text = updates.iconText?.trim().slice(0, 3).toUpperCase() || null;
+        if (updates.color !== undefined) payload.color = updates.color || 'indigo';
+
+        const { error } = await supabase
+            .from('chat_workspaces')
+            .update(payload)
+            .eq('id', workspaceId)
+            .is('deleted_at', null);
+
+        if (error) throw new Error(errorMessage(error, 'Không thể cập nhật kênh chat.'));
+        await loadWorkspaces();
+    }, [ensureWorkspaceAdmin, loadWorkspaces, user?.id]);
+
+    const deleteWorkspace = useCallback(async (workspaceId: string) => {
+        if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
+        await ensureWorkspaceAdmin(workspaceId, 'xóa kênh chat');
+
+        const now = new Date().toISOString();
+        const { error } = await supabase
+            .from('chat_workspaces')
+            .update({ deleted_at: now, deleted_by: user.id })
+            .eq('id', workspaceId);
+
+        if (error) throw new Error(errorMessage(error, 'Không thể xóa kênh chat.'));
+
+        await supabase
+            .from('chat_conversations')
+            .update({ deleted_at: now, deleted_by: user.id })
+            .eq('workspace_id', workspaceId)
+            .in('type', ['channel_text', 'channel_voice']);
+
+        if (activeConversationId && conversationsRef.current.find(c => c.id === activeConversationId)?.workspaceId === workspaceId) {
+            setActiveConversationId(null);
+        }
+        await loadWorkspaces();
+        await loadConversations();
+    }, [activeConversationId, ensureWorkspaceAdmin, loadConversations, loadWorkspaces, user?.id]);
+
+    const addWorkspaceMember = useCallback(async (workspaceId: string, userId: string) => {
+        if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
+        await ensureWorkspaceAdmin(workspaceId, 'thêm thành viên kênh chat');
+
+        const now = new Date().toISOString();
+        const { data: existingRows, error: existingError } = await supabase
+            .from('chat_workspace_members')
+            .select('*')
+            .eq('workspace_id', workspaceId)
+            .eq('user_id', userId)
+            .limit(1);
+
+        if (existingError) throw new Error(errorMessage(existingError, 'Không thể kiểm tra thành viên kênh chat.'));
+        const existing = existingRows?.[0];
+
+        const result = existing
+            ? await supabase.from('chat_workspace_members').update({
+                role: 'member',
+                left_at: null,
+                removed_at: null,
+                removed_by: null,
+                joined_at: now,
+            }).eq('id', existing.id)
+            : await supabase.from('chat_workspace_members').insert({
+                workspace_id: workspaceId,
+                user_id: userId,
+                role: 'member',
+            });
+
+        if (result.error) throw new Error(errorMessage(result.error, 'Không thể thêm thành viên kênh chat.'));
+
+        const { data: roomRows } = await supabase
+            .from('chat_conversations')
+            .select('id')
+            .eq('workspace_id', workspaceId)
+            .in('type', ['channel_text', 'channel_voice'])
+            .is('deleted_at', null);
+
+        if (roomRows && roomRows.length > 0) {
+            const roomIds = roomRows.map(room => room.id);
+            const { data: existingChatMembers } = await supabase
+                .from('chat_members')
+                .select('id, conversation_id')
+                .in('conversation_id', roomIds)
+                .eq('user_id', userId);
+
+            const existingRoomIds = new Set((existingChatMembers || []).map(row => row.conversation_id));
+            if (existingChatMembers && existingChatMembers.length > 0) {
+                await supabase
+                    .from('chat_members')
+                    .update({
+                        role: 'member',
+                        left_at: null,
+                        removed_at: null,
+                        removed_by: null,
+                        joined_at: now,
+                        last_read_at: now,
+                    })
+                    .in('id', existingChatMembers.map(row => row.id));
+            }
+
+            const missingRows = roomRows
+                .filter(room => !existingRoomIds.has(room.id))
+                .map(room => ({
+                    conversation_id: room.id,
+                    user_id: userId,
+                    role: 'member',
+                    last_read_at: now,
+                    joined_at: now,
+                }));
+
+            if (missingRows.length > 0) await supabase.from('chat_members').insert(missingRows);
+        }
+
+        await loadWorkspaces();
+        await loadConversations();
+    }, [ensureWorkspaceAdmin, loadConversations, loadWorkspaces, user?.id]);
+
+    const removeWorkspaceMember = useCallback(async (workspaceId: string, userId: string) => {
+        if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
+        if (userId === user.id) throw new Error('Không thể tự xóa mình khỏi kênh chat bằng thao tác này.');
+        await ensureWorkspaceAdmin(workspaceId, 'xóa thành viên kênh chat');
+
+        const now = new Date().toISOString();
+        const { error } = await supabase
+            .from('chat_workspace_members')
+            .update({ left_at: now, removed_at: now, removed_by: user.id })
+            .eq('workspace_id', workspaceId)
+            .eq('user_id', userId)
+            .is('left_at', null);
+
+        if (error) throw new Error(errorMessage(error, 'Không thể xóa thành viên kênh chat.'));
+
+        const { data: roomRows } = await supabase
+            .from('chat_conversations')
+            .select('id')
+            .eq('workspace_id', workspaceId)
+            .in('type', ['channel_text', 'channel_voice'])
+            .is('deleted_at', null);
+
+        if (roomRows && roomRows.length > 0) {
+            await supabase
+                .from('chat_members')
+                .update({ left_at: now, removed_at: now, removed_by: user.id })
+                .in('conversation_id', roomRows.map(room => room.id))
+                .eq('user_id', userId)
+                .is('left_at', null);
+        }
+
+        await loadWorkspaces();
+        await loadConversations();
+    }, [ensureWorkspaceAdmin, loadConversations, loadWorkspaces, user?.id]);
+
+    const updateChannel = useCallback(async (conversationId: string, name: string) => {
+        if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
+        const cleanName = name.trim();
+        if (!cleanName) throw new Error('Tên kênh không được để trống.');
+        await ensureGroupAdmin(conversationId, 'đổi tên kênh');
+
+        const { error } = await supabase.from('chat_conversations')
+            .update({ name: cleanName })
+            .eq('id', conversationId)
+            .in('type', ['channel_text', 'channel_voice'])
+            .is('deleted_at', null);
+
+        if (error) throw new Error(errorMessage(error, 'Không thể đổi tên kênh.'));
+
+        await insertSystemMessage(conversationId, `Tên kênh đã được đổi thành "${cleanName}"`);
+        await loadConversations();
+        if (activeConversationId === conversationId) await loadMessages(conversationId);
+    }, [activeConversationId, ensureGroupAdmin, insertSystemMessage, loadConversations, loadMessages, user?.id]);
+
     const addMember = useCallback(async (conversationId: string, userId: string) => {
         if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
         await ensureGroupAdmin(conversationId, 'thêm thành viên');
@@ -509,17 +923,18 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
         const conv = conversationsRef.current.find(c => c.id === conversationId);
 
-        if (conv?.type === 'group') {
-            await ensureGroupAdmin(conversationId, 'xóa nhóm');
-            await insertSystemMessage(conversationId, `${user.name || 'Quản trị viên'} đã xóa nhóm chat`);
+        if (conv?.type === 'group' || conv?.type === 'channel_text' || conv?.type === 'channel_voice') {
+            const isChannel = conv.type === 'channel_text' || conv.type === 'channel_voice';
+            await ensureGroupAdmin(conversationId, isChannel ? 'xóa kênh' : 'xóa nhóm');
+            await insertSystemMessage(conversationId, `${user.name || 'Quản trị viên'} đã xóa ${isChannel ? 'kênh chat' : 'nhóm chat'}`);
             const { error } = await supabase.from('chat_conversations')
                 .update({
                     deleted_at: new Date().toISOString(),
                     deleted_by: user.id,
                 })
                 .eq('id', conversationId)
-                .eq('type', 'group');
-            if (error) throw new Error(errorMessage(error, 'Không thể xóa nhóm chat.'));
+                .in('type', isChannel ? ['channel_text', 'channel_voice'] : ['group']);
+            if (error) throw new Error(errorMessage(error, isChannel ? 'Không thể xóa kênh chat.' : 'Không thể xóa nhóm chat.'));
         } else {
             const { error } = await supabase.from('chat_members')
                 .update({
@@ -789,6 +1204,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => {
         if (!isSupabaseConfigured || !user?.id) return;
 
+        loadWorkspaces();
         loadConversations();
         loadPinnedMessages();
 
@@ -856,6 +1272,19 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 schema: 'public',
                 table: 'chat_members',
             }, () => loadConversations())
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'chat_workspaces',
+            }, () => loadWorkspaces())
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'chat_workspace_members',
+            }, () => {
+                loadWorkspaces();
+                loadConversations();
+            })
             .subscribe();
 
         presenceRef.current = supabase.channel(`chat-presence-${user.id}`);
@@ -910,12 +1339,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (presenceRef.current) supabase.removeChannel(presenceRef.current);
             supabase.removeChannel(pinsChannel);
         };
-    }, [loadConversations, loadPinnedMessages, user?.id]);
+    }, [loadConversations, loadPinnedMessages, loadWorkspaces, user?.id]);
 
-    const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+    const totalUnread = conversations.reduce((sum, c) => sum + (c.type === 'channel_voice' ? 0 : (c.unreadCount || 0)), 0);
 
     return (
         <ChatContext.Provider value={{
+            workspaces,
             conversations,
             messages,
             activeConversationId,
@@ -925,6 +1355,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             sendMessage,
             createDirectConversation,
             createGroupConversation,
+            createWorkspace,
+            updateWorkspace,
+            deleteWorkspace,
+            addWorkspaceMember,
+            removeWorkspaceMember,
+            createChannel,
+            updateChannel,
             addMember,
             removeMember,
             updateGroupName,
