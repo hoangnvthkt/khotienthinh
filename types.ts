@@ -1735,6 +1735,8 @@ export interface ChatConversation {
   avatarUrl?: string;
   createdBy?: string;
   createdAt: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
   // Computed (local only)
   members?: ChatMember[];
   lastMessage?: ChatMessage;
@@ -1748,6 +1750,7 @@ export interface ChatMember {
   role: 'admin' | 'member';
   lastReadAt: string;
   joinedAt: string;
+  leftAt?: string | null;
 }
 
 export interface ChatMessage {
@@ -1759,6 +1762,25 @@ export interface ChatMessage {
   attachments?: { url: string; name: string; type: string; size?: number }[];
   reactions?: Record<string, string[]>; // emoji -> userIds
   createdAt: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+  replyToId?: string;
+  replyToPreview?: { senderId: string; senderName: string; content: string } | null;
+  fileUrls?: string[];
+}
+
+export type ChatThemeName = 'discord' | 'light' | 'rose' | 'cyberpunk';
+
+export interface ChatCallSession {
+  id: string;
+  conversationId: string;
+  startedBy: string;
+  mode: 'audio' | 'video';
+  status: 'ringing' | 'active' | 'ended' | 'missed' | 'cancelled';
+  startedAt: string;
+  endedAt?: string | null;
+  endedBy?: string | null;
+  durationSeconds?: number | null;
 }
 
 // ==================== ATTACHMENT CHUẨN ====================

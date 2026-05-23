@@ -179,27 +179,27 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
             </div>
             {/* Summary Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                         <Users size={10} /> Nhà thầu phụ
                     </div>
                     <div className="text-2xl font-black text-slate-800">{overallStats.subCount}</div>
                     <div className="text-[10px] text-slate-400 mt-1">Tổng HĐ: {fmt(overallStats.totalContractValue)}</div>
                 </div>
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                         <TrendingUp size={10} /> Đã nghiệm thu
                     </div>
                     <div className="text-xl font-black text-emerald-600">{fmt(overallStats.totalAccepted)}</div>
                     <div className="text-[10px] text-emerald-500 font-bold mt-1">{overallStats.acceptPercent}% giá trị HĐ</div>
                 </div>
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                         <DollarSign size={10} /> Đã thanh toán
                     </div>
                     <div className="text-xl font-black text-violet-600">{fmt(overallStats.totalPaid)}</div>
                 </div>
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                         <Percent size={10} /> Giữ lại BH
                     </div>
@@ -209,7 +209,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
 
             {/* Subcontract List */}
             {contracts.length === 0 ? (
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 text-center">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm p-12 text-center">
                     <Users size={40} className="mx-auto mb-3 text-slate-200" />
                     <p className="text-sm font-bold text-slate-400 mb-1">Chưa có hợp đồng thầu phụ</p>
                     <p className="text-xs text-slate-300">Vào tab <span className="font-bold text-blue-500">📋 Hợp đồng</span> để thêm HĐ thầu phụ trước</p>
@@ -222,7 +222,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
                         const payPercent = contract.value > 0 ? Math.round(stats.totalPaid / contract.value * 100) : 0;
 
                         return (
-                            <div key={contract.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div key={contract.id} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                                 {/* Contract Header */}
                                 <div className="p-5 cursor-pointer hover:bg-slate-50/50 transition-colors"
                                     onClick={() => setExpandedContractId(isExpanded ? null : contract.id)}>
@@ -311,7 +311,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
                                                 Chưa có biên bản nghiệm thu nào
                                             </div>
                                         ) : (
-                                            <div className="divide-y divide-slate-50">
+                                            <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                                 {stats.records.sort((a, b) => a.periodNumber - b.periodNumber).map(record => {
                                                     const stCfg = STATUS_CFG[record.status];
                                                     return (
@@ -389,7 +389,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
             {/* Acceptance Form Modal */}
             {showForm && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
                         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-t-3xl flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editing ? <><Edit2 size={18} /> Sửa nghiệm thu</> : <><Plus size={18} /> Tạo biên bản NT</>}

@@ -172,7 +172,7 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
                     </h3>
                     <div className="flex items-center gap-2">
                         <select value={filterType} onChange={e => setFilterType(e.target.value as any)}
-                            className="text-xs font-bold text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200 bg-white outline-none">
+                            className="text-xs font-bold text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none">
                             <option value="all">Tất cả</option>
                             <option value="customer">📋 HĐ Khách hàng</option>
                             <option value="subcontractor">🏗️ Thầu phụ</option>
@@ -193,7 +193,7 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
                         <p className="text-xs text-slate-300 mt-1">Vào <strong>Module HD</strong> để thêm hợp đồng cho dự án này</p>
                     </div>
                 ) : (
-                    <div className="divide-y divide-slate-50 dark:divide-slate-700">
+                    <div className="divide-y divide-slate-50 dark:divide-slate-700/40 dark:divide-slate-700">
                         {filtered.map(c => {
                             const stCfg = STATUS_CFG[c.status];
                             const tCfg = TYPE_CFG[c.type];

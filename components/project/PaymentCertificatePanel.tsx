@@ -7,6 +7,9 @@ import { PaymentCertificate, PaymentCertificateStatus, ContractItemType, Advance
 import { paymentCertificateService, calculatePayableAmount } from '../../lib/paymentCertificateService';
 import { advancePaymentService } from '../../lib/advancePaymentService';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
+import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
+import { projectDocumentDependencyService } from '../../lib/projectDocumentDependencyService';
+import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
@@ -42,6 +45,8 @@ const STATUS_PERMISSION: Partial<Record<PaymentCertificateStatus, ProjectPermiss
   cancelled: 'approve',
 };
 
+const ADMIN_PROJECT_PERMS: ProjectPermissionCode[] = ['view', 'edit', 'delete', 'submit', 'verify', 'confirm', 'approve'];
+
 const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, projectId, constructionSiteId }) => {
   const toast = useToast();
   const confirm = useConfirm();
@@ -75,6 +80,15 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
 
   const handleCreateCert = async () => {
     try {
+      if (user?.role !== 'ADMIN') {
+        await projectStaffService.requireProjectPermission({
+          userId: user?.id,
+          projectId,
+          constructionSiteId,
+          code: 'edit',
+          actionLabel: 'tạo đợt thanh toán',
+        });
+      }
       await paymentCertificateService.create(contractId, contractType, constructionSiteId, {});
       await load();
       toast.success('Tạo đợt thanh toán mới');
@@ -83,6 +97,13 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
 
   const handleStatusChange = async (cert: PaymentCertificate, newStatus: PaymentCertificateStatus) => {
     const labels: Record<string, string> = { submitted: 'Gửi duyệt', returned: 'Trả lại', approved: 'Phê duyệt', paid: 'Xác nhận thanh toán', cancelled: 'Huỷ/Rollback chứng từ' };
+    const reason = newStatus === 'returned' || newStatus === 'cancelled'
+      ? window.prompt(newStatus === 'returned' ? 'Nhập lý do trả lại chứng từ' : 'Nhập lý do huỷ/rollback chứng từ')?.trim()
+      : undefined;
+    if ((newStatus === 'returned' || newStatus === 'cancelled') && !reason) {
+      toast.warning('Cần nhập lý do', 'Thao tác trả lại/huỷ cần lý do để truy vết.');
+      return;
+    }
     const warningText = newStatus === 'cancelled'
       ? 'Rollback chứng từ sẽ hủy trạng thái thanh toán/phê duyệt và mở khóa BOQ liên quan nếu không còn chứng từ paid khác dùng cùng hạng mục.'
       : undefined;
@@ -90,7 +111,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
     if (!ok) return;
     try {
       const requiredPermission = STATUS_PERMISSION[newStatus];
-      if (requiredPermission) {
+      if (requiredPermission && user?.role !== 'ADMIN') {
         await projectStaffService.requireProjectPermission({
           userId: user?.id,
           projectId,
@@ -99,7 +120,51 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
           actionLabel: (labels[newStatus] || newStatus).toLowerCase(),
         });
       }
-      await paymentCertificateService.setStatus(cert.id, newStatus, user.id, undefined, { approverUser: user, projectId });
+      if (newStatus === 'returned' || newStatus === 'cancelled') {
+        const deps = await projectDocumentDependencyService.getPaymentCertificateDependencies(cert);
+        const policy = getProjectDocumentPolicy({
+          action: newStatus === 'returned' ? 'return' : 'cancel',
+          documentType: 'payment_certificate',
+          status: cert.status,
+          user,
+          permissions: user?.role === 'ADMIN' ? ADMIN_PROJECT_PERMS : ['view', requiredPermission || 'approve'],
+          dependencies: newStatus === 'cancelled' ? null : deps,
+          reason,
+          documentLabel: `Đợt ${cert.periodNumber}`,
+        });
+        if (!policy.allowed) {
+          await projectDocumentActionLogService.logBlocked({
+            projectId,
+            constructionSiteId,
+            documentType: 'payment_certificate',
+            documentId: cert.id,
+            documentLabel: `Đợt ${cert.periodNumber}`,
+            action: newStatus === 'returned' ? 'return' : 'cancel',
+            fromStatus: cert.status,
+            reason,
+            blockedReason: policy.reason,
+            requiredRollbackSteps: policy.requiredRollbackSteps,
+            metadata: deps.metadata,
+            createdBy: user?.id,
+          });
+          toast.error(newStatus === 'returned' ? 'Không thể trả lại chứng từ' : 'Không thể huỷ chứng từ', formatPolicyMessage(policy));
+          return;
+        }
+      }
+      await paymentCertificateService.setStatus(cert.id, newStatus, user.id, reason, { approverUser: user, projectId });
+      await projectDocumentActionLogService.log({
+        projectId,
+        constructionSiteId,
+        documentType: 'payment_certificate',
+        documentId: cert.id,
+        documentLabel: `Đợt ${cert.periodNumber}`,
+        action: newStatus === 'returned' ? 'return' : newStatus,
+        fromStatus: cert.status,
+        toStatus: newStatus,
+        reason,
+        warningAcknowledged: true,
+        createdBy: user?.id,
+      });
       await load();
       toast.success(`${labels[newStatus]} thành công`);
     } catch (e: any) { toast.error('Lỗi', e?.message); }
@@ -133,6 +198,15 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
     });
 
     try {
+      if (user?.role !== 'ADMIN') {
+        await projectStaffService.requireProjectPermission({
+          userId: user?.id,
+          projectId,
+          constructionSiteId,
+          code: 'edit',
+          actionLabel: 'cập nhật chứng từ thanh toán',
+        });
+      }
       await paymentCertificateService.update(cert.id, {
         items: updatedItems,
         currentCompletedValue,
@@ -150,11 +224,58 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
   };
 
   const handleDeleteCert = async (cert: PaymentCertificate) => {
-    if (cert.status !== 'draft') { toast.warning('Không thể xoá', 'Chỉ xoá được đợt TT ở trạng thái Nháp'); return; }
-    const ok = await confirm({ title: 'Xoá đợt thanh toán', targetName: `Đợt ${cert.periodNumber}` });
-    if (!ok) return;
     try {
+      if (user?.role !== 'ADMIN') {
+        await projectStaffService.requireProjectPermission({
+          userId: user?.id,
+          projectId,
+          constructionSiteId,
+          code: 'delete',
+          actionLabel: 'xoá đợt thanh toán',
+        });
+      }
+      const deps = await projectDocumentDependencyService.getPaymentCertificateDependencies(cert);
+      const policy = getProjectDocumentPolicy({
+        action: 'delete',
+        documentType: 'payment_certificate',
+        status: cert.status,
+        user,
+        permissions: user?.role === 'ADMIN' ? ADMIN_PROJECT_PERMS : ['view', 'delete'],
+        dependencies: deps,
+        documentLabel: `Đợt ${cert.periodNumber}`,
+      });
+      if (!policy.allowed) {
+        await projectDocumentActionLogService.logBlocked({
+          projectId,
+          constructionSiteId,
+          documentType: 'payment_certificate',
+          documentId: cert.id,
+          documentLabel: `Đợt ${cert.periodNumber}`,
+          action: 'delete',
+          fromStatus: cert.status,
+          blockedReason: policy.reason,
+          requiredRollbackSteps: policy.requiredRollbackSteps,
+          metadata: deps.metadata,
+          createdBy: user?.id,
+        });
+        toast.warning('Không thể xoá chứng từ', formatPolicyMessage(policy));
+        return;
+      }
+      const ok = await confirm({ title: 'Xoá đợt thanh toán', targetName: `Đợt ${cert.periodNumber}` });
+      if (!ok) return;
       await paymentCertificateService.remove(cert.id);
+      await projectDocumentActionLogService.log({
+        projectId,
+        constructionSiteId,
+        documentType: 'payment_certificate',
+        documentId: cert.id,
+        documentLabel: `Đợt ${cert.periodNumber}`,
+        action: 'delete',
+        fromStatus: cert.status,
+        warningAcknowledged: true,
+        metadata: deps.metadata,
+        createdBy: user?.id,
+      });
       await load();
       toast.success('Đã xoá');
     } catch (e: any) { toast.error('Lỗi', e?.message); }
@@ -366,7 +487,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
                       <div className="flex gap-2 justify-end">
                         {(cert.status === 'draft' || cert.status === 'returned') && (
                           <>
-                            <button onClick={() => handleDeleteCert(cert)} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-red-500 hover:bg-red-50 border border-red-200">Xoá</button>
+                            {cert.status === 'draft' && <button onClick={() => handleDeleteCert(cert)} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-red-500 hover:bg-red-50 border border-red-200">Xoá</button>}
                             <button onClick={() => handleStatusChange(cert, 'submitted')} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-white bg-amber-500 hover:bg-amber-600 flex items-center gap-1">
                               <Send size={10} /> Gửi duyệt
                             </button>

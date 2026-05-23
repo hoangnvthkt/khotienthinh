@@ -388,7 +388,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
                         className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400 dark:bg-slate-700 dark:border-slate-600" />
                     </div>
                     {searchQuery && (
-                      <div className="mt-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white dark:bg-slate-700 shadow-lg">
+                      <div className="mt-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:bg-slate-700 shadow-lg">
                         {filteredUsers.map(u => (
                           <button key={u.id} onClick={() => { setFUserId(u.id); setSearchQuery(u.name); }}
                             className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-bold hover:bg-indigo-50 dark:hover:bg-slate-600 transition-colors ${fUserId === u.id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600'}`}>

@@ -334,7 +334,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
     // Chart card component
     const ChartCard: React.FC<{ title: string; icon: React.ReactNode; color: string; children: React.ReactNode; span?: number }> =
         ({ title, icon, color, children, span = 1 }) => (
-            <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden ${span === 2 ? 'col-span-2' : ''}`}
+            <div className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden ${span === 2 ? 'col-span-2' : ''}`}
                 onClick={() => setSelectedChart(selectedChart === title ? null : title)}>
                 <div className={`px-5 py-3 border-b border-slate-50 flex items-center gap-2`}>
                     <div className={`w-7 h-7 rounded-lg ${color} flex items-center justify-center text-white`}>{icon}</div>
@@ -470,7 +470,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                     { label: 'Vượt HH', value: kpis.wasteOverCount, icon: <AlertTriangle size={10} />, color: kpis.wasteOverCount > 0 ? 'text-red-600' : 'text-emerald-600' },
                     { label: 'Ngày mưa', value: kpis.rainyDays, icon: <Calendar size={10} />, color: 'text-sky-600' },
                 ].map((k, i) => (
-                    <div key={i} className="bg-white rounded-xl p-3 border border-slate-100 shadow-sm text-center">
+                    <div key={i} className="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-100 dark:border-slate-700/60 shadow-sm text-center">
                         <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-center gap-0.5">{k.icon} {k.label}</div>
                         <div className={`text-sm font-black ${k.color}`}>{k.value}</div>
                     </div>
@@ -697,7 +697,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                         <th className="text-center px-3 py-2">Mức độ</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-100">
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-700/40">
                                     {riskMatrix.map((r, i) => (
                                         <tr key={i} className="hover:bg-slate-50/50">
                                             <td className="px-3 py-2 font-bold text-slate-700">{r.taskName}</td>
@@ -758,7 +758,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
             </div>
 
             {/* Summary Table */}
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                 <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
                     <h3 className="text-xs font-black text-slate-700 flex items-center gap-2"><FileText size={14} className="text-indigo-500" /> Bảng tổng hợp dự án</h3>
                     <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-lg text-xs font-bold transition-colors border border-emerald-200">
@@ -775,7 +775,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                                 <th className="text-center px-4 py-3">Trạng thái</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-50">
+                        <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                             {[
                                 { name: 'Hợp đồng chính', count: contracts.filter(c => c.type === 'main').length, value: contracts.filter(c => c.type === 'main').reduce((s, c) => s + c.value, 0), status: '📋' },
                                 { name: 'Hợp đồng thầu phụ', count: contracts.filter(c => c.type === 'subcontract').length, value: contracts.filter(c => c.type === 'subcontract').reduce((s, c) => s + c.value, 0), status: '🏗️' },

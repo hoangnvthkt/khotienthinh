@@ -9,6 +9,7 @@ import { dailyLogDetailService } from './dailyLogDetailService';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 import { createPoQrToken } from './poQr';
 import { projectTransactionService } from './projectTransactionService';
+import { projectDocumentDependencyService } from './projectDocumentDependencyService';
 
 // ==================== HELPER ====================
 // snake_case ↔ camelCase mapping
@@ -115,6 +116,21 @@ export const dailyLogService = {
         });
     },
     async upsert(item: DailyLog): Promise<void> {
+        const { data: current, error: currentError } = await supabase
+            .from('daily_logs')
+            .select('status')
+            .eq('id', item.id)
+            .maybeSingle();
+        if (currentError) throw currentError;
+        if (current && !['draft', 'rejected'].includes(current.status || 'draft')) {
+            throw new Error('Nhật ký đã gửi đi hoặc đã xác nhận, không thể chỉnh sửa trực tiếp. Vui lòng trả lại nhật ký trước khi sửa.');
+        }
+        if (current) {
+            const deps = await projectDocumentDependencyService.getDailyLogDependencies({ ...item, status: current.status });
+            if (deps.blockers.length > 0) {
+                throw new Error(`${deps.blockers[0]} ${deps.requiredRollbackSteps.join(' ')}`);
+            }
+        }
         // Mục 8: Strip JSONB array fields — data chi tiết lưu trong normalized tables
         // (daily_log_volumes, daily_log_materials, daily_log_labor, daily_log_machines)
         // Không gửi lên daily_logs để tránh double-write và drift
@@ -137,7 +153,34 @@ export const dailyLogService = {
         requestedVerifierId?: string | null;
         requestedVerifierName?: string | null;
         rejectionReason?: string | null;
+        actorUserId?: string | null;
     }): Promise<void> {
+        if (input.status === 'rejected') {
+            const { data: current, error: currentError } = await supabase
+                .from('daily_logs')
+                .select('status')
+                .eq('id', input.logId)
+                .single();
+            if (currentError) throw currentError;
+            if (current?.status === 'verified') {
+                if (!input.rejectionReason?.trim()) {
+                    throw new Error('Vui lòng nhập lý do trả lại nhật ký.');
+                }
+                const { error: updateError } = await supabase
+                    .from('daily_logs')
+                    .update({
+                        status: 'rejected',
+                        verified: false,
+                        rejected_by: input.actorUserId || null,
+                        rejected_by_id: input.actorUserId || null,
+                        rejected_at: new Date().toISOString(),
+                        rejection_reason: input.rejectionReason,
+                    })
+                    .eq('id', input.logId);
+                if (updateError) throw updateError;
+                return;
+            }
+        }
         const { error } = await supabase.rpc('transition_daily_log_status', {
             p_log_id: input.logId,
             p_status: input.status,
@@ -149,6 +192,15 @@ export const dailyLogService = {
     },
 
     async remove(id: string): Promise<void> {
+        const { data, error: readError } = await supabase
+            .from('daily_logs')
+            .select('status')
+            .eq('id', id)
+            .single();
+        if (readError) throw readError;
+        if ((data?.status || 'draft') !== 'draft') {
+            throw new Error('Chỉ xoá được nhật ký ở trạng thái Nháp. Phiếu đã gửi/duyệt cần được trả lại hoặc rollback theo đúng quy trình.');
+        }
         const { error } = await supabase
             .from('daily_logs')
             .delete()
