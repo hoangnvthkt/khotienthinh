@@ -20,7 +20,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   onClose,
   onReceived,
 }) => {
-  const { warehouses, user, addTransaction } = useApp();
+  const { warehouses, items, user, addTransaction } = useApp();
   const { canManage } = usePermission();
   const toast = useToast();
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -67,6 +67,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   const receiptLines = lines
     .map(line => ({ itemId: line.itemId, quantity: Number(quantities[line.key]) || 0, price: Number(line.unitPrice) || 0 }))
     .filter(line => line.quantity > 0);
+  const unlinkedReceiptLines = receiptLines.filter(line => !items.some(item => item.id === line.itemId));
 
   const handleConfirm = async () => {
     if (saving || !po.targetWarehouseId) return;
@@ -80,6 +81,10 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
     }
     if (hasInvalidQty || receiptLines.length === 0) {
       toast.warning('Kiểm tra số lượng', 'Số lượng thực nhận phải lớn hơn 0 và không vượt phần còn lại.');
+      return;
+    }
+    if (unlinkedReceiptLines.length > 0) {
+      toast.warning('Chưa liên kết mã kho', 'PO có vật tư viết tay/chưa có SKU. Vui lòng chuẩn hoá mã vật tư hoặc xử lý cấp thẳng sử dụng trước khi nhập kho.');
       return;
     }
 
@@ -244,4 +249,3 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
 };
 
 export default ReceivePurchaseOrderModal;
-

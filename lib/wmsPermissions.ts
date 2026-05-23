@@ -4,11 +4,15 @@ export const isAdmin = (user: User): boolean => user.role === Role.ADMIN;
 
 export const isWarehouseKeeper = (user: User): boolean => user.role === Role.WAREHOUSE_KEEPER;
 
+export const isGlobalWarehouseKeeper = (user: User): boolean =>
+  isWarehouseKeeper(user) && !user.assignedWarehouseId;
+
 export const isWarehouseKeeperFor = (user: User, warehouseId?: string): boolean =>
   isWarehouseKeeper(user) && !!warehouseId && user.assignedWarehouseId === warehouseId;
 
 export const canApproveWmsTransaction = (user: User, tx: Transaction): boolean => {
   if (isAdmin(user)) return true;
+  if (isGlobalWarehouseKeeper(user)) return true;
   if (!isWarehouseKeeper(user)) return false;
 
   if (tx.type === TransactionType.IMPORT) return isWarehouseKeeperFor(user, tx.targetWarehouseId);
@@ -21,6 +25,7 @@ export const canApproveWmsTransaction = (user: User, tx: Transaction): boolean =
 
 export const canReceiveWmsTransaction = (user: User, tx: Transaction): boolean => {
   if (isAdmin(user)) return true;
+  if (isGlobalWarehouseKeeper(user)) return true;
   if (!isWarehouseKeeper(user)) return false;
 
   if (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) {
@@ -35,21 +40,23 @@ export const canReceiveWmsTransaction = (user: User, tx: Transaction): boolean =
 export const canViewWmsTransaction = (user: User, tx: Transaction): boolean => {
   if (isAdmin(user)) return true;
   if (tx.requesterId === user.id) return true;
+  if (isGlobalWarehouseKeeper(user)) return true;
   if (!isWarehouseKeeper(user)) return false;
   return user.assignedWarehouseId === tx.sourceWarehouseId || user.assignedWarehouseId === tx.targetWarehouseId;
 };
 
 export const canApproveMaterialRequest = (user: User, request: MaterialRequest): boolean =>
-  isAdmin(user) || isWarehouseKeeperFor(user, request.sourceWarehouseId);
+  isAdmin(user) || isGlobalWarehouseKeeper(user) || isWarehouseKeeperFor(user, request.sourceWarehouseId);
 
 export const canExportMaterialRequest = (user: User, request: MaterialRequest): boolean =>
-  request.status === RequestStatus.APPROVED && canApproveMaterialRequest(user, request);
+  request.status === RequestStatus.APPROVED && !!request.sourceWarehouseId && canApproveMaterialRequest(user, request);
 
 export const canReceiveMaterialRequest = (user: User, request: MaterialRequest): boolean => {
   if (request.status !== RequestStatus.IN_TRANSIT) return false;
   if (isAdmin(user)) return true;
+  if (isGlobalWarehouseKeeper(user)) return true;
   if (request.fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION) {
-    return isWarehouseKeeperFor(user, request.sourceWarehouseId);
+    return isWarehouseKeeperFor(user, request.sourceWarehouseId) || isWarehouseKeeperFor(user, request.siteWarehouseId);
   }
   return isWarehouseKeeperFor(user, request.siteWarehouseId);
 };
@@ -57,6 +64,7 @@ export const canReceiveMaterialRequest = (user: User, request: MaterialRequest):
 export const canViewMaterialRequest = (user: User, request: MaterialRequest): boolean => {
   if (isAdmin(user)) return true;
   if (request.requesterId === user.id) return true;
+  if (isGlobalWarehouseKeeper(user)) return true;
   if (!isWarehouseKeeper(user)) return false;
   return user.assignedWarehouseId === request.sourceWarehouseId || user.assignedWarehouseId === request.siteWarehouseId;
 };

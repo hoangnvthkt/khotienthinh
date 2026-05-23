@@ -55,7 +55,7 @@ export interface User {
   phone?: string; // SĐT nhân viên
   role: Role;
   avatar?: string;
-  assignedWarehouseId?: string; // ID kho được giao quản lý (null = Toàn quyền)
+  assignedWarehouseId?: string; // ID kho được giao quản lý; WAREHOUSE_KEEPER không gán kho = phòng vật tư/toàn bộ kho
   allowedModules?: string[]; // Danh sách module được phép sử dụng (VD: ['WMS', 'TS'])
   adminModules?: string[]; // Danh sách module mà user là Quản trị viên ứng dụng
   allowedSubModules?: Record<string, string[]>; // Module key -> danh sách route sub-app được phép (VD: { "HRM": ["/hrm/attendance", "/hrm/leave"] })
@@ -625,6 +625,57 @@ export interface ProjectBaseline {
   createdAt?: string;
 }
 
+export type ProjectDelayEventStatus = 'reported' | 'accepted' | 'applied' | 'resolved' | 'void';
+
+export interface ProjectDelayEvent {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  sourceDailyLogId?: string | null;
+  taskId?: string | null;
+  taskNameSnapshot: string;
+  category: DelayCategory;
+  reason?: string | null;
+  impactDays: number;
+  status: ProjectDelayEventStatus;
+  responsibility?: string | null;
+  occurredOn: string;
+  createdBy?: string | null;
+  acceptedBy?: string | null;
+  acceptedAt?: string | null;
+  resolvedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ProjectScheduleRevision {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  reason?: string | null;
+  sourceDelayEventIds: string[];
+  appliedBy?: string | null;
+  appliedAt: string;
+  createdAt?: string;
+}
+
+export interface ProjectScheduleRevisionTask {
+  id?: string;
+  revisionId: string;
+  taskId?: string | null;
+  taskNameSnapshot: string;
+  beforeStart: string;
+  beforeEnd: string;
+  beforeDuration: number;
+  afterStart: string;
+  afterEnd: string;
+  afterDuration: number;
+  deltaDays: number;
+  wasCritical: boolean;
+  floatBefore: number;
+  createdAt?: string;
+}
+
 // ==================== NHẬT KÝ CÔNG TRƯỜNG ====================
 export type WeatherType = 'sunny' | 'cloudy' | 'rainy' | 'storm';
 export type DailyLogStatus = 'draft' | 'submitted' | 'verified' | 'rejected';
@@ -653,7 +704,7 @@ export interface DailyLogVolume {
 }
 
 export interface DailyLogMaterial {
-  materialId?: string;        // FK → MaterialBudgetItem.id
+  materialId?: string;        // FK → MaterialBudgetItem.id hoặc InventoryItem.id khi chọn từ tồn kho công trường
   itemName: string;           // Tên vật tư
   unit: string;               // Đơn vị: kg, m3, bao...
   quantity: number;           // SL sử dụng trong ngày
@@ -1228,6 +1279,11 @@ export interface PurchaseOrderItem {
   overBudgetQtySnapshot?: number;
   overBudgetPercentSnapshot?: number;
   overBudgetReason?: string;
+  isManualItem?: boolean;
+  itemNameSnapshot?: string;
+  unitSnapshot?: string;
+  specification?: string;
+  manualReason?: string;
   note?: string;
 }
 
@@ -1453,6 +1509,12 @@ export interface RequestItem {
   overBudgetQtySnapshot?: number;
   overBudgetPercentSnapshot?: number;
   overBudgetReason?: string;
+  isManualItem?: boolean;
+  itemNameSnapshot?: string;
+  unitSnapshot?: string;
+  skuSnapshot?: string;
+  specification?: string;
+  manualReason?: string;
 }
 
 export interface MaterialRequest {
@@ -1666,13 +1728,48 @@ export interface RequestPrintTemplate {
 }
 
 // ==================== CHAT ====================
+export type ChatConversationType = 'direct' | 'group' | 'channel_text' | 'channel_voice';
+export type ChatChannelKind = 'text' | 'voice';
+export type ChatWorkspaceRole = 'owner' | 'admin' | 'member';
+export type ChatUserStatus = 'online' | 'busy' | 'away' | 'offline';
+
+export interface ChatWorkspace {
+  id: string;
+  name: string;
+  iconText?: string | null;
+  color?: string | null;
+  description?: string | null;
+  isPublic?: boolean;
+  sortOrder?: number;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+  members?: ChatWorkspaceMember[];
+}
+
+export interface ChatWorkspaceMember {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  role: ChatWorkspaceRole;
+  joinedAt: string;
+  leftAt?: string | null;
+}
+
 export interface ChatConversation {
   id: string;
-  type: 'direct' | 'group';
+  type: ChatConversationType;
   name?: string;
+  workspaceId?: string | null;
+  channelKind?: ChatChannelKind | null;
+  description?: string | null;
+  sortOrder?: number;
   avatarUrl?: string;
   createdBy?: string;
   createdAt: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
   // Computed (local only)
   members?: ChatMember[];
   lastMessage?: ChatMessage;
@@ -1686,6 +1783,7 @@ export interface ChatMember {
   role: 'admin' | 'member';
   lastReadAt: string;
   joinedAt: string;
+  leftAt?: string | null;
 }
 
 export interface ChatMessage {
@@ -1697,6 +1795,36 @@ export interface ChatMessage {
   attachments?: { url: string; name: string; type: string; size?: number }[];
   reactions?: Record<string, string[]>; // emoji -> userIds
   createdAt: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+  replyToId?: string;
+  replyToPreview?: { senderId: string; senderName: string; content: string } | null;
+  fileUrls?: string[];
+}
+
+export type ChatThemeName = 'discord' | 'light' | 'rose' | 'cyberpunk';
+
+export interface ChatUserSettings {
+  userId: string;
+  theme: ChatThemeName;
+  soundEnabled: boolean;
+  notificationsEnabled: boolean;
+  defaultMuted: boolean;
+  defaultDeafened: boolean;
+  status: ChatUserStatus;
+  lastWorkspaceId?: string | null;
+}
+
+export interface ChatCallSession {
+  id: string;
+  conversationId: string;
+  startedBy: string;
+  mode: 'audio' | 'video';
+  status: 'ringing' | 'active' | 'ended' | 'missed' | 'cancelled';
+  startedAt: string;
+  endedAt?: string | null;
+  endedBy?: string | null;
+  durationSeconds?: number | null;
 }
 
 // ==================== ATTACHMENT CHUẨN ====================

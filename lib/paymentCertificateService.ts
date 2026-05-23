@@ -22,7 +22,7 @@ const ITEM_TABLE = 'payment_certificate_items';
 const ADV_RECOVERY_TABLE = 'payment_certificate_advance_recoveries';
 
 const APPROVED_STATUSES: PaymentCertificateStatus[] = ['approved', 'paid'];
-const LOCKED_STATUSES: PaymentCertificateStatus[] = ['approved', 'paid', 'cancelled'];
+const LOCKED_STATUSES: PaymentCertificateStatus[] = ['submitted', 'approved', 'paid', 'cancelled'];
 
 const normalizeCert = (row: any): PaymentCertificate => {
   const mapped = fromDb(row);
@@ -300,7 +300,7 @@ export const paymentCertificateService = {
     if (readError) throw readError;
     const currentCert = normalizeCert(current);
     if (LOCKED_STATUSES.includes(currentCert.status)) {
-      throw new Error('Chứng từ đã duyệt/thanh toán hoặc đã hủy, không thể chỉnh sửa trực tiếp.');
+      throw new Error('Chứng từ đã gửi duyệt/duyệt/thanh toán hoặc đã hủy, không thể chỉnh sửa trực tiếp.');
     }
 
     const prevCerts = await this.listByContract(currentCert.contractId, currentCert.contractType);
@@ -369,6 +369,9 @@ export const paymentCertificateService = {
     }
     if (cert.status === 'paid' && status !== 'cancelled') {
       throw new Error('Chứng từ đã thanh toán. Chỉ có thể chuyển sang Hủy để rollback.');
+    }
+    if ((status === 'returned' || status === 'cancelled') && !reason?.trim()) {
+      throw new Error('Vui lòng nhập lý do trả lại/huỷ chứng từ để truy vết.');
     }
     if ((status === 'submitted' || status === 'approved' || status === 'paid') && cert.items.length === 0) {
       throw new Error('Chứng từ chưa có hạng mục, không thể gửi duyệt/phê duyệt/thanh toán.');

@@ -27,9 +27,15 @@ interface AppSettings {
   logo: string;
 }
 
+const normalizeDbRole = (role: any): Role => {
+  if (role === 'KEEPER') return Role.WAREHOUSE_KEEPER;
+  return role as Role;
+};
+
 const mapUserFromDb = (row: any): User => ({
   ...row,
   authId: row.auth_id ?? row.authId,
+  role: normalizeDbRole(row.role),
   assignedWarehouseId: row.assigned_warehouse_id ?? row.assignedWarehouseId,
   allowedModules: row.allowed_modules ?? row.allowedModules ?? undefined,
   adminModules: row.admin_modules ?? row.adminModules ?? undefined,
@@ -1465,6 +1471,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return users
       .filter(u =>
         u.role === Role.ADMIN ||
+        (u.role === Role.WAREHOUSE_KEEPER && !u.assignedWarehouseId) ||
         (u.role === Role.WAREHOUSE_KEEPER && !!request.sourceWarehouseId && u.assignedWarehouseId === request.sourceWarehouseId)
       )
       .map(u => u.id);
@@ -1472,10 +1479,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const getWarehouseKeeperIds = (...warehouseIds: Array<string | undefined>) => {
     const whSet = new Set(warehouseIds.filter(Boolean) as string[]);
-    if (whSet.size === 0) return [];
+    const globalKeeperIds = users
+      .filter(u => u.role === Role.WAREHOUSE_KEEPER && !u.assignedWarehouseId)
+      .map(u => u.id);
+    if (whSet.size === 0) return globalKeeperIds;
     return users
       .filter(u =>
         u.role === Role.ADMIN ||
+        (u.role === Role.WAREHOUSE_KEEPER && !u.assignedWarehouseId) ||
         (u.role === Role.WAREHOUSE_KEEPER && !!u.assignedWarehouseId && whSet.has(u.assignedWarehouseId))
       )
       .map(u => u.id);
@@ -1564,8 +1575,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const effectiveSourceWhId = sourceWarehouseId || req.sourceWarehouseId;
 
+    const stockFulfillmentLines = updatedItems.filter(line => {
+      const approvedQty = Number(line.approvedQty || 0);
+      if (approvedQty <= 0) return false;
+      return items.some(item => item.id === line.itemId);
+    });
+
+    if ((status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && stockFulfillmentLines.length > 0 && !effectiveSourceWhId) {
+      return false;
+    }
+
     if ((status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && effectiveSourceWhId) {
-      const shortages = updatedItems.filter(line => {
+      const shortages = stockFulfillmentLines.filter(line => {
         const item = items.find(i => i.id === line.itemId);
         const onHand = item?.stockByWarehouse[effectiveSourceWhId] || 0;
         return (line.approvedQty || 0) > onHand;
@@ -1573,7 +1594,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (shortages.length > 0) return false;
     }
 
-    const shouldCreateTransaction = status === RequestStatus.COMPLETED && !req.relatedTransactionId;
+    const shouldCreateTransaction = status === RequestStatus.COMPLETED && !req.relatedTransactionId && !!effectiveSourceWhId && stockFulfillmentLines.length > 0;
     const relatedTransactionId = shouldCreateTransaction
       ? `tx-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
       : req.relatedTransactionId;
@@ -1628,7 +1649,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         id: relatedTransactionId,
         type: isDirectConsumption ? TransactionType.EXPORT : TransactionType.TRANSFER,
         date: new Date().toISOString(),
-        items: updatedItems.filter(i => (i.approvedQty || 0) > 0).map(i => ({ itemId: i.itemId, quantity: i.approvedQty })),
+        items: stockFulfillmentLines.map(i => ({ itemId: i.itemId, quantity: i.approvedQty })),
         sourceWarehouseId: effectiveSourceWhId,
         targetWarehouseId: isDirectConsumption ? undefined : req.siteWarehouseId,
         requesterId: req.requesterId,

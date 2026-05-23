@@ -114,6 +114,11 @@ const normalizePoItem = (item: Partial<PurchaseOrderItem>, inventoryItems: Inven
         overBudgetQtySnapshot: Number(item.overBudgetQtySnapshot || 0),
         overBudgetPercentSnapshot: Number(item.overBudgetPercentSnapshot || 0),
         overBudgetReason: item.overBudgetReason || '',
+        isManualItem: item.isManualItem || (!matched && !!item.itemId?.startsWith('manual-')),
+        itemNameSnapshot: item.itemNameSnapshot || item.name || matched?.name || '',
+        unitSnapshot: item.unitSnapshot || item.unit || matched?.unit || '',
+        specification: item.specification || '',
+        manualReason: item.manualReason || '',
         note: item.note || '',
     };
 };
@@ -367,9 +372,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             return normalizePoItem({
                 lineId: crypto.randomUUID(),
                 itemId: row.line.itemId,
-                sku: inventory?.sku || '',
-                name: inventory?.name || row.line.materialBudgetItemName || '',
-                unit: inventory?.unit || budget?.unit || '',
+                sku: inventory?.sku || row.line.skuSnapshot || '',
+                name: inventory?.name || row.line.itemNameSnapshot || row.line.materialBudgetItemName || '',
+                unit: inventory?.unit || row.line.unitSnapshot || budget?.unit || '',
                 qty: remainingQty,
                 unitPrice: inventory?.priceIn || budget?.budgetUnitPrice || 0,
                 receivedQty: 0,
@@ -386,6 +391,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 overBudgetQtySnapshot: row.line.overBudgetQtySnapshot,
                 overBudgetPercentSnapshot: row.line.overBudgetPercentSnapshot,
                 overBudgetReason: row.line.overBudgetReason,
+                isManualItem: row.line.isManualItem || !inventory,
+                itemNameSnapshot: row.line.itemNameSnapshot,
+                unitSnapshot: row.line.unitSnapshot,
+                specification: row.line.specification,
+                manualReason: row.line.manualReason,
                 note: row.line.note || `Từ đề xuất ${row.request.code}`,
             }, inventoryItems);
         });
@@ -423,9 +433,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 overBudgetPercentSnapshot: 0,
                 overBudgetReason: '',
             } : buildPoBudgetSnapshot(i))
-            .filter(i => i.itemId && i.qty > 0);
+            .filter(i => i.itemId && i.qty > 0 && (i.isManualItem || i.sku || i.name));
         if (validItems.length === 0) {
-            toast.warning('Chưa có vật tư', 'Vui lòng chọn ít nhất một vật tư WMS và nhập khối lượng đặt.');
+            toast.warning('Chưa có vật tư', 'Vui lòng chọn hoặc nhập ít nhất một dòng vật tư và khối lượng đặt.');
             return;
         }
         const duplicatedSku = validItems.find((line, index) => {
@@ -578,6 +588,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             name: selected?.name || '',
             unit: selected?.unit || '',
             unitPrice: selected?.priceIn || 0,
+            isManualItem: false,
+            itemNameSnapshot: selected?.name || '',
+            unitSnapshot: selected?.unit || '',
         });
     };
 
@@ -603,11 +616,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
         const inventory = findInventoryForBudget(budget);
         updatePoItem(index, {
-            itemId: inventory?.id || pItems[index]?.itemId || '',
+            itemId: inventory?.id || pItems[index]?.itemId || `manual-${crypto.randomUUID()}`,
             sku: inventory?.sku || budget.materialCode || pItems[index]?.sku || '',
             name: inventory?.name || budget.itemName,
             unit: inventory?.unit || budget.unit,
             unitPrice: inventory?.priceIn || budget.budgetUnitPrice || pItems[index]?.unitPrice || 0,
+            isManualItem: !inventory,
+            itemNameSnapshot: inventory?.name || budget.itemName,
+            unitSnapshot: inventory?.unit || budget.unit,
             workBoqItemId: budget.workBoqItemId || null,
             workBoqItemName: work?.name || null,
             materialBudgetItemId: budget.id,
@@ -893,27 +909,27 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             </div>
             {/* KPI */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Users size={10} /> Nhà cung cấp</div>
                     <div className="text-2xl font-black text-slate-800">{stats.vendorCount}</div>
                 </div>
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><ShoppingCart size={10} /> Đơn hàng</div>
                     <div className="text-2xl font-black text-slate-800">{stats.totalPo}</div>
                     <div className="text-[10px] text-slate-400 mt-1">Tổng: {fmt(stats.totalValue)} đ</div>
                 </div>
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Truck size={10} /> Đã giao</div>
                     <div className="text-2xl font-black text-emerald-600">{stats.delivered}</div>
                 </div>
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Clock size={10} /> Chờ giao</div>
                     <div className="text-2xl font-black text-amber-600">{stats.pending}</div>
                 </div>
             </div>
 
             {/* Sub-tabs */}
-            <div className="flex gap-1 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
+            <div className="flex gap-1 bg-white dark:bg-slate-850 rounded-2xl p-1.5 border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
                 {[
                     { key: 'vendor' as const, label: '🏢 Nhà cung cấp', count: vendors.length },
                     { key: 'po' as const, label: '📄 Đơn hàng (PO)', count: pos.length },
@@ -929,7 +945,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
             {/* Vendor Tab */}
             {subTab === 'vendor' && (
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                     <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><Users size={16} className="text-cyan-500" /> Danh sách NCC</h3>
                         <button onClick={() => { resetVendorForm(); setShowVendorForm(true); }}
@@ -943,7 +959,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             <p className="text-sm font-bold text-slate-400">Chưa có nhà cung cấp</p>
                         </div>
                     ) : (
-                        <div className="divide-y divide-slate-50">
+                        <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
                             {vendors.map(v => {
                                 const vendorPos = pos.filter(p => p.vendorId === v.id);
                                 const vendorValue = vendorPos.reduce((s, p) => s + p.totalAmount, 0);
@@ -999,7 +1015,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
             {/* PO Tab */}
             {subTab === 'po' && (
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                     <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><FileText size={16} className="text-blue-500" /> Đơn đặt hàng (PO)</h3>
                         <div className="flex items-center gap-2">
@@ -1035,7 +1051,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             <p className="text-sm font-bold text-slate-400">Chưa có đơn hàng</p>
                         </div>
                     ) : (
-                        <div className="divide-y divide-slate-50">
+                        <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
                             {pos.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(po => {
                                 const stCfg = PO_STATUS[po.status];
                                 const sourceCfg = PO_SOURCE_MODE[po.sourceMode || 'proactive_project'];
@@ -1128,7 +1144,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             <th className="text-right py-2 px-2">Thành tiền</th>
                                                         </tr>
                                                     </thead>
-                                                    <tbody className="divide-y divide-slate-100">
+                                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700/40">
                                                         {po.items.map((item, i) => {
                                                             const work = item.workBoqItemId ? workBoqMap.get(item.workBoqItemId) : undefined;
                                                             return (
@@ -1173,7 +1189,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
             {showRequestPicker && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[86vh] overflow-hidden flex flex-col">
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-5xl max-h-[86vh] overflow-hidden flex flex-col">
                         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                             <div>
                                 <h3 className="font-black text-lg text-slate-800">Tạo PO từ đề xuất công trường</h3>
@@ -1194,11 +1210,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         <th className="px-4 py-3 text-left">Ngày cần</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-50">
+                                <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                     {scopedRequestLines.map(row => {
                                         const inv = inventoryItems.find(item => item.id === row.line.itemId);
                                         const work = row.line.workBoqItemId ? workBoqMap.get(row.line.workBoqItemId) : undefined;
                                         const remaining = Math.max(0, Number(row.line.requestQty || 0) - row.orderedQty);
+                                        const lineName = inv?.name || row.line.itemNameSnapshot || row.line.materialBudgetItemName || row.line.itemId;
                                         return (
                                             <tr key={row.key} className="hover:bg-amber-50/40">
                                                 <td className="px-4 py-3 text-center">
@@ -1214,11 +1231,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     <div className="text-[10px] text-slate-400">{new Date(row.request.createdDate).toLocaleDateString('vi-VN')}</div>
                                                 </td>
                                                 <td className="px-4 py-3">
-                                                    <div className="font-bold text-slate-700">{inv?.name || row.line.itemId}</div>
+                                                    <div className="font-bold text-slate-700">{lineName}</div>
                                                     <div className="text-[10px] text-slate-400">
                                                         {work?.wbsCode ? `${work.wbsCode} - ` : ''}{row.line.workBoqItemName || work?.name || 'Ngoài BOQ'}
                                                         {row.line.materialBudgetItemName ? ` • ${row.line.materialBudgetItemName}` : ''}
                                                     </div>
+                                                    {row.line.isManualItem ? <div className="text-[10px] font-bold text-amber-600">Vật tư viết tay/chưa có mã kho</div> : null}
                                                     {row.line.overBudgetQtySnapshot ? <div className="text-[10px] font-bold text-orange-600">Vượt định mức: {row.line.overBudgetReason || 'Đã nhập lý do'}</div> : null}
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-bold">{Number(row.line.requestQty || 0).toLocaleString('vi-VN')}</td>
@@ -1245,7 +1263,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             {/* Vendor Form Modal */}
             {showVendorForm && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
                         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-t-3xl flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editingVendor ? <><Edit2 size={18} /> Sửa NCC</> : <><Plus size={18} /> Thêm NCC</>}
@@ -1328,7 +1346,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             {/* PO Form Modal */}
             {showPoForm && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto">
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto">
                         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-t-3xl flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editingPo ? <><Edit2 size={18} /> Sửa PO</> : <><Plus size={18} /> Tạo đơn hàng</>}
@@ -1416,7 +1434,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     value={item.materialBudgetItemId || ''}
                                                     onChange={e => selectPoBudgetItem(i, e.target.value)}
                                                     disabled={!!item.requestId}
-                                                    className="col-span-12 px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400"
+                                                    className="col-span-12 px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400"
                                                 >
                                                     <option value="">Gắn BOQ triển khai / định mức vật tư (tuỳ chọn)</option>
                                                     {materialBudgetItems.map(budget => {
@@ -1429,17 +1447,35 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     })}
                                                 </select>
                                             )}
-                                            <select
-                                                value={item.itemId}
-                                                onChange={e => selectPoInventoryItem(i, e.target.value)}
-                                                className="col-span-12 md:col-span-4 px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none"
-                                            >
-                                                <option value="">Chọn SKU vật tư...</option>
-                                                {inventoryItems.map(inv => <option key={inv.id} value={inv.id}>{inv.sku} - {inv.name}</option>)}
-                                            </select>
-                                            <div className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-xs text-slate-500 font-bold truncate">
-                                                {item.unit || 'ĐVT'}
-                                            </div>
+                                            {item.isManualItem ? (
+                                                <input
+                                                    value={item.name || item.itemNameSnapshot || ''}
+                                                    onChange={e => updatePoItem(i, { name: e.target.value, itemNameSnapshot: e.target.value })}
+                                                    placeholder="Tên vật tư viết tay"
+                                                    className="col-span-12 md:col-span-4 px-2.5 py-2 rounded-lg border border-amber-200 bg-amber-50/40 text-xs font-bold focus:ring-2 focus:ring-amber-300 outline-none"
+                                                />
+                                            ) : (
+                                                <select
+                                                    value={item.itemId}
+                                                    onChange={e => selectPoInventoryItem(i, e.target.value)}
+                                                    className="col-span-12 md:col-span-4 px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                                >
+                                                    <option value="">Chọn SKU vật tư...</option>
+                                                    {inventoryItems.map(inv => <option key={inv.id} value={inv.id}>{inv.sku} - {inv.name}</option>)}
+                                                </select>
+                                            )}
+                                            {item.isManualItem ? (
+                                                <input
+                                                    value={item.unit || item.unitSnapshot || ''}
+                                                    onChange={e => updatePoItem(i, { unit: e.target.value, unitSnapshot: e.target.value })}
+                                                    placeholder="ĐVT"
+                                                    className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-amber-200 bg-white text-xs text-slate-600 font-bold focus:ring-2 focus:ring-amber-300 outline-none"
+                                                />
+                                            ) : (
+                                                <div className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-500 font-bold truncate">
+                                                    {item.unit || 'ĐVT'}
+                                                </div>
+                                            )}
                                             <input
                                                 type="number"
                                                 min={0}

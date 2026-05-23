@@ -5,8 +5,13 @@ import {
 } from 'lucide-react';
 import { ContractItem, ContractItemType } from '../../types';
 import { contractItemService } from '../../lib/contractItemService';
+import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
+import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
+import { projectDocumentDependencyService } from '../../lib/projectDocumentDependencyService';
+import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useApp } from '../../context/AppContext';
 import ContractItemDetailModal from './ContractItemDetailModal';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
@@ -34,6 +39,8 @@ const EMPTY_ITEM: Partial<ContractItem> = {
   code: '', name: '', unit: 'm2', quantity: 0, unitPrice: 0, totalPrice: 0, order: 0,
 };
 
+const ADMIN_PROJECT_PERMS: ProjectPermissionCode[] = ['view', 'edit', 'delete', 'submit', 'verify', 'confirm', 'approve'];
+
 const parseImportNumber = (value: unknown): number => {
   const normalized = String(value ?? '')
     .replace(/\s/g, '')
@@ -48,6 +55,7 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
 }) => {
   const toast = useToast();
   const confirm = useConfirm();
+  const { user } = useApp();
   const { loading: saving, run } = useAsyncAction({
     errorTitle: 'Không thể cập nhật BOQ',
     fallbackError: 'Không thể lưu hạng mục BOQ lên Supabase.',
@@ -108,6 +116,15 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
   const handleAdd = async () => {
     if (!newItem.code || !newItem.name) { toast.warning('Thiếu thông tin', 'Nhập mã và tên hạng mục'); return; }
     await run(async () => {
+      if (user?.role !== 'ADMIN') {
+        await projectStaffService.requireProjectPermission({
+          userId: user?.id,
+          projectId: projectId || undefined,
+          constructionSiteId,
+          code: 'edit',
+          actionLabel: 'thêm hạng mục BOQ',
+        });
+      }
       await contractItemService.create({
         ...newItem as any,
         contractId,
@@ -133,6 +150,15 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
   const handleSaveEdit = async () => {
     if (!editingId) return;
     await run(async () => {
+      if (user?.role !== 'ADMIN') {
+        await projectStaffService.requireProjectPermission({
+          userId: user?.id,
+          projectId: projectId || undefined,
+          constructionSiteId,
+          code: 'edit',
+          actionLabel: 'cập nhật hạng mục BOQ',
+        });
+      }
       await contractItemService.update(editingId, editData);
       setEditingId(null);
       await load();
@@ -143,7 +169,54 @@ const ContractItemTable: React.FC<ContractItemTableProps> = ({
     const ok = await confirm({ targetName: `${item.code} — ${item.name}`, title: 'Xoá hạng mục BOQ' });
     if (!ok) return;
     await run(async () => {
+      if (user?.role !== 'ADMIN') {
+        await projectStaffService.requireProjectPermission({
+          userId: user?.id,
+          projectId: projectId || undefined,
+          constructionSiteId,
+          code: 'delete',
+          actionLabel: 'xoá hạng mục BOQ',
+        });
+      }
+      const deps = await projectDocumentDependencyService.getContractItemDependencies(item.id, item.isLocked);
+      const policy = getProjectDocumentPolicy({
+        action: 'delete',
+        documentType: 'contract_item',
+        status: item.isLocked ? 'locked' : 'draft',
+        user,
+        permissions: user?.role === 'ADMIN' ? ADMIN_PROJECT_PERMS : ['view', 'delete'],
+        dependencies: deps,
+        documentLabel: `${item.code} — ${item.name}`,
+      });
+      if (!policy.allowed) {
+        await projectDocumentActionLogService.logBlocked({
+          projectId: projectId || item.projectId || constructionSiteId || null,
+          constructionSiteId: constructionSiteId || item.constructionSiteId || null,
+          documentType: 'contract_item',
+          documentId: item.id,
+          documentLabel: `${item.code} — ${item.name}`,
+          action: 'delete',
+          fromStatus: item.isLocked ? 'locked' : 'draft',
+          blockedReason: policy.reason,
+          requiredRollbackSteps: policy.requiredRollbackSteps,
+          metadata: deps.metadata,
+          createdBy: user?.id,
+        });
+        throw new Error(formatPolicyMessage(policy));
+      }
       await contractItemService.remove(item.id);
+      await projectDocumentActionLogService.log({
+        projectId: projectId || item.projectId || constructionSiteId || null,
+        constructionSiteId: constructionSiteId || item.constructionSiteId || null,
+        documentType: 'contract_item',
+        documentId: item.id,
+        documentLabel: `${item.code} — ${item.name}`,
+        action: 'delete',
+        fromStatus: item.isLocked ? 'locked' : 'draft',
+        warningAcknowledged: true,
+        metadata: deps.metadata,
+        createdBy: user?.id,
+      });
       await load();
     }, { successTitle: 'Xoá hạng mục thành công', errorTitle: 'Không thể xoá hạng mục BOQ' });
   };

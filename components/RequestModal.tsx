@@ -42,6 +42,12 @@ type RequestLineDraft = {
     neededDate?: string;
     note?: string;
     overBudgetReason?: string;
+    isManualItem?: boolean;
+    itemNameSnapshot?: string;
+    unitSnapshot?: string;
+    skuSnapshot?: string;
+    specification?: string;
+    manualReason?: string;
 };
 
 const activeBudgetStatuses = new Set<RequestStatus | string>([
@@ -64,6 +70,12 @@ const toDraftLine = (item: RequestItem): RequestLineDraft => ({
     neededDate: item.neededDate || '',
     note: item.note || '',
     overBudgetReason: item.overBudgetReason || '',
+    isManualItem: item.isManualItem || false,
+    itemNameSnapshot: item.itemNameSnapshot || '',
+    unitSnapshot: item.unitSnapshot || '',
+    skuSnapshot: item.skuSnapshot || '',
+    specification: item.specification || '',
+    manualReason: item.manualReason || '',
 });
 
 const RequestModal: React.FC<RequestModalProps> = ({
@@ -87,6 +99,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     // Form State
     const [siteWarehouseId, setSiteWarehouseId] = useState('');
     const [sourceWarehouseId, setSourceWarehouseId] = useState('');
+    const [stockPreviewWarehouseId, setStockPreviewWarehouseId] = useState('');
     const [note, setNote] = useState('');
     const [fulfillmentMode, setFulfillmentMode] = useState<MaterialRequestFulfillmentMode>(MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
     const [overrideReason, setOverrideReason] = useState('');
@@ -97,6 +110,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [draftQty, setDraftQty] = useState('');
     const [draftNeededDate, setDraftNeededDate] = useState('');
     const [draftLineNote, setDraftLineNote] = useState('');
+    const [manualWorkBoqItemId, setManualWorkBoqItemId] = useState('');
+    const [manualItemName, setManualItemName] = useState('');
+    const [manualUnit, setManualUnit] = useState('');
+    const [manualQty, setManualQty] = useState('');
+    const [manualSpecification, setManualSpecification] = useState('');
+    const [manualReason, setManualReason] = useState('');
+    const [manualNeededDate, setManualNeededDate] = useState('');
 
     const [isItemSelectOpen, setItemSelectOpen] = useState(false);
     const [isScannerOpen, setScannerOpen] = useState(false);
@@ -146,6 +166,42 @@ const RequestModal: React.FC<RequestModalProps> = ({
         };
     };
 
+    const getLineInventory = (itemId?: string) => items.find(i => i.id === itemId);
+
+    const getLineName = (line: Partial<RequestLineDraft | RequestItem>) => {
+        const inventory = getLineInventory(line.itemId);
+        return inventory?.name || line.itemNameSnapshot || line.materialBudgetItemName || line.itemId || 'Vật tư viết tay';
+    };
+
+    const getLineUnit = (line: Partial<RequestLineDraft | RequestItem>) => {
+        const inventory = getLineInventory(line.itemId);
+        return inventory?.unit || line.unitSnapshot || '';
+    };
+
+    const getLineSku = (line: Partial<RequestLineDraft | RequestItem>) => {
+        const inventory = getLineInventory(line.itemId);
+        return inventory?.sku || line.skuSnapshot || (line.isManualItem ? 'VIẾT TAY' : '');
+    };
+
+    const getAggregateStockSummary = (itemId: string, warehouseId?: string, excludeRequestId?: string) => {
+        if (!getLineInventory(itemId)) {
+            return { onHand: 0, softReserved: 0, hardReserved: 0, reserved: 0, available: 0, hasConflict: false, isCritical: false };
+        }
+        if (warehouseId) return getStockSummary(itemId, warehouseId, { excludeRequestId });
+        return warehouses.reduce((sum, warehouse) => {
+            const summary = getStockSummary(itemId, warehouse.id, { excludeRequestId });
+            return {
+                onHand: sum.onHand + summary.onHand,
+                softReserved: sum.softReserved + summary.softReserved,
+                hardReserved: sum.hardReserved + summary.hardReserved,
+                reserved: sum.reserved + summary.reserved,
+                available: sum.available + summary.available,
+                hasConflict: sum.hasConflict || summary.hasConflict,
+                isCritical: false,
+            };
+        }, { onHand: 0, softReserved: 0, hardReserved: 0, reserved: 0, available: 0, hasConflict: false, isCritical: false });
+    };
+
     useEffect(() => {
         if (isOpen) {
             setShowApprovalPanel(false);
@@ -159,6 +215,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
                 setSiteWarehouseId(request.siteWarehouseId);
                 setSourceWarehouseId(request.sourceWarehouseId || '');
+                setStockPreviewWarehouseId('');
                 setNote(request.note || '');
                 setFulfillmentMode(request.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
                 setOverrideReason(request.overrideReason || '');
@@ -168,6 +225,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 setStep('CREATE');
                 setSiteWarehouseId(defaultSiteWarehouseId || user.assignedWarehouseId || '');
                 setSourceWarehouseId('');
+                setStockPreviewWarehouseId('');
                 setNote('');
                 setFulfillmentMode(MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
                 setOverrideReason('');
@@ -178,13 +236,20 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 setDraftQty('');
                 setDraftNeededDate('');
                 setDraftLineNote('');
+                setManualWorkBoqItemId('');
+                setManualItemName('');
+                setManualUnit('');
+                setManualQty('');
+                setManualSpecification('');
+                setManualReason('');
+                setManualNeededDate('');
             }
         }
     }, [isOpen, request, user, items, defaultSiteWarehouseId]);
 
     const handleAddItem = () => {
         if (items.length === 0) return;
-        if (!sourceWarehouseId) {
+        if (!isProjectRequest && !sourceWarehouseId) {
             toast.warning('Thiếu kho cung cấp', 'Vui lòng chọn kho cung cấp trước khi chọn vật tư.');
             return;
         }
@@ -200,10 +265,15 @@ const RequestModal: React.FC<RequestModalProps> = ({
             lineId: crypto.randomUUID(),
             itemId: item.id,
             qty: 1,
+            itemNameSnapshot: item.name,
+            unitSnapshot: item.unit,
+            skuSnapshot: item.sku,
             overBudgetReason: isProjectRequest ? '' : undefined,
         }]);
         setItemSelectOpen(false);
     };
+
+    const createManualItemId = () => `manual-${crypto.randomUUID()}`;
 
     const handleUpdateItem = (index: number, field: keyof RequestLineDraft, value: any) => {
         const newItems = [...reqItems];
@@ -214,13 +284,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const handleUpdateApprovedItem = (line: RequestItem, qty: number) => {
         const itemId = line.itemId;
         const item = items.find(i => i.id === itemId);
-        const stockSummary = getStockSummary(itemId, sourceWarehouseId, { excludeRequestId: request?.id });
+        const stockSummary = getAggregateStockSummary(itemId, sourceWarehouseId, request?.id);
         const availableStock = stockSummary.available;
-        const sourceStock = isAdmin(user) ? Number.MAX_SAFE_INTEGER : availableStock;
+        const sourceStock = isAdmin(user) || line.isManualItem || !item ? Number.MAX_SAFE_INTEGER : availableStock;
 
         // Ràng buộc 1: Không vượt quá tồn kho
         if (qty > sourceStock) {
-            toast.warning('Vượt tồn khả dụng', `Kho nguồn chỉ còn ${sourceStock} ${item?.unit || ''}.`);
+            toast.warning('Vượt tồn khả dụng', `${sourceWarehouseId ? 'Kho nguồn' : 'Tổng các kho'} chỉ còn ${sourceStock} ${item?.unit || line.unitSnapshot || ''}.`);
             qty = sourceStock;
         }
 
@@ -244,10 +314,6 @@ const RequestModal: React.FC<RequestModalProps> = ({
             (!!budget.materialCode && item.sku.toLowerCase() === budget.materialCode.toLowerCase()) ||
             item.name.toLowerCase() === budget.itemName.toLowerCase()
         );
-        if (!inventoryItem) {
-            toast.warning('Chưa liên kết vật tư WMS', 'Dòng BOQ này chưa có SKU trong kho. Vui lòng liên kết mã vật tư trước hoặc chọn vật tư ngoài BOQ kèm lý do.');
-            return;
-        }
         const qty = Math.max(0, Number(draftQty || 0));
         if (qty <= 0) {
             toast.warning('Thiếu khối lượng', 'Vui lòng nhập khối lượng đề xuất lớn hơn 0.');
@@ -256,7 +322,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
         setReqItems(prev => [...prev, {
             lineId: crypto.randomUUID(),
-            itemId: inventoryItem.id,
+            itemId: inventoryItem?.id || createManualItemId(),
             qty,
             workBoqItemId: budget.workBoqItemId || draftWorkBoqItemId || null,
             workBoqItemName: work?.name || '',
@@ -264,6 +330,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
             materialBudgetItemName: budget.itemName,
             neededDate: draftNeededDate || '',
             note: draftLineNote || '',
+            isManualItem: !inventoryItem,
+            itemNameSnapshot: inventoryItem?.name || budget.itemName,
+            unitSnapshot: inventoryItem?.unit || budget.unit,
+            skuSnapshot: inventoryItem?.sku || budget.materialCode || '',
+            specification: budget.notes || '',
             overBudgetReason: '',
         }]);
         setDraftMaterialBudgetItemId('');
@@ -271,10 +342,46 @@ const RequestModal: React.FC<RequestModalProps> = ({
         setDraftLineNote('');
     };
 
+    const handleAddManualLine = () => {
+        const qty = Math.max(0, Number(manualQty || 0));
+        if (!manualItemName.trim() || !manualUnit.trim() || qty <= 0) {
+            toast.warning('Thiếu thông tin vật tư', 'Vui lòng nhập tên vật tư, đơn vị và khối lượng lớn hơn 0.');
+            return;
+        }
+        if (!manualReason.trim()) {
+            toast.warning('Thiếu lý do', 'Vật tư viết tay cần lý do để phòng vật tư xử lý và đối chiếu BOQ.');
+            return;
+        }
+        const work = manualWorkBoqItemId ? workBoqMap.get(manualWorkBoqItemId) : undefined;
+        setReqItems(prev => [...prev, {
+            lineId: crypto.randomUUID(),
+            itemId: createManualItemId(),
+            qty,
+            workBoqItemId: manualWorkBoqItemId || null,
+            workBoqItemName: work?.name || null,
+            materialBudgetItemId: null,
+            materialBudgetItemName: null,
+            neededDate: manualNeededDate || '',
+            note: manualSpecification || '',
+            overBudgetReason: manualReason.trim(),
+            isManualItem: true,
+            itemNameSnapshot: manualItemName.trim(),
+            unitSnapshot: manualUnit.trim(),
+            specification: manualSpecification.trim(),
+            manualReason: manualReason.trim(),
+        }]);
+        setManualItemName('');
+        setManualUnit('');
+        setManualQty('');
+        setManualSpecification('');
+        setManualReason('');
+        setManualNeededDate('');
+    };
+
     const handleSubmitCreate = async () => {
         if (isSaving) return;
-        if (!siteWarehouseId || !sourceWarehouseId || reqItems.length === 0) {
-            toast.warning('Thiếu thông tin', 'Vui lòng chọn đầy đủ kho nhận, kho nguồn và ít nhất 1 vật tư.');
+        if (!siteWarehouseId || (!isProjectRequest && !sourceWarehouseId) || reqItems.length === 0) {
+            toast.warning('Thiếu thông tin', isProjectRequest ? 'Vui lòng chọn kho nhận và ít nhất 1 vật tư.' : 'Vui lòng chọn đầy đủ kho nhận, kho nguồn và ít nhất 1 vật tư.');
             return;
         }
 
@@ -291,12 +398,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
             }
         }
 
-        const shortages = reqItems
+        const shortages = sourceWarehouseId ? reqItems
+            .filter(line => !line.isManualItem && !!getLineInventory(line.itemId))
             .map(line => ({ ...line, summary: getStockSummary(line.itemId, sourceWarehouseId) }))
-            .filter(line => Number(line.qty) > line.summary.available);
-        if (shortages.length > 0) {
+            .filter(line => Number(line.qty) > line.summary.available) : [];
+        if (!isProjectRequest && shortages.length > 0) {
             const shortageText = shortages.map(line => {
-                const item = items.find(i => i.id === line.itemId);
+                const item = getLineInventory(line.itemId);
                 const missing = Number(line.qty) - line.summary.available;
                 return `${item?.name || line.itemId}: khả dụng ${line.summary.available}, thiếu ${missing}`;
             }).join('\n');
@@ -310,7 +418,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             constructionSiteId: effectiveConstructionSiteId,
             requestOrigin: isProjectRequest ? 'project' : 'wms',
             siteWarehouseId,
-            sourceWarehouseId: sourceWarehouseId,
+            sourceWarehouseId: sourceWarehouseId || undefined,
             requesterId: user.id,
             status: RequestStatus.PENDING,
             createdDate: new Date().toISOString(),
@@ -336,6 +444,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     overBudgetQtySnapshot: snapshot.overBudgetQty,
                     overBudgetPercentSnapshot: snapshot.overBudgetPercent,
                     overBudgetReason: i.overBudgetReason || undefined,
+                    isManualItem: i.isManualItem || false,
+                    itemNameSnapshot: i.itemNameSnapshot || getLineInventory(i.itemId)?.name || snapshot.budget?.itemName || undefined,
+                    unitSnapshot: i.unitSnapshot || getLineInventory(i.itemId)?.unit || snapshot.budget?.unit || undefined,
+                    skuSnapshot: i.skuSnapshot || getLineInventory(i.itemId)?.sku || undefined,
+                    specification: i.specification || undefined,
+                    manualReason: i.manualReason || undefined,
                 };
             }),
             logs: [{ action: 'CREATED', userId: user.id, timestamp: new Date().toISOString() }]
@@ -379,9 +493,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
 
         if (status === RequestStatus.APPROVED) {
-            const stockShortages = approvedItems
-                .map(line => ({ ...line, summary: getStockSummary(line.itemId, sourceWarehouseId, { excludeRequestId: request.id }) }))
-                .filter(line => Number(line.qty) > line.summary.available);
+            const stockShortages = sourceWarehouseId
+                ? approvedItems
+                    .filter(line => !!getLineInventory(line.itemId))
+                    .map(line => ({ ...line, summary: getStockSummary(line.itemId, sourceWarehouseId, { excludeRequestId: request.id }) }))
+                    .filter(line => Number(line.qty) > line.summary.available)
+                : [];
             if (stockShortages.length > 0) {
                 if (!isAdmin(user)) {
                     toast.warning('Vượt tồn khả dụng', 'Thủ kho không thể duyệt vượt tồn khả dụng. Vui lòng giảm số lượng duyệt hoặc xử lý phiếu đang giữ chỗ trước.');
@@ -401,7 +518,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
 
         if (status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) {
-            const stockShortages = approvedItems
+            const stockLines = approvedItems.filter(line => Number(line.qty || 0) > 0 && !!getLineInventory(line.itemId));
+            if (stockLines.length > 0 && !sourceWarehouseId) {
+                toast.error('Chưa chọn kho nguồn', 'Phòng vật tư cần chọn kho nguồn trước khi xuất vật tư có mã tồn kho.');
+                return;
+            }
+            const stockShortages = stockLines
                 .map(line => ({ ...line, onHand: getOnHandStock(line.itemId, sourceWarehouseId) }))
                 .filter(line => Number(line.qty) > line.onHand);
             if (stockShortages.length > 0) {
@@ -412,7 +534,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
         setIsSaving(true);
         try {
-            const saved = await updateRequestStatus(request.id, status, note, approvedItems, sourceWarehouseId, overrideReason.trim() || undefined);
+            const saved = await updateRequestStatus(request.id, status, note, approvedItems, sourceWarehouseId || undefined, overrideReason.trim() || undefined);
             if (!saved) {
                 toast.error('Không thể cập nhật phiếu', 'Không cập nhật được trạng thái phiếu trên hệ thống. Vui lòng thử lại.');
                 return;
@@ -439,6 +561,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const sourceWh = warehouses.find(w => w.id === sourceWarehouseId);
     const targetWh = warehouses.find(w => w.id === siteWarehouseId);
     const requester = users.find(u => u.id === (request?.requesterId || user.id));
+    const showSourceWarehouseField = !isEditable || !isProjectRequest || isApproving;
+    const stockContextWarehouseId = isEditable && isProjectRequest ? stockPreviewWarehouseId : sourceWarehouseId;
 
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
@@ -543,26 +667,45 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             </div>
                         </div>
 
-                        <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm space-y-2">
-                            <label className="text-[10px] uppercase font-black text-blue-400">Kho cung cấp</label>
-                            <div className="flex items-center gap-2 text-blue-700 font-bold">
-                                <PackageCheck size={18} className="text-blue-400" />
-                                {isEditable ? (
+                        {showSourceWarehouseField && (
+                            <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm space-y-2">
+                                <label className="text-[10px] uppercase font-black text-blue-400">Kho cung cấp</label>
+                                <div className="flex items-center gap-2 text-blue-700 font-bold">
+                                    <PackageCheck size={18} className="text-blue-400" />
+                                    {isEditable || isApproving ? (
+                                        <select
+                                            value={sourceWarehouseId}
+                                            onChange={(e) => setSourceWarehouseId(e.target.value)}
+                                            className="w-full bg-transparent outline-none text-sm"
+                                        >
+                                            <option value="">{isProjectRequest ? '-- Phòng vật tư phân nguồn sau --' : '-- Chọn kho nguồn --'}</option>
+                                            {warehouses.filter(w => w.id !== siteWarehouseId).map(w => (
+                                                <option key={w.id} value={w.id}>{w.name}</option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        <span className="text-sm">{sourceWh?.name || 'Chưa phân nguồn'}</span>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {isEditable && isProjectRequest && (
+                            <div className="bg-white p-4 rounded-xl border border-cyan-100 shadow-sm space-y-2">
+                                <label className="text-[10px] uppercase font-black text-cyan-500">Xem tồn kho khi đề xuất</label>
+                                <div className="flex items-center gap-2 text-cyan-700 font-bold">
+                                    <PackageCheck size={18} className="text-cyan-400" />
                                     <select
-                                        value={sourceWarehouseId}
-                                        onChange={(e) => setSourceWarehouseId(e.target.value)}
+                                        value={stockPreviewWarehouseId}
+                                        onChange={(e) => setStockPreviewWarehouseId(e.target.value)}
                                         className="w-full bg-transparent outline-none text-sm"
                                     >
-                                        <option value="">-- Chọn kho nguồn --</option>
-                                        {warehouses.filter(w => w.id !== siteWarehouseId).map(w => (
-                                            <option key={w.id} value={w.id}>{w.name}</option>
-                                        ))}
+                                        <option value="">Tổng tồn tất cả kho</option>
+                                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                                     </select>
-                                ) : (
-                                    <span className="text-sm">{sourceWh?.name}</span>
-                                )}
+                                </div>
                             </div>
-                        </div>
+                        )}
 
                         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
                             <label className="text-[10px] uppercase font-black text-slate-400">Ghi chú phiếu</label>
@@ -662,6 +805,68 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         </div>
                     )}
 
+                    {isEditable && isProjectRequest && (
+                        <div className="mb-5 rounded-xl border border-slate-200 bg-white p-4">
+                            <div className="flex items-center justify-between gap-3 mb-3">
+                                <div>
+                                    <div className="text-xs font-black text-slate-700">Thêm vật tư viết tay / chưa có mã kho</div>
+                                    <div className="text-[10px] font-bold text-slate-400">Ưu tiên gắn với đầu mục BOQ triển khai; ngoại lệ phải có lý do để phòng vật tư chuẩn hoá.</div>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+                                <select
+                                    value={manualWorkBoqItemId}
+                                    onChange={event => setManualWorkBoqItemId(event.target.value)}
+                                    className="md:col-span-4 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-slate-300"
+                                >
+                                    <option value="">Gắn đầu mục BOQ triển khai nếu có...</option>
+                                    {workBoqItems.map(item => <option key={item.id} value={item.id}>{item.wbsCode ? `${item.wbsCode} - ` : ''}{item.name}</option>)}
+                                </select>
+                                <input
+                                    value={manualItemName}
+                                    onChange={event => setManualItemName(event.target.value)}
+                                    placeholder="Tên vật tư / mô tả nhu cầu"
+                                    className="md:col-span-4 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-slate-300"
+                                />
+                                <input
+                                    value={manualUnit}
+                                    onChange={event => setManualUnit(event.target.value)}
+                                    placeholder="ĐVT"
+                                    className="md:col-span-1 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-slate-300"
+                                />
+                                <input
+                                    type="number"
+                                    min={0}
+                                    value={manualQty}
+                                    onChange={event => setManualQty(event.target.value)}
+                                    placeholder="SL"
+                                    className="md:col-span-1 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-slate-300"
+                                />
+                                <input
+                                    type="date"
+                                    value={manualNeededDate}
+                                    onChange={event => setManualNeededDate(event.target.value)}
+                                    className="md:col-span-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-slate-300"
+                                />
+                                <input
+                                    value={manualSpecification}
+                                    onChange={event => setManualSpecification(event.target.value)}
+                                    placeholder="Quy cách / ghi chú kỹ thuật"
+                                    className="md:col-span-7 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs outline-none focus:ring-2 focus:ring-slate-300"
+                                />
+                                <input
+                                    value={manualReason}
+                                    onChange={event => setManualReason(event.target.value)}
+                                    placeholder="Lý do viết tay / ngoài định mức"
+                                    className="md:col-span-4 px-3 py-2 rounded-xl border border-orange-200 bg-orange-50/40 text-xs outline-none focus:ring-2 focus:ring-orange-300"
+                                />
+                                <button onClick={handleAddManualLine} className="md:col-span-1 px-3 py-2 rounded-xl bg-slate-800 text-white text-xs font-black hover:bg-slate-700">
+                                    Thêm
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Desktop table view */}
                     <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden hidden md:block">
                         <table className="w-full text-left text-sm">
@@ -672,7 +877,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     <th className="p-4 w-32 text-right">Số lượng Y/C</th>
                                     {!isEditable && (
                                         <>
-                                            <th className="p-4 w-32 text-right text-blue-600 bg-blue-50/30">Tồn kho</th>
+                                            <th className="p-4 w-32 text-right text-blue-600 bg-blue-50/30">{stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</th>
                                             <th className="p-4 w-32 text-right text-emerald-600 bg-emerald-50/30">Duyệt xuất</th>
                                         </>
                                     )}
@@ -683,8 +888,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 {(isEditable ? reqItems : (request?.items || [])).map((row, idx) => {
                                     const itemId = row.itemId;
                                     const requestQty = isEditable ? row.qty : row.requestQty;
-                                    const itemInfo = items.find(i => i.id === itemId);
-                                    const stockSummary = getStockSummary(itemId, sourceWarehouseId, { excludeRequestId: request?.id });
+                                    const itemInfo = getLineInventory(itemId);
+                                    const stockSummary = getAggregateStockSummary(itemId, stockContextWarehouseId, request?.id);
                                     const sourceStock = stockSummary.available;
                                     const lineId = row.lineId;
                                     const approvedQty = approvedItems.find(ai => (lineId && ai.lineId === lineId) || (!lineId && ai.itemId === itemId))?.qty || 0;
@@ -696,8 +901,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                         <tr key={idx} className={`transition-colors ${isExcess ? 'bg-orange-50/50' : 'hover:bg-slate-50/50'}`}>
                                             <td className="p-4">
                                                 <div>
-                                                    <div className="font-bold text-slate-800">{itemInfo?.name}</div>
-                                                    <div className="text-[10px] font-mono text-slate-400">{itemInfo?.sku}</div>
+                                                    <div className="font-bold text-slate-800">{getLineName(row)}</div>
+                                                    <div className="text-[10px] font-mono text-slate-400">{getLineSku(row) || '—'}</div>
+                                                    {row.specification && <div className="text-[10px] text-slate-400 mt-0.5">{row.specification}</div>}
                                                     {isProjectRequest && (
                                                         <div className="mt-1 space-y-1">
                                                             <div className="flex flex-wrap gap-1">
@@ -721,7 +927,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="p-4 text-center text-slate-500 font-medium">{itemInfo?.unit || '-'}</td>
+                                            <td className="p-4 text-center text-slate-500 font-medium">{getLineUnit(row) || '-'}</td>
                                             <td className="p-4 text-right">
                                                 {isEditable ? (
                                                     <input
@@ -746,7 +952,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                         {isApproving ? (
                                                             <div className="flex flex-col items-end">
                                                                 <input
-                                                                    type="number" min="0" max={sourceStock}
+                                                                    type="number" min="0" max={itemInfo ? sourceStock : undefined}
                                                                     value={approvedQty}
                                                                     onChange={(e) => handleUpdateApprovedItem(row as RequestItem, Number(e.target.value))}
                                                                     className={`w-20 text-right p-1 border rounded font-bold bg-white focus:ring-2 outline-none transition-colors ${isExcess ? 'border-orange-400 text-orange-700 focus:ring-orange-500' : 'border-emerald-200 text-emerald-700 focus:ring-emerald-500'}`}
@@ -785,8 +991,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         {(isEditable ? reqItems : (request?.items || [])).map((row, idx) => {
                             const itemId = row.itemId;
                             const requestQty = isEditable ? row.qty : row.requestQty;
-                            const itemInfo = items.find(i => i.id === itemId);
-                            const stockSummary = getStockSummary(itemId, sourceWarehouseId, { excludeRequestId: request?.id });
+                            const itemInfo = getLineInventory(itemId);
+                            const stockSummary = getAggregateStockSummary(itemId, stockContextWarehouseId, request?.id);
                             const sourceStock = stockSummary.available;
                             const lineId = row.lineId;
                             const approvedQty = approvedItems.find(ai => (lineId && ai.lineId === lineId) || (!lineId && ai.itemId === itemId))?.qty || 0;
@@ -798,8 +1004,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 <div key={idx} className={`bg-white rounded-xl p-3 border ${isExcess ? 'border-orange-200 bg-orange-50/50' : 'border-slate-200'} shadow-sm`}>
                                     <div className="flex items-start justify-between mb-2">
                                         <div className="min-w-0 flex-1">
-                                            <div className="font-bold text-sm text-slate-800 truncate">{itemInfo?.name}</div>
-                                            <div className="text-[10px] font-mono text-slate-400">{itemInfo?.sku} • {itemInfo?.unit || '-'}</div>
+                                            <div className="font-bold text-sm text-slate-800 truncate">{getLineName(row)}</div>
+                                            <div className="text-[10px] font-mono text-slate-400">{getLineSku(row) || '—'} • {getLineUnit(row) || '-'}</div>
+                                            {row.specification && <div className="text-[10px] text-slate-400 mt-0.5 line-clamp-2">{row.specification}</div>}
                                             {isProjectRequest && (row.workBoqItemName || row.materialBudgetItemName || !row.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0) && (
                                                 <div className="mt-1 flex flex-wrap gap-1">
                                                     {(row.workBoqItemName || row.materialBudgetItemName) && <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 text-[9px] font-bold">{row.workBoqItemName || 'BOQ'}{row.materialBudgetItemName ? ` • ${row.materialBudgetItemName}` : ''}</span>}
@@ -839,7 +1046,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                         {!isEditable && (
                                             <>
                                                 <div className="flex-1">
-                                                    <div className="text-[9px] uppercase font-bold text-blue-400 mb-0.5">Tồn kho</div>
+                                                    <div className="text-[9px] uppercase font-bold text-blue-400 mb-0.5">{stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</div>
                                                     <div className="font-bold text-blue-600 text-sm">{sourceStock.toLocaleString()}</div>
                                                     {stockSummary.reserved > 0 && <div className="text-[9px] text-amber-600 font-bold">Giữ chỗ: {stockSummary.reserved}</div>}
                                                 </div>
@@ -847,7 +1054,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                     <div className="text-[9px] uppercase font-bold text-emerald-400 mb-0.5">Duyệt</div>
                                                     {isApproving ? (
                                                         <input
-                                                            type="number" min="0" max={sourceStock}
+                                                            type="number" min="0" max={itemInfo ? sourceStock : undefined}
                                                             value={approvedQty}
                                                             onChange={(e) => handleUpdateApprovedItem(row as RequestItem, Number(e.target.value))}
                                                             className={`w-full text-center p-2 border rounded-lg font-bold text-sm ${isExcess ? 'border-orange-400 text-orange-700' : 'border-emerald-200 text-emerald-700'}`}
@@ -921,7 +1128,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 onClose={() => setItemSelectOpen(false)}
                 onSelect={handleSelectFromModal}
                 onOpenScanner={() => setScannerOpen(true)}
-                filterWarehouseId={sourceWarehouseId}
+                filterWarehouseId={isProjectRequest ? stockPreviewWarehouseId : sourceWarehouseId}
+                allowAllItems={isProjectRequest}
             />
 
             <ScannerModal

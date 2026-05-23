@@ -156,7 +156,7 @@ const UserManagement: React.FC = () => {
                         <MapPin size={12} className="mr-1" /> Kho phụ trách
                      </div>
                      <div className="font-bold text-xs text-slate-700">
-                        {assignedWarehouse ? assignedWarehouse.name : 'Không gán kho'}
+                        {assignedWarehouse ? assignedWarehouse.name : (u.role === Role.WAREHOUSE_KEEPER ? 'Phòng vật tư - toàn bộ kho' : 'Không gán kho')}
                      </div>
                   </div>
                </div>

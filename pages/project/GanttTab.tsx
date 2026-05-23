@@ -13,12 +13,17 @@ import {
     Paperclip, ClipboardCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus, ProjectTaskProgressMode, ContractItem, ProjectStaff, ProjectTaskCompletionRequest, Attachment } from '../../types';
+import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus, ProjectTaskProgressMode, ContractItem, ProjectStaff, ProjectTaskCompletionRequest, Attachment, ProjectDelayEvent, ProjectDelayEventStatus, ProjectScheduleRevision, ProjectScheduleRevisionTask } from '../../types';
 import { taskService, baselineService, dailyLogService } from '../../lib/projectService';
 import { taskCompletionRequestService } from '../../lib/projectTaskCompletionService';
+import { buildScheduleForecast } from '../../lib/projectScheduleForecast';
+import { delayEventService, scheduleRevisionService } from '../../lib/projectScheduleForecastService';
 import { contractItemService } from '../../lib/contractItemService';
 import { taskContractItemService } from '../../lib/taskContractItemService';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
+import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
+import { projectDocumentDependencyService } from '../../lib/projectDocumentDependencyService';
+import { formatPolicyMessage, getProjectDocumentPolicy, ProjectDocumentStatus } from '../../lib/projectDocumentPolicy';
 import { notificationService } from '../../lib/notificationService';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { computeCriticalPath, getDelayDays, rippleEffect, type CriticalPathResult } from '../../lib/criticalPathEngine';
@@ -220,11 +225,28 @@ const COMPLETION_STATUS_CONFIG: Record<string, { label: string; className: strin
     cancelled: { label: 'Đã hủy', className: 'bg-slate-50 text-slate-500 border-slate-200' },
 };
 
-const ALL_PROJECT_PERMISSION_CODES: ProjectPermissionCode[] = ['view', 'edit', 'submit', 'verify', 'confirm', 'approve'];
+const DELAY_CATEGORY_LABELS: Record<string, string> = {
+    material: 'Vật tư',
+    weather: 'Thời tiết',
+    drawing: 'Bản vẽ',
+    labor: 'Nhân công',
+    other: 'Khác',
+};
+
+const DELAY_STATUS_LABELS: Record<ProjectDelayEventStatus, string> = {
+    reported: 'Mới ghi nhận',
+    accepted: 'Đã chấp nhận',
+    applied: 'Đã áp dụng',
+    resolved: 'Đã xử lý',
+    void: 'Bỏ qua',
+};
+
+const ALL_PROJECT_PERMISSION_CODES: ProjectPermissionCode[] = ['view', 'edit', 'delete', 'submit', 'verify', 'confirm', 'approve'];
 
 const PROJECT_PERMISSION_HINTS: Record<ProjectPermissionCode, string> = {
     view: 'xem dữ liệu tiến độ',
     edit: 'tạo, sửa hoặc xoá hạng mục tiến độ',
+    delete: 'xoá hạng mục tiến độ',
     submit: 'gửi hạng mục vào luồng nghiệm thu',
     verify: 'xác nhận kỹ thuật',
     confirm: 'xác nhận nghiệp vụ',
@@ -270,10 +292,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const { projectFinances, updateProjectFinance, user } = useApp();
     const toast = useToast();
     const effectiveId = projectId || constructionSiteId || '';
+    const isAdminUser = user?.role === 'ADMIN';
     // Data
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
     const [baselines, setBaselines] = useState<ProjectBaseline[]>([]);
     const [activeBaseline, setActiveBaseline] = useState<ProjectBaseline | null>(null);
+    const [delayEvents, setDelayEvents] = useState<ProjectDelayEvent[]>([]);
+    const [scheduleRevisions, setScheduleRevisions] = useState<ProjectScheduleRevision[]>([]);
     const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
     const [contractItems, setContractItems] = useState<ContractItem[]>([]);
     const [taskContractLinks, setTaskContractLinks] = useState<Record<string, string[]>>({});
@@ -283,6 +308,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     const [pbacLoaded, setPbacLoaded] = useState(false);
     const [loading, setLoading] = useState(true);
     const [showBaselinePanel, setShowBaselinePanel] = useState(false);
+    const [showForecastPanel, setShowForecastPanel] = useState(false);
+    const [applyingForecast, setApplyingForecast] = useState(false);
     // GĐ2: Drag state for ripple + ghosting
     const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
     const [dragGhost, setDragGhost] = useState<{ taskId: string; origLeft: number; origWidth: number; deltaDays: number; weatherWarn: string | null } | null>(null);
@@ -301,6 +328,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         if (!effectiveId) {
             setTasks([]);
             setBaselines([]);
+            setDelayEvents([]);
+            setScheduleRevisions([]);
             setDailyLogs([]);
             setContractItems([]);
             setTaskContractLinks({});
@@ -314,6 +343,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             const [
                 taskData,
                 baselineData,
+                delayEventData,
+                scheduleRevisionData,
                 logData,
                 contractItemData,
                 linkData,
@@ -322,6 +353,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             ] = await Promise.all([
                 taskService.list(effectiveId, constructionSiteId || null),
                 baselineService.list(effectiveId, constructionSiteId || null),
+                delayEventService.list(effectiveId, constructionSiteId || null),
+                scheduleRevisionService.list(effectiveId, constructionSiteId || null),
                 dailyLogService.list(effectiveId, constructionSiteId || null),
                 contractItemService.listBySite(effectiveId, undefined, constructionSiteId || null),
                 taskContractItemService.listBySite(effectiveId, constructionSiteId || null),
@@ -334,6 +367,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             ]);
             setTasks(deriveProjectTaskProgress(taskData, completionData, logData));
             setBaselines(baselineData);
+            setDelayEvents(delayEventData);
+            setScheduleRevisions(scheduleRevisionData);
             setDailyLogs(logData);
             setContractItems(contractItemData);
             setProjectStaff(staffData);
@@ -395,6 +430,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     }, [effectiveId, projectId, constructionSiteId, user?.id]);
 
     const ensureProjectPermission = useCallback((code: ProjectPermissionCode, actionLabel?: string) => {
+        if (isAdminUser) return true;
         if (!pbacLoaded) {
             toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
             return false;
@@ -404,16 +440,29 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             return false;
         }
         return true;
-    }, [pbacLoaded, projectPerms, toast]);
+    }, [isAdminUser, pbacLoaded, projectPerms, toast]);
 
     // View
     const [viewMode, setViewMode] = useState<ViewMode>('split');
+    const ganttOffset = viewMode === 'gantt' ? 140 : 0;
+    const [splitTableWidth, setSplitTableWidth] = useState(520); // px
     const [zoom, setZoom] = useState(28);
     const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
     const [searchQuery, setSearchQuery] = useState('');
     const [filterStatus, setFilterStatus] = useState<TaskStatus | 'all'>('all');
     const [sortField, setSortField] = useState<SortField>('name');
     const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+    useEffect(() => {
+        const handleResize = () => {
+            if (window.innerWidth < 1024 && viewMode === 'split') {
+                setViewMode('gantt');
+            }
+        };
+        handleResize();
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, [viewMode]);
 
     // CRUD
     const [showForm, setShowForm] = useState(false);
@@ -869,9 +918,34 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 
         if (nextStatus === 'verified' && !ensureProjectPermission('verify', 'xác nhận kỹ thuật phiếu hoàn thành')) return;
         if (nextStatus === 'approved' && !ensureProjectPermission('approve', 'duyệt phiếu hoàn thành')) return;
-        if (nextStatus === 'returned' && !projectPerms.has('verify') && !projectPerms.has('approve')) {
-            toast.error('Không có quyền', 'Bạn cần quyền verify hoặc approve để trả lại phiếu.');
-            return;
+        if (nextStatus === 'returned') {
+            const policy = getProjectDocumentPolicy({
+                action: 'return',
+                documentType: 'completion_request',
+                status: request.status,
+                user,
+                permissions: projectPerms,
+                relatedUserIds: [request.submittedBy, task.assigneeUserId, ...(task.watchers || [])],
+                reason,
+                documentLabel: task.name,
+            });
+            if (!policy.allowed) {
+                await projectDocumentActionLogService.logBlocked({
+                    projectId: projectId || request.projectId || effectiveId,
+                    constructionSiteId: constructionSiteId || request.constructionSiteId || null,
+                    documentType: 'completion_request',
+                    documentId: request.id,
+                    documentLabel: task.name,
+                    action: 'return',
+                    fromStatus: request.status,
+                    reason,
+                    blockedReason: policy.reason,
+                    requiredRollbackSteps: policy.requiredRollbackSteps,
+                    createdBy: user?.id,
+                });
+                toast.error('Không thể trả lại phiếu', formatPolicyMessage(policy));
+                return;
+            }
         }
 
         try {
@@ -917,6 +991,19 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 await notifyCompletionResult({ ...request, ...patch, updatedAt: now }, task, 'approved');
                 toast.success('Đã duyệt phiếu hoàn thành', 'Tiến độ đã được tính lại tự động.');
             } else {
+                await projectDocumentActionLogService.log({
+                    projectId: projectId || request.projectId || effectiveId,
+                    constructionSiteId: constructionSiteId || request.constructionSiteId || null,
+                    documentType: 'completion_request',
+                    documentId: request.id,
+                    documentLabel: task.name,
+                    action: 'return',
+                    fromStatus: request.status,
+                    toStatus: 'returned',
+                    reason,
+                    warningAcknowledged: true,
+                    createdBy: user?.id,
+                });
                 await notifyCompletionResult({ ...request, ...patch, updatedAt: now }, task, 'returned', reason);
                 toast.success('Đã trả lại phiếu');
             }
@@ -931,9 +1018,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         notifyCompletionResult,
         notifyCompletionReviewers,
         persistDerivedProgress,
+        effectiveId,
+        constructionSiteId,
+        projectId,
         projectPerms,
         tasks,
         toast,
+        user,
         user?.id,
     ]);
 
@@ -1107,8 +1198,39 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 
     const handleDelete = async () => {
         if (!deleteTarget) return;
-        if (!ensureProjectPermission('edit', 'xoá hạng mục tiến độ')) return;
+        if (!ensureProjectPermission('delete', 'xoá hạng mục tiến độ')) return;
         try {
+            const deps = await projectDocumentDependencyService.getProjectTaskDependencies(deleteTarget.id, tasks);
+            const status: ProjectDocumentStatus = deleteTarget.gateStatus === 'approved' || deleteTarget.progress > 0 || deleteTarget.actualStartDate
+                ? 'locked'
+                : 'draft';
+            const policy = getProjectDocumentPolicy({
+                action: 'delete',
+                documentType: 'schedule_task',
+                status,
+                user,
+                permissions: projectPerms,
+                dependencies: deps,
+                relatedUserIds: [deleteTarget.assigneeUserId, ...(deleteTarget.watchers || [])],
+                documentLabel: deleteTarget.name,
+            });
+            if (!policy.allowed) {
+                await projectDocumentActionLogService.logBlocked({
+                    projectId: projectId || effectiveId,
+                    constructionSiteId: constructionSiteId || null,
+                    documentType: 'schedule_task',
+                    documentId: deleteTarget.id,
+                    documentLabel: deleteTarget.name,
+                    action: 'delete',
+                    fromStatus: status,
+                    blockedReason: policy.reason,
+                    requiredRollbackSteps: policy.requiredRollbackSteps,
+                    metadata: deps.metadata,
+                    createdBy: user?.id,
+                });
+                toast.error('Không thể xoá hạng mục', formatPolicyMessage(policy));
+                return;
+            }
             const idsToRemove = collectDescendantTaskIds(tasks, deleteTarget.id);
             idsToRemove.add(deleteTarget.id);
             const nextLocalTasks = removeTasksAndReferences(tasks, idsToRemove);
@@ -1123,6 +1245,18 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             setTasks(nextTasks);
             syncProjectFinanceProgress(nextTasks);
             setDeleteTarget(null);
+            await projectDocumentActionLogService.log({
+                projectId: projectId || effectiveId,
+                constructionSiteId: constructionSiteId || null,
+                documentType: 'schedule_task',
+                documentId: deleteTarget.id,
+                documentLabel: deleteTarget.name,
+                action: 'delete',
+                fromStatus: status,
+                warningAcknowledged: true,
+                metadata: deps.metadata,
+                createdBy: user?.id,
+            });
             toast.success('Đã xoá hạng mục');
         } catch (e: any) {
             toast.error('Lỗi xoá hạng mục', e?.message);
@@ -1433,6 +1567,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         return computeCriticalPath(tasks);
     }, [tasks]);
 
+    const scheduleForecast = useMemo(() => buildScheduleForecast(tasks, delayEvents), [tasks, delayEvents]);
+    const activeDelayEventCount = scheduleForecast.activeDelayEvents.length;
+
     // Map baseline tasks by ID for quick lookup (shadow bars)
     const baselineMap = useMemo(() => {
         if (!activeBaseline) return new Map<string, ProjectTask>();
@@ -1615,6 +1752,113 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         setSandboxTasks([]);
     }, [sandboxTasks, syncProjectFinanceProgress, tasks]);
 
+    const ensureScheduleChangePermission = useCallback((actionLabel: string) => {
+        if (!pbacLoaded) {
+            toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
+            return false;
+        }
+        if (!projectPerms.has('edit') && !projectPerms.has('approve')) {
+            toast.error('Không có quyền', `Bạn cần quyền edit hoặc approve để ${actionLabel}.`);
+            return false;
+        }
+        return true;
+    }, [pbacLoaded, projectPerms, toast]);
+
+    const handleDelayEventStatus = useCallback(async (event: ProjectDelayEvent, status: ProjectDelayEventStatus) => {
+        if (!ensureScheduleChangePermission('cập nhật sự kiện chậm tiến độ')) return;
+        try {
+            await delayEventService.markStatus(event.id, status, user?.id || null);
+            const now = new Date().toISOString();
+            setDelayEvents(prev => prev.map(item => item.id === event.id ? {
+                ...item,
+                status,
+                acceptedBy: status === 'accepted' ? user?.id || null : item.acceptedBy,
+                acceptedAt: status === 'accepted' ? now : item.acceptedAt,
+                resolvedAt: status === 'resolved' || status === 'void' ? now : status === 'accepted' ? null : item.resolvedAt,
+            } : item));
+            toast.success('Đã cập nhật sự kiện chậm tiến độ');
+        } catch (err: any) {
+            toast.error('Không thể cập nhật sự kiện', err?.message || 'Vui lòng thử lại.');
+        }
+    }, [ensureScheduleChangePermission, toast, user?.id]);
+
+    const applyScheduleForecast = useCallback(async () => {
+        if (!ensureScheduleChangePermission('áp dụng dự báo tiến độ')) return;
+        if (scheduleForecast.changedTasks.length === 0) {
+            toast.info('Không có thay đổi forecast', 'Chưa có hạng mục nào cần điều chỉnh theo sự kiện chậm tiến độ.');
+            return;
+        }
+
+        const sourceDelayEventIds = [...new Set(scheduleForecast.activeDelayEvents.map(event => event.id))];
+        const now = new Date().toISOString();
+        const revisionId = crypto.randomUUID();
+        const revision: ProjectScheduleRevision = {
+            id: revisionId,
+            projectId: projectId || constructionSiteId || null,
+            constructionSiteId: constructionSiteId || null,
+            reason: `Áp dụng forecast từ ${sourceDelayEventIds.length} sự kiện chậm tiến độ`,
+            sourceDelayEventIds,
+            appliedBy: user?.id || null,
+            appliedAt: now,
+            createdAt: now,
+        };
+        const revisionTasks: ProjectScheduleRevisionTask[] = scheduleForecast.changedTasks.map(nextTask => {
+            const prevTask = tasks.find(task => task.id === nextTask.id)!;
+            const meta = scheduleForecast.taskForecastMeta.get(nextTask.id);
+            return {
+                id: crypto.randomUUID(),
+                revisionId,
+                taskId: nextTask.id,
+                taskNameSnapshot: nextTask.name,
+                beforeStart: prevTask.startDate,
+                beforeEnd: prevTask.endDate,
+                beforeDuration: Number(prevTask.duration || 0),
+                afterStart: nextTask.startDate,
+                afterEnd: nextTask.endDate,
+                afterDuration: Number(nextTask.duration || 0),
+                deltaDays: meta?.deltaDays || daysBetween(prevTask.endDate, nextTask.endDate),
+                wasCritical: !!meta?.wasCritical,
+                floatBefore: meta?.floatBefore || 0,
+                createdAt: now,
+            };
+        });
+
+        setApplyingForecast(true);
+        try {
+            await scheduleRevisionService.createAndApply({
+                revision,
+                revisionTasks,
+                updatedTasks: scheduleForecast.changedTasks,
+                sourceDelayEventIds,
+            });
+            const forecastById = scheduleForecast.forecastTaskMap;
+            const nextTasks = tasks.map(task => forecastById.get(task.id) || task);
+            setTasks(nextTasks);
+            setScheduleRevisions(prev => [revision, ...prev]);
+            const appliedIds = new Set(sourceDelayEventIds);
+            setDelayEvents(prev => prev.map(event => appliedIds.has(event.id) ? {
+                ...event,
+                status: 'applied',
+                resolvedAt: now,
+            } : event));
+            syncProjectFinanceProgress(nextTasks);
+            toast.success('Đã áp dụng forecast tiến độ', `${revisionTasks.length} hạng mục đã được cập nhật vào kế hoạch điều hành.`);
+        } catch (err: any) {
+            toast.error('Không thể áp dụng forecast', err?.message || 'Vui lòng thử lại.');
+        } finally {
+            setApplyingForecast(false);
+        }
+    }, [
+        constructionSiteId,
+        ensureScheduleChangePermission,
+        projectId,
+        scheduleForecast,
+        syncProjectFinanceProgress,
+        tasks,
+        toast,
+        user?.id,
+    ]);
+
     // ====== GĐ5: AI Risk Analysis (Rule-based) ======
     const aiInsights = useMemo(() => {
         const insights: { icon: string; title: string; desc: string; severity: 'high' | 'medium' | 'low' }[] = [];
@@ -1673,12 +1917,17 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 months: [] as { label: string; startDay: number; days: number }[],
                 days: Array.from({ length: 91 }, (_, i) => {
                     const date = addDays(s, i);
-                    const dt = new Date(date);
-                    return { date, label: fmtShort(date), startDay: i, isWeekend: dt.getDay() === 0 || dt.getDay() === 6 };
+                    const dt = new Date(date + 'T00:00:00');
+                    return { date, label: date.split('-')[2], startDay: i, isWeekend: dt.getDay() === 0 || dt.getDay() === 6 };
                 }),
             };
         }
-        const dates = filteredTasks.flatMap(t => [t.startDate, t.endDate]).sort();
+        const dates = filteredTasks.flatMap(t => {
+            const forecastTask = scheduleForecast.forecastTaskMap.get(t.id);
+            return forecastTask
+                ? [t.startDate, t.endDate, forecastTask.startDate, forecastTask.endDate]
+                : [t.startDate, t.endDate];
+        }).sort();
         const s = addDays(dates[0], -7);
         const e = addDays(dates[dates.length - 1], 14);
         const td = daysBetween(s, e);
@@ -1695,11 +1944,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         }
         for (let i = 0; i <= td; i++) {
             const date = addDays(s, i);
-            const dt = new Date(date);
-            ds.push({ date, label: fmtShort(date), startDay: i, isWeekend: dt.getDay() === 0 || dt.getDay() === 6 });
+            const dt = new Date(date + 'T00:00:00');
+            ds.push({ date, label: date.split('-')[2], startDay: i, isWeekend: dt.getDay() === 0 || dt.getDay() === 6 });
         }
         return { timelineStart: s, totalDays: td, months: ms, days: ds };
-    }, [filteredTasks]);
+    }, [filteredTasks, scheduleForecast.forecastTaskMap]);
 
     const todayOffset = useMemo(() => daysBetween(timelineStart, today()), [timelineStart]);
     const formTaskHasChildren = !!(editing && childCountByTaskId.get(editing.id));
@@ -1779,6 +2028,20 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                             <BarChart3 size={13} /> So sánh BL
                         </button>
                     )}
+                    <button onClick={() => setShowForecastPanel(v => !v)}
+                        className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+                            showForecastPanel
+                                ? 'border-red-400 bg-red-50 dark:bg-red-900/20 text-red-700'
+                                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                        }`}
+                        title="Dự báo tác động chậm tiến độ">
+                        <AlertTriangle size={13} /> Dự báo
+                        {activeDelayEventCount > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center">
+                                {activeDelayEventCount}
+                            </span>
+                        )}
+                    </button>
                     {/* GĐ5: Sandbox Toggle */}
                     <button onClick={toggleSandbox}
                         className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${isSandboxMode
@@ -1834,6 +2097,129 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                             <Check size={12} /> Áp dụng thật
                         </button>
                     </div>
+                </div>
+            )}
+
+            {/* Schedule Forecast Panel */}
+            {showForecastPanel && (
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-red-100 dark:border-red-900/60 shadow-sm overflow-hidden">
+                    <div className="px-5 py-3 border-b border-red-100 dark:border-red-900/60 flex items-center justify-between bg-red-50/50 dark:bg-red-900/10">
+                        <div className="flex items-center gap-2">
+                            <AlertTriangle size={15} className="text-red-500" />
+                            <div>
+                                <h4 className="text-sm font-black text-slate-800 dark:text-white">Dự báo tác động chậm tiến độ</h4>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                                    {activeDelayEventCount} sự kiện đang tính forecast • {scheduleForecast.changedTasks.length} hạng mục bị đổi lịch
+                                    {scheduleForecast.projectEndDeltaDays !== 0 && (
+                                        <span className={scheduleForecast.projectEndDeltaDays > 0 ? ' text-red-600 font-black' : ' text-emerald-600 font-black'}>
+                                            {' '}• Dự án {scheduleForecast.projectEndDeltaDays > 0 ? 'trễ' : 'sớm'} {Math.abs(scheduleForecast.projectEndDeltaDays)} ngày
+                                        </span>
+                                    )}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {scheduleRevisions.length > 0 && (
+                                <span className="text-[10px] font-bold text-slate-400">Revision: {scheduleRevisions.length}</span>
+                            )}
+                            <button onClick={applyScheduleForecast}
+                                disabled={applyingForecast || scheduleForecast.changedTasks.length === 0}
+                                className="px-3 py-1.5 rounded-lg text-[10px] font-black text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
+                                {applyingForecast ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} Áp dụng forecast
+                            </button>
+                            <button onClick={() => setShowForecastPanel(false)}
+                                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+                                <X size={14} />
+                            </button>
+                        </div>
+                    </div>
+
+                    {activeDelayEventCount === 0 ? (
+                        <div className="p-6 text-center">
+                            <CheckCircle2 size={26} className="text-emerald-400 mx-auto mb-2" />
+                            <p className="text-xs font-bold text-emerald-600">Chưa có sự kiện chậm tiến độ đang ảnh hưởng forecast.</p>
+                            <p className="text-[10px] text-slate-400 mt-1">Daily Log đã xác nhận có hạng mục trễ sẽ tự tạo sự kiện ở đây.</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-0">
+                            <div className="p-4 border-b xl:border-b-0 xl:border-r border-slate-100 dark:border-slate-700">
+                                <div className="text-[10px] font-black text-slate-400 uppercase mb-2">Sự kiện chậm</div>
+                                <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
+                                    {scheduleForecast.activeDelayEvents.map(event => (
+                                        <div key={event.id} className="rounded-xl border border-red-100 dark:border-red-900/50 bg-red-50/40 dark:bg-red-900/10 p-3">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">{event.taskNameSnapshot}</div>
+                                                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-slate-500">
+                                                        <span>{fmtShort(event.occurredOn)}</span>
+                                                        <span>•</span>
+                                                        <span>{DELAY_CATEGORY_LABELS[event.category] || event.category}</span>
+                                                        <span className="rounded-full bg-red-100 text-red-700 px-2 py-0.5">+{event.impactDays} ngày</span>
+                                                        <span className="rounded-full bg-white/80 text-slate-500 px-2 py-0.5 border border-red-100">{DELAY_STATUS_LABELS[event.status]}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1 shrink-0">
+                                                    {event.status === 'reported' && (
+                                                        <button onClick={() => handleDelayEventStatus(event, 'accepted')}
+                                                            className="px-2 py-1 rounded-lg text-[9px] font-black text-blue-600 bg-blue-50 border border-blue-100 hover:bg-blue-100">
+                                                            Chấp nhận
+                                                        </button>
+                                                    )}
+                                                    <button onClick={() => handleDelayEventStatus(event, 'resolved')}
+                                                        className="px-2 py-1 rounded-lg text-[9px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 hover:bg-emerald-100">
+                                                        Đã xử lý
+                                                    </button>
+                                                    <button onClick={() => handleDelayEventStatus(event, 'void')}
+                                                        className="px-2 py-1 rounded-lg text-[9px] font-black text-slate-500 bg-white border border-slate-200 hover:bg-slate-50">
+                                                        Bỏ qua
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            {event.reason && <p className="mt-2 text-[10px] text-slate-500 leading-relaxed">{event.reason}</p>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="p-4">
+                                <div className="text-[10px] font-black text-slate-400 uppercase mb-2">
+                                    Hạng mục bị ảnh hưởng • downstream: {scheduleForecast.impactedTaskIds.size}
+                                </div>
+                                <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
+                                    {scheduleForecast.changedTasks.length === 0 ? (
+                                        <div className="rounded-xl bg-slate-50 dark:bg-slate-700/30 p-4 text-center text-xs font-bold text-slate-500">
+                                            Các sự kiện hiện tại chưa làm đổi lịch điều hành.
+                                        </div>
+                                    ) : scheduleForecast.changedTasks.slice(0, 12).map(task => {
+                                        const original = tasks.find(item => item.id === task.id);
+                                        const meta = scheduleForecast.taskForecastMeta.get(task.id);
+                                        if (!original) return null;
+                                        return (
+                                            <div key={task.id} className="rounded-xl border border-slate-100 dark:border-slate-700 p-3 bg-slate-50/50 dark:bg-slate-700/20">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="min-w-0">
+                                                        <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">{task.name}</div>
+                                                        <div className="mt-1 text-[10px] text-slate-500">
+                                                            {fmtShort(original.startDate)}-{fmtShort(original.endDate)} → <span className="font-black text-red-600">{fmtShort(task.startDate)}-{fmtShort(task.endDate)}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                        <span className="rounded-full bg-red-100 text-red-700 px-2 py-0.5 text-[9px] font-black">+{meta?.deltaDays || 0}d</span>
+                                                        {meta?.wasCritical && <span className="rounded-full bg-red-500 text-white px-2 py-0.5 text-[9px] font-black">Găng</span>}
+                                                        {!!meta && meta.floatBefore > 0 && <span className="rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 px-2 py-0.5 text-[9px] font-black">Float {meta.floatBefore}d</span>}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                    {scheduleForecast.changedTasks.length > 12 && (
+                                        <div className="text-[10px] font-bold text-slate-400 text-center">
+                                            Còn {scheduleForecast.changedTasks.length - 12} hạng mục khác trong forecast.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -1912,7 +2298,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                 <th className="text-center px-3 py-2.5">ĐỘ THẤY ĐỔI</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
+                                        <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40 dark:divide-slate-700">
                                             {rows.map(({ task, bl, startDelta, endDelta }) => {
                                                 const isDelayed = endDelta > 0;
                                                 const isAhead = endDelta < 0;
@@ -1996,16 +2382,16 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                         {/* View mode toggle */}
                         <div className="flex bg-slate-100 dark:bg-slate-700 rounded-xl p-0.5">
                             {([
-                                { mode: 'table' as ViewMode, icon: LayoutList, label: 'Bảng đầy đủ' },
-                                { mode: 'split' as ViewMode, icon: Columns, label: 'Kết hợp' },
-                                { mode: 'gantt' as ViewMode, icon: BarChart3, label: 'Gantt' },
+                                { mode: 'table' as ViewMode, icon: LayoutList, label: 'Bảng đầy đủ', className: 'flex' },
+                                { mode: 'split' as ViewMode, icon: Columns, label: 'Kết hợp', className: 'hidden lg:flex' },
+                                { mode: 'gantt' as ViewMode, icon: BarChart3, label: 'Gantt', className: 'flex' },
                             ]).map(v => (
                                 <button key={v.mode} onClick={() => setViewMode(v.mode)}
-                                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${viewMode === v.mode
+                                    className={`items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${v.className} ${viewMode === v.mode
                                         ? 'bg-white dark:bg-slate-600 text-orange-600 shadow-sm'
                                         : 'text-slate-400 hover:text-slate-600'
                                         }`}>
-                                    <v.icon size={12} /> {v.label}
+                                    <v.icon size={12} /> <span className="hidden sm:inline">{v.label}</span>
                                 </button>
                             ))}
                         </div>
@@ -2073,8 +2459,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                     <div className="flex flex-col lg:flex-row overflow-hidden">
                         {/* ====== TABLE VIEW ====== */}
                         {(viewMode === 'table' || viewMode === 'split') && (
-                            <div className={`${viewMode === 'split' ? 'w-full lg:w-[520px] shrink-0 lg:border-r border-b lg:border-b-0 border-slate-100 dark:border-slate-700' : 'flex-1'} overflow-auto`}>
-                                <table className={`${viewMode === 'table' ? 'w-full min-w-[760px] lg:min-w-[1280px] table-fixed' : 'w-full min-w-[500px]'} text-xs`}>
+                            <div 
+                                style={{ width: viewMode === 'split' ? `${splitTableWidth}px` : undefined }}
+                                className={`${viewMode === 'split' ? 'shrink-0 lg:border-r border-b lg:border-b-0 border-slate-100 dark:border-slate-700' : 'flex-1'} overflow-auto`}>
+                                <table className={`${viewMode === 'table' ? 'w-full min-w-[760px] lg:min-w-[1280px] table-fixed' : 'w-full min-w-[680px] table-fixed'} text-xs`}>
                                     <thead>
                                         <tr className="bg-slate-50/80 dark:bg-slate-700/50 border-b border-slate-100 dark:border-slate-700" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
                                             {viewMode === 'table' && (
@@ -2087,7 +2475,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Mã WBS</span>
                                                 </th>
                                             )}
-                                            <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-3 py-2.5 text-left">
+                                            <th className={`sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-3 py-2.5 text-left ${viewMode === 'split' ? 'w-[220px]' : ''}`}>
                                                 <button onClick={() => handleSort('name')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
                                                     Công việc <SortIcon field="name" />
                                                 </button>
@@ -2184,8 +2572,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         </td>
                                                     )}
                                                     {/* Name */}
-                                                    <td className="px-3 py-2.5">
-                                                        <div className="flex items-center gap-1" style={{ paddingLeft: viewMode === 'split' ? `${level * 16}px` : 0 }}>
+                                                    <td className={`px-3 ${viewMode === 'split' ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
+                                                        style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
+                                                        <div className="flex items-center gap-1 min-w-0 h-full" style={{ paddingLeft: viewMode === 'split' ? `${level * 16}px` : 0 }}>
                                                             {viewMode === 'split' && hasChildren ? (
                                                                 <button onClick={() => toggleCollapse(task.id)} className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-orange-500 shrink-0 rounded hover:bg-orange-50 transition-colors">
                                                                     {collapsedParents.has(task.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
@@ -2218,7 +2607,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                     </td>
                                                     {/* Status */}
                                                     {viewMode === 'split' && (
-                                                        <td className="px-2 py-0 overflow-hidden" style={{ maxWidth: "95px" }}><StatusBadge status={status} /></td>
+                                                        <td className="px-2 py-0 overflow-hidden whitespace-nowrap" style={{ maxWidth: "95px", height: `${ROW_HEIGHT}px` }}>
+                                                            <div className="flex items-center h-full">
+                                                                <StatusBadge status={status} />
+                                                            </div>
+                                                        </td>
                                                     )}
                                                     {/* Assignee */}
                                                     {viewMode === 'table' && (
@@ -2237,8 +2630,18 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         <td className="hidden lg:table-cell px-2 py-2.5 text-center font-bold text-slate-500">{task.duration}</td>
                                                     )}
                                                     {/* Planned Dates */}
-                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 py-2.5 text-slate-500 font-medium`}>{fmtShort(task.startDate)}</td>
-                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 py-2.5 text-slate-500 font-medium`}>{fmtShort(task.endDate)}</td>
+                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${viewMode === 'split' ? 'py-0' : 'py-2.5'} text-slate-500 font-medium whitespace-nowrap`}
+                                                        style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
+                                                        <div className="flex items-center h-full">
+                                                            {fmtShort(task.startDate)}
+                                                        </div>
+                                                    </td>
+                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${viewMode === 'split' ? 'py-0' : 'py-2.5'} text-slate-500 font-medium whitespace-nowrap`}
+                                                        style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
+                                                        <div className="flex items-center h-full">
+                                                            {fmtShort(task.endDate)}
+                                                        </div>
+                                                    </td>
                                                     {/* Actual Dates (table mode only) */}
                                                     {viewMode === 'table' && (
                                                         <>
@@ -2254,8 +2657,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         </>
                                                     )}
                                                     {/* Progress */}
-                                                    <td className="px-2 py-2.5">
-                                                        <ProgressCell value={task.progress} onChange={v => updateProgress(task.id, v)} disabled={progressReadOnly} hint={getProgressHint(task, rowHasChildren)} />
+                                                    <td className={`px-2 ${viewMode === 'split' ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
+                                                        style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
+                                                        <div className="flex items-center h-full">
+                                                            <ProgressCell value={task.progress} onChange={v => updateProgress(task.id, v)} disabled={progressReadOnly} hint={getProgressHint(task, rowHasChildren)} />
+                                                        </div>
                                                     </td>
                                                     {/* Unit (table mode only) */}
                                                     {viewMode === 'table' && (
@@ -2268,8 +2674,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         <td className="px-2 py-0 overflow-hidden" style={{ maxWidth: "96px" }}><StatusBadge status={status} /></td>
                                                     )}
                                                     {/* Actions */}
-                                                    <td className="px-2 py-2.5">
-                                                        <div className="flex items-center justify-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                                    <td className={`px-2 ${viewMode === 'split' ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
+                                                        style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
+                                                        <div className="flex items-center justify-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity h-full">
                                                             <button onClick={() => openEdit(task)} title="Sửa"
                                                                 className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
                                                                 <Edit2 size={12} />
@@ -2302,16 +2709,52 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                             </div>
                         )}
 
+                        {viewMode === 'split' && (
+                            <div
+                                className="hidden lg:flex w-1.5 hover:w-2 bg-slate-100 hover:bg-orange-400 dark:bg-slate-800 dark:hover:bg-orange-500 cursor-col-resize self-stretch transition-all items-center justify-center group relative z-30 shrink-0 border-x border-slate-200/50 dark:border-slate-700/50"
+                                onMouseDown={e => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    const startX = e.clientX;
+                                    const startWidth = splitTableWidth;
+                                    
+                                    const onMouseMove = (moveEvent: MouseEvent) => {
+                                        const deltaX = moveEvent.clientX - startX;
+                                        // Restrict width to reasonable bounds (e.g. between 250px and 900px)
+                                        const newWidth = Math.max(250, Math.min(900, startWidth + deltaX));
+                                        setSplitTableWidth(newWidth);
+                                    };
+                                    
+                                    const onMouseUp = () => {
+                                        document.removeEventListener('mousemove', onMouseMove);
+                                        document.removeEventListener('mouseup', onMouseUp);
+                                        document.body.style.cursor = '';
+                                    };
+                                    
+                                    document.body.style.cursor = 'col-resize';
+                                    document.addEventListener('mousemove', onMouseMove);
+                                    document.addEventListener('mouseup', onMouseUp);
+                                }}
+                            >
+                                <div className="w-[2px] h-6 rounded-full bg-slate-300 dark:bg-slate-600 group-hover:bg-white transition-colors" />
+                            </div>
+                        )}
+
                         {/* ====== GANTT VIEW ====== */}
                         {(viewMode === 'gantt' || viewMode === 'split') && (
                             <div className="flex-1 overflow-x-auto overflow-y-hidden relative">
-                                <div className="relative" style={{ width: `${(totalDays + 1) * zoom}px`, minWidth: '100%' }}>
+                                <div className="relative" style={{ width: `${ganttOffset + (totalDays + 1) * zoom}px`, minWidth: '100%' }}>
                                     {/* Month + day headers */}
                                     <div className="border-b border-slate-100 dark:border-slate-700 relative bg-slate-50/50 dark:bg-slate-700/30" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
+                                        {viewMode === 'gantt' && (
+                                            <div className="absolute left-0 top-0 bottom-0 z-30 w-[140px] shrink-0 bg-slate-100 dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700/80 px-2.5 flex items-center font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider text-[9px] select-none shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+                                                Hạng mục
+                                            </div>
+                                        )}
                                         {months.map((m, i) => (
-                                            <div key={i} className="absolute top-0 h-[30px] flex items-center border-r border-slate-100 dark:border-slate-700"
-                                                style={{ left: `${m.startDay * zoom}px`, width: `${m.days * zoom}px` }}>
-                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider px-2 truncate">{m.label}</span>
+                                            <div key={i} className="absolute top-0 h-[30px] flex items-center justify-center border-r border-slate-100 dark:border-slate-700"
+                                                style={{ left: `${ganttOffset + m.startDay * zoom}px`, width: `${m.days * zoom}px` }}>
+                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider px-2 truncate text-center w-full">{m.label}</span>
                                             </div>
                                         ))}
                                         <div className="absolute left-0 right-0 top-[30px] h-[34px] border-t border-slate-100 dark:border-slate-700">
@@ -2320,14 +2763,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                 return (
                                                     <div key={day.date}
                                                         className={`absolute top-0 h-full border-r border-slate-100 dark:border-slate-700 flex items-center justify-center ${day.isWeekend ? 'bg-slate-100/60 dark:bg-slate-800/40' : ''}`}
-                                                        style={{ left: `${day.startDay * zoom}px`, width: `${zoom}px` }}>
+                                                        style={{ left: `${ganttOffset + day.startDay * zoom}px`, width: `${zoom}px` }}>
                                                         {showLabel && <span className="text-[8px] font-bold text-slate-400 whitespace-nowrap">{day.label}</span>}
                                                     </div>
                                                 );
                                             })}
                                         </div>
                                         {todayOffset >= 0 && todayOffset <= totalDays && (
-                                            <div className="absolute top-0 h-full w-[2px] bg-red-500 z-10" style={{ left: `${todayOffset * zoom}px` }}>
+                                            <div className="absolute top-0 h-full w-[2px] bg-red-500 z-10" style={{ left: `${ganttOffset + todayOffset * zoom}px` }}>
                                                 <div className="absolute top-0 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-b bg-red-500 text-white text-[8px] font-bold whitespace-nowrap">
                                                     Hôm nay
                                                 </div>
@@ -2335,41 +2778,17 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                         )}
                                     </div>
 
-                                    <div className="absolute left-0 pointer-events-none z-0" style={{ top: `${GANTT_HEADER_HEIGHT}px`, height: `${taskTree.length * ROW_HEIGHT}px`, width: `${(totalDays + 1) * zoom}px` }}>
+                                    <div className="absolute left-0 pointer-events-none z-0" style={{ top: `${GANTT_HEADER_HEIGHT}px`, height: `${taskTree.length * ROW_HEIGHT}px`, width: `${ganttOffset + (totalDays + 1) * zoom}px` }}>
                                         {days.map(day => (
                                             <div key={`grid-${day.date}`}
                                                 className={`absolute top-0 h-full border-r border-slate-100/70 dark:border-slate-700/60 ${day.isWeekend ? 'bg-slate-100/45 dark:bg-slate-800/30' : ''}`}
-                                                style={{ left: `${day.startDay * zoom}px`, width: `${zoom}px` }} />
+                                                style={{ left: `${ganttOffset + day.startDay * zoom}px`, width: `${zoom}px` }} />
                                         ))}
                                     </div>
 
-                                    {/* Gantt-only task labels */}
-                                    {viewMode === 'gantt' && (
-                                        <div className="border-b border-slate-100 dark:border-slate-700">
-                                            {taskTree.map(({ task, level, hasChildren }) => (
-                                                <div key={task.id} className="flex items-center gap-1 px-2 border-b border-slate-50 dark:border-slate-700/50 hover:bg-slate-50/50 dark:hover:bg-slate-700/30 group text-xs"
-                                                    style={{ height: `${ROW_HEIGHT}px`, paddingLeft: `${8 + level * 16}px` }}>
-                                                    {hasChildren ? (
-                                                        <button onClick={() => toggleCollapse(task.id)} className="w-4 h-4 flex items-center justify-center text-slate-400 hover:text-orange-500 shrink-0">
-                                                            {collapsedParents.has(task.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                                                        </button>
-                                                    ) : <span className="w-4 shrink-0" />}
-                                                    {task.isMilestone && <Flag size={10} className="text-red-500 shrink-0" />}
-                                                    <span className="truncate font-bold text-slate-700 dark:text-slate-200 flex-1" title={task.name}>{task.name}</span>
-                                                    {(task.watchers || []).length > 0 && (
-                                                        <span title={`Theo dõi: ${getWatcherNames(task.watchers)}`} className="inline-flex shrink-0">
-                                                            <Eye size={10} className="text-blue-400" />
-                                                        </span>
-                                                    )}
-                                                    <span className="text-[9px] font-bold text-slate-400 shrink-0 w-8 text-right">{task.progress}%</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-
                                     {/* Task bars + Baseline shadows + Critical Path + GĐ2: Ghost + Gate Block */}
-                                    {taskTree.map(({ task }, idx) => {
-                                        const left = daysBetween(timelineStart, task.startDate) * zoom;
+                                    {taskTree.map(({ task, level, hasChildren }, idx) => {
+                                        const left = ganttOffset + daysBetween(timelineStart, task.startDate) * zoom;
                                         const displayDuration = Math.max(task.duration || 0, daysBetween(task.startDate, task.endDate));
                                         const width = Math.max((displayDuration || 1) * zoom, zoom);
                                         const isPointMilestone = task.isMilestone && (displayDuration <= 0 || task.startDate === task.endDate);
@@ -2379,6 +2798,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                         const scheduleInfo = criticalPathResult?.taskSchedule.get(task.id);
                                         const floatVal = scheduleInfo?.float ?? 0;
                                         const baselineTask = baselineMap.get(task.id);
+                                        const forecastTask = scheduleForecast.forecastTaskMap.get(task.id);
+                                        const forecastMeta = scheduleForecast.taskForecastMeta.get(task.id);
+                                        const hasForecastShift = !!forecastTask && (forecastTask.startDate !== task.startDate || forecastTask.endDate !== task.endDate);
                                         const delayDays = getDelayDays(task);
                                         const isGateBlocked = gateBlockedIds.has(task.id);
                                         const isDragging = draggingTaskId === task.id;
@@ -2389,13 +2811,30 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                         const latestPhoto = latestPhotoLog?.photos?.[0];
 
                                         // Baseline shadow position
-                                        const blLeft = baselineTask ? daysBetween(timelineStart, baselineTask.startDate) * zoom : 0;
+                                        const blLeft = baselineTask ? ganttOffset + daysBetween(timelineStart, baselineTask.startDate) * zoom : 0;
                                         const blWidth = baselineTask ? Math.max(baselineTask.duration * zoom, zoom) : 0;
+                                        const forecastLeft = forecastTask ? ganttOffset + daysBetween(timelineStart, forecastTask.startDate) * zoom : 0;
+                                        const forecastDuration = forecastTask ? Math.max(forecastTask.duration || 0, daysBetween(forecastTask.startDate, forecastTask.endDate)) : 0;
+                                        const forecastWidth = forecastTask ? Math.max((forecastDuration || 1) * zoom, zoom) : 0;
 
                                         return (
                                             <div key={task.id} className="w-full relative border-b border-slate-50 dark:border-slate-700/50" style={{ height: `${ROW_HEIGHT}px` }}>
+                                                {viewMode === 'gantt' && (
+                                                    <div className="absolute left-0 top-0 bottom-0 z-20 w-[140px] shrink-0 bg-white/95 dark:bg-slate-800/95 border-r border-slate-200 dark:border-slate-700/80 px-2 flex items-center gap-1 shadow-[2px_0_5px_rgba(0,0,0,0.02)] select-none overflow-hidden"
+                                                        style={{ paddingLeft: `${8 + level * 8}px` }}>
+                                                        {hasChildren ? (
+                                                            <button onClick={() => toggleCollapse(task.id)} className="w-3.5 h-3.5 flex items-center justify-center text-slate-400 hover:text-orange-500 shrink-0">
+                                                                {collapsedParents.has(task.id) ? <ChevronRight size={10} /> : <ChevronDown size={10} />}
+                                                            </button>
+                                                        ) : <span className="w-3.5 shrink-0" />}
+                                                        {task.isMilestone && <Flag size={9} className="text-red-500 shrink-0" />}
+                                                        <span className="truncate font-black text-slate-700 dark:text-slate-200 flex-1 text-[10px]" title={task.name}>{task.name}</span>
+                                                        <span className="text-[9px] font-bold text-slate-400 shrink-0">{task.progress}%</span>
+                                                    </div>
+                                                )}
+
                                                 {todayOffset >= 0 && todayOffset <= totalDays && (
-                                                    <div className="absolute top-0 h-full w-[2px] bg-red-500/10 z-0" style={{ left: `${todayOffset * zoom}px` }} />
+                                                    <div className="absolute top-0 h-full w-[2px] bg-red-500/10 z-0" style={{ left: `${ganttOffset + todayOffset * zoom}px` }} />
                                                 )}
 
                                                 {/* GĐ1: Baseline Shadow Bar */}
@@ -2405,11 +2844,17 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         title={`Baseline: ${fmtShort(baselineTask.startDate)} → ${fmtShort(baselineTask.endDate)}`} />
                                                 )}
 
+                                                {hasForecastShift && forecastTask && forecastWidth > 0 && (
+                                                    <div className="absolute top-[34px] h-[6px] rounded-full bg-red-400/20 border border-red-400/60 z-[3] pointer-events-none"
+                                                        style={{ left: `${forecastLeft}px`, width: `${forecastWidth}px` }}
+                                                        title={`Forecast: ${fmtShort(forecastTask.startDate)} → ${fmtShort(forecastTask.endDate)}${forecastMeta ? ` | +${forecastMeta.deltaDays} ngày` : ''}`} />
+                                                )}
+
                                                 {/* GĐ2: Ghost Bar — fixed at original position during drag */}
                                                 {dragGhost && dragGhost.taskId === task.id && (
                                                     <div className="absolute top-[8px] h-[20px] rounded-lg z-[2] pointer-events-none border-2 border-dashed"
                                                         style={{
-                                                            left: `${dragGhost.origLeft}px`,
+                                                            left: `${ganttOffset + dragGhost.origLeft}px`,
                                                             width: `${dragGhost.origWidth}px`,
                                                             borderColor: `${color}60`,
                                                             backgroundColor: `${color}10`,
@@ -2477,6 +2922,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         {!isDragging && delayDays > 0 && (
                                                             <span className="absolute -top-3.5 left-0 text-[8px] font-bold text-red-500 bg-red-50 dark:bg-red-900/30 px-1 rounded animate-pulse">
                                                                 -{delayDays}d
+                                                            </span>
+                                                        )}
+                                                        {!isDragging && hasForecastShift && forecastMeta && (
+                                                            <span className="absolute -bottom-3.5 right-0 text-[8px] font-black text-red-600 bg-red-50 dark:bg-red-900/30 px-1 rounded border border-red-100">
+                                                                forecast +{forecastMeta.deltaDays}d
                                                             </span>
                                                         )}
                                                         {/* GĐ2: Gate State Machine Badge */}
@@ -2577,7 +3027,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                         {taskTree.map(({ task }, idx) => {
                                             if (!task.dependencies || task.dependencies.length === 0) return null;
                                             const succY = GANTT_HEADER_HEIGHT + idx * ROW_HEIGHT + ROW_HEIGHT / 2; // center of this row
-                                            const succLeft = daysBetween(timelineStart, task.startDate) * zoom;
+                                            const succLeft = ganttOffset + daysBetween(timelineStart, task.startDate) * zoom;
                                             const succWidth = Math.max((Math.max(task.duration || 0, daysBetween(task.startDate, task.endDate)) || 1) * zoom, zoom);
 
                                             return task.dependencies.map(dep => {
@@ -2585,8 +3035,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                 if (predIdx < 0) return null;
                                                 const predTask = taskTree[predIdx].task;
                                                 const predY = GANTT_HEADER_HEIGHT + predIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
-                                                const predRight = daysBetween(timelineStart, predTask.endDate) * zoom;
-                                                const predLeft = daysBetween(timelineStart, predTask.startDate) * zoom;
+                                                const predRight = ganttOffset + daysBetween(timelineStart, predTask.endDate) * zoom;
+                                                const predLeft = ganttOffset + daysBetween(timelineStart, predTask.startDate) * zoom;
 
                                                 const isBothCrit = criticalPathResult?.criticalPath.includes(task.id) && criticalPathResult?.criticalPath.includes(dep.taskId);
 
@@ -2622,7 +3072,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                             if (!w || w === 'sunny' || w === 'cloudy') return null;
                                             return (
                                                 <div key={i} className={`absolute top-0 h-full ${WEATHER_COLORS[w] || ''} pointer-events-auto`}
-                                                    style={{ left: `${i * zoom}px`, width: `${zoom}px`, borderLeft: `2px solid ${w === 'storm' ? '#fca5a5' : '#93c5fd'}` }}
+                                                    style={{ left: `${ganttOffset + i * zoom}px`, width: `${zoom}px`, borderLeft: `2px solid ${w === 'storm' ? '#fca5a5' : '#93c5fd'}` }}
                                                     title={`Thời tiết ngày ${d}: ${WEATHER_ICONS[w] || ''} ${w === 'rainy' ? 'Mưa' : 'Bão'} (Nguy cơ chậm tiến độ)`}>
                                                     <span className="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] drop-shadow">{WEATHER_ICONS[w]}</span>
                                                 </div>
@@ -2659,7 +3109,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                     return (
                                                         <div key={i}
                                                             className={`absolute bottom-0 group/wbar cursor-default ${isOverload ? 'z-[2]' : ''}`}
-                                                            style={{ left: `${dayOffset * zoom}px`, width: `${Math.max(zoom - 1, 2)}px` }}>
+                                                            style={{ left: `${ganttOffset + dayOffset * zoom}px`, width: `${Math.max(zoom - 1, 2)}px` }}>
                                                             <div className={`flex flex-col-reverse rounded-t-sm ${isOverload ? 'animate-pulse' : ''}`} style={{ height: `${barH}px` }}>
                                                                 {wH > 0 && <div className={`rounded-t-sm ${isOverload ? 'bg-red-400/80' : 'bg-blue-400/60'}`} style={{ height: `${wH}px` }} />}
                                                                 {mH > 0 && <div className={isOverload ? 'bg-red-300/80' : 'bg-amber-400/60'} style={{ height: `${mH}px` }} />}
@@ -2677,8 +3127,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                     );
                                                 })}
                                                 {/* Dynamic threshold line */}
-                                                <div className="absolute left-0 right-0 border-t-2 border-dashed border-red-400/60 dark:border-red-600/60"
-                                                    style={{ bottom: `${(threshold / maxVal) * 72}px` }}>
+                                                <div className="absolute right-0 border-t-2 border-dashed border-red-400/60 dark:border-red-600/60"
+                                                    style={{ bottom: `${(threshold / maxVal) * 72}px`, left: `${ganttOffset}px` }}>
                                                     <span className="absolute right-1 -top-3 text-[7px] font-bold text-red-400 bg-white dark:bg-slate-800 px-1 rounded">
                                                         ⚠️ Quá tải ({threshold})
                                                     </span>
@@ -2687,7 +3137,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                 {(() => {
                                                     const overloadDays = workloadData.filter(d => d.total > threshold).length;
                                                     return overloadDays > 0 ? (
-                                                        <div className="absolute top-0 left-1 text-[8px] font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded-b shadow-sm animate-pulse">
+                                                        <div className="absolute top-0 text-[8px] font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded-b shadow-sm animate-pulse"
+                                                            style={{ left: `${ganttOffset + 4}px` }}>
                                                             🔴 {overloadDays} ngày quá tải
                                                         </div>
                                                     ) : null;
@@ -3234,7 +3685,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 targetName={deleteTarget?.name || ''}
                 subtitle={deleteTarget ? `${fmtDate(deleteTarget.startDate)} → ${fmtDate(deleteTarget.endDate)} • Tiến độ: ${deleteTarget.progress}%` : ''}
                 warningText={deleteTarget && tasks.some(t => t.parentId === deleteTarget.id)
-                    ? `Hạng mục này có ${collectDescendantTaskIds(tasks, deleteTarget.id).size} công việc con. Tất cả sẽ bị xoá và phụ thuộc liên quan sẽ được gỡ.`
+                    ? `Hạng mục này có ${collectDescendantTaskIds(tasks, deleteTarget.id).size} công việc con. Hệ thống sẽ chặn xoá trực tiếp; hãy chuyển hoặc xoá công việc con trước.`
                     : 'Hành động này không thể hoàn tác.'}
                 countdownSeconds={2}
             />
@@ -3301,7 +3752,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                 <th className="px-3 py-2 border-b border-slate-200">Trạng thái</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700/40 dark:divide-slate-700">
 	                                            {importRows.map((row, idx) => {
 	                                                const err = importErrors[idx];
 	                                                const plannedStart = parseExcelDate(row['Bắt đầu KH (*)']);

@@ -344,8 +344,8 @@ export const quantityAcceptanceService = {
   async update(id: string, updates: Partial<QuantityAcceptance>): Promise<void> {
     const { data: current, error: readError } = await supabase.from(TABLE).select('*').eq('id', id).single();
     if (readError) throw readError;
-    if (current.status === 'approved' || current.status === 'cancelled') {
-      throw new Error('Nghiệm thu đã duyệt/hủy, không thể chỉnh sửa.');
+    if (['submitted', 'approved', 'cancelled'].includes(current.status)) {
+      throw new Error('Nghiệm thu đã gửi duyệt/duyệt/hủy, không thể chỉnh sửa trực tiếp.');
     }
 
     const items = updates.items;
@@ -372,8 +372,21 @@ export const quantityAcceptanceService = {
     if (acceptance.status === 'approved' && status !== 'cancelled') {
       throw new Error('Nghiệm thu đã duyệt. Chỉ có thể chuyển sang Hủy để rollback.');
     }
+    if ((status === 'returned' || status === 'cancelled') && !reason?.trim()) {
+      throw new Error('Vui lòng nhập lý do trả lại/huỷ nghiệm thu để truy vết.');
+    }
     if ((status === 'submitted' || status === 'approved') && acceptance.items.length === 0) {
       throw new Error('Phiếu nghiệm thu chưa có hạng mục. Cần đối chiếu BOQ và tạo lại phiếu trước khi gửi duyệt.');
+    }
+    if (status === 'cancelled') {
+      const { count: linkedCertCount, error: linkedCertError } = await supabase
+        .from('payment_certificates')
+        .select('*', { count: 'exact', head: true })
+        .eq('acceptance_id', id);
+      if (linkedCertError) throw linkedCertError;
+      if ((linkedCertCount || 0) > 0) {
+        throw new Error(`Không thể huỷ nghiệm thu vì đã có ${linkedCertCount} chứng từ thanh toán liên kết. Vui lòng xoá/rollback chứng từ thanh toán trước.`);
+      }
     }
 
     // T5: Approval Matrix check — kiểm tra quyền duyệt

@@ -16,6 +16,9 @@ import { ContractItemType, QuantityAcceptance } from '../../types';
 import { quantityAcceptanceService, QuantityAcceptanceUnmappedVolume } from '../../lib/quantityAcceptanceService';
 import { paymentCertificateService } from '../../lib/paymentCertificateService';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
+import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
+import { projectDocumentDependencyService } from '../../lib/projectDocumentDependencyService';
+import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
@@ -36,6 +39,8 @@ const STATUS_PERMISSION: Record<string, ProjectPermissionCode> = {
   approved: 'approve',
   cancelled: 'approve',
 };
+
+const ADMIN_PROJECT_PERMS: ProjectPermissionCode[] = ['view', 'edit', 'delete', 'submit', 'verify', 'confirm', 'approve'];
 
 const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, projectId, constructionSiteId }) => {
   const toast = useToast();
@@ -68,6 +73,15 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
   const createDraft = async () => {
     setCreating(true);
     try {
+      if (user?.role !== 'ADMIN') {
+        await projectStaffService.requireProjectPermission({
+          userId: user?.id,
+          projectId,
+          constructionSiteId,
+          code: 'edit',
+          actionLabel: 'tạo nghiệm thu',
+        });
+      }
       const acceptance = await quantityAcceptanceService.createDraftFromVerifiedLogs({
         contractId,
         contractType,
@@ -97,6 +111,13 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
       approved: 'Duyệt nghiệm thu sẽ khóa các hạng mục BOQ liên quan và cập nhật KL hoàn thành.',
       cancelled: 'Huỷ sẽ mở khoá hạng mục BOQ và hoàn trả KL hoàn thành về trạng thái trước.',
     };
+    const reason = status === 'returned' || status === 'cancelled'
+      ? window.prompt(status === 'returned' ? 'Nhập lý do trả lại nghiệm thu' : 'Nhập lý do huỷ/rollback nghiệm thu')?.trim()
+      : undefined;
+    if ((status === 'returned' || status === 'cancelled') && !reason) {
+      toast.warning('Cần nhập lý do', 'Thao tác trả lại/huỷ cần lý do để truy vết.');
+      return;
+    }
     const ok = await confirm({
       title: labels[status] || status,
       targetName: `Nghiệm thu Đợt ${item.periodNumber}`,
@@ -105,14 +126,62 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
     if (!ok) return;
 
     try {
-      await projectStaffService.requireProjectPermission({
-        userId: user?.id,
+      if (user?.role !== 'ADMIN') {
+        await projectStaffService.requireProjectPermission({
+          userId: user?.id,
+          projectId,
+          constructionSiteId,
+          code: STATUS_PERMISSION[status],
+          actionLabel: labels[status].toLowerCase(),
+        });
+      }
+      if (status === 'returned' || status === 'cancelled') {
+        const deps = status === 'cancelled'
+          ? await projectDocumentDependencyService.getQuantityAcceptanceDependencies(item)
+          : null;
+        const policy = getProjectDocumentPolicy({
+          action: status === 'returned' ? 'return' : 'cancel',
+          documentType: 'quantity_acceptance',
+          status: item.status,
+          user,
+          permissions: user?.role === 'ADMIN' ? ADMIN_PROJECT_PERMS : ['view', STATUS_PERMISSION[status]],
+          dependencies: deps,
+          reason,
+          documentLabel: `Nghiệm thu Đợt ${item.periodNumber}`,
+        });
+        if (!policy.allowed) {
+          await projectDocumentActionLogService.logBlocked({
+            projectId,
+            constructionSiteId,
+            documentType: 'quantity_acceptance',
+            documentId: item.id,
+            documentLabel: `Nghiệm thu Đợt ${item.periodNumber}`,
+            action: status === 'returned' ? 'return' : 'cancel',
+            fromStatus: item.status,
+            reason,
+            blockedReason: policy.reason,
+            requiredRollbackSteps: policy.requiredRollbackSteps,
+            metadata: deps?.metadata,
+            createdBy: user?.id,
+          });
+          toast.error(status === 'returned' ? 'Không thể trả lại nghiệm thu' : 'Không thể huỷ nghiệm thu', formatPolicyMessage(policy));
+          return;
+        }
+      }
+      await quantityAcceptanceService.setStatus(item.id, status, user.id, reason, user, projectId);
+      await projectDocumentActionLogService.log({
         projectId,
         constructionSiteId,
-        code: STATUS_PERMISSION[status],
-        actionLabel: labels[status].toLowerCase(),
+        documentType: 'quantity_acceptance',
+        documentId: item.id,
+        documentLabel: `Nghiệm thu Đợt ${item.periodNumber}`,
+        action: status === 'returned' ? 'return' : status,
+        fromStatus: item.status,
+        toStatus: status,
+        reason,
+        warningAcknowledged: true,
+        createdBy: user?.id,
       });
-      await quantityAcceptanceService.setStatus(item.id, status, user.id, undefined, user, projectId);
       await load();
       toast.success(`${labels[status]} thành công`);
     } catch (e: any) {
@@ -121,15 +190,59 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
   };
 
   const handleDelete = async (item: QuantityAcceptance) => {
-    if (item.status !== 'draft') {
-      toast.warning('Không thể xoá', 'Chỉ xoá được phiếu nghiệm thu ở trạng thái Nháp.');
-      return;
-    }
-    const ok = await confirm({ title: 'Xoá nghiệm thu', targetName: `Đợt ${item.periodNumber}` });
-    if (!ok) return;
     try {
+      if (user?.role !== 'ADMIN') {
+        await projectStaffService.requireProjectPermission({
+          userId: user?.id,
+          projectId,
+          constructionSiteId,
+          code: 'delete',
+          actionLabel: 'xoá nghiệm thu',
+        });
+      }
+      const deps = await projectDocumentDependencyService.getQuantityAcceptanceDependencies(item);
+      const policy = getProjectDocumentPolicy({
+        action: 'delete',
+        documentType: 'quantity_acceptance',
+        status: item.status,
+        user,
+        permissions: user?.role === 'ADMIN' ? ADMIN_PROJECT_PERMS : ['view', 'delete'],
+        dependencies: deps,
+        documentLabel: `Nghiệm thu Đợt ${item.periodNumber}`,
+      });
+      if (!policy.allowed) {
+        await projectDocumentActionLogService.logBlocked({
+          projectId,
+          constructionSiteId,
+          documentType: 'quantity_acceptance',
+          documentId: item.id,
+          documentLabel: `Nghiệm thu Đợt ${item.periodNumber}`,
+          action: 'delete',
+          fromStatus: item.status,
+          blockedReason: policy.reason,
+          requiredRollbackSteps: policy.requiredRollbackSteps,
+          metadata: deps.metadata,
+          createdBy: user?.id,
+        });
+        toast.warning('Không thể xoá nghiệm thu', formatPolicyMessage(policy));
+        return;
+      }
+      const ok = await confirm({ title: 'Xoá nghiệm thu', targetName: `Đợt ${item.periodNumber}` });
+      if (!ok) return;
       await quantityAcceptanceService.remove(item.id);
       if (expandedId === item.id) setExpandedId(null);
+      await projectDocumentActionLogService.log({
+        projectId,
+        constructionSiteId,
+        documentType: 'quantity_acceptance',
+        documentId: item.id,
+        documentLabel: `Nghiệm thu Đợt ${item.periodNumber}`,
+        action: 'delete',
+        fromStatus: item.status,
+        warningAcknowledged: true,
+        metadata: deps.metadata,
+        createdBy: user?.id,
+      });
       await load();
       toast.success('Đã xoá nghiệm thu');
     } catch (e: any) {
@@ -151,6 +264,15 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
       };
     });
     try {
+      if (user?.role !== 'ADMIN') {
+        await projectStaffService.requireProjectPermission({
+          userId: user?.id,
+          projectId,
+          constructionSiteId,
+          code: 'edit',
+          actionLabel: 'cập nhật nghiệm thu',
+        });
+      }
       await quantityAcceptanceService.update(acceptance.id, { items: updatedItems });
       await load();
     } catch (e: any) {

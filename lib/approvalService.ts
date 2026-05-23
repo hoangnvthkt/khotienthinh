@@ -97,6 +97,9 @@ export const approvalService = {
    */
   async checkApproval(params: ApprovalCheckParams): Promise<ApprovalCheckResult> {
     const { module, action, amount, projectId, constructionSiteId, user } = params;
+    if (user.role === 'ADMIN') {
+      return { allowed: true, reason: 'Admin có quyền phê duyệt nghiệp vụ dự án.' };
+    }
 
     // ── PBAC CHECK (Priority 1) ──
     // Nếu dự án/công trình đã setup project_staff → dùng position-based permissions

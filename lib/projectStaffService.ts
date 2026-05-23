@@ -11,11 +11,12 @@ const STAFF_TABLE = 'project_staff';
 const PERM_TABLE = 'project_staff_permissions';
 const PERM_TYPE_TABLE = 'project_permission_types';
 
-export type ProjectPermissionCode = 'view' | 'edit' | 'submit' | 'verify' | 'confirm' | 'approve';
+export type ProjectPermissionCode = 'view' | 'edit' | 'delete' | 'submit' | 'verify' | 'confirm' | 'approve';
 
 export const PROJECT_PERMISSION_LABELS: Record<ProjectPermissionCode, string> = {
   view: 'xem dữ liệu',
   edit: 'sửa dữ liệu',
+  delete: 'xóa dữ liệu',
   submit: 'gửi yêu cầu',
   verify: 'xác nhận kết quả',
   confirm: 'xác nhận nghiệp vụ',
@@ -25,6 +26,7 @@ export const PROJECT_PERMISSION_LABELS: Record<ProjectPermissionCode, string> = 
 const PROJECT_PERMISSION_CODES = new Set<ProjectPermissionCode>([
   'view',
   'edit',
+  'delete',
   'submit',
   'verify',
   'confirm',

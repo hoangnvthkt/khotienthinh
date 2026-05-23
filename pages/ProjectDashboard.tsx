@@ -2539,25 +2539,25 @@ const ProjectDashboard: React.FC = () => {
                 {/* Back + Actions */}
                 <div className="flex items-center justify-between flex-wrap gap-2">
                     <button onClick={() => { setActiveView('list'); setSelectedSiteId(null); setSelectedProjectId(null); }}
-                        className="flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">← Danh sách dự án</button>
-                    <div className="flex gap-2 flex-wrap">
+                        className="flex items-center gap-2 text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors">← Danh sách dự án</button>
+                    <div className="flex gap-2 overflow-x-auto pb-1 max-w-full sm:flex-wrap [&::-webkit-scrollbar]:hidden scrollbar-none">
                         <button onClick={() => openEditProject(selectedProject)}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-all">
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100 dark:text-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700 transition-all shrink-0">
                             <Edit2 size={14} /> Dự án
                         </button>
                         {hasSiteLink && (
                             <>
                                 <button onClick={() => { resetTxForm(); setShowTxForm(true); }}
-                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-all">
+                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 dark:text-blue-400 dark:bg-blue-950/40 dark:border-blue-800/80 dark:hover:bg-blue-900/40 transition-all shrink-0">
                                     <Plus size={14} /> Thêm giao dịch
                                 </button>
                                 <button onClick={() => fileInputRef.current?.click()}
-                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-all">
+                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-950/40 dark:border-emerald-800/80 dark:hover:bg-emerald-900/40 transition-all shrink-0">
                                     <Upload size={14} /> Import Excel
                                 </button>
                                 <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
                                 <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
-                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-all">
+                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 dark:text-orange-400 dark:bg-orange-950/40 dark:border-orange-800/80 dark:hover:bg-orange-900/40 transition-all shrink-0">
                                     <Edit2 size={14} /> Ngân sách
                                 </button>
                             </>
@@ -2597,7 +2597,7 @@ const ProjectDashboard: React.FC = () => {
                 </div>
 
                 {/* Overview Sub-tabs */}
-                <div className="flex gap-1 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
+                <div className="flex gap-1 bg-white dark:bg-slate-800 rounded-2xl p-1.5 border border-slate-100 dark:border-slate-700/50 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
                     {[
                         { key: 'org' as const, label: 'Tổ chức', icon: '👥' },
                         { key: 'budget' as const, label: 'Ngân sách', icon: '📊' },
@@ -2613,7 +2613,9 @@ const ProjectDashboard: React.FC = () => {
                     ].map(tab => (
                         <button key={tab.key} onClick={() => setOverviewTab(tab.key)}
                             className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                                overviewTab === tab.key ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25' : 'text-slate-500 hover:bg-slate-50'
+                                overviewTab === tab.key 
+                                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25' 
+                                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'
                             }`}>
                             <span>{tab.icon}</span> {tab.label}
                         </button>
@@ -2621,7 +2623,7 @@ const ProjectDashboard: React.FC = () => {
                 </div>
 
                 <Suspense fallback={
-                    <div className="rounded-2xl border border-slate-100 bg-white p-10 text-center text-sm font-bold text-slate-400">
+                    <div className="rounded-2xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 p-10 text-center text-sm font-bold text-slate-400">
                         <Loader2 size={22} className="mx-auto mb-2 animate-spin text-orange-500" />
                         Đang tải tab...
                     </div>
@@ -2663,28 +2665,28 @@ const ProjectDashboard: React.FC = () => {
                 <>
                 {/* KPI Cards — AUTO-AGGREGATED */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div onClick={() => setOverviewTab('contract')} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-indigo-500 transition-colors"><FileText size={12} /> Giá trị HĐ</div>
-                        <div className="text-xl font-black text-slate-800">{fmt(contractValue)}</div>
-                        <div className="text-[10px] text-slate-400 mt-1">{fmtFull(contractValue)}</div>
+                    <div onClick={() => setOverviewTab('contract')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                        <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-indigo-500 transition-colors"><FileText size={12} /> Giá trị HĐ</div>
+                        <div className="text-xl font-black text-slate-800 dark:text-white">{fmt(contractValue)}</div>
+                        <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{fmtFull(contractValue)}</div>
                     </div>
-                    <div onClick={() => setOverviewTab('budget')} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-orange-500 transition-colors"><DollarSign size={12} /> Chi phí thực tế</div>
-                        <div className="text-xl font-black text-slate-800">{fmt(aggForRender.totalExpense)}</div>
+                    <div onClick={() => setOverviewTab('budget')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                        <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-orange-500 transition-colors"><DollarSign size={12} /> Chi phí thực tế</div>
+                        <div className="text-xl font-black text-slate-800 dark:text-white">{fmt(aggForRender.totalExpense)}</div>
                         <div className={`text-[10px] mt-1 font-bold flex items-center gap-1 ${budgetUsed > 100 ? 'text-red-500' : 'text-emerald-500'}`}>
                             {budgetUsed > 100 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />} {budgetUsed.toFixed(1)}% ngân sách
                         </div>
                     </div>
-                    <div onClick={() => setOverviewTab('cashflow')} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
-	                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-emerald-500 transition-colors"><TrendingUp size={12} /> Biên tạm tính</div>
-	                        <div className={`text-xl font-black ${estimatedMargin >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmt(estimatedMargin)}</div>
-	                        <div className={`text-[10px] mt-1 font-bold ${estimatedMarginPct >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-	                            {estimatedMarginPct >= 0 ? '+' : ''}{estimatedMarginPct.toFixed(1)}%
+                    <div onClick={() => setOverviewTab('cashflow')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                        <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-emerald-500 transition-colors"><TrendingUp size={12} /> Biên tạm tính</div>
+                        <div className={`text-xl font-black ${estimatedMargin >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>{fmt(estimatedMargin)}</div>
+                        <div className={`text-[10px] mt-1 font-bold ${estimatedMarginPct >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                            {estimatedMarginPct >= 0 ? '+' : ''}{estimatedMarginPct.toFixed(1)}%
                         </div>
                     </div>
-                    <div onClick={() => setOverviewTab('cashflow')} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-cyan-500 transition-colors"><Target size={12} /> Thu / Chờ thu</div>
-                        <div className="text-xl font-black text-emerald-600">{fmt(aggForRender.revenueReceived)}</div>
+                    <div onClick={() => setOverviewTab('cashflow')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                        <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-cyan-500 transition-colors"><Target size={12} /> Thu / Chờ thu</div>
+                        <div className="text-xl font-black text-emerald-600 dark:text-emerald-400">{fmt(aggForRender.revenueReceived)}</div>
                         <div className="text-[10px] text-amber-500 font-bold mt-1">Chờ: {fmt(aggForRender.revenuePending)}</div>
                     </div>
                 </div>
@@ -2692,8 +2694,8 @@ const ProjectDashboard: React.FC = () => {
                 {/* Budget Chart + Cash Flow */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Budget vs Actual */}
-                    <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
-                        <h3 className="text-sm font-black text-slate-700 mb-4 flex items-center gap-2"><BarChart3 size={16} className="text-orange-500" /> Dự toán vs Thực tế (tự động)</h3>
+                    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-100 dark:border-slate-700 shadow-sm">
+                        <h3 className="text-sm font-black text-slate-700 dark:text-slate-200 mb-4 flex items-center gap-2"><BarChart3 size={16} className="text-orange-500" /> Dự toán vs Thực tế (tự động)</h3>
                         <div className="space-y-4">
                             {BUDGET_CATS.map(cat => {
                                 const budget = (financeForRender as any)?.[`budget${cat.key}`] || 0;
@@ -2702,73 +2704,73 @@ const ProjectDashboard: React.FC = () => {
                                 return (
                                     <div key={cat.key}
                                         onClick={() => { setTxFilter(txFilter === cat.filterKey ? 'all' : cat.filterKey); document.getElementById('tx-list-section')?.scrollIntoView({ behavior: 'smooth' }); }}
-                                        className={`cursor-pointer rounded-xl p-2 -mx-2 transition-all hover:bg-slate-50 ${txFilter === cat.filterKey ? 'ring-2 ring-offset-1 bg-slate-50 scale-[1.02]' : ''}`}
+                                        className={`cursor-pointer rounded-xl p-2 -mx-2 transition-all hover:bg-slate-50 dark:hover:bg-slate-700/30 ${txFilter === cat.filterKey ? 'ring-2 ring-offset-1 dark:ring-offset-slate-800 bg-slate-50 dark:bg-slate-700 scale-[1.02]' : ''}`}
                                         style={txFilter === cat.filterKey ? { '--tw-ring-color': cat.color } as any : {}}
                                     >
                                         <div className="flex items-center justify-between mb-1.5">
-                                            <div className="flex items-center gap-2"><span className="text-lg">{cat.icon}</span><span className="text-sm font-bold text-slate-700">{cat.label}</span>{txFilter === cat.filterKey && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold text-white" style={{ backgroundColor: cat.color }}>Đang lọc</span>}</div>
+                                            <div className="flex items-center gap-2"><span className="text-lg">{cat.icon}</span><span className="text-sm font-bold text-slate-700 dark:text-slate-200">{cat.label}</span>{txFilter === cat.filterKey && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold text-white" style={{ backgroundColor: cat.color }}>Đang lọc</span>}</div>
                                             <div className="flex items-center gap-3 text-xs">
-                                                <span className="text-slate-400">DT: <span className="font-bold text-slate-600">{fmt(budget)}</span></span>
-                                                <span className="text-slate-400">TT: <span className={`font-bold ${diff > 0 ? 'text-red-500' : 'text-emerald-600'}`}>{fmt(actual)}</span></span>
-                                                {diff !== 0 && <span className={`font-bold px-1.5 py-0.5 rounded ${diff > 0 ? 'bg-red-50 text-red-500' : 'bg-emerald-50 text-emerald-600'}`}>{diff > 0 ? '+' : ''}{fmt(diff)}</span>}
+                                                <span className="text-slate-400">DT: <span className="font-bold text-slate-600 dark:text-slate-300">{fmt(budget)}</span></span>
+                                                <span className="text-slate-400">TT: <span className={`font-bold ${diff > 0 ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'}`}>{fmt(actual)}</span></span>
+                                                {diff !== 0 && <span className={`font-bold px-1.5 py-0.5 rounded ${diff > 0 ? 'bg-red-50 dark:bg-red-950/30 text-red-500' : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'}`}>{diff > 0 ? '+' : ''}{fmt(diff)}</span>}
                                             </div>
                                         </div>
-                                        <div className="relative h-5 bg-slate-100 rounded-full overflow-hidden">
+                                        <div className="relative h-5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
                                             <div className="absolute inset-y-0 left-0 rounded-full opacity-30 transition-all duration-700" style={{ width: `${maxVal > 0 ? (budget / maxVal) * 100 : 0}%`, backgroundColor: cat.color }} />
                                             <div className="absolute inset-y-0 left-0 rounded-full transition-all duration-700" style={{ width: `${maxVal > 0 ? (actual / maxVal) * 100 : 0}%`, backgroundColor: cat.color }} />
                                         </div>
                                     </div>
                                 );
                             })}
-                            <div className="flex items-center gap-6 pt-2 border-t border-slate-100 text-xs text-slate-400">
-                                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-slate-300 opacity-40" /> Dự toán</div>
-                                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-slate-500" /> Thực tế (từ giao dịch)</div>
+                            <div className="flex items-center gap-6 pt-2 border-t border-slate-100 dark:border-slate-700 text-xs text-slate-400 dark:text-slate-500">
+                                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-slate-300 dark:bg-slate-600 opacity-40" /> Dự toán</div>
+                                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-slate-500 dark:bg-slate-400" /> Thực tế (từ giao dịch)</div>
                             </div>
                         </div>
                     </div>
 
                     {/* Cash Flow */}
-                    <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
-                        <h3 className="text-sm font-black text-slate-700 mb-4 flex items-center gap-2"><DollarSign size={16} className="text-emerald-500" /> Dòng tiền</h3>
+                    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-100 dark:border-slate-700 shadow-sm">
+                        <h3 className="text-sm font-black text-slate-700 dark:text-slate-200 mb-4 flex items-center gap-2"><DollarSign size={16} className="text-emerald-500" /> Dòng tiền</h3>
                         <div className="space-y-2.5">
-                            <div className="flex justify-between items-center p-3 bg-blue-50 rounded-xl border border-blue-100">
-                                <span className="text-sm font-bold text-blue-700">Giá trị HĐ (A)</span>
-                                <span className="text-sm font-black text-blue-700">{fmtFull(contractValue)}</span>
+                            <div className="flex justify-between items-center p-3 bg-blue-50 dark:bg-blue-950/40 rounded-xl border border-blue-100 dark:border-blue-800/40 text-blue-700 dark:text-blue-400">
+                                <span className="text-sm font-bold">Giá trị HĐ (A)</span>
+                                <span className="text-sm font-black">{fmtFull(contractValue)}</span>
                             </div>
-                            <div className="flex justify-between items-center p-3 bg-emerald-50 rounded-xl border border-emerald-100">
-                                <span className="text-sm font-bold text-emerald-700">Đã thanh toán</span>
-                                <span className="text-sm font-black text-emerald-700">+ {fmtFull(aggForRender.revenueReceived)}</span>
+                            <div className="flex justify-between items-center p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-100 dark:border-emerald-800/40 text-emerald-700 dark:text-emerald-400">
+                                <span className="text-sm font-bold">Đã thanh toán</span>
+                                <span className="text-sm font-black">+ {fmtFull(aggForRender.revenueReceived)}</span>
                             </div>
-                            <div className="flex justify-between items-center p-3 bg-amber-50 rounded-xl border border-amber-100">
-                                <span className="text-sm font-bold text-amber-700">Chờ nghiệm thu</span>
-                                <span className="text-sm font-black text-amber-700">{fmtFull(aggForRender.revenuePending)}</span>
+                            <div className="flex justify-between items-center p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-100 dark:border-amber-800/40 text-amber-700 dark:text-amber-400">
+                                <span className="text-sm font-bold">Chờ nghiệm thu</span>
+                                <span className="text-sm font-black">{fmtFull(aggForRender.revenuePending)}</span>
                             </div>
-                            <div className="border-t-2 border-dashed border-slate-200 my-1" />
-                            <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-200">
-                                <span className="text-sm font-bold text-slate-700">Tổng ngân sách (DT)</span>
-                                <span className="text-sm font-black text-slate-700">{fmtFull(totalBudget)}</span>
+                            <div className="border-t-2 border-dashed border-slate-200 dark:border-slate-700 my-1" />
+                            <div className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300">
+                                <span className="text-sm font-bold">Tổng ngân sách (DT)</span>
+                                <span className="text-sm font-black">{fmtFull(totalBudget)}</span>
                             </div>
-                            <div className="flex justify-between items-center p-3 bg-orange-50 rounded-xl border border-orange-200">
-                                <span className="text-sm font-bold text-orange-700">Tổng chi thực tế ({aggForRender.txCount} GD)</span>
-                                <span className="text-sm font-black text-orange-700">- {fmtFull(aggForRender.totalExpense)}</span>
+                            <div className="flex justify-between items-center p-3 bg-orange-50 dark:bg-orange-950/40 rounded-xl border border-orange-200 dark:border-orange-800/40 text-orange-700 dark:text-orange-400">
+                                <span className="text-sm font-bold">Tổng chi thực tế ({aggForRender.txCount} GD)</span>
+                                <span className="text-sm font-black">- {fmtFull(aggForRender.totalExpense)}</span>
                             </div>
-	                            <div className={`flex justify-between items-center p-4 rounded-xl border-2 ${estimatedMargin >= 0 ? 'bg-emerald-50 border-emerald-300' : 'bg-red-50 border-red-300'}`}>
-	                                <span className={`text-sm font-black uppercase ${estimatedMargin >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{estimatedMargin >= 0 ? 'Biên doanh thu - chi' : 'Âm theo chi hiện tại'}</span>
-	                                <span className={`text-lg font-black ${estimatedMargin >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{estimatedMargin >= 0 ? '+' : ''}{fmtFull(estimatedMargin)}</span>
-	                            </div>
+                            <div className={`flex justify-between items-center p-4 rounded-xl border-2 ${estimatedMargin >= 0 ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800' : 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800'}`}>
+                                <span className={`text-sm font-black uppercase ${estimatedMargin >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>{estimatedMargin >= 0 ? 'Biên doanh thu - chi' : 'Âm theo chi hiện tại'}</span>
+                                <span className={`text-lg font-black ${estimatedMargin >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>{estimatedMargin >= 0 ? '+' : ''}{fmtFull(estimatedMargin)}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 {/* Transaction List */}
-                <div id="tx-list-section" className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                    <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between flex-wrap gap-2">
-                        <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider flex items-center gap-2">
+                <div id="tx-list-section" className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
+                    <div className="p-4 border-b border-slate-100 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex items-center justify-between flex-wrap gap-2">
+                        <h3 className="text-sm font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
                             <List size={16} /> Danh sách giao dịch ({siteTxs.length})
                         </h3>
                         <div className="flex items-center gap-2">
                             <select value={txFilter} onChange={e => setTxFilter(e.target.value as any)}
-                                className="text-xs font-bold text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-orange-500 outline-none">
+                                className="text-xs font-bold text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 focus:ring-2 focus:ring-orange-500 outline-none">
                                 <option value="all">Tất cả</option>
                                 {Object.entries(CATEGORY_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
                             </select>
@@ -2777,48 +2779,48 @@ const ProjectDashboard: React.FC = () => {
 
                     {siteTxs.length === 0 ? (
                         <div className="p-12 text-center">
-                            <DollarSign size={36} className="mx-auto mb-2 text-slate-200" />
-                            <p className="text-sm font-bold text-slate-400">Chưa có giao dịch nào</p>
-                            <p className="text-xs text-slate-300 mt-1">Nhấn "Thêm giao dịch" hoặc "Import Excel" để bắt đầu</p>
+                            <DollarSign size={36} className="mx-auto mb-2 text-slate-200 dark:text-slate-700" />
+                            <p className="text-sm font-bold text-slate-400 dark:text-slate-500">Chưa có giao dịch nào</p>
+                            <p className="text-xs text-slate-300 dark:text-slate-600 mt-1">Nhấn "Thêm giao dịch" hoặc "Import Excel" để bắt đầu</p>
                         </div>
                     ) : (
-                        <div className="divide-y divide-slate-50">
+                        <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
                             {siteTxs.map(tx => {
                                 const catCfg = CATEGORY_CONFIG[tx.category];
                                 const typeCfg = TX_TYPE_CONFIG[tx.type];
                                 const srcCfg = SOURCE_CONFIG[tx.source];
                                 const hasAttachments = tx.attachments && tx.attachments.length > 0;
                                 return (
-                                    <div key={tx.id} className="flex items-center justify-between px-4 py-3 hover:bg-slate-50/50 transition-colors group">
+                                    <div key={tx.id} className="flex items-center justify-between px-4 py-3 hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors group">
                                         <div className="flex items-center gap-3 flex-1 min-w-0">
                                             <span className="text-lg">{catCfg?.icon || '📄'}</span>
                                             <div className="min-w-0">
-                                                <div className="text-sm font-bold text-slate-800 truncate flex items-center gap-1.5">
+                                                <div className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate flex items-center gap-1.5">
                                                     {tx.description || '—'}
                                                     {hasAttachments && (
-                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-violet-50 text-violet-500 text-[10px] font-bold shrink-0">
+                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-violet-50 dark:bg-violet-950/30 text-violet-500 dark:text-violet-400 text-[10px] font-bold shrink-0">
                                                             <Paperclip size={9} /> {tx.attachments!.length}
                                                         </span>
                                                     )}
                                                 </div>
                                                 <div className="flex items-center gap-2 text-[10px] flex-wrap">
                                                     <span className={`font-bold px-1.5 py-0.5 rounded ${typeCfg?.color}`}>{typeCfg?.label}</span>
-                                                    <span className="text-slate-400">{catCfg?.label}</span>
-                                                    <span className="text-slate-300">•</span>
-                                                    <span className="text-slate-400">{tx.date}</span>
-                                                    <span className="text-slate-300">•</span>
-                                                    <span className="text-slate-400">{srcCfg?.icon} {srcCfg?.label}</span>
+                                                    <span className="text-slate-400 dark:text-slate-500">{catCfg?.label}</span>
+                                                    <span className="text-slate-300 dark:text-slate-600">•</span>
+                                                    <span className="text-slate-400 dark:text-slate-500">{tx.date}</span>
+                                                    <span className="text-slate-300 dark:text-slate-600">•</span>
+                                                    <span className="text-slate-400 dark:text-slate-500">{srcCfg?.icon} {srcCfg?.label}</span>
                                                 </div>
                                                 {hasAttachments && (
                                                     <div className="flex gap-1.5 mt-1.5">
                                                         {tx.attachments!.map((att, ai) => (
                                                             <button key={ai} onClick={() => setPreviewUrl(att.url)} className="group/att relative">
                                                                 {(att.fileType || '').startsWith('image/') ? (
-                                                                    <img src={att.url} className="w-10 h-10 object-cover rounded-lg border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all" />
+                                                                    <img src={att.url} className="w-10 h-10 object-cover rounded-lg border border-slate-200 dark:border-slate-700 hover:border-blue-400 hover:shadow-md transition-all" />
                                                                 ) : (
-                                                                    <div className="w-10 h-10 rounded-lg border border-slate-200 bg-slate-50 flex flex-col items-center justify-center hover:border-blue-400 transition-all">
-                                                                        <FileText size={12} className="text-slate-400" />
-                                                                        <span className="text-[7px] text-slate-400">{att.name.split('.').pop()?.toUpperCase()}</span>
+                                                                    <div className="w-10 h-10 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 flex flex-col items-center justify-center hover:border-blue-400 transition-all">
+                                                                        <FileText size={12} className="text-slate-400 dark:text-slate-500" />
+                                                                        <span className="text-[7px] text-slate-400 dark:text-slate-500">{att.name.split('.').pop()?.toUpperCase()}</span>
                                                                     </div>
                                                                 )}
                                                                 <div className="absolute inset-0 rounded-lg bg-black/0 group-hover/att:bg-black/20 flex items-center justify-center transition-all">
@@ -2835,17 +2837,17 @@ const ProjectDashboard: React.FC = () => {
                                                 {tx.type === 'expense' ? '-' : '+'}{fmtFull(tx.amount)}
                                             </span>
                                             <button onClick={() => openEditTx(tx)}
-                                                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50 transition-all opacity-0 group-hover:opacity-100">
+                                                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-750 transition-all opacity-0 group-hover:opacity-100">
                                                 <Edit2 size={13} />
                                             </button>
                                             {deleteTxConfirmId === tx.id ? (
                                                 <div className="flex items-center gap-1">
                                                     <button onClick={() => handleDeleteTx(tx.id)} className="px-2 py-1 rounded-lg bg-red-500 text-white text-[10px] font-black">Xoá</button>
-                                                    <button onClick={() => setDeleteTxConfirmId(null)} className="px-2 py-1 rounded-lg bg-slate-100 text-slate-500 text-[10px] font-black">Huỷ</button>
+                                                    <button onClick={() => setDeleteTxConfirmId(null)} className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-[10px] font-black">Huỷ</button>
                                                 </div>
                                             ) : (
                                                 <button onClick={() => setDeleteTxConfirmId(tx.id)}
-                                                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100">
+                                                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-slate-750 transition-all opacity-0 group-hover:opacity-100">
                                                     <Trash2 size={14} />
                                                 </button>
                                             )}
@@ -2890,8 +2892,8 @@ const ProjectDashboard: React.FC = () => {
                 </div>
             )}
 
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-slate-100 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/50 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
                     <div>
                         <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider">Danh sách dự án</h3>
                         <p className="text-xs text-slate-400 mt-0.5">

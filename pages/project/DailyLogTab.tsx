@@ -11,6 +11,10 @@ import { ProjectPermissionCode, projectStaffService } from '../../lib/projectSta
 import { notificationService } from '../../lib/notificationService';
 import { taskCompletionRequestService } from '../../lib/projectTaskCompletionService';
 import { deriveProjectTaskProgress } from '../../lib/projectScheduleRules';
+import { delayEventService } from '../../lib/projectScheduleForecastService';
+import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
+import { projectDocumentDependencyService } from '../../lib/projectDocumentDependencyService';
+import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
 import { useVoiceInput } from '../../hooks/useVoiceInput';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -49,7 +53,7 @@ const DAILY_LOG_STATUS_PERMISSION: Partial<Record<DailyLogStatus, ProjectPermiss
     rejected: 'verify',
 };
 
-const ALL_DAILY_LOG_PERMISSION_CODES: ProjectPermissionCode[] = ['edit', 'submit', 'verify'];
+const ALL_DAILY_LOG_PERMISSION_CODES: ProjectPermissionCode[] = ['view', 'edit', 'delete', 'submit', 'verify'];
 
 const toDateKey = (date: Date): string => {
     const y = date.getFullYear();
@@ -75,6 +79,51 @@ const formatNumber = (value?: number | null) =>
 
 const formatMoney = (value?: number | null) =>
     Number(value || 0).toLocaleString('vi-VN');
+
+const ATTACHMENT_MIME_BY_EXTENSION: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    bmp: 'image/bmp',
+};
+
+const inferAttachmentMimeType = (file: { fileType?: string; fileName?: string; name?: string }) => {
+    if (file.fileType) return file.fileType;
+    const name = file.fileName || file.name || '';
+    const ext = name.split('.').pop()?.toLowerCase() || '';
+    return ATTACHMENT_MIME_BY_EXTENSION[ext] || '';
+};
+
+const normalizeAttachmentUrl = (file: { fileType?: string; fileName?: string; name?: string; url?: string }) => {
+    const url = file.url || '';
+    if (!url.startsWith('data:')) return url;
+    const mimeType = inferAttachmentMimeType(file);
+    if (!mimeType) return url;
+    const commaIndex = url.indexOf(',');
+    if (commaIndex === -1) return url;
+    const prefix = url.slice(0, commaIndex);
+    const needsMime = /^data:(?:;base64)?$/i.test(prefix) || /^data:application\/octet-stream(?:;base64)?$/i.test(prefix);
+    return needsMime ? `data:${mimeType};base64${url.slice(commaIndex)}` : url;
+};
+
+const isImageAttachment = (file: { fileType?: string; fileName?: string; name?: string; url?: string }) => {
+    const name = file.fileName || file.name || '';
+    return /^image\//i.test(inferAttachmentMimeType(file)) || /^data:image\//i.test(normalizeAttachmentUrl(file)) || /\.(jpe?g|png|gif|webp|bmp)$/i.test(name);
+};
+
+const normalizeLookupText = (value?: string | null) =>
+    String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd')
+        .replace(/Đ/g, 'D')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+
+const SITE_WAREHOUSE_STOP_WORDS = new Set(['kho', 'cong', 'truong', 'du', 'an', 'ct', 'tai', 'khu']);
 
 const uniqueStaffByUser = (rows: ProjectStaff[]): ProjectStaff[] => {
     const map = new Map<string, ProjectStaff>();
@@ -287,11 +336,23 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                             </div>
                                             {attachments.length > 0 && (
                                                 <div className="mt-2 flex flex-wrap gap-2">
-                                                    {attachments.map(file => (
-                                                        <a key={file.id || file.url} href={file.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-blue-600 border border-blue-100 hover:bg-blue-50">
-                                                            <Paperclip size={10} /> {file.name || file.fileName || 'Bằng chứng'}
-                                                        </a>
-                                                    ))}
+                                                    {attachments.map(file => {
+                                                        const label = file.name || file.fileName || 'Bằng chứng';
+                                                        const attachmentUrl = normalizeAttachmentUrl(file);
+                                                        if (attachmentUrl && isImageAttachment({ ...file, url: attachmentUrl })) {
+                                                            return (
+                                                                <a key={file.id || attachmentUrl} href={attachmentUrl} target="_blank" rel="noreferrer" className="group w-24">
+                                                                    <img src={attachmentUrl} alt={label} className="w-24 h-20 object-cover rounded-lg border border-white shadow-sm group-hover:border-blue-200" />
+                                                                    <div className="mt-1 text-[10px] font-bold text-blue-600 truncate">{label}</div>
+                                                                </a>
+                                                            );
+                                                        }
+                                                        return (
+                                                            <a key={file.id || attachmentUrl || label} href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-blue-600 border border-blue-100 hover:bg-blue-50">
+                                                                <Paperclip size={10} /> {label}
+                                                            </a>
+                                                        );
+                                                    })}
                                                 </div>
                                             )}
                                         </div>
@@ -401,7 +462,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const location = useLocation();
     const toast = useToast();
     const confirm = useConfirm();
-    const { user, users } = useApp();
+    const { user, users, items: inventoryItems, warehouses, hrmConstructionSites, loadModuleData } = useApp();
     const effectiveId = projectId || constructionSiteId || '';
     const [logs, setLogs] = useState<DailyLog[]>([]);
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
@@ -424,8 +485,31 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [loadingVerifiers, setLoadingVerifiers] = useState(false);
 
     // ── PBAC: Load user permissions ──
-    const [userPerms, setUserPerms] = useState<Set<string>>(new Set());
+    const [userPerms, setUserPerms] = useState<Set<ProjectPermissionCode>>(new Set());
     const [pbacLoaded, setPbacLoaded] = useState(false);
+
+    useEffect(() => {
+        loadModuleData('wms');
+    }, [loadModuleData]);
+
+    const siteWarehouse = useMemo(() => {
+        const activeSiteWarehouses = warehouses.filter(warehouse => !warehouse.isArchived && warehouse.type === 'SITE');
+        if (activeSiteWarehouses.length === 0) return undefined;
+        const site = constructionSiteId ? hrmConstructionSites.find(item => item.id === constructionSiteId) : undefined;
+        const siteName = normalizeLookupText(site?.name);
+        if (!siteName) return undefined;
+        const exactName = activeSiteWarehouses.find(warehouse => normalizeLookupText(warehouse.name).includes(siteName));
+        if (exactName) return exactName;
+        const tokens = siteName.split(' ').filter(token => token.length > 1 && !SITE_WAREHOUSE_STOP_WORDS.has(token));
+        if (tokens.length === 0) return undefined;
+        return activeSiteWarehouses.find(warehouse => {
+            const warehouseName = normalizeLookupText(warehouse.name);
+            return tokens.every(token => warehouseName.includes(token));
+        }) || activeSiteWarehouses.find(warehouse => {
+            const warehouseName = normalizeLookupText(warehouse.name);
+            return tokens.some(token => warehouseName.includes(token));
+        });
+    }, [constructionSiteId, hrmConstructionSites, warehouses]);
 
     useEffect(() => {
         setPbacLoaded(false);
@@ -555,8 +639,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     }, [user?.id, user?.name]);
 
     const canEditDailyLog = useCallback((log: DailyLog) => {
-        if (isAdminUser) return true;
-        return userPerms.has('edit') && isDailyLogOwner(log) && ['draft', 'rejected'].includes(getLogStatus(log));
+        const editableStatus = ['draft', 'rejected'].includes(getLogStatus(log));
+        if (isAdminUser) return editableStatus;
+        return userPerms.has('edit') && isDailyLogOwner(log) && editableStatus;
     }, [isAdminUser, isDailyLogOwner, userPerms]);
 
     const resetForm = () => {
@@ -693,8 +778,66 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             toast.error('Phiếu đã khoá', 'Nhật ký đã gửi đi chỉ được sửa khi bị trả lại.');
             return;
         }
+        if (editing) {
+            const deps = await projectDocumentDependencyService.getDailyLogDependencies(editing);
+            const policy = getProjectDocumentPolicy({
+                action: 'edit',
+                documentType: 'daily_log',
+                status: getLogStatus(editing),
+                user,
+                permissions: userPerms,
+                dependencies: deps,
+                relatedUserIds: [editing.createdById, editing.submittedById, editing.submittedBy],
+                documentLabel: new Date(editing.date).toLocaleDateString('vi-VN'),
+            });
+            if (!policy.allowed) {
+                await projectDocumentActionLogService.logBlocked({
+                    projectId: projectId || editing.projectId || effectiveId,
+                    constructionSiteId: constructionSiteId || editing.constructionSiteId || null,
+                    documentType: 'daily_log',
+                    documentId: editing.id,
+                    documentLabel: new Date(editing.date).toLocaleDateString('vi-VN'),
+                    action: 'edit',
+                    fromStatus: getLogStatus(editing),
+                    blockedReason: policy.reason,
+                    requiredRollbackSteps: policy.requiredRollbackSteps,
+                    metadata: deps.metadata,
+                    createdBy: user?.id,
+                });
+                toast.error('Không thể sửa nhật ký', formatPolicyMessage(policy));
+                return;
+            }
+        }
         if (photoRequired && fPhotos.length === 0) {
             toast.error('Cần ít nhất 1 ảnh công trường');
+            return;
+        }
+        const overLimitVolume = fVolumes.find(volume => {
+            const task = volume.taskId ? tasks.find(item => item.id === volume.taskId) : undefined;
+            const workBoq = volume.workBoqItemId ? workBoqItems.find(item => item.id === volume.workBoqItemId) : undefined;
+            const plannedQty = Number(task?.provisionalQuantity || 0) > 0
+                ? Number(task?.provisionalQuantity || 0)
+                : Number(workBoq?.plannedQty || 0);
+            if (plannedQty <= 0) return false;
+            const verifiedQty = Math.max(
+                volume.taskId ? Number(verifiedQuantityByTaskId[volume.taskId] || 0) : 0,
+                volume.workBoqItemId ? Number(verifiedQuantityByWorkBoqItemId[volume.workBoqItemId] || 0) : 0,
+            );
+            const remainingQty = Math.max(0, plannedQty - verifiedQty);
+            return Number(volume.quantity || 0) > remainingQty + 0.000001;
+        });
+        if (overLimitVolume) {
+            toast.error('Khối lượng vượt phần còn lại', 'Phần vượt cần tách sang phát sinh hoặc đầu mục BOQ/tiến độ khác để đối chiếu đúng thực tế.');
+            return;
+        }
+        const overStockMaterial = siteWarehouse ? fMaterials.find(material => {
+            const item = material.materialId ? inventoryItems.find(inventory => inventory.id === material.materialId) : undefined;
+            if (!item) return false;
+            const siteStock = Number(item.stockByWarehouse?.[siteWarehouse.id] || 0);
+            return Number(material.quantity || 0) > siteStock + 0.000001;
+        }) : undefined;
+        if (overStockMaterial) {
+            toast.error('Vật tư vượt tồn kho công trường', `${overStockMaterial.itemName} đang vượt tồn tại ${siteWarehouse.name}. Vui lòng kiểm tra lại phiếu cấp vật tư hoặc kho công trường.`);
             return;
         }
 
@@ -744,7 +887,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             setBusyLogIds(new Set(statusBusyRef.current));
         };
 
-	    const handleStatusChange = async (log: DailyLog, status: DailyLogStatus, requestedVerifier?: ProjectStaff): Promise<boolean> => {
+	    const handleStatusChange = async (log: DailyLog, status: DailyLogStatus, requestedVerifier?: ProjectStaff, rejectionReason?: string): Promise<boolean> => {
             if (!beginStatusAction(log.id)) return false;
 	        // ── PBAC Check ──
 	        const permCode = DAILY_LOG_STATUS_PERMISSION[status];
@@ -773,17 +916,72 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         throw new Error(`${requestedVerifier.userName || 'Người được chọn'} chưa có quyền verify trong Tổ chức dự án.`);
                     }
                 }
+                if (status === 'rejected') {
+                    const policy = getProjectDocumentPolicy({
+                        action: 'return',
+                        documentType: 'daily_log',
+                        status: getLogStatus(log),
+                        user,
+                        permissions: userPerms,
+                        relatedUserIds: [log.createdById, log.submittedById, log.submittedBy],
+                        currentHandlerIds: [log.requestedVerifierId, log.submittedToUserId],
+                        reason: rejectionReason,
+                        documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
+                    });
+                    if (!policy.allowed) {
+                        await projectDocumentActionLogService.logBlocked({
+                            projectId: projectId || log.projectId || effectiveId,
+                            constructionSiteId: constructionSiteId || log.constructionSiteId || null,
+                            documentType: 'daily_log',
+                            documentId: log.id,
+                            documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
+                            action: 'return',
+                            fromStatus: getLogStatus(log),
+                            reason: rejectionReason,
+                            blockedReason: policy.reason,
+                            requiredRollbackSteps: policy.requiredRollbackSteps,
+                            createdBy: user?.id,
+                        });
+                        toast.error('Không thể trả lại nhật ký', formatPolicyMessage(policy));
+                        endStatusAction(log.id);
+                        return false;
+                    }
+                }
 
 	            await dailyLogService.updateStatus({
 	                logId: log.id,
 	                status,
 	                requestedVerifierId: status === 'submitted' ? requestedVerifier?.userId : undefined,
 	                requestedVerifierName: status === 'submitted' ? (requestedVerifier?.userName || requestedVerifier?.userId) : undefined,
-	                rejectionReason: status === 'rejected' ? 'Cần bổ sung/kiểm tra lại' : undefined,
+	                rejectionReason: status === 'rejected' ? rejectionReason : undefined,
+                    actorUserId: user?.id,
 	            });
+                if (status === 'verified' && (log.delayTasks || []).length > 0) {
+                    try {
+                        await delayEventService.createFromDailyLog({ ...log, status: 'verified', verified: true }, user?.id || null);
+                    } catch (delayError: any) {
+                        console.warn('Cannot create schedule delay events from daily log', delayError?.message || delayError);
+                        toast.warning('Chưa ghi được sự kiện chậm tiến độ', 'Nhật ký vẫn đã xác nhận; kiểm tra migration forecast trước khi dùng bảng dự báo.');
+                    }
+                }
 	            const nextLogs = await dailyLogService.list(effectiveId, constructionSiteId || null);
 	            setLogs(nextLogs);
                 if (status === 'verified' || status === 'rejected') await recalculateTaskProgress(nextLogs);
+                if (status === 'submitted' || status === 'verified' || status === 'rejected') {
+                    await projectDocumentActionLogService.log({
+                        projectId: projectId || log.projectId || effectiveId,
+                        constructionSiteId: constructionSiteId || log.constructionSiteId || null,
+                        documentType: 'daily_log',
+                        documentId: log.id,
+                        documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
+                        action: status === 'rejected' ? 'return' : status,
+                        fromStatus: getLogStatus(log),
+                        toStatus: status,
+                        reason: status === 'rejected' ? rejectionReason : undefined,
+                        warningAcknowledged: true,
+                        createdBy: user?.id,
+                    });
+                }
 
             // Notify if submitted
             if (status === 'submitted') {
@@ -915,10 +1113,36 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     };
 
     const handleDelete = async (id: string) => {
-        if (!ensureDailyLogPermission('edit', 'xoá nhật ký')) return;
+        if (!ensureDailyLogPermission('delete', 'xoá nhật ký')) return;
         const log = logs.find(l => l.id === id);
-        if (log && !canEditDailyLog(log)) {
-            toast.error('Phiếu đã khoá', 'Chỉ người lập được xoá nhật ký ở trạng thái nháp hoặc bị trả lại.');
+        if (!log) return;
+        const deps = await projectDocumentDependencyService.getDailyLogDependencies(log);
+        const status = getLogStatus(log);
+        const policy = getProjectDocumentPolicy({
+            action: 'delete',
+            documentType: 'daily_log',
+            status,
+            user,
+            permissions: userPerms,
+            dependencies: deps,
+            relatedUserIds: [log.createdById, log.submittedById, log.submittedBy],
+            documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
+        });
+        if (!policy.allowed) {
+            await projectDocumentActionLogService.logBlocked({
+                projectId: projectId || log.projectId || effectiveId,
+                constructionSiteId: constructionSiteId || log.constructionSiteId || null,
+                documentType: 'daily_log',
+                documentId: log.id,
+                documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
+                action: 'delete',
+                fromStatus: status,
+                blockedReason: policy.reason,
+                requiredRollbackSteps: policy.requiredRollbackSteps,
+                metadata: deps.metadata,
+                createdBy: user?.id,
+            });
+            toast.error('Không thể xoá nhật ký', formatPolicyMessage(policy));
             return;
         }
         const ok = await confirm({ targetName: log ? new Date(log.date).toLocaleDateString('vi-VN') : 'nhật ký này', title: 'Xoá nhật ký công trường' });
@@ -928,6 +1152,18 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             const nextLogs = await dailyLogService.list(effectiveId, constructionSiteId || null);
             setLogs(nextLogs);
             if (log && getLogStatus(log) === 'verified') await recalculateTaskProgress(nextLogs);
+            await projectDocumentActionLogService.log({
+                projectId: projectId || log.projectId || effectiveId,
+                constructionSiteId: constructionSiteId || log.constructionSiteId || null,
+                documentType: 'daily_log',
+                documentId: log.id,
+                documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
+                action: 'delete',
+                fromStatus: status,
+                warningAcknowledged: true,
+                metadata: deps.metadata,
+                createdBy: user?.id,
+            });
             toast.success('Xoá nhật ký thành công');
         } catch (e: any) {
             toast.error('Lỗi xoá', e?.message);
@@ -982,6 +1218,19 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         return totals;
     }, [editing, logs]);
 
+    const verifiedQuantityByWorkBoqItemId = useMemo(() => {
+        const totals: Record<string, number> = {};
+        logs.forEach(log => {
+            if (editing && log.id === editing.id) return;
+            if (getLogStatus(log) !== 'verified' && !log.verified) return;
+            (log.volumes || []).forEach(volume => {
+                if (!volume.workBoqItemId) return;
+                totals[volume.workBoqItemId] = (totals[volume.workBoqItemId] || 0) + Math.max(0, Number(volume.quantity || 0));
+            });
+        });
+        return totals;
+    }, [editing, logs]);
+
     const calendarCells = useMemo(() => buildCalendarCells(calendarMonth), [calendarMonth]);
     const calendarTitle = useMemo(() => {
         const [year, month] = calendarMonth.split('-').map(Number);
@@ -1003,27 +1252,27 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             </div>
             {/* Summary */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">📝 Tổng nhật ký</div>
                     <div className="text-2xl font-black text-slate-800">{stats.total}</div>
                     <div className="text-[10px] text-blue-500 font-bold mt-1">Tháng này: {stats.monthCount}</div>
                 </div>
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Users size={10} /> CN TB/ngày</div>
                     <div className="text-2xl font-black text-blue-600">{stats.avgWorkers}</div>
                 </div>
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">🌧️ Ngày mưa</div>
                     <div className="text-2xl font-black text-cyan-600">{stats.rainyDays}</div>
                 </div>
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><AlertTriangle size={10} /> Vấn đề</div>
                     <div className="text-2xl font-black text-red-500">{stats.issueCount}</div>
                 </div>
             </div>
 
             {/* Log List */}
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                 <div className="p-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
                     <h3 className="text-sm font-black text-slate-700 flex items-center gap-2">
                         <Calendar size={16} className="text-teal-500" /> Nhật ký công trường
@@ -1049,7 +1298,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             </button>
                         </div>
                         {viewMode === 'calendar' ? (
-                            <div className="flex items-center gap-1.5 px-2 py-1 rounded-xl border border-slate-200 bg-white">
+                            <div className="flex items-center gap-1.5 px-2 py-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
                                 <button onClick={() => setCalendarMonth(shiftMonth(calendarMonth, -1))}
                                     className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
                                     title="Tháng trước">
@@ -1064,7 +1313,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             </div>
                         ) : (
                             <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
-                                className="text-xs font-bold text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200 bg-white outline-none">
+                                className="text-xs font-bold text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none">
                                 <option value="">Tất cả</option>
                                 {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
@@ -1128,7 +1377,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         <p className="text-sm font-bold text-slate-400">Chưa có nhật ký nào</p>
                     </div>
                 ) : (
-                    <div className="divide-y divide-slate-50">
+                    <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
 	                        {filtered.map(l => {
 	                            const w = WEATHER[l.weather];
 	                            const status = (l.status || (l.verified ? 'verified' : 'draft')) as DailyLogStatus;
@@ -1137,6 +1386,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 const canReviewSubmitted = status === 'submitted'
                                     && (isAdminUser || userPerms.has('verify'))
                                     && (!l.requestedVerifierId || l.requestedVerifierId === user?.id);
+                                const canReturnCurrentLog = (status === 'submitted' || status === 'verified')
+                                    && (isAdminUser || userPerms.has('verify'))
+                                    && (status === 'verified' || !l.requestedVerifierId || l.requestedVerifierId === user?.id);
                                 const canEditCurrentLog = canEditDailyLog(l);
 	                            return (
 	                                <div
@@ -1187,15 +1439,22 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                         {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
                                                     </button>
 	                                            )}
-		                                            {canReviewSubmitted && (
-	                                                <button disabled={busy} onClick={() => handleStatusChange(l, 'rejected')} title="Trả lại" className="w-7 h-7 rounded-lg flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-50">
+		                                            {canReturnCurrentLog && (
+	                                                <button disabled={busy} onClick={() => {
+                                                        const reason = window.prompt('Nhập lý do trả lại nhật ký')?.trim();
+                                                        if (!reason) {
+                                                            toast.warning('Cần lý do trả lại', 'Vui lòng nhập lý do để người lập bổ sung đúng nội dung.');
+                                                            return;
+                                                        }
+                                                        handleStatusChange(l, 'rejected', undefined, reason);
+                                                    }} title="Trả lại" className="w-7 h-7 rounded-lg flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-50">
                                                         {busy ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
                                                     </button>
 	                                            )}
 	                                            {canEditCurrentLog && (
                                                     <>
                                                         <button onClick={() => openEdit(l)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50"><Edit2 size={13} /></button>
-                                                        <button onClick={() => handleDelete(l.id)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={13} /></button>
+                                                        {status === 'draft' && <button onClick={() => handleDelete(l.id)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={13} /></button>}
                                                     </>
                                                 )}
 	                                        </div>
@@ -1340,7 +1599,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             {/* Form Modal */}
             {showForm && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-[95vw] h-[90vh] sm:w-[80vw] sm:h-[80vh] max-w-[1280px] min-w-[320px] flex flex-col">
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-[95vw] h-[90vh] sm:w-[80vw] sm:h-[80vh] max-w-[1280px] min-w-[320px] flex flex-col">
                         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-t-3xl flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editing ? <><Edit2 size={18} /> Sửa nhật ký</> : <><Plus size={18} /> Ghi nhật ký</>}
@@ -1519,7 +1778,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 laborCatalogs={laborCatalogs}
                                 machineCatalogs={machineCatalogs}
                                 businessPartners={businessPartners}
+                                inventoryItems={inventoryItems}
+                                siteWarehouseId={siteWarehouse?.id}
+                                siteWarehouseName={siteWarehouse?.name}
                                 verifiedQuantityByTaskId={verifiedQuantityByTaskId}
+                                verifiedQuantityByWorkBoqItemId={verifiedQuantityByWorkBoqItemId}
                             />
                         </div>
                         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">

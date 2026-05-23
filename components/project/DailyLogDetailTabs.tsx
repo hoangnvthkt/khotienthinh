@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Plus, X, Package, Users, Wrench, Layers, Paperclip, ClipboardCheck } from 'lucide-react';
 import {
   DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine,
-  Attachment, BusinessPartner, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectTask, ProjectWorkBoqItem,
+  Attachment, BusinessPartner, ContractLaborCatalogItem, ContractMachineCatalogItem, InventoryItem, ProjectTask, ProjectWorkBoqItem,
 } from '../../types';
 
 interface Props {
@@ -19,7 +19,11 @@ interface Props {
   laborCatalogs?: ContractLaborCatalogItem[];
   machineCatalogs?: ContractMachineCatalogItem[];
   businessPartners?: BusinessPartner[];
+  inventoryItems?: InventoryItem[];
+  siteWarehouseId?: string;
+  siteWarehouseName?: string;
   verifiedQuantityByTaskId?: Record<string, number>;
+  verifiedQuantityByWorkBoqItemId?: Record<string, number>;
 }
 
 type TabKey = 'volumes' | 'materials' | 'labor' | 'machines';
@@ -41,14 +45,42 @@ const partnerClassLabel: Record<string, string> = {
 const describePartner = (partner: BusinessPartner) =>
   (partner.classifications || []).map(value => partnerClassLabel[value] || value).join(', ') || 'Đối tác';
 
+const getWarehouseStock = (item: InventoryItem, warehouseId?: string) =>
+  warehouseId ? Number(item.stockByWarehouse?.[warehouseId] || 0) : 0;
+
 const formatQuantity = (value?: number | null) =>
   Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
 
 const parseNonNegative = (value: string) => Math.max(0, Number(value || 0));
 
-const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+const MIME_BY_EXTENSION: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  pdf: 'application/pdf',
+};
+
+const inferMimeType = (file: File) => {
+  if (file.type) return file.type;
+  const ext = file.name.split('.').pop()?.toLowerCase() || '';
+  return MIME_BY_EXTENSION[ext] || 'application/octet-stream';
+};
+
+const normalizeDataUrlMime = (url: string, mimeType: string) => {
+  if (!url.startsWith('data:') || !mimeType) return url;
+  const commaIndex = url.indexOf(',');
+  if (commaIndex === -1) return url;
+  const prefix = url.slice(0, commaIndex);
+  const needsMime = /^data:(?:;base64)?$/i.test(prefix) || /^data:application\/octet-stream(?:;base64)?$/i.test(prefix);
+  return needsMime ? `data:${mimeType};base64${url.slice(commaIndex)}` : url;
+};
+
+const fileToBase64 = (file: File, mimeType: string): Promise<string> => new Promise((resolve, reject) => {
   const reader = new FileReader();
-  reader.onload = () => resolve(reader.result as string);
+  reader.onload = () => resolve(normalizeDataUrlMime(reader.result as string, mimeType));
   reader.onerror = reject;
   reader.readAsDataURL(file);
 });
@@ -57,12 +89,13 @@ const filesToAttachments = async (files: FileList | null): Promise<Attachment[]>
   if (!files?.length) return [];
   const result: Attachment[] = [];
   for (const file of Array.from(files)) {
+    const mimeType = inferMimeType(file);
     result.push({
       id: crypto.randomUUID(),
       name: file.name,
       fileName: file.name,
-      url: await fileToBase64(file),
-      fileType: file.type,
+      url: await fileToBase64(file, mimeType),
+      fileType: mimeType,
       fileSize: file.size,
       category: 'daily_log_volume',
       uploadedAt: new Date().toISOString(),
@@ -143,7 +176,11 @@ const DailyLogDetailTabs: React.FC<Props> = ({
   laborCatalogs = [],
   machineCatalogs = [],
   businessPartners = [],
+  inventoryItems = [],
+  siteWarehouseId,
+  siteWarehouseName,
   verifiedQuantityByTaskId = {},
+  verifiedQuantityByWorkBoqItemId = {},
 }) => {
   const [tab, setTab] = useState<TabKey>('volumes');
   const [laborModes, setLaborModes] = useState<Record<number, 'catalog' | 'partner'>>({});
@@ -157,6 +194,15 @@ const DailyLogDetailTabs: React.FC<Props> = ({
     label: `${item.wbsCode ? `${item.wbsCode} - ` : ''}${item.name}`,
     meta: [item.unit, item.sourceTaskId ? 'Từ tiến độ' : 'Nhập tay'].filter(Boolean).join(' • '),
   })), [workBoqItems]);
+  const materialOptions = useMemo<SearchOption<InventoryItem>[]>(() => inventoryItems
+    .filter(item => !siteWarehouseId || getWarehouseStock(item, siteWarehouseId) > 0)
+    .map(item => ({
+      item,
+      label: `${item.sku ? `${item.sku} - ` : ''}${item.name}`,
+      meta: siteWarehouseId
+        ? `Tồn ${formatQuantity(getWarehouseStock(item, siteWarehouseId))} ${item.unit} tại ${siteWarehouseName || 'kho công trường'}`
+        : `Tổng tồn ${formatQuantity(Object.values(item.stockByWarehouse || {}).reduce((sum, qty) => sum + Number(qty || 0), 0))} ${item.unit}`,
+    })), [inventoryItems, siteWarehouseId, siteWarehouseName]);
   const workBoqByTaskId = useMemo(() => new Map(workBoqItems.filter(item => item.sourceTaskId).map(item => [item.sourceTaskId as string, item])), [workBoqItems]);
   const taskById = useMemo(() => new Map(tasks.map(task => [task.id, task])), [tasks]);
   const laborOptions = useMemo<SearchOption<ContractLaborCatalogItem>[]>(() => laborCatalogs
@@ -207,9 +253,15 @@ const DailyLogDetailTabs: React.FC<Props> = ({
         <div className="space-y-3">
           {volumes.map((v, i) => {
             const task = tasks.find(item => item.id === v.taskId);
-            const plannedQty = Number(task?.provisionalQuantity || 0);
-            const verifiedQty = v.taskId ? Number(verifiedQuantityByTaskId[v.taskId] || 0) : 0;
+            const workBoqItem = v.workBoqItemId ? workBoqItems.find(item => item.id === v.workBoqItemId) : undefined;
+            const taskPlannedQty = Number(task?.provisionalQuantity || 0);
+            const workBoqPlannedQty = Number(workBoqItem?.plannedQty || 0);
+            const plannedQty = taskPlannedQty > 0 ? taskPlannedQty : workBoqPlannedQty;
+            const verifiedByTask = v.taskId ? Number(verifiedQuantityByTaskId[v.taskId] || 0) : 0;
+            const verifiedByWorkBoq = v.workBoqItemId ? Number(verifiedQuantityByWorkBoqItemId[v.workBoqItemId] || 0) : 0;
+            const verifiedQty = Math.max(verifiedByTask, verifiedByWorkBoq);
             const remainingQty = Math.max(0, plannedQty - verifiedQty);
+            const hasQuantityLimit = plannedQty > 0;
             const attachments = v.attachments || [];
 
             return (
@@ -310,13 +362,24 @@ const DailyLogDetailTabs: React.FC<Props> = ({
                   <div className="grid grid-cols-1 md:grid-cols-[1fr_120px] gap-2">
                     <div>
                       <label className="text-[10px] font-black text-slate-500 uppercase block mb-1.5">Khối lượng hoàn thành</label>
-                      <input type="number" min={0} step="0.001" placeholder="0" value={v.quantity || ''}
+                      <input type="number" min={0} max={hasQuantityLimit ? remainingQty : undefined} step="0.001" placeholder="0" value={v.quantity || ''}
+                        disabled={hasQuantityLimit && remainingQty <= 0}
                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-amber-400 bg-white"
                         onChange={e => {
+                          const inputQty = parseNonNegative(e.target.value);
                           const u = [...volumes];
-                          u[i] = { ...v, quantity: parseNonNegative(e.target.value) };
+                          u[i] = { ...v, quantity: hasQuantityLimit ? Math.min(inputQty, remainingQty) : inputQty };
                           onVolumesChange(u);
                         }} />
+                      {hasQuantityLimit ? (
+                        <p className={`mt-1 text-[10px] font-bold ${remainingQty <= 0 ? 'text-red-500' : 'text-amber-600'}`}>
+                          Tối đa được nhập {formatQuantity(remainingQty)} {v.unit || task?.fallbackUnit || workBoqItem?.unit || ''}; phần vượt phải tách thành phát sinh/đầu mục khác.
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-[10px] font-bold text-slate-400">
+                          Hạng mục chưa có KL tạm tính nên hệ thống chưa giới hạn khối lượng.
+                        </p>
+                      )}
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-slate-500 uppercase block mb-1.5">ĐVT</label>
@@ -391,18 +454,80 @@ const DailyLogDetailTabs: React.FC<Props> = ({
 
       {/* Materials Tab */}
       {tab === 'materials' && (
-        <div className="space-y-2">
-          {materials.map((m, i) => (
-            <div key={i} className="flex gap-2 items-center p-2 rounded-lg bg-orange-50/50 border border-orange-100">
-              <input placeholder="Tên vật tư" value={m.itemName} className={`${inputCls} flex-1`}
-                onChange={e => { const u = [...materials]; u[i] = { ...m, itemName: e.target.value }; onMaterialsChange(u); }} />
-              <input type="number" placeholder="SL" value={m.quantity || ''} className={`${inputCls} w-20`}
-                onChange={e => { const u = [...materials]; u[i] = { ...m, quantity: Number(e.target.value) }; onMaterialsChange(u); }} />
-              <input placeholder="ĐVT" value={m.unit} className={`${inputCls} w-14`}
-                onChange={e => { const u = [...materials]; u[i] = { ...m, unit: e.target.value }; onMaterialsChange(u); }} />
-              <button onClick={() => onMaterialsChange(materials.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-500"><X size={14} /></button>
+        <div className="space-y-3">
+          {!siteWarehouseId && (
+            <div className="rounded-xl border border-orange-100 bg-orange-50 px-3 py-2 text-[10px] font-bold text-orange-700">
+              Chưa xác định được kho công trường nên danh sách vật tư chỉ dùng để tra cứu. Khi liên kết đúng kho công trường, tồn sẽ lấy theo kho đó.
             </div>
-          ))}
+          )}
+          {materials.map((m, i) => {
+            const selectedItem = m.materialId ? inventoryItems.find(item => item.id === m.materialId) : undefined;
+            const selectedStock = selectedItem ? getWarehouseStock(selectedItem, siteWarehouseId) : 0;
+            const hasSelectedWarehouseStock = !!selectedItem && !!siteWarehouseId;
+            return (
+              <div key={i} className="rounded-2xl border border-orange-100 bg-orange-50/50 p-3 space-y-2">
+                <div className="flex gap-2 items-start">
+                  <SearchablePicker
+                    value={m.itemName}
+                    placeholder={siteWarehouseId ? `Chọn vật tư tồn tại ${siteWarehouseName || 'kho công trường'}...` : 'Gõ/chọn vật tư...'}
+                    options={materialOptions}
+                    onTextChange={value => {
+                      const u = [...materials];
+                      u[i] = { ...m, materialId: undefined, itemName: value };
+                      onMaterialsChange(u);
+                    }}
+                    onPick={item => {
+                      const stock = getWarehouseStock(item, siteWarehouseId);
+                      const u = [...materials];
+                      u[i] = {
+                        ...m,
+                        materialId: item.id,
+                        itemName: item.name,
+                        unit: item.unit,
+                        quantity: siteWarehouseId ? Math.min(Number(m.quantity || 0), stock) : Number(m.quantity || 0),
+                      };
+                      onMaterialsChange(u);
+                    }}
+                  />
+                  <button onClick={() => onMaterialsChange(materials.filter((_, idx) => idx !== i))} className="mt-1 text-slate-400 hover:text-red-500"><X size={14} /></button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-[1fr_96px_96px] gap-2">
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Ghi chú vật tư</label>
+                    <input placeholder="Vị trí sử dụng, quy cách, ghi chú..." value={m.note || ''} className={inputCls}
+                      onChange={e => { const u = [...materials]; u[i] = { ...m, note: e.target.value }; onMaterialsChange(u); }} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Số lượng</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={hasSelectedWarehouseStock ? selectedStock : undefined}
+                      placeholder="SL"
+                      value={m.quantity || ''}
+                      className={inputCls}
+                      onChange={e => {
+                        const inputQty = Math.max(0, Number(e.target.value || 0));
+                        const u = [...materials];
+                        u[i] = { ...m, quantity: hasSelectedWarehouseStock ? Math.min(inputQty, selectedStock) : inputQty };
+                        onMaterialsChange(u);
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">ĐVT</label>
+                    <input placeholder="ĐVT" value={m.unit} className={inputCls}
+                      onChange={e => { const u = [...materials]; u[i] = { ...m, unit: e.target.value }; onMaterialsChange(u); }} />
+                  </div>
+                </div>
+                {hasSelectedWarehouseStock && (
+                  <div className={`text-[10px] font-bold ${Number(m.quantity || 0) >= selectedStock && selectedStock > 0 ? 'text-amber-600' : selectedStock <= 0 ? 'text-red-500' : 'text-orange-600'}`}>
+                    Tồn tại {siteWarehouseName || 'kho công trường'}: {formatQuantity(selectedStock)} {selectedItem?.unit}. Nhật ký chỉ ghi nhận vật tư trong kho công trường này.
+                  </div>
+                )}
+              </div>
+            );
+          })}
           <button onClick={() => onMaterialsChange([...materials, { itemName: '', unit: 'kg', quantity: 0 }])}
             className="flex items-center gap-1 text-[10px] font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-lg border border-orange-200">
             <Plus size={10} /> Thêm vật tư

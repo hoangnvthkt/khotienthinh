@@ -587,26 +587,26 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             </div>
             {/* KPI Summary */}
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Package size={10} /> Hạng mục</div>
                     <div className="text-2xl font-black text-slate-800">{stats.boqCount}</div>
                     <div className="text-[10px] text-slate-400">DT: {fmt(stats.totalBudget)} đ</div>
                 </div>
-                <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><TrendingUp size={10} /> Chi phí TT</div>
                     <div className={`text-xl font-black ${stats.diff > 0 ? 'text-red-500' : 'text-emerald-600'}`}>{fmt(stats.totalActual)} đ</div>
                     <div className={`text-[10px] font-bold ${stats.diff > 0 ? 'text-red-400' : 'text-emerald-500'}`}>{stats.diff > 0 ? '+' : ''}{fmt(stats.diff)} đ</div>
                 </div>
-                <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><AlertTriangle size={10} /> Vượt hao hụt</div>
                     <div className={`text-2xl font-black ${stats.overWaste > 0 ? 'text-red-500' : 'text-emerald-600'}`}>{stats.overWaste}</div>
                     <div className="text-[10px] text-slate-400">/ {stats.overBudget} vượt NS</div>
                 </div>
-                <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">💰 GT Hao hụt</div>
                     <div className={`text-xl font-black ${stats.totalWasteValue > 0 ? 'text-red-500' : 'text-emerald-600'}`}>{fmt(stats.totalWasteValue)} đ</div>
                 </div>
-                <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1"><Clock size={10} /> YC chờ duyệt</div>
                     <div className="text-2xl font-black text-amber-600">{stats.pendingReq}</div>
                     <div className="text-[10px] text-slate-400">{requests.length} phiếu tổng</div>
@@ -614,7 +614,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             </div>
 
             {/* Sub-tabs */}
-            <div className="flex gap-1 bg-white rounded-2xl p-1.5 border border-slate-100 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
+            <div className="flex gap-1 bg-white dark:bg-slate-850 rounded-2xl p-1.5 border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
                 {[
                     { key: 'summary' as const, label: '🔗 Tổng hợp', count: computedBoqItems.length },
                     { key: 'boq' as const, label: '📋 BOQ', count: workBoqItems.length + computedBoqItems.length },
@@ -633,7 +633,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
             {/* ===== SUMMARY TAB - Bảng tổng hợp 1 dòng ===== */}
             {activeSubTab === 'summary' && (
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                     <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                         <div><h4 className="text-sm font-black text-slate-800">📊 Bảng tổng hợp vật tư</h4><p className="text-[10px] text-slate-400">Toàn bộ chỉ số trên 1 dòng — liên kết BOQ↔YC↔PO↔Kho</p></div>
                     </div>
@@ -656,14 +656,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                     <th className="p-2.5">Cảnh báo</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-50 text-xs">
+                            <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40 text-xs">
                                 {computedBoqItems.map(b => {
                                     const overBudget = (b.budgetOverPercent || 0) > 0;
                                     const overWaste = (b.wastePercent || 0) > b.wasteThreshold;
                                     const negStock = (b.stockBalance || 0) < 0;
                                     return (
                                         <tr key={b.id} className={`hover:bg-slate-50 ${overWaste ? 'bg-red-50/40' : overBudget ? 'bg-amber-50/40' : ''}`}>
-                                            <td className="p-2.5 font-mono text-[10px] text-indigo-500 font-bold sticky left-0 bg-white z-10">{b.materialCode || '—'}</td>
+                                            <td className="p-2.5 font-mono text-[10px] text-indigo-500 font-bold sticky left-0 bg-white dark:bg-slate-900 z-10">{b.materialCode || '—'}</td>
                                             <td className="p-2.5 font-bold text-slate-800 max-w-[140px] truncate">{b.itemName}</td>
                                             <td className="p-2.5 text-slate-400">{b.unit}</td>
                                             <td className="p-2.5 text-right font-bold">{b.budgetQty.toLocaleString()}</td>
@@ -699,7 +699,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             {activeSubTab === 'boq' && (
                 <div className="space-y-4">
                 <BoqReconciliationPanel projectId={projectId || null} constructionSiteId={constructionSiteId || null} />
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                     <div className="p-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                         <div>
                             <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><ListTree size={16} className="text-indigo-500" /> BOQ triển khai theo tiến độ</h3>
@@ -748,7 +748,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                         <th className="text-center px-4 py-3"></th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-50">
+                                <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                     {workBoqTree.map(({ item, level }) => {
                                         const comparison = getWorkComparison(item);
                                         const childMaterials = boqItemsByWork.get(item.id) || [];
@@ -852,7 +852,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
             {/* Material Request Tab — using MaterialRequest from Inventory module */}
             {activeSubTab === 'request' && (
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                     <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><Package size={16} className="text-purple-500" /> Đề xuất vật tư ({requests.length})</h3>
                         <button onClick={() => { setSelectedRequest(undefined); setReqModalOpen(true); }}
@@ -879,7 +879,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                         <th className="text-center px-4 py-3"></th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-50">
+                                <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                     {requests.sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || '')).map(req => {
                                         const stCfg = REQ_STATUS_MAP[req.status] || REQ_STATUS_MAP.PENDING;
                                         const reqUser = users.find(u => u.id === req.requesterId);
@@ -934,14 +934,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             {activeSubTab === 'waste' && (
                 <div className="space-y-4">
                     {computedBoqItems.length === 0 ? (
-                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 text-center">
+                        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm p-12 text-center">
                             <BarChart3 size={36} className="mx-auto mb-2 text-slate-200" />
                             <p className="text-sm font-bold text-slate-400">Thêm dữ liệu BOQ để so sánh hao hụt</p>
                         </div>
                     ) : (
                         <>
                             {/* Bar chart: Budget vs Actual */}
-                            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+                            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm p-5">
                                 <h3 className="text-sm font-black text-slate-700 mb-4 flex items-center gap-2"><BarChart3 size={16} className="text-indigo-500" /> Dự toán vs Thực tế</h3>
                                 <ResponsiveContainer width="100%" height={300}>
                                     <BarChart data={wasteChartData} barGap={4}>
@@ -961,7 +961,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             </div>
 
                             {/* Waste detail table */}
-                            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                                 <div className="p-5 border-b border-slate-100">
                                     <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><AlertTriangle size={16} className="text-red-400" /> Chi tiết hao hụt</h3>
                                 </div>
@@ -979,7 +979,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                 <th className="text-center px-4 py-3">Trạng thái</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-slate-50">
+                                        <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                             {computedBoqItems.sort((a, b) => (b.wastePercent || 0) - (a.wastePercent || 0)).map(item => {
                                                 const isOver = (item.wastePercent || 0) > item.wasteThreshold;
                                                 const isNeg = (item.wastePercent || 0) <= 0;
@@ -1020,7 +1020,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             {/* BOQ Form Modal */}
             {showBoqForm && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
                         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-t-3xl flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editingBoq ? <><Edit2 size={18} /> Sửa BOQ</> : <><Plus size={18} /> Thêm BOQ</>}
@@ -1149,7 +1149,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     {/* Row 1: Pie + Bar */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         {/* Pie Chart - Budget by Category */}
-                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+                        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm p-5">
                             <h4 className="text-sm font-black text-slate-800 mb-4">🥧 Ngân sách theo nhóm VT</h4>
                             <ResponsiveContainer width="100%" height={280}>
                                 <PieChart>
@@ -1165,7 +1165,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             </ResponsiveContainer>
                         </div>
                         {/* Bar Chart - Top 10 Value */}
-                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+                        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm p-5">
                             <h4 className="text-sm font-black text-slate-800 mb-4">📊 Top giá trị DT cao nhất</h4>
                             <ResponsiveContainer width="100%" height={280}>
                                 <BarChart data={[...computedBoqItems].sort((a, b) => (b.budgetTotal || 0) - (a.budgetTotal || 0)).slice(0, 8).map(b => ({
@@ -1188,13 +1188,13 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     {/* Row 2: Budget Overrun Ranking + Waste Alert Table */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         {/* Budget Overrun */}
-                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                             <div className="p-4 border-b border-slate-100"><h4 className="text-sm font-black text-slate-800">🔴 Vật tư VƯỢT ngân sách</h4></div>
                             <table className="w-full text-xs">
                                 <thead><tr className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase">
                                     <th className="p-2.5 text-left">Vật tư</th><th className="p-2.5 text-right">NS</th><th className="p-2.5 text-right">LK YC</th><th className="p-2.5 text-right">% Vượt</th>
                                 </tr></thead>
-                                <tbody className="divide-y divide-slate-50">
+                                <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                     {computedBoqItems.filter(b => (b.budgetOverPercent || 0) > 0).sort((a, b) => (b.budgetOverPercent || 0) - (a.budgetOverPercent || 0)).map(b => (
                                         <tr key={b.id} className="hover:bg-red-50/50">
                                             <td className="p-2.5 font-bold text-slate-800">{b.itemName}</td>
@@ -1210,13 +1210,13 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             </table>
                         </div>
                         {/* Waste Alert */}
-                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                             <div className="p-4 border-b border-slate-100"><h4 className="text-sm font-black text-slate-800">⚠️ Vật tư VƯỢT hao hụt</h4></div>
                             <table className="w-full text-xs">
                                 <thead><tr className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase">
                                     <th className="p-2.5 text-left">Vật tư</th><th className="p-2.5 text-right">HH%</th><th className="p-2.5 text-right">Định mức</th><th className="p-2.5 text-right">GT Hao hụt</th>
                                 </tr></thead>
-                                <tbody className="divide-y divide-slate-50">
+                                <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                     {computedBoqItems.filter(b => (b.wastePercent || 0) > b.wasteThreshold).sort((a, b) => (b.wastePercent || 0) - (a.wastePercent || 0)).map(b => (
                                         <tr key={b.id} className="hover:bg-amber-50/50">
                                             <td className="p-2.5 font-bold text-slate-800">{b.itemName}</td>
@@ -1274,7 +1274,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                     <thead className="bg-slate-50 text-slate-400 uppercase text-[9px] font-black">
                                         <tr><th className="px-3 py-2 text-left">Dòng</th><th className="px-3 py-2 text-left">WBS</th><th className="px-3 py-2 text-left">Tên</th><th className="px-3 py-2 text-left">Trạng thái</th></tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-50">
+                                    <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                         {importPreview.workRows.map(row => (
                                             <tr key={`work-${row.rowNumber}`} className={row.status === 'error' ? 'bg-red-50/60' : ''}>
                                                 <td className="px-3 py-2 font-mono text-slate-400">{row.rowNumber}</td>
@@ -1292,7 +1292,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                     <thead className="bg-slate-50 text-slate-400 uppercase text-[9px] font-black">
                                         <tr><th className="px-3 py-2 text-left">Dòng</th><th className="px-3 py-2 text-left">Mã</th><th className="px-3 py-2 text-left">Tên vật tư</th><th className="px-3 py-2 text-right">KL</th><th className="px-3 py-2 text-left">Trạng thái</th></tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-50">
+                                    <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                         {importPreview.materialRows.map(row => (
                                             <tr key={`mat-${row.rowNumber}`} className={row.status === 'error' ? 'bg-red-50/60' : ''}>
                                                 <td className="px-3 py-2 font-mono text-slate-400">{row.rowNumber}</td>

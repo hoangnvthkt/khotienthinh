@@ -197,17 +197,17 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
                 <AiInsightPanel module="cashflow" siteId={constructionSiteId} />
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><TrendingUp size={11} /> Tổng thu</div>
                     <div className="text-xl font-black text-emerald-600">{fmt(summary.totalRevenue)}</div>
                     <div className="text-[10px] text-amber-500 font-bold mt-1">Chờ: {fmt(summary.totalPending)}</div>
                 </div>
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><TrendingDown size={11} /> Tổng chi</div>
                     <div className="text-xl font-black text-orange-600">{fmt(summary.totalExpense)}</div>
                     <div className="text-[10px] text-slate-400 mt-1">{((summary.totalExpense / (contractValue || 1)) * 100).toFixed(1)}% HĐ</div>
                 </div>
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
 	                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><DollarSign size={11} /> Dòng tiền ròng</div>
 	                    <div className={`text-xl font-black ${summary.cashPosition >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmt(summary.cashPosition)}</div>
 	                    <div className={`text-[10px] font-bold mt-1 flex items-center gap-0.5 ${summary.cashPosition >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
@@ -215,7 +215,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
 	                        {((summary.cashPosition / (contractValue || 1)) * 100).toFixed(1)}%
                     </div>
                 </div>
-                <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><AlertTriangle size={11} /> Công nợ</div>
                     <div className="flex gap-3">
                         <div>
@@ -236,7 +236,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
             </div>
 
             {/* Cash Flow Chart */}
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                 <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                     <h3 className="text-sm font-black text-slate-700 flex items-center gap-2">
                         <DollarSign size={16} className="text-indigo-500" /> Dòng tiền luỹ kế
@@ -290,7 +290,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
             </div>
 
             {/* Monthly breakdown table */}
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                 <div className="p-5 border-b border-slate-100">
                     <h3 className="text-sm font-black text-slate-700 flex items-center gap-2">
                         <Calendar size={16} className="text-violet-500" /> Chi tiết theo tháng
@@ -308,7 +308,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
 	                                <th className="p-3 text-right">Dòng tiền ròng LK</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-50 text-xs">
+                        <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40 text-xs">
                             {chartData.map(m => (
                                 <tr key={m.key} className="hover:bg-slate-50/50 transition-colors">
                                     <td className="p-3 font-bold text-slate-700">{m.label}</td>
@@ -325,7 +325,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
             </div>
 
             {/* Payment Schedule */}
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                 <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                     <h3 className="text-sm font-black text-slate-700 flex items-center gap-2">
                         <Clock size={16} className="text-amber-500" /> Lịch thanh toán ({paymentSchedules.length})
@@ -343,7 +343,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
                         <p className="text-xs text-slate-300 mt-1">Thêm các đợt thanh toán để theo dõi công nợ</p>
                     </div>
                 ) : (
-                    <div className="divide-y divide-slate-50">
+                    <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
                         {paymentSchedules
                             .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
                             .map(p => {
@@ -399,7 +399,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
             {/* Payment Form Modal */}
             {showPaymentForm && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg mx-4">
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg mx-4">
                         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-indigo-500 to-violet-600 rounded-t-3xl flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editingPayment ? <><Edit2 size={18} /> Sửa đợt thanh toán</> : <><Plus size={18} /> Thêm đợt thanh toán</>}
