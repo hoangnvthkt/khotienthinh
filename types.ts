@@ -294,6 +294,9 @@ export interface Project {
   manualProgressPercent?: number;
   createdBy?: string;
   source?: 'manual' | 'backfill';
+  isPinned?: boolean;
+  pinnedAt?: string;
+  pinnedBy?: string;
   isHidden?: boolean;
   hiddenAt?: string;
   hiddenBy?: string;
@@ -1377,6 +1380,30 @@ export interface InventoryItem {
   stockByWarehouse: Record<string, number>; // warehouseId -> quantity (in base unit)
 }
 
+export type MaterialCodeRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface MaterialCodeRequest {
+  id: string;
+  code: string;
+  requestedByUserId: string;
+  requestedByName?: string | null;
+  proposedName: string;
+  proposedUnit: string;
+  proposedCategory?: string | null;
+  proposedSpecification?: string | null;
+  proposedSupplierId?: string | null;
+  reason: string;
+  status: MaterialCodeRequestStatus;
+  approvedSku?: string | null;
+  approvedItemId?: string | null;
+  approvedByUserId?: string | null;
+  approvedByName?: string | null;
+  approvedAt?: string | null;
+  rejectionReason?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
 export interface TransactionItem {
   itemId: string;
   quantity: number;            // Số lượng theo đơn vị tồn kho (Cây, Cái...)
@@ -1496,6 +1523,10 @@ export interface RequestItem {
   itemId: string;
   requestQty: number;
   approvedQty: number; // Thực xuất (Bộ phận tiếp nhận quyết định)
+  issuedQty?: number;
+  orderedQty?: number;
+  procurementQty?: number;
+  fulfillmentStatus?: 'pending' | 'approved_for_issue' | 'issued' | 'procurement_required' | 'ordered' | 'fulfilled';
   workBoqItemId?: string | null;
   workBoqItemName?: string | null;
   materialBudgetItemId?: string | null;

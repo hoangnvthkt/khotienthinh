@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2 } from 'lucide-react';
+import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import {
     MaterialBudgetItem,
@@ -15,7 +15,7 @@ import {
 import ItemSelectionModal from './ItemSelectionModal';
 import ScannerModal from './ScannerModal';
 import { useReservedStock } from '../hooks/useReservedStock';
-import { canApproveMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, isAdmin } from '../lib/wmsPermissions';
+import { canApproveMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, isAdmin, isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../lib/wmsPermissions';
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 
@@ -110,13 +110,6 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [draftQty, setDraftQty] = useState('');
     const [draftNeededDate, setDraftNeededDate] = useState('');
     const [draftLineNote, setDraftLineNote] = useState('');
-    const [manualWorkBoqItemId, setManualWorkBoqItemId] = useState('');
-    const [manualItemName, setManualItemName] = useState('');
-    const [manualUnit, setManualUnit] = useState('');
-    const [manualQty, setManualQty] = useState('');
-    const [manualSpecification, setManualSpecification] = useState('');
-    const [manualReason, setManualReason] = useState('');
-    const [manualNeededDate, setManualNeededDate] = useState('');
 
     const [isItemSelectOpen, setItemSelectOpen] = useState(false);
     const [isScannerOpen, setScannerOpen] = useState(false);
@@ -170,7 +163,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     const getLineName = (line: Partial<RequestLineDraft | RequestItem>) => {
         const inventory = getLineInventory(line.itemId);
-        return inventory?.name || line.itemNameSnapshot || line.materialBudgetItemName || line.itemId || 'Vật tư viết tay';
+        return inventory?.name || line.itemNameSnapshot || line.materialBudgetItemName || line.itemId || 'Dòng chưa có mã kho';
     };
 
     const getLineUnit = (line: Partial<RequestLineDraft | RequestItem>) => {
@@ -180,7 +173,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     const getLineSku = (line: Partial<RequestLineDraft | RequestItem>) => {
         const inventory = getLineInventory(line.itemId);
-        return inventory?.sku || line.skuSnapshot || (line.isManualItem ? 'VIẾT TAY' : '');
+        return inventory?.sku || line.skuSnapshot || (line.isManualItem ? 'CHƯA MÃ' : '');
     };
 
     const getAggregateStockSummary = (itemId: string, warehouseId?: string, excludeRequestId?: string) => {
@@ -236,13 +229,6 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 setDraftQty('');
                 setDraftNeededDate('');
                 setDraftLineNote('');
-                setManualWorkBoqItemId('');
-                setManualItemName('');
-                setManualUnit('');
-                setManualQty('');
-                setManualSpecification('');
-                setManualReason('');
-                setManualNeededDate('');
             }
         }
     }, [isOpen, request, user, items, defaultSiteWarehouseId]);
@@ -273,8 +259,6 @@ const RequestModal: React.FC<RequestModalProps> = ({
         setItemSelectOpen(false);
     };
 
-    const createManualItemId = () => `manual-${crypto.randomUUID()}`;
-
     const handleUpdateItem = (index: number, field: keyof RequestLineDraft, value: any) => {
         const newItems = [...reqItems];
         newItems[index] = { ...newItems[index], [field]: value };
@@ -286,7 +270,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
         const item = items.find(i => i.id === itemId);
         const stockSummary = getAggregateStockSummary(itemId, sourceWarehouseId, request?.id);
         const availableStock = stockSummary.available;
-        const sourceStock = isAdmin(user) || line.isManualItem || !item ? Number.MAX_SAFE_INTEGER : availableStock;
+        const sourceStock = line.isManualItem || !item ? 0 : (isAdmin(user) ? Number.MAX_SAFE_INTEGER : availableStock);
+
+        if (line.isManualItem || !item) {
+            toast.warning('Dòng chưa có mã kho', 'Vui lòng tạo đề xuất cấp mã vật tư/vật liệu trước khi duyệt xuất hoặc đặt hàng.');
+            qty = 0;
+        }
 
         // Ràng buộc 1: Không vượt quá tồn kho
         if (qty > sourceStock) {
@@ -314,6 +303,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
             (!!budget.materialCode && item.sku.toLowerCase() === budget.materialCode.toLowerCase()) ||
             item.name.toLowerCase() === budget.itemName.toLowerCase()
         );
+        if (!inventoryItem) {
+            toast.warning('Chưa có mã kho', 'Dòng BOQ này chưa liên kết với vật tư trong danh mục. Vui lòng tạo Đề xuất cấp mã vật tư/vật liệu trước.');
+            return;
+        }
         const qty = Math.max(0, Number(draftQty || 0));
         if (qty <= 0) {
             toast.warning('Thiếu khối lượng', 'Vui lòng nhập khối lượng đề xuất lớn hơn 0.');
@@ -322,7 +315,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
         setReqItems(prev => [...prev, {
             lineId: crypto.randomUUID(),
-            itemId: inventoryItem?.id || createManualItemId(),
+            itemId: inventoryItem.id,
             qty,
             workBoqItemId: budget.workBoqItemId || draftWorkBoqItemId || null,
             workBoqItemName: work?.name || '',
@@ -330,52 +323,16 @@ const RequestModal: React.FC<RequestModalProps> = ({
             materialBudgetItemName: budget.itemName,
             neededDate: draftNeededDate || '',
             note: draftLineNote || '',
-            isManualItem: !inventoryItem,
-            itemNameSnapshot: inventoryItem?.name || budget.itemName,
-            unitSnapshot: inventoryItem?.unit || budget.unit,
-            skuSnapshot: inventoryItem?.sku || budget.materialCode || '',
+            isManualItem: false,
+            itemNameSnapshot: inventoryItem.name,
+            unitSnapshot: inventoryItem.unit,
+            skuSnapshot: inventoryItem.sku,
             specification: budget.notes || '',
             overBudgetReason: '',
         }]);
         setDraftMaterialBudgetItemId('');
         setDraftQty('');
         setDraftLineNote('');
-    };
-
-    const handleAddManualLine = () => {
-        const qty = Math.max(0, Number(manualQty || 0));
-        if (!manualItemName.trim() || !manualUnit.trim() || qty <= 0) {
-            toast.warning('Thiếu thông tin vật tư', 'Vui lòng nhập tên vật tư, đơn vị và khối lượng lớn hơn 0.');
-            return;
-        }
-        if (!manualReason.trim()) {
-            toast.warning('Thiếu lý do', 'Vật tư viết tay cần lý do để phòng vật tư xử lý và đối chiếu BOQ.');
-            return;
-        }
-        const work = manualWorkBoqItemId ? workBoqMap.get(manualWorkBoqItemId) : undefined;
-        setReqItems(prev => [...prev, {
-            lineId: crypto.randomUUID(),
-            itemId: createManualItemId(),
-            qty,
-            workBoqItemId: manualWorkBoqItemId || null,
-            workBoqItemName: work?.name || null,
-            materialBudgetItemId: null,
-            materialBudgetItemName: null,
-            neededDate: manualNeededDate || '',
-            note: manualSpecification || '',
-            overBudgetReason: manualReason.trim(),
-            isManualItem: true,
-            itemNameSnapshot: manualItemName.trim(),
-            unitSnapshot: manualUnit.trim(),
-            specification: manualSpecification.trim(),
-            manualReason: manualReason.trim(),
-        }]);
-        setManualItemName('');
-        setManualUnit('');
-        setManualQty('');
-        setManualSpecification('');
-        setManualReason('');
-        setManualNeededDate('');
     };
 
     const handleSubmitCreate = async () => {
@@ -527,7 +484,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 .map(line => ({ ...line, onHand: getOnHandStock(line.itemId, sourceWarehouseId) }))
                 .filter(line => Number(line.qty) > line.onHand);
             if (stockShortages.length > 0) {
-                toast.error('Không đủ tồn thực tế', 'Vui lòng kiểm tra lại tồn kho nguồn.');
+                const shortage = stockShortages[0];
+                const item = getLineInventory(shortage.itemId);
+                const whName = warehouses.find(w => w.id === sourceWarehouseId)?.name || sourceWarehouseId;
+                toast.error('Không đủ tồn thực tế', `Kho nguồn "${whName}" không đủ tồn cho dòng "${item?.name || shortage.itemId}". Tồn ${shortage.onHand}, cần ${shortage.qty}.`);
                 return;
             }
         }
@@ -549,19 +509,65 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
     };
 
+    const handleReturnRequest = async () => {
+        if (isSaving || !request) return;
+        if (request.relatedTransactionId) {
+            toast.error('Không thể trả lại trực tiếp', 'Phiếu đã phát sinh phiếu kho liên kết. Cần huỷ/rollback phiếu kho trước.');
+            return;
+        }
+        const reason = window.prompt('Nhập lý do trả lại phiếu');
+        if (!reason?.trim()) {
+            toast.warning('Thiếu lý do trả lại', 'Vui lòng nhập lý do để người tạo phiếu biết cần bổ sung gì.');
+            return;
+        }
+        setIsSaving(true);
+        try {
+            const saved = await updateRequestStatus(request.id, RequestStatus.PENDING, reason.trim(), undefined, undefined, undefined, 'RETURNED');
+            if (!saved) {
+                toast.error('Không thể trả lại phiếu', 'Không cập nhật được trạng thái phiếu trên hệ thống.');
+                return;
+            }
+            toast.success('Đã trả lại phiếu', 'Phiếu đã quay về bước chờ xử lý.');
+            onClose();
+        } catch (err: any) {
+            logApiError('requestModal.returnRequest', err);
+            toast.error('Không thể trả lại phiếu', getApiErrorMessage(err, 'Không cập nhật được trạng thái phiếu trên hệ thống.'));
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     if (!isOpen) return null;
 
     const isEditable = step === 'CREATE';
     const isApproving = step === 'APPROVE';
     const isViewing = step === 'VIEW';
 
-    const canExport = request ? canExportMaterialRequest(user, request) : false;
+    const permissionRequest = request ? { ...request, sourceWarehouseId: sourceWarehouseId || request.sourceWarehouseId } : undefined;
+    const canPrepareIssue = !!request
+        && request.status === RequestStatus.APPROVED
+        && !request.relatedTransactionId
+        && (
+            isAdmin(user)
+            || isGlobalWarehouseKeeper(user)
+            || isWarehouseKeeperFor(user, sourceWarehouseId || request.sourceWarehouseId)
+        );
+    const canEditApprovalQuantities = isApproving || canPrepareIssue;
+    const canReturn = !!request
+        && !request.relatedTransactionId
+        && (request.status === RequestStatus.PENDING || request.status === RequestStatus.APPROVED)
+        && (
+            isAdmin(user)
+            || (request.status === RequestStatus.PENDING && canApproveMaterialRequest(user, request))
+            || canPrepareIssue
+        );
+    const canExport = permissionRequest ? canExportMaterialRequest(user, permissionRequest) : false;
     const canReceive = request ? canReceiveMaterialRequest(user, request) : false;
 
     const sourceWh = warehouses.find(w => w.id === sourceWarehouseId);
     const targetWh = warehouses.find(w => w.id === siteWarehouseId);
     const requester = users.find(u => u.id === (request?.requesterId || user.id));
-    const showSourceWarehouseField = !isEditable || !isProjectRequest || isApproving;
+    const showSourceWarehouseField = !isEditable || !isProjectRequest || canEditApprovalQuantities;
     const stockContextWarehouseId = isEditable && isProjectRequest ? stockPreviewWarehouseId : sourceWarehouseId;
 
     return (
@@ -672,7 +678,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 <label className="text-[10px] uppercase font-black text-blue-400">Kho cung cấp</label>
                                 <div className="flex items-center gap-2 text-blue-700 font-bold">
                                     <PackageCheck size={18} className="text-blue-400" />
-                                    {isEditable || isApproving ? (
+                                    {isEditable || canEditApprovalQuantities ? (
                                         <select
                                             value={sourceWarehouseId}
                                             onChange={(e) => setSourceWarehouseId(e.target.value)}
@@ -711,7 +717,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             <label className="text-[10px] uppercase font-black text-slate-400">Ghi chú phiếu</label>
                             <input
                                 type="text"
-                                disabled={!isEditable && !isApproving}
+                                disabled={!isEditable && !canEditApprovalQuantities}
                                 value={note}
                                 onChange={(e) => setNote(e.target.value)}
                                 className="w-full bg-transparent outline-none text-sm text-slate-700"
@@ -736,7 +742,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             )}
                         </div>
 
-                        {isApproving && isAdmin(user) && (
+                        {canEditApprovalQuantities && isAdmin(user) && (
                             <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm space-y-2">
                                 <label className="text-[10px] uppercase font-black text-amber-600">Lý do override</label>
                                 <input
@@ -801,68 +807,6 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     placeholder="Ghi chú dòng..."
                                     className="md:col-span-12 px-3 py-2 rounded-xl border border-amber-100 bg-white text-xs outline-none focus:ring-2 focus:ring-amber-300"
                                 />
-                            </div>
-                        </div>
-                    )}
-
-                    {isEditable && isProjectRequest && (
-                        <div className="mb-5 rounded-xl border border-slate-200 bg-white p-4">
-                            <div className="flex items-center justify-between gap-3 mb-3">
-                                <div>
-                                    <div className="text-xs font-black text-slate-700">Thêm vật tư viết tay / chưa có mã kho</div>
-                                    <div className="text-[10px] font-bold text-slate-400">Ưu tiên gắn với đầu mục BOQ triển khai; ngoại lệ phải có lý do để phòng vật tư chuẩn hoá.</div>
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
-                                <select
-                                    value={manualWorkBoqItemId}
-                                    onChange={event => setManualWorkBoqItemId(event.target.value)}
-                                    className="md:col-span-4 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-slate-300"
-                                >
-                                    <option value="">Gắn đầu mục BOQ triển khai nếu có...</option>
-                                    {workBoqItems.map(item => <option key={item.id} value={item.id}>{item.wbsCode ? `${item.wbsCode} - ` : ''}{item.name}</option>)}
-                                </select>
-                                <input
-                                    value={manualItemName}
-                                    onChange={event => setManualItemName(event.target.value)}
-                                    placeholder="Tên vật tư / mô tả nhu cầu"
-                                    className="md:col-span-4 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-slate-300"
-                                />
-                                <input
-                                    value={manualUnit}
-                                    onChange={event => setManualUnit(event.target.value)}
-                                    placeholder="ĐVT"
-                                    className="md:col-span-1 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-slate-300"
-                                />
-                                <input
-                                    type="number"
-                                    min={0}
-                                    value={manualQty}
-                                    onChange={event => setManualQty(event.target.value)}
-                                    placeholder="SL"
-                                    className="md:col-span-1 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-slate-300"
-                                />
-                                <input
-                                    type="date"
-                                    value={manualNeededDate}
-                                    onChange={event => setManualNeededDate(event.target.value)}
-                                    className="md:col-span-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-slate-300"
-                                />
-                                <input
-                                    value={manualSpecification}
-                                    onChange={event => setManualSpecification(event.target.value)}
-                                    placeholder="Quy cách / ghi chú kỹ thuật"
-                                    className="md:col-span-7 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs outline-none focus:ring-2 focus:ring-slate-300"
-                                />
-                                <input
-                                    value={manualReason}
-                                    onChange={event => setManualReason(event.target.value)}
-                                    placeholder="Lý do viết tay / ngoài định mức"
-                                    className="md:col-span-4 px-3 py-2 rounded-xl border border-orange-200 bg-orange-50/40 text-xs outline-none focus:ring-2 focus:ring-orange-300"
-                                />
-                                <button onClick={handleAddManualLine} className="md:col-span-1 px-3 py-2 rounded-xl bg-slate-800 text-white text-xs font-black hover:bg-slate-700">
-                                    Thêm
-                                </button>
                             </div>
                         </div>
                     )}
@@ -949,7 +893,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                         )}
                                                     </td>
                                                     <td className="p-4 text-right">
-                                                        {isApproving ? (
+                                                        {canEditApprovalQuantities ? (
                                                             <div className="flex flex-col items-end">
                                                                 <input
                                                                     type="number" min="0" max={itemInfo ? sourceStock : undefined}
@@ -1052,7 +996,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                 </div>
                                                 <div className="flex-1">
                                                     <div className="text-[9px] uppercase font-bold text-emerald-400 mb-0.5">Duyệt</div>
-                                                    {isApproving ? (
+                                                    {canEditApprovalQuantities ? (
                                                         <input
                                                             type="number" min="0" max={itemInfo ? sourceStock : undefined}
                                                             value={approvedQty}
@@ -1090,6 +1034,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             Đóng
                         </button>
 
+                        {canReturn && !isEditable && (
+                            <button disabled={isSaving} onClick={handleReturnRequest} className="px-5 py-2 rounded-lg border border-amber-200 text-amber-700 bg-amber-50 font-bold hover:bg-amber-100 disabled:opacity-60 disabled:cursor-not-allowed flex items-center">
+                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <AlertCircle size={18} className="mr-2" />} Trả lại
+                            </button>
+                        )}
+
                         {isEditable && (
                             <button disabled={isSaving} onClick={handleSubmitCreate} className="px-6 py-2 rounded-lg bg-accent text-white font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20">
                                 {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Send size={18} className="mr-2" />} {isSaving ? 'Đang gửi...' : 'Gửi đề xuất'}
@@ -1104,6 +1054,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             >
                                 {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <AlertCircle size={18} className="mr-2" />}
                                 {isSaving ? 'ĐANG XỬ LÝ...' : 'XỬ LÝ ĐỀ XUẤT'}
+                            </button>
+                        )}
+
+                        {canPrepareIssue && (
+                            <button disabled={isSaving || !sourceWarehouseId} onClick={() => handleAction(RequestStatus.APPROVED)} className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20">
+                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />} {isSaving ? 'Đang lưu...' : 'Lưu phân nguồn'}
                             </button>
                         )}
 

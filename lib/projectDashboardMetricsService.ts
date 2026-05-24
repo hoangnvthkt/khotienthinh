@@ -1,15 +1,18 @@
 import {
   AdvancePayment,
   BoqReconciliationGroup,
+  ContractVariation,
   ContractItem,
   ContractItemType,
   DailyLog,
   MaterialBudgetItem,
   PaymentCertificate,
   PaymentSchedule,
+  ProjectDelayEvent,
   Project,
   ProjectProgressCalculationMode,
   ProjectTask,
+  ProjectTaskCompletionRequest,
   ProjectWorkBoqItem,
   ProjectTransaction,
   PurchaseOrder,
@@ -29,6 +32,8 @@ import {
   workBoqService,
 } from './projectService';
 import { boqReconciliationService } from './boqReconciliationService';
+import { buildScheduleForecast } from './projectScheduleForecast';
+import { delayEventService } from './projectScheduleForecastService';
 import { paymentCertificateService } from './paymentCertificateService';
 import { projectFinancialService, ProjectFinancialKPIs } from './projectFinancialService';
 import { projectMasterService } from './projectMasterService';
@@ -42,6 +47,7 @@ import {
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 import { quantityAcceptanceService } from './quantityAcceptanceService';
 import { taskContractItemService } from './taskContractItemService';
+import { taskCompletionRequestService } from './projectTaskCompletionService';
 
 export interface ProjectProgressMetric {
   mode: ProjectProgressCalculationMode;
@@ -115,6 +121,72 @@ export interface SevenDayForecastDashboardMetric {
   taskCount: number;
 }
 
+export type ExecutiveAlertSeverity = 'critical' | 'warning' | 'info' | 'success';
+export type ExecutiveHealthStatus = 'green' | 'amber' | 'red';
+export type ExecutivePaymentParty = 'owner' | 'subcontractor' | 'supplier';
+export type ExecutivePaymentBlockingStage = 'none' | 'production' | 'acceptance' | 'certificate' | 'cash';
+
+export interface ExecutiveScheduleHealthMetric {
+  status: ExecutiveHealthStatus;
+  plannedProgress: number;
+  actualProgress: number;
+  progressVariance: number;
+  baselineEndDate: string;
+  forecastEndDate: string;
+  forecastDeltaDays: number;
+  activeDelayEventCount: number;
+  impactedTaskCount: number;
+  overdueTaskCount: number;
+  criticalOverdueTaskCount: number;
+  upcomingDueTaskCount: number;
+}
+
+export interface ExecutivePaymentPeriodRisk {
+  id: string;
+  party: ExecutivePaymentParty;
+  label: string;
+  description: string;
+  dueDate: string;
+  daysUntilDue: number;
+  targetCumulative: number;
+  performedValue: number;
+  acceptedValue: number;
+  certifiedValue: number;
+  paidValue: number;
+  blockingStage: ExecutivePaymentBlockingStage;
+  missingAmount: number;
+  severity: ExecutiveAlertSeverity;
+  recommendation: string;
+}
+
+export interface ExecutiveApprovalQueueMetric {
+  dailyLogSubmitted: number;
+  taskCompletionSubmitted: number;
+  taskGatePending: number;
+  quantityAcceptanceSubmitted: number;
+  paymentCertificateSubmitted: number;
+  variationSubmitted: number;
+  reconciliationSubmitted: number;
+  total: number;
+}
+
+export interface ExecutivePriorityAlert {
+  id: string;
+  severity: ExecutiveAlertSeverity;
+  title: string;
+  message: string;
+  targetTab?: string;
+  dueDate?: string;
+  amount?: number;
+}
+
+export interface ExecutiveDashboardMetric {
+  scheduleHealth: ExecutiveScheduleHealthMetric;
+  paymentPeriodRisks: ExecutivePaymentPeriodRisk[];
+  approvalQueue: ExecutiveApprovalQueueMetric;
+  priorityAlerts: ExecutivePriorityAlert[];
+}
+
 export interface ProjectDashboardMetrics {
   project?: Project;
   financialKPIs?: ProjectFinancialKPIs;
@@ -126,6 +198,7 @@ export interface ProjectDashboardMetrics {
   constructionCost: ConstructionCostDashboardMetric;
   material: MaterialDashboardMetric;
   sevenDayForecast: SevenDayForecastDashboardMetric;
+  executive: ExecutiveDashboardMetric;
   sourceNotes: string[];
   warnings: string[];
   calculatedAt: string;
@@ -140,12 +213,23 @@ const PROGRESS_MODE_LABELS: Record<ProjectProgressCalculationMode, string> = {
 };
 
 const BOOKED_CERT_STATUSES = new Set(['submitted', 'approved', 'paid']);
-const ACTIVE_PO_STATUSES = new Set(['draft', 'sent', 'partial', 'delivered']);
+const ACTIVE_PO_STATUSES = new Set(['draft', 'sent', 'confirmed', 'in_transit', 'partial', 'delivered']);
 
 const sum = <T>(items: T[], picker: (item: T) => number | null | undefined): number =>
   items.reduce((total, item) => total + Number(picker(item) || 0), 0);
 
 const clampMoney = (value: number): number => (Number.isFinite(value) ? Math.max(0, value) : 0);
+const todayIso = (): string => new Date().toISOString().slice(0, 10);
+const addDaysIso = (date: string, days: number): string => {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+const maxEndDate = (tasks: ProjectTask[]): string => {
+  const dates = tasks.map(task => task.endDate).filter(Boolean).sort();
+  return dates[dates.length - 1] || '';
+};
+const severityRank: Record<ExecutiveAlertSeverity, number> = { critical: 0, warning: 1, info: 2, success: 3 };
 
 const revisedItemValue = (item: ContractItem): number =>
   Number(item.revisedTotalPrice ?? item.totalPrice ?? (Number(item.quantity || 0) * Number(item.unitPrice || 0)) ?? 0);
@@ -208,6 +292,17 @@ const listTransactions = async (projectIdOrSiteId: string, constructionSiteId?: 
     .order('date', { ascending: true });
   if (error) throw error;
   return dedupeRowsById(data || []).map(row => fromDb(row) as ProjectTransaction);
+};
+
+const listContractVariations = async (projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ContractVariation[]> => {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase
+    .from('contract_variations')
+    .select('*')
+    .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return dedupeRowsById(data || []).map(row => fromDb(row) as ContractVariation);
 };
 
 const resolveProject = async (projectId?: string, constructionSiteId?: string): Promise<Project | undefined> => {
@@ -485,6 +580,308 @@ const buildSevenDayForecastMetric = (tasks: ProjectTask[]): SevenDayForecastDash
   };
 };
 
+const buildPlannedProgress = (tasks: ProjectTask[], today: string): number => {
+  const leafTasks = getLeafProjectTasks(tasks);
+  const totalWeight = sum(leafTasks, getTaskProgressWeight);
+  if (totalWeight <= 0) return 0;
+  const weighted = leafTasks.reduce((total, task) => {
+    let planned = 0;
+    if (task.startDate && task.endDate) {
+      if (today >= task.endDate) planned = 100;
+      else if (today <= task.startDate) planned = 0;
+      else {
+        const duration = Math.max(1, daysBetweenDates(task.startDate, task.endDate) + 1);
+        const elapsed = Math.max(0, daysBetweenDates(task.startDate, today) + 1);
+        planned = clampProgress((elapsed / duration) * 100);
+      }
+    }
+    return total + planned * getTaskProgressWeight(task);
+  }, 0);
+  return Math.round(weighted / totalWeight);
+};
+
+const buildScheduleHealthMetric = (
+  tasks: ProjectTask[],
+  progress: ProjectProgressMetric,
+  delayEvents: ProjectDelayEvent[],
+): ExecutiveScheduleHealthMetric => {
+  const today = todayIso();
+  const leafTasks = getLeafProjectTasks(tasks);
+  const forecast = buildScheduleForecast(tasks, delayEvents);
+  const plannedProgress = buildPlannedProgress(tasks, today);
+  const progressVariance = Math.round((progress.percent - plannedProgress) * 10) / 10;
+  const overdueTasks = leafTasks.filter(task => task.progress < 100 && !!task.endDate && task.endDate < today);
+  const upcomingEnd = addDaysIso(today, 10);
+  const upcomingDueTasks = leafTasks.filter(task => task.progress < 100 && !!task.endDate && task.endDate >= today && task.endDate <= upcomingEnd);
+  const criticalIds = forecast.baseCriticalPath?.criticalPath || [];
+  const criticalOverdueTaskCount = overdueTasks.filter(task => criticalIds.includes(task.id) || task.isCritical).length;
+  const forecastDeltaDays = forecast.projectEndDeltaDays || 0;
+  const status: ExecutiveHealthStatus = forecastDeltaDays > 0 || criticalOverdueTaskCount > 0 || progressVariance <= -10
+    ? 'red'
+    : forecast.activeDelayEvents.length > 0 || overdueTasks.length > 0 || progressVariance <= -3
+      ? 'amber'
+      : 'green';
+
+  return {
+    status,
+    plannedProgress,
+    actualProgress: progress.percent,
+    progressVariance,
+    baselineEndDate: forecast.baseProjectEndDate || maxEndDate(tasks),
+    forecastEndDate: forecast.forecastProjectEndDate || maxEndDate(tasks),
+    forecastDeltaDays,
+    activeDelayEventCount: forecast.activeDelayEvents.length,
+    impactedTaskCount: forecast.changedTasks.length,
+    overdueTaskCount: overdueTasks.length,
+    criticalOverdueTaskCount,
+    upcomingDueTaskCount: upcomingDueTasks.length,
+  };
+};
+
+const paymentGroupKey = (schedule: PaymentSchedule): string =>
+  [schedule.type, schedule.contractType || '', schedule.contractId || ''].join('|');
+
+const getPartyMetric = (
+  schedule: PaymentSchedule,
+  owner: PartyDashboardMetric,
+  subcontractor: PartyDashboardMetric,
+  supplier: SupplierDashboardMetric,
+): {
+  party: ExecutivePaymentParty;
+  label: string;
+  performedValue: number;
+  acceptedValue: number;
+  certifiedValue: number;
+  paidValue: number;
+} => {
+  if (schedule.type === 'receivable' || schedule.contractType === 'customer') {
+    return {
+      party: 'owner',
+      label: 'Chủ đầu tư',
+      performedValue: owner.performedValue,
+      acceptedValue: owner.acceptedValue,
+      certifiedValue: owner.paymentRequested,
+      paidValue: owner.actualPaid,
+    };
+  }
+  if (schedule.contractType === 'subcontractor') {
+    return {
+      party: 'subcontractor',
+      label: 'Thầu phụ',
+      performedValue: subcontractor.performedValue,
+      acceptedValue: subcontractor.acceptedValue,
+      certifiedValue: subcontractor.paymentRequested,
+      paidValue: subcontractor.actualPaid,
+    };
+  }
+  return {
+    party: 'supplier',
+    label: 'Nhà cung cấp',
+    performedValue: supplier.paymentRequested,
+    acceptedValue: supplier.paymentRequested,
+    certifiedValue: supplier.paymentRequested,
+    paidValue: supplier.actualPaid,
+  };
+};
+
+const buildPaymentPeriodRisks = (
+  paymentSchedules: PaymentSchedule[],
+  owner: PartyDashboardMetric,
+  subcontractor: PartyDashboardMetric,
+  supplier: SupplierDashboardMetric,
+): ExecutivePaymentPeriodRisk[] => {
+  const today = todayIso();
+  const horizon = addDaysIso(today, 10);
+  const openSchedules = paymentSchedules
+    .filter(schedule => schedule.status !== 'paid')
+    .filter(schedule => schedule.dueDate && schedule.dueDate <= horizon)
+    .filter(schedule => schedule.type === 'receivable' || schedule.contractType === 'subcontractor' || schedule.type === 'payable');
+
+  return openSchedules.map(schedule => {
+    const partyMetric = getPartyMetric(schedule, owner, subcontractor, supplier);
+    const key = paymentGroupKey(schedule);
+    const targetCumulative = sum(
+      paymentSchedules.filter(item => paymentGroupKey(item) === key && item.dueDate <= schedule.dueDate),
+      item => item.amount,
+    );
+
+    let blockingStage: ExecutivePaymentBlockingStage = 'none';
+    let missingAmount = 0;
+    if (partyMetric.performedValue < targetCumulative) {
+      blockingStage = 'production';
+      missingAmount = targetCumulative - partyMetric.performedValue;
+    } else if (partyMetric.acceptedValue < targetCumulative) {
+      blockingStage = 'acceptance';
+      missingAmount = targetCumulative - partyMetric.acceptedValue;
+    } else if (partyMetric.certifiedValue < targetCumulative) {
+      blockingStage = 'certificate';
+      missingAmount = targetCumulative - partyMetric.certifiedValue;
+    } else if (partyMetric.paidValue < targetCumulative) {
+      blockingStage = 'cash';
+      missingAmount = targetCumulative - partyMetric.paidValue;
+    }
+
+    const daysUntilDue = daysBetweenDates(today, schedule.dueDate);
+    const isOverdue = daysUntilDue < 0 || schedule.status === 'overdue';
+    const severity: ExecutiveAlertSeverity = blockingStage === 'none'
+      ? 'info'
+      : isOverdue || daysUntilDue <= 3
+        ? 'critical'
+        : 'warning';
+    const recommendationByStage: Record<ExecutivePaymentBlockingStage, string> = {
+      none: 'Đủ điều kiện theo dữ liệu hiện có; theo dõi thu/chi đúng hạn.',
+      production: partyMetric.party === 'subcontractor'
+        ? 'Không thanh toán đủ kỳ; chỉ xem xét phần đã có khối lượng/tiến độ thực tế.'
+        : 'Cần đẩy sản lượng/khối lượng thi công trước kỳ thanh toán.',
+      acceptance: 'Cần hoàn tất nghiệm thu khối lượng trước khi lập/thực hiện thanh toán.',
+      certificate: 'Cần lập hoặc gửi chứng từ thanh toán cho phần đã nghiệm thu.',
+      cash: partyMetric.party === 'owner'
+        ? 'Cần theo dõi thu tiền từ CĐT theo chứng từ đã đủ điều kiện.'
+        : 'Cần chuẩn bị dòng tiền trả theo phần đã đủ hồ sơ.',
+    };
+
+    return {
+      id: schedule.id,
+      party: partyMetric.party,
+      label: partyMetric.label,
+      description: schedule.description,
+      dueDate: schedule.dueDate,
+      daysUntilDue,
+      targetCumulative,
+      performedValue: partyMetric.performedValue,
+      acceptedValue: partyMetric.acceptedValue,
+      certifiedValue: partyMetric.certifiedValue,
+      paidValue: partyMetric.paidValue,
+      blockingStage,
+      missingAmount: clampMoney(missingAmount),
+      severity,
+      recommendation: recommendationByStage[blockingStage],
+    };
+  }).sort((a, b) => severityRank[a.severity] - severityRank[b.severity] || a.dueDate.localeCompare(b.dueDate));
+};
+
+const buildApprovalQueueMetric = (
+  tasks: ProjectTask[],
+  logs: DailyLog[],
+  completionRequests: ProjectTaskCompletionRequest[],
+  acceptances: QuantityAcceptance[],
+  certs: PaymentCertificate[],
+  variations: ContractVariation[],
+  reconciliationGroups: BoqReconciliationGroup[],
+): ExecutiveApprovalQueueMetric => {
+  const queue = {
+    dailyLogSubmitted: logs.filter(log => log.status === 'submitted').length,
+    taskCompletionSubmitted: completionRequests.filter(req => ['submitted', 'verified'].includes(req.status)).length,
+    taskGatePending: tasks.filter(task => task.gateStatus === 'pending' || (task.progress >= 100 && (!task.gateStatus || task.gateStatus === 'none'))).length,
+    quantityAcceptanceSubmitted: acceptances.filter(item => item.status === 'submitted').length,
+    paymentCertificateSubmitted: certs.filter(cert => cert.status === 'submitted').length,
+    variationSubmitted: variations.filter(item => item.status === 'submitted').length,
+    reconciliationSubmitted: reconciliationGroups.filter(item => item.status === 'submitted').length,
+    total: 0,
+  };
+  queue.total =
+    queue.dailyLogSubmitted +
+    queue.taskCompletionSubmitted +
+    queue.taskGatePending +
+    queue.quantityAcceptanceSubmitted +
+    queue.paymentCertificateSubmitted +
+    queue.variationSubmitted +
+    queue.reconciliationSubmitted;
+  return queue;
+};
+
+const buildPriorityAlerts = (
+  scheduleHealth: ExecutiveScheduleHealthMetric,
+  paymentPeriodRisks: ExecutivePaymentPeriodRisk[],
+  approvalQueue: ExecutiveApprovalQueueMetric,
+  sourceWarnings: string[],
+): ExecutivePriorityAlert[] => {
+  const alerts: ExecutivePriorityAlert[] = [];
+  if (scheduleHealth.status === 'red') {
+    alerts.push({
+      id: 'schedule-red',
+      severity: 'critical',
+      title: 'Tiến độ cần can thiệp',
+      message: `Actual ${scheduleHealth.actualProgress}% so với kế hoạch ${scheduleHealth.plannedProgress}%. ${scheduleHealth.criticalOverdueTaskCount} hạng mục critical quá hạn, forecast ${scheduleHealth.forecastDeltaDays > 0 ? `trễ ${scheduleHealth.forecastDeltaDays} ngày` : 'chưa kéo dài'}.`,
+      targetTab: 'gantt',
+    });
+  } else if (scheduleHealth.status === 'amber') {
+    alerts.push({
+      id: 'schedule-amber',
+      severity: 'warning',
+      title: 'Tiến độ có dấu hiệu lệch',
+      message: `${scheduleHealth.overdueTaskCount} hạng mục quá hạn, ${scheduleHealth.activeDelayEventCount} sự kiện chậm đang ảnh hưởng forecast.`,
+      targetTab: 'gantt',
+    });
+  }
+
+  paymentPeriodRisks
+    .filter(risk => risk.severity === 'critical' || risk.severity === 'warning')
+    .slice(0, 5)
+    .forEach(risk => {
+      alerts.push({
+        id: `payment-${risk.id}`,
+        severity: risk.severity,
+        title: `${risk.label}: ${risk.description}`,
+        message: `${risk.daysUntilDue < 0 ? `Quá hạn ${Math.abs(risk.daysUntilDue)} ngày` : `Còn ${risk.daysUntilDue} ngày`} · thiếu ${Math.round(risk.missingAmount).toLocaleString('vi-VN')} đ tại bước ${risk.blockingStage}. ${risk.recommendation}`,
+        targetTab: risk.party === 'owner' ? 'contract' : 'subcontract',
+        dueDate: risk.dueDate,
+        amount: risk.missingAmount,
+      });
+    });
+
+  if (approvalQueue.total > 0) {
+    alerts.push({
+      id: 'approval-queue',
+      severity: approvalQueue.total >= 5 ? 'warning' : 'info',
+      title: 'Có chứng từ đang chờ xử lý',
+      message: `${approvalQueue.total} nhật ký/chứng từ/hạng mục đang ở bước submitted/pending.`,
+      targetTab: 'executive',
+    });
+  }
+
+  if (sourceWarnings.length > 0) {
+    alerts.push({
+      id: 'data-source-warning',
+      severity: 'info',
+      title: 'Một số nguồn dữ liệu chưa đọc được',
+      message: `${sourceWarnings.length} nguồn dữ liệu fallback. Xem ghi chú dữ liệu để kiểm tra Supabase/RLS.`,
+    });
+  }
+
+  return alerts
+    .sort((a, b) => severityRank[a.severity] - severityRank[b.severity])
+    .slice(0, 8);
+};
+
+const buildExecutiveMetric = (
+  tasks: ProjectTask[],
+  logs: DailyLog[],
+  completionRequests: ProjectTaskCompletionRequest[],
+  acceptances: QuantityAcceptance[],
+  certs: PaymentCertificate[],
+  variations: ContractVariation[],
+  reconciliationGroups: BoqReconciliationGroup[],
+  paymentSchedules: PaymentSchedule[],
+  delayEvents: ProjectDelayEvent[],
+  progress: ProjectProgressMetric,
+  owner: PartyDashboardMetric,
+  subcontractor: PartyDashboardMetric,
+  supplier: SupplierDashboardMetric,
+  sourceWarnings: string[],
+): ExecutiveDashboardMetric => {
+  const scheduleHealth = buildScheduleHealthMetric(tasks, progress, delayEvents);
+  const paymentPeriodRisks = buildPaymentPeriodRisks(paymentSchedules, owner, subcontractor, supplier);
+  const approvalQueue = buildApprovalQueueMetric(tasks, logs, completionRequests, acceptances, certs, variations, reconciliationGroups);
+  const priorityAlerts = buildPriorityAlerts(scheduleHealth, paymentPeriodRisks, approvalQueue, sourceWarnings);
+  return {
+    scheduleHealth,
+    paymentPeriodRisks,
+    approvalQueue,
+    priorityAlerts,
+  };
+};
+
 export const projectDashboardMetricsService = {
   async getMetrics(params: { projectId?: string; constructionSiteId: string }): Promise<ProjectDashboardMetrics> {
     const warnings: string[] = [];
@@ -511,6 +908,7 @@ export const projectDashboardMetricsService = {
       customerItems,
       subcontractorItems,
       taskLinks,
+      completionRequests,
       acceptances,
       certs,
       advances,
@@ -518,6 +916,9 @@ export const projectDashboardMetricsService = {
       purchaseOrders,
       materialBudgets,
       paymentSchedules,
+      delayEvents,
+      variations,
+      reconciliationGroups,
       financialKPIs,
       customerReconciliationGroups,
       subcontractorReconciliationGroups,
@@ -528,6 +929,7 @@ export const projectDashboardMetricsService = {
       safeLoad('contract_items customer', warnings, () => contractItemService.listBySite(projectScopeId, 'customer', constructionSiteId), [] as ContractItem[]),
       safeLoad('contract_items subcontractor', warnings, () => contractItemService.listBySite(projectScopeId, 'subcontractor', constructionSiteId), [] as ContractItem[]),
       safeLoad('task_contract_items', warnings, () => taskContractItemService.listBySite(projectScopeId, constructionSiteId), [] as TaskContractItem[]),
+      safeLoad('project_task_completion_requests', warnings, () => taskCompletionRequestService.list(projectScopeId, constructionSiteId), [] as ProjectTaskCompletionRequest[]),
       safeLoad('quantity_acceptances', warnings, () => quantityAcceptanceService.listBySite(constructionSiteId), [] as QuantityAcceptance[]),
       safeLoad('payment_certificates', warnings, () => paymentCertificateService.listBySite(constructionSiteId), [] as PaymentCertificate[]),
       safeLoad('advance_payments', warnings, () => advancePaymentService.listBySite(constructionSiteId), [] as AdvancePayment[]),
@@ -535,6 +937,9 @@ export const projectDashboardMetricsService = {
       safeLoad('purchase_orders', warnings, () => poService.list(projectScopeId, constructionSiteId), [] as PurchaseOrder[]),
       safeLoad('material_budget_items', warnings, () => boqService.list(projectScopeId, constructionSiteId), [] as MaterialBudgetItem[]),
       safeLoad('payment_schedules', warnings, () => paymentService.list(projectScopeId, constructionSiteId), [] as PaymentSchedule[]),
+      safeLoad('project_delay_events', warnings, () => delayEventService.list(projectScopeId, constructionSiteId), [] as ProjectDelayEvent[]),
+      safeLoad('contract_variations', warnings, () => listContractVariations(projectScopeId, constructionSiteId), [] as ContractVariation[]),
+      safeLoad('boq_reconciliation submitted', warnings, () => boqReconciliationService.listByProject(projectScopeId, constructionSiteId), [] as BoqReconciliationGroup[]),
       safeLoad('financial_kpis', warnings, () => projectFinancialService.getKPIs(constructionSiteId), undefined as ProjectFinancialKPIs | undefined),
       safeLoad('boq_reconciliation customer', warnings, () => boqReconciliationService.listOfficialByProject(projectScopeId, constructionSiteId, 'customer'), []),
       safeLoad('boq_reconciliation subcontractor', warnings, () => boqReconciliationService.listOfficialByProject(projectScopeId, constructionSiteId, 'subcontractor'), []),
@@ -549,6 +954,22 @@ export const projectDashboardMetricsService = {
     const material = buildMaterialMetric(materialBudgets, purchaseOrders);
     const sevenDayForecast = buildSevenDayForecastMetric(tasks);
     const progress = buildProgressMetric(project, tasks, taskLinks, customerItems);
+    const executive = buildExecutiveMetric(
+      tasks,
+      logs,
+      completionRequests,
+      acceptances,
+      certs,
+      variations,
+      reconciliationGroups,
+      paymentSchedules,
+      delayEvents,
+      progress,
+      owner,
+      subcontractor,
+      supplier,
+      warnings,
+    );
 
     return {
       project,
@@ -561,6 +982,7 @@ export const projectDashboardMetricsService = {
       constructionCost,
       material,
       sevenDayForecast,
+      executive,
       sourceNotes,
       warnings,
       calculatedAt: new Date().toISOString(),

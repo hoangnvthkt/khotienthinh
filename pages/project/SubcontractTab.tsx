@@ -14,6 +14,7 @@ import { useConfirm } from '../../context/ConfirmContext';
 interface SubcontractTabProps {
     constructionSiteId?: string;
     projectId?: string;
+    canManageTab?: boolean;
 }
 
 const fmt = (n: number) => {
@@ -29,7 +30,7 @@ const STATUS_CFG: Record<AcceptanceStatus, { label: string; color: string; bg: s
     paid: { label: 'Đã TT', color: 'text-violet-600', bg: 'bg-violet-50 border-violet-200', icon: <CreditCard size={12} /> },
 };
 
-const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, projectId }) => {
+const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';
@@ -60,6 +61,12 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
     const [fNote, setFNote] = useState('');
     const [fApprovedBy, setFApprovedBy] = useState('');
 
+    const ensureCanManage = (action: string) => {
+        if (canManageTab) return true;
+        toast.warning('Không có quyền quản trị tab', `Bạn cần quyền quản trị "Nhà thầu" để ${action}.`);
+        return false;
+    };
+
     const resetForm = () => {
         setEditing(null);
         setFormContractId('');
@@ -70,6 +77,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
     };
 
     const openNewAcceptance = (contractId: string) => {
+        if (!ensureCanManage('tạo đợt nghiệm thu')) return;
         resetForm();
         setFormContractId(contractId);
         const existingCount = acceptances.filter(a => a.contractId === contractId).length;
@@ -78,6 +86,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
     };
 
     const openEditAcceptance = (a: AcceptanceRecord) => {
+        if (!ensureCanManage('sửa nghiệm thu')) return;
         setEditing(a);
         setFormContractId(a.contractId);
         setFPeriod(String(a.periodNumber)); setFDesc(a.description);
@@ -88,6 +97,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
     };
 
     const handleSave = async () => {
+        if (!ensureCanManage('lưu nghiệm thu')) return;
         if (!formContractId || !fValue || !fDesc) return;
         const value = Number(fValue);
         const retention = Number(fRetention);
@@ -120,6 +130,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
     };
 
     const handleDeleteAcceptance = async (id: string) => {
+        if (!ensureCanManage('xoá nghiệm thu')) return;
         const a = acceptances.find(r => r.id === id);
         const ok = await confirm({ targetName: `Biên bản NT Đợt ${a?.periodNumber || ''}`, title: 'Xoá biên bản nghiệm thu' });
         if (!ok) return;
@@ -133,6 +144,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
     };
 
     const updateAcceptanceStatus = async (id: string, status: AcceptanceStatus) => {
+        if (!ensureCanManage('cập nhật trạng thái nghiệm thu')) return;
         const record = acceptances.find(a => a.id === id);
         if (!record) return;
         const updated = {
@@ -299,10 +311,12 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
                                             <span className="text-xs font-black text-slate-600 flex items-center gap-1">
                                                 <CheckCircle2 size={12} className="text-emerald-500" /> Biên bản nghiệm thu
                                             </span>
-                                            <button onClick={() => openNewAcceptance(contract.id)}
-                                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-all">
-                                                <Plus size={12} /> Tạo đợt NT
-                                            </button>
+                                            {canManageTab && (
+                                                <button onClick={() => openNewAcceptance(contract.id)}
+                                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-all">
+                                                    <Plus size={12} /> Tạo đợt NT
+                                                </button>
+                                            )}
                                         </div>
 
                                         {/* Records List */}
@@ -342,35 +356,39 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
                                                                         </div>
                                                                     </div>
                                                                     {/* Status action buttons */}
-                                                                    <div className="flex gap-1">
-                                                                        {record.status === 'draft' && (
+                                                                    {canManageTab && (
+                                                                        <div className="flex gap-1">
+                                                                            {record.status === 'draft' && (
                                                                             <button onClick={() => updateAcceptanceStatus(record.id, 'submitted')}
                                                                                 title="Gửi duyệt"
                                                                                 className="w-7 h-7 rounded-lg flex items-center justify-center text-amber-400 hover:text-amber-600 hover:bg-amber-50 border border-transparent hover:border-amber-200">
                                                                                 <Send size={13} />
                                                                             </button>
-                                                                        )}
-                                                                        {record.status === 'submitted' && (
+                                                                            )}
+                                                                            {record.status === 'submitted' && (
                                                                             <button onClick={() => updateAcceptanceStatus(record.id, 'approved')}
                                                                                 title="Phê duyệt"
                                                                                 className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50 border border-transparent hover:border-emerald-200">
                                                                                 <CheckCircle2 size={13} />
                                                                             </button>
-                                                                        )}
-                                                                        {record.status === 'approved' && (
+                                                                            )}
+                                                                            {record.status === 'approved' && (
                                                                             <button onClick={() => updateAcceptanceStatus(record.id, 'paid')}
                                                                                 title="Đã thanh toán"
                                                                                 className="w-7 h-7 rounded-lg flex items-center justify-center text-violet-400 hover:text-violet-600 hover:bg-violet-50 border border-transparent hover:border-violet-200">
                                                                                 <CreditCard size={13} />
                                                                             </button>
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                        <button onClick={() => openEditAcceptance(record)}
-                                                                            className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
-                                                                        <button onClick={() => handleDeleteAcceptance(record.id)}
-                                                                            className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
-                                                                    </div>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                    {canManageTab && (
+                                                                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                            <button onClick={() => openEditAcceptance(record)}
+                                                                                className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
+                                                                            <button onClick={() => handleDeleteAcceptance(record.id)}
+                                                                                className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>

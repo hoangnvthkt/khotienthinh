@@ -157,7 +157,7 @@ export const projectFinancialService = {
 
     // ── KPI 2: Contract Margin ──
     const committedPO = (poData as any[])
-      .filter(p => ['sent', 'partial'].includes(p.status))
+      .filter(p => ['sent', 'confirmed', 'in_transit', 'partial'].includes(p.status))
       .reduce((s, p) => s + Number(p.total_amount || 0), 0);
     const committedCost = subcontractValue + committedPO;
     const forecastFinalCost = actualCost + committedCost;

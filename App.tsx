@@ -16,6 +16,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { Role } from './types';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { ROUTE_TO_MODULE } from './constants/routes';
+import { getProjectAllowedSubModuleRedirect, hasProjectTabPermissionRoute } from './lib/projectTabPermissions';
 
 // Lazy load all page components for code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -23,6 +24,7 @@ const Inventory = React.lazy(() => import('./pages/Inventory'));
 const Operations = React.lazy(() => import('./pages/Operations'));
 const Settings = React.lazy(() => import('./pages/Settings'));
 const RequestWorkflow = React.lazy(() => import('./pages/RequestWorkflow'));
+const MaterialCodeRequests = React.lazy(() => import('./pages/MaterialCodeRequests'));
 const Audit = React.lazy(() => import('./pages/Audit'));
 const Reports = React.lazy(() => import('./pages/Reports'));
 const MisaExport = React.lazy(() => import('./pages/MisaExport'));
@@ -167,9 +169,22 @@ const SubModuleGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =
   }
 
   // User bị giới hạn sub-route trong module
-  const allowedSubs = user.allowedSubModules?.[moduleKey];
-  if (allowedSubs && allowedSubs.length > 0 && !allowedSubs.includes(pathname)) {
-    return <Navigate to={allowedSubs[0] || '/'} replace />;
+  const hasSubModuleRestriction = Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, moduleKey);
+  const allowedSubs = user.allowedSubModules?.[moduleKey] || [];
+  if (hasSubModuleRestriction && allowedSubs.length === 0) {
+    return <Navigate to="/" replace />;
+  }
+  if (hasSubModuleRestriction && !allowedSubs.includes(pathname)) {
+    const canOpenProjectShell =
+      moduleKey === 'DA' &&
+      pathname === '/da' &&
+      hasProjectTabPermissionRoute(allowedSubs);
+    if (!canOpenProjectShell) {
+      const redirectTo = moduleKey === 'DA'
+        ? getProjectAllowedSubModuleRedirect(allowedSubs)
+        : allowedSubs[0] || '/';
+      return <Navigate to={redirectTo} replace />;
+    }
   }
 
   return <>{children}</>;
@@ -192,6 +207,7 @@ const AppRoutes: React.FC = () => {
           <Route path="custom-dashboard" element={<CustomDashboard />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="requests" element={<RequestWorkflow />} />
+          <Route path="material-code-requests" element={<MaterialCodeRequests />} />
           <Route path="inventory" element={<Inventory />} />
           <Route path="operations" element={<Operations />} />
           <Route path="audit" element={<Audit />} />

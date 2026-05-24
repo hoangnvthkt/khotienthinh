@@ -14,6 +14,7 @@ import { fromDb } from '../../lib/dbMapping';
 interface Props {
   projectId: string;
   constructionSiteId?: string | null;
+  canManageTab?: boolean;
 }
 
 const LEVEL_COLORS: Record<number, string> = {
@@ -34,7 +35,7 @@ const LEVEL_BG: Record<number, string> = {
   6: 'bg-slate-50 border-slate-100',
 };
 
-const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
+const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canManageTab = true }) => {
   const toast = useToast();
   const confirm = useConfirm();
   const { users, hrmPositions } = useApp();
@@ -118,12 +119,20 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
     setShowModal(false);
   };
 
+  const ensureCanManage = (action: string) => {
+    if (canManageTab) return true;
+    toast.warning('Không có quyền quản trị tab', `Bạn cần quyền quản trị "Tổ chức" để ${action}.`);
+    return false;
+  };
+
   const openAdd = () => {
+    if (!ensureCanManage('thêm thành viên dự án')) return;
     resetForm();
     setShowModal(true);
   };
 
   const openEdit = (s: ProjectStaff) => {
+    if (!ensureCanManage('sửa thành viên dự án')) return;
     setEditingStaff(s);
     setFUserId(s.userId);
     setFPositionId(s.positionId);
@@ -136,6 +145,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
   };
 
   const togglePerm = (ptId: string) => {
+    if (!ensureCanManage('cập nhật quyền dự án')) return;
     setFPermIds(prev => {
       const next = new Set(prev);
       if (next.has(ptId)) next.delete(ptId);
@@ -145,6 +155,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
   };
 
   const handleSave = async () => {
+    if (!ensureCanManage('lưu tổ chức dự án')) return;
     if (!fUserId) { toast.warning('Thiếu', 'Vui lòng chọn nhân viên'); return; }
     if (!fPositionId) { toast.warning('Thiếu', 'Vui lòng chọn vị trí'); return; }
 
@@ -181,6 +192,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
   };
 
   const handleDelete = async (s: ProjectStaff) => {
+    if (!ensureCanManage('xoá thành viên dự án')) return;
     const ok = await confirm({
       title: 'Xoá thành viên',
       targetName: `${s.userName} — ${s.positionName}`,
@@ -197,6 +209,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
   };
 
   const handleEndDate = async (s: ProjectStaff) => {
+    if (!ensureCanManage('kết thúc phân công')) return;
     const ok = await confirm({
       title: 'Kết thúc phân công',
       targetName: `${s.userName} — ${s.positionName}`,
@@ -214,6 +227,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
 
   // Quick inline permission toggle
   const handleQuickTogglePerm = async (s: ProjectStaff, ptId: string) => {
+    if (!ensureCanManage('cấp hoặc gỡ quyền nghiệp vụ')) return;
     const currentPerms = (s.permissions || []).filter(p => p.isActive).map(p => p.permissionTypeId);
     const newPerms = currentPerms.includes(ptId)
       ? currentPerms.filter(id => id !== ptId)
@@ -244,10 +258,12 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
             <p className="text-xs text-slate-400">{staff.length} thành viên • {groupedStaff.length} cấp bậc</p>
           </div>
         </div>
-        <button onClick={openAdd}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black text-white bg-gradient-to-r from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/25 hover:shadow-xl hover:scale-[1.02] transition-all">
-          <UserPlus size={14} /> Thêm thành viên
-        </button>
+        {canManageTab && (
+          <button onClick={openAdd}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-black text-white bg-gradient-to-r from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/25 hover:shadow-xl hover:scale-[1.02] transition-all">
+            <UserPlus size={14} /> Thêm thành viên
+          </button>
+        )}
       </div>
 
       {/* Staff Grid by Level */}
@@ -307,19 +323,21 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
                           )}
                         </div>
                         {/* Actions */}
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => openEdit(s)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors" title="Sửa">
-                            <Edit2 size={12} />
-                          </button>
-                          {!isEnded && (
-                            <button onClick={() => handleEndDate(s)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-amber-600 hover:bg-amber-50 transition-colors" title="Kết thúc">
-                              <XCircle size={12} />
+                        {canManageTab && (
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => openEdit(s)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors" title="Sửa">
+                              <Edit2 size={12} />
                             </button>
-                          )}
-                          <button onClick={() => handleDelete(s)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors" title="Xoá">
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
+                            {!isEnded && (
+                              <button onClick={() => handleEndDate(s)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-amber-600 hover:bg-amber-50 transition-colors" title="Kết thúc">
+                                <XCircle size={12} />
+                              </button>
+                            )}
+                            <button onClick={() => handleDelete(s)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors" title="Xoá">
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {/* Permissions — inline toggles */}
@@ -329,10 +347,11 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
                           return (
                             <button key={pt.id}
                               onClick={() => handleQuickTogglePerm(s, pt.id)}
+                              disabled={!canManageTab}
                               className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold transition-all border ${
                                 has
                                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm'
-                                  : 'bg-white text-slate-300 border-slate-100 hover:border-slate-200'
+                                  : `bg-white text-slate-300 border-slate-100 ${canManageTab ? 'hover:border-slate-200' : 'cursor-default'}`
                               }`}
                               title={pt.description || pt.name}>
                               {has ? <CheckCircle2 size={9} /> : <XCircle size={9} />}

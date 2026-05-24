@@ -13,6 +13,7 @@ interface DocumentsTabProps {
     constructionSiteId?: string;
     projectId?: string;
     uploadedBy?: string;
+    canManageTab?: boolean;
 }
 
 const FILE_ICONS: Record<string, { icon: React.ReactNode; color: string }> = {
@@ -29,7 +30,7 @@ const FILE_ICONS: Record<string, { icon: React.ReactNode; color: string }> = {
 
 const getFileIcon = (fileType: string) => FILE_ICONS[fileType] || { icon: <FileIcon size={18} />, color: 'text-slate-500 bg-slate-50' };
 
-const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, projectId, uploadedBy }) => {
+const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, projectId, uploadedBy, canManageTab = true }) => {
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';
@@ -75,6 +76,10 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, project
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault();
         setDragOver(false);
+        if (!canManageTab) {
+            toast.warning('Không có quyền quản trị tab', 'Bạn cần quyền quản trị "Tài liệu" để tải tài liệu lên.');
+            return;
+        }
         const files: File[] = Array.from(e.dataTransfer.files);
         if (files.length > 0) {
             setUploadFiles(files);
@@ -84,6 +89,11 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, project
     };
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!canManageTab) {
+            e.target.value = '';
+            toast.warning('Không có quyền quản trị tab', 'Bạn cần quyền quản trị "Tài liệu" để tải tài liệu lên.');
+            return;
+        }
         const files: File[] = Array.from(e.target.files || []);
         if (files.length > 0) {
             setUploadFiles(files);
@@ -93,6 +103,10 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, project
     };
 
     const handleUpload = async () => {
+        if (!canManageTab) {
+            toast.warning('Không có quyền quản trị tab', 'Bạn cần quyền quản trị "Tài liệu" để tải tài liệu lên.');
+            return;
+        }
         if (uploadFiles.length === 0 || !uploadTitle) return;
         // Validate file sizes
         for (const file of uploadFiles) {
@@ -134,6 +148,10 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, project
     };
 
     const handleDelete = async (doc: ProjectDocument) => {
+        if (!canManageTab) {
+            toast.warning('Không có quyền quản trị tab', 'Bạn cần quyền quản trị "Tài liệu" để xoá tài liệu.');
+            return;
+        }
         const ok = await confirm({ targetName: doc.title, title: 'Xoá tài liệu', warningText: 'File sẽ bị xóa khỏi Storage vĩnh viễn.' });
         if (!ok) return;
         try {
@@ -203,10 +221,12 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, project
                         <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     </div>
                     {/* Upload Button */}
-                    <button onClick={() => { resetUploadForm(); setShowUploadModal(true); }}
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-indigo-500 to-purple-500 shadow-lg hover:shadow-xl transition-all">
-                        <Upload size={14} /> Tải lên
-                    </button>
+                    {canManageTab && (
+                        <button onClick={() => { resetUploadForm(); setShowUploadModal(true); }}
+                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-indigo-500 to-purple-500 shadow-lg hover:shadow-xl transition-all">
+                            <Upload size={14} /> Tải lên
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -216,10 +236,10 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, project
                 onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
             >
                 {filteredDocs.length === 0 ? (
-                    <div className="p-16 text-center cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                    <div className={`p-16 text-center ${canManageTab ? 'cursor-pointer' : ''}`} onClick={() => canManageTab && fileInputRef.current?.click()}>
                         <Upload size={48} className={`mx-auto mb-4 ${dragOver ? 'text-indigo-400 animate-bounce' : 'text-slate-200'}`} />
                         <p className="text-sm font-bold text-slate-400">
-                            {dragOver ? 'Thả file vào đây!' : 'Kéo thả file hoặc nhấn để chọn'}
+                            {canManageTab ? (dragOver ? 'Thả file vào đây!' : 'Kéo thả file hoặc nhấn để chọn') : 'Chưa có tài liệu'}
                         </p>
                         <p className="text-[10px] text-slate-300 mt-1">Hỗ trợ PDF, hình ảnh, Excel, Word, AutoCAD...</p>
                     </div>
@@ -231,10 +251,12 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, project
                                 <FolderOpen size={14} className="text-indigo-500" />
                                 Tài liệu ({filteredDocs.length})
                             </span>
-                            <button onClick={() => fileInputRef.current?.click()}
-                                className="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1">
-                                <Plus size={10} /> Thêm file
-                            </button>
+                            {canManageTab && (
+                                <button onClick={() => fileInputRef.current?.click()}
+                                    className="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1">
+                                    <Plus size={10} /> Thêm file
+                                </button>
+                            )}
                         </div>
 
                         {/* File Grid */}
@@ -288,10 +310,12 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, project
                                                 className="w-6 h-6 rounded-lg bg-white shadow border border-slate-200 flex items-center justify-center text-slate-400 hover:text-blue-500" title="Tải xuống">
                                                 <Download size={11} />
                                             </button>
-                                            <button onClick={e => { e.stopPropagation(); handleDelete(doc); }}
-                                                className="w-6 h-6 rounded-lg bg-white shadow border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-500" title="Xoá">
-                                                <Trash2 size={11} />
-                                            </button>
+                                            {canManageTab && (
+                                                <button onClick={e => { e.stopPropagation(); handleDelete(doc); }}
+                                                    className="w-6 h-6 rounded-lg bg-white shadow border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-500" title="Xoá">
+                                                    <Trash2 size={11} />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 );

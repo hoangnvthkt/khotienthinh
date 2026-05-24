@@ -139,9 +139,17 @@ export const projectMasterService = {
     const { data, error } = await supabase
       .from(TABLE)
       .select('*')
+      .order('is_pinned', { ascending: false })
+      .order('pinned_at', { ascending: false, nullsFirst: false })
       .order('updated_at', { ascending: false });
-    if (error) throw error;
-    const rows = (data || []).map(mapProject);
+    if (error && !isMissingSchemaError(error)) throw error;
+    let rowsData = data || [];
+    if (error) {
+      const fallback = await supabase.from(TABLE).select('*').order('updated_at', { ascending: false });
+      if (fallback.error) throw fallback.error;
+      rowsData = fallback.data || [];
+    }
+    const rows = rowsData.map(mapProject);
     return options.includeHidden ? rows : rows.filter(project => !project.isHidden);
   },
 
@@ -185,6 +193,7 @@ export const projectMasterService = {
         manualProgressPercent: input.manualProgressPercent || 0,
         createdBy: input.createdBy,
         source: 'manual',
+        isPinned: false,
         isHidden: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -240,6 +249,9 @@ export const projectMasterService = {
       endDate: project.endDate || null,
       progressCalculationMode: project.progressCalculationMode || 'gantt_weighted',
       manualProgressPercent: project.manualProgressPercent || 0,
+      ...(project.isPinned !== undefined ? { isPinned: project.isPinned } : {}),
+      ...(project.pinnedAt !== undefined ? { pinnedAt: project.pinnedAt || null } : {}),
+      ...(project.pinnedBy !== undefined ? { pinnedBy: project.pinnedBy || null } : {}),
       ...(project.isHidden !== undefined ? { isHidden: project.isHidden } : {}),
       ...(project.hiddenAt !== undefined ? { hiddenAt: project.hiddenAt || null } : {}),
       ...(project.hiddenBy !== undefined ? { hiddenBy: project.hiddenBy || null } : {}),
@@ -250,6 +262,35 @@ export const projectMasterService = {
       .from(TABLE)
       .update(payload)
       .eq('id', project.id)
+      .select('*')
+      .single();
+    if (error) throw error;
+    return mapProject(data);
+  },
+
+  async setPinned(projectId: string, pinned: boolean, pinnedBy?: string): Promise<Project> {
+    if (!isSupabaseConfigured) {
+      return {
+        id: projectId,
+        code: projectId,
+        name: projectId,
+        projectType: 'construction',
+        status: 'planning',
+        isPinned: pinned,
+        pinnedAt: pinned ? new Date().toISOString() : undefined,
+        pinnedBy: pinned ? pinnedBy : undefined,
+        source: 'manual',
+      };
+    }
+
+    const { data, error } = await supabase
+      .from(TABLE)
+      .update({
+        is_pinned: pinned,
+        pinned_at: pinned ? new Date().toISOString() : null,
+        pinned_by: pinned ? pinnedBy || null : null,
+      })
+      .eq('id', projectId)
       .select('*')
       .single();
     if (error) throw error;

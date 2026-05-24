@@ -15,7 +15,6 @@ import { acceptanceService, boqService, matRequestService, vendorService, poServ
 import { customerContractService, subcontractorContractService } from '../../lib/hdService';
 import { calculateProjectProgress } from '../../lib/projectScheduleRules';
 import { projectFinancialService, ProjectFinancialKPIs } from '../../lib/projectFinancialService';
-import FastConsDashboard from '../../components/project/FastConsDashboard';
 
 interface ReportTabProps {
     constructionSiteId: string;
@@ -350,8 +349,6 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
 
     return (
         <div className="space-y-6">
-            <FastConsDashboard constructionSiteId={constructionSiteId} projectId={projectId} />
-
             {/* T1: 4 Financial KPIs Banner */}
             {!kpisLoading && financialKPIs && (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

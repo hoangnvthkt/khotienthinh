@@ -45,6 +45,7 @@ import {
 interface GanttTabProps {
     constructionSiteId?: string;
     projectId?: string;
+    canManageTab?: boolean;
 }
 
 // ============= CONSTANTS =============
@@ -288,7 +289,7 @@ const ProgressCell: React.FC<{ value: number; onChange: (v: number) => void; dis
 };
 
 // ============= MAIN COMPONENT =============
-const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) => {
+const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
     const { projectFinances, updateProjectFinance, user } = useApp();
     const toast = useToast();
     const effectiveId = projectId || constructionSiteId || '';
@@ -431,6 +432,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
 
     const ensureProjectPermission = useCallback((code: ProjectPermissionCode, actionLabel?: string) => {
         if (isAdminUser) return true;
+        if (!canManageTab && code !== 'view') {
+            toast.error('Không có quyền quản trị tab', 'Bạn cần quyền quản trị "Tiến độ" để thay đổi dữ liệu tiến độ.');
+            return false;
+        }
         if (!pbacLoaded) {
             toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
             return false;
@@ -440,7 +445,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             return false;
         }
         return true;
-    }, [isAdminUser, pbacLoaded, projectPerms, toast]);
+    }, [canManageTab, isAdminUser, pbacLoaded, projectPerms, toast]);
 
     // View
     const [viewMode, setViewMode] = useState<ViewMode>('split');
@@ -1976,99 +1981,101 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                         )}
                     </p>
                 </div>
-                <div className="flex items-center gap-2">
-                    <AiInsightPanel module="gantt" siteId={constructionSiteId} />
-                    {/* GĐ3: Excel Import/Export */}
-                    <button onClick={handleExportExcel}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-emerald-600 border border-emerald-200 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30 transition-all"
-                        title="Xuất Excel">
-                        <Download size={13} />
-                    </button>
-                    <button onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-blue-600 border border-blue-200 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-all"
-                        title="Nhập Excel">
-                        <Upload size={13} />
-                    </button>
-                    <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx,.xls" onChange={handleFileUpload} />
-                    {/* GĐ2: Gate Panel toggle */}
-                    {(() => {
-                        const pendingCount = progressSummary.pendingGateCount;
-                        return (
-                            <button onClick={() => setShowGatePanel(v => !v)}
-                                className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${showGatePanel
-                                        ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700'
+                <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 scroll-smooth shrink-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    <div className="flex items-center gap-2 shrink-0">
+                        <AiInsightPanel module="gantt" siteId={constructionSiteId} />
+                        {/* GĐ3: Excel Import/Export */}
+                        <button onClick={handleExportExcel}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-emerald-600 border border-emerald-200 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30 transition-all whitespace-nowrap shrink-0"
+                            title="Xuất Excel">
+                            <Download size={13} />
+                        </button>
+                        <button onClick={() => fileInputRef.current?.click()}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-blue-600 border border-blue-200 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-all whitespace-nowrap shrink-0"
+                            title="Nhập Excel">
+                            <Upload size={13} />
+                        </button>
+                        <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx,.xls" onChange={handleFileUpload} />
+                        {/* GĐ2: Gate Panel toggle */}
+                        {(() => {
+                            const pendingCount = progressSummary.pendingGateCount;
+                            return (
+                                <button onClick={() => setShowGatePanel(v => !v)}
+                                    className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showGatePanel
+                                            ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700'
+                                            : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                        }`}
+                                    title="Danh sách chờ nghiệm thu">
+                                    <Shield size={13} /> Gate
+                                    {pendingCount > 0 && (
+                                        <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center animate-pulse">
+                                            {pendingCount}
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })()}
+                        {/* GĐ1: Lock Baseline */}
+                        <button onClick={lockBaseline}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all whitespace-nowrap shrink-0"
+                            title="Chốt kế hoạch gốc (Baseline)">
+                            <Lock size={13} /> Chốt Baseline
+                            {baselines.length > 0 && <span className="text-[9px] text-slate-400">v{baselines.length}</span>}
+                        </button>
+                        {/* T3: Baseline Compare Panel toggle */}
+                        {baselines.length > 0 && (
+                            <button onClick={() => setShowBaselinePanel(v => !v)}
+                                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${
+                                    showBaselinePanel
+                                        ? 'border-sky-400 bg-sky-50 dark:bg-sky-900/20 text-sky-700'
                                         : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-                                    }`}
-                                title="Danh sách chờ nghiệm thu">
-                                <Shield size={13} /> Gate
-                                {pendingCount > 0 && (
-                                    <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center animate-pulse">
-                                        {pendingCount}
-                                    </span>
-                                )}
+                                }`}
+                                title="So sánh kế hoạch vs thực tế">
+                                <BarChart3 size={13} /> So sánh BL
                             </button>
-                        );
-                    })()}
-                    {/* GĐ1: Lock Baseline */}
-                    <button onClick={lockBaseline}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
-                        title="Chốt kế hoạch gốc (Baseline)">
-                        <Lock size={13} /> Chốt Baseline
-                        {baselines.length > 0 && <span className="text-[9px] text-slate-400">v{baselines.length}</span>}
-                    </button>
-                    {/* T3: Baseline Compare Panel toggle */}
-                    {baselines.length > 0 && (
-                        <button onClick={() => setShowBaselinePanel(v => !v)}
-                            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-                                showBaselinePanel
-                                    ? 'border-sky-400 bg-sky-50 dark:bg-sky-900/20 text-sky-700'
+                        )}
+                        <button onClick={() => setShowForecastPanel(v => !v)}
+                            className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${
+                                showForecastPanel
+                                    ? 'border-red-400 bg-red-50 dark:bg-red-900/20 text-red-700'
                                     : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
                             }`}
-                            title="So sánh kế hoạch vs thực tế">
-                            <BarChart3 size={13} /> So sánh BL
+                            title="Dự báo tác động chậm tiến độ">
+                            <AlertTriangle size={13} /> Dự báo
+                            {activeDelayEventCount > 0 && (
+                                <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center">
+                                    {activeDelayEventCount}
+                                </span>
+                            )}
                         </button>
-                    )}
-                    <button onClick={() => setShowForecastPanel(v => !v)}
-                        className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-                            showForecastPanel
-                                ? 'border-red-400 bg-red-50 dark:bg-red-900/20 text-red-700'
-                                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-                        }`}
-                        title="Dự báo tác động chậm tiến độ">
-                        <AlertTriangle size={13} /> Dự báo
-                        {activeDelayEventCount > 0 && (
-                            <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center">
-                                {activeDelayEventCount}
-                            </span>
-                        )}
-                    </button>
-                    {/* GĐ5: Sandbox Toggle */}
-                    <button onClick={toggleSandbox}
-                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${isSandboxMode
-                                ? 'border-violet-400 bg-violet-50 dark:bg-violet-900/30 text-violet-700 ring-2 ring-violet-300 shadow-lg shadow-violet-500/20'
-                                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-                            }`}
-                        title="Chế độ giả lập (không lưu vào DB)">
-                        <FlaskConical size={13} /> {isSandboxMode ? 'Tắt Giả lập' : 'Giả lập'}
-                    </button>
-                    {/* GĐ5: AI Insights Toggle */}
-                    <button onClick={() => setShowAiInsights(v => !v)}
-                        className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${showAiInsights
-                                ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700'
-                                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-                            }`}
-                        title="AI Dự báo rủi ro">
-                        <Lightbulb size={13} /> AI
-                        {aiInsights.length > 0 && (
-                            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-amber-500 text-white text-[8px] font-black flex items-center justify-center">
-                                {aiInsights.length}
-                            </span>
-                        )}
-                    </button>
-                    <button onClick={() => openAdd()}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg shadow-orange-500/20 hover:shadow-xl hover:scale-[1.02] transition-all">
-                        <Plus size={14} /> Thêm hạng mục
-                    </button>
+                        {/* GĐ5: Sandbox Toggle */}
+                        <button onClick={toggleSandbox}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${isSandboxMode
+                                    ? 'border-violet-400 bg-violet-50 dark:bg-violet-900/30 text-violet-700 ring-2 ring-violet-300 shadow-lg shadow-violet-500/20'
+                                    : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                }`}
+                            title="Chế độ giả lập (không lưu vào DB)">
+                            <FlaskConical size={13} /> {isSandboxMode ? 'Tắt Giả lập' : 'Giả lập'}
+                        </button>
+                        {/* GĐ5: AI Insights Toggle */}
+                        <button onClick={() => setShowAiInsights(v => !v)}
+                            className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showAiInsights
+                                    ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700'
+                                    : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                }`}
+                            title="AI Dự báo rủi ro">
+                            <Lightbulb size={13} /> AI
+                            {aiInsights.length > 0 && (
+                                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-amber-500 text-white text-[8px] font-black flex items-center justify-center">
+                                    {aiInsights.length}
+                                </span>
+                            )}
+                        </button>
+                        <button onClick={() => openAdd()}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg shadow-orange-500/20 hover:shadow-xl hover:scale-[1.02] transition-all whitespace-nowrap shrink-0">
+                            <Plus size={14} /> Thêm hạng mục
+                        </button>
+                    </div>
                 </div>
             </div>
 

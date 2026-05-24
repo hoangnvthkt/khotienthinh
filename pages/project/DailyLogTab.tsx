@@ -24,6 +24,7 @@ import DailyLogDetailTabs from '../../components/project/DailyLogDetailTabs';
 interface DailyLogTabProps {
     constructionSiteId?: string;
     projectId?: string;
+    canManageTab?: boolean;
 }
 
 const WEATHER: Record<WeatherType, { label: string; icon: React.ReactNode; emoji: string }> = {
@@ -458,7 +459,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
     );
 };
 
-const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId }) => {
+const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
     const location = useLocation();
     const toast = useToast();
     const confirm = useConfirm();
@@ -555,6 +556,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     const ensureDailyLogPermission = useCallback((code: ProjectPermissionCode, actionLabel: string) => {
         if (user?.role === 'ADMIN') return true;
+        if (!canManageTab && code !== 'view') {
+            toast.error('Không có quyền quản trị tab', 'Bạn cần quyền quản trị "Nhật ký" để thay đổi nhật ký.');
+            return false;
+        }
         if (!pbacLoaded) {
             toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
             return false;
@@ -564,7 +569,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             return false;
         }
         return true;
-    }, [pbacLoaded, toast, user?.role, userPerms]);
+    }, [canManageTab, pbacLoaded, toast, user?.role, userPerms]);
 
     useEffect(() => {
         if (!effectiveId) return;
@@ -641,8 +646,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const canEditDailyLog = useCallback((log: DailyLog) => {
         const editableStatus = ['draft', 'rejected'].includes(getLogStatus(log));
         if (isAdminUser) return editableStatus;
-        return userPerms.has('edit') && isDailyLogOwner(log) && editableStatus;
-    }, [isAdminUser, isDailyLogOwner, userPerms]);
+        return canManageTab && userPerms.has('edit') && isDailyLogOwner(log) && editableStatus;
+    }, [canManageTab, isAdminUser, isDailyLogOwner, userPerms]);
 
     const resetForm = () => {
         if (savingLogRef.current) return;
@@ -702,6 +707,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     }, [logs, targetDailyLogId]);
 
     const openCreateForDate = (date: string) => {
+        if (!ensureDailyLogPermission('edit', 'ghi nhật ký')) return;
         resetForm();
         setDayLogPicker(null);
         setFDate(date);
@@ -1318,8 +1324,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
                         )}
-                        <button onClick={() => { resetForm(); setShowForm(true); }}
-                            disabled={pbacLoaded && !userPerms.has('edit') && !isAdminUser}
+                        <button onClick={() => { if (!ensureDailyLogPermission('edit', 'ghi nhật ký')) return; resetForm(); setShowForm(true); }}
+                            disabled={!canManageTab || (pbacLoaded && !userPerms.has('edit') && !isAdminUser)}
                             className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-teal-600 bg-teal-50 border border-teal-200 hover:bg-teal-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                             <Plus size={12} /> Ghi nhật ký
                         </button>
@@ -1568,6 +1574,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         </div>
                         <div className="px-4 py-3 border-t border-slate-100 flex justify-end">
                             <button onClick={() => openCreateForDate(dayLogPicker.date)}
+                                disabled={!canManageTab}
                                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-teal-600 bg-teal-50 border border-teal-200 hover:bg-teal-100 transition-colors">
                                 <Plus size={13} /> Thêm nhật ký
                             </button>

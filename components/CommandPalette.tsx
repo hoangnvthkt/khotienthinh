@@ -43,6 +43,7 @@ const PAGES: SearchResult[] = [
   { id: 'p-3p', title: 'Lương 3P', subtitle: 'Cấu hình bậc lương 3P', category: 'Trang', icon: <DollarSign size={16} />, route: '/hrm/salary-3p', keywords: 'luong 3p bac luong kpi' },
   { id: 'p-leave', title: 'Nghỉ phép', subtitle: 'Quản lý phép năm', category: 'Trang', icon: <Calendar size={16} />, route: '/hrm/leave', keywords: 'nghi phep phep nam' },
   { id: 'p-req', title: 'Yêu cầu vật tư', subtitle: 'Phiếu yêu cầu', category: 'Trang', icon: <ClipboardCheck size={16} />, route: '/requests', keywords: 'yeu cau vat tu phieu' },
+  { id: 'p-mcr', title: 'Đề xuất cấp mã vật tư', subtitle: 'Cấp mã vật tư/vật liệu mới', category: 'Trang', icon: <Hash size={16} />, route: '/material-code-requests', keywords: 'de xuat cap ma vat tu vat lieu sku' },
   { id: 'p-wf', title: 'Quy trình', subtitle: 'Workflow instances', category: 'Trang', icon: <Briefcase size={16} />, route: '/wf', keywords: 'quy trinh workflow' },
   { id: 'p-settings', title: 'Cài đặt', subtitle: 'Cấu hình hệ thống', category: 'Trang', icon: <Settings size={16} />, route: '/settings', keywords: 'cai dat he thong settings' },
 ];

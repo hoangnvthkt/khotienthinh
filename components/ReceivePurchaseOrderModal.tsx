@@ -84,7 +84,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
       return;
     }
     if (unlinkedReceiptLines.length > 0) {
-      toast.warning('Chưa liên kết mã kho', 'PO có vật tư viết tay/chưa có SKU. Vui lòng chuẩn hoá mã vật tư hoặc xử lý cấp thẳng sử dụng trước khi nhập kho.');
+      toast.warning('Chưa liên kết mã kho', 'PO có dòng chưa có mã vật tư trong hệ thống. Vui lòng tạo Đề xuất cấp mã vật tư/vật liệu trước khi nhập kho.');
       return;
     }
 
