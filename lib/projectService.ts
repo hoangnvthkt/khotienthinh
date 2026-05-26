@@ -508,6 +508,17 @@ export const poService = {
             }), { onConflict: 'id' });
         if (error) throw error;
     },
+    async updateStatus(id: string, patch: Partial<PurchaseOrder>): Promise<void> {
+        const row = toDb(patch);
+        if (patch.receivedTransactionIds) row.received_transaction_ids = patch.receivedTransactionIds;
+        delete row.id;
+        delete row.created_at;
+        const { error } = await supabase
+            .from('purchase_orders')
+            .update(row)
+            .eq('id', id);
+        if (error) throw error;
+    },
     async listStockOrders(): Promise<PurchaseOrder[]> {
         const { data, error } = await supabase
             .from('purchase_orders')
@@ -557,7 +568,7 @@ export const poService = {
     },
     async receivePo(
         poId: string,
-        receiptLines: { itemId: string; quantity: number }[],
+        receiptLines: { itemId: string; quantity: number; lineId?: string }[],
         transactionId: string
     ): Promise<PurchaseOrder> {
         const { data, error } = await supabase
@@ -568,11 +579,14 @@ export const poService = {
         if (error) throw error;
 
         const po = fromDb(data) as PurchaseOrder;
-        const receiptMap = new Map(receiptLines.map(line => [line.itemId, Number(line.quantity) || 0]));
+        if (['cancelled', 'closed', 'returned'].includes(po.status)) {
+            throw new Error('PO đã huỷ/đóng/hoàn hàng, không thể nhập kho.');
+        }
+        const receiptMap = new Map(receiptLines.map(line => [line.lineId || line.itemId, Number(line.quantity) || 0]));
         let hasReceipt = false;
 
         const nextItems = po.items.map(item => {
-            const receiveQty = receiptMap.get(item.itemId) || 0;
+            const receiveQty = receiptMap.get(item.lineId || item.itemId) || 0;
             const orderedQty = Number(item.qty) || 0;
             const receivedQty = Number(item.receivedQty) || 0;
             const remainingQty = Math.max(orderedQty - receivedQty, 0);
@@ -603,12 +617,19 @@ export const poService = {
     async remove(id: string): Promise<void> {
         const { data: current, error: readError } = await supabase
             .from('purchase_orders')
-            .select('status, ever_submitted')
+            .select('status, ever_submitted, received_transaction_ids')
             .eq('id', id)
             .single();
         if (readError) throw readError;
-        if (current.status !== 'draft' || current.ever_submitted) {
-            throw new Error('Chỉ xoá cứng PO nháp chưa từng gửi duyệt.');
+        const receivedTransactionIds = Array.isArray(current.received_transaction_ids)
+            ? current.received_transaction_ids
+            : [];
+        const canHardDelete =
+            (current.status === 'draft' && !current.ever_submitted) ||
+            current.status === 'returned' ||
+            (current.status === 'cancelled' && receivedTransactionIds.length === 0);
+        if (!canHardDelete) {
+            throw new Error('Chỉ xoá PO nháp chưa gửi duyệt, PO hoàn hàng, hoặc PO đã huỷ chưa phát sinh nhập kho.');
         }
         const { error } = await supabase
             .from('purchase_orders')

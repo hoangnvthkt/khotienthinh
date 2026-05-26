@@ -9,19 +9,22 @@ import AddInventoryModal from '../components/AddInventoryModal';
 import InventoryDetailModal from '../components/InventoryDetailModal';
 import DeleteInventoryModal from '../components/DeleteInventoryModal';
 import ReceivePurchaseOrderModal from '../components/ReceivePurchaseOrderModal';
+import ReceiveFulfillmentBatchModal from '../components/ReceiveFulfillmentBatchModal';
 import Pagination from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
 import { loadXlsx } from '../lib/loadXlsx';
-import { InventoryItem, Role, Transaction, TransactionType, TransactionStatus, PurchaseOrder } from '../types';
+import { InventoryItem, Role, Transaction, TransactionType, TransactionStatus, PurchaseOrder, MaterialRequest, MaterialRequestFulfillmentBatch } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import { useModuleData } from '../hooks/useModuleData';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { poService } from '../lib/projectService';
 import { extractPoToken, PO_QR_PARAM } from '../lib/poQr';
+import { extractFulfillmentBatchToken, FULFILLMENT_BATCH_QR_PARAM } from '../lib/fulfillmentBatchQr';
+import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
 
 const Inventory: React.FC = () => {
   const location = useLocation();
-  const { items, warehouses, addItems, addItem, removeItem, addTransaction, user, transactions, categories, units } = useApp();
+  const { items, warehouses, requests, addItems, addItem, removeItem, addTransaction, user, transactions, categories, units } = useApp();
   useModuleData('wms');
   const toast = useToast();
   const [searchTerm, setSearchTerm] = useState('');
@@ -53,8 +56,10 @@ const Inventory: React.FC = () => {
   const [importing, setImporting] = useState(false);
   const [deletingItem, setDeletingItem] = useState(false);
   const [receivingPo, setReceivingPo] = useState<PurchaseOrder | null>(null);
-  const [loadingPo, setLoadingPo] = useState(false);
-  const lastLoadedPoTokenRef = useRef<string | null>(null);
+  const [receivingFulfillmentBatch, setReceivingFulfillmentBatch] = useState<MaterialRequestFulfillmentBatch | null>(null);
+  const [receivingFulfillmentRequest, setReceivingFulfillmentRequest] = useState<MaterialRequest | null>(null);
+  const [loadingQr, setLoadingQr] = useState(false);
+  const lastLoadedQrTokenRef = useRef<string | null>(null);
 
   // Logic lọc vật tư theo yêu cầu bảo mật mới
   const filteredItems = useMemo(() => {
@@ -95,39 +100,60 @@ const Inventory: React.FC = () => {
     return item.stockByWarehouse[filterWarehouse] || 0;
   };
 
-  const loadPurchaseOrderFromQr = async (raw: string) => {
-    const token = extractPoToken(raw);
-    if (!token) {
-      toast.error('QR không hợp lệ', 'Mã QR không phải phiếu nhập NCC hợp lệ.');
+  const loadDocumentFromQr = async (raw: string) => {
+    const fulfillmentToken = extractFulfillmentBatchToken(raw);
+    const poToken = extractPoToken(raw);
+    if (!fulfillmentToken && !poToken) {
+      toast.error('QR không hợp lệ', 'Mã QR không phải phiếu NCC hoặc phiếu xuất kho nội bộ hợp lệ.');
       return;
     }
 
-    setLoadingPo(true);
+    setLoadingQr(true);
     try {
-      const po = await poService.getByQrToken(token);
-      if (!po) {
-        toast.error('Không tìm thấy PO', 'Mã QR không phải phiếu nhập NCC hợp lệ.');
+      if (fulfillmentToken) {
+        const batch = await materialRequestFulfillmentService.getByQrToken(fulfillmentToken);
+        if (!batch) {
+          toast.error('Không tìm thấy phiếu xuất', 'Mã QR không phải phiếu xuất kho nội bộ hợp lệ.');
+          return;
+        }
+        const request = requests.find(item => item.id === batch.materialRequestId);
+        if (!request) {
+          toast.error('Không tìm thấy đề xuất', 'Phiếu xuất tồn tại nhưng chưa tải được phiếu đề xuất liên quan.');
+          return;
+        }
+        setReceivingFulfillmentRequest(request);
+        setReceivingFulfillmentBatch(batch);
         return;
       }
-      if (po.status === 'cancelled') {
-        toast.warning('PO đã huỷ', 'Không thể nhập kho từ phiếu đã huỷ.');
-        return;
+
+      if (poToken) {
+        const po = await poService.getByQrToken(poToken);
+        if (!po) {
+          toast.error('Không tìm thấy PO', 'Mã QR không phải phiếu nhập NCC hợp lệ.');
+          return;
+        }
+        if (po.status === 'cancelled') {
+          toast.warning('PO đã huỷ', 'Không thể nhập kho từ phiếu đã huỷ.');
+          return;
+        }
+        setReceivingPo(po);
       }
-      setReceivingPo(po);
     } catch (err: any) {
-      logApiError('inventory.loadPurchaseOrderQr', err);
-      toast.error('Không thể tải PO', getApiErrorMessage(err, 'Không thể tải phiếu nhập NCC từ Supabase.'));
+      logApiError('inventory.loadDocumentQr', err);
+      toast.error('Không thể tải phiếu QR', getApiErrorMessage(err, 'Không thể tải phiếu từ Supabase.'));
     } finally {
-      setLoadingPo(false);
+      setLoadingQr(false);
     }
   };
 
   useEffect(() => {
-    const token = new URLSearchParams(location.search).get(PO_QR_PARAM);
-    if (!token || lastLoadedPoTokenRef.current === token) return;
-    lastLoadedPoTokenRef.current = token;
-    void loadPurchaseOrderFromQr(token);
-  }, [location.search]);
+    const params = new URLSearchParams(location.search);
+    const token = params.get(FULFILLMENT_BATCH_QR_PARAM) || params.get(PO_QR_PARAM);
+    const loadKey = `${token || ''}:${requests.length}`;
+    if (!token || lastLoadedQrTokenRef.current === loadKey) return;
+    lastLoadedQrTokenRef.current = loadKey;
+    void loadDocumentFromQr(token);
+  }, [location.search, requests]);
 
   const handleAddItem = async (item: InventoryItem) => {
     await addItem(item);
@@ -315,10 +341,10 @@ const Inventory: React.FC = () => {
       <ScannerModal
         isOpen={isScannerOpen}
         onClose={() => setScannerOpen(false)}
-        onScan={loadPurchaseOrderFromQr}
-        title="Quét QR phiếu NCC"
-        description="Quét mã QR trên phiếu đặt hàng/phiếu giao hàng của nhà cung cấp để tự động tạo phiếu nhập kho."
-        manualPlaceholder="Nhập token PO..."
+        onScan={loadDocumentFromQr}
+        title="Quét QR phiếu nhập kho"
+        description="Quét mã QR trên phiếu NCC hoặc phiếu xuất kho nội bộ để xác nhận thực nhận."
+        manualPlaceholder="Nhập token PO hoặc phiếu xuất..."
       />
       <AddInventoryModal isOpen={isAddModalOpen} onClose={() => setAddModalOpen(false)} onAdd={handleAddItem} />
       <InventoryDetailModal isOpen={!!selectedItem} onClose={() => setSelectedItem(null)} item={selectedItem} />
@@ -328,6 +354,19 @@ const Inventory: React.FC = () => {
         po={receivingPo}
         onClose={() => setReceivingPo(null)}
         onReceived={(po) => setReceivingPo(po)}
+      />
+      <ReceiveFulfillmentBatchModal
+        isOpen={!!receivingFulfillmentBatch}
+        request={receivingFulfillmentRequest}
+        batch={receivingFulfillmentBatch}
+        onClose={() => {
+          setReceivingFulfillmentBatch(null);
+          setReceivingFulfillmentRequest(null);
+        }}
+        onReceived={() => {
+          setReceivingFulfillmentBatch(null);
+          setReceivingFulfillmentRequest(null);
+        }}
       />
 
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
@@ -357,11 +396,11 @@ const Inventory: React.FC = () => {
           <div className="flex gap-2 w-full sm:w-auto">
             <button
               onClick={() => setScannerOpen(true)}
-              disabled={loadingPo}
+              disabled={loadingQr}
               className="flex-1 sm:flex-none flex items-center justify-center px-6 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60 disabled:cursor-wait"
             >
-              {loadingPo ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <QrCode className="w-4 h-4 mr-2" />}
-              {loadingPo ? 'Đang tải PO...' : 'Quét QR PO'}
+              {loadingQr ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <QrCode className="w-4 h-4 mr-2" />}
+              {loadingQr ? 'Đang tải phiếu...' : 'Quét QR phiếu'}
             </button>
 
             {(canCRUD || hasAssignedWh) && (

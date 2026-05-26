@@ -1,6 +1,8 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from '../context/AppContext';
 import {
     MaterialBudgetItem,
@@ -25,6 +27,7 @@ import { useConfirm } from '../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { projectSubmissionService } from '../lib/projectSubmissionService';
 import { materialRequestFulfillmentService, getCommittedQty, getRequestLineId } from '../lib/materialRequestFulfillmentService';
+import { buildFulfillmentBatchReceiveUrl } from '../lib/fulfillmentBatchQr';
 
 interface RequestModalProps {
     isOpen: boolean;
@@ -139,6 +142,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [issueLines, setIssueLines] = useState<FulfillmentQtyDraft[]>([]);
     const [issueNote, setIssueNote] = useState('');
     const [receivingBatch, setReceivingBatch] = useState<MaterialRequestFulfillmentBatch | null>(null);
+    const [selectedFulfillmentBatch, setSelectedFulfillmentBatch] = useState<MaterialRequestFulfillmentBatch | null>(null);
     const [receiveLines, setReceiveLines] = useState<ReceiveQtyDraft[]>([]);
 
     const [isItemSelectOpen, setItemSelectOpen] = useState(false);
@@ -714,6 +718,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     };
 
     const openReceivePanel = (batch: MaterialRequestFulfillmentBatch) => {
+        setSelectedFulfillmentBatch(null);
         setReceivingBatch(batch);
         setReceiveLines(batch.lines.map(line => ({
             lineId: line.id,
@@ -757,6 +762,40 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
     };
 
+    const handleReturnFulfillmentBatch = async (batch: MaterialRequestFulfillmentBatch) => {
+        if (!request || isSaving) return;
+        const ok = await confirm({
+            title: 'Trả lại / hoàn hàng đợt cấp',
+            targetName: batch.batchNo,
+            confirmText: 'Xác nhận trả lại',
+            subtitle: 'Đợt cấp đang vận chuyển sẽ bị hoàn về kho nguồn và phiếu đề xuất sẽ quay lại phần còn lại cần cấp.',
+            intent: 'danger',
+            actionLabel: 'Trả lại đợt cấp',
+            cancelLabel: 'Giữ nguyên',
+            countdownSeconds: 1,
+        });
+        if (!ok) return;
+        setIsSaving(true);
+        try {
+            await materialRequestFulfillmentService.returnIssuedBatch({
+                batch,
+                actorUserId: user.id,
+                reason: overrideReason.trim() || undefined,
+            });
+            const freshBatches = await refreshFulfillmentBatches(request.id);
+            const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
+            await updateRequestStatus(request.id, nextStatus, 'Trả lại/hoàn hàng đợt cấp vật tư', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_SYNC');
+            await loadModuleData('wms', true);
+            toast.success('Đã trả lại đợt cấp', nextStatus === RequestStatus.APPROVED ? 'Phiếu đề xuất đã quay lại trạng thái chờ cấp hàng.' : 'Đã cập nhật lại lũy kế cấp/nhận cho phiếu.');
+            onClose();
+        } catch (err: any) {
+            logApiError('requestModal.fulfillment.return', err);
+            toast.error('Không thể trả lại đợt cấp', getApiErrorMessage(err, 'Không cập nhật được đợt cấp.'));
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const handleResolveFulfillmentVariance = async (batch: MaterialRequestFulfillmentBatch) => {
         if (!request || isSaving) return;
         const ok = await confirm({
@@ -787,6 +826,87 @@ const RequestModal: React.FC<RequestModalProps> = ({
             toast.error('Không thể chốt lệch', getApiErrorMessage(err, 'Không cập nhật được đợt cấp lệch.'));
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handlePrintFulfillmentBatch = async (batch: MaterialRequestFulfillmentBatch) => {
+        if (!request) return;
+        try {
+            const printableBatch = await materialRequestFulfillmentService.ensureQrToken(batch);
+            setSelectedFulfillmentBatch(printableBatch);
+            const receiveUrl = buildFulfillmentBatchReceiveUrl(printableBatch.qrToken!);
+            const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={132} level="H" includeMargin />);
+            const rows = printableBatch.lines.map(line => {
+                const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
+                return `
+                    <tr>
+                        <td>${requestLine ? getLineName(requestLine) : line.itemId}</td>
+                        <td class="right">${Number(line.issuedQty || 0).toLocaleString('vi-VN')}</td>
+                        <td>${line.unit || requestLine?.unitSnapshot || ''}</td>
+                    </tr>
+                `;
+            }).join('');
+            const html = `
+                <!doctype html>
+                <html>
+                <head>
+                    <meta charset="utf-8" />
+                    <title>${printableBatch.batchNo}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; color: #0f172a; padding: 28px; }
+                        .header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #0f172a; padding-bottom: 16px; }
+                        h1 { margin: 0; font-size: 22px; }
+                        .meta { margin-top: 8px; color: #475569; font-size: 12px; line-height: 1.6; }
+                        .qr { text-align: center; color: #64748b; font-size: 11px; font-weight: 700; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 24px; font-size: 13px; }
+                        th, td { border: 1px solid #cbd5e1; padding: 9px; text-align: left; }
+                        th { background: #f1f5f9; text-transform: uppercase; font-size: 11px; color: #475569; }
+                        .right { text-align: right; font-weight: 700; }
+                        .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 42px; text-align: center; font-size: 12px; font-weight: 700; }
+                        .signature-space { height: 64px; }
+                        @media print { body { padding: 18px; } }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <div>
+                            <h1>PHIẾU XUẤT KHO NỘI BỘ</h1>
+                            <div class="meta">
+                                Mã đợt cấp: <b>${printableBatch.batchNo}</b><br/>
+                                Phiếu đề xuất: <b>${request.code}</b><br/>
+                                Ngày xuất: ${new Date(printableBatch.batchDate).toLocaleString('vi-VN')}<br/>
+                                Kho xuất: ${getWarehouseName(printableBatch.sourceWarehouseId)}<br/>
+                                Kho nhận: ${printableBatch.targetWarehouseId ? getWarehouseName(printableBatch.targetWarehouseId) : 'Cấp thẳng sử dụng'}
+                            </div>
+                        </div>
+                        <div class="qr">${qrSvg}<div>CT quét QR để xác nhận thực nhận</div></div>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr><th>Vật tư</th><th>Số lượng xuất</th><th>ĐVT</th></tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                    ${printableBatch.note ? `<div class="meta"><b>Ghi chú:</b> ${printableBatch.note}</div>` : ''}
+                    <div class="signatures">
+                        <div>Người lập<div class="signature-space"></div></div>
+                        <div>Thủ kho xuất<div class="signature-space"></div></div>
+                        <div>Thủ kho/CT nhận<div class="signature-space"></div></div>
+                    </div>
+                    <script>window.print();</script>
+                </body>
+                </html>
+            `;
+            const printWindow = window.open('', '_blank');
+            if (!printWindow) {
+                toast.error('Không thể mở cửa sổ in', 'Trình duyệt đang chặn popup in phiếu xuất kho.');
+                return;
+            }
+            printWindow.document.write(html);
+            printWindow.document.close();
+        } catch (err: any) {
+            logApiError('requestModal.fulfillment.print', err);
+            toast.error('Không thể in phiếu xuất', getApiErrorMessage(err, 'Không tạo được mã QR cho đợt cấp.'));
         }
     };
 
@@ -1353,13 +1473,25 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             ) : (
                                 <div className="divide-y divide-slate-100">
                                     {fulfillmentBatches.map(batch => (
-                                        <div key={batch.id} className="p-4">
+                                        <div
+                                            key={batch.id}
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={() => setSelectedFulfillmentBatch(batch)}
+                                            onKeyDown={event => {
+                                                if (event.key === 'Enter' || event.key === ' ') {
+                                                    event.preventDefault();
+                                                    setSelectedFulfillmentBatch(batch);
+                                                }
+                                            }}
+                                            className="block w-full p-4 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+                                        >
                                             <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                                                 <div>
                                                     <div className="flex flex-wrap items-center gap-2">
                                                         <span className="font-mono text-xs font-black text-indigo-600">{batch.batchNo}</span>
-                                                        <span className={`px-2 py-0.5 rounded-full border text-[9px] font-black ${batch.status === 'received' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : batch.status === 'issued' ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : batch.status === 'variance_pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : batch.status === 'cancelled' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
-                                                            {batch.status === 'received' ? 'Đã nhận' : batch.status === 'issued' ? 'Đã xuất' : batch.status === 'variance_pending' ? 'Chờ chốt lệch' : batch.status === 'cancelled' ? 'Đã huỷ' : 'Nháp'}
+                                                        <span className={`px-2 py-0.5 rounded-full border text-[9px] font-black ${batch.status === 'received' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : batch.status === 'issued' ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : batch.status === 'variance_pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : batch.status === 'returned' ? 'bg-rose-50 text-rose-600 border-rose-200' : batch.status === 'cancelled' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                                                            {batch.status === 'received' ? 'Đã nhận' : batch.status === 'issued' ? 'Đã xuất' : batch.status === 'variance_pending' ? 'Chờ chốt lệch' : batch.status === 'returned' ? 'Đã trả lại' : batch.status === 'cancelled' ? 'Đã huỷ' : 'Nháp'}
                                                         </span>
                                                         <span className="text-[10px] font-bold text-slate-400">{new Date(batch.batchDate).toLocaleString('vi-VN')}</span>
                                                     </div>
@@ -1368,24 +1500,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                     </div>
                                                     {batch.note && <div className="mt-1 text-xs text-slate-500">{batch.note}</div>}
                                                 </div>
-                                                {canReceiveFulfillmentBatch && batch.status === 'issued' && (
-                                                    <button
-                                                        disabled={isSaving}
-                                                        onClick={() => openReceivePanel(batch)}
-                                                        className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-black hover:bg-emerald-700 disabled:opacity-60 flex items-center justify-center gap-1"
-                                                    >
-                                                        <CheckCircle size={14} /> Xác nhận nhận
-                                                    </button>
-                                                )}
-                                                {canReceiveFulfillmentBatch && batch.status === 'variance_pending' && (
-                                                    <button
-                                                        disabled={isSaving}
-                                                        onClick={() => handleResolveFulfillmentVariance(batch)}
-                                                        className="px-3 py-2 rounded-lg bg-amber-600 text-white text-xs font-black hover:bg-amber-700 disabled:opacity-60 flex items-center justify-center gap-1"
-                                                    >
-                                                        <AlertCircle size={14} /> Chốt lệch
-                                                    </button>
-                                                )}
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Mở chi tiết</span>
                                             </div>
                                             <div className="mt-3 overflow-x-auto">
                                                 <table className="w-full text-[11px]">
@@ -1566,6 +1681,108 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             <button disabled={isSaving} onClick={handleCreateFulfillmentBatch} className="px-5 py-2 rounded-lg bg-indigo-600 text-white font-black hover:bg-indigo-700 disabled:opacity-60 flex items-center gap-2">
                                 {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Truck size={16} />} Tạo đợt cấp
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {selectedFulfillmentBatch && request && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
+                    <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col">
+                        <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
+                            <div>
+                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Chi tiết đợt cấp</div>
+                                <h4 className="text-base font-black text-slate-800 mt-0.5">{selectedFulfillmentBatch.batchNo}</h4>
+                                <p className="text-xs font-bold text-slate-400 mt-1">
+                                    {request.code} • {new Date(selectedFulfillmentBatch.batchDate).toLocaleString('vi-VN')}
+                                </p>
+                            </div>
+                            <button onClick={() => setSelectedFulfillmentBatch(null)} className="p-2 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                        </div>
+                        <div className="p-5 overflow-y-auto space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                                    <div className="text-[10px] uppercase font-black text-slate-400">Trạng thái</div>
+                                    <div className="mt-1 font-black text-slate-700">
+                                        {selectedFulfillmentBatch.status === 'received' ? 'Đã nhận' : selectedFulfillmentBatch.status === 'issued' ? 'Đã xuất' : selectedFulfillmentBatch.status === 'variance_pending' ? 'Chờ chốt lệch' : selectedFulfillmentBatch.status === 'returned' ? 'Đã trả lại' : selectedFulfillmentBatch.status === 'cancelled' ? 'Đã huỷ' : 'Nháp'}
+                                    </div>
+                                </div>
+                                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                                    <div className="text-[10px] uppercase font-black text-slate-400">Nguồn</div>
+                                    <div className="mt-1 font-black text-slate-700">{getWarehouseName(selectedFulfillmentBatch.sourceWarehouseId)}</div>
+                                </div>
+                                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                                    <div className="text-[10px] uppercase font-black text-slate-400">Đích</div>
+                                    <div className="mt-1 font-black text-slate-700">{selectedFulfillmentBatch.targetWarehouseId ? getWarehouseName(selectedFulfillmentBatch.targetWarehouseId) : 'Cấp thẳng sử dụng'}</div>
+                                </div>
+                            </div>
+                            {selectedFulfillmentBatch.note && (
+                                <div className="rounded-xl border border-slate-100 bg-white p-3 text-xs font-bold text-slate-500">
+                                    {selectedFulfillmentBatch.note}
+                                </div>
+                            )}
+                            <div className="overflow-x-auto rounded-xl border border-slate-200">
+                                <table className="w-full text-xs">
+                                    <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+                                        <tr>
+                                            <th className="p-3 text-left">Vật tư</th>
+                                            <th className="p-3 text-right">Xuất</th>
+                                            <th className="p-3 text-right">Thực nhận</th>
+                                            <th className="p-3 text-left">Lý do lệch</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {selectedFulfillmentBatch.lines.map(line => {
+                                            const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
+                                            return (
+                                                <tr key={line.id}>
+                                                    <td className="p-3 font-bold text-slate-700">{requestLine ? getLineName(requestLine) : line.itemId}</td>
+                                                    <td className="p-3 text-right font-black text-indigo-600">{Number(line.issuedQty || 0).toLocaleString('vi-VN')}</td>
+                                                    <td className="p-3 text-right font-black text-cyan-600">{Number(line.receivedQty || 0).toLocaleString('vi-VN')}</td>
+                                                    <td className="p-3 text-slate-400">{line.varianceReason || '-'}</td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-3">
+                            <button onClick={() => setSelectedFulfillmentBatch(null)} className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 font-bold">Đóng</button>
+                            <button
+                                disabled={isSaving}
+                                onClick={() => handlePrintFulfillmentBatch(selectedFulfillmentBatch)}
+                                className="px-4 py-2 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 font-black hover:bg-indigo-100 disabled:opacity-60 flex items-center gap-2"
+                            >
+                                <Truck size={16} /> In phiếu QR
+                            </button>
+                            {canReceiveFulfillmentBatch && selectedFulfillmentBatch.status === 'issued' && (
+                                <>
+                                    <button
+                                        disabled={isSaving}
+                                        onClick={() => openReceivePanel(selectedFulfillmentBatch)}
+                                        className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-black hover:bg-emerald-700 disabled:opacity-60 flex items-center gap-2"
+                                    >
+                                        <CheckCircle size={16} /> Xác nhận nhận
+                                    </button>
+                                    <button
+                                        disabled={isSaving}
+                                        onClick={() => handleReturnFulfillmentBatch(selectedFulfillmentBatch)}
+                                        className="px-4 py-2 rounded-lg bg-rose-600 text-white font-black hover:bg-rose-700 disabled:opacity-60 flex items-center gap-2"
+                                    >
+                                        <XCircle size={16} /> Trả lại
+                                    </button>
+                                </>
+                            )}
+                            {canReceiveFulfillmentBatch && selectedFulfillmentBatch.status === 'variance_pending' && (
+                                <button
+                                    disabled={isSaving}
+                                    onClick={() => handleResolveFulfillmentVariance(selectedFulfillmentBatch)}
+                                    className="px-4 py-2 rounded-lg bg-amber-600 text-white font-black hover:bg-amber-700 disabled:opacity-60 flex items-center gap-2"
+                                >
+                                    <AlertCircle size={16} /> Chốt lệch
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

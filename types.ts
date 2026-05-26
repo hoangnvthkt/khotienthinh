@@ -1244,7 +1244,7 @@ export interface ProjectMaterialRequest extends ProjectSubmissionFields {
 }
 
 // ==================== CUNG ỨNG ====================
-export type POStatus = 'draft' | 'sent' | 'confirmed' | 'in_transit' | 'partial' | 'delivered' | 'closed' | 'cancelled';
+export type POStatus = 'draft' | 'sent' | 'confirmed' | 'in_transit' | 'partial' | 'delivered' | 'closed' | 'returned' | 'cancelled';
 export type PurchaseOrderSourceMode = 'from_request' | 'proactive_project' | 'proactive_stock';
 
 export interface ProjectVendor {
@@ -1585,7 +1585,7 @@ export interface RequestItem {
   manualReason?: string;
 }
 
-export type MaterialRequestFulfillmentBatchStatus = 'draft' | 'issued' | 'received' | 'variance_pending' | 'cancelled';
+export type MaterialRequestFulfillmentBatchStatus = 'draft' | 'issued' | 'received' | 'variance_pending' | 'returned' | 'cancelled';
 export type MaterialRequestFulfillmentSourceType = 'stock' | 'po_receipt' | 'mixed';
 
 export interface MaterialRequestFulfillmentLine {
@@ -1622,6 +1622,7 @@ export interface MaterialRequestFulfillmentBatch {
   sourceType: MaterialRequestFulfillmentSourceType;
   status: MaterialRequestFulfillmentBatchStatus;
   transactionId?: string | null;
+  qrToken?: string | null;
   reason?: string | null;
   note?: string | null;
   createdBy?: string | null;

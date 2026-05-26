@@ -22,6 +22,9 @@ import {
     PurchaseOrderSourceMode,
     MaterialRequestFulfillmentSummary,
     RequestStatus,
+    Transaction,
+    TransactionStatus,
+    TransactionType,
 } from '../../types';
 import { boqService, vendorService, poService, workBoqService } from '../../lib/projectService';
 import { materialRequestFulfillmentService, getRequestLineId } from '../../lib/materialRequestFulfillmentService';
@@ -55,11 +58,12 @@ const fmt = (n: number) => {
 const PO_STATUS: Record<POStatus, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
     draft: { label: 'Nháp', color: 'text-slate-600', bg: 'bg-slate-50 border-slate-200', icon: <Clock size={12} /> },
     sent: { label: 'Đã gửi', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', icon: <Send size={12} /> },
-    confirmed: { label: 'Đã gửi', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', icon: <Send size={12} /> },
+    confirmed: { label: 'Đã duyệt', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', icon: <CheckCircle2 size={12} /> },
     in_transit: { label: 'Đang giao', color: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-200', icon: <Truck size={12} /> },
     partial: { label: 'Giao 1 phần', color: 'text-orange-600', bg: 'bg-orange-50 border-orange-200', icon: <Package size={12} /> },
     delivered: { label: 'Đã giao', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', icon: <CheckCircle2 size={12} /> },
     closed: { label: 'Đã đóng', color: 'text-slate-700', bg: 'bg-slate-100 border-slate-300', icon: <FileText size={12} /> },
+    returned: { label: 'Hoàn hàng', color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200', icon: <RefreshCcw size={12} /> },
     cancelled: { label: 'Huỷ', color: 'text-red-600', bg: 'bg-red-50 border-red-200', icon: <Ban size={12} /> },
 };
 
@@ -152,7 +156,7 @@ const normalizePoImportDate = (value: string): string => {
 const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, projectId, canManageTab = true, compact = false }) => {
     const toast = useToast();
     const confirm = useConfirm();
-    const { items: inventoryItems, warehouses, requests: materialRequests, loadModuleData, user } = useApp();
+    const { items: inventoryItems, warehouses, requests: materialRequests, loadModuleData, user, addTransaction, updateRequestStatus } = useApp();
     const effectiveId = projectId || constructionSiteId || '';
     const [subTab] = useState<'vendor' | 'po'>('po');
 
@@ -711,14 +715,121 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setSubmittingPo(po);
             return;
         }
+        if (status === 'draft') {
+            const receivedQty = po.items.reduce((sum, item) => sum + (Number(item.receivedQty) || 0), 0);
+            if (receivedQty > 0 || (po.receivedTransactionIds || []).length > 0) {
+                toast.warning('Không thể huỷ duyệt', 'PO đã phát sinh nhập kho nên không thể trả về nháp.');
+                return;
+            }
+            const ok = await confirm({
+                targetName: po.poNumber,
+                title: 'Huỷ duyệt PO',
+                confirmText: 'Đưa về nháp',
+                warningText: 'PO sẽ trở về trạng thái nháp để chỉnh sửa và gửi duyệt lại khi cần.',
+            });
+            if (!ok) return;
+        }
+        if (status === 'returned') {
+            if (!['in_transit', 'closed'].includes(po.status)) {
+                toast.warning('Không thể hoàn hàng', 'Chỉ PO đang giao hoặc đã đóng mới được đánh dấu trả lại/hoàn hàng.');
+                return;
+            }
+            const receivedQty = po.items.reduce((sum, item) => sum + (Number(item.receivedQty) || 0), 0);
+            if (po.status === 'in_transit' && (receivedQty > 0 || (po.receivedTransactionIds || []).length > 0)) {
+                toast.warning('Không thể hoàn hàng', 'PO đã phát sinh nhập kho. Vui lòng hoàn hàng từ trạng thái Đã đóng để hệ thống trừ tồn kho.');
+                return;
+            }
+            if (po.status === 'closed') {
+                if (!po.targetWarehouseId) {
+                    toast.warning('Thiếu kho nhận', 'PO chưa có kho nhận nên không thể tạo phiếu hoàn hàng.');
+                    return;
+                }
+                if (receivedQty <= 0) {
+                    toast.warning('Không có số lượng hoàn', 'PO đã đóng nhưng chưa có số lượng đã nhận để hoàn hàng.');
+                    return;
+                }
+                const invalidReturnLine = po.items.find(item => {
+                    const qty = Number(item.receivedQty || 0);
+                    if (qty <= 0) return false;
+                    const stockItem = inventoryItems.find(inv => inv.id === item.itemId);
+                    const stockQty = Number(stockItem?.stockByWarehouse?.[po.targetWarehouseId!] || 0);
+                    return !stockItem || stockQty < qty;
+                });
+                if (invalidReturnLine) {
+                    toast.warning('Không đủ tồn để hoàn', `${invalidReturnLine.sku || invalidReturnLine.name} không đủ tồn tại kho nhận để xuất hoàn NCC.`);
+                    return;
+                }
+            }
+            const ok = await confirm({
+                targetName: po.poNumber,
+                title: 'Trả lại / hoàn hàng PO',
+                confirmText: 'Xác nhận hoàn hàng',
+                warningText: po.status === 'closed'
+                    ? 'Hệ thống sẽ tạo phiếu xuất kho hoàn NCC từ kho nhận, sau đó chuyển PO sang trạng thái Hoàn hàng.'
+                    : 'PO sẽ chuyển sang trạng thái Hoàn hàng và không còn tính vào đơn đang giao.',
+            });
+            if (!ok) return;
+        }
+        const statusPatch =
+            status === 'draft'
+                ? {
+                    submittedToUserId: null,
+                    submittedToName: null,
+                    submittedToPermission: null,
+                    submissionNote: null,
+                }
+                : status === 'sent'
+                    ? projectSubmissionService.targetToUpdate(submissionTarget)
+                    : {};
         const updated = {
-            ...po,
             status,
-            ...(status === 'sent' ? projectSubmissionService.targetToUpdate(submissionTarget) : {}),
+            ...statusPatch,
+            ...projectSubmissionService.actionMeta(user?.id, status !== 'draft'),
             actualDeliveryDate: status === 'delivered' ? new Date().toISOString().split('T')[0] : po.actualDeliveryDate,
         };
         try {
-            await poService.upsert(updated);
+            if (status === 'returned' && po.status === 'closed') {
+                const txId = `tx-po-return-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+                const transaction: Transaction = {
+                    id: txId,
+                    type: TransactionType.EXPORT,
+                    date: new Date().toISOString(),
+                    items: po.items
+                        .filter(item => Number(item.receivedQty || 0) > 0)
+                        .map(item => ({
+                            itemId: item.itemId,
+                            quantity: Number(item.receivedQty || 0),
+                            price: Number(item.unitPrice || 0),
+                        })),
+                    sourceWarehouseId: po.targetWarehouseId,
+                    requesterId: user.id,
+                    approverId: user.id,
+                    status: TransactionStatus.COMPLETED,
+                    note: `Hoàn hàng NCC theo PO ${po.poNumber}${po.vendorName ? ` - ${po.vendorName}` : ''}`,
+                };
+                await addTransaction(transaction);
+            }
+            await poService.updateStatus(id, updated);
+            if (status === 'returned') {
+                const affectedRequestIds = await materialRequestFulfillmentService.markPoReceiptBatchesReturned(po.id, `PO ${po.poNumber} đã trả lại/hoàn hàng`);
+                for (const requestId of affectedRequestIds) {
+                    const request = materialRequests.find(item => item.id === requestId);
+                    if (!request) continue;
+                    const batches = await materialRequestFulfillmentService.listByRequest(requestId);
+                    const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, batches);
+                    if (nextStatus !== request.status) {
+                        await updateRequestStatus(
+                            request.id,
+                            nextStatus,
+                            `Đồng bộ hoàn hàng PO ${po.poNumber}`,
+                            undefined,
+                            request.sourceWarehouseId,
+                            request.overrideReason,
+                            'FULFILLMENT_SYNC',
+                        );
+                    }
+                }
+            }
             if (status === 'sent' && submissionTarget) {
                 await projectSubmissionService.notifyTarget({
                     target: submissionTarget,
@@ -740,7 +851,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 setSubmittingPo(null);
             }
             await loadSupplyData();
-            toast.success('Cập nhật trạng thái PO');
+            toast.success(status === 'draft' ? 'Đã đưa PO về nháp' : 'Cập nhật trạng thái PO');
         } catch (e: any) {
             logApiError('supplyChain.updatePoStatus', e);
             toast.error('Không thể cập nhật PO', getApiErrorMessage(e, 'Không thể cập nhật trạng thái PO trên Supabase.'));
@@ -1358,7 +1469,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             </div>
                                                         )}
                                                     </div>
-                                                    {/* Status actions */}
                                                     <div className="flex gap-1">
                                                         <button onClick={e => { e.stopPropagation(); handlePrintPo(po); }} title="In/PDF có QR"
                                                             disabled={printingPoId === po.id}
@@ -1371,26 +1481,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                 className="h-7 rounded-lg px-2 text-[9px] font-black text-violet-500 hover:bg-violet-50 hover:text-violet-700 border border-transparent hover:border-violet-200 disabled:opacity-50">
                                                                 {printingPoId === po.procurementGroupId ? <Loader2 size={12} className="animate-spin" /> : 'In nhóm'}
                                                             </button>
-                                                        )}
-                                                        {canManageTab && (
-                                                            <>
-                                                                {po.status === 'draft' && (
-                                                                    <button onClick={e => { e.stopPropagation(); updatePoStatus(po.id, 'sent'); }} title="Gửi đơn"
-                                                                        className="w-7 h-7 rounded-lg flex items-center justify-center text-amber-400 hover:text-amber-600 hover:bg-amber-50 border border-transparent hover:border-amber-200"><Send size={13} /></button>
-                                                                )}
-                                                                {(po.status === 'sent' || po.status === 'confirmed') && (
-                                                                    <button onClick={e => { e.stopPropagation(); updatePoStatus(po.id, 'in_transit'); }} title="Đánh dấu đang giao"
-                                                                        className="w-7 h-7 rounded-lg flex items-center justify-center text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 border border-transparent hover:border-indigo-200"><Truck size={13} /></button>
-                                                                )}
-                                                                {po.status === 'delivered' && (
-                                                                    <button onClick={e => { e.stopPropagation(); updatePoStatus(po.id, 'closed'); }} title="Đóng PO"
-                                                                        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-50 border border-transparent hover:border-slate-200"><FileText size={13} /></button>
-                                                                )}
-                                                                {!['cancelled', 'closed', 'delivered'].includes(po.status) && (
-                                                                    <button onClick={e => { e.stopPropagation(); updatePoStatus(po.id, 'cancelled'); }} title="Huỷ PO"
-                                                                        className="w-7 h-7 rounded-lg flex items-center justify-center text-red-300 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200"><Ban size={13} /></button>
-                                                                )}
-                                                            </>
                                                         )}
                                                     </div>
                                                     {canManageTab && (
@@ -1450,7 +1540,59 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         </tr>
                                                     </tfoot>
                                                 </table>
-                                                {po.note && <div className="mt-2 px-2 text-[10px] text-slate-400 italic">💬 {po.note}</div>}
+                                                {po.note && <div className="mt-2 px-2 text-[10px] text-slate-400 italic">Ghi chú: {po.note}</div>}
+                                                {canManageTab && (
+                                                    <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+                                                        <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Thao tác phiếu</div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {po.status === 'draft' && (
+                                                                <button onClick={() => updatePoStatus(po.id, 'sent')} className="px-3 py-2 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-xs font-black hover:bg-amber-100 flex items-center gap-1.5">
+                                                                    <Send size={14} /> Gửi đơn
+                                                                </button>
+                                                            )}
+                                                            {po.status === 'sent' && (
+                                                                <button onClick={() => updatePoStatus(po.id, 'confirmed')} className="px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-black hover:bg-emerald-100 flex items-center gap-1.5">
+                                                                    <CheckCircle2 size={14} /> Duyệt PO
+                                                                </button>
+                                                            )}
+                                                            {(po.status === 'sent' || po.status === 'confirmed') && (
+                                                                <button onClick={() => updatePoStatus(po.id, 'draft')} className="px-3 py-2 rounded-lg bg-slate-50 text-slate-700 border border-slate-200 text-xs font-black hover:bg-slate-100 flex items-center gap-1.5">
+                                                                    <RefreshCcw size={14} /> Huỷ duyệt
+                                                                </button>
+                                                            )}
+                                                            {po.status === 'confirmed' && (
+                                                                <button onClick={() => updatePoStatus(po.id, 'in_transit')} className="px-3 py-2 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-black hover:bg-indigo-100 flex items-center gap-1.5">
+                                                                    <Truck size={14} /> Đánh dấu đang giao
+                                                                </button>
+                                                            )}
+                                                            {po.status === 'in_transit' && (
+                                                                <button onClick={() => updatePoStatus(po.id, 'returned')} className="px-3 py-2 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-xs font-black hover:bg-rose-100 flex items-center gap-1.5">
+                                                                    <RefreshCcw size={14} /> Trả lại / hoàn hàng
+                                                                </button>
+                                                            )}
+                                                            {po.status === 'delivered' && (
+                                                                <button onClick={() => updatePoStatus(po.id, 'closed')} className="px-3 py-2 rounded-lg bg-slate-50 text-slate-700 border border-slate-200 text-xs font-black hover:bg-slate-100 flex items-center gap-1.5">
+                                                                    <FileText size={14} /> Đóng PO
+                                                                </button>
+                                                            )}
+                                                            {po.status === 'closed' && (
+                                                                <button onClick={() => updatePoStatus(po.id, 'returned')} className="px-3 py-2 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-xs font-black hover:bg-rose-100 flex items-center gap-1.5">
+                                                                    <RefreshCcw size={14} /> Hoàn trả PO đã đóng
+                                                                </button>
+                                                            )}
+                                                            {!['cancelled', 'closed', 'delivered', 'returned'].includes(po.status) && (
+                                                                <button onClick={() => updatePoStatus(po.id, 'cancelled')} className="px-3 py-2 rounded-lg bg-red-50 text-red-700 border border-red-200 text-xs font-black hover:bg-red-100 flex items-center gap-1.5">
+                                                                    <Ban size={14} /> Huỷ PO
+                                                                </button>
+                                                            )}
+                                                            {['cancelled', 'returned'].includes(po.status) && (
+                                                                <span className="px-3 py-2 rounded-lg bg-slate-50 text-slate-400 border border-slate-200 text-xs font-bold">
+                                                                    Không còn thao tác trạng thái
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>

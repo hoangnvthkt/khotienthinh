@@ -521,7 +521,7 @@ const buildMaterialMetric = (
     return purchasedQty * Number(item.budgetUnitPrice || 0);
   });
   const materialPurchasedActualCost = sum(
-    purchaseOrders.filter(po => po.status !== 'cancelled'),
+    purchaseOrders.filter(po => !['cancelled', 'returned'].includes(po.status)),
     po => po.totalAmount,
   );
   const overLimitCount = materialBudgets.filter(item =>
