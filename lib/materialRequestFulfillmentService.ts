@@ -100,6 +100,13 @@ export interface ReturnFulfillmentBatchInput {
   reason?: string;
 }
 
+export interface ReturnReceivedFulfillmentBatchInput {
+  batch: MaterialRequestFulfillmentBatch;
+  actorUserId: string;
+  reason?: string;
+  returnTransactionId?: string;
+}
+
 export interface RecordPoReceiptLineInput {
   itemId: string;
   quantity: number;
@@ -758,6 +765,36 @@ export const materialRequestFulfillmentService = {
         status: 'returned',
         cancel_reason: input.reason || 'Công trường trả lại/hoàn hàng đợt cấp đang vận chuyển',
         reason: input.reason || input.batch.reason || null,
+      })
+      .eq('id', input.batch.id)
+      .select('*')
+      .single();
+    if (batchError) throw batchError;
+
+    const { data: lineRows, error: lineError } = await supabase
+      .from(LINE_TABLE)
+      .select('*')
+      .eq('batch_id', input.batch.id)
+      .order('created_at', { ascending: true });
+    if (lineError) throw lineError;
+
+    return normalizeBatch(batchRow, lineRows || []);
+  },
+
+  async returnReceivedBatch(input: ReturnReceivedFulfillmentBatchInput): Promise<MaterialRequestFulfillmentBatch> {
+    if (input.batch.status !== 'received') {
+      throw new Error('Chỉ Admin được hoàn trả đợt cấp đã nhận ở trạng thái Đã nhận.');
+    }
+
+    const { data: batchRow, error: batchError } = await supabase
+      .from(BATCH_TABLE)
+      .update({
+        status: 'returned',
+        cancel_reason: input.reason || 'Admin hoàn trả đợt cấp đã nhận',
+        reason: input.reason || input.batch.reason || null,
+        note: input.returnTransactionId
+          ? `${input.batch.note || ''}${input.batch.note ? ' | ' : ''}Phiếu hoàn kho: ${input.returnTransactionId}`
+          : input.batch.note || null,
       })
       .eq('id', input.batch.id)
       .select('*')

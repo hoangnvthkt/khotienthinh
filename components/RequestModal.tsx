@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save } from 'lucide-react';
+import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save, FileDown } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from '../context/AppContext';
 import {
@@ -16,6 +16,9 @@ import {
     RequestItem,
     RequestStatus,
     InventoryItem,
+    Transaction,
+    TransactionStatus,
+    TransactionType,
 } from '../types';
 import ItemSelectionModal from './ItemSelectionModal';
 import ScannerModal from './ScannerModal';
@@ -112,7 +115,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     workBoqItems = [],
     materialBudgetItems = [],
 }) => {
-    const { items, warehouses, user, users, requests, addRequest, updateRequestStatus, loadModuleData } = useApp();
+    const { items, warehouses, user, users, requests, addRequest, updateRequestStatus, removeRequest, loadModuleData, addTransaction } = useApp();
     const { getStockSummary, getOnHandStock } = useReservedStock();
     const toast = useToast();
     const confirm = useConfirm();
@@ -266,6 +269,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
             if (request) {
                 if (request.status === RequestStatus.PENDING && canApproveMaterialRequest(user, request)) {
                     setStep('APPROVE');
+                } else if (request.status === RequestStatus.DRAFT && request.requesterId === user.id) {
+                    setStep('CREATE');
                 } else {
                     setStep('VIEW');
                 }
@@ -410,76 +415,90 @@ const RequestModal: React.FC<RequestModalProps> = ({
         setDraftLineNote('');
     };
 
-    const submitCreatedRequest = async (newRequest: MaterialRequest, submissionTarget?: ProjectSubmissionTarget) => {
-        const requestToSave: MaterialRequest = submissionTarget
-            ? { ...newRequest, ...projectSubmissionService.targetToUpdate(submissionTarget) }
-            : newRequest;
+    const saveMaterialRequest = async (requestToSave: MaterialRequest, successTitle: string, successMessage: string) => {
+        setIsSaving(true);
+        try {
+            const saved = await addRequest(requestToSave);
+            if (!saved) {
+                toast.error('Không thể lưu đề xuất', 'Không lưu được phiếu đề xuất lên hệ thống. Vui lòng thử lại.');
+                throw new Error('Không lưu được phiếu đề xuất lên hệ thống.');
+            }
+            toast.success(successTitle, successMessage);
+            onClose();
+        } catch (err: any) {
+            logApiError('requestModal.save', err);
+            toast.error('Không thể lưu đề xuất', getApiErrorMessage(err, 'Không lưu được phiếu đề xuất lên hệ thống.'));
+            throw err;
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const submitRequestForApproval = async (draftRequest: MaterialRequest, submissionTarget?: ProjectSubmissionTarget) => {
+        if (!submissionTarget) return;
+        const ok = await confirm({
+            title: 'Gửi đề xuất duyệt',
+            targetName: draftRequest.code,
+            subtitle: `Phiếu sẽ chuyển sang Chờ duyệt và gửi tới ${submissionTarget.name}.`,
+            confirmText: 'Xác nhận gửi',
+            actionLabel: 'Gửi duyệt',
+            cancelLabel: 'Kiểm tra lại',
+            intent: 'success',
+            countdownSeconds: 1,
+        });
+        if (!ok) return;
+
+        const now = new Date().toISOString();
+        const requestToSave: MaterialRequest = {
+            ...draftRequest,
+            status: RequestStatus.PENDING,
+            ...projectSubmissionService.targetToUpdate(submissionTarget),
+            ...projectSubmissionService.actionMeta(user.id, true),
+            logs: [
+                ...(draftRequest.logs || []),
+                { action: 'SUBMITTED', userId: user.id, timestamp: now, note: submissionTarget.note || undefined },
+            ],
+        };
 
         setIsSaving(true);
         try {
             const saved = await addRequest(requestToSave);
             if (!saved) {
                 toast.error('Không thể gửi đề xuất', 'Không lưu được phiếu đề xuất lên hệ thống. Vui lòng thử lại.');
-                if (submissionTarget) throw new Error('Không lưu được phiếu đề xuất lên hệ thống.');
                 return;
             }
             setSubmittingProjectRequest(null);
-            toast.success('Đã gửi đề xuất vật tư', submissionTarget?.name ? `Phiếu đã gửi tới ${submissionTarget.name}.` : 'Phiếu của bạn đang chờ xử lý.');
+            toast.success('Đã gửi đề xuất vật tư', `Phiếu đã gửi tới ${submissionTarget.name}.`);
             onClose();
         } catch (err: any) {
-            logApiError('requestModal.create', err);
+            logApiError('requestModal.submitApproval', err);
             toast.error('Không thể gửi đề xuất', getApiErrorMessage(err, 'Không lưu được phiếu đề xuất lên hệ thống.'));
-            if (submissionTarget) throw err;
+            throw err;
         } finally {
             setIsSaving(false);
         }
     };
 
-    const handleSubmitCreate = async () => {
-        if (isSaving) return;
-        if (!siteWarehouseId || (!isProjectRequest && !sourceWarehouseId) || reqItems.length === 0) {
-            toast.warning('Thiếu thông tin', isProjectRequest ? 'Vui lòng chọn kho nhận và ít nhất 1 vật tư.' : 'Vui lòng chọn đầy đủ kho nhận, kho nguồn và ít nhất 1 vật tư.');
-            return;
-        }
-
-        if (isProjectRequest) {
-            const invalidLine = reqItems.find(line => {
-                const snapshot = buildLineBudgetSnapshot(line);
-                const outsideBoq = !line.materialBudgetItemId;
-                return (outsideBoq || snapshot.overBudgetQty > 0) && !line.overBudgetReason?.trim();
-            });
-            if (invalidLine) {
-                const item = items.find(i => i.id === invalidLine.itemId);
-                toast.warning('Thiếu lý do vượt/ngoài BOQ', `${item?.name || invalidLine.itemId} cần nhập lý do để gửi đề xuất.`);
-                return;
-            }
-        }
-
-        const shortages = sourceWarehouseId ? reqItems
-            .filter(line => !line.isManualItem && !!getLineInventory(line.itemId))
-            .map(line => ({ ...line, summary: getStockSummary(line.itemId, sourceWarehouseId) }))
-            .filter(line => Number(line.qty) > line.summary.available) : [];
-        if (!isProjectRequest && shortages.length > 0) {
-            const shortageText = shortages.map(line => {
-                const item = getLineInventory(line.itemId);
-                const missing = Number(line.qty) - line.summary.available;
-                return `${item?.name || line.itemId}: khả dụng ${line.summary.available}, thiếu ${missing}`;
-            }).join('\n');
-            if (!window.confirm(`Một số vật tư vượt tồn khả dụng và sẽ chỉ ghi nhận nhu cầu chờ duyệt:\n${shortageText}`)) return;
-        }
-
-        const newRequest: MaterialRequest = {
-            id: `mr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-            code: `MR-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`,
+    const buildDraftRequestFromForm = (): MaterialRequest => {
+        const now = new Date().toISOString();
+        const isExistingDraft = !!request && request.status === RequestStatus.DRAFT;
+        return {
+            ...(request || {}),
+            id: request?.id || `mr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            code: request?.code || `MR-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`,
             projectId: effectiveProjectId,
             constructionSiteId: effectiveConstructionSiteId,
             requestOrigin: isProjectRequest ? 'project' : 'wms',
             siteWarehouseId,
             sourceWarehouseId: sourceWarehouseId || undefined,
-            requesterId: user.id,
-            status: RequestStatus.PENDING,
-            createdDate: new Date().toISOString(),
-            expectedDate: new Date(Date.now() + 86400000 * 3).toISOString(),
+            requesterId: request?.requesterId || user.id,
+            status: RequestStatus.DRAFT,
+            submittedToUserId: null,
+            submittedToName: null,
+            submittedToPermission: null,
+            submissionNote: null,
+            createdDate: request?.createdDate || now,
+            expectedDate: request?.expectedDate || new Date(Date.now() + 86400000 * 3).toISOString(),
             note,
             fulfillmentMode,
             items: reqItems.map(i => {
@@ -509,15 +528,115 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     manualReason: i.manualReason || undefined,
                 };
             }),
-            logs: [{ action: 'CREATED', userId: user.id, timestamp: new Date().toISOString() }]
+            logs: [
+                ...(request?.logs || []),
+                { action: isExistingDraft ? 'UPDATED_DRAFT' : 'CREATED_DRAFT', userId: user.id, timestamp: now },
+            ],
         };
+    };
 
-        if (isProjectRequest) {
-            setSubmittingProjectRequest(newRequest);
-            return;
+    const validateDraftForm = async () => {
+        if (!siteWarehouseId || (!isProjectRequest && !sourceWarehouseId) || reqItems.length === 0) {
+            toast.warning('Thiếu thông tin', isProjectRequest ? 'Vui lòng chọn kho nhận và ít nhất 1 vật tư.' : 'Vui lòng chọn đầy đủ kho nhận, kho nguồn và ít nhất 1 vật tư.');
+            return false;
         }
 
-        await submitCreatedRequest(newRequest);
+        if (isProjectRequest) {
+            const invalidLine = reqItems.find(line => {
+                const snapshot = buildLineBudgetSnapshot(line);
+                const outsideBoq = !line.materialBudgetItemId;
+                return (outsideBoq || snapshot.overBudgetQty > 0) && !line.overBudgetReason?.trim();
+            });
+            if (invalidLine) {
+                const item = items.find(i => i.id === invalidLine.itemId);
+                toast.warning('Thiếu lý do vượt/ngoài BOQ', `${item?.name || invalidLine.itemId} cần nhập lý do để gửi đề xuất.`);
+                return false;
+            }
+        }
+
+        const shortages = sourceWarehouseId ? reqItems
+            .filter(line => !line.isManualItem && !!getLineInventory(line.itemId))
+            .map(line => ({ ...line, summary: getStockSummary(line.itemId, sourceWarehouseId) }))
+            .filter(line => Number(line.qty) > line.summary.available) : [];
+        if (!isProjectRequest && shortages.length > 0) {
+            const shortageText = shortages.map(line => {
+                const item = getLineInventory(line.itemId);
+                const missing = Number(line.qty) - line.summary.available;
+                return `${item?.name || line.itemId}: khả dụng ${line.summary.available}, thiếu ${missing}`;
+            }).join('\n');
+            const ok = await confirm({
+                title: 'Tạo nháp vượt tồn khả dụng',
+                targetName: 'Phiếu đề xuất vật tư',
+                warningText: `Một số vật tư vượt tồn khả dụng:\n${shortageText}`,
+                confirmText: 'Tạo phiếu nháp',
+                actionLabel: 'Tiếp tục',
+                cancelLabel: 'Kiểm tra lại',
+                intent: 'warning',
+            });
+            if (!ok) return false;
+        }
+        return true;
+    };
+
+    const handleSubmitCreate = async () => {
+        if (isSaving) return;
+        const isValid = await validateDraftForm();
+        if (!isValid) return;
+
+        const isExistingDraft = !!request && request.status === RequestStatus.DRAFT;
+        const newRequest = buildDraftRequestFromForm();
+
+        const ok = await confirm({
+            title: isExistingDraft ? 'Lưu phiếu nháp' : 'Tạo đề xuất nháp',
+            targetName: newRequest.code,
+            subtitle: 'Phiếu sẽ lưu ở trạng thái Nháp. Anh/chị mở lại phiếu để kiểm tra rồi mới gửi duyệt.',
+            confirmText: isExistingDraft ? 'Xác nhận lưu' : 'Xác nhận tạo',
+            actionLabel: isExistingDraft ? 'Lưu nháp' : 'Tạo nháp',
+            cancelLabel: 'Kiểm tra lại',
+            intent: 'success',
+            countdownSeconds: 1,
+        });
+        if (!ok) return;
+
+        await saveMaterialRequest(
+            newRequest,
+            isExistingDraft ? 'Đã lưu phiếu nháp' : 'Đã tạo phiếu nháp',
+            'Phiếu đang ở trạng thái Nháp. Mở lại phiếu để kiểm tra và gửi duyệt khi sẵn sàng.',
+        );
+    };
+
+    const handleOpenSubmitDraft = async () => {
+        if (isSaving || !request || request.status !== RequestStatus.DRAFT) return;
+        const isValid = await validateDraftForm();
+        if (!isValid) return;
+        setSubmittingProjectRequest(buildDraftRequestFromForm());
+    };
+
+    const handleDeleteRequest = async () => {
+        if (isSaving || !request) return;
+        const ok = await confirm({
+            title: 'Xoá phiếu đề xuất',
+            targetName: request.code,
+            subtitle: 'Chỉ xoá được phiếu chưa phát sinh đợt cấp, PO hoặc phiếu kho liên quan.',
+            confirmText: 'Xác nhận xoá',
+            actionLabel: 'Xoá phiếu',
+            cancelLabel: 'Giữ lại',
+            intent: 'danger',
+            countdownSeconds: 2,
+        });
+        if (!ok) return;
+
+        setIsSaving(true);
+        try {
+            await removeRequest(request.id);
+            toast.success('Đã xoá phiếu đề xuất', `Phiếu ${request.code} đã được xoá khỏi danh sách.`);
+            onClose();
+        } catch (err: any) {
+            logApiError('requestModal.delete', err);
+            toast.error('Không thể xoá phiếu', getApiErrorMessage(err, 'Phiếu không đủ điều kiện xoá hoặc bạn không có quyền xoá.'));
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleAction = async (status: RequestStatus) => {
@@ -535,9 +654,23 @@ const RequestModal: React.FC<RequestModalProps> = ({
             });
 
             if (itemsWithExcess.length > 0) {
-                const confirmMsg = `Có ${itemsWithExcess.length} vật tư được duyệt vượt mức yêu cầu ban đầu. Bạn có chắc chắn muốn tiếp tục phê duyệt?`;
-                if (!window.confirm(confirmMsg)) return;
+                const ok = await confirm({
+                    title: 'Duyệt vượt số lượng yêu cầu',
+                    targetName: request.code,
+                    warningText: `Có ${itemsWithExcess.length} vật tư được duyệt vượt mức yêu cầu ban đầu.`,
+                    confirmText: 'Tiếp tục phê duyệt',
+                    actionLabel: 'Duyệt vượt',
+                    cancelLabel: 'Kiểm tra lại',
+                    intent: 'warning',
+                    countdownSeconds: 1,
+                });
+                if (!ok) return;
             }
+        }
+
+        if (status === RequestStatus.REJECTED && !(overrideReason.trim() || note.trim())) {
+            toast.warning('Thiếu lý do từ chối', 'Vui lòng nhập lý do vào ô ghi chú/lý do override trước khi từ chối.');
+            return;
         }
 
         if (status === RequestStatus.APPROVED && !isProjectRequest) {
@@ -561,7 +694,17 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     const missing = Number(line.qty) - line.summary.available;
                     return `${item?.name || line.itemId}: khả dụng ${line.summary.available}, vượt ${missing}`;
                 }).join('\n');
-                if (!window.confirm(`Bạn đang duyệt vượt tồn khả dụng:\n${shortageText}\n\nTiếp tục với lý do override?`)) return;
+                const ok = await confirm({
+                    title: 'Duyệt vượt tồn khả dụng',
+                    targetName: request.code,
+                    warningText: `Bạn đang duyệt vượt tồn khả dụng:\n${shortageText}`,
+                    confirmText: 'Tiếp tục duyệt',
+                    actionLabel: 'Duyệt override',
+                    cancelLabel: 'Kiểm tra lại',
+                    intent: 'warning',
+                    countdownSeconds: 1,
+                });
+                if (!ok) return;
             }
         }
 
@@ -582,6 +725,27 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 return;
             }
         }
+
+        const actionLabel = status === RequestStatus.APPROVED
+            ? 'Phê duyệt'
+            : status === RequestStatus.REJECTED
+                ? 'Từ chối'
+                : status === RequestStatus.IN_TRANSIT
+                    ? 'Xác nhận xuất kho'
+                    : status === RequestStatus.COMPLETED
+                        ? 'Xác nhận hoàn thành'
+                        : 'Cập nhật';
+        const ok = await confirm({
+            title: `${actionLabel} phiếu đề xuất`,
+            targetName: request.code,
+            subtitle: `Phiếu sẽ chuyển sang trạng thái ${status}.`,
+            confirmText: `Xác nhận ${actionLabel.toLowerCase()}`,
+            actionLabel,
+            cancelLabel: 'Kiểm tra lại',
+            intent: status === RequestStatus.REJECTED ? 'danger' : 'success',
+            countdownSeconds: 1,
+        });
+        if (!ok) return;
 
         setIsSaving(true);
         try {
@@ -606,19 +770,30 @@ const RequestModal: React.FC<RequestModalProps> = ({
             toast.error('Không thể trả lại trực tiếp', 'Phiếu đã phát sinh phiếu kho liên kết. Cần huỷ/rollback phiếu kho trước.');
             return;
         }
-        const reason = window.prompt('Nhập lý do trả lại phiếu');
-        if (!reason?.trim()) {
+        const reason = overrideReason.trim() || note.trim();
+        if (!reason) {
             toast.warning('Thiếu lý do trả lại', 'Vui lòng nhập lý do để người tạo phiếu biết cần bổ sung gì.');
             return;
         }
+        const ok = await confirm({
+            title: 'Trả lại phiếu đề xuất',
+            targetName: request.code,
+            subtitle: 'Phiếu sẽ quay về trạng thái Nháp và hiển thị nhãn Bị trả lại cho người tạo phiếu.',
+            confirmText: 'Xác nhận trả lại',
+            actionLabel: 'Trả lại',
+            cancelLabel: 'Kiểm tra lại',
+            intent: 'warning',
+            countdownSeconds: 1,
+        });
+        if (!ok) return;
         setIsSaving(true);
         try {
-            const saved = await updateRequestStatus(request.id, RequestStatus.PENDING, reason.trim(), undefined, undefined, undefined, 'RETURNED');
+            const saved = await updateRequestStatus(request.id, RequestStatus.DRAFT, reason, undefined, undefined, undefined, 'RETURNED');
             if (!saved) {
                 toast.error('Không thể trả lại phiếu', 'Không cập nhật được trạng thái phiếu trên hệ thống.');
                 return;
             }
-            toast.success('Đã trả lại phiếu', 'Phiếu đã quay về bước chờ xử lý.');
+            toast.success('Đã trả lại phiếu', 'Phiếu đã quay về Nháp để người tạo phiếu chỉnh sửa và gửi lại.');
             onClose();
         } catch (err: any) {
             logApiError('requestModal.returnRequest', err);
@@ -686,6 +861,18 @@ const RequestModal: React.FC<RequestModalProps> = ({
             return;
         }
 
+        const ok = await confirm({
+            title: 'Tạo đợt cấp vật tư',
+            targetName: request.code,
+            subtitle: `Tạo phiếu xuất kho nội bộ cho ${validLines.length} dòng vật tư từ ${getWarehouseName(effectiveSource)}.`,
+            confirmText: 'Xác nhận tạo đợt cấp',
+            actionLabel: 'Tạo đợt cấp',
+            cancelLabel: 'Kiểm tra lại',
+            intent: 'success',
+            countdownSeconds: 1,
+        });
+        if (!ok) return;
+
         setIsSaving(true);
         try {
             await materialRequestFulfillmentService.createIssuedBatch({
@@ -729,6 +916,23 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     const handleReceiveFulfillmentBatch = async () => {
         if (!request || !receivingBatch || isSaving) return;
+        const hasVariance = receivingBatch.lines.some(line => {
+            const draft = receiveLines.find(item => item.lineId === line.id);
+            return Number(draft?.qty || 0) !== Number(line.issuedQty || 0);
+        });
+        const ok = await confirm({
+            title: 'Xác nhận thực nhận đợt cấp',
+            targetName: receivingBatch.batchNo,
+            subtitle: hasVariance
+                ? 'Có chênh lệch giữa số xuất và số thực nhận. Hệ thống sẽ ghi nhận lệch để chốt theo quy trình.'
+                : 'Hệ thống sẽ cập nhật lũy kế thực nhận của phiếu đề xuất.',
+            confirmText: 'Xác nhận nhận hàng',
+            actionLabel: 'Xác nhận nhận',
+            cancelLabel: 'Kiểm tra lại',
+            intent: hasVariance ? 'warning' : 'success',
+            countdownSeconds: 1,
+        });
+        if (!ok) return;
         setIsSaving(true);
         try {
             const savedBatch = await materialRequestFulfillmentService.receiveBatch({
@@ -764,6 +968,85 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     const handleReturnFulfillmentBatch = async (batch: MaterialRequestFulfillmentBatch) => {
         if (!request || isSaving) return;
+        if (batch.status === 'received') {
+            if (!isAdmin(user)) {
+                toast.warning('Chỉ Admin được hoàn trả', 'Đợt cấp đã nhận đã phát sinh tồn kho, chỉ Admin được hoàn trả để đảo tồn.');
+                return;
+            }
+            if (!batch.sourceWarehouseId || !batch.targetWarehouseId) {
+                toast.warning('Không thể hoàn trả', 'Đợt cấp đã nhận thiếu kho nguồn hoặc kho nhận để tạo phiếu hoàn kho.');
+                return;
+            }
+            const shortage = batch.lines.find(line => {
+                const item = items.find(inv => inv.id === line.itemId);
+                const onHand = Number(item?.stockByWarehouse?.[batch.targetWarehouseId!] || 0);
+                return onHand < Number(line.receivedQty || 0);
+            });
+            if (shortage) {
+                const item = items.find(inv => inv.id === shortage.itemId);
+                const onHand = Number(item?.stockByWarehouse?.[batch.targetWarehouseId!] || 0);
+                toast.error('Không đủ tồn để hoàn trả', `${item?.name || shortage.itemId}: tồn kho nhận còn ${onHand.toLocaleString('vi-VN')}, cần hoàn ${Number(shortage.receivedQty || 0).toLocaleString('vi-VN')}.`);
+                return;
+            }
+
+            const ok = await confirm({
+                title: 'Admin hoàn trả đợt đã nhận',
+                targetName: batch.batchNo,
+                confirmText: 'Xác nhận hoàn trả',
+                subtitle: `Hệ thống sẽ tạo phiếu hoàn kho từ ${getWarehouseName(batch.targetWarehouseId)} về ${getWarehouseName(batch.sourceWarehouseId)} và loại đợt này khỏi lũy kế thực nhận.`,
+                intent: 'danger',
+                actionLabel: 'Hoàn trả và đảo tồn',
+                cancelLabel: 'Giữ nguyên',
+                countdownSeconds: 2,
+            });
+            if (!ok) return;
+
+            setIsSaving(true);
+            try {
+                const returnTransactionId = `tx-mr-return-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+                const returnTransaction: Transaction = {
+                    id: returnTransactionId,
+                    type: TransactionType.TRANSFER,
+                    date: new Date().toISOString(),
+                    items: batch.lines
+                        .filter(line => Number(line.receivedQty || 0) > 0)
+                        .map(line => ({
+                            itemId: line.itemId,
+                            quantity: Number(line.receivedQty || 0),
+                            materialRequestId: request.id,
+                            requestLineId: line.requestLineId,
+                            fulfillmentBatchId: batch.id,
+                        })),
+                    sourceWarehouseId: batch.targetWarehouseId,
+                    targetWarehouseId: batch.sourceWarehouseId,
+                    requesterId: user.id,
+                    approverId: user.id,
+                    status: TransactionStatus.COMPLETED,
+                    note: `Admin hoàn trả đợt cấp ${batch.batchNo} của phiếu ${request.code}`,
+                    relatedRequestId: request.id,
+                };
+                await addTransaction(returnTransaction);
+                await materialRequestFulfillmentService.returnReceivedBatch({
+                    batch,
+                    actorUserId: user.id,
+                    reason: overrideReason.trim() || 'Admin hoàn trả đợt cấp đã nhận',
+                    returnTransactionId,
+                });
+                const freshBatches = await refreshFulfillmentBatches(request.id);
+                const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
+                await updateRequestStatus(request.id, nextStatus, 'Admin hoàn trả đợt cấp đã nhận và đảo tồn kho', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_SYNC');
+                await loadModuleData('wms', true);
+                toast.success('Đã hoàn trả đợt cấp', nextStatus === RequestStatus.APPROVED ? 'Phiếu đề xuất đã quay lại trạng thái chờ cấp hàng.' : 'Đã trừ kho nhận, hoàn về kho nguồn và cập nhật lại lũy kế.');
+                onClose();
+            } catch (err: any) {
+                logApiError('requestModal.fulfillment.returnReceived', err);
+                toast.error('Không thể hoàn trả đợt đã nhận', getApiErrorMessage(err, 'Không hoàn trả được tồn kho cho đợt cấp.'));
+            } finally {
+                setIsSaving(false);
+            }
+            return;
+        }
+
         const ok = await confirm({
             title: 'Trả lại / hoàn hàng đợt cấp',
             targetName: batch.batchNo,
@@ -829,13 +1112,14 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
     };
 
-    const handlePrintFulfillmentBatch = async (batch: MaterialRequestFulfillmentBatch) => {
+    const handlePrintFulfillmentBatch = async (batch: MaterialRequestFulfillmentBatch, mode: 'print' | 'pdf' = 'print') => {
         if (!request) return;
         try {
             const printableBatch = await materialRequestFulfillmentService.ensureQrToken(batch);
             setSelectedFulfillmentBatch(printableBatch);
             const receiveUrl = buildFulfillmentBatchReceiveUrl(printableBatch.qrToken!);
             const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={132} level="H" includeMargin />);
+            const documentTitle = `${mode === 'pdf' ? 'PDF_' : ''}Phieu_xuat_kho_${printableBatch.batchNo}`;
             const rows = printableBatch.lines.map(line => {
                 const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
                 return `
@@ -851,7 +1135,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 <html>
                 <head>
                     <meta charset="utf-8" />
-                    <title>${printableBatch.batchNo}</title>
+                    <title>${documentTitle}</title>
                     <style>
                         body { font-family: Arial, sans-serif; color: #0f172a; padding: 28px; }
                         .header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #0f172a; padding-bottom: 16px; }
@@ -893,20 +1177,28 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         <div>Thủ kho xuất<div class="signature-space"></div></div>
                         <div>Thủ kho/CT nhận<div class="signature-space"></div></div>
                     </div>
-                    <script>window.print();</script>
+                    <script>
+                        window.addEventListener('load', function () {
+                            window.focus();
+                            setTimeout(function () { window.print(); }, 250);
+                        });
+                    </script>
                 </body>
                 </html>
             `;
             const printWindow = window.open('', '_blank');
             if (!printWindow) {
-                toast.error('Không thể mở cửa sổ in', 'Trình duyệt đang chặn popup in phiếu xuất kho.');
+                toast.error(mode === 'pdf' ? 'Không thể mở cửa sổ xuất PDF' : 'Không thể mở cửa sổ in', 'Trình duyệt đang chặn popup phiếu xuất kho.');
                 return;
             }
             printWindow.document.write(html);
             printWindow.document.close();
+            if (mode === 'pdf') {
+                toast.info('Xuất PDF', 'Trong hộp thoại in, chọn "Save as PDF" để lưu file.');
+            }
         } catch (err: any) {
             logApiError('requestModal.fulfillment.print', err);
-            toast.error('Không thể in phiếu xuất', getApiErrorMessage(err, 'Không tạo được mã QR cho đợt cấp.'));
+            toast.error(mode === 'pdf' ? 'Không thể xuất PDF' : 'Không thể in phiếu xuất', getApiErrorMessage(err, 'Không tạo được mã QR cho đợt cấp.'));
         }
     };
 
@@ -957,8 +1249,22 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const sourceWh = warehouses.find(w => w.id === sourceWarehouseId);
     const targetWh = warehouses.find(w => w.id === siteWarehouseId);
     const requester = users.find(u => u.id === (request?.requesterId || user.id));
+    const latestRequestLog = request?.logs?.[request.logs.length - 1];
+    const isReturnedDraft = request?.status === RequestStatus.DRAFT && latestRequestLog?.action === 'RETURNED';
+    const requestStatusText = isReturnedDraft
+        ? 'Bị trả lại'
+        : request?.status === RequestStatus.DRAFT
+            ? 'Nháp'
+            : request?.status || 'NEW';
     const showSourceWarehouseField = !isEditable || !isProjectRequest || canEditApprovalQuantities;
     const stockContextWarehouseId = isEditable && isProjectRequest ? stockPreviewWarehouseId : sourceWarehouseId;
+    const canDeleteRequest = !!request
+        && [RequestStatus.DRAFT, RequestStatus.PENDING, RequestStatus.REJECTED].includes(request.status)
+        && (
+            isAdmin(user)
+            || (request.requesterId === user.id && (request.status === RequestStatus.DRAFT || request.status === RequestStatus.REJECTED))
+        );
+    const canSubmitDraft = !!request && request.status === RequestStatus.DRAFT && request.requesterId === user.id;
 
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
@@ -1002,10 +1308,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
                     <div>
                         <h3 className="font-bold text-lg text-slate-800">
-                            {isEditable ? 'Tạo đề xuất vật tư' : `Phiếu đề xuất: ${request?.code}`}
+                            {isEditable && !request ? 'Tạo đề xuất vật tư' : `Phiếu đề xuất: ${request?.code}`}
                         </h3>
                         <p className="text-xs text-slate-500">
-                            {isEditable ? 'Gửi nhu cầu về bộ phận điều phối' : `Trạng thái: ${request?.status}${request?.submittedToName ? ` • Gửi: ${request.submittedToName}` : ''}`}
+                            {isEditable && !request ? 'Tạo phiếu nháp trước, kiểm tra lại rồi gửi duyệt sau.' : `Trạng thái: ${requestStatusText}${request?.submittedToName ? ` • Gửi: ${request.submittedToName}` : ''}`}
                         </p>
                     </div>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
@@ -1019,7 +1325,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         request?.status === RequestStatus.APPROVED ? 'bg-blue-600' :
                             request?.status === RequestStatus.IN_TRANSIT ? 'bg-indigo-600' :
                                 request?.status === RequestStatus.COMPLETED ? 'bg-emerald-600' :
-                                    request?.status === RequestStatus.REJECTED ? 'bg-red-600' : 'bg-slate-600'
+                                    request?.status === RequestStatus.REJECTED ? 'bg-red-600' :
+                                        isReturnedDraft ? 'bg-rose-600' :
+                                            request?.status === RequestStatus.DRAFT ? 'bg-slate-500' : 'bg-slate-600'
                         }`}>
                         <div className="flex items-center uppercase tracking-widest">
                             <Info size={14} className="mr-2" />
@@ -1027,7 +1335,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 request?.status === RequestStatus.APPROVED ? 'Đã duyệt - Chờ xuất hàng' :
                                     request?.status === RequestStatus.IN_TRANSIT ? 'Đang trên đường vận chuyển' :
                                         request?.status === RequestStatus.COMPLETED ? (fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Đã cấp thẳng sử dụng' : 'Đã nhập kho công trường thành công') :
-                                            request?.status === RequestStatus.REJECTED ? 'Đề xuất này đã bị từ chối' : 'Đề xuất đã đóng'}
+                                            isReturnedDraft ? 'Phiếu bị trả lại - đang ở Nháp' :
+                                                request?.status === RequestStatus.DRAFT ? 'Phiếu nháp - chưa gửi duyệt' :
+                                                    request?.status === RequestStatus.REJECTED ? 'Đề xuất này đã bị từ chối' : 'Đề xuất đã đóng'}
                         </div>
                         <div className="font-mono">{new Date(request?.createdDate || '').toLocaleDateString('vi-VN')}</div>
                     </div>
@@ -1546,6 +1856,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             Đóng
                         </button>
 
+                        {canDeleteRequest && (
+                            <button disabled={isSaving} onClick={handleDeleteRequest} className="px-5 py-2 rounded-lg border border-red-200 text-red-700 bg-red-50 font-bold hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed flex items-center">
+                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Trash2 size={18} className="mr-2" />} Xoá phiếu
+                            </button>
+                        )}
+
                         {canReturn && !isEditable && (
                             <button disabled={isSaving} onClick={handleReturnRequest} className="px-5 py-2 rounded-lg border border-amber-200 text-amber-700 bg-amber-50 font-bold hover:bg-amber-100 disabled:opacity-60 disabled:cursor-not-allowed flex items-center">
                                 {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <AlertCircle size={18} className="mr-2" />} Trả lại
@@ -1553,8 +1869,14 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         )}
 
                         {isEditable && (
-                            <button disabled={isSaving} onClick={handleSubmitCreate} className="px-6 py-2 rounded-lg bg-accent text-white font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20">
-                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Send size={18} className="mr-2" />} {isSaving ? 'Đang gửi...' : 'Gửi đề xuất'}
+                            <button disabled={isSaving} onClick={handleSubmitCreate} className="px-6 py-2 rounded-lg bg-slate-700 text-white font-bold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-slate-500/20">
+                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />} {isSaving ? 'Đang lưu...' : request ? 'Lưu nháp' : 'Tạo đề xuất'}
+                            </button>
+                        )}
+
+                        {canSubmitDraft && (
+                            <button disabled={isSaving} onClick={handleOpenSubmitDraft} className="px-6 py-2 rounded-lg bg-accent text-white font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20">
+                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Send size={18} className="mr-2" />} Gửi duyệt
                             </button>
                         )}
 
@@ -1756,6 +2078,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             >
                                 <Truck size={16} /> In phiếu QR
                             </button>
+                            <button
+                                disabled={isSaving}
+                                onClick={() => handlePrintFulfillmentBatch(selectedFulfillmentBatch, 'pdf')}
+                                className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 font-black hover:bg-slate-50 disabled:opacity-60 flex items-center gap-2"
+                            >
+                                <FileDown size={16} /> Xuất PDF
+                            </button>
                             {canReceiveFulfillmentBatch && selectedFulfillmentBatch.status === 'issued' && (
                                 <>
                                     <button
@@ -1773,6 +2102,15 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                         <XCircle size={16} /> Trả lại
                                     </button>
                                 </>
+                            )}
+                            {isAdmin(user) && selectedFulfillmentBatch.status === 'received' && selectedFulfillmentBatch.sourceWarehouseId && selectedFulfillmentBatch.targetWarehouseId && (
+                                <button
+                                    disabled={isSaving}
+                                    onClick={() => handleReturnFulfillmentBatch(selectedFulfillmentBatch)}
+                                    className="px-4 py-2 rounded-lg bg-rose-600 text-white font-black hover:bg-rose-700 disabled:opacity-60 flex items-center gap-2"
+                                >
+                                    <XCircle size={16} /> Hoàn trả / đảo tồn
+                                </button>
                             )}
                             {canReceiveFulfillmentBatch && selectedFulfillmentBatch.status === 'variance_pending' && (
                                 <button
@@ -1889,7 +2227,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         { label: 'Ghi chú', value: submittingProjectRequest.note || '-' },
                     ]}
                     onCancel={() => setSubmittingProjectRequest(null)}
-                    onConfirm={target => submitCreatedRequest(submittingProjectRequest, target)}
+                    onConfirm={target => submitRequestForApproval(submittingProjectRequest, target)}
                 />
             )}
         </div>
