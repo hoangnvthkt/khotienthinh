@@ -17,6 +17,7 @@ import { RealtimeBadge } from './OfflineIndicator';
 import { useChat } from '../context/ChatContext';
 import { Role, TransactionStatus, RequestStatus } from '../types';
 import { canApproveMaterialRequest, canApproveWmsTransaction, canExportMaterialRequest, canReceiveMaterialRequest, canReceiveWmsTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
+import { hasProjectTabPermissionRoute } from '../lib/projectTabPermissions';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -66,7 +67,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p.startsWith('/ai')) return 'AI';
     if (p.startsWith('/ep')) return 'EP';
     if (p.startsWith('/hd')) return 'HD';
-    if (['/dashboard', '/inventory', '/operations', '/audit', '/reports', '/requests', '/misa-export'].includes(p)) return 'WMS';
+    if (['/dashboard', '/inventory', '/operations', '/audit', '/reports', '/requests', '/material-code-requests', '/misa-export'].includes(p)) return 'WMS';
     return null;
   };
 
@@ -183,6 +184,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     WMS: [
       { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/requests', icon: FileText, label: 'Đề xuất vật tư', badge: pendingReqCount > 0 ? pendingReqCount : null },
+      { to: '/material-code-requests', icon: ClipboardCheck, label: 'Đề xuất cấp mã' },
       { to: '/inventory', icon: Package, label: 'Kho & Vật tư', badge: lowStockCount > 0 ? lowStockCount : null, badgeColor: 'bg-amber-500' },
       { to: '/operations', icon: ArrowLeftRight, label: 'Nhập / Xuất', badge: pendingTxCount > 0 ? pendingTxCount : null },
       { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
@@ -256,8 +258,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (item.roles && !item.roles.includes(user.role)) return false;
     // Sub-module filter: if allowedSubModules is configured for this module, only show allowed routes
     if (user.role !== Role.ADMIN && activeModule) {
-      const subModules = user.allowedSubModules?.[activeModule.key];
-      if (subModules && subModules.length > 0 && !subModules.includes(item.to)) return false;
+      const hasSubModuleRestriction = Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, activeModule.key);
+      const subModules = user.allowedSubModules?.[activeModule.key] || [];
+      if (hasSubModuleRestriction && !subModules.includes(item.to)) {
+        if (activeModule.key === 'DA' && item.to === '/da' && hasProjectTabPermissionRoute(subModules)) return true;
+        return false;
+      }
     }
     return true;
   });

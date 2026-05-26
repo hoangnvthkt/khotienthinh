@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, PackageCheck, Loader2, AlertTriangle, Building2 } from 'lucide-react';
-import { PurchaseOrder, Transaction, TransactionStatus, TransactionType, Role } from '../types';
+import { PurchaseOrder, RequestStatus, Transaction, TransactionStatus, TransactionType, Role } from '../types';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { poService } from '../lib/projectService';
+import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { usePermission } from '../hooks/usePermission';
 
@@ -20,7 +21,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   onClose,
   onReceived,
 }) => {
-  const { warehouses, items, user, addTransaction } = useApp();
+  const { warehouses, items, user, requests, addTransaction, updateRequestStatus } = useApp();
   const { canManage } = usePermission();
   const toast = useToast();
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -65,7 +66,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
     return qty < 0 || qty > line.remainingQty;
   });
   const receiptLines = lines
-    .map(line => ({ itemId: line.itemId, quantity: Number(quantities[line.key]) || 0, price: Number(line.unitPrice) || 0 }))
+    .map(line => ({ itemId: line.itemId, lineId: line.lineId, quantity: Number(quantities[line.key]) || 0, price: Number(line.unitPrice) || 0 }))
     .filter(line => line.quantity > 0);
   const unlinkedReceiptLines = receiptLines.filter(line => !items.some(item => item.id === line.itemId));
 
@@ -84,7 +85,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
       return;
     }
     if (unlinkedReceiptLines.length > 0) {
-      toast.warning('Chưa liên kết mã kho', 'PO có vật tư viết tay/chưa có SKU. Vui lòng chuẩn hoá mã vật tư hoặc xử lý cấp thẳng sử dụng trước khi nhập kho.');
+      toast.warning('Chưa liên kết mã kho', 'PO có dòng chưa có mã vật tư trong hệ thống. Vui lòng tạo Đề xuất cấp mã vật tư/vật liệu trước khi nhập kho.');
       return;
     }
 
@@ -110,6 +111,35 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
       } catch (transactionError) {
         await poService.upsert(po);
         throw transactionError;
+      }
+
+      try {
+        const affectedRequestIds = await materialRequestFulfillmentService.recordPoReceipt({
+          po: updatedPo,
+          transactionId: txId,
+          actorUserId: user.id,
+          receiptLines,
+        });
+        for (const requestId of affectedRequestIds) {
+          const request = requests.find(item => item.id === requestId);
+          if (!request) continue;
+          const batches = await materialRequestFulfillmentService.listByRequest(requestId);
+          const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, batches);
+          if (nextStatus !== request.status) {
+            await updateRequestStatus(
+              request.id,
+              nextStatus as RequestStatus,
+              `Đồng bộ thực nhận từ PO ${updatedPo.poNumber}`,
+              undefined,
+              request.sourceWarehouseId,
+              request.overrideReason,
+              'FULFILLMENT_SYNC',
+            );
+          }
+        }
+      } catch (syncError) {
+        logApiError('receivePurchaseOrder.syncMaterialRequestFulfillment', syncError);
+        toast.warning('PO đã nhập kho', 'Chưa đồng bộ được lũy kế thực nhận về phiếu yêu cầu. Vui lòng mở lại phiếu để kiểm tra.');
       }
 
       toast.success('Đã nhập kho theo PO', `${po.poNumber} đã được cập nhật tồn kho.`);
@@ -170,35 +200,92 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
           )}
 
           <div className="border border-slate-100 rounded-2xl overflow-hidden">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50 text-[10px] uppercase text-slate-400 font-black tracking-widest border-b border-slate-100">
-                <tr>
-                  <th className="p-4">Vật tư</th>
-                  <th className="p-4 text-right">Đặt</th>
-                  <th className="p-4 text-right">Đã nhận</th>
-                  <th className="p-4 text-right">Còn lại</th>
-                  <th className="p-4 text-center w-40">Thực nhận</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {lines.map(line => {
-                  const qty = Number(quantities[line.key]) || 0;
-                  const invalid = qty < 0 || qty > line.remainingQty;
-                  return (
-                    <tr key={line.key} className={line.remainingQty <= 0 ? 'bg-slate-50/60 opacity-70' : ''}>
-                      <td className="p-4">
-                        <div className="font-black text-sm text-slate-800">{line.name}</div>
-                        <div className="text-[10px] text-slate-400 font-mono font-bold">{line.sku}</div>
-                        {(line.neededDate || line.note) && (
-                          <div className="text-[10px] text-slate-500 mt-1">
-                            {line.neededDate ? `Ngày cần: ${line.neededDate}` : ''}{line.neededDate && line.note ? ' • ' : ''}{line.note || ''}
-                          </div>
-                        )}
-                      </td>
-                      <td className="p-4 text-right font-black text-slate-700">{line.orderedQty.toLocaleString()} {line.unit}</td>
-                      <td className="p-4 text-right font-bold text-slate-500">{line.receivedQty.toLocaleString()} {line.unit}</td>
-                      <td className="p-4 text-right font-black text-emerald-600">{line.remainingQty.toLocaleString()} {line.unit}</td>
-                      <td className="p-4">
+            {/* Desktop Table View */}
+            <div className="hidden md:block">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 text-[10px] uppercase text-slate-400 font-black tracking-widest border-b border-slate-100">
+                  <tr>
+                    <th className="p-4">Vật tư</th>
+                    <th className="p-4 text-right">Đặt</th>
+                    <th className="p-4 text-right">Đã nhận</th>
+                    <th className="p-4 text-right">Còn lại</th>
+                    <th className="p-4 text-center w-40">Thực nhận</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {lines.map(line => {
+                    const qty = Number(quantities[line.key]) || 0;
+                    const invalid = qty < 0 || qty > line.remainingQty;
+                    return (
+                      <tr key={line.key} className={line.remainingQty <= 0 ? 'bg-slate-50/60 opacity-70' : ''}>
+                        <td className="p-4">
+                          <div className="font-black text-sm text-slate-800">{line.name}</div>
+                          <div className="text-[10px] text-slate-400 font-mono font-bold">{line.sku}</div>
+                          {(line.neededDate || line.note) && (
+                            <div className="text-[10px] text-slate-500 mt-1">
+                              {line.neededDate ? `Ngày cần: ${line.neededDate}` : ''}{line.neededDate && line.note ? ' • ' : ''}{line.note || ''}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-4 text-right font-black text-slate-700">{line.orderedQty.toLocaleString()} {line.unit}</td>
+                        <td className="p-4 text-right font-bold text-slate-500">{line.receivedQty.toLocaleString()} {line.unit}</td>
+                        <td className="p-4 text-right font-black text-emerald-600">{line.remainingQty.toLocaleString()} {line.unit}</td>
+                        <td className="p-4">
+                          <input
+                            type="number"
+                            min={0}
+                            max={line.remainingQty}
+                            step={1}
+                            disabled={line.remainingQty <= 0 || saving}
+                            value={quantities[line.key] ?? 0}
+                            onChange={(event) => setQuantities(prev => ({ ...prev, [line.key]: Number(event.target.value) || 0 }))}
+                            className={`w-full px-3 py-2 rounded-xl border text-center font-black outline-none focus:ring-2 ${
+                              invalid ? 'border-red-300 bg-red-50 text-red-600 focus:ring-red-200' : 'border-slate-200 focus:ring-emerald-200'
+                            }`}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Card List View */}
+            <div className="block md:hidden divide-y divide-slate-100">
+              {lines.map(line => {
+                const qty = Number(quantities[line.key]) || 0;
+                const invalid = qty < 0 || qty > line.remainingQty;
+                return (
+                  <div key={line.key} className={`p-4 space-y-3 ${line.remainingQty <= 0 ? 'bg-slate-50/60 opacity-70' : ''}`}>
+                    <div>
+                      <div className="font-black text-sm text-slate-800 leading-snug">{line.name}</div>
+                      <div className="text-[10px] text-slate-400 font-mono font-bold mt-0.5">{line.sku}</div>
+                      {(line.neededDate || line.note) && (
+                        <div className="text-[10px] text-slate-500 mt-1">
+                          {line.neededDate ? `Ngày cần: ${line.neededDate}` : ''}{line.neededDate && line.note ? ' • ' : ''}{line.note || ''}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 bg-slate-50 rounded-xl p-3 text-center">
+                      <div>
+                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Đặt</div>
+                        <div className="text-xs font-black text-slate-700 mt-0.5 truncate">{line.orderedQty.toLocaleString()} {line.unit}</div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Đã nhận</div>
+                        <div className="text-xs font-bold text-slate-500 mt-0.5 truncate">{line.receivedQty.toLocaleString()} {line.unit}</div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Còn lại</div>
+                        <div className="text-xs font-black text-emerald-600 mt-0.5 truncate">{line.remainingQty.toLocaleString()} {line.unit}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 pt-1">
+                      <div className="text-xs font-black text-slate-500 uppercase tracking-wider">Thực nhận:</div>
+                      <div className="w-32 shrink-0">
                         <input
                           type="number"
                           min={0}
@@ -211,12 +298,12 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                             invalid ? 'border-red-300 bg-red-50 text-red-600 focus:ring-red-200' : 'border-slate-200 focus:ring-emerald-200'
                           }`}
                         />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           <div>

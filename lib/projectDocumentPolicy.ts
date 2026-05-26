@@ -19,6 +19,7 @@ export type ProjectDocumentStatus =
   | 'pending'
   | 'verified'
   | 'approved'
+  | 'reviewed'
   | 'returned'
   | 'rejected'
   | 'cancelled'
@@ -29,9 +30,13 @@ export type ProjectDocumentAction =
   | 'view'
   | 'edit'
   | 'delete'
+  | 'submit'
+  | 'verify'
+  | 'confirm'
   | 'return'
   | 'approve'
   | 'cancel'
+  | 'rollback'
   | 'admin_override';
 
 export interface ProjectDocumentDependencies {
@@ -59,11 +64,14 @@ export interface ProjectDocumentPolicyInput {
   dependencies?: ProjectDocumentDependencies | null;
   reason?: string | null;
   documentLabel?: string;
+  everSubmitted?: boolean | null;
+  legacyPermissionFallback?: boolean;
 }
 
 const EDITABLE_STATUSES = new Set(['draft', 'returned', 'rejected']);
-const RETURNABLE_STATUSES = new Set(['submitted', 'pending', 'verified']);
-const LOCKED_DELETE_STATUSES = new Set(['submitted', 'pending', 'verified', 'approved', 'returned', 'rejected', 'cancelled', 'paid', 'locked']);
+const WAITING_STATUSES = new Set(['submitted', 'pending', 'verified', 'approved', 'reviewed']);
+const RETURNABLE_STATUSES = new Set(['submitted', 'pending', 'verified', 'approved', 'reviewed']);
+const LOCKED_DELETE_STATUSES = new Set(['submitted', 'pending', 'verified', 'approved', 'reviewed', 'returned', 'rejected', 'cancelled', 'paid', 'locked']);
 
 const normalizeStatus = (status?: string | null): ProjectDocumentStatus => (
   (status || 'draft') as ProjectDocumentStatus
@@ -76,6 +84,10 @@ const hasPermission = (permissions: Iterable<ProjectPermissionCode> | undefined,
 
 const includesCurrentUser = (userId: string | undefined, values?: Array<string | null | undefined>) => (
   !!userId && !!values?.some(value => value === userId)
+);
+
+const hasKnownHandler = (values?: Array<string | null | undefined>) => (
+  !!values?.some(Boolean)
 );
 
 const hasAnyProjectPermission = (permissions: Iterable<ProjectPermissionCode> | undefined) => (
@@ -100,8 +112,12 @@ export function getProjectDocumentPolicy(input: ProjectDocumentPolicyInput): Pro
   const isAdmin = input.user?.role === Role.ADMIN;
   const dependencies = input.dependencies || { blockers: [], requiredRollbackSteps: [] };
   const related = includesCurrentUser(userId, input.relatedUserIds);
+  const relatedKnown = hasKnownHandler(input.relatedUserIds);
   const currentHandler = includesCurrentUser(userId, input.currentHandlerIds);
+  const currentHandlerKnown = hasKnownHandler(input.currentHandlerIds);
   const canView = isAdmin || related || currentHandler || hasPermission(input.permissions, 'view') || hasAnyProjectPermission(input.permissions);
+  const legacyFallback = input.legacyPermissionFallback !== false;
+  const canActOnCurrentStep = isAdmin || currentHandler || (!currentHandlerKnown && legacyFallback);
 
   if (input.action === 'view') {
     return canView ? allow() : deny('Bạn không có quyền xem phiếu này.');
@@ -124,14 +140,17 @@ export function getProjectDocumentPolicy(input: ProjectDocumentPolicyInput): Pro
     if (!isAdmin && !hasPermission(input.permissions, 'edit')) {
       return deny('Bạn cần quyền "edit" để chỉnh sửa phiếu này.');
     }
-    return allow(isAdmin ? 'Admin đang chỉnh sửa dữ liệu dự án. Nếu dữ liệu có liên kết downstream, cần thao tác từ chứng từ gốc.' : undefined);
+    if (!isAdmin && relatedKnown && !related) {
+      return deny('Chỉ người lập phiếu được chỉnh sửa khi phiếu ở nháp hoặc đã được trả lại về mình.');
+    }
+    return allow(isAdmin ? 'Admin chỉ nên chỉnh sửa khi phiếu đã được rollback/trả lại về trạng thái có thể sửa.' : undefined);
   }
 
   if (input.action === 'delete') {
-    if (status !== 'draft') {
+    if (status !== 'draft' || input.everSubmitted) {
       const reason = LOCKED_DELETE_STATUSES.has(status)
-        ? 'Chỉ được xoá phiếu ở trạng thái nháp. Phiếu đã gửi, trả lại, duyệt, huỷ hoặc thanh toán cần được giữ lại để truy vết.'
-        : 'Không thể xoá phiếu ở trạng thái hiện tại.';
+        ? 'Chỉ được xoá phiếu nháp chưa từng gửi duyệt. Phiếu đã gửi, trả lại, duyệt, huỷ hoặc thanh toán cần được giữ lại để truy vết.'
+        : 'Không thể xoá phiếu ở trạng thái hiện tại hoặc phiếu đã từng gửi duyệt.';
       return deny(reason, ['Nếu cần điều chỉnh, hãy trả lại, huỷ/rollback hoặc tạo chứng từ điều chỉnh theo đúng luồng.']);
     }
     if (dependencies.blockers.length > 0) {
@@ -143,6 +162,19 @@ export function getProjectDocumentPolicy(input: ProjectDocumentPolicyInput): Pro
     return allow();
   }
 
+  if (input.action === 'submit') {
+    if (!EDITABLE_STATUSES.has(status)) {
+      return deny('Chỉ phiếu nháp hoặc phiếu đã được trả lại mới được gửi duyệt.');
+    }
+    if (dependencies.blockers.length > 0) {
+      return deny(dependencies.blockers[0], dependencies.requiredRollbackSteps);
+    }
+    if (!isAdmin && !hasPermission(input.permissions, 'submit')) {
+      return deny('Bạn cần quyền "submit" để gửi phiếu duyệt.');
+    }
+    return allow();
+  }
+
   if (input.action === 'return') {
     if (!RETURNABLE_STATUSES.has(status)) {
       return deny('Chỉ phiếu đang chờ xử lý mới được trả lại.');
@@ -150,24 +182,34 @@ export function getProjectDocumentPolicy(input: ProjectDocumentPolicyInput): Pro
     if (!input.reason?.trim()) {
       return deny('Vui lòng nhập lý do trả lại phiếu.');
     }
-    if (!isAdmin && !currentHandler && !hasPermission(input.permissions, 'verify') && !hasPermission(input.permissions, 'approve')) {
-      return deny('Bạn cần là người nhận xử lý hoặc có quyền verify/approve để trả lại phiếu.');
+    if (!canActOnCurrentStep) {
+      return deny('Phiếu đang chờ người nhận xử lý hiện tại. Bạn chỉ được xem, không được trả lại thay người đó.');
+    }
+    if (!isAdmin && !hasPermission(input.permissions, 'verify') && !hasPermission(input.permissions, 'approve') && !hasPermission(input.permissions, 'confirm')) {
+      return deny('Bạn cần quyền verify/approve/confirm phù hợp để trả lại phiếu.');
     }
     return allow();
   }
 
-  if (input.action === 'approve') {
-    if (!isAdmin && !hasPermission(input.permissions, 'approve')) {
-      return deny('Bạn cần quyền "approve" để phê duyệt phiếu này.');
+  if (input.action === 'verify' || input.action === 'approve' || input.action === 'confirm') {
+    const requiredPermission = input.action as ProjectPermissionCode;
+    if (!WAITING_STATUSES.has(status)) {
+      return deny('Phiếu không ở trạng thái chờ xử lý bước hiện tại.');
+    }
+    if (!canActOnCurrentStep) {
+      return deny('Phiếu không được giao cho bạn ở bước hiện tại. Bạn chỉ được xem.');
+    }
+    if (!isAdmin && !hasPermission(input.permissions, requiredPermission)) {
+      return deny(`Bạn cần quyền "${requiredPermission}" để xử lý bước này.`);
     }
     return allow();
   }
 
-  if (input.action === 'cancel') {
+  if (input.action === 'cancel' || input.action === 'rollback') {
     if (dependencies.blockers.length > 0) {
       return deny(dependencies.blockers[0], dependencies.requiredRollbackSteps);
     }
-    if (!isAdmin && !hasPermission(input.permissions, 'approve')) {
+    if (!isAdmin && (!canActOnCurrentStep || !hasPermission(input.permissions, 'approve'))) {
       return deny('Bạn cần quyền "approve" để huỷ hoặc rollback phiếu này.');
     }
     if (!input.reason?.trim()) {

@@ -5,12 +5,35 @@ import { Role, User, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
+import { PROJECT_TAB_PERMISSIONS } from '../lib/projectTabPermissions';
+import type { ProjectOverviewTabKey } from '../lib/projectTabPermissions';
+
+const PROJECT_TAB_PERMISSION_ICONS: Record<ProjectOverviewTabKey, any> = {
+  executive: LayoutDashboard,
+  org: Users,
+  budget: DollarSign,
+  cashflow: Repeat,
+  contract: FileSignature,
+  gantt: GitBranch,
+  dailylog: ClipboardCheck,
+  subcontract: Briefcase,
+  material: Package,
+  documents: FolderOpen,
+  report: BarChart3,
+};
+
+const PROJECT_TAB_SUB_MODULES = PROJECT_TAB_PERMISSIONS.map(tab => ({
+  to: tab.route,
+  icon: PROJECT_TAB_PERMISSION_ICONS[tab.key],
+  label: `Tab: ${tab.label}`,
+}));
 
 // Sub-app definitions per module (matches Sidebar's moduleNavMap)
 const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }[]> = {
   WMS: [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/requests', icon: FileText, label: 'Đề xuất vật tư' },
+    { to: '/material-code-requests', icon: ClipboardCheck, label: 'Đề xuất cấp mã' },
     { to: '/inventory', icon: Package, label: 'Kho & Vật tư' },
     { to: '/operations', icon: ArrowLeftRight, label: 'Nhập / Xuất' },
     { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
@@ -37,6 +60,7 @@ const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }
   DA: [
     { to: '/da', icon: BarChart3, label: 'Tổng quan DA' },
     { to: '/da/portfolio', icon: Layers, label: 'Đa dự án' },
+    ...PROJECT_TAB_SUB_MODULES,
   ],
   TS: [
     { to: '/ts/dashboard', icon: LayoutDashboard, label: 'Dashboard TS' },
@@ -118,6 +142,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
         allowedModules: [],
         allowedSubModules: {},
         adminModules: [],
+        adminSubModules: {},
       });
     }
     setErrors({});
@@ -409,10 +434,11 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                   const ModIcon = mod.icon;
                   const isChecked = (formData.allowedModules || []).includes(mod.key);
                   const subApps = SUB_MODULE_CONFIG[mod.key] || [];
-                  const currentSubModules = formData.allowedSubModules?.[mod.key] || [];
+                  const hasSubModuleRestriction = Object.prototype.hasOwnProperty.call(formData.allowedSubModules || {}, mod.key);
+                  const currentSubModules = hasSubModuleRestriction ? (formData.allowedSubModules?.[mod.key] || []) : [];
                   const allSubRoutes = subApps.map(s => s.to);
-                  const isAllSubSelected = currentSubModules.length === 0 || currentSubModules.length === allSubRoutes.length;
-                  const hasPartialSub = isChecked && currentSubModules.length > 0 && currentSubModules.length < allSubRoutes.length;
+                  const isAllSubSelected = !hasSubModuleRestriction || currentSubModules.length === allSubRoutes.length;
+                  const hasPartialSub = isChecked && hasSubModuleRestriction && currentSubModules.length > 0 && currentSubModules.length < allSubRoutes.length;
                   return (
                     <div key={mod.key}>
                       <label
@@ -444,7 +470,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                         <span className="text-xs font-bold flex-1">{mod.label}</span>
                         {isChecked && subApps.length > 1 && (
                           <span className="text-[9px] font-bold text-slate-400">
-                            {hasPartialSub ? `${currentSubModules.length}/${allSubRoutes.length}` : 'Tất cả'}
+                            {hasPartialSub ? `${currentSubModules.length}/${allSubRoutes.length}` : isAllSubSelected ? 'Tất cả' : 'Không'}
                           </span>
                         )}
                       </label>
@@ -471,7 +497,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                           </label>
                           {subApps.map(sub => {
                             const SubIcon = sub.icon;
-                            const isSubChecked = currentSubModules.length === 0 || currentSubModules.includes(sub.to);
+                            const isSubChecked = !hasSubModuleRestriction || currentSubModules.includes(sub.to);
                             return (
                               <label key={sub.to} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition ${isSubChecked ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400' : 'text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/40'}`}>
                                 <input
@@ -479,7 +505,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                                   checked={isSubChecked}
                                   onChange={(e) => {
                                     const subMods = { ...(formData.allowedSubModules || {}) };
-                                    let list = subMods[mod.key] && subMods[mod.key].length > 0 ? [...subMods[mod.key]] : [...allSubRoutes];
+                                    let list = Object.prototype.hasOwnProperty.call(subMods, mod.key) ? [...(subMods[mod.key] || [])] : [...allSubRoutes];
                                     if (e.target.checked) {
                                       if (!list.includes(sub.to)) list.push(sub.to);
                                     } else {

@@ -1,4 +1,6 @@
 
+import { PROJECT_TAB_PERMISSIONS } from '../lib/projectTabPermissions';
+
 /**
  * ROUTE_TO_MODULE — Single source of truth.
  * Map: route pathname → module key
@@ -15,6 +17,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   // ── WMS ──────────────────────────────────────────────
   '/dashboard':    'WMS',
   '/requests':     'WMS',
+  '/material-code-requests': 'WMS',
   '/inventory':    'WMS',
   '/operations':   'WMS',
   '/audit':        'WMS',
@@ -43,6 +46,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   // ── DỰ ÁN ────────────────────────────────────────────
   '/da':            'DA',
   '/da/portfolio':  'DA',
+  ...Object.fromEntries(PROJECT_TAB_PERMISSIONS.map(tab => [tab.route, 'DA'])),
 
   // ── TÀI SẢN ──────────────────────────────────────────
   '/ts/dashboard':   'TS',

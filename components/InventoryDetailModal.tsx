@@ -5,12 +5,14 @@ import {
   PlusCircle, Send, Edit3, Save, RotateCcw, Trash2, Truck,
   History, ArrowRight, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Flame, Printer, Loader2
 } from 'lucide-react';
-import { InventoryItem, Role, Transaction, TransactionType, TransactionStatus } from '../types';
+import { BusinessPartner, InventoryItem, Role, Transaction, TransactionType, TransactionStatus } from '../types';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import DeleteInventoryModal from './DeleteInventoryModal';
 import { QRCodeCanvas } from 'qrcode.react';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
+import { partnerService } from '../lib/partnerService';
+import SupplierCombobox from './SupplierCombobox';
 
 interface InventoryDetailModalProps {
   isOpen: boolean;
@@ -36,6 +38,7 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
   // State cho Chế độ sửa Admin
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState<Partial<InventoryItem>>({});
+  const [supplierPartners, setSupplierPartners] = useState<BusinessPartner[]>([]);
 
   // State cho Modal xoá
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -50,6 +53,19 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
       setShowDeleteConfirm(false);
     }
   }, [item, isOpen, warehouses, user]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let alive = true;
+    partnerService.list({ classification: 'supplier' })
+      .then(rows => {
+        if (alive) setSupplierPartners(rows);
+      })
+      .catch(error => {
+        logApiError('inventoryDetail.loadSupplierPartners', error);
+      });
+    return () => { alive = false; };
+  }, [isOpen]);
 
   const handleSendRequest = async () => {
     if (!item || reqQty <= 0 || !reqWarehouseId) {
@@ -135,8 +151,26 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
 
   const supplierName = useMemo(() => {
     if (!item?.supplierId) return 'Không xác định';
-    return suppliers.find(s => s.id === item.supplierId)?.name || 'N/A';
-  }, [item, suppliers]);
+    return supplierPartners.find(partner => partner.id === item.supplierId)?.name
+      || suppliers.find(s => s.id === item.supplierId)?.name
+      || 'N/A';
+  }, [item, supplierPartners, suppliers]);
+  const supplierOptions = useMemo<BusinessPartner[]>(() => {
+    const partnerIds = new Set(supplierPartners.map(partner => partner.id));
+    return [
+      ...supplierPartners,
+      ...suppliers
+        .filter(sup => !partnerIds.has(sup.id))
+        .map(sup => ({
+          id: sup.id,
+          code: sup.id.slice(-6).toUpperCase(),
+          name: sup.name,
+          classifications: ['supplier' as const],
+          phone: sup.phone,
+          isActive: true,
+        })),
+    ];
+  }, [supplierPartners, suppliers]);
 
   if (!isOpen || !item) return null;
 
@@ -425,14 +459,12 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
               <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 col-span-2 lg:col-span-1">
                 <div className="text-slate-400 mb-1 text-[10px] uppercase font-bold tracking-tight">Nhà cung cấp</div>
                 {isEditing ? (
-                  <select
-                    className="w-full bg-white border border-slate-200 text-sm font-medium p-1 rounded outline-none"
+                  <SupplierCombobox
                     value={editData.supplierId || ''}
-                    onChange={e => setEditData({ ...editData, supplierId: e.target.value })}
-                  >
-                    <option value="">Không xác định</option>
-                    {suppliers.map(sup => <option key={sup.id} value={sup.id}>{sup.name}</option>)}
-                  </select>
+                    suppliers={supplierOptions}
+                    onChange={supplier => setEditData({ ...editData, supplierId: supplier?.id || '' })}
+                    inputClassName="py-1 text-sm"
+                  />
                 ) : (
                   <div className="font-medium text-blue-600 text-sm truncate" title={supplierName}>
                     {supplierName}

@@ -15,7 +15,6 @@ import { acceptanceService, boqService, matRequestService, vendorService, poServ
 import { customerContractService, subcontractorContractService } from '../../lib/hdService';
 import { calculateProjectProgress } from '../../lib/projectScheduleRules';
 import { projectFinancialService, ProjectFinancialKPIs } from '../../lib/projectFinancialService';
-import FastConsDashboard from '../../components/project/FastConsDashboard';
 
 interface ReportTabProps {
     constructionSiteId: string;
@@ -196,8 +195,8 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
         if (purchaseOrders.length === 0) return [];
         const byStatus: Record<string, number> = {};
         purchaseOrders.forEach(p => { byStatus[p.status] = (byStatus[p.status] || 0) + 1; });
-        const labels: Record<string, string> = { draft: 'Nháp', sent: 'Đã gửi', partial: 'Giao 1 phần', delivered: 'Đã giao', cancelled: 'Huỷ' };
-        const colors: Record<string, string> = { draft: '#94a3b8', sent: '#fbbf24', partial: '#fb923c', delivered: '#34d399', cancelled: '#ef4444' };
+        const labels: Record<string, string> = { draft: 'Nháp', sent: 'Đã gửi', confirmed: 'Đã duyệt', in_transit: 'Đang giao', partial: 'Giao 1 phần', delivered: 'Đã giao', closed: 'Đã đóng', returned: 'Hoàn hàng', cancelled: 'Huỷ' };
+        const colors: Record<string, string> = { draft: '#94a3b8', sent: '#fbbf24', confirmed: '#10b981', in_transit: '#6366f1', partial: '#fb923c', delivered: '#34d399', closed: '#64748b', returned: '#f43f5e', cancelled: '#ef4444' };
         return Object.entries(byStatus).map(([k, v]) => ({ name: labels[k] || k, value: v, fill: colors[k] || '#818cf8' }));
     }, [purchaseOrders]);
 
@@ -350,8 +349,6 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
 
     return (
         <div className="space-y-6">
-            <FastConsDashboard constructionSiteId={constructionSiteId} projectId={projectId} />
-
             {/* T1: 4 Financial KPIs Banner */}
             {!kpisLoading && financialKPIs && (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

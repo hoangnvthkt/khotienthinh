@@ -16,6 +16,7 @@ import {
     ProjectMasterCategory,
     WorkGroupWithMembers,
     ProjectDeleteImpact,
+    Role,
 } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { loadXlsx } from '../lib/loadXlsx';
@@ -33,11 +34,19 @@ import { projectPermissionTypeService, projectStaffService } from '../lib/projec
 import { workGroupService } from '../lib/workGroupService';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import {
+    PROJECT_TAB_PERMISSIONS,
+    PROJECT_TAB_ROUTE_BY_KEY,
+    LEGACY_PROJECT_SUPPLY_ROUTE,
+    hasProjectTabPermissionRoute,
+    isProjectOverviewTabKey,
+    type ProjectOverviewTabKey,
+} from '../lib/projectTabPermissions';
+import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, FileText,
     Building2, HardHat, AlertCircle, ArrowUpRight, ArrowDownRight,
     Upload, Download, Filter, Calendar, Tag, List, Paperclip, Eye, Image,
-    Users, UserPlus, Loader2, RefreshCcw, Search, EyeOff, ArchiveRestore
+    Users, UserPlus, Loader2, RefreshCcw, Search, EyeOff, ArchiveRestore, Shield, Pin
 } from 'lucide-react';
 
 const CashFlowTab = React.lazy(() => import('./project/CashFlowTab'));
@@ -46,10 +55,10 @@ const GanttTab = React.lazy(() => import('./project/GanttTab'));
 const DailyLogTab = React.lazy(() => import('./project/DailyLogTab'));
 const SubcontractTab = React.lazy(() => import('./project/SubcontractTab'));
 const MaterialTab = React.lazy(() => import('./project/MaterialTab'));
-const SupplyChainTab = React.lazy(() => import('./project/SupplyChainTab'));
 const ReportTab = React.lazy(() => import('./project/ReportTab'));
 const DocumentsTab = React.lazy(() => import('./project/DocumentsTab'));
 const ProjectOrgTab = React.lazy(() => import('./project/ProjectOrgTab'));
+const ExecutiveTab = React.lazy(() => import('./project/ExecutiveTab'));
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
     planning: { label: 'Lập kế hoạch', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
@@ -300,7 +309,7 @@ const ProjectDashboard: React.FC = () => {
 
     const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
     const [activeView, setActiveView] = useState<'list' | 'overview'>('list');
-    const [overviewTab, setOverviewTab] = useState<'org' | 'budget' | 'cashflow' | 'contract' | 'gantt' | 'dailylog' | 'subcontract' | 'material' | 'supply' | 'report' | 'documents'>('org');
+    const [overviewTab, setOverviewTab] = useState<ProjectOverviewTabKey>('executive');
     const [showBudgetForm, setShowBudgetForm] = useState(false);
     const [showTxForm, setShowTxForm] = useState(false);
     const [budgetData, setBudgetData] = useState<ProjectFinance | null>(null);
@@ -353,6 +362,61 @@ const ProjectDashboard: React.FC = () => {
     const [showProjectAdvanced, setShowProjectAdvanced] = useState(false);
     const [quickCategoryKind, setQuickCategoryKind] = useState<'group' | 'type' | 'sector' | null>(null);
     const [quickCategoryForm, setQuickCategoryForm] = useState({ code: '', name: '', description: '' });
+
+    const canViewProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
+        if (user.role === Role.ADMIN) return true;
+        if (user.allowedModules !== undefined && !user.allowedModules.includes('DA')) return false;
+
+        const hasDaSubModuleRestriction = Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, 'DA');
+        const allowedRoutes = user.allowedSubModules?.DA || [];
+        if (!hasDaSubModuleRestriction) return true;
+        if (allowedRoutes.length === 0) return false;
+
+        const hasExplicitTabRoutes = hasProjectTabPermissionRoute(allowedRoutes);
+        if (!hasExplicitTabRoutes && allowedRoutes.includes('/da')) return true;
+        if (tabKey === 'material' && allowedRoutes.includes(LEGACY_PROJECT_SUPPLY_ROUTE)) return true;
+
+        return allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY[tabKey]);
+    }, [user.allowedModules, user.allowedSubModules, user.role]);
+
+    const canManageProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
+        if (user.role === Role.ADMIN) return true;
+        if ((user.adminModules || []).includes('DA')) return true;
+        if (tabKey === 'material' && user.adminSubModules?.DA?.includes(LEGACY_PROJECT_SUPPLY_ROUTE)) return true;
+        return Boolean(user.adminSubModules?.DA?.includes(PROJECT_TAB_ROUTE_BY_KEY[tabKey]));
+    }, [user.adminModules, user.adminSubModules, user.role]);
+
+    const visibleOverviewTabs = useMemo(
+        () => PROJECT_TAB_PERMISSIONS.filter(tab => canViewProjectTab(tab.key)),
+        [canViewProjectTab]
+    );
+    const defaultOverviewTab = visibleOverviewTabs[0]?.key || 'executive';
+    const canManageBudgetTab = canManageProjectTab('budget');
+    const canManageCashflowTab = canManageProjectTab('cashflow');
+
+    const requireProjectTabManage = useCallback((tabKey: ProjectOverviewTabKey, actionLabel: string) => {
+        if (canManageProjectTab(tabKey)) return true;
+        const tab = PROJECT_TAB_PERMISSIONS.find(item => item.key === tabKey);
+        toast.warning('Không có quyền quản trị tab', `Bạn cần quyền quản trị "${tab?.label || tabKey}" để ${actionLabel}.`);
+        return false;
+    }, [canManageProjectTab, toast]);
+
+    const goToProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
+        if (canViewProjectTab(tabKey)) {
+            setOverviewTab(tabKey);
+            return;
+        }
+        const tab = PROJECT_TAB_PERMISSIONS.find(item => item.key === tabKey);
+        toast.warning('Không có quyền xem tab', `Tài khoản chưa được cấp quyền xem "${tab?.label || tabKey}".`);
+    }, [canViewProjectTab, toast]);
+
+    useEffect(() => {
+        if (activeView !== 'overview') return;
+        if (visibleOverviewTabs.length === 0) return;
+        if (!visibleOverviewTabs.some(tab => tab.key === overviewTab)) {
+            setOverviewTab(visibleOverviewTabs[0].key);
+        }
+    }, [activeView, overviewTab, visibleOverviewTabs]);
 
     const loadProjects = useCallback(async () => {
         setProjectsLoading(true);
@@ -420,11 +484,10 @@ const ProjectDashboard: React.FC = () => {
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
-        const tab = params.get('tab') as typeof overviewTab | null;
+        const tab = params.get('tab');
         const projectIdParam = params.get('projectId');
         const siteIdParam = params.get('siteId') || params.get('constructionSiteId');
-        const validTabs = new Set(['org', 'budget', 'cashflow', 'contract', 'gantt', 'dailylog', 'subcontract', 'material', 'supply', 'report', 'documents']);
-        if (!projectIdParam && !siteIdParam && (!tab || !validTabs.has(tab))) return;
+        if (!projectIdParam && !siteIdParam && !isProjectOverviewTabKey(tab)) return;
 
         const targetProject = projectIdParam
             ? projectRows.find(project => project.id === projectIdParam)
@@ -439,7 +502,7 @@ const ProjectDashboard: React.FC = () => {
             setSelectedSiteId(siteIdParam);
         }
 
-        if (tab && validTabs.has(tab)) setOverviewTab(tab);
+        if (isProjectOverviewTabKey(tab)) setOverviewTab(tab);
         setActiveView('overview');
     }, [location.search, projectRows]);
 
@@ -584,6 +647,12 @@ const ProjectDashboard: React.FC = () => {
         });
 
         rows = [...rows].sort((a, b) => {
+            const pinResult = Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned));
+            if (pinResult !== 0) return pinResult;
+            if (a.isPinned && b.isPinned) {
+                const pinnedResult = String(b.pinnedAt || '').localeCompare(String(a.pinnedAt || ''), 'vi');
+                if (pinnedResult !== 0) return pinnedResult;
+            }
             const aMetrics = getProjectListMetrics(a);
             const bMetrics = getProjectListMetrics(b);
             const getSortValue = (project: Project, metrics: ReturnType<typeof getProjectListMetrics>) => {
@@ -733,11 +802,15 @@ const ProjectDashboard: React.FC = () => {
     const openProjectDetail = (project: Project) => {
         setSelectedProjectId(project.id);
         setSelectedSiteId(project.constructionSiteId || null);
-        setOverviewTab('org');
+        setOverviewTab(defaultOverviewTab);
         setActiveView('overview');
     };
 
     const openCreateProject = () => {
+        if (!canManageProjects) {
+            toast.warning('Không có quyền quản trị dự án', 'Bạn cần quyền quản trị "Tổng quan DA" để thêm dự án.');
+            return;
+        }
         setEditingProject(null);
         setProjectForm(emptyProjectForm());
         setShowProjectAdvanced(false);
@@ -746,6 +819,10 @@ const ProjectDashboard: React.FC = () => {
     };
 
     const openEditProject = (project: Project) => {
+        if (!canManageProjects) {
+            toast.warning('Không có quyền quản trị dự án', 'Bạn cần quyền quản trị "Tổng quan DA" để sửa thông tin dự án.');
+            return;
+        }
         setEditingProject(project);
         setProjectForm({
             name: project.name || '',
@@ -1248,6 +1325,7 @@ const ProjectDashboard: React.FC = () => {
                     'Lợi nhuận tạm tính': metrics.profit,
                     'Tiến độ (%)': metrics.progress,
                     'Số giao dịch': metrics.txCount,
+                    'Ghim ưu tiên': project.isPinned ? 'Đã ghim' : '',
                     'Trạng thái ẩn': project.isHidden ? 'Đã ẩn' : 'Đang hoạt động',
                     'Lý do ẩn': project.hiddenReason || '',
                 };
@@ -1281,6 +1359,28 @@ const ProjectDashboard: React.FC = () => {
             toast.error('Không thể kiểm tra phát sinh', getApiErrorMessage(error, 'Không thể kiểm tra dữ liệu phát sinh của dự án.'));
         } finally {
             setHideProjectImpactLoading(false);
+        }
+    };
+
+    const handleToggleProjectPin = async (project: Project) => {
+        if (!canManageProjects) {
+            toast.warning('Không có quyền quản trị dự án', 'Bạn cần quyền quản trị "Tổng quan DA" để ghim dự án.');
+            return;
+        }
+        try {
+            const updated = await projectMasterService.setPinned(
+                project.id,
+                !project.isPinned,
+                user.name || user.username || user.email || user.id,
+            );
+            setProjects(prev => prev.map(item => item.id === updated.id ? updated : item));
+            toast.success(
+                updated.isPinned ? 'Đã ghim dự án' : 'Đã bỏ ghim dự án',
+                updated.isPinned ? `${project.code} sẽ hiển thị ưu tiên trên đầu danh sách.` : `${project.code} trở về thứ tự danh sách thường.`,
+            );
+        } catch (error) {
+            logApiError('ProjectDashboard.togglePin', error);
+            toast.error('Không thể cập nhật ghim dự án', getApiErrorMessage(error, 'Cần áp dụng migration ghim dự án trên Supabase trước khi dùng.'));
         }
     };
 
@@ -1456,12 +1556,14 @@ const ProjectDashboard: React.FC = () => {
     };
 
     const openBudgetForm = (siteId: string) => {
+        if (!requireProjectTabManage('budget', 'cập nhật ngân sách')) return;
         const existing = projectFinances.find(pf => pf.constructionSiteId === siteId);
         setBudgetData(existing ? { ...existing } : emptyFinance(siteId));
         setShowBudgetForm(true);
     };
 
     const saveBudget = () => {
+        if (!requireProjectTabManage('budget', 'lưu ngân sách')) return;
         if (!budgetData) return;
         const derivedProgress = taskProgressBySite[budgetData.constructionSiteId]?.progressPercent;
         const nextBudgetData = {
@@ -1535,6 +1637,7 @@ const ProjectDashboard: React.FC = () => {
     };
 
     const openEditTx = (tx: ProjectTransaction) => {
+        if (!requireProjectTabManage('cashflow', 'sửa giao dịch dòng tiền')) return;
         setEditingTx(tx);
         setTxType(tx.type);
         setTxCategory(tx.category);
@@ -1559,6 +1662,7 @@ const ProjectDashboard: React.FC = () => {
     };
 
     const handleAddTx = async () => {
+        if (!requireProjectTabManage('cashflow', editingTx ? 'cập nhật giao dịch dòng tiền' : 'thêm giao dịch dòng tiền')) return;
         if (!effectiveSiteId || !txAmount || Number(txAmount) <= 0) {
             toast.warning('Thiếu dữ liệu giao dịch', 'Vui lòng chọn dự án có công trường và nhập số tiền hợp lệ.');
             return;
@@ -1615,6 +1719,10 @@ const ProjectDashboard: React.FC = () => {
     };
 
     const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!requireProjectTabManage('cashflow', 'import giao dịch dòng tiền')) {
+            e.target.value = '';
+            return;
+        }
         const file = e.target.files?.[0];
         if (!file) return;
         if (!effectiveSiteId) {
@@ -1814,6 +1922,7 @@ const ProjectDashboard: React.FC = () => {
     };
 
     const handleDeleteTx = (id: string) => {
+        if (!requireProjectTabManage('cashflow', 'xoá giao dịch dòng tiền')) return;
         removeProjectTransaction(id);
         setDeleteTxConfirmId(null);
         toast.success('Đã xoá giao dịch', 'Giao dịch dự án đã được xoá.');
@@ -2541,25 +2650,33 @@ const ProjectDashboard: React.FC = () => {
                     <button onClick={() => { setActiveView('list'); setSelectedSiteId(null); setSelectedProjectId(null); }}
                         className="flex items-center gap-2 text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors">← Danh sách dự án</button>
                     <div className="flex gap-2 overflow-x-auto pb-1 max-w-full sm:flex-wrap [&::-webkit-scrollbar]:hidden scrollbar-none">
-                        <button onClick={() => openEditProject(selectedProject)}
-                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100 dark:text-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700 transition-all shrink-0">
-                            <Edit2 size={14} /> Dự án
-                        </button>
+                        {canManageProjects && (
+                            <button onClick={() => openEditProject(selectedProject)}
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100 dark:text-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700 transition-all shrink-0">
+                                <Edit2 size={14} /> Dự án
+                            </button>
+                        )}
                         {hasSiteLink && (
                             <>
-                                <button onClick={() => { resetTxForm(); setShowTxForm(true); }}
-                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 dark:text-blue-400 dark:bg-blue-950/40 dark:border-blue-800/80 dark:hover:bg-blue-900/40 transition-all shrink-0">
-                                    <Plus size={14} /> Thêm giao dịch
-                                </button>
-                                <button onClick={() => fileInputRef.current?.click()}
-                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-950/40 dark:border-emerald-800/80 dark:hover:bg-emerald-900/40 transition-all shrink-0">
-                                    <Upload size={14} /> Import Excel
-                                </button>
+                                {canManageCashflowTab && (
+                                    <>
+                                        <button onClick={() => { resetTxForm(); setShowTxForm(true); }}
+                                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 dark:text-blue-400 dark:bg-blue-950/40 dark:border-blue-800/80 dark:hover:bg-blue-900/40 transition-all shrink-0">
+                                            <Plus size={14} /> Thêm giao dịch
+                                        </button>
+                                        <button onClick={() => fileInputRef.current?.click()}
+                                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-950/40 dark:border-emerald-800/80 dark:hover:bg-emerald-900/40 transition-all shrink-0">
+                                            <Upload size={14} /> Import Excel
+                                        </button>
+                                    </>
+                                )}
                                 <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
-                                <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
-                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 dark:text-orange-400 dark:bg-orange-950/40 dark:border-orange-800/80 dark:hover:bg-orange-900/40 transition-all shrink-0">
-                                    <Edit2 size={14} /> Ngân sách
-                                </button>
+                                {canManageBudgetTab && (
+                                    <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
+                                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 dark:text-orange-400 dark:bg-orange-950/40 dark:border-orange-800/80 dark:hover:bg-orange-900/40 transition-all shrink-0">
+                                        <Edit2 size={14} /> Ngân sách
+                                    </button>
+                                )}
                             </>
                         )}
                     </div>
@@ -2598,20 +2715,8 @@ const ProjectDashboard: React.FC = () => {
 
                 {/* Overview Sub-tabs */}
                 <div className="flex gap-1 bg-white dark:bg-slate-800 rounded-2xl p-1.5 border border-slate-100 dark:border-slate-700/50 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
-                    {[
-                        { key: 'org' as const, label: 'Tổ chức', icon: '👥' },
-                        { key: 'budget' as const, label: 'Ngân sách', icon: '📊' },
-                        { key: 'cashflow' as const, label: 'Dòng tiền', icon: '💰' },
-                        { key: 'contract' as const, label: 'Hợp đồng', icon: '📋' },
-                        { key: 'gantt' as const, label: 'Tiến độ', icon: '📐' },
-                        { key: 'dailylog' as const, label: 'Nhật ký', icon: '📝' },
-                        { key: 'subcontract' as const, label: 'Nhà thầu', icon: '🏗️' },
-                        { key: 'material' as const, label: 'Vật tư', icon: '📦' },
-                        { key: 'supply' as const, label: 'Cung ứng', icon: '🚛' },
-                        { key: 'documents' as const, label: 'Tài liệu', icon: '📎' },
-                        { key: 'report' as const, label: 'Báo cáo', icon: '📊' },
-                    ].map(tab => (
-                        <button key={tab.key} onClick={() => setOverviewTab(tab.key)}
+                    {visibleOverviewTabs.map(tab => (
+                        <button key={tab.key} onClick={() => goToProjectTab(tab.key)}
                             className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                                 overviewTab === tab.key 
                                     ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/25' 
@@ -2628,8 +2733,18 @@ const ProjectDashboard: React.FC = () => {
                         Đang tải tab...
                     </div>
                 }>
-                    {overviewTab === 'org' ? (
-                        <ProjectOrgTab projectId={selectedProject.id} constructionSiteId={effectiveSiteId} />
+                    {visibleOverviewTabs.length === 0 ? (
+                        <div className="rounded-2xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 p-12 text-center shadow-sm">
+                            <Shield size={40} className="mx-auto mb-3 text-slate-300" />
+                            <p className="text-sm font-black text-slate-600 dark:text-slate-300">Tài khoản chưa được cấp quyền xem tab nào trong dự án này</p>
+                            <p className="text-xs text-slate-400 mt-1">Admin có thể cấp quyền tại Cài đặt → Phân quyền module → DA - Dự án.</p>
+                        </div>
+                    ) : overviewTab === 'executive' ? (
+                        hasSiteLink ? (
+                            <ExecutiveTab constructionSiteId={effectiveSiteId!} projectId={selectedProject.id} />
+                        ) : renderSiteRequired('Điều hành')
+                    ) : overviewTab === 'org' ? (
+                        <ProjectOrgTab projectId={selectedProject.id} constructionSiteId={effectiveSiteId} canManageTab={canManageProjectTab('org')} />
                     ) : overviewTab === 'cashflow' ? (
                         hasSiteLink ? (
                             <CashFlowTab
@@ -2639,17 +2754,15 @@ const ProjectDashboard: React.FC = () => {
                             />
                         ) : renderSiteRequired('Dòng tiền')
                     ) : overviewTab === 'contract' ? (
-                        <ContractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
+                        <ContractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('contract')} />
                     ) : overviewTab === 'gantt' ? (
-                        <GanttTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
+                        <GanttTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('gantt')} />
                     ) : overviewTab === 'dailylog' ? (
-                        <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
+                        <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('dailylog')} />
                     ) : overviewTab === 'subcontract' ? (
-                        <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
+                        <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('subcontract')} />
                     ) : overviewTab === 'material' ? (
-                        <MaterialTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
-                    ) : overviewTab === 'supply' ? (
-                        <SupplyChainTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
+                        <MaterialTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('material')} />
                     ) : overviewTab === 'report' ? (
                         hasSiteLink ? (
                             <ReportTab
@@ -2660,31 +2773,31 @@ const ProjectDashboard: React.FC = () => {
                             />
                         ) : renderSiteRequired('Báo cáo')
                     ) : overviewTab === 'documents' ? (
-                        <DocumentsTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} uploadedBy={user?.name} />
+                        <DocumentsTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} uploadedBy={user?.name} canManageTab={canManageProjectTab('documents')} />
                     ) : (
                 <>
                 {/* KPI Cards — AUTO-AGGREGATED */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div onClick={() => setOverviewTab('contract')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                    <div onClick={() => goToProjectTab('contract')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
                         <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-indigo-500 transition-colors"><FileText size={12} /> Giá trị HĐ</div>
                         <div className="text-xl font-black text-slate-800 dark:text-white">{fmt(contractValue)}</div>
                         <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{fmtFull(contractValue)}</div>
                     </div>
-                    <div onClick={() => setOverviewTab('budget')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                    <div onClick={() => goToProjectTab('budget')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
                         <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-orange-500 transition-colors"><DollarSign size={12} /> Chi phí thực tế</div>
                         <div className="text-xl font-black text-slate-800 dark:text-white">{fmt(aggForRender.totalExpense)}</div>
                         <div className={`text-[10px] mt-1 font-bold flex items-center gap-1 ${budgetUsed > 100 ? 'text-red-500' : 'text-emerald-500'}`}>
                             {budgetUsed > 100 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />} {budgetUsed.toFixed(1)}% ngân sách
                         </div>
                     </div>
-                    <div onClick={() => setOverviewTab('cashflow')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                    <div onClick={() => goToProjectTab('cashflow')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
                         <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-emerald-500 transition-colors"><TrendingUp size={12} /> Biên tạm tính</div>
                         <div className={`text-xl font-black ${estimatedMargin >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>{fmt(estimatedMargin)}</div>
                         <div className={`text-[10px] mt-1 font-bold ${estimatedMarginPct >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
                             {estimatedMarginPct >= 0 ? '+' : ''}{estimatedMarginPct.toFixed(1)}%
                         </div>
                     </div>
-                    <div onClick={() => setOverviewTab('cashflow')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
+                    <div onClick={() => goToProjectTab('cashflow')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
                         <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 group-hover:text-cyan-500 transition-colors"><Target size={12} /> Thu / Chờ thu</div>
                         <div className="text-xl font-black text-emerald-600 dark:text-emerald-400">{fmt(aggForRender.revenueReceived)}</div>
                         <div className="text-[10px] text-amber-500 font-bold mt-1">Chờ: {fmt(aggForRender.revenuePending)}</div>
@@ -2836,20 +2949,24 @@ const ProjectDashboard: React.FC = () => {
                                             <span className={`text-sm font-black ${tx.type === 'expense' ? 'text-red-500' : 'text-emerald-600'}`}>
                                                 {tx.type === 'expense' ? '-' : '+'}{fmtFull(tx.amount)}
                                             </span>
-                                            <button onClick={() => openEditTx(tx)}
-                                                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-750 transition-all opacity-0 group-hover:opacity-100">
-                                                <Edit2 size={13} />
-                                            </button>
-                                            {deleteTxConfirmId === tx.id ? (
-                                                <div className="flex items-center gap-1">
-                                                    <button onClick={() => handleDeleteTx(tx.id)} className="px-2 py-1 rounded-lg bg-red-500 text-white text-[10px] font-black">Xoá</button>
-                                                    <button onClick={() => setDeleteTxConfirmId(null)} className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-[10px] font-black">Huỷ</button>
-                                                </div>
-                                            ) : (
-                                                <button onClick={() => setDeleteTxConfirmId(tx.id)}
-                                                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-slate-750 transition-all opacity-0 group-hover:opacity-100">
-                                                    <Trash2 size={14} />
-                                                </button>
+                                            {canManageCashflowTab && (
+                                                <>
+                                                    <button onClick={() => openEditTx(tx)}
+                                                        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-blue-500 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-750 transition-all opacity-0 group-hover:opacity-100">
+                                                        <Edit2 size={13} />
+                                                    </button>
+                                                    {deleteTxConfirmId === tx.id ? (
+                                                        <div className="flex items-center gap-1">
+                                                            <button onClick={() => handleDeleteTx(tx.id)} className="px-2 py-1 rounded-lg bg-red-500 text-white text-[10px] font-black">Xoá</button>
+                                                            <button onClick={() => setDeleteTxConfirmId(null)} className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 text-[10px] font-black">Huỷ</button>
+                                                        </div>
+                                                    ) : (
+                                                        <button onClick={() => setDeleteTxConfirmId(tx.id)}
+                                                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-slate-750 transition-all opacity-0 group-hover:opacity-100">
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    )}
+                                                </>
                                             )}
                                         </div>
                                     </div>
@@ -3100,26 +3217,27 @@ const ProjectDashboard: React.FC = () => {
                             const metaChips = getProjectMetaChips(project);
 
                             return (
-                                <div key={project.id} className={`flex items-center justify-between p-4 transition-colors group ${project.isHidden ? 'bg-slate-50/70 hover:bg-slate-100/70' : 'hover:bg-slate-50/50'}`}>
-                                    <div className="flex items-center gap-4 flex-1 min-w-0">
-                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${project.isHidden ? 'bg-slate-200 text-slate-500' : site ? 'bg-orange-50 text-orange-500' : 'bg-slate-100 text-slate-400'}`}>
+                                <div key={project.id} className={`flex flex-col md:flex-row md:items-center justify-between p-4 gap-3 transition-colors group ${project.isHidden ? 'bg-slate-50/70 hover:bg-slate-100/70' : 'hover:bg-slate-50/50'}`}>
+                                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${project.isHidden ? 'bg-slate-200 text-slate-500' : site ? 'bg-orange-50 text-orange-500' : 'bg-slate-100 text-slate-400'}`}>
                                             {project.isHidden ? <EyeOff size={18} /> : site ? <HardHat size={18} /> : <Building2 size={18} />}
                                         </div>
-                                        <div className="min-w-0">
-                                            <div className="flex items-center gap-2 min-w-0">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                                                 <div className={`text-sm font-bold truncate ${project.isHidden ? 'text-slate-500' : 'text-slate-800'}`}>{project.name}</div>
-                                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-bold shrink-0">{project.code}</span>
-                                                {project.isHidden && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100 font-black shrink-0">Đã ẩn</span>}
+                                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-bold shrink-0 whitespace-nowrap">{project.code}</span>
+                                                {project.isPinned && <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100 font-black shrink-0 whitespace-nowrap"><Pin size={9} className="fill-amber-500" /> Ghim</span>}
+                                                {project.isHidden && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100 font-black shrink-0 whitespace-nowrap">Đã ẩn</span>}
                                             </div>
-                                            <div className="text-xs text-slate-400 truncate">
+                                            <div className="text-xs text-slate-400 truncate mt-0.5">
                                                 {site ? `Công trường: ${site.name}` : 'Chưa liên kết công trường HRM'}
                                                 {project.clientName ? ` • ${project.clientName}` : ''}
                                                 {project.hiddenReason ? ` • Lý do ẩn: ${project.hiddenReason}` : ''}
                                             </div>
                                             {metaChips.length > 0 && (
-                                                <div className="mt-1 flex flex-wrap gap-1">
+                                                <div className="mt-1.5 flex flex-wrap gap-1">
                                                     {metaChips.map(chip => (
-                                                        <span key={chip.label} className={`px-1.5 py-0.5 rounded-md border text-[9px] font-black ${chip.tone}`}>
+                                                        <span key={chip.label} className={`px-1.5 py-0.5 rounded-md border text-[9px] font-black whitespace-nowrap ${chip.tone}`}>
                                                             {chip.label}
                                                         </span>
                                                     ))}
@@ -3128,8 +3246,8 @@ const ProjectDashboard: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center gap-3">
-                                        <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_CONFIG[status]?.bg || 'bg-slate-50 border-slate-200'} ${STATUS_CONFIG[status]?.color || 'text-slate-500'}`}>
+                                    <div className="flex items-center justify-between md:justify-end gap-2.5 w-full md:w-auto border-t border-slate-100 md:border-0 pt-2.5 md:pt-0 mt-1 md:mt-0 flex-wrap">
+                                        <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${STATUS_CONFIG[status]?.bg || 'bg-slate-50 border-slate-200'} ${STATUS_CONFIG[status]?.color || 'text-slate-500'}`}>
                                             {STATUS_CONFIG[status]?.label || status}
                                         </div>
                                         <div className="text-right hidden md:block">
@@ -3144,6 +3262,20 @@ const ProjectDashboard: React.FC = () => {
                                                 <div className="h-full bg-orange-500 rounded-full" style={{ width: `${metrics.progress}%` }} />
                                             </div>
                                         </div>
+                                        {canManageProjects && !project.isHidden && (
+                                            <button
+                                                onClick={() => handleToggleProjectPin(project)}
+                                                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                                    project.isPinned
+                                                        ? 'text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100'
+                                                        : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
+                                                }`}
+                                                title={project.isPinned ? 'Bỏ ghim dự án' : 'Ghim dự án'}
+                                                aria-label={project.isPinned ? 'Bỏ ghim dự án' : 'Ghim dự án'}
+                                            >
+                                                <Pin size={14} className={project.isPinned ? 'fill-amber-500' : ''} />
+                                            </button>
+                                        )}
                                         {canManageProjects && !project.isHidden && (
                                             <button onClick={() => openEditProject(project)}
                                                 className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 hover:text-slate-700 hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-all" title="Sửa dự án">
@@ -3162,7 +3294,7 @@ const ProjectDashboard: React.FC = () => {
                                                 {restoringProjectId === project.id ? <Loader2 size={14} className="animate-spin" /> : <ArchiveRestore size={14} />}
                                             </button>
                                         )}
-                                        {site && !finance && !project.isHidden && (
+                                        {site && !finance && !project.isHidden && canManageBudgetTab && (
                                             <button onClick={() => openBudgetForm(site.id)}
                                                 className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 opacity-0 group-hover:opacity-100 transition-all">
                                                 Ngân sách

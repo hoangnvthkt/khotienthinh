@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import AiInsightPanel from '../../components/AiInsightPanel';
+import SupplyChainTab from './SupplyChainTab';
 import {
     Plus, Edit2, Trash2, X, Save, Package, AlertTriangle, TrendingUp,
     CheckCircle2, Clock, Ban, FileCheck, ChevronDown, ChevronUp,
@@ -7,8 +8,9 @@ import {
     FileSpreadsheet, GitBranch, ListTree, MinusCircle
 } from 'lucide-react';
 import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem } from '../../types';
+import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary } from '../../types';
 import { boqService, taskService, workBoqService, WorkBoqSyncPreview } from '../../lib/projectService';
+import { materialRequestFulfillmentService, getRequestLineId } from '../../lib/materialRequestFulfillmentService';
 import { useApp } from '../../context/AppContext';
 import RequestModal from '../../components/RequestModal';
 import BoqReconciliationPanel from '../../components/project/BoqReconciliationPanel';
@@ -22,6 +24,7 @@ interface MaterialTabProps {
     constructionSiteId?: string;
     projectId?: string;
     siteWarehouseId?: string; // ID kho công trường
+    canManageTab?: boolean;
 }
 
 const fmt = (n: number) => {
@@ -31,11 +34,11 @@ const fmt = (n: number) => {
 };
 
 const REQ_STATUS_MAP: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
-    PENDING:    { label: 'Chờ duyệt', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', icon: <Clock size={12} /> },
-    APPROVED:   { label: 'Chờ xuất kho', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', icon: <CheckCircle2 size={12} /> },
+    PENDING: { label: 'Chờ duyệt', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', icon: <Clock size={12} /> },
+    APPROVED: { label: 'Chờ xuất kho', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', icon: <CheckCircle2 size={12} /> },
     IN_TRANSIT: { label: 'Đang giao', color: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-200', icon: <Truck size={12} /> },
-    COMPLETED:  { label: 'Đã nhận', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', icon: <FileCheck size={12} /> },
-    REJECTED:   { label: 'Từ chối', color: 'text-red-600', bg: 'bg-red-50 border-red-200', icon: <Ban size={12} /> },
+    COMPLETED: { label: 'Đã nhận', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', icon: <FileCheck size={12} /> },
+    REJECTED: { label: 'Từ chối', color: 'text-red-600', bg: 'bg-red-50 border-red-200', icon: <Ban size={12} /> },
 };
 
 type WorkBoqImportPreview = {
@@ -59,12 +62,12 @@ const isValidWbsCode = (value: string) => /^\d+(\.\d+)*$/.test(value.trim());
 const summarizeSync = (preview: WorkBoqSyncPreview) =>
     `Thêm mới ${preview.created}, cập nhật ${preview.updated}, bỏ qua ${preview.skipped}, đánh dấu orphan ${preview.orphaned}.`;
 
-const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, siteWarehouseId }) => {
+const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, siteWarehouseId, canManageTab = true }) => {
     const { items: inventoryItems, requests: allRequests, warehouses, users, loadModuleData } = useApp();
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';
-    const [activeSubTab, setActiveSubTab] = useState<'summary' | 'boq' | 'request' | 'waste' | 'dashboard'>('summary');
+    const [activeSubTab, setActiveSubTab] = useState<'summary' | 'boq' | 'request' | 'po' | 'waste' | 'dashboard'>('summary');
 
     // BOQ Data
     const [boqItems, setBoqItems] = useState<MaterialBudgetItem[]>([]);
@@ -102,6 +105,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     // Request Modal state
     const [isReqModalOpen, setReqModalOpen] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<MaterialRequest | undefined>(undefined);
+    const [requestFulfillmentSummaries, setRequestFulfillmentSummaries] = useState<Record<string, MaterialRequestFulfillmentSummary>>({});
+    const [requestFulfillmentBatchCounts, setRequestFulfillmentBatchCounts] = useState<Record<string, number>>({});
 
     const loadBoqData = async () => {
         if (!effectiveId) return;
@@ -127,6 +132,37 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         loadBoqData().catch(console.error);
     }, [effectiveId, constructionSiteId]);
 
+    useEffect(() => {
+        let cancelled = false;
+        const loadFulfillment = async () => {
+            if (requests.length === 0) {
+                setRequestFulfillmentSummaries({});
+                setRequestFulfillmentBatchCounts({});
+                return;
+            }
+            const batchesByRequest = await materialRequestFulfillmentService.listByRequests(requests.map(req => req.id));
+            if (cancelled) return;
+            const summaries = requests.reduce<Record<string, MaterialRequestFulfillmentSummary>>((acc, req) => {
+                acc[req.id] = materialRequestFulfillmentService.summarizeRequest(req, batchesByRequest[req.id] || []);
+                return acc;
+            }, {});
+            const counts = requests.reduce<Record<string, number>>((acc, req) => {
+                acc[req.id] = (batchesByRequest[req.id] || []).length;
+                return acc;
+            }, {});
+            setRequestFulfillmentSummaries(summaries);
+            setRequestFulfillmentBatchCounts(counts);
+        };
+        loadFulfillment().catch(err => {
+            console.warn('Failed to load material request fulfillment summaries:', err);
+            if (!cancelled) {
+                setRequestFulfillmentSummaries({});
+                setRequestFulfillmentBatchCounts({});
+            }
+        });
+        return () => { cancelled = true; };
+    }, [requests]);
+
     const [showBoqForm, setShowBoqForm] = useState(false);
     const [editingBoq, setEditingBoq] = useState<MaterialBudgetItem | null>(null);
     // Unused old state removed — now using RequestModal from inventory module
@@ -142,6 +178,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [bInventoryItemId, setBInventoryItemId] = useState('');
     const [bMaterialCode, setBMaterialCode] = useState('');
     const [bWorkBoqItemId, setBWorkBoqItemId] = useState('');
+
+    const ensureCanManage = (action: string) => {
+        if (canManageTab) return true;
+        toast.warning('Không có quyền quản trị tab', `Bạn cần quyền quản trị "Vật tư" để ${action}.`);
+        return false;
+    };
 
     // Autocomplete state
     const [acQuery, setAcQuery] = useState('');
@@ -174,6 +216,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const openEditBoq = (item: MaterialBudgetItem) => {
+        if (!ensureCanManage('sửa BOQ vật tư')) return;
         setEditingBoq(item);
         setBCat(item.category); setBName(item.itemName); setBUnit(item.unit);
         setBBudgetQty(String(item.budgetQty)); setBPrice(String(item.budgetUnitPrice));
@@ -186,27 +229,33 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         setShowBoqForm(true);
     };
 
-    // Compute actualQty from MaterialRequests (COMPLETED + IN_TRANSIT)
+    // Compute actualQty from fulfillment batches; legacy completed requests fall back to approvedQty.
     const computedBoqItems = useMemo(() => {
         return boqItems.map(b => {
             if (!b.inventoryItemId) return b;
-            // Sum approvedQty from completed/in_transit requests
-            let totalApproved = 0;
+            let totalReceived = 0;
             let totalRequested = 0;
             requests.filter(r => r.status !== RequestStatus.REJECTED).forEach(r => {
                 const rItems = r.items || [];
-                rItems.forEach((ri: any) => {
+                const requestSummary = requestFulfillmentSummaries[r.id];
+                const hasFulfillmentBatches = (requestFulfillmentBatchCounts[r.id] || 0) > 0;
+                const summaryByLine = new Map((requestSummary?.lineSummaries || []).map(line => [line.requestLineId, line]));
+                rItems.forEach((ri: any, index: number) => {
                     const sameBudgetLine = ri.materialBudgetItemId && ri.materialBudgetItemId === b.id;
                     const legacySameItem = !ri.materialBudgetItemId && ri.itemId === b.inventoryItemId;
                     if (sameBudgetLine || legacySameItem) {
                         totalRequested += (ri.requestQty || 0);
-                        if (r.status === RequestStatus.COMPLETED || r.status === RequestStatus.IN_TRANSIT) {
-                            totalApproved += (ri.approvedQty || 0);
+                        const requestLineId = getRequestLineId(r, ri, index);
+                        const lineSummary = summaryByLine.get(requestLineId);
+                        if (hasFulfillmentBatches && lineSummary) {
+                            totalReceived += lineSummary.receivedQty;
+                        } else if (r.status === RequestStatus.COMPLETED || r.status === RequestStatus.IN_TRANSIT) {
+                            totalReceived += (ri.issuedQty || ri.approvedQty || 0);
                         }
                     }
                 });
             });
-            const actualQty = totalApproved;
+            const actualQty = totalReceived;
             const wasteQty = actualQty - b.budgetQty;
             const wastePercent = b.budgetQty > 0 ? Math.round((wasteQty / b.budgetQty) * 1000) / 10 : 0;
             const budgetOverPercent = b.budgetQty > 0 ? Math.round(((totalRequested - b.budgetQty) / b.budgetQty) * 1000) / 10 : 0;
@@ -224,7 +273,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 autoAlert: budgetOverPercent > 0 ? 'Vượt ngân sách' : wastePercent > b.wasteThreshold ? 'Vượt định mức hao hụt' : undefined,
             };
         });
-    }, [boqItems, requests]);
+    }, [boqItems, requestFulfillmentBatchCounts, requestFulfillmentSummaries, requests]);
 
     const boqItemsByWork = useMemo(() => {
         const map = new Map<string, MaterialBudgetItem[]>();
@@ -282,6 +331,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const handleSyncWithSchedule = async () => {
+        if (!ensureCanManage('đồng bộ BOQ vật tư')) return;
         if (tasks.length === 0) {
             toast.warning('Chưa có tiến độ', 'Cần tạo hoặc import tiến độ trước khi đồng bộ BOQ.');
             return;
@@ -310,6 +360,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const handleSaveBoq = async () => {
+        if (!ensureCanManage('lưu BOQ vật tư')) return;
         if (!bName || !bUnit || !bBudgetQty || !bPrice) return;
         const budgetQty = Number(bBudgetQty);
         const budgetUnitPrice = Number(bPrice);
@@ -337,6 +388,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const handleDeleteBoq = async (id: string, name: string) => {
+        if (!ensureCanManage('xoá BOQ vật tư')) return;
         const ok = await confirm({ targetName: name, title: 'Xoá mục BOQ' });
         if (!ok) return;
         try {
@@ -398,6 +450,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const handleImportWorkBoq = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        if (!ensureCanManage('import BOQ vật tư')) {
+            event.target.value = '';
+            return;
+        }
         const file = event.target.files?.[0];
         if (!file) return;
         setImportingBoq(true);
@@ -533,6 +589,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const confirmImportWorkBoq = async () => {
+        if (!ensureCanManage('áp dụng import BOQ vật tư')) return;
         if (!importPreview) return;
         const validWorkRows = importPreview.workRows.filter(row => row.status !== 'error');
         const validMaterialRows = importPreview.materialRows.filter(row => row.status !== 'error');
@@ -619,13 +676,13 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     { key: 'summary' as const, label: '🔗 Tổng hợp', count: computedBoqItems.length },
                     { key: 'boq' as const, label: '📋 BOQ', count: workBoqItems.length + computedBoqItems.length },
                     { key: 'request' as const, label: '📦 Yêu cầu', count: requests.length },
+                    { key: 'po' as const, label: '🛒 Đơn hàng (PO)', count: 0 },
                     { key: 'waste' as const, label: '📊 Hao hụt', count: stats.overWaste },
                     { key: 'dashboard' as const, label: '📈 Dashboard', count: 0 },
                 ].map(t => (
                     <button key={t.key} onClick={() => setActiveSubTab(t.key)}
-                        className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                            activeSubTab === t.key ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'
-                        }`}>
+                        className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${activeSubTab === t.key ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'
+                            }`}>
                         {t.label} {t.count > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] ${activeSubTab === t.key ? 'bg-white/20' : 'bg-slate-100'}`}>{t.count}</span>}
                     </button>
                 ))}
@@ -679,9 +736,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                             <td className={`p-2.5 text-right font-bold ${(b.wasteValue || 0) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmt(Math.abs(b.wasteValue || 0))}</td>
                                             <td className="p-2.5">
                                                 {b.autoAlert ? (
-                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                                                        b.autoAlert.includes('Vượt') ? 'bg-red-100 text-red-700' : b.autoAlert.includes('Cận') ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
-                                                    }`}>
+                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold ${b.autoAlert.includes('Vượt') ? 'bg-red-100 text-red-700' : b.autoAlert.includes('Cận') ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                                                        }`}>
                                                         <AlertTriangle size={9} /> {b.autoAlert}
                                                     </span>
                                                 ) : <span className="text-[9px] text-emerald-500 font-bold">✓ OK</span>}
@@ -698,155 +754,178 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             {/* BOQ Tab */}
             {activeSubTab === 'boq' && (
                 <div className="space-y-4">
-                <BoqReconciliationPanel projectId={projectId || null} constructionSiteId={constructionSiteId || null} />
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
-                    <div className="p-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                        <div>
-                            <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><ListTree size={16} className="text-indigo-500" /> BOQ triển khai theo tiến độ</h3>
-                            <p className="text-[10px] text-slate-400 mt-1">Đầu mục lấy từ tiến độ, vật tư dự toán nằm dưới từng đầu mục.</p>
+                    <details className="group border-y border-slate-100 dark:border-slate-700/60">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4">
+                            <div>
+                                <h3 className="flex items-center gap-2 text-sm font-black text-slate-700 dark:text-slate-100">
+                                    <GitBranch size={16} className="text-indigo-500" /> Đối chiếu BOQ hợp đồng tham khảo
+                                </h3>
+                                <p className="mt-1 text-[10px] font-bold text-slate-400">Không còn là điều kiện tạo nghiệm thu/thanh toán; mở ra khi cần so sánh BOQ hợp đồng với BOQ triển khai.</p>
+                            </div>
+                            <ChevronDown size={16} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
+                        </summary>
+                        <div className="border-t border-slate-100 p-4 dark:border-slate-700/60">
+                            <BoqReconciliationPanel projectId={projectId || null} constructionSiteId={constructionSiteId || null} />
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                            <button onClick={handleSyncWithSchedule} disabled={syncingBoq}
-                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50">
-                                <RefreshCcw size={12} className={syncingBoq ? 'animate-spin' : ''} /> Đồng bộ với tiến độ
-                            </button>
-                            <button onClick={handleExportWorkBoq}
-                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100">
-                                <Download size={12} /> Export
-                            </button>
-                            <button onClick={() => boqImportRef.current?.click()} disabled={importingBoq}
-                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 hover:bg-amber-100 disabled:opacity-50">
-                                <Upload size={12} /> Import
-                            </button>
-                            <button onClick={() => { resetBoqForm(); setShowBoqForm(true); }}
-                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100">
-                                <Plus size={12} /> Thêm vật tư
-                            </button>
-                            <input ref={boqImportRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportWorkBoq} />
+                    </details>
+                    <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
+                        <div className="p-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                            <div>
+                                <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><ListTree size={16} className="text-indigo-500" /> BOQ khối lượng triển khai theo tiến độ</h3>
+                                <p className="text-[10px] text-slate-400 mt-1">Đầu mục lấy từ tiến độ, vật tư dự toán nằm dưới từng đầu mục.</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {canManageTab && (
+                                    <button onClick={handleSyncWithSchedule} disabled={syncingBoq}
+                                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50">
+                                        <RefreshCcw size={12} className={syncingBoq ? 'animate-spin' : ''} /> Đồng bộ với tiến độ
+                                    </button>
+                                )}
+                                <button onClick={handleExportWorkBoq}
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100">
+                                    <Download size={12} /> Export
+                                </button>
+                                {canManageTab && (
+                                    <>
+                                        <button onClick={() => boqImportRef.current?.click()} disabled={importingBoq}
+                                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 hover:bg-amber-100 disabled:opacity-50">
+                                            <Upload size={12} /> Import
+                                        </button>
+                                        <button onClick={() => { resetBoqForm(); setShowBoqForm(true); }}
+                                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100">
+                                            <Plus size={12} /> Thêm vật tư
+                                        </button>
+                                    </>
+                                )}
+                                <input ref={boqImportRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportWorkBoq} />
+                            </div>
                         </div>
-                    </div>
-                    {workBoqItems.length === 0 && computedBoqItems.length === 0 ? (
-                        <div className="p-12 text-center">
-                            <GitBranch size={36} className="mx-auto mb-2 text-slate-200" />
-                            <p className="text-sm font-bold text-slate-400">Chưa có BOQ triển khai</p>
-                            <p className="text-xs text-slate-300 mt-1">Bấm “Đồng bộ với tiến độ” để sinh cây đầu mục từ bảng tiến độ.</p>
-                        </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-xs min-w-[1180px]">
-                                <thead className="bg-slate-50/80">
-                                    <tr className="text-[10px] font-bold text-slate-400 uppercase">
-                                        <th className="text-left px-4 py-3">Đầu mục / Vật tư</th>
-                                        <th className="text-center px-4 py-3">ĐVT</th>
-                                        <th className="text-right px-4 py-3">KL Dự toán</th>
-                                        <th className="text-right px-4 py-3">Đơn giá</th>
-                                        <th className="text-right px-4 py-3">GT Triển khai</th>
-                                        <th className="text-right px-4 py-3">KL HĐ</th>
-                                        <th className="text-right px-4 py-3">GT HĐ</th>
-                                        <th className="text-right px-4 py-3">Chênh lệch</th>
-                                        <th className="text-center px-4 py-3">TT</th>
-                                        <th className="text-center px-4 py-3"></th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
-                                    {workBoqTree.map(({ item, level }) => {
-                                        const comparison = getWorkComparison(item);
-                                        const childMaterials = boqItemsByWork.get(item.id) || [];
-                                        const isOrphan = item.syncStatus === 'orphaned';
-                                        return (
-                                            <React.Fragment key={item.id}>
-                                                <tr className={`${isOrphan ? 'bg-amber-50/60' : 'bg-indigo-50/40'} hover:bg-indigo-50 group`}>
-                                                    <td className="px-4 py-2.5 font-black text-slate-800">
-                                                        <div className="flex items-center gap-2" style={{ paddingLeft: `${level * 18}px` }}>
-                                                            <ListTree size={12} className={isOrphan ? 'text-amber-500' : 'text-indigo-500'} />
-                                                            <span className="font-mono text-indigo-600">{item.wbsCode || '-'}</span>
-                                                            <span>{item.name}</span>
-                                                            {isOrphan && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[9px] font-black">ORPHAN</span>}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-4 py-2.5 text-center text-slate-500">{item.unit || '—'}</td>
-                                                    <td className="px-4 py-2.5 text-right font-bold text-slate-700">{Number(item.plannedQty || 0).toLocaleString()}</td>
-                                                    <td className="px-4 py-2.5 text-right text-slate-500">{fmt(Number(item.unitPrice || 0))}</td>
-                                                    <td className="px-4 py-2.5 text-right font-black text-indigo-700">{fmt(comparison.plannedValue)}</td>
-                                                    <td className="px-4 py-2.5 text-right text-slate-500">{comparison.hasLink ? comparison.contractQty.toLocaleString() : '—'}</td>
-                                                    <td className="px-4 py-2.5 text-right text-slate-500">{comparison.hasLink ? fmt(comparison.contractValue) : '—'}</td>
-                                                    <td className={`px-4 py-2.5 text-right font-black ${comparison.hasLink ? comparison.valueDiff > 0 ? 'text-red-500' : comparison.valueDiff < 0 ? 'text-emerald-600' : 'text-slate-500' : 'text-slate-300'}`}>
-                                                        {comparison.hasLink ? `${comparison.valueDiff > 0 ? '+' : ''}${fmt(comparison.valueDiff)}` : 'Chưa đối chiếu'}
-                                                    </td>
-                                                    <td className="px-4 py-2.5 text-center">
-                                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${comparison.hasLink ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                                                            {comparison.hasLink ? 'Đã link HĐ' : 'Chưa link'}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-4 py-2.5 text-center">
-                                                        <button onClick={() => { resetBoqForm(); setBWorkBoqItemId(item.id); setShowBoqForm(true); }}
-                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold text-indigo-600 hover:bg-indigo-100">
-                                                            <Plus size={10} /> Vật tư
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                                {childMaterials.map(mat => {
-                                                    const isOver = (mat.wastePercent || 0) > mat.wasteThreshold;
-                                                    return (
-                                                        <tr key={mat.id} className="hover:bg-slate-50/70 group">
-                                                            <td className="px-4 py-2.5">
-                                                                <div className="flex items-center gap-2 text-slate-700" style={{ paddingLeft: `${(level + 1) * 18}px` }}>
-                                                                    <MinusCircle size={11} className="text-slate-300" />
-                                                                    <span className="font-bold">{mat.itemName}</span>
-                                                                    <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-400 text-[9px] font-bold">{mat.category}</span>
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-4 py-2.5 text-center text-slate-500">{mat.unit}</td>
-                                                            <td className="px-4 py-2.5 text-right font-bold text-slate-700">{mat.budgetQty.toLocaleString()}</td>
-                                                            <td className="px-4 py-2.5 text-right text-slate-500">{fmt(mat.budgetUnitPrice)}</td>
-                                                            <td className="px-4 py-2.5 text-right font-bold text-slate-700">{fmt(mat.budgetTotal || 0)}</td>
-                                                            <td className="px-4 py-2.5 text-right text-slate-300">—</td>
-                                                            <td className="px-4 py-2.5 text-right text-slate-300">—</td>
-                                                            <td className={`px-4 py-2.5 text-right font-black ${isOver ? 'text-red-500' : (mat.wastePercent || 0) > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>
-                                                                {(mat.wastePercent || 0) > 0 ? '+' : ''}{mat.wastePercent || 0}%
-                                                            </td>
-                                                            <td className="px-4 py-2.5 text-center">
-                                                                {isOver ? <AlertTriangle size={12} className="inline text-red-500" /> : <CheckCircle2 size={12} className="inline text-emerald-500" />}
-                                                            </td>
-                                                            <td className="px-4 py-2.5">
-                                                                <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
-                                                                    <button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
-                                                                    <button onClick={() => handleDeleteBoq(mat.id, mat.itemName)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </React.Fragment>
-                                        );
-                                    })}
-                                    {unassignedBoqItems.map(mat => (
-                                        <tr key={mat.id} className="hover:bg-slate-50/70 group">
-                                            <td className="px-4 py-2.5 font-bold text-slate-700">{mat.itemName}<span className="ml-2 text-[9px] text-amber-500">Chưa gắn đầu mục</span></td>
-                                            <td className="px-4 py-2.5 text-center text-slate-500">{mat.unit}</td>
-                                            <td className="px-4 py-2.5 text-right font-bold text-slate-700">{mat.budgetQty.toLocaleString()}</td>
-                                            <td className="px-4 py-2.5 text-right text-slate-500">{fmt(mat.budgetUnitPrice)}</td>
-                                            <td className="px-4 py-2.5 text-right font-bold text-slate-700">{fmt(mat.budgetTotal || 0)}</td>
-                                            <td colSpan={4}></td>
-                                            <td className="px-4 py-2.5"><button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button></td>
+                        {workBoqItems.length === 0 && computedBoqItems.length === 0 ? (
+                            <div className="p-12 text-center">
+                                <GitBranch size={36} className="mx-auto mb-2 text-slate-200" />
+                                <p className="text-sm font-bold text-slate-400">Chưa có BOQ triển khai</p>
+                                <p className="text-xs text-slate-300 mt-1">Bấm “Đồng bộ với tiến độ” để sinh cây đầu mục từ bảng tiến độ.</p>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-xs min-w-[1180px]">
+                                    <thead className="bg-slate-50/80">
+                                        <tr className="text-[10px] font-bold text-slate-400 uppercase">
+                                            <th className="text-left px-4 py-3">Đầu mục / Vật tư</th>
+                                            <th className="text-center px-4 py-3">ĐVT</th>
+                                            <th className="text-right px-4 py-3">KL Dự toán</th>
+                                            <th className="text-right px-4 py-3">Đơn giá</th>
+                                            <th className="text-right px-4 py-3">GT Triển khai</th>
+                                            <th className="text-right px-4 py-3">KL HĐ</th>
+                                            <th className="text-right px-4 py-3">GT HĐ</th>
+                                            <th className="text-right px-4 py-3">Chênh lệch</th>
+                                            <th className="text-center px-4 py-3">TT</th>
+                                            <th className="text-center px-4 py-3"></th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                                <tfoot className="bg-slate-50/80 font-bold">
-                                    <tr className="text-xs">
-                                        <td colSpan={4} className="px-4 py-3 text-slate-600">TỔNG CỘNG VẬT TƯ</td>
-                                        <td className="px-4 py-3 text-right text-slate-700">{fmt(stats.totalBudget)} đ</td>
-                                        <td className="px-4 py-3"></td>
-                                        <td className={`px-4 py-3 text-right font-black ${stats.diff > 0 ? 'text-red-500' : 'text-emerald-600'}`}>
-                                            {stats.diff > 0 ? '+' : ''}{fmt(stats.diff)} đ
-                                        </td>
-                                        <td colSpan={3}></td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-                    )}
-                </div>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
+                                        {workBoqTree.map(({ item, level }) => {
+                                            const comparison = getWorkComparison(item);
+                                            const childMaterials = boqItemsByWork.get(item.id) || [];
+                                            const isOrphan = item.syncStatus === 'orphaned';
+                                            return (
+                                                <React.Fragment key={item.id}>
+                                                    <tr className={`${isOrphan ? 'bg-amber-50/60' : 'bg-indigo-50/40'} hover:bg-indigo-50 group`}>
+                                                        <td className="px-4 py-2.5 font-black text-slate-800">
+                                                            <div className="flex items-center gap-2" style={{ paddingLeft: `${level * 18}px` }}>
+                                                                <ListTree size={12} className={isOrphan ? 'text-amber-500' : 'text-indigo-500'} />
+                                                                <span className="font-mono text-indigo-600">{item.wbsCode || '-'}</span>
+                                                                <span>{item.name}</span>
+                                                                {isOrphan && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[9px] font-black">ORPHAN</span>}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-2.5 text-center text-slate-500">{item.unit || '—'}</td>
+                                                        <td className="px-4 py-2.5 text-right font-bold text-slate-700">{Number(item.plannedQty || 0).toLocaleString()}</td>
+                                                        <td className="px-4 py-2.5 text-right text-slate-500">{fmt(Number(item.unitPrice || 0))}</td>
+                                                        <td className="px-4 py-2.5 text-right font-black text-indigo-700">{fmt(comparison.plannedValue)}</td>
+                                                        <td className="px-4 py-2.5 text-right text-slate-500">{comparison.hasLink ? comparison.contractQty.toLocaleString() : '—'}</td>
+                                                        <td className="px-4 py-2.5 text-right text-slate-500">{comparison.hasLink ? fmt(comparison.contractValue) : '—'}</td>
+                                                        <td className={`px-4 py-2.5 text-right font-black ${comparison.hasLink ? comparison.valueDiff > 0 ? 'text-red-500' : comparison.valueDiff < 0 ? 'text-emerald-600' : 'text-slate-500' : 'text-slate-300'}`}>
+                                                            {comparison.hasLink ? `${comparison.valueDiff > 0 ? '+' : ''}${fmt(comparison.valueDiff)}` : 'Chưa đối chiếu'}
+                                                        </td>
+                                                        <td className="px-4 py-2.5 text-center">
+                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${comparison.hasLink ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                                {comparison.hasLink ? 'Đã link HĐ' : 'Chưa link'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-2.5 text-center">
+                                                            {canManageTab && (
+                                                                <button onClick={() => { resetBoqForm(); setBWorkBoqItemId(item.id); setShowBoqForm(true); }}
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold text-indigo-600 hover:bg-indigo-100">
+                                                                    <Plus size={10} /> Vật tư
+                                                                </button>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                    {childMaterials.map(mat => {
+                                                        const isOver = (mat.wastePercent || 0) > mat.wasteThreshold;
+                                                        return (
+                                                            <tr key={mat.id} className="hover:bg-slate-50/70 group">
+                                                                <td className="px-4 py-2.5">
+                                                                    <div className="flex items-center gap-2 text-slate-700" style={{ paddingLeft: `${(level + 1) * 18}px` }}>
+                                                                        <MinusCircle size={11} className="text-slate-300" />
+                                                                        <span className="font-bold">{mat.itemName}</span>
+                                                                        <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-400 text-[9px] font-bold">{mat.category}</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-4 py-2.5 text-center text-slate-500">{mat.unit}</td>
+                                                                <td className="px-4 py-2.5 text-right font-bold text-slate-700">{mat.budgetQty.toLocaleString()}</td>
+                                                                <td className="px-4 py-2.5 text-right text-slate-500">{fmt(mat.budgetUnitPrice)}</td>
+                                                                <td className="px-4 py-2.5 text-right font-bold text-slate-700">{fmt(mat.budgetTotal || 0)}</td>
+                                                                <td className="px-4 py-2.5 text-right text-slate-300">—</td>
+                                                                <td className="px-4 py-2.5 text-right text-slate-300">—</td>
+                                                                <td className={`px-4 py-2.5 text-right font-black ${isOver ? 'text-red-500' : (mat.wastePercent || 0) > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                                                                    {(mat.wastePercent || 0) > 0 ? '+' : ''}{mat.wastePercent || 0}%
+                                                                </td>
+                                                                <td className="px-4 py-2.5 text-center">
+                                                                    {isOver ? <AlertTriangle size={12} className="inline text-red-500" /> : <CheckCircle2 size={12} className="inline text-emerald-500" />}
+                                                                </td>
+                                                                <td className="px-4 py-2.5">
+                                                                    {canManageTab && (
+                                                                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
+                                                                            <button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
+                                                                            <button onClick={() => handleDeleteBoq(mat.id, mat.itemName)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
+                                                                        </div>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </React.Fragment>
+                                            );
+                                        })}
+                                        {unassignedBoqItems.map(mat => (
+                                            <tr key={mat.id} className="hover:bg-slate-50/70 group">
+                                                <td className="px-4 py-2.5 font-bold text-slate-700">{mat.itemName}<span className="ml-2 text-[9px] text-amber-500">Chưa gắn đầu mục</span></td>
+                                                <td className="px-4 py-2.5 text-center text-slate-500">{mat.unit}</td>
+                                                <td className="px-4 py-2.5 text-right font-bold text-slate-700">{mat.budgetQty.toLocaleString()}</td>
+                                                <td className="px-4 py-2.5 text-right text-slate-500">{fmt(mat.budgetUnitPrice)}</td>
+                                                <td className="px-4 py-2.5 text-right font-bold text-slate-700">{fmt(mat.budgetTotal || 0)}</td>
+                                                <td colSpan={4}></td>
+                                                <td className="px-4 py-2.5"><button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                    <tfoot className="bg-slate-50/80 font-bold">
+                                        <tr className="text-xs">
+                                            <td colSpan={4} className="px-4 py-3 text-slate-600">TỔNG CỘNG VẬT TƯ</td>
+                                            <td className="px-4 py-3 text-right text-slate-700">{fmt(stats.totalBudget)} đ</td>
+                                            <td className="px-4 py-3"></td>
+                                            <td className={`px-4 py-3 text-right font-black ${stats.diff > 0 ? 'text-red-500' : 'text-emerald-600'}`}>
+                                                {stats.diff > 0 ? '+' : ''}{fmt(stats.diff)} đ
+                                            </td>
+                                            <td colSpan={3}></td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -855,10 +934,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                     <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><Package size={16} className="text-purple-500" /> Đề xuất vật tư ({requests.length})</h3>
-                        <button onClick={() => { setSelectedRequest(undefined); setReqModalOpen(true); }}
-                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-purple-600 bg-purple-50 border border-purple-200 hover:bg-purple-100">
-                            <Plus size={12} /> Tạo đề xuất
-                        </button>
+                        {canManageTab && (
+                            <button onClick={() => { setSelectedRequest(undefined); setReqModalOpen(true); }}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-purple-600 bg-purple-50 border border-purple-200 hover:bg-purple-100">
+                                <Plus size={12} /> Tạo đề xuất
+                            </button>
+                        )}
                     </div>
                     {requests.length === 0 ? (
                         <div className="p-12 text-center">
@@ -882,6 +963,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                 <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                     {requests.sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || '')).map(req => {
                                         const stCfg = REQ_STATUS_MAP[req.status] || REQ_STATUS_MAP.PENDING;
+                                        const fulfillment = requestFulfillmentSummaries[req.id];
+                                        const progressPercent = fulfillment && fulfillment.committedQty > 0
+                                            ? Math.min(100, Math.round((fulfillment.receivedQty / fulfillment.committedQty) * 100))
+                                            : 0;
+                                        const hasPartialFulfillment = fulfillment && fulfillment.receivedQty > 0 && fulfillment.receivedQty < fulfillment.committedQty;
+                                        const hasIssuedFulfillment = fulfillment && fulfillment.issuedQty > 0 && fulfillment.receivedQty < fulfillment.committedQty;
                                         const reqUser = users.find(u => u.id === req.requesterId);
                                         const reqItems = (req.items || []) as any[];
                                         return (
@@ -892,6 +979,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                 <td className="px-4 py-3 text-slate-500">
                                                     {req.createdDate ? new Date(req.createdDate).toLocaleDateString('vi-VN') : '—'}
                                                     <div className="text-[10px] text-slate-300 mt-0.5">{reqUser?.name || 'N/A'}</div>
+                                                    {req.submittedToName && <div className="text-[10px] font-bold text-amber-500 mt-0.5">Gửi: {req.submittedToName}</div>}
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <div className="flex flex-wrap gap-1">
@@ -910,15 +998,27 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                 </td>
                                                 <td className="px-4 py-3 text-center">
                                                     <span className={`inline-flex items-center gap-0.5 px-2 py-1 rounded-full text-[9px] font-bold border ${stCfg.bg} ${stCfg.color}`}>
-                                                        {stCfg.icon} {stCfg.label}
+                                                        {stCfg.icon} {hasPartialFulfillment ? 'Cấp một phần' : hasIssuedFulfillment ? 'Đang cấp' : stCfg.label}
                                                     </span>
+                                                    {fulfillment && fulfillment.committedQty > 0 && (
+                                                        <div className="mt-1.5 min-w-[120px]">
+                                                            <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                                                                <div className="h-full bg-emerald-500" style={{ width: `${progressPercent}%` }} />
+                                                            </div>
+                                                            <div className="mt-0.5 text-[9px] font-bold text-slate-400">
+                                                                {fulfillment.receivedQty.toLocaleString('vi-VN')} / {fulfillment.committedQty.toLocaleString('vi-VN')}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-400 max-w-[200px] truncate">{req.note || '—'}</td>
                                                 <td className="px-4 py-3 text-center">
-                                                    <button onClick={() => { setSelectedRequest(req); setReqModalOpen(true); }}
-                                                        className="text-slate-300 hover:text-indigo-500 opacity-0 group-hover:opacity-100 transition">
-                                                        <ArrowRight size={14} />
-                                                    </button>
+                                                    {canManageTab && (
+                                                        <button onClick={() => { setSelectedRequest(req); setReqModalOpen(true); }}
+                                                            className="text-slate-300 hover:text-indigo-500 opacity-0 group-hover:opacity-100 transition">
+                                                            <ArrowRight size={14} />
+                                                        </button>
+                                                    )}
                                                 </td>
                                             </tr>
                                         );
@@ -928,6 +1028,15 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         </div>
                     )}
                 </div>
+            )}
+
+            {activeSubTab === 'po' && (
+                <SupplyChainTab
+                    constructionSiteId={constructionSiteId}
+                    projectId={projectId}
+                    canManageTab={canManageTab}
+                    compact
+                />
             )}
 
             {/* Waste Comparison Tab */}
@@ -1308,7 +1417,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         </div>
                         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
                             <button onClick={() => setImportPreview(null)} disabled={importingBoq} className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600">Huỷ</button>
-                            <button onClick={confirmImportWorkBoq} disabled={importingBoq || [...importPreview.workRows, ...importPreview.materialRows].every(row => row.status === 'error')}
+                            <button onClick={confirmImportWorkBoq} disabled={!canManageTab || importingBoq || [...importPreview.workRows, ...importPreview.materialRows].every(row => row.status === 'error')}
                                 className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 disabled:opacity-50 flex items-center gap-2">
                                 <FileSpreadsheet size={15} /> Ghi dữ liệu hợp lệ
                             </button>

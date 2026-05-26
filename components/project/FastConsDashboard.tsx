@@ -5,7 +5,9 @@ import {
   Banknote,
   Building2,
   CalendarClock,
+  CheckCircle2,
   CircleDollarSign,
+  ClipboardCheck,
   FileText,
   HardHat,
   Package,
@@ -14,6 +16,8 @@ import {
   Truck,
 } from 'lucide-react';
 import {
+  ExecutiveAlertSeverity,
+  ExecutivePaymentBlockingStage,
   PartyDashboardMetric,
   ProjectDashboardMetrics,
   SupplierDashboardMetric,
@@ -34,6 +38,19 @@ const fmtMoney = (value: number): string => {
 };
 
 const fmtFull = (value: number): string => `${Math.round(Number(value || 0)).toLocaleString('vi-VN')} đ`;
+
+const fmtDate = (value?: string): string => {
+  if (!value) return 'Chưa có';
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('vi-VN');
+};
+
+const fmtDeltaDays = (days: number): string => {
+  if (days > 0) return `+${days} ngày`;
+  if (days < 0) return `${days} ngày`;
+  return 'Không đổi';
+};
 
 const metricTone = (value: number, positiveGood = true): string => {
   if (value === 0) return 'text-slate-700';
@@ -87,6 +104,200 @@ const MetricRow = ({ label, value, highlight }: { label: string; value: number; 
     </span>
   </div>
 );
+
+const severityClasses: Record<ExecutiveAlertSeverity, string> = {
+  critical: 'bg-red-50 border-red-200 text-red-700',
+  warning: 'bg-orange-50 border-orange-200 text-orange-700',
+  info: 'bg-blue-50 border-blue-200 text-blue-700',
+  success: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+};
+
+const stageLabels: Record<ExecutivePaymentBlockingStage, string> = {
+  none: 'Đủ điều kiện',
+  production: 'Khối lượng',
+  acceptance: 'Nghiệm thu',
+  certificate: 'Chứng từ',
+  cash: 'Dòng tiền',
+};
+
+const partyLabels = {
+  owner: 'CĐT',
+  subcontractor: 'Thầu phụ',
+  supplier: 'NCC',
+};
+
+const statusLabel = {
+  green: 'Ổn định',
+  amber: 'Cần theo dõi',
+  red: 'Cần can thiệp',
+};
+
+const CompactProgress = ({ label, value, tone }: { label: string; value: number; tone: string }) => (
+  <div>
+    <div className="flex items-center justify-between gap-3 mb-1">
+      <span className="text-[11px] font-bold text-slate-500">{label}</span>
+      <span className="text-xs font-black text-slate-800">{Math.round(value)}%</span>
+    </div>
+    <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+      <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
+    </div>
+  </div>
+);
+
+const ApprovalQueuePanel = ({ metrics }: { metrics: ProjectDashboardMetrics }) => {
+  const queue = metrics.executive.approvalQueue;
+  const items = [
+    { label: 'Nhật ký submitted', value: queue.dailyLogSubmitted },
+    { label: 'Task/gate pending', value: queue.taskCompletionSubmitted + queue.taskGatePending },
+    { label: 'Nghiệm thu KL', value: queue.quantityAcceptanceSubmitted },
+    { label: 'Chứng từ TT', value: queue.paymentCertificateSubmitted },
+    { label: 'Phát sinh HĐ', value: queue.variationSubmitted },
+    { label: 'Đối chiếu BOQ', value: queue.reconciliationSubmitted },
+  ];
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
+            <ClipboardCheck size={15} />
+          </div>
+          <h3 className="text-xs font-black text-slate-800">Yêu cầu chờ xử lý</h3>
+        </div>
+        <span className="text-lg font-black text-slate-900">{queue.total}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {items.map(item => (
+          <MiniCount key={item.label} label={item.label} value={item.value} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const PriorityAlertsPanel = ({ metrics }: { metrics: ProjectDashboardMetrics }) => {
+  const alerts = metrics.executive.priorityAlerts;
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-8 h-8 rounded-xl bg-red-100 text-red-700 flex items-center justify-center">
+          <AlertTriangle size={15} />
+        </div>
+        <h3 className="text-xs font-black text-slate-800">Cảnh báo ưu tiên</h3>
+      </div>
+      {alerts.length === 0 ? (
+        <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-xs font-bold text-emerald-700 flex items-center gap-2">
+          <CheckCircle2 size={14} />
+          Không có cảnh báo trọng yếu trong dữ liệu hiện tại.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {alerts.map(alert => (
+            <div key={alert.id} className={`rounded-xl border p-3 ${severityClasses[alert.severity]}`}>
+              <div className="text-xs font-black">{alert.title}</div>
+              <div className="mt-1 text-[11px] font-semibold opacity-85 leading-relaxed">{alert.message}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ScheduleHealthPanel = ({ metrics }: { metrics: ProjectDashboardMetrics }) => {
+  const schedule = metrics.executive.scheduleHealth;
+  const tone = schedule.status === 'red'
+    ? 'bg-red-500'
+    : schedule.status === 'amber'
+      ? 'bg-orange-500'
+      : 'bg-emerald-500';
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center">
+            <Activity size={15} />
+          </div>
+          <h3 className="text-xs font-black text-slate-800">Sức khỏe tiến độ</h3>
+        </div>
+        <span className={`text-[10px] font-black px-2 py-1 rounded-full border ${severityClasses[schedule.status === 'red' ? 'critical' : schedule.status === 'amber' ? 'warning' : 'success']}`}>
+          {statusLabel[schedule.status]}
+        </span>
+      </div>
+      <div className="space-y-3">
+        <CompactProgress label="Kế hoạch đến hôm nay" value={schedule.plannedProgress} tone="bg-slate-400" />
+        <CompactProgress label="Thực tế" value={schedule.actualProgress} tone={tone} />
+      </div>
+      <div className="grid grid-cols-2 gap-2 mt-4">
+        <MiniCount label="Lệch tiến độ" value={schedule.progressVariance} />
+        <MiniCount label="Forecast trễ" value={schedule.forecastDeltaDays} />
+        <MiniCount label="Task quá hạn" value={schedule.overdueTaskCount} />
+        <MiniCount label="Delay active" value={schedule.activeDelayEventCount} />
+      </div>
+      <div className="mt-3 rounded-xl bg-slate-50 border border-slate-100 px-3 py-2 text-[11px] font-semibold text-slate-500">
+        Hoàn thành forecast: <span className="font-black text-slate-800">{fmtDate(schedule.forecastEndDate)}</span>
+        <span className="mx-1">·</span>
+        Ảnh hưởng <span className="font-black text-slate-800">{schedule.impactedTaskCount}</span> hạng mục downstream.
+      </div>
+    </div>
+  );
+};
+
+const PaymentRiskPanel = ({ metrics }: { metrics: ProjectDashboardMetrics }) => {
+  const risks = metrics.executive.paymentPeriodRisks;
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+            <CalendarClock size={15} />
+          </div>
+          <div>
+            <h3 className="text-xs font-black text-slate-800">Kỳ thanh toán sắp đến / quá hạn</h3>
+            <p className="text-[11px] font-semibold text-slate-400 mt-0.5">Theo mốc 10 ngày tới và target lũy kế của lịch thanh toán.</p>
+          </div>
+        </div>
+        <span className="text-sm font-black text-slate-900">{risks.length}</span>
+      </div>
+      {risks.length === 0 ? (
+        <div className="p-4 text-xs font-bold text-slate-400">Chưa có kỳ thanh toán quá hạn hoặc đến hạn trong 10 ngày tới.</div>
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {risks.slice(0, 6).map(risk => (
+            <div key={risk.id} className="p-4">
+              <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[10px] font-black px-2 py-1 rounded-full border ${severityClasses[risk.severity]}`}>
+                      {partyLabels[risk.party]}
+                    </span>
+                    <span className="text-xs font-black text-slate-800 truncate">{risk.description || risk.label}</span>
+                    <span className="text-[11px] font-bold text-slate-400">{fmtDate(risk.dueDate)}</span>
+                  </div>
+                  <div className="mt-1 text-[11px] font-semibold text-slate-500 leading-relaxed">
+                    {risk.daysUntilDue < 0 ? `Quá hạn ${Math.abs(risk.daysUntilDue)} ngày` : `Còn ${risk.daysUntilDue} ngày`}
+                    <span className="mx-1">·</span>
+                    Nghẽn tại: <span className="font-black text-slate-700">{stageLabels[risk.blockingStage]}</span>
+                    <span className="mx-1">·</span>
+                    Thiếu: <span className="font-black text-red-600">{fmtFull(risk.missingAmount)}</span>
+                  </div>
+                  <div className="mt-1 text-[11px] font-semibold text-slate-500">{risk.recommendation}</div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 lg:w-[640px]">
+                  <MiniMoney label="Target" value={risk.targetCumulative} />
+                  <MiniMoney label="Thi công" value={risk.performedValue} />
+                  <MiniMoney label="Nghiệm thu" value={risk.acceptedValue} />
+                  <MiniMoney label="Chứng từ" value={risk.certifiedValue} />
+                  <MiniMoney label="Tiền" value={risk.paidValue} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 /** Cell value in reconciliation table */
 const TCell = ({ value, highlight, negative, formula }: { value: number; highlight?: boolean; negative?: boolean; formula?: string }) => {
@@ -266,6 +477,19 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
   }
 
   const financial = metrics.financialKPIs;
+  const scheduleHealth = metrics.executive.scheduleHealth;
+  const approvalQueue = metrics.executive.approvalQueue;
+  const forecastTone = scheduleHealth.forecastDeltaDays > 0 || scheduleHealth.status === 'red'
+    ? 'red'
+    : scheduleHealth.status === 'amber'
+      ? 'orange'
+      : 'emerald';
+  const progressTone = scheduleHealth.status === 'red'
+    ? 'red'
+    : scheduleHealth.status === 'amber'
+      ? 'orange'
+      : 'blue';
+  const progressVarianceText = `${scheduleHealth.progressVariance >= 0 ? '+' : ''}${scheduleHealth.progressVariance}%`;
 
   return (
     <section className="space-y-4">
@@ -284,13 +508,20 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
             Cập nhật {new Date(metrics.calculatedAt).toLocaleString('vi-VN')}
           </div>
         </div>
-        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
           <SummaryCard
-            title="Tiến độ dự án"
-            value={`${metrics.progress.percent}%`}
-            sub={`${metrics.progress.modeLabel} · Gantt ${metrics.progress.ganttPercent}%`}
+            title="Tiến độ thực tế"
+            value={`${scheduleHealth.actualProgress}%`}
+            sub={`Kế hoạch ${scheduleHealth.plannedProgress}% · lệch ${progressVarianceText}`}
             icon={<Activity size={16} />}
-            tone="blue"
+            tone={progressTone}
+          />
+          <SummaryCard
+            title="Forecast hoàn thành"
+            value={fmtDate(scheduleHealth.forecastEndDate)}
+            sub={`${fmtDeltaDays(scheduleHealth.forecastDeltaDays)} · ảnh hưởng ${scheduleHealth.impactedTaskCount}`}
+            icon={<CalendarClock size={16} />}
+            tone={forecastTone}
           />
           <SummaryCard
             title="Vị thế tiền mặt"
@@ -300,11 +531,18 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
             tone={metrics.cashFlow.balance >= 0 ? 'emerald' : 'red'}
           />
           <SummaryCard
-            title="Dự trù lãi/lỗ"
-            value={fmtMoney(metrics.constructionCost.forecastProfitLoss)}
-            sub={`Theo KL thi công và chi phí đã dùng`}
+            title="Công nợ"
+            value={fmtMoney(metrics.cashFlow.receivable)}
+            sub={`Phải trả ${fmtMoney(metrics.cashFlow.payable)}`}
             icon={<CircleDollarSign size={16} />}
-            tone={metrics.constructionCost.forecastProfitLoss >= 0 ? 'emerald' : 'orange'}
+            tone={metrics.cashFlow.receivable >= metrics.cashFlow.payable ? 'emerald' : 'orange'}
+          />
+          <SummaryCard
+            title="Chờ duyệt"
+            value={`${approvalQueue.total}`}
+            sub={`NT ${approvalQueue.quantityAcceptanceSubmitted} · TT ${approvalQueue.paymentCertificateSubmitted}`}
+            icon={<ClipboardCheck size={16} />}
+            tone={approvalQueue.total > 0 ? 'orange' : 'emerald'}
           />
           <SummaryCard
             title="Chi phí 7 ngày tới"
@@ -315,6 +553,14 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
           />
         </div>
       </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <ScheduleHealthPanel metrics={metrics} />
+        <PriorityAlertsPanel metrics={metrics} />
+        <ApprovalQueuePanel metrics={metrics} />
+      </div>
+
+      <PaymentRiskPanel metrics={metrics} />
 
       {/* === Bảng Đối Soát 3 Bên (FastCons-style) === */}
       <ReconciliationTable owner={metrics.owner} subcontractor={metrics.subcontractor} supplier={metrics.supplier} />
@@ -406,6 +652,13 @@ const MiniCount = ({ label, value }: { label: string; value: number }) => (
   <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
     <div className="text-[10px] font-bold text-slate-400 truncate">{label}</div>
     <div className="text-base font-black text-slate-800">{value}</div>
+  </div>
+);
+
+const MiniMoney = ({ label, value }: { label: string; value: number }) => (
+  <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 min-w-0">
+    <div className="text-[10px] font-bold text-slate-400 truncate">{label}</div>
+    <div className="text-xs font-black text-slate-800 truncate">{fmtMoney(value)}</div>
   </div>
 );
 

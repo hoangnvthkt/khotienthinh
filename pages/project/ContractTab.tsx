@@ -21,6 +21,7 @@ import ContractWorkspace from '../../components/project/ContractWorkspace';
 interface ContractTabProps {
     constructionSiteId?: string;
     projectId?: string;
+    canManageTab?: boolean;
 }
 
 const fmt = (n: number) => {
@@ -58,7 +59,7 @@ const TYPE_CFG = {
     subcontractor: { label: 'Thầu phụ',       icon: '🏗️', color: 'text-orange-600 bg-orange-50 border-orange-200' },
 };
 
-const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId }) => {
+const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';
@@ -87,6 +88,12 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
             {title} cần liên kết công trường HRM để dùng dữ liệu nghiệm thu/thanh toán hiện trường.
         </div>
     );
+
+    const ensureCanManage = (action: string) => {
+        if (canManageTab) return true;
+        toast.warning('Không có quyền quản trị tab', `Bạn cần quyền quản trị "Hợp đồng" để ${action}.`);
+        return false;
+    };
 
     // Unified view
     const contracts: ContractView[] = useMemo(() => [
@@ -120,6 +127,7 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
     }), [contracts, customerContracts, subContracts]);
 
     const handleDelete = async (id: string, type: 'customer' | 'subcontractor') => {
+        if (!ensureCanManage('xoá hợp đồng khỏi dự án')) return;
         const c = contracts.find(x => x.id === id);
         const ok = await confirm({ targetName: c?.code || 'hợp đồng này', title: 'Xoá hợp đồng' });
         if (!ok) return;
@@ -222,13 +230,15 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
                                                 <div className="text-sm font-black text-slate-800 dark:text-white">{fmt(c.value)}</div>
                                                 <div className="text-[10px] text-slate-400">{c.signedDate ? new Date(c.signedDate).toLocaleDateString('vi-VN') : '—'}</div>
                                             </div>
-                                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button
-                                                    onClick={e => { e.stopPropagation(); handleDelete(c.id, c.type); }}
-                                                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50">
-                                                    <Trash2 size={13} />
-                                                </button>
-                                            </div>
+                                            {canManageTab && (
+                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button
+                                                        onClick={e => { e.stopPropagation(); handleDelete(c.id, c.type); }}
+                                                        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50">
+                                                        <Trash2 size={13} />
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                     {isExpanded && (

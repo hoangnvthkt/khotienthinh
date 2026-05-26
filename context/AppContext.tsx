@@ -135,7 +135,7 @@ interface AppContextType {
   updateWarehouse: (warehouse: Warehouse) => void;
   removeWarehouse: (warehouseId: string) => void;
   addRequest: (request: MaterialRequest) => Promise<boolean>;
-  updateRequestStatus: (id: string, status: RequestStatus, note?: string, approvedItems?: { lineId?: string, itemId: string, qty: number }[], sourceWarehouseId?: string, overrideReason?: string) => Promise<boolean>;
+  updateRequestStatus: (id: string, status: RequestStatus, note?: string, approvedItems?: { lineId?: string, itemId: string, qty: number }[], sourceWarehouseId?: string, overrideReason?: string, actionOverride?: string) => Promise<boolean>;
   logActivity: (type: ActivityType, action: string, description: string, status?: GlobalActivity['status'], warehouseId?: string) => void;
   addCategory: (name: string) => void;
   updateCategory: (category: ItemCategory) => void;
@@ -202,7 +202,7 @@ interface AppContextType {
     date: string;
   }) => Promise<AssetTransfer | null>;
   isModuleAdmin: (moduleKey: string) => boolean;
-  loadModuleData: (module: AppModule) => Promise<void>;
+  loadModuleData: (module: AppModule, force?: boolean) => Promise<void>;
   isLoading: boolean;
   isRefreshing: boolean;
   connectionError: string | null;
@@ -247,6 +247,10 @@ const mapMaterialRequestFromDb = (r: any): MaterialRequest => ({
   fulfillmentMode: r.fulfillment_mode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
   overrideReason: r.override_reason || undefined,
   relatedTransactionId: r.related_transaction_id || undefined,
+  submittedToUserId: r.submitted_to_user_id ?? r.submittedToUserId ?? undefined,
+  submittedToName: r.submitted_to_name ?? r.submittedToName ?? undefined,
+  submittedToPermission: r.submitted_to_permission ?? r.submittedToPermission ?? undefined,
+  submissionNote: r.submission_note ?? r.submissionNote ?? undefined,
 });
 
 const mapAssetLocationStockFromDb = (l: any): AssetLocationStock => ({
@@ -668,8 +672,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     construction_site_id: tx.constructionSiteId || null,
   });
 
-  const loadModuleData = useCallback(async (module: AppModule) => {
-    if (!isSupabaseConfigured || loadedModulesRef.current.has(module)) return;
+  const loadModuleData = useCallback(async (module: AppModule, force = false) => {
+    if (!isSupabaseConfigured) return;
+    if (!force && loadedModulesRef.current.has(module)) return;
     loadedModulesRef.current.add(module);
 
     try {
@@ -956,7 +961,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       } else if (table === 'requests') {
         payload = {
-          id: data.id, code: data.code, site_warehouse_id: data.siteWarehouseId, source_warehouse_id: data.sourceWarehouseId,
+          id: data.id, code: data.code, site_warehouse_id: data.siteWarehouseId, source_warehouse_id: data.sourceWarehouseId || null,
           project_id: data.projectId || null,
           construction_site_id: data.constructionSiteId || null,
           request_origin: data.requestOrigin || 'wms',
@@ -964,7 +969,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           expected_date: data.expectedDate, note: data.note, logs: data.logs,
           fulfillment_mode: data.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
           override_reason: data.overrideReason || null,
-          related_transaction_id: data.relatedTransactionId || null
+          related_transaction_id: data.relatedTransactionId || null,
+          submitted_to_user_id: data.submittedToUserId || null,
+          submitted_to_name: data.submittedToName || null,
+          submitted_to_permission: data.submittedToPermission || null,
+          submission_note: data.submissionNote || null
         };
       } else if (table === 'activities') {
         payload = {
@@ -1468,6 +1477,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const getMaterialRequestApproverIds = (request: MaterialRequest) => {
+    if (request.submittedToUserId) return [request.submittedToUserId];
     return users
       .filter(u =>
         u.role === Role.ADMIN ||
@@ -1550,12 +1560,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
-  const updateRequestStatus = async (id: string, status: RequestStatus, note?: string, approvedItems?: { lineId?: string, itemId: string, qty: number }[], sourceWarehouseId?: string, overrideReason?: string): Promise<boolean> => {
+  const updateRequestStatus = async (id: string, status: RequestStatus, note?: string, approvedItems?: { lineId?: string, itemId: string, qty: number }[], sourceWarehouseId?: string, overrideReason?: string, actionOverride?: string): Promise<boolean> => {
     const req = requests.find(r => r.id === id);
     if (!req) return false;
+    const isReturnAction = actionOverride === 'RETURNED';
+    const isFulfillmentSync = actionOverride === 'FULFILLMENT_SYNC';
+
+    if (isReturnAction && req.relatedTransactionId) {
+      throw new Error('Phiếu đã phát sinh phiếu kho liên kết. Cần huỷ/rollback phiếu kho trước khi trả lại bước trước.');
+    }
+
+    const applyLineFulfillment = (line: MaterialRequest['items'][number], nextStatus: RequestStatus): MaterialRequest['items'][number] => {
+      const requestQty = Number(line.requestQty || 0);
+      const approvedQty = Number(line.approvedQty || 0);
+      const orderedQty = Number(line.orderedQty || 0);
+      const existingIssuedQty = Number(line.issuedQty || 0);
+      const issuedQty = existingIssuedQty;
+      const stockCoveredQty = Math.max(approvedQty, issuedQty);
+      const procurementQty = Math.max(0, requestQty - stockCoveredQty - orderedQty);
+      const fulfillmentStatus =
+        requestQty > 0 && issuedQty >= requestQty ? 'fulfilled'
+          : issuedQty > 0 && procurementQty > 0 ? 'procurement_required'
+            : issuedQty > 0 ? 'issued'
+              : approvedQty > 0 && procurementQty > 0 ? 'procurement_required'
+                : approvedQty > 0 ? 'approved_for_issue'
+                  : orderedQty > 0 ? 'ordered'
+                    : nextStatus === RequestStatus.APPROVED && procurementQty > 0 ? 'procurement_required'
+                      : 'pending';
+
+      return {
+        ...line,
+        approvedQty,
+        issuedQty,
+        orderedQty,
+        procurementQty,
+        fulfillmentStatus,
+      };
+    };
 
     const newLog: AuditLog = {
-      action: status,
+      action: actionOverride || status,
       userId: user.id,
       timestamp: new Date().toISOString(),
       note: note,
@@ -1563,14 +1607,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     let updatedItems = [...req.items];
-    if (status === RequestStatus.APPROVED && approvedItems) {
+    if (isFulfillmentSync) {
+      updatedItems = req.items;
+    } else if (isReturnAction) {
+      updatedItems = req.items.map(item => applyLineFulfillment({
+        ...item,
+        approvedQty: 0,
+        issuedQty: 0,
+        procurementQty: 0,
+        fulfillmentStatus: 'pending',
+      }, RequestStatus.PENDING));
+    } else if ((status === RequestStatus.APPROVED || status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && approvedItems) {
       updatedItems = req.items.map(item => {
         const approved = approvedItems.find(i =>
           (item.lineId && i.lineId === item.lineId) ||
           (!item.lineId && i.itemId === item.itemId)
         );
-        return approved ? { ...item, approvedQty: approved.qty } : item;
+        return applyLineFulfillment(approved ? { ...item, approvedQty: approved.qty } : item, status);
       });
+    } else {
+      updatedItems = req.items.map(item => applyLineFulfillment(item, status));
     }
 
     const effectiveSourceWhId = sourceWarehouseId || req.sourceWarehouseId;
@@ -1581,20 +1637,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return items.some(item => item.id === line.itemId);
     });
 
-    if ((status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && stockFulfillmentLines.length > 0 && !effectiveSourceWhId) {
-      return false;
+    if (!isFulfillmentSync && (status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && stockFulfillmentLines.length === 0) {
+      throw new Error('Chưa có dòng vật tư nào được duyệt xuất. Vui lòng nhập số lượng duyệt lớn hơn 0 cho ít nhất một dòng.');
     }
 
-    if ((status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && effectiveSourceWhId) {
-      const shortages = stockFulfillmentLines.filter(line => {
+    if (!isFulfillmentSync && (status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && stockFulfillmentLines.length > 0 && !effectiveSourceWhId) {
+      throw new Error('Chưa chọn kho nguồn. Phòng vật tư cần chọn kho nguồn trước khi xuất vật tư có mã tồn kho.');
+    }
+
+    if (!isFulfillmentSync && (status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && effectiveSourceWhId) {
+      const shortage = stockFulfillmentLines.find(line => {
         const item = items.find(i => i.id === line.itemId);
         const onHand = item?.stockByWarehouse[effectiveSourceWhId] || 0;
         return (line.approvedQty || 0) > onHand;
       });
-      if (shortages.length > 0) return false;
+      if (shortage) {
+        const item = items.find(i => i.id === shortage.itemId);
+        const onHand = item?.stockByWarehouse[effectiveSourceWhId] || 0;
+        const whName = warehouses.find(w => w.id === effectiveSourceWhId)?.name || effectiveSourceWhId;
+        const lineName = item?.name || shortage.itemNameSnapshot || shortage.materialBudgetItemName || shortage.itemId;
+        throw new Error(`Kho nguồn "${whName}" không đủ tồn cho dòng "${lineName}". Tồn ${onHand}, cần ${shortage.approvedQty || 0}.`);
+      }
     }
 
-    const shouldCreateTransaction = status === RequestStatus.COMPLETED && !req.relatedTransactionId && !!effectiveSourceWhId && stockFulfillmentLines.length > 0;
+    const shouldCreateTransaction = !isFulfillmentSync && status === RequestStatus.COMPLETED && !req.relatedTransactionId && !!effectiveSourceWhId && stockFulfillmentLines.length > 0;
     const relatedTransactionId = shouldCreateTransaction
       ? `tx-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
       : req.relatedTransactionId;
@@ -1602,16 +1668,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updatedReq = {
       ...req,
       status,
-      sourceWarehouseId: effectiveSourceWhId,
+      sourceWarehouseId: isReturnAction ? undefined : effectiveSourceWhId,
       fulfillmentMode: req.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
-      overrideReason: overrideReason || req.overrideReason,
+      overrideReason: isReturnAction ? undefined : (overrideReason || req.overrideReason),
       relatedTransactionId,
       items: updatedItems,
       logs: [...req.logs, newLog]
     };
 
     const synced = await syncToSupabase('requests', updatedReq);
-    if (!synced) return false;
+    if (!synced) throw new Error('Không thể cập nhật phiếu đề xuất trên Supabase.');
 
     setRequests(prev => prev.map(r => r.id === id ? updatedReq : r));
     logActivity('REQUEST', 'Cập nhật yêu cầu', `Yêu cầu ${req.code} chuyển sang ${status}`, 'INFO', req.siteWarehouseId);

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Plus, X, Package, Users, Wrench, Layers, Paperclip, ClipboardCheck } from 'lucide-react';
 import {
   DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine,
@@ -51,7 +51,24 @@ const getWarehouseStock = (item: InventoryItem, warehouseId?: string) =>
 const formatQuantity = (value?: number | null) =>
   Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 });
 
-const parseNonNegative = (value: string) => Math.max(0, Number(value || 0));
+const formatPercent = (value?: number | null) =>
+  Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
+
+const normalizeDecimalInput = (value: string) => value.trim().replace(/\s/g, '').replace(',', '.');
+
+const parseNonNegativeDecimal = (value: string): number | null => {
+  const normalized = normalizeDecimalInput(value);
+  if (!normalized || normalized === '.' || normalized === ',') return 0;
+  if (!/^\d*(?:\.\d*)?$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+};
+
+const formatDecimalInput = (value?: number | null) => {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return String(Number(n.toFixed(3))).replace('.', ',');
+};
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   jpg: 'image/jpeg',
@@ -184,6 +201,10 @@ const DailyLogDetailTabs: React.FC<Props> = ({
 }) => {
   const [tab, setTab] = useState<TabKey>('volumes');
   const [laborModes, setLaborModes] = useState<Record<number, 'catalog' | 'partner'>>({});
+  const [volumeQuantityDrafts, setVolumeQuantityDrafts] = useState<Record<number, string>>({});
+  useEffect(() => {
+    setVolumeQuantityDrafts({});
+  }, [volumes.length]);
   const taskOptions = useMemo<SearchOption<ProjectTask>[]>(() => tasks.map(task => ({
     item: task,
     label: `${task.wbsCode ? `${task.wbsCode} - ` : ''}${task.name}`,
@@ -262,6 +283,9 @@ const DailyLogDetailTabs: React.FC<Props> = ({
             const verifiedQty = Math.max(verifiedByTask, verifiedByWorkBoq);
             const remainingQty = Math.max(0, plannedQty - verifiedQty);
             const hasQuantityLimit = plannedQty > 0;
+            const currentQty = Math.max(0, Number(v.quantity || 0));
+            const rowProgressPercent = plannedQty > 0 ? Math.min(100, (currentQty / plannedQty) * 100) : 0;
+            const cumulativeProgressPercent = plannedQty > 0 ? Math.min(100, ((verifiedQty + currentQty) / plannedQty) * 100) : 0;
             const attachments = v.attachments || [];
 
             return (
@@ -362,19 +386,40 @@ const DailyLogDetailTabs: React.FC<Props> = ({
                   <div className="grid grid-cols-1 md:grid-cols-[1fr_120px] gap-2">
                     <div>
                       <label className="text-[10px] font-black text-slate-500 uppercase block mb-1.5">Khối lượng hoàn thành</label>
-                      <input type="number" min={0} max={hasQuantityLimit ? remainingQty : undefined} step="0.001" placeholder="0" value={v.quantity || ''}
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        pattern="[0-9]*[,.]?[0-9]*"
+                        placeholder="0"
+                        value={volumeQuantityDrafts[i] ?? formatDecimalInput(v.quantity)}
                         disabled={hasQuantityLimit && remainingQty <= 0}
                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-amber-400 bg-white"
                         onChange={e => {
-                          const inputQty = parseNonNegative(e.target.value);
+                          const rawValue = e.target.value;
+                          const inputQty = parseNonNegativeDecimal(rawValue);
+                          setVolumeQuantityDrafts(prev => ({ ...prev, [i]: rawValue }));
+                          if (inputQty === null) return;
                           const u = [...volumes];
-                          u[i] = { ...v, quantity: hasQuantityLimit ? Math.min(inputQty, remainingQty) : inputQty };
+                          const nextQty = hasQuantityLimit ? Math.min(inputQty, remainingQty) : inputQty;
+                          u[i] = { ...v, quantity: nextQty };
                           onVolumesChange(u);
-                        }} />
+                          if (hasQuantityLimit && inputQty > remainingQty) {
+                            setVolumeQuantityDrafts(prev => ({ ...prev, [i]: formatDecimalInput(nextQty) }));
+                          }
+                        }}
+                        onBlur={() => {
+                          setVolumeQuantityDrafts(prev => {
+                            const next = { ...prev };
+                            delete next[i];
+                            return next;
+                          });
+                        }}
+                      />
                       {hasQuantityLimit ? (
-                        <p className={`mt-1 text-[10px] font-bold ${remainingQty <= 0 ? 'text-red-500' : 'text-amber-600'}`}>
-                          Tối đa được nhập {formatQuantity(remainingQty)} {v.unit || task?.fallbackUnit || workBoqItem?.unit || ''}; phần vượt phải tách thành phát sinh/đầu mục khác.
-                        </p>
+                        <div className={`mt-1 space-y-0.5 text-[10px] font-bold ${remainingQty <= 0 ? 'text-red-500' : 'text-amber-600'}`}>
+                          <p>Tối đa được nhập {formatQuantity(remainingQty)} {v.unit || task?.fallbackUnit || workBoqItem?.unit || ''}; phần vượt phải tách thành phát sinh/đầu mục khác.</p>
+                          <p>Quy đổi dòng này {formatPercent(rowProgressPercent)}%; lũy kế sau xác nhận {formatPercent(cumulativeProgressPercent)}%.</p>
+                        </div>
                       ) : (
                         <p className="mt-1 text-[10px] font-bold text-slate-400">
                           Hạng mục chưa có KL tạm tính nên hệ thống chưa giới hạn khối lượng.
