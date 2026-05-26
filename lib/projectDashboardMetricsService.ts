@@ -46,7 +46,7 @@ import {
 } from './projectScheduleRules';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 import { quantityAcceptanceService } from './quantityAcceptanceService';
-import { taskContractItemService } from './taskContractItemService';
+import { buildTaskContractQuantityFactors, taskContractItemService } from './taskContractItemService';
 import { taskCompletionRequestService } from './projectTaskCompletionService';
 
 export interface ProjectProgressMetric {
@@ -370,7 +370,7 @@ const buildPartyMetric = (
   contractItems: ContractItem[],
   logs: DailyLog[],
   workBoqItems: ProjectWorkBoqItem[],
-  reconciliationGroups: BoqReconciliationGroup[],
+  taskLinks: TaskContractItem[],
   acceptances: QuantityAcceptance[],
   certs: PaymentCertificate[],
   advances: AdvancePayment[],
@@ -378,11 +378,11 @@ const buildPartyMetric = (
   const items = getLeafItems(contractItems.filter(item => item.contractType === contractType));
   const itemMap = new Map(items.map(item => [item.id, item]));
   const workBoqByTaskId = new Map(workBoqItems.filter(item => item.sourceTaskId).map(item => [item.sourceTaskId as string, item.id]));
-  const factorsByWorkBoqItem = boqReconciliationService
-    .buildWorkContractFactors(reconciliationGroups)
-    .reduce<Map<string, ReturnType<typeof boqReconciliationService.buildWorkContractFactors>>>((acc, factor) => {
-      if (!acc.has(factor.workBoqItemId)) acc.set(factor.workBoqItemId, []);
-      acc.get(factor.workBoqItemId)!.push(factor);
+  const taskByWorkBoqId = new Map(workBoqItems.filter(item => item.sourceTaskId).map(item => [item.id, item.sourceTaskId as string]));
+  const factorsByTaskId = buildTaskContractQuantityFactors(taskLinks, new Set(itemMap.keys()))
+    .reduce<Map<string, ReturnType<typeof buildTaskContractQuantityFactors>>>((acc, factor) => {
+      if (!acc.has(factor.taskId)) acc.set(factor.taskId, []);
+      acc.get(factor.taskId)!.push(factor);
       return acc;
     }, new Map());
   const contractValue = sum(items, revisedItemValue);
@@ -392,8 +392,9 @@ const buildPartyMetric = (
       const directItem = volume.contractItemId ? itemMap.get(volume.contractItemId) : undefined;
       if (directItem) return Number(volume.quantity || 0) * Number(directItem.unitPrice || 0);
       const workBoqItemId = volume.workBoqItemId || (volume.taskId ? workBoqByTaskId.get(volume.taskId) : undefined);
-      if (!workBoqItemId) return 0;
-      return sum(factorsByWorkBoqItem.get(workBoqItemId) || [], factor => {
+      const sourceTaskId = volume.taskId || (workBoqItemId ? taskByWorkBoqId.get(workBoqItemId) : undefined);
+      if (!sourceTaskId) return 0;
+      return sum(factorsByTaskId.get(sourceTaskId) || [], factor => {
         const item = itemMap.get(factor.contractItemId);
         if (!item) return 0;
         return Number(volume.quantity || 0) * Number(factor.quantityFactor || 0) * Number(item.unitPrice || 0);
@@ -920,8 +921,6 @@ export const projectDashboardMetricsService = {
       variations,
       reconciliationGroups,
       financialKPIs,
-      customerReconciliationGroups,
-      subcontractorReconciliationGroups,
     ] = await Promise.all([
       safeLoad('project_tasks', warnings, () => taskService.list(projectScopeId, constructionSiteId), [] as ProjectTask[]),
       safeLoad('daily_logs', warnings, () => dailyLogService.list(projectScopeId, constructionSiteId), [] as DailyLog[]),
@@ -941,13 +940,11 @@ export const projectDashboardMetricsService = {
       safeLoad('contract_variations', warnings, () => listContractVariations(projectScopeId, constructionSiteId), [] as ContractVariation[]),
       safeLoad('boq_reconciliation submitted', warnings, () => boqReconciliationService.listByProject(projectScopeId, constructionSiteId), [] as BoqReconciliationGroup[]),
       safeLoad('financial_kpis', warnings, () => projectFinancialService.getKPIs(constructionSiteId), undefined as ProjectFinancialKPIs | undefined),
-      safeLoad('boq_reconciliation customer', warnings, () => boqReconciliationService.listOfficialByProject(projectScopeId, constructionSiteId, 'customer'), []),
-      safeLoad('boq_reconciliation subcontractor', warnings, () => boqReconciliationService.listOfficialByProject(projectScopeId, constructionSiteId, 'subcontractor'), []),
     ]);
 
     const allContractItems = [...customerItems, ...subcontractorItems];
-    const owner = buildPartyMetric('customer', allContractItems, logs, workBoqItems, customerReconciliationGroups, acceptances, certs, advances);
-    const subcontractor = buildPartyMetric('subcontractor', allContractItems, logs, workBoqItems, subcontractorReconciliationGroups, acceptances, certs, advances);
+    const owner = buildPartyMetric('customer', allContractItems, logs, workBoqItems, taskLinks, acceptances, certs, advances);
+    const subcontractor = buildPartyMetric('subcontractor', allContractItems, logs, workBoqItems, taskLinks, acceptances, certs, advances);
     const supplier = buildSupplierMetric(purchaseOrders, transactions);
     const cashFlow = buildCashFlowMetric(transactions, paymentSchedules, owner, subcontractor, supplier);
     const constructionCost = buildConstructionCostMetric(owner, subcontractor, supplier, transactions);

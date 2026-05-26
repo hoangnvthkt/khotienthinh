@@ -15,13 +15,16 @@ import {
     BusinessPartner,
     ProjectVendor,
     ProjectWorkBoqItem,
+    ProjectSubmissionTarget,
     PurchaseOrder,
     PurchaseOrderItem,
     PurchaseOrderRequestLineLink,
     PurchaseOrderSourceMode,
+    MaterialRequestFulfillmentSummary,
     RequestStatus,
 } from '../../types';
 import { boqService, vendorService, poService, workBoqService } from '../../lib/projectService';
+import { materialRequestFulfillmentService, getRequestLineId } from '../../lib/materialRequestFulfillmentService';
 import { partnerService } from '../../lib/partnerService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -30,7 +33,11 @@ import { loadXlsx } from '../../lib/loadXlsx';
 import { buildPoReceiveUrl, createPoQrToken } from '../../lib/poQr';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
+import InventoryItemCombobox from '../../components/InventoryItemCombobox';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
+import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
+import { projectSubmissionService } from '../../lib/projectSubmissionService';
+import SupplierCombobox from '../../components/SupplierCombobox';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -78,6 +85,8 @@ const ACTIVE_PO_BUDGET_STATUSES = new Set<POStatus>(['draft', 'sent', 'confirmed
 const createEmptyPoItem = (): PurchaseOrderItem => ({
     lineId: crypto.randomUUID(),
     itemId: '',
+    vendorId: null,
+    vendorName: null,
     sku: '',
     name: '',
     unit: '',
@@ -97,6 +106,8 @@ const normalizePoItem = (item: Partial<PurchaseOrderItem>, inventoryItems: Inven
     return {
         itemId: item.itemId || matched?.id || '',
         lineId: item.lineId || crypto.randomUUID(),
+        vendorId: item.vendorId || null,
+        vendorName: item.vendorName || null,
         sku: item.sku || matched?.sku || '',
         name: item.name || matched?.name || '',
         unit: item.unit || matched?.unit || '',
@@ -141,7 +152,7 @@ const normalizePoImportDate = (value: string): string => {
 const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, projectId, canManageTab = true, compact = false }) => {
     const toast = useToast();
     const confirm = useConfirm();
-    const { items: inventoryItems, warehouses, requests: materialRequests, loadModuleData } = useApp();
+    const { items: inventoryItems, warehouses, requests: materialRequests, loadModuleData, user } = useApp();
     const effectiveId = projectId || constructionSiteId || '';
     const [subTab] = useState<'vendor' | 'po'>('po');
 
@@ -153,6 +164,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [workBoqItems, setWorkBoqItems] = useState<ProjectWorkBoqItem[]>([]);
     const [materialBudgetItems, setMaterialBudgetItems] = useState<MaterialBudgetItem[]>([]);
     const [poRequestLinks, setPoRequestLinks] = useState<PurchaseOrderRequestLineLink[]>([]);
+    const [requestFulfillmentSummaries, setRequestFulfillmentSummaries] = useState<Record<string, MaterialRequestFulfillmentSummary>>({});
+    const [requestFulfillmentBatchCounts, setRequestFulfillmentBatchCounts] = useState<Record<string, number>>({});
 
     const ensureCanManage = (action: string) => {
         if (canManageTab) return true;
@@ -168,7 +181,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         if (!effectiveId) return;
         try {
             const [partnerRows, poRows, stockPoRows, workRows, budgetRows, linkRows] = await Promise.all([
-                partnerService.list(),
+                partnerService.list({ classification: 'supplier' }),
                 poService.list(effectiveId, constructionSiteId || null),
                 poService.listStockOrders().catch(() => [] as PurchaseOrder[]),
                 workBoqService.list(effectiveId, constructionSiteId || null),
@@ -224,12 +237,23 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [importingPo, setImportingPo] = useState(false);
     const [poImportMode, setPoImportMode] = useState<ExcelImportMode>('create');
     const [poImportPreview, setPoImportPreview] = useState<ExcelImportPreview<PurchaseOrderItem> | null>(null);
+    const [submittingPo, setSubmittingPo] = useState<PurchaseOrder | null>(null);
     const [printingPoId, setPrintingPoId] = useState<string | null>(null);
     const [savingPo, setSavingPo] = useState(false);
     const poSubmitLockRef = useRef(false);
     const poImportModeRef = useRef<ExcelImportMode>('create');
     const workBoqMap = useMemo(() => new Map(workBoqItems.map(item => [item.id, item])), [workBoqItems]);
     const materialBudgetMap = useMemo(() => new Map(materialBudgetItems.map(item => [item.id, item])), [materialBudgetItems]);
+    const supplierById = useMemo(() => new Map(partners.map(partner => [partner.id, partner])), [partners]);
+    const getSupplierPatch = (supplierId?: string | null): Pick<PurchaseOrderItem, 'vendorId' | 'vendorName'> => {
+        const supplier = supplierId ? supplierById.get(supplierId) : undefined;
+        return supplier ? { vendorId: supplier.id, vendorName: supplier.name } : { vendorId: null, vendorName: null };
+    };
+    const getDefaultSupplierPatchForInventory = (inventory?: InventoryItem): Pick<PurchaseOrderItem, 'vendorId' | 'vendorName'> => {
+        if (inventory?.supplierId && supplierById.has(inventory.supplierId)) return getSupplierPatch(inventory.supplierId);
+        if (pVendorId && supplierById.has(pVendorId)) return getSupplierPatch(pVendorId);
+        return { vendorId: null, vendorName: null };
+    };
     const orderedQtyByRequestLine = useMemo(() => {
         const map = new Map<string, number>();
         poRequestLinks.forEach(link => {
@@ -243,6 +267,34 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             .filter(req => req.requestOrigin === 'project' || req.projectId || req.constructionSiteId)
             .filter(req => (projectId && req.projectId === projectId) || (constructionSiteId && req.constructionSiteId === constructionSiteId));
     }, [constructionSiteId, materialRequests, projectId]);
+    useEffect(() => {
+        let cancelled = false;
+        const loadFulfillment = async () => {
+            if (scopedMaterialRequests.length === 0) {
+                setRequestFulfillmentSummaries({});
+                setRequestFulfillmentBatchCounts({});
+                return;
+            }
+            const batchesByRequest = await materialRequestFulfillmentService.listByRequests(scopedMaterialRequests.map(req => req.id));
+            if (cancelled) return;
+            setRequestFulfillmentSummaries(scopedMaterialRequests.reduce<Record<string, MaterialRequestFulfillmentSummary>>((acc, req) => {
+                acc[req.id] = materialRequestFulfillmentService.summarizeRequest(req, batchesByRequest[req.id] || []);
+                return acc;
+            }, {}));
+            setRequestFulfillmentBatchCounts(scopedMaterialRequests.reduce<Record<string, number>>((acc, req) => {
+                acc[req.id] = (batchesByRequest[req.id] || []).length;
+                return acc;
+            }, {}));
+        };
+        loadFulfillment().catch(err => {
+            console.warn('Failed to load material request fulfillment summaries for PO tab:', err);
+            if (!cancelled) {
+                setRequestFulfillmentSummaries({});
+                setRequestFulfillmentBatchCounts({});
+            }
+        });
+        return () => { cancelled = true; };
+    }, [scopedMaterialRequests]);
     const scopedRequestLines = useMemo(() => {
         const allowedStatuses = new Set<RequestStatus | string>([
             RequestStatus.PENDING,
@@ -257,7 +309,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             .flatMap(req => (req.items || []).map((line, index) => {
                 const requestLineId = line.lineId || `${req.id}-${index}`;
                 const requestedQty = Number(line.requestQty || 0);
-                const stockCoveredQty = Math.max(Number(line.issuedQty || 0), Number(line.approvedQty || 0));
+                const fulfillmentLine = requestFulfillmentSummaries[req.id]?.lineSummaries.find(summary => summary.requestLineId === getRequestLineId(req, line, index));
+                const hasFulfillmentBatches = (requestFulfillmentBatchCounts[req.id] || 0) > 0;
+                const stockCoveredQty = hasFulfillmentBatches ? (fulfillmentLine?.receivedQty || 0) : Number(line.issuedQty || 0);
                 const orderedQty = orderedQtyByRequestLine.get(`${req.id}:${requestLineId}`) || 0;
                 const remainingQty = Math.max(0, requestedQty - stockCoveredQty - orderedQty);
                 return {
@@ -273,7 +327,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             }))
             .filter(row => row.remainingQty > 0)
             .filter(row => !row.line.isManualItem && inventoryItems.some(item => item.id === row.line.itemId));
-    }, [inventoryItems, orderedQtyByRequestLine, scopedMaterialRequests]);
+    }, [inventoryItems, orderedQtyByRequestLine, requestFulfillmentBatchCounts, requestFulfillmentSummaries, scopedMaterialRequests]);
     const requestedQtyByBudget = useMemo(() => {
         const map = new Map<string, number>();
         scopedMaterialRequests
@@ -379,7 +433,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
     const openEditPo = (po: PurchaseOrder) => {
         if (!ensureCanManage('sửa đơn hàng')) return;
-        const normalizedItems = po.items.map(i => normalizePoItem(i, inventoryItems));
+        const normalizedItems = po.items.map(i => normalizePoItem({
+            ...i,
+            vendorId: i.vendorId || po.vendorId,
+            vendorName: i.vendorName || po.vendorName,
+        }, inventoryItems));
         setEditingPo(po); setPVendorId(po.vendorId); setPNum(po.poNumber);
         setPTargetWarehouseId(po.targetWarehouseId || '');
         setPSourceMode(normalizedItems.some(item => item.requestId) ? 'from_request' : (po.sourceMode || 'proactive_project'));
@@ -405,9 +463,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             const remainingQty = row.remainingQty;
             const budget = row.line.materialBudgetItemId ? materialBudgetMap.get(row.line.materialBudgetItemId) : undefined;
             const work = row.line.workBoqItemId ? workBoqMap.get(row.line.workBoqItemId) : undefined;
+            const supplierPatch = getDefaultSupplierPatchForInventory(inventory);
             return normalizePoItem({
                 lineId: crypto.randomUUID(),
                 itemId: row.line.itemId,
+                ...supplierPatch,
                 sku: inventory?.sku || row.line.skuSnapshot || '',
                 name: inventory?.name || row.line.itemNameSnapshot || row.line.materialBudgetItemName || '',
                 unit: inventory?.unit || row.line.unitSnapshot || budget?.unit || '',
@@ -447,8 +507,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const handleSavePo = async () => {
         if (!ensureCanManage('lưu đơn hàng')) return;
         if (poSubmitLockRef.current) return;
-        if (!pVendorId || !pNum || !pTargetWarehouseId) {
-            toast.warning('Thiếu thông tin PO', 'Vui lòng chọn nhà cung cấp, số PO và kho nhận.');
+        if (!pNum || !pTargetWarehouseId) {
+            toast.warning('Thiếu thông tin PO', 'Vui lòng nhập số PO/nhóm mua hàng và kho nhận.');
             return;
         }
         const preparedItems = pItems
@@ -470,6 +530,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 overBudgetPercentSnapshot: 0,
                 overBudgetReason: '',
             } : buildPoBudgetSnapshot(i))
+            .map(i => {
+                const supplierPatch = i.vendorId ? getSupplierPatch(i.vendorId) : getSupplierPatch(pVendorId);
+                return { ...i, ...supplierPatch };
+            })
             .filter(i => i.qty > 0);
         const uncodedItem = preparedItems.find(i => i.isManualItem || !inventoryItems.some(item => item.id === i.itemId));
         if (uncodedItem) {
@@ -481,15 +545,20 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             toast.warning('Chưa có vật tư', 'Vui lòng chọn ít nhất một dòng vật tư có mã trong hệ thống và khối lượng đặt.');
             return;
         }
+        const missingVendor = validItems.find(line => !line.vendorId || !supplierById.has(line.vendorId));
+        if (missingVendor) {
+            toast.warning('Thiếu nhà cung cấp', `${missingVendor.sku || missingVendor.name} chưa chọn NCC. Mỗi dòng vật tư cần có NCC để tách PO.`);
+            return;
+        }
         const duplicatedSku = validItems.find((line, index) => {
-            const key = `${line.itemId}|${line.materialBudgetItemId || ''}|${line.requestLineId || ''}`;
+            const key = `${line.vendorId || ''}|${line.itemId}|${line.materialBudgetItemId || ''}|${line.requestLineId || ''}`;
             return validItems.some((other, otherIndex) =>
                 otherIndex !== index &&
-                `${other.itemId}|${other.materialBudgetItemId || ''}|${other.requestLineId || ''}` === key
+                `${other.vendorId || ''}|${other.itemId}|${other.materialBudgetItemId || ''}|${other.requestLineId || ''}` === key
             );
         });
         if (duplicatedSku) {
-            toast.warning('Vật tư bị trùng', `SKU ${duplicatedSku.sku} đang xuất hiện nhiều dòng cùng nguồn BOQ/đề xuất trong PO.`);
+            toast.warning('Vật tư bị trùng', `SKU ${duplicatedSku.sku} đang xuất hiện nhiều dòng cùng NCC và cùng nguồn BOQ/đề xuất trong PO.`);
             return;
         }
         const invalidReceivedQty = validItems.find(line => (Number(line.receivedQty) || 0) > (Number(line.qty) || 0));
@@ -511,33 +580,52 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             return;
         }
         const totalAmount = validItems.reduce((s, i) => s + i.qty * i.unitPrice, 0);
-        const vendor = partners.find(v => v.id === pVendorId);
         const scopedProjectId = pSourceMode === 'proactive_stock' ? null : projectId || constructionSiteId || null;
         const scopedSiteId = pSourceMode === 'proactive_stock' ? null : constructionSiteId || null;
-        const poItem: PurchaseOrder = editingPo ? {
-            ...editingPo, vendorId: pVendorId, vendorName: vendor?.name,
-            poNumber: pNum, items: validItems, totalAmount, orderDate: pDate,
-            expectedDeliveryDate: pExpDate || undefined, targetWarehouseId: pTargetWarehouseId,
-            qrToken: editingPo.qrToken || createPoQrToken(),
-            sourceMode: pSourceMode,
-            projectId: scopedProjectId,
-            constructionSiteId: scopedSiteId,
-            note: pNote || undefined,
-        } : {
-            id: crypto.randomUUID(), projectId: scopedProjectId, constructionSiteId: scopedSiteId, vendorId: pVendorId,
-            vendorName: vendor?.name, poNumber: pNum, items: validItems,
-            totalAmount, orderDate: pDate, expectedDeliveryDate: pExpDate || undefined,
-            status: 'draft', sourceMode: pSourceMode, targetWarehouseId: pTargetWarehouseId, qrToken: createPoQrToken(),
-            receivedTransactionIds: [], note: pNote || undefined, createdAt: new Date().toISOString(),
-        };
+        const groups = validItems.reduce<Map<string, PurchaseOrderItem[]>>((map, item) => {
+            const key = item.vendorId!;
+            map.set(key, [...(map.get(key) || []), item]);
+            return map;
+        }, new Map());
+        const groupEntries = Array.from(groups.entries());
+        const buildLinks = (po: PurchaseOrder, items: PurchaseOrderItem[]): PurchaseOrderRequestLineLink[] => items
+            .filter(item => item.requestId && item.requestLineId && item.lineId)
+            .map(item => {
+                const sourceRequest = scopedMaterialRequests.find(req => req.id === item.requestId);
+                const sourceLine = sourceRequest?.items.find((line, index) => (line.lineId || `${sourceRequest.id}-${index}`) === item.requestLineId);
+                return {
+                    projectId: projectId || null,
+                    constructionSiteId: constructionSiteId || null,
+                    purchaseOrderId: po.id,
+                    purchaseOrderLineId: item.lineId!,
+                    materialRequestId: item.requestId!,
+                    materialRequestCode: item.requestCode || null,
+                    requestLineId: item.requestLineId!,
+                    itemId: item.itemId,
+                    workBoqItemId: item.workBoqItemId || null,
+                    materialBudgetItemId: item.materialBudgetItemId || null,
+                    requestedQty: Number(sourceLine?.requestQty || item.qty || 0),
+                    orderedQty: Number(item.qty || 0),
+                    unit: item.unit || null,
+                    note: item.note || null,
+                };
+            });
+
+        if (editingPo && groupEntries.length > 1) {
+            toast.warning('PO đang sửa chỉ được có một NCC', 'Nếu cần tách nhiều NCC, hãy tạo nhóm mua hàng mới từ form tạo PO.');
+            return;
+        }
+
         try {
             if (!editingPo) {
                 const ok = await confirm({
-                    title: 'Xác nhận tạo PO',
+                    title: groupEntries.length > 1 ? 'Xác nhận tách PO theo NCC' : 'Xác nhận tạo PO',
                     targetName: pNum,
-                    confirmText: 'Bạn có chắc chắn muốn tạo đơn hàng PO',
-                    subtitle: `${validItems.length} dòng vật tư • Tổng ${fmt(totalAmount)} đ${vendor?.name ? ` • NCC: ${vendor.name}` : ''}`,
-                    warningText: 'PO sẽ được lưu vào hệ thống và dùng để in QR nhận hàng từ nhà cung cấp.',
+                    confirmText: groupEntries.length > 1 ? 'Bạn có chắc chắn muốn tạo các PO theo từng NCC' : 'Bạn có chắc chắn muốn tạo đơn hàng PO',
+                    subtitle: `${validItems.length} dòng vật tư • ${groupEntries.length} NCC • Tổng ${fmt(totalAmount)} đ`,
+                    warningText: groupEntries.length > 1
+                        ? 'Mỗi NCC sẽ có một PO riêng, một mã QR riêng và cùng chung mã nhóm mua hàng.'
+                        : 'PO sẽ được lưu vào hệ thống và dùng để in QR nhận hàng từ nhà cung cấp.',
                     intent: 'success',
                     actionLabel: 'Xác nhận tạo',
                     cancelLabel: 'Kiểm tra lại',
@@ -547,32 +635,64 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             }
             poSubmitLockRef.current = true;
             setSavingPo(true);
-            await poService.upsert(poItem);
-            const links: PurchaseOrderRequestLineLink[] = validItems
-                .filter(item => item.requestId && item.requestLineId && item.lineId)
-                .map(item => {
-                    const sourceRequest = scopedMaterialRequests.find(req => req.id === item.requestId);
-                    const sourceLine = sourceRequest?.items.find((line, index) => (line.lineId || `${sourceRequest.id}-${index}`) === item.requestLineId);
-                    return {
-                        projectId: projectId || null,
-                        constructionSiteId: constructionSiteId || null,
-                        purchaseOrderId: poItem.id,
-                        purchaseOrderLineId: item.lineId!,
-                        materialRequestId: item.requestId!,
-                        materialRequestCode: item.requestCode || null,
-                        requestLineId: item.requestLineId!,
-                        itemId: item.itemId,
-                        workBoqItemId: item.workBoqItemId || null,
-                        materialBudgetItemId: item.materialBudgetItemId || null,
-                        requestedQty: Number(sourceLine?.requestQty || item.qty || 0),
-                        orderedQty: Number(item.qty || 0),
-                        unit: item.unit || null,
-                        note: item.note || null,
+
+            if (editingPo) {
+                const [vendorId, items] = groupEntries[0];
+                const vendor = supplierById.get(vendorId)!;
+                const groupItems = items.map(item => ({ ...item, vendorId, vendorName: vendor.name }));
+                const poItem: PurchaseOrder = {
+                    ...editingPo,
+                    vendorId,
+                    vendorName: vendor.name,
+                    poNumber: pNum,
+                    items: groupItems,
+                    totalAmount: groupItems.reduce((s, i) => s + i.qty * i.unitPrice, 0),
+                    orderDate: pDate,
+                    expectedDeliveryDate: pExpDate || undefined,
+                    targetWarehouseId: pTargetWarehouseId,
+                    qrToken: editingPo.qrToken || createPoQrToken(),
+                    sourceMode: pSourceMode,
+                    projectId: scopedProjectId,
+                    constructionSiteId: scopedSiteId,
+                    procurementGroupId: editingPo.procurementGroupId || null,
+                    procurementGroupNo: editingPo.procurementGroupNo || null,
+                    note: pNote || undefined,
+                };
+                await poService.upsert(poItem);
+                await poService.replaceRequestLineLinks(poItem.id, buildLinks(poItem, groupItems));
+            } else {
+                const procurementGroupId = crypto.randomUUID();
+                const procurementGroupNo = pNum;
+                for (const [index, [vendorId, items]] of groupEntries.entries()) {
+                    const vendor = supplierById.get(vendorId)!;
+                    const groupItems = items.map(item => ({ ...item, vendorId, vendorName: vendor.name }));
+                    const poItem: PurchaseOrder = {
+                        id: crypto.randomUUID(),
+                        projectId: scopedProjectId,
+                        constructionSiteId: scopedSiteId,
+                        vendorId,
+                        vendorName: vendor.name,
+                        poNumber: groupEntries.length === 1 ? pNum : `${pNum}-${String(index + 1).padStart(2, '0')}`,
+                        procurementGroupId,
+                        procurementGroupNo,
+                        items: groupItems,
+                        totalAmount: groupItems.reduce((s, i) => s + i.qty * i.unitPrice, 0),
+                        orderDate: pDate,
+                        expectedDeliveryDate: pExpDate || undefined,
+                        status: 'draft',
+                        sourceMode: pSourceMode,
+                        targetWarehouseId: pTargetWarehouseId,
+                        qrToken: createPoQrToken(),
+                        receivedTransactionIds: [],
+                        note: pNote || undefined,
+                        createdAt: new Date().toISOString(),
                     };
-                });
-            await poService.replaceRequestLineLinks(poItem.id, links);
+                    await poService.upsert(poItem);
+                    await poService.replaceRequestLineLinks(poItem.id, buildLinks(poItem, groupItems));
+                }
+            }
             await loadSupplyData();
-            toast.success(editingPo ? 'Cập nhật PO' : 'Tạo đơn hàng thành công');
+            toast.success(editingPo ? 'Cập nhật PO' : groupEntries.length > 1 ? `Đã tạo ${groupEntries.length} PO theo NCC` : 'Tạo đơn hàng thành công');
             resetPoForm();
         } catch (e: any) {
             logApiError('supplyChain.savePo', e);
@@ -583,21 +703,48 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         }
     };
 
-    const updatePoStatus = async (id: string, status: POStatus) => {
+    const updatePoStatus = async (id: string, status: POStatus, submissionTarget?: ProjectSubmissionTarget) => {
         if (!ensureCanManage('cập nhật trạng thái PO')) return;
         const po = pos.find(p => p.id === id);
         if (!po) return;
+        if (status === 'sent' && !submissionTarget) {
+            setSubmittingPo(po);
+            return;
+        }
         const updated = {
-            ...po, status,
+            ...po,
+            status,
+            ...(status === 'sent' ? projectSubmissionService.targetToUpdate(submissionTarget) : {}),
             actualDeliveryDate: status === 'delivered' ? new Date().toISOString().split('T')[0] : po.actualDeliveryDate,
         };
         try {
             await poService.upsert(updated);
+            if (status === 'sent' && submissionTarget) {
+                await projectSubmissionService.notifyTarget({
+                    target: submissionTarget,
+                    actorId: user?.id,
+                    category: 'material',
+                    title: `PO ${po.poNumber} chờ xác nhận`,
+                    message: `Bạn được chọn xử lý PO ${po.poNumber}${po.vendorName ? ` của ${po.vendorName}` : ''}.`,
+                    sourceType: 'purchase_order',
+                    sourceId: po.id,
+                    constructionSiteId: po.constructionSiteId || constructionSiteId,
+                    link: '/da',
+                    metadata: {
+                        projectId: po.projectId || projectId,
+                        totalAmount: po.totalAmount,
+                        vendorId: po.vendorId,
+                        vendorName: po.vendorName,
+                    },
+                }).catch(error => console.warn('Cannot notify PO recipient', error));
+                setSubmittingPo(null);
+            }
             await loadSupplyData();
             toast.success('Cập nhật trạng thái PO');
         } catch (e: any) {
             logApiError('supplyChain.updatePoStatus', e);
             toast.error('Không thể cập nhật PO', getApiErrorMessage(e, 'Không thể cập nhật trạng thái PO trên Supabase.'));
+            if (status === 'sent' && submissionTarget) throw e;
         }
     };
 
@@ -633,8 +780,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
     const selectPoInventoryItem = (index: number, itemId: string) => {
         const selected = inventoryItems.find(item => item.id === itemId);
+        const currentLine = pItems[index];
+        const supplierPatch = currentLine?.vendorId ? {} : getDefaultSupplierPatchForInventory(selected);
         updatePoItem(index, {
             itemId,
+            ...supplierPatch,
             sku: selected?.sku || '',
             name: selected?.name || '',
             unit: selected?.unit || '',
@@ -672,6 +822,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         }
         updatePoItem(index, {
             itemId: inventory.id,
+            ...(pItems[index]?.vendorId ? {} : getDefaultSupplierPatchForInventory(inventory)),
             sku: inventory.sku,
             name: inventory.name,
             unit: inventory.unit,
@@ -737,9 +888,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             validateKey: sku => inventoryBySku(sku) ? undefined : `SKU "${sku}" không tồn tại trong kho vật tư.`,
             createBaseRecord: sku => {
                 const item = inventoryBySku(sku);
+                const supplierPatch = getDefaultSupplierPatchForInventory(item);
                 return {
                     lineId: crypto.randomUUID(),
                     itemId: item?.id || '',
+                    ...supplierPatch,
                     sku: item?.sku || sku,
                     name: item?.name || '',
                     unit: item?.unit || '',
@@ -845,6 +998,84 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
 
+    const buildPoPrintSection = (printablePo: PurchaseOrder, qrSvg: string, pageBreak = false) => {
+        const targetWh = warehouses.find(w => w.id === printablePo.targetWarehouseId);
+        const rowsHtml = printablePo.items.map((item, index) => `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${escapeHtml(item.sku)}</td>
+                <td>${escapeHtml(item.name)}</td>
+                <td>${escapeHtml(item.unit)}</td>
+                <td class="right">${Number(item.qty || 0).toLocaleString('vi-VN')}</td>
+                <td class="right">${Number(item.unitPrice || 0).toLocaleString('vi-VN')}</td>
+                <td>${escapeHtml(item.neededDate || printablePo.expectedDeliveryDate || '')}</td>
+                <td>${escapeHtml(item.note || '')}</td>
+            </tr>
+        `).join('');
+
+        return `
+            <section class="${pageBreak ? 'page-break' : ''}">
+                <div class="header">
+                    <div>
+                        <div class="label">Phiếu đặt hàng nhà cung cấp</div>
+                        <h1>${escapeHtml(printablePo.poNumber)}</h1>
+                        <div class="meta">
+                            <div><div class="label">Nhà cung cấp</div>${escapeHtml(printablePo.vendorName || '')}</div>
+                            <div><div class="label">Kho nhận</div>${escapeHtml(targetWh?.name || '')}</div>
+                            <div><div class="label">Nhóm mua hàng</div>${escapeHtml(printablePo.procurementGroupNo || '')}</div>
+                            <div><div class="label">Ngày đặt</div>${escapeHtml(printablePo.orderDate)}</div>
+                            <div><div class="label">Ngày cần</div>${escapeHtml(printablePo.expectedDeliveryDate || '')}</div>
+                            <div><div class="label">Dự án/Công trường</div>${escapeHtml(printablePo.projectId || printablePo.constructionSiteId || '')}</div>
+                        </div>
+                    </div>
+                    <div class="qr">${qrSvg}<div>Quét QR để nhập kho</div></div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>STT</th>
+                            <th>Mã hàng hoá</th>
+                            <th>Tên hàng hoá</th>
+                            <th>ĐVT</th>
+                            <th>Khối lượng</th>
+                            <th>Đơn giá</th>
+                            <th>Ngày cần</th>
+                            <th>Ghi chú</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rowsHtml}</tbody>
+                </table>
+                ${printablePo.note ? `<div class="note"><strong>Ghi chú:</strong> ${escapeHtml(printablePo.note)}</div>` : ''}
+            </section>
+        `;
+    };
+
+    const buildPoPrintHtml = (title: string, sectionsHtml: string) => `
+        <!doctype html>
+        <html>
+        <head>
+            <meta charset="utf-8" />
+            <title>${escapeHtml(title)}</title>
+            <style>
+                body { font-family: Arial, sans-serif; color: #0f172a; margin: 32px; }
+                .header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
+                h1 { margin: 0; font-size: 24px; letter-spacing: .02em; }
+                .meta { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; font-size: 13px; }
+                .label { color: #64748b; font-weight: 700; text-transform: uppercase; font-size: 10px; }
+                table { width: 100%; border-collapse: collapse; margin-top: 28px; font-size: 12px; }
+                th, td { border: 1px solid #cbd5e1; padding: 8px; vertical-align: top; }
+                th { background: #f1f5f9; text-transform: uppercase; font-size: 10px; letter-spacing: .04em; }
+                .right { text-align: right; }
+                .qr { text-align: center; font-size: 10px; color: #64748b; font-weight: 700; }
+                .note { margin-top: 20px; font-size: 12px; color: #475569; }
+                .page-break { page-break-before: always; break-before: page; }
+                @media print { body { margin: 18mm; } }
+            </style>
+        </head>
+        <body>${sectionsHtml}</body>
+        </html>
+    `;
+
     const handlePrintPo = async (po: PurchaseOrder) => {
         setPrintingPoId(po.id);
         try {
@@ -854,74 +1085,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             }
             const receiveUrl = buildPoReceiveUrl(printablePo.qrToken!);
             const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={132} level="H" includeMargin />);
-            const targetWh = warehouses.find(w => w.id === printablePo.targetWarehouseId);
-            const rowsHtml = printablePo.items.map((item, index) => `
-                <tr>
-                    <td>${index + 1}</td>
-                    <td>${escapeHtml(item.sku)}</td>
-                    <td>${escapeHtml(item.name)}</td>
-                    <td>${escapeHtml(item.unit)}</td>
-                    <td class="right">${Number(item.qty || 0).toLocaleString('vi-VN')}</td>
-                    <td class="right">${Number(item.unitPrice || 0).toLocaleString('vi-VN')}</td>
-                    <td>${escapeHtml(item.neededDate || printablePo.expectedDeliveryDate || '')}</td>
-                    <td>${escapeHtml(item.note || '')}</td>
-                </tr>
-            `).join('');
-            const html = `
-                <!doctype html>
-                <html>
-                <head>
-                    <meta charset="utf-8" />
-                    <title>${escapeHtml(printablePo.poNumber)}</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; color: #0f172a; margin: 32px; }
-                        .header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
-                        h1 { margin: 0; font-size: 24px; letter-spacing: .02em; }
-                        .meta { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; font-size: 13px; }
-                        .label { color: #64748b; font-weight: 700; text-transform: uppercase; font-size: 10px; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 28px; font-size: 12px; }
-                        th, td { border: 1px solid #cbd5e1; padding: 8px; vertical-align: top; }
-                        th { background: #f1f5f9; text-transform: uppercase; font-size: 10px; letter-spacing: .04em; }
-                        .right { text-align: right; }
-                        .qr { text-align: center; font-size: 10px; color: #64748b; font-weight: 700; }
-                        .note { margin-top: 20px; font-size: 12px; color: #475569; }
-                        @media print { body { margin: 18mm; } }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <div>
-                            <div class="label">Phiếu đặt hàng nhà cung cấp</div>
-                            <h1>${escapeHtml(printablePo.poNumber)}</h1>
-                            <div class="meta">
-                                <div><div class="label">Nhà cung cấp</div>${escapeHtml(printablePo.vendorName || '')}</div>
-                                <div><div class="label">Kho nhận</div>${escapeHtml(targetWh?.name || '')}</div>
-                                <div><div class="label">Dự án/Công trường</div>${escapeHtml(printablePo.projectId || printablePo.constructionSiteId || '')}</div>
-                                <div><div class="label">Ngày đặt</div>${escapeHtml(printablePo.orderDate)}</div>
-                                <div><div class="label">Ngày cần</div>${escapeHtml(printablePo.expectedDeliveryDate || '')}</div>
-                            </div>
-                        </div>
-                        <div class="qr">${qrSvg}<div>Quét QR để nhập kho</div></div>
-                    </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>STT</th>
-                                <th>Mã hàng hoá</th>
-                                <th>Tên hàng hoá</th>
-                                <th>ĐVT</th>
-                                <th>Khối lượng</th>
-                                <th>Đơn giá</th>
-                                <th>Ngày cần</th>
-                                <th>Ghi chú</th>
-                            </tr>
-                        </thead>
-                        <tbody>${rowsHtml}</tbody>
-                    </table>
-                    ${printablePo.note ? `<div class="note"><strong>Ghi chú:</strong> ${escapeHtml(printablePo.note)}</div>` : ''}
-                </body>
-                </html>
-            `;
+            const html = buildPoPrintHtml(printablePo.poNumber, buildPoPrintSection(printablePo, qrSvg));
 
             const printWindow = window.open('', '_blank', 'width=980,height=720');
             if (!printWindow) {
@@ -940,6 +1104,42 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         }
     };
 
+    const handlePrintPoGroup = async (groupId: string) => {
+        const groupOrders = pos
+            .filter(po => po.procurementGroupId === groupId)
+            .sort((a, b) => a.poNumber.localeCompare(b.poNumber));
+        if (groupOrders.length === 0) return;
+        setPrintingPoId(groupId);
+        try {
+            const printableOrders: PurchaseOrder[] = [];
+            for (const po of groupOrders) {
+                const printablePo = await poService.ensureQrToken(po);
+                printableOrders.push(printablePo);
+            }
+            setPos(prev => prev.map(po => printableOrders.find(item => item.id === po.id) || po));
+            const sections = printableOrders.map((po, index) => {
+                const receiveUrl = buildPoReceiveUrl(po.qrToken!);
+                const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={132} level="H" includeMargin />);
+                return buildPoPrintSection(po, qrSvg, index > 0);
+            }).join('');
+            const html = buildPoPrintHtml(printableOrders[0].procurementGroupNo || 'Nhóm PO', sections);
+            const printWindow = window.open('', '_blank', 'width=980,height=720');
+            if (!printWindow) {
+                toast.error('Không thể mở cửa sổ in', 'Trình duyệt đang chặn popup in/PDF.');
+                return;
+            }
+            printWindow.document.write(html);
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => printWindow.print(), 300);
+        } catch (e: any) {
+            logApiError('supplyChain.printPoGroup', e);
+            toast.error('Không thể in nhóm PO', getApiErrorMessage(e, 'Không thể tạo bộ phiếu PO có QR.'));
+        } finally {
+            setPrintingPoId(null);
+        }
+    };
+
     // Stats
     const stats = useMemo(() => {
         const totalPo = pos.length;
@@ -951,6 +1151,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
     const poTotalCalc = useMemo(() => pItems.reduce((s, i) => s + i.qty * i.unitPrice, 0), [pItems]);
     const poHasRequestLines = useMemo(() => pItems.some(item => !!item.requestId), [pItems]);
+    const procurementGroupCounts = useMemo(() => pos.reduce<Record<string, number>>((acc, po) => {
+        if (po.procurementGroupId) acc[po.procurementGroupId] = (acc[po.procurementGroupId] || 0) + 1;
+        return acc;
+    }, {}), [pos]);
 
     return (
         <div className="space-y-6">
@@ -1112,6 +1316,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 const sourceCfg = PO_SOURCE_MODE[po.sourceMode || 'proactive_project'];
                                 const isExpanded = expandedPoId === po.id;
                                 const targetWh = warehouses.find(w => w.id === po.targetWarehouseId);
+                                const groupSize = po.procurementGroupId ? (procurementGroupCounts[po.procurementGroupId] || 0) : 0;
                                 return (
                                     <div key={po.id}>
                                         <div className="px-5 py-4 hover:bg-slate-50/30 group cursor-pointer"
@@ -1130,6 +1335,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold border ${sourceCfg.color}`}>
                                                                 {sourceCfg.label}
                                                             </span>
+                                                            {po.procurementGroupNo && (
+                                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-violet-200 bg-violet-50 text-[9px] font-bold text-violet-700">
+                                                                    Nhóm {po.procurementGroupNo}{groupSize > 1 ? ` • ${groupSize} PO` : ''}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                         <div className="text-[10px] text-slate-400 mt-0.5">
                                                             NCC: <span className="font-bold text-slate-500">{po.vendorName || '—'}</span>
@@ -1155,6 +1365,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             className="w-7 h-7 rounded-lg flex items-center justify-center text-blue-400 hover:text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 disabled:opacity-50">
                                                             {printingPoId === po.id ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
                                                         </button>
+                                                        {po.procurementGroupId && groupSize > 1 && (
+                                                            <button onClick={e => { e.stopPropagation(); handlePrintPoGroup(po.procurementGroupId!); }} title="In tất cả PO trong nhóm"
+                                                                disabled={printingPoId === po.procurementGroupId}
+                                                                className="h-7 rounded-lg px-2 text-[9px] font-black text-violet-500 hover:bg-violet-50 hover:text-violet-700 border border-transparent hover:border-violet-200 disabled:opacity-50">
+                                                                {printingPoId === po.procurementGroupId ? <Loader2 size={12} className="animate-spin" /> : 'In nhóm'}
+                                                            </button>
+                                                        )}
                                                         {canManageTab && (
                                                             <>
                                                                 {po.status === 'draft' && (
@@ -1420,17 +1637,23 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nhà cung cấp *</label>
-                                    <select value={pVendorId} onChange={e => setPVendorId(e.target.value)}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none">
-                                        <option value="">— Chọn đối tác NCC —</option>
-                                        {partners.map(partner => (
-                                            <option key={partner.id} value={partner.id}>
-                                                {partner.code ? `${partner.code} - ` : ''}{partner.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <p className="mt-1 text-[10px] font-bold text-slate-400">Danh sách lấy trực tiếp từ Hợp đồng → Đối tác.</p>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">NCC mặc định</label>
+                                    <SupplierCombobox
+                                        value={pVendorId}
+                                        suppliers={partners}
+                                        onChange={supplier => {
+                                            setPVendorId(supplier?.id || '');
+                                            if (supplier) {
+                                                setPItems(prev => prev.map(item => item.vendorId ? item : {
+                                                    ...item,
+                                                    vendorId: supplier.id,
+                                                    vendorName: supplier.name,
+                                                }));
+                                            }
+                                        }}
+                                        inputClassName="rounded-xl py-2.5 text-sm"
+                                    />
+                                    <p className="mt-1 text-[10px] font-bold text-slate-400">Dùng để tự điền NCC cho các dòng chưa chọn. Mỗi dòng vẫn có thể chọn NCC riêng.</p>
                                 </div>
                             </div>
                             <div>
@@ -1511,14 +1734,22 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     })}
                                                 </select>
                                             )}
-                                            <select
+                                            <InventoryItemCombobox
                                                 value={item.isManualItem ? '' : item.itemId}
-                                                onChange={e => selectPoInventoryItem(i, e.target.value)}
-                                                className="col-span-12 md:col-span-4 px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none"
-                                            >
-                                                <option value="">Chọn SKU vật tư...</option>
-                                                {inventoryItems.map(inv => <option key={inv.id} value={inv.id}>{inv.sku} - {inv.name}</option>)}
-                                            </select>
+                                                items={inventoryItems}
+                                                onChange={selected => selectPoInventoryItem(i, selected?.id || '')}
+                                                className="col-span-12 md:col-span-4"
+                                            />
+                                            <SupplierCombobox
+                                                value={item.vendorId || ''}
+                                                suppliers={partners}
+                                                onChange={supplier => updatePoItem(i, {
+                                                    vendorId: supplier?.id || null,
+                                                    vendorName: supplier?.name || null,
+                                                })}
+                                                placeholder="NCC dòng vật tư..."
+                                                className="col-span-12 md:col-span-4"
+                                            />
                                             <div className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-500 font-bold truncate">
                                                 {item.unit || 'ĐVT'}
                                             </div>
@@ -1549,7 +1780,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                 value={item.note || ''}
                                                 onChange={e => updatePoItem(i, { note: e.target.value })}
                                                 placeholder="Ghi chú"
-                                                className="col-span-5 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                                className="col-span-5 md:col-span-9 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                                             />
                                             <button
                                                 onClick={() => setPItems(pItems.length > 1 ? pItems.filter((_, j) => j !== i) : [createEmptyPoItem()])}
@@ -1592,7 +1823,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         </div>
                         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
                             <button onClick={resetPoForm} disabled={savingPo} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50">Huỷ</button>
-                            <button onClick={handleSavePo} disabled={savingPo || !pVendorId || !pNum || !pTargetWarehouseId}
+                            <button onClick={handleSavePo} disabled={savingPo || !pNum || !pTargetWarehouseId}
                                 className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-blue-500 to-indigo-500 shadow-lg flex items-center gap-2 disabled:opacity-50">
                                 {savingPo ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                                 {savingPo ? (editingPo ? 'Đang lưu...' : 'Đang tạo...') : (editingPo ? 'Lưu' : 'Tạo')}
@@ -1600,6 +1831,27 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         </div>
                     </div>
                 </div>
+            )}
+            {submittingPo && (
+                <ProjectSubmissionDialog
+                    title="Gửi đơn hàng vật tư"
+                    actionLabel="Gửi đơn"
+                    documentLabel="PO vật tư"
+                    documentName={`${submittingPo.poNumber} • ${submittingPo.vendorName || 'Nhà cung cấp'}`}
+                    documentSubtitle={`Trạng thái hiện tại: ${PO_STATUS[submittingPo.status].label}`}
+                    projectId={projectId}
+                    constructionSiteId={constructionSiteId || submittingPo.constructionSiteId}
+                    recipientPermissionCodes={['confirm']}
+                    recipientHint="Chọn đích danh người nhận/xác nhận đơn hàng vật tư."
+                    details={[
+                        { label: 'Nhà cung cấp', value: submittingPo.vendorName || '-' },
+                        { label: 'Tổng giá trị', value: `${fmt(submittingPo.totalAmount)} đ` },
+                        { label: 'Số dòng', value: `${submittingPo.items.length} dòng vật tư` },
+                        { label: 'Ngày cần giao', value: submittingPo.expectedDeliveryDate || '-' },
+                    ]}
+                    onCancel={() => setSubmittingPo(null)}
+                    onConfirm={target => updatePoStatus(submittingPo.id, 'sent', target)}
+                />
             )}
         </div>
     );

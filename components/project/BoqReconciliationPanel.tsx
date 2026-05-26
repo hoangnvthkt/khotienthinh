@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, FileSearch, Link2, Loader2, Lock, Plus, RefreshCcw, Search, Send, Trash2 } from 'lucide-react';
+import { CheckCircle2, FileSearch, Link2, Loader2, Lock, Plus, RefreshCcw, Search, Send, Trash2, Undo2 } from 'lucide-react';
 import {
   BoqReconciliationContractLine,
   BoqReconciliationGroup,
   BoqReconciliationWorkLine,
   ContractItem,
   ContractItemType,
+  ProjectSubmissionTarget,
   ProjectWorkBoqItem,
 } from '../../types';
 import {
@@ -18,6 +19,10 @@ import { workBoqService } from '../../lib/projectService';
 import { useApp } from '../../context/AppContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
+import ProjectSubmissionDialog from './ProjectSubmissionDialog';
+import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
+import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
+import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
 
 interface Props {
   projectId?: string | null;
@@ -41,6 +46,20 @@ const statusClass: Record<BoqReconciliationGroup['status'], string> = {
   locked: 'bg-indigo-50 text-indigo-700',
 };
 
+const statusOrder: Record<BoqReconciliationGroup['status'], number> = {
+  draft: 0,
+  submitted: 1,
+  reviewed: 2,
+  locked: 3,
+};
+
+const statusActionLabel: Record<BoqReconciliationGroup['status'], string> = {
+  draft: 'Trả về nháp',
+  submitted: 'Gửi rà soát',
+  reviewed: 'Xác nhận đã rà soát',
+  locked: 'Khóa nhóm đối chiếu',
+};
+
 const numberInput = 'w-24 px-2 py-1 rounded-lg border border-slate-200 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-indigo-400';
 const textInput = 'w-full px-2 py-1 rounded-lg border border-slate-200 text-[10px] outline-none focus:ring-1 focus:ring-indigo-400';
 
@@ -52,6 +71,7 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
   const toast = useToast();
   const confirm = useConfirm();
   const { user } = useApp();
+  const isAdminUser = user?.role === 'ADMIN';
   const [contractType, setContractType] = useState<ContractItemType>('customer');
   const [groups, setGroups] = useState<BoqReconciliationGroup[]>([]);
   const [contractItems, setContractItems] = useState<ContractItem[]>([]);
@@ -64,6 +84,7 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
   const [workSearch, setWorkSearch] = useState('');
   const [selectedContractIds, setSelectedContractIds] = useState<string[]>([]);
   const [selectedWorkIds, setSelectedWorkIds] = useState<string[]>([]);
+  const [submittingGroup, setSubmittingGroup] = useState<BoqReconciliationGroup | null>(null);
 
   const load = useCallback(async () => {
     if (!effectiveId) return;
@@ -139,22 +160,121 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
     }
   };
 
-  const setStatus = async (status: BoqReconciliationGroup['status']) => {
+  const setStatus = async (status: BoqReconciliationGroup['status'], submissionTarget?: ProjectSubmissionTarget) => {
     if (!activeGroup) return;
-    const ok = await confirm({
-      title: status === 'submitted' ? 'Gửi rà soát' : status === 'reviewed' ? 'Xác nhận đã rà soát' : 'Khóa nhóm đối chiếu',
-      targetName: activeGroup.name,
-      warningText: status === 'locked' ? 'Nhóm đã khóa sẽ là nguồn chính thức cho báo cáo và gợi ý nghiệm thu.' : undefined,
-      intent: status === 'locked' ? 'danger' : 'success',
-    });
-    if (!ok) return;
+    if (status === 'submitted' && !submissionTarget) {
+      setSubmittingGroup(activeGroup);
+      return;
+    }
+    const isRollback = statusOrder[status] < statusOrder[activeGroup.status];
+    const hasContractLines = (activeGroup.contractLines || []).length > 0;
+    const hasWorkLines = (activeGroup.workLines || []).length > 0;
+    if (!isRollback && (status === 'reviewed' || status === 'locked') && (!hasContractLines || !hasWorkLines)) {
+      toast.error(
+        'Chưa đủ dữ liệu đối chiếu',
+        'Nhóm cần có cả dòng BOQ hợp đồng và đầu mục BOQ thi công trước khi chốt bảng tham khảo.',
+      );
+      return;
+    }
+    if (isRollback && !isAdminUser) {
+      toast.error('Không đủ quyền', 'Chỉ admin được hạ trạng thái nhóm đối chiếu để chỉnh sửa.');
+      return;
+    }
+    const rollbackReason = isRollback
+      ? window.prompt('Nhập lý do rollback/hạ trạng thái nhóm đối chiếu')?.trim()
+      : undefined;
+    if (isRollback && !rollbackReason) {
+      toast.warning('Cần nhập lý do', 'Rollback nhóm đối chiếu bắt buộc có lý do để truy vết.');
+      return;
+    }
+    if (!(status === 'submitted' && submissionTarget)) {
+      const ok = await confirm({
+        title: isRollback ? 'Hạ trạng thái đối chiếu' : statusActionLabel[status],
+        targetName: activeGroup.name,
+        warningText: isRollback
+          ? `Admin sẽ đưa nhóm từ "${statusLabel[activeGroup.status]}" về "${statusLabel[status]}" để chỉnh sửa.`
+          : status === 'locked'
+            ? 'Khóa chỉ để chốt bảng đối chiếu tham khảo; không còn là điều kiện tạo nghiệm thu/thanh toán.'
+            : undefined,
+        intent: status === 'locked' || isRollback ? 'danger' : 'success',
+      });
+      if (!ok) return;
+    }
     setSaving(true);
     try {
-      await boqReconciliationService.setStatus(activeGroup.id, status, { id: user?.id, name: user?.name || user?.username });
+      const requiredPermission: ProjectPermissionCode = status === 'submitted'
+        ? 'submit'
+        : status === 'reviewed'
+          ? 'verify'
+          : 'approve';
+      if (!isAdminUser) {
+        await projectStaffService.requireProjectPermission({
+          userId: user?.id,
+          projectId: projectId || undefined,
+          constructionSiteId: constructionSiteId || undefined,
+          code: requiredPermission,
+          actionLabel: statusActionLabel[status].toLowerCase(),
+        });
+      }
+      const action = isRollback
+        ? 'rollback'
+        : status === 'submitted'
+          ? 'submit'
+          : status === 'reviewed'
+            ? 'verify'
+            : 'approve';
+      const policy = getProjectDocumentPolicy({
+        action,
+        documentType: 'boq_item',
+        status: activeGroup.status,
+        user,
+        permissions: isAdminUser
+          ? ['view', 'edit', 'delete', 'submit', 'verify', 'confirm', 'approve']
+          : ['view', requiredPermission],
+        currentHandlerIds: [activeGroup.submittedToUserId],
+        relatedUserIds: [activeGroup.preparedById],
+        reason: rollbackReason,
+        everSubmitted: activeGroup.everSubmitted,
+        documentLabel: activeGroup.name,
+      });
+      if (!policy.allowed) {
+        await projectDocumentActionLogService.logBlocked({
+          projectId: projectId || activeGroup.projectId || effectiveId,
+          constructionSiteId: constructionSiteId || activeGroup.constructionSiteId || null,
+          documentType: 'boq_item',
+          documentId: activeGroup.id,
+          documentLabel: activeGroup.name,
+          action,
+          fromStatus: activeGroup.status,
+          toStatus: status,
+          reason: rollbackReason,
+          blockedReason: policy.reason,
+          requiredRollbackSteps: policy.requiredRollbackSteps,
+          createdBy: user?.id,
+        });
+        toast.error('Không thể cập nhật đối chiếu BOQ', formatPolicyMessage(policy));
+        return;
+      }
+      await boqReconciliationService.setStatus(activeGroup.id, status, { id: user?.id, name: user?.name || user?.username }, submissionTarget);
+      await projectDocumentActionLogService.log({
+        projectId: projectId || activeGroup.projectId || effectiveId,
+        constructionSiteId: constructionSiteId || activeGroup.constructionSiteId || null,
+        documentType: 'boq_item',
+        documentId: activeGroup.id,
+        documentLabel: activeGroup.name,
+        action,
+        fromStatus: activeGroup.status,
+        toStatus: status,
+        reason: rollbackReason,
+        warningAcknowledged: true,
+        createdBy: user?.id,
+      });
       await load();
+      if (status === 'submitted') setSubmittingGroup(null);
       toast.success('Đã cập nhật trạng thái đối chiếu');
     } catch (error: any) {
       toast.error('Không cập nhật được trạng thái', error?.message || 'Vui lòng thử lại.');
+      if (status === 'submitted' && submissionTarget) throw error;
     } finally {
       setSaving(false);
     }
@@ -272,9 +392,9 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
       <div className="p-4 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-            <FileSearch size={16} className="text-indigo-500" /> Đối chiếu BOQ hợp đồng
+            <FileSearch size={16} className="text-indigo-500" /> Đối chiếu BOQ hợp đồng tham khảo
           </h3>
-          <p className="text-[10px] text-slate-400 font-bold mt-1">BOQ hợp đồng và BOQ thi công là hai cây độc lập; chỉ nhóm đã rà soát/khóa được dùng cho báo cáo chính thức.</p>
+          <p className="text-[10px] text-slate-400 font-bold mt-1">Bảng này chỉ dùng để so sánh nội bộ; nghiệm thu/thanh toán lấy nguồn từ nhật ký verified và liên kết task với BOQ hợp đồng.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select value={contractType} onChange={event => setContractType(event.target.value as ContractItemType)} className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600">
@@ -331,8 +451,11 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
               </div>
               <div className="flex gap-1.5">
                 {activeGroup.status === 'draft' && <button onClick={() => setStatus('submitted')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-amber-700 bg-amber-50 flex items-center gap-1"><Send size={11} /> Gửi rà soát</button>}
-                {activeGroup.status !== 'locked' && <button onClick={() => setStatus('reviewed')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-emerald-700 bg-emerald-50 flex items-center gap-1"><CheckCircle2 size={11} /> Đã rà soát</button>}
+                {activeGroup.status === 'submitted' && <button onClick={() => setStatus('reviewed')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-emerald-700 bg-emerald-50 flex items-center gap-1"><CheckCircle2 size={11} /> Đã rà soát</button>}
                 {activeGroup.status === 'reviewed' && <button onClick={() => setStatus('locked')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-indigo-700 bg-indigo-50 flex items-center gap-1"><Lock size={11} /> Khóa</button>}
+                {isAdminUser && activeGroup.status === 'submitted' && <button onClick={() => setStatus('draft')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-slate-600 bg-slate-100 flex items-center gap-1"><Undo2 size={11} /> Về nháp</button>}
+                {isAdminUser && activeGroup.status === 'reviewed' && <button onClick={() => setStatus('submitted')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-slate-600 bg-slate-100 flex items-center gap-1"><Undo2 size={11} /> Về chờ rà soát</button>}
+                {isAdminUser && activeGroup.status === 'locked' && <button onClick={() => setStatus('reviewed')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-red-700 bg-red-50 flex items-center gap-1"><Undo2 size={11} /> Mở khóa</button>}
                 {activeGroup.status !== 'locked' && <button onClick={removeGroup} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-red-600 bg-red-50"><Trash2 size={11} /></button>}
               </div>
             </div>
@@ -409,6 +532,27 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
           </div>
         )}
       </div>
+      {submittingGroup && (
+        <ProjectSubmissionDialog
+          title="Gửi nhóm đối chiếu BOQ"
+          actionLabel="Gửi rà soát"
+          documentLabel="Đối chiếu BOQ"
+          documentName={`${submittingGroup.code || 'DQ'} • ${submittingGroup.name}`}
+          documentSubtitle={`Trạng thái hiện tại: ${statusLabel[submittingGroup.status]}`}
+          projectId={projectId || undefined}
+          constructionSiteId={constructionSiteId || undefined}
+          recipientPermissionCodes={['verify']}
+          recipientHint="Chọn đích danh người có quyền rà soát bảng đối chiếu tham khảo."
+          details={[
+            { label: 'Dòng BOQ hợp đồng', value: `${submittingGroup.contractLines?.length || 0} dòng` },
+            { label: 'Đầu mục BOQ thi công', value: `${submittingGroup.workLines?.length || 0} đầu mục` },
+            { label: 'Giá trị HĐ tham chiếu', value: `${money((submittingGroup.contractLines || []).reduce((sum, line) => sum + Number(line.amountSnapshot || 0), 0))} đ` },
+            { label: 'Giá trị thi công tham chiếu', value: `${money((submittingGroup.workLines || []).reduce((sum, line) => sum + Number(line.amountSnapshot || 0), 0))} đ` },
+          ]}
+          onCancel={() => setSubmittingGroup(null)}
+          onConfirm={target => setStatus('submitted', target)}
+        />
+      )}
     </div>
   );
 };

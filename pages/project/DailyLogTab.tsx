@@ -207,9 +207,15 @@ interface DailyLogViewerProps {
     weatherEmoji: string;
     canEdit: boolean;
     canReview: boolean;
+    canRollback: boolean;
+    canSubmit: boolean;
+    canDelete: boolean;
     busy: boolean;
     onClose: () => void;
     onEdit: () => void;
+    onRollback: () => void;
+    onSubmit: () => void;
+    onDelete: () => void;
     onVerify: () => void;
     onReject: () => void;
 }
@@ -222,15 +228,28 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
     weatherEmoji,
     canEdit,
     canReview,
+    canRollback,
+    canSubmit,
+    canDelete,
     busy,
     onClose,
     onEdit,
+    onRollback,
+    onSubmit,
+    onDelete,
     onVerify,
     onReject,
 }) => {
-    const totalMaterial = (log.materials || []).reduce((sum, row) => sum + Number((row as any).totalCost || 0), 0);
-    const totalLabor = (log.laborDetails || []).reduce((sum, row) => sum + Number(row.totalCost || (Number(row.count || 0) * Number(row.unitCost || 0))), 0);
-    const totalMachine = (log.machines || []).reduce((sum, row) => sum + Number(row.totalCost || (Number(row.shifts || 0) * Number(row.unitCost || 0))), 0);
+    const materialRows = log.materials || [];
+    const materialQuantity = materialRows.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+    const materialUnits = Array.from(new Set(materialRows.map(row => row.unit).filter(Boolean)));
+    const materialSummary = materialRows.length === 0
+        ? '0'
+        : materialUnits.length === 1
+            ? `${formatNumber(materialQuantity)} ${materialUnits[0]}`
+            : `${materialRows.length} dòng`;
+    const laborCount = (log.laborDetails || []).reduce((sum, row) => sum + Number(row.count || 0), 0);
+    const machineShifts = (log.machines || []).reduce((sum, row) => sum + Number(row.shifts || 0), 0);
 
     return (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm px-3" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -285,15 +304,15 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                             <div className="grid grid-cols-3 gap-2">
                                 <div className="rounded-xl bg-amber-50 p-3">
                                     <div className="text-[9px] font-black text-amber-500 uppercase">Vật tư</div>
-                                    <div className="text-sm font-black text-amber-700">{formatMoney(totalMaterial)}</div>
+                                    <div className="text-sm font-black text-amber-700">{materialSummary}</div>
                                 </div>
                                 <div className="rounded-xl bg-blue-50 p-3">
                                     <div className="text-[9px] font-black text-blue-500 uppercase">Nhân công</div>
-                                    <div className="text-sm font-black text-blue-700">{formatMoney(totalLabor)}</div>
+                                    <div className="text-sm font-black text-blue-700">{formatNumber(laborCount)} người</div>
                                 </div>
                                 <div className="rounded-xl bg-purple-50 p-3">
                                     <div className="text-[9px] font-black text-purple-500 uppercase">Máy TC</div>
-                                    <div className="text-sm font-black text-purple-700">{formatMoney(totalMachine)}</div>
+                                    <div className="text-sm font-black text-purple-700">{formatNumber(machineShifts)} ca</div>
                                 </div>
                             </div>
                         </div>
@@ -450,6 +469,21 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                     {canEdit && (
                         <button onClick={onEdit} className="px-4 py-2 rounded-xl text-sm font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 flex items-center gap-1.5">
                             <Edit2 size={15} /> Sửa phiếu
+                        </button>
+                    )}
+                    {canRollback && (
+                        <button onClick={onRollback} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 flex items-center gap-1.5">
+                            {busy ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />} Rollback
+                        </button>
+                    )}
+                    {canSubmit && (
+                        <button onClick={onSubmit} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 flex items-center gap-1.5">
+                            {busy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Gửi xác nhận
+                        </button>
+                    )}
+                    {canDelete && (
+                        <button onClick={onDelete} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 flex items-center gap-1.5">
+                            <Trash2 size={15} /> Xoá phiếu
                         </button>
                     )}
                     <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Đóng</button>
@@ -922,6 +956,36 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         throw new Error(`${requestedVerifier.userName || 'Người được chọn'} chưa có quyền verify trong Tổ chức dự án.`);
                     }
                 }
+                if (status === 'submitted' || status === 'verified') {
+                    const policy = getProjectDocumentPolicy({
+                        action: status === 'submitted' ? 'submit' : 'verify',
+                        documentType: 'daily_log',
+                        status: getLogStatus(log),
+                        user,
+                        permissions: userPerms,
+                        relatedUserIds: [log.createdById, log.submittedById, log.submittedBy],
+                        currentHandlerIds: [log.requestedVerifierId, log.submittedToUserId],
+                        everSubmitted: log.everSubmitted,
+                        documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
+                    });
+                    if (!policy.allowed) {
+                        await projectDocumentActionLogService.logBlocked({
+                            projectId: projectId || log.projectId || effectiveId,
+                            constructionSiteId: constructionSiteId || log.constructionSiteId || null,
+                            documentType: 'daily_log',
+                            documentId: log.id,
+                            documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
+                            action: status === 'submitted' ? 'submit' : 'verify',
+                            fromStatus: getLogStatus(log),
+                            blockedReason: policy.reason,
+                            requiredRollbackSteps: policy.requiredRollbackSteps,
+                            createdBy: user?.id,
+                        });
+                        toast.error(status === 'submitted' ? 'Không thể gửi nhật ký' : 'Không thể xác nhận nhật ký', formatPolicyMessage(policy));
+                        endStatusAction(log.id);
+                        return false;
+                    }
+                }
                 if (status === 'rejected') {
                     const policy = getProjectDocumentPolicy({
                         action: 'return',
@@ -1132,6 +1196,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             permissions: userPerms,
             dependencies: deps,
             relatedUserIds: [log.createdById, log.submittedById, log.submittedBy],
+            everSubmitted: log.everSubmitted,
             documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
         });
         if (!policy.allowed) {
@@ -1247,7 +1312,20 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const canReviewViewingLog = !!viewingLog
         && viewingLogStatus === 'submitted'
         && (isAdminUser || userPerms.has('verify'))
+        && (!viewingLog.submittedToUserId || viewingLog.submittedToUserId === user?.id)
         && (!viewingLog.requestedVerifierId || viewingLog.requestedVerifierId === user?.id);
+    const canRollbackViewingLog = !!viewingLog
+        && viewingLogStatus === 'verified'
+        && isAdminUser;
+    const canSubmitViewingLog = !!viewingLog
+        && ['draft', 'rejected'].includes(viewingLogStatus)
+        && canEditDailyLog(viewingLog)
+        && (isAdminUser || userPerms.has('submit'));
+    const canDeleteViewingLog = !!viewingLog
+        && viewingLogStatus === 'draft'
+        && !viewingLog.everSubmitted
+        && canEditDailyLog(viewingLog)
+        && (isAdminUser || userPerms.has('delete'));
 
     return (
         <div className="space-y-6">
@@ -1385,17 +1463,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 ) : (
                     <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
 	                        {filtered.map(l => {
-	                            const w = WEATHER[l.weather];
-	                            const status = (l.status || (l.verified ? 'verified' : 'draft')) as DailyLogStatus;
-	                            const statusCfg = STATUS_CFG[status];
-                                const busy = busyLogIds.has(l.id);
-                                const canReviewSubmitted = status === 'submitted'
-                                    && (isAdminUser || userPerms.has('verify'))
-                                    && (!l.requestedVerifierId || l.requestedVerifierId === user?.id);
-                                const canReturnCurrentLog = (status === 'submitted' || status === 'verified')
-                                    && (isAdminUser || userPerms.has('verify'))
-                                    && (status === 'verified' || !l.requestedVerifierId || l.requestedVerifierId === user?.id);
-                                const canEditCurrentLog = canEditDailyLog(l);
+                                const w = WEATHER[l.weather];
+                                const status = (l.status || (l.verified ? 'verified' : 'draft')) as DailyLogStatus;
+                                const statusCfg = STATUS_CFG[status];
 	                            return (
 	                                <div
                                         key={l.id}
@@ -1435,34 +1505,6 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                 <button onClick={() => openView(l)} title="Xem chi tiết" className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-teal-600 hover:bg-teal-50">
                                                     <Eye size={13} />
                                                 </button>
-	                                            {['draft', 'rejected'].includes(status) && canEditCurrentLog && (isAdminUser || userPerms.has('submit')) && (
-	                                                <button disabled={busy} onClick={() => openSubmitVerifierPicker(l)} title="Gửi xác nhận" className="w-7 h-7 rounded-lg flex items-center justify-center text-amber-400 hover:text-amber-600 hover:bg-amber-50 disabled:opacity-50">
-                                                        {busy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-                                                    </button>
-	                                            )}
-	                                            {canReviewSubmitted && (
-	                                                <button disabled={busy} onClick={() => handleStatusChange(l, 'verified')} title="Xác nhận" className="w-7 h-7 rounded-lg flex items-center justify-center text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50 disabled:opacity-50">
-                                                        {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-                                                    </button>
-	                                            )}
-		                                            {canReturnCurrentLog && (
-	                                                <button disabled={busy} onClick={() => {
-                                                        const reason = window.prompt('Nhập lý do trả lại nhật ký')?.trim();
-                                                        if (!reason) {
-                                                            toast.warning('Cần lý do trả lại', 'Vui lòng nhập lý do để người lập bổ sung đúng nội dung.');
-                                                            return;
-                                                        }
-                                                        handleStatusChange(l, 'rejected', undefined, reason);
-                                                    }} title="Trả lại" className="w-7 h-7 rounded-lg flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-50">
-                                                        {busy ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
-                                                    </button>
-	                                            )}
-	                                            {canEditCurrentLog && (
-                                                    <>
-                                                        <button onClick={() => openEdit(l)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50"><Edit2 size={13} /></button>
-                                                        {status === 'draft' && <button onClick={() => handleDelete(l.id)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={13} /></button>}
-                                                    </>
-                                                )}
 	                                        </div>
                                     </div>
                                 </div>
@@ -1592,14 +1634,40 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     weatherEmoji={WEATHER[viewingLog.weather]?.emoji || ''}
                     canEdit={canEditDailyLog(viewingLog)}
                     canReview={canReviewViewingLog}
+                    canRollback={canRollbackViewingLog}
+                    canSubmit={canSubmitViewingLog}
+                    canDelete={canDeleteViewingLog}
                     busy={busyLogIds.has(viewingLog.id)}
                     onClose={() => setViewLogId(null)}
                     onEdit={() => {
                         setViewLogId(null);
                         openEdit(viewingLog);
                     }}
+                    onRollback={() => {
+                        const reason = window.prompt('Nhập lý do rollback nhật ký đã xác nhận')?.trim();
+                        if (!reason) {
+                            toast.warning('Cần lý do rollback', 'Admin rollback nhật ký đã xác nhận bắt buộc nhập lý do để truy vết.');
+                            return;
+                        }
+                        handleStatusChange(viewingLog, 'rejected', undefined, reason);
+                    }}
+                    onSubmit={() => {
+                        setViewLogId(null);
+                        openSubmitVerifierPicker(viewingLog);
+                    }}
+                    onDelete={() => {
+                        setViewLogId(null);
+                        handleDelete(viewingLog.id);
+                    }}
                     onVerify={() => handleStatusChange(viewingLog, 'verified')}
-                    onReject={() => handleStatusChange(viewingLog, 'rejected')}
+                    onReject={() => {
+                        const reason = window.prompt('Nhập lý do trả lại nhật ký')?.trim();
+                        if (!reason) {
+                            toast.warning('Cần lý do trả lại', 'Vui lòng nhập lý do để người lập bổ sung đúng nội dung.');
+                            return;
+                        }
+                        handleStatusChange(viewingLog, 'rejected', undefined, reason);
+                    }}
                 />
             )}
 

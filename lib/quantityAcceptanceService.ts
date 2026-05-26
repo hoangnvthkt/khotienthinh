@@ -5,18 +5,21 @@ import {
   QuantityAcceptance,
   QuantityAcceptanceItem,
   QuantityAcceptanceStatus,
+  ProjectSubmissionTarget,
 } from '../types';
 import { contractItemService } from './contractItemService';
 import { dailyLogDetailService } from './dailyLogDetailService';
-import { boqReconciliationService } from './boqReconciliationService';
+import { buildTaskContractQuantityFactors, taskContractItemService } from './taskContractItemService';
 import { fromDb, toDb } from './dbMapping';
 import { auditService } from './auditService';
 import { approvalService } from './approvalService';
 import { User } from '../types';
+import { projectSubmissionService } from './projectSubmissionService';
 
 const TABLE = 'quantity_acceptances';
 const ITEM_TABLE = 'quantity_acceptance_items';
 const APPROVED: QuantityAcceptanceStatus[] = ['approved'];
+const MONEY_EPSILON = 1;
 
 export interface QuantityAcceptanceUnmappedVolume {
   dailyLogId: string;
@@ -34,6 +37,9 @@ const normalize = (row: any): QuantityAcceptance => ({
   ...fromDb(row),
   items: row.items || [],
 });
+
+const money = (value?: number | null) => Math.round(Number(value || 0));
+const roundPercent = (value?: number | null) => Math.round(Number(value || 0) * 10000) / 10000;
 
 async function fetchItems(acceptanceIds: string[]): Promise<Record<string, QuantityAcceptanceItem[]>> {
   if (acceptanceIds.length === 0) return {};
@@ -85,7 +91,13 @@ const buildAcceptanceItem = (
 ): QuantityAcceptanceItem => {
   const acceptedQuantity = proposedQuantity;
   const cumulativeAcceptedQuantity = previousAcceptedQuantity + acceptedQuantity;
-  const unitPrice = contractItem.unitPrice || 0;
+  const revisedQuantity = contractItem.revisedQuantity ?? contractItem.quantity ?? 0;
+  const unitPrice = contractItem.revisedUnitPrice ?? contractItem.unitPrice ?? 0;
+  const contractAmount = Number(contractItem.revisedTotalPrice ?? contractItem.totalPrice ?? revisedQuantity * unitPrice);
+  const suggestedAmount = money(acceptedQuantity * unitPrice);
+  const acceptedPercent = contractAmount > 0
+    ? roundPercent((suggestedAmount / contractAmount) * 100)
+    : revisedQuantity > 0 ? roundPercent((acceptedQuantity / revisedQuantity) * 100) : 0;
   return {
     contractItemId: contractItem.id,
     contractItemCode: contractItem.code,
@@ -96,10 +108,93 @@ const buildAcceptanceItem = (
     acceptedQuantity,
     cumulativeAcceptedQuantity,
     unitPrice,
-    acceptedAmount: acceptedQuantity * unitPrice,
+    acceptedPercent,
+    suggestedAmount,
+    acceptedAmount: suggestedAmount,
     sourceDailyLogVolumeIds,
   };
 };
+
+async function assertAcceptanceAmountsWithinContract(params: {
+  contractId: string;
+  contractType: ContractItemType;
+  items: QuantityAcceptanceItem[];
+  currentAcceptanceId?: string;
+}): Promise<void> {
+  const contractItems = await contractItemService.listByContract(params.contractId, params.contractType);
+  const contractItemMap = new Map(contractItems.map(item => [item.id, item]));
+  const { data: approvedRows, error } = await supabase
+    .from(TABLE)
+    .select('id')
+    .eq('contract_id', params.contractId)
+    .eq('contract_type', params.contractType)
+    .eq('status', 'approved');
+  if (error) throw error;
+
+  const previousIds = (approvedRows || [])
+    .map(row => row.id)
+    .filter(id => id !== params.currentAcceptanceId);
+  const previousItemMap = await fetchItems(previousIds);
+  const amountByContractItem = new Map<string, number>();
+  const percentByContractItem = new Map<string, number>();
+
+  const addLine = (line: QuantityAcceptanceItem) => {
+    amountByContractItem.set(line.contractItemId, (amountByContractItem.get(line.contractItemId) || 0) + money(line.acceptedAmount));
+    percentByContractItem.set(line.contractItemId, (percentByContractItem.get(line.contractItemId) || 0) + Number(line.acceptedPercent || 0));
+  };
+  Object.values(previousItemMap).flat().forEach(addLine);
+  params.items.forEach(addLine);
+
+  for (const [contractItemId, acceptedAmount] of amountByContractItem.entries()) {
+    const contractItem = contractItemMap.get(contractItemId);
+    if (!contractItem) continue;
+    const contractAmount = Number(contractItem.revisedTotalPrice ?? contractItem.totalPrice ?? 0);
+    if (contractAmount > 0 && acceptedAmount > contractAmount + MONEY_EPSILON) {
+      throw new Error(`${contractItem.code || contractItem.name} vượt giá trị hợp đồng sau phát sinh.`);
+    }
+    const acceptedPercent = percentByContractItem.get(contractItemId) || 0;
+    if (acceptedPercent > 100.0001) {
+      throw new Error(`${contractItem.code || contractItem.name} vượt 100% nghiệm thu lũy kế.`);
+    }
+  }
+}
+
+async function syncContractCompletedQuantities(
+  contractId: string,
+  contractType: ContractItemType,
+  contractItemIds: string[],
+): Promise<void> {
+  const uniqueIds = Array.from(new Set(contractItemIds));
+  if (uniqueIds.length === 0) return;
+  const contractItems = await contractItemService.listByContract(contractId, contractType);
+  const contractItemMap = new Map(contractItems.map(item => [item.id, item]));
+  const { data: approvedRows, error } = await supabase
+    .from(TABLE)
+    .select('id')
+    .eq('contract_id', contractId)
+    .eq('contract_type', contractType)
+    .eq('status', 'approved');
+  if (error) throw error;
+  const itemMap = await fetchItems((approvedRows || []).map(row => row.id));
+  const approvedItems = Object.values(itemMap).flat();
+
+  for (const contractItemId of uniqueIds) {
+    const contractItem = contractItemMap.get(contractItemId);
+    if (!contractItem) continue;
+    const revisedQuantity = Number(contractItem.revisedQuantity ?? contractItem.quantity ?? 0);
+    const completedQuantity = approvedItems
+      .filter(item => item.contractItemId === contractItemId)
+      .reduce((sum, item) => {
+        const linePercent = Number(item.acceptedPercent || 0);
+        if (linePercent > 0 && revisedQuantity > 0) return sum + (revisedQuantity * linePercent / 100);
+        return sum + Number(item.acceptedQuantity || 0);
+      }, 0);
+    await contractItemService.updateCompletedQuantity(
+      contractItemId,
+      revisedQuantity > 0 ? Math.min(completedQuantity, revisedQuantity) : completedQuantity,
+    );
+  }
+}
 
 async function collectVerifiedVolumeMapping(params: {
   contractType: ContractItemType;
@@ -117,12 +212,8 @@ async function collectVerifiedVolumeMapping(params: {
     .lte('date', params.periodEnd);
   if (error) throw error;
 
-  const [officialGroups, workBoqRows] = await Promise.all([
-    boqReconciliationService.listOfficialByProject(
-      params.constructionSiteId,
-      params.constructionSiteId,
-      params.contractType,
-    ),
+  const [taskContractLinks, workBoqRows] = await Promise.all([
+    taskContractItemService.listBySite(params.constructionSiteId, params.constructionSiteId),
     supabase
       .from('project_work_boq_items')
       .select('id, name, source_task_id')
@@ -131,17 +222,20 @@ async function collectVerifiedVolumeMapping(params: {
   if (workBoqRows.error) throw workBoqRows.error;
 
   const taskToWorkBoqItemId = new Map<string, string>();
+  const workBoqSourceTaskById = new Map<string, string>();
   const workBoqItemNameById = new Map<string, string>();
   for (const row of workBoqRows.data || []) {
     workBoqItemNameById.set(row.id, row.name || row.id);
-    if (row.source_task_id) taskToWorkBoqItemId.set(row.source_task_id, row.id);
+    if (row.source_task_id) {
+      taskToWorkBoqItemId.set(row.source_task_id, row.id);
+      workBoqSourceTaskById.set(row.id, row.source_task_id);
+    }
   }
 
-  const factorsByWorkBoqItem = boqReconciliationService
-    .buildWorkContractFactors(officialGroups)
-    .reduce<Map<string, ReturnType<typeof boqReconciliationService.buildWorkContractFactors>>>((acc, item) => {
-      if (!acc.has(item.workBoqItemId)) acc.set(item.workBoqItemId, []);
-      acc.get(item.workBoqItemId)!.push(item);
+  const factorsByTaskId = buildTaskContractQuantityFactors(taskContractLinks, contractItemIds)
+    .reduce<Map<string, ReturnType<typeof buildTaskContractQuantityFactors>>>((acc, item) => {
+      if (!acc.has(item.taskId)) acc.set(item.taskId, []);
+      acc.get(item.taskId)!.push(item);
       return acc;
     }, new Map());
 
@@ -163,6 +257,7 @@ async function collectVerifiedVolumeMapping(params: {
       const directContractItemId = volume.contractItemId;
       const volumeId = (volume as any).id;
       const workBoqItemId = volume.workBoqItemId || (volume.taskId ? taskToWorkBoqItemId.get(volume.taskId) : undefined);
+      const sourceTaskId = volume.taskId || (workBoqItemId ? workBoqSourceTaskById.get(workBoqItemId) : undefined);
       const pushUnmapped = (reason: string) => {
         unmapped.push({
           dailyLogId: logId,
@@ -189,20 +284,19 @@ async function collectVerifiedVolumeMapping(params: {
         continue;
       }
 
-      if (!workBoqItemId) {
-        pushUnmapped('Chưa gắn BOQ thi công hoặc task không có BOQ thi công tương ứng.');
+      if (!sourceTaskId) {
+        pushUnmapped('Chưa gắn task/BOQ thi công để xác định dòng BOQ hợp đồng.');
         continue;
       }
 
-      const factors = factorsByWorkBoqItem.get(workBoqItemId) || [];
+      const factors = factorsByTaskId.get(sourceTaskId) || [];
       if (factors.length === 0) {
-        pushUnmapped('BOQ thi công chưa thuộc nhóm đối chiếu BOQ reviewed/locked.');
+        pushUnmapped('Task/BOQ thi công chưa liên kết BOQ hợp đồng trong tiến độ.');
         continue;
       }
 
       let applied = false;
       for (const factor of factors) {
-        if (!contractItemIds.has(factor.contractItemId)) continue;
         const row = grouped.get(factor.contractItemId) || { quantity: 0, volumeIds: [] };
         row.quantity += quantity * factor.quantityFactor;
         if (volumeId) row.volumeIds.push(volumeId);
@@ -210,7 +304,7 @@ async function collectVerifiedVolumeMapping(params: {
         applied = true;
       }
       if (!applied) {
-        pushUnmapped('Nhóm đối chiếu không có dòng BOQ hợp đồng thuộc hợp đồng này.');
+        pushUnmapped('Liên kết task không có dòng BOQ hợp đồng thuộc hợp đồng này.');
       }
     }
   }
@@ -295,7 +389,7 @@ export const quantityAcceptanceService = {
       if (source.positiveVolumeCount > 0) {
         throw new Error(
           `Có ${source.positiveVolumeCount} dòng khối lượng từ nhật ký verified nhưng chưa quy đổi được sang BOQ hợp đồng. ` +
-          `Vui lòng hoàn tất nhóm đối chiếu BOQ ở trạng thái reviewed/locked trước khi tạo nghiệm thu.`
+          `Vui lòng gắn task/BOQ thi công với dòng BOQ hợp đồng trong tiến độ trước khi tạo nghiệm thu.`
         );
       }
       throw new Error(`Không có khối lượng nhật ký verified trong kỳ ${params.periodStart} - ${params.periodEnd}.`);
@@ -308,6 +402,11 @@ export const quantityAcceptanceService = {
         throw new Error(`${item.contractItemCode} vượt khối lượng hợp đồng sau phát sinh.`);
       }
     }
+    await assertAcceptanceAmountsWithinContract({
+      contractId: params.contractId,
+      contractType: params.contractType,
+      items,
+    });
 
     const periodNumber = previousAcceptances.length + 1;
     const acceptance: Partial<QuantityAcceptance> = {
@@ -320,7 +419,7 @@ export const quantityAcceptanceService = {
       description: params.description || `Nghiệm thu khối lượng đợt ${periodNumber}`,
       status: 'draft',
       items,
-      totalAcceptedAmount: items.reduce((sum, item) => sum + item.acceptedAmount, 0),
+      totalAcceptedAmount: items.reduce((sum, item) => sum + money(item.acceptedAmount), 0),
     };
 
     const dbItem = toDb(acceptance);
@@ -349,9 +448,17 @@ export const quantityAcceptanceService = {
     }
 
     const items = updates.items;
+    if (items) {
+      await assertAcceptanceAmountsWithinContract({
+        contractId: current.contract_id,
+        contractType: current.contract_type,
+        items,
+        currentAcceptanceId: id,
+      });
+    }
     const next: Partial<QuantityAcceptance> = {
       ...updates,
-      totalAcceptedAmount: items ? items.reduce((sum, item) => sum + item.acceptedAmount, 0) : updates.totalAcceptedAmount,
+      totalAcceptedAmount: items ? items.reduce((sum, item) => sum + money(item.acceptedAmount), 0) : updates.totalAcceptedAmount,
     };
     const dbNext = toDb(next);
     delete dbNext.items; // 'items' là virtual field, không tồn tại trong bảng
@@ -360,7 +467,15 @@ export const quantityAcceptanceService = {
     if (items) await replaceItems(id, items);
   },
 
-  async setStatus(id: string, status: QuantityAcceptanceStatus, userId?: string, reason?: string, approverUser?: User, projectId?: string): Promise<void> {
+  async setStatus(
+    id: string,
+    status: QuantityAcceptanceStatus,
+    userId?: string,
+    reason?: string,
+    approverUser?: User,
+    projectId?: string,
+    submissionTarget?: ProjectSubmissionTarget,
+  ): Promise<void> {
     const { data, error: readError } = await supabase.from(TABLE).select('*').eq('id', id).single();
     if (readError) throw readError;
     const acceptance = normalize(data);
@@ -376,7 +491,7 @@ export const quantityAcceptanceService = {
       throw new Error('Vui lòng nhập lý do trả lại/huỷ nghiệm thu để truy vết.');
     }
     if ((status === 'submitted' || status === 'approved') && acceptance.items.length === 0) {
-      throw new Error('Phiếu nghiệm thu chưa có hạng mục. Cần đối chiếu BOQ và tạo lại phiếu trước khi gửi duyệt.');
+      throw new Error('Phiếu nghiệm thu chưa có hạng mục. Cần tạo lại sau khi nhật ký verified có liên kết task/BOQ hợp đồng.');
     }
     if (status === 'cancelled') {
       const { count: linkedCertCount, error: linkedCertError } = await supabase
@@ -406,12 +521,50 @@ export const quantityAcceptanceService = {
     }
 
     const now = new Date().toISOString();
-    const updates: any = { status };
-    if (status === 'submitted') { updates.submittedBy = userId; updates.submittedAt = now; }
-    if (status === 'returned') { updates.returnedBy = userId; updates.returnedAt = now; updates.returnReason = reason; }
-    if (status === 'approved') { updates.approvedBy = userId; updates.approvedAt = now; }
+    const updates: any = {
+      status,
+      ...projectSubmissionService.actionMeta(userId, status === 'submitted'),
+    };
+    if (status === 'submitted') {
+      updates.submittedBy = userId;
+      updates.submittedAt = now;
+      Object.assign(updates, projectSubmissionService.targetToUpdate(submissionTarget));
+    }
+    if (status === 'returned') {
+      updates.returnedBy = userId;
+      updates.returnedAt = now;
+      updates.returnReason = reason;
+      Object.assign(updates, projectSubmissionService.returnToOwnerUpdate(acceptance.submittedBy, reason));
+    }
+    if (status === 'approved') {
+      updates.approvedBy = userId;
+      updates.approvedAt = now;
+      Object.assign(updates, projectSubmissionService.targetToUpdate(null));
+    }
+    if (status === 'cancelled') {
+      Object.assign(updates, projectSubmissionService.targetToUpdate(null));
+    }
     const { error } = await supabase.from(TABLE).update(toDb(updates)).eq('id', id);
     if (error) throw error;
+    if (status === 'submitted' && submissionTarget) {
+      await projectSubmissionService.notifyTarget({
+        target: submissionTarget,
+        actorId: userId,
+        category: 'contract',
+        title: `Nghiệm thu khối lượng đợt ${acceptance.periodNumber} chờ duyệt`,
+        message: `Bạn được chọn duyệt nghiệm thu ${acceptance.description || `đợt ${acceptance.periodNumber}`}.`,
+        sourceType: 'quantity_acceptance',
+        sourceId: id,
+        constructionSiteId: acceptance.constructionSiteId,
+        link: '/da',
+        metadata: {
+          contractId: acceptance.contractId,
+          contractType: acceptance.contractType,
+          periodNumber: acceptance.periodNumber,
+          totalAcceptedAmount: acceptance.totalAcceptedAmount || 0,
+        },
+      }).catch(error => console.warn('Cannot notify quantity acceptance recipient', error));
+    }
     await auditService.log({
       tableName: TABLE,
       recordId: id,
@@ -425,27 +578,22 @@ export const quantityAcceptanceService = {
 
     if (status === 'approved') {
       await contractItemService.lockItems(acceptance.items.map(item => item.contractItemId));
-      for (const item of acceptance.items) {
-        await contractItemService.updateCompletedQuantity(item.contractItemId, item.cumulativeAcceptedQuantity);
-      }
+      await syncContractCompletedQuantities(acceptance.contractId, acceptance.contractType, acceptance.items.map(item => item.contractItemId));
     }
 
     // Mục 9a: Rollback khi hủy nghiệm thu đã approved
     if (status === 'cancelled' && acceptance.status === 'approved') {
       // Unlock BOQ items
       await contractItemService.unlockItems(acceptance.items.map(item => item.contractItemId));
-      // Revert completedQuantity = cumulative của các đợt approved TRƯỚC đó
-      for (const item of acceptance.items) {
-        const previousQty = item.cumulativeAcceptedQuantity - item.acceptedQuantity;
-        await contractItemService.updateCompletedQuantity(item.contractItemId, Math.max(0, previousQty));
-      }
+      await syncContractCompletedQuantities(acceptance.contractId, acceptance.contractType, acceptance.items.map(item => item.contractItemId));
     }
   },
 
   async remove(id: string): Promise<void> {
-    const { data, error: readError } = await supabase.from(TABLE).select('status, period_number').eq('id', id).single();
+    const { data, error: readError } = await supabase.from(TABLE).select('status, period_number, ever_submitted').eq('id', id).single();
     if (readError) throw readError;
     if (data?.status !== 'draft') throw new Error('Chỉ xoá được nghiệm thu ở trạng thái Nháp.');
+    if (data?.ever_submitted) throw new Error('Phiếu đã từng gửi duyệt, không được xoá cứng. Vui lòng huỷ/rollback để giữ lịch sử.');
     const { error } = await supabase.from(TABLE).delete().eq('id', id);
     if (error) throw error;
     await auditService.log({

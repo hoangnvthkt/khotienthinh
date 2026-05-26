@@ -8,16 +8,23 @@ import {
     MaterialRequestFulfillmentMode,
     MaterialRequestOrigin,
     ProjectWorkBoqItem,
+    ProjectSubmissionTarget,
+    MaterialRequestFulfillmentBatch,
+    MaterialRequestFulfillmentSourceType,
     RequestItem,
     RequestStatus,
     InventoryItem,
 } from '../types';
 import ItemSelectionModal from './ItemSelectionModal';
 import ScannerModal from './ScannerModal';
+import ProjectSubmissionDialog from './project/ProjectSubmissionDialog';
 import { useReservedStock } from '../hooks/useReservedStock';
 import { canApproveMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, isAdmin, isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../lib/wmsPermissions';
 import { useToast } from '../context/ToastContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
+import { projectSubmissionService } from '../lib/projectSubmissionService';
+import { materialRequestFulfillmentService, getCommittedQty, getRequestLineId } from '../lib/materialRequestFulfillmentService';
 
 interface RequestModalProps {
     isOpen: boolean;
@@ -48,6 +55,19 @@ type RequestLineDraft = {
     skuSnapshot?: string;
     specification?: string;
     manualReason?: string;
+};
+
+type FulfillmentQtyDraft = {
+    requestLineId: string;
+    itemId: string;
+    qty: string;
+    reason: string;
+};
+
+type ReceiveQtyDraft = {
+    lineId: string;
+    qty: string;
+    reason: string;
 };
 
 const activeBudgetStatuses = new Set<RequestStatus | string>([
@@ -89,9 +109,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
     workBoqItems = [],
     materialBudgetItems = [],
 }) => {
-    const { items, warehouses, user, users, requests, addRequest, updateRequestStatus } = useApp();
+    const { items, warehouses, user, users, requests, addRequest, updateRequestStatus, loadModuleData } = useApp();
     const { getStockSummary, getOnHandStock } = useReservedStock();
     const toast = useToast();
+    const confirm = useConfirm();
     const [step, setStep] = useState<'CREATE' | 'APPROVE' | 'VIEW'>('CREATE');
     const [showApprovalPanel, setShowApprovalPanel] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -110,6 +131,15 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [draftQty, setDraftQty] = useState('');
     const [draftNeededDate, setDraftNeededDate] = useState('');
     const [draftLineNote, setDraftLineNote] = useState('');
+    const [submittingProjectRequest, setSubmittingProjectRequest] = useState<MaterialRequest | null>(null);
+    const [fulfillmentBatches, setFulfillmentBatches] = useState<MaterialRequestFulfillmentBatch[]>([]);
+    const [isLoadingFulfillment, setIsLoadingFulfillment] = useState(false);
+    const [isIssuePanelOpen, setIsIssuePanelOpen] = useState(false);
+    const [issueSourceType, setIssueSourceType] = useState<MaterialRequestFulfillmentSourceType>('stock');
+    const [issueLines, setIssueLines] = useState<FulfillmentQtyDraft[]>([]);
+    const [issueNote, setIssueNote] = useState('');
+    const [receivingBatch, setReceivingBatch] = useState<MaterialRequestFulfillmentBatch | null>(null);
+    const [receiveLines, setReceiveLines] = useState<ReceiveQtyDraft[]>([]);
 
     const [isItemSelectOpen, setItemSelectOpen] = useState(false);
     const [isScannerOpen, setScannerOpen] = useState(false);
@@ -176,6 +206,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
         return inventory?.sku || line.skuSnapshot || (line.isManualItem ? 'CHƯA MÃ' : '');
     };
 
+    const getWarehouseName = (warehouseId?: string | null) =>
+        warehouses.find(w => w.id === warehouseId)?.name || warehouseId || '-';
+
     const getAggregateStockSummary = (itemId: string, warehouseId?: string, excludeRequestId?: string) => {
         if (!getLineInventory(itemId)) {
             return { onHand: 0, softReserved: 0, hardReserved: 0, reserved: 0, available: 0, hasConflict: false, isCritical: false };
@@ -195,10 +228,37 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }, { onHand: 0, softReserved: 0, hardReserved: 0, reserved: 0, available: 0, hasConflict: false, isCritical: false });
     };
 
+    const isBatchFulfillmentRequest = !!request && (request.requestOrigin === 'project' || !!request.projectId || !!request.constructionSiteId);
+    const fulfillmentSummary = useMemo(
+        () => request ? materialRequestFulfillmentService.summarizeRequest(request, fulfillmentBatches) : null,
+        [fulfillmentBatches, request],
+    );
+    const fulfillmentLineSummaryMap = useMemo(
+        () => new Map((fulfillmentSummary?.lineSummaries || []).map(line => [line.requestLineId, line])),
+        [fulfillmentSummary],
+    );
+    const actionableFulfillmentBatches = useMemo(
+        () => fulfillmentBatches.filter(batch => batch.status === 'issued' || batch.status === 'variance_pending'),
+        [fulfillmentBatches],
+    );
+
+    const refreshFulfillmentBatches = async (requestId: string) => {
+        setIsLoadingFulfillment(true);
+        try {
+            const batches = await materialRequestFulfillmentService.listByRequest(requestId);
+            setFulfillmentBatches(batches);
+            return batches;
+        } finally {
+            setIsLoadingFulfillment(false);
+        }
+    };
+
     useEffect(() => {
         if (isOpen) {
             setShowApprovalPanel(false);
             setIsSaving(false);
+            setIsIssuePanelOpen(false);
+            setReceivingBatch(null);
             if (request) {
                 if (request.status === RequestStatus.PENDING && canApproveMaterialRequest(user, request)) {
                     setStep('APPROVE');
@@ -232,6 +292,17 @@ const RequestModal: React.FC<RequestModalProps> = ({
             }
         }
     }, [isOpen, request, user, items, defaultSiteWarehouseId]);
+
+    useEffect(() => {
+        if (!isOpen || !request) {
+            setFulfillmentBatches([]);
+            return;
+        }
+        void refreshFulfillmentBatches(request.id).catch(err => {
+            logApiError('requestModal.fulfillment.list', err);
+            setFulfillmentBatches([]);
+        });
+    }, [isOpen, request?.id]);
 
     const handleAddItem = () => {
         if (items.length === 0) return;
@@ -270,7 +341,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         const item = items.find(i => i.id === itemId);
         const stockSummary = getAggregateStockSummary(itemId, sourceWarehouseId, request?.id);
         const availableStock = stockSummary.available;
-        const sourceStock = line.isManualItem || !item ? 0 : (isAdmin(user) ? Number.MAX_SAFE_INTEGER : availableStock);
+        const sourceStock = line.isManualItem || !item ? 0 : (isProjectRequest || isAdmin(user) ? Number.MAX_SAFE_INTEGER : availableStock);
 
         if (line.isManualItem || !item) {
             toast.warning('Dòng chưa có mã kho', 'Vui lòng tạo đề xuất cấp mã vật tư/vật liệu trước khi duyệt xuất hoặc đặt hàng.');
@@ -278,7 +349,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
 
         // Ràng buộc 1: Không vượt quá tồn kho
-        if (qty > sourceStock) {
+        if (!isProjectRequest && qty > sourceStock) {
             toast.warning('Vượt tồn khả dụng', `${sourceWarehouseId ? 'Kho nguồn' : 'Tổng các kho'} chỉ còn ${sourceStock} ${item?.unit || line.unitSnapshot || ''}.`);
             qty = sourceStock;
         }
@@ -333,6 +404,31 @@ const RequestModal: React.FC<RequestModalProps> = ({
         setDraftMaterialBudgetItemId('');
         setDraftQty('');
         setDraftLineNote('');
+    };
+
+    const submitCreatedRequest = async (newRequest: MaterialRequest, submissionTarget?: ProjectSubmissionTarget) => {
+        const requestToSave: MaterialRequest = submissionTarget
+            ? { ...newRequest, ...projectSubmissionService.targetToUpdate(submissionTarget) }
+            : newRequest;
+
+        setIsSaving(true);
+        try {
+            const saved = await addRequest(requestToSave);
+            if (!saved) {
+                toast.error('Không thể gửi đề xuất', 'Không lưu được phiếu đề xuất lên hệ thống. Vui lòng thử lại.');
+                if (submissionTarget) throw new Error('Không lưu được phiếu đề xuất lên hệ thống.');
+                return;
+            }
+            setSubmittingProjectRequest(null);
+            toast.success('Đã gửi đề xuất vật tư', submissionTarget?.name ? `Phiếu đã gửi tới ${submissionTarget.name}.` : 'Phiếu của bạn đang chờ xử lý.');
+            onClose();
+        } catch (err: any) {
+            logApiError('requestModal.create', err);
+            toast.error('Không thể gửi đề xuất', getApiErrorMessage(err, 'Không lưu được phiếu đề xuất lên hệ thống.'));
+            if (submissionTarget) throw err;
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleSubmitCreate = async () => {
@@ -412,21 +508,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
             logs: [{ action: 'CREATED', userId: user.id, timestamp: new Date().toISOString() }]
         };
 
-        setIsSaving(true);
-        try {
-            const saved = await addRequest(newRequest);
-            if (!saved) {
-                toast.error('Không thể gửi đề xuất', 'Không lưu được phiếu đề xuất lên hệ thống. Vui lòng thử lại.');
-                return;
-            }
-            toast.success('Đã gửi đề xuất vật tư', 'Phiếu của bạn đang chờ xử lý.');
-            onClose();
-        } catch (err: any) {
-            logApiError('requestModal.create', err);
-            toast.error('Không thể gửi đề xuất', getApiErrorMessage(err, 'Không lưu được phiếu đề xuất lên hệ thống.'));
-        } finally {
-            setIsSaving(false);
+        if (isProjectRequest) {
+            setSubmittingProjectRequest(newRequest);
+            return;
         }
+
+        await submitCreatedRequest(newRequest);
     };
 
     const handleAction = async (status: RequestStatus) => {
@@ -449,7 +536,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             }
         }
 
-        if (status === RequestStatus.APPROVED) {
+        if (status === RequestStatus.APPROVED && !isProjectRequest) {
             const stockShortages = sourceWarehouseId
                 ? approvedItems
                     .filter(line => !!getLineInventory(line.itemId))
@@ -537,6 +624,172 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
     };
 
+    const openIssuePanel = () => {
+        if (!request || !fulfillmentSummary) return;
+        const drafts = request.items
+            .map((line, index) => {
+                const requestLineId = getRequestLineId(request, line, index);
+                const lineSummary = fulfillmentLineSummaryMap.get(requestLineId);
+                const remaining = lineSummary?.remainingToIssue ?? getCommittedQty(line);
+                return {
+                    requestLineId,
+                    itemId: line.itemId,
+                    qty: remaining > 0 ? String(remaining) : '0',
+                    reason: '',
+                };
+            })
+            .filter(line => Number(line.qty || 0) > 0);
+        if (drafts.length === 0) {
+            toast.info('Đã cấp đủ', 'Không còn dòng vật tư nào cần tạo đợt cấp.');
+            return;
+        }
+        setIssueLines(drafts);
+        setIssueSourceType('stock');
+        setIssueNote('');
+        setIsIssuePanelOpen(true);
+    };
+
+    const updateIssueLine = (requestLineId: string, patch: Partial<FulfillmentQtyDraft>) => {
+        setIssueLines(prev => prev.map(line => line.requestLineId === requestLineId ? { ...line, ...patch } : line));
+    };
+
+    const updateReceiveLine = (lineId: string, patch: Partial<ReceiveQtyDraft>) => {
+        setReceiveLines(prev => prev.map(line => line.lineId === lineId ? { ...line, ...patch } : line));
+    };
+
+    const handleCreateFulfillmentBatch = async () => {
+        if (!request || isSaving) return;
+        const effectiveSource = sourceWarehouseId || request.sourceWarehouseId || '';
+        if (!effectiveSource) {
+            toast.warning('Chưa chọn kho nguồn', 'Vui lòng chọn kho nguồn trước khi tạo đợt cấp.');
+            return;
+        }
+        const validLines = issueLines
+            .map(line => ({ ...line, issuedQty: Number(line.qty || 0) }))
+            .filter(line => line.issuedQty > 0);
+        if (validLines.length === 0) {
+            toast.warning('Thiếu số lượng cấp', 'Vui lòng nhập ít nhất một dòng có số lượng cấp lớn hơn 0.');
+            return;
+        }
+        const shortage = validLines.find(line => {
+            const onHand = getOnHandStock(line.itemId, effectiveSource);
+            return line.issuedQty > onHand && !isAdmin(user);
+        });
+        if (shortage) {
+            const item = getLineInventory(shortage.itemId);
+            const onHand = getOnHandStock(shortage.itemId, effectiveSource);
+            toast.error('Không đủ tồn thực tế', `${item?.name || shortage.itemId}: tồn ${onHand}, cần cấp ${shortage.issuedQty}.`);
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            await materialRequestFulfillmentService.createIssuedBatch({
+                request,
+                sourceWarehouseId: effectiveSource,
+                sourceType: issueSourceType,
+                actorUserId: user.id,
+                note: issueNote.trim() || undefined,
+                overrideReason: overrideReason.trim() || undefined,
+                allowOverCommit: isAdmin(user),
+                lines: validLines.map(line => ({
+                    requestLineId: line.requestLineId,
+                    itemId: line.itemId,
+                    issuedQty: line.issuedQty,
+                    varianceReason: line.reason.trim() || undefined,
+                })),
+            });
+            const freshBatches = await refreshFulfillmentBatches(request.id);
+            const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
+            await updateRequestStatus(request.id, nextStatus, issueNote.trim() || 'Tạo đợt cấp vật tư', undefined, effectiveSource, overrideReason.trim() || undefined, 'FULFILLMENT_SYNC');
+            await loadModuleData('wms', true);
+            toast.success('Đã tạo đợt cấp', 'Đợt cấp đã được ghi nhận và tạo phiếu kho chờ xác nhận nhận hàng.');
+            onClose();
+        } catch (err: any) {
+            logApiError('requestModal.fulfillment.issue', err);
+            toast.error('Không thể tạo đợt cấp', getApiErrorMessage(err, 'Không tạo được đợt cấp vật tư.'));
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const openReceivePanel = (batch: MaterialRequestFulfillmentBatch) => {
+        setReceivingBatch(batch);
+        setReceiveLines(batch.lines.map(line => ({
+            lineId: line.id,
+            qty: String(line.issuedQty || 0),
+            reason: '',
+        })));
+    };
+
+    const handleReceiveFulfillmentBatch = async () => {
+        if (!request || !receivingBatch || isSaving) return;
+        setIsSaving(true);
+        try {
+            const savedBatch = await materialRequestFulfillmentService.receiveBatch({
+                request,
+                batch: receivingBatch,
+                actorUserId: user.id,
+                overrideReason: overrideReason.trim() || undefined,
+                allowOverCommit: isAdmin(user),
+                lines: receiveLines.map(line => ({
+                    lineId: line.lineId,
+                    receivedQty: Number(line.qty || 0),
+                    varianceReason: line.reason.trim() || undefined,
+                })),
+            });
+            const freshBatches = await refreshFulfillmentBatches(request.id);
+            const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
+            await updateRequestStatus(request.id, nextStatus, 'Xác nhận nhận đợt cấp vật tư', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_SYNC');
+            await loadModuleData('wms', true);
+            toast.success(
+                savedBatch.status === 'variance_pending' ? 'Đã ghi nhận lệch' : 'Đã xác nhận nhận hàng',
+                savedBatch.status === 'variance_pending'
+                    ? 'Đợt cấp đang chờ phòng vật tư/admin chốt theo số thực nhận trước khi cập nhật tồn kho.'
+                    : nextStatus === RequestStatus.COMPLETED ? 'Phiếu đề xuất đã đủ số lượng công trường đề xuất.' : 'Đã cập nhật lũy kế nhận hàng cho phiếu.'
+            );
+            onClose();
+        } catch (err: any) {
+            logApiError('requestModal.fulfillment.receive', err);
+            toast.error('Không thể xác nhận nhận hàng', getApiErrorMessage(err, 'Không cập nhật được đợt cấp.'));
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleResolveFulfillmentVariance = async (batch: MaterialRequestFulfillmentBatch) => {
+        if (!request || isSaving) return;
+        const ok = await confirm({
+            title: 'Chốt lệch đợt cấp',
+            targetName: batch.batchNo,
+            confirmText: 'Chốt tồn kho theo số lượng công trường thực nhận',
+            subtitle: 'Sau khi chốt, phiếu kho sẽ cập nhật theo số thực nhận thay vì số phòng vật tư đã xuất.',
+            intent: 'warning',
+            actionLabel: 'Chốt lệch',
+            cancelLabel: 'Kiểm tra lại',
+            countdownSeconds: 1,
+        });
+        if (!ok) return;
+        setIsSaving(true);
+        try {
+            await materialRequestFulfillmentService.resolveVarianceBatch({
+                batch,
+                actorUserId: user.id,
+            });
+            const freshBatches = await refreshFulfillmentBatches(request.id);
+            const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
+            await updateRequestStatus(request.id, nextStatus, 'Chốt lệch đợt cấp vật tư theo thực nhận', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_SYNC');
+            await loadModuleData('wms', true);
+            toast.success('Đã chốt lệch', nextStatus === RequestStatus.COMPLETED ? 'Phiếu đề xuất đã đủ số lượng công trường đề xuất.' : 'Tồn kho đã cập nhật theo số thực nhận.');
+            onClose();
+        } catch (err: any) {
+            logApiError('requestModal.fulfillment.resolveVariance', err);
+            toast.error('Không thể chốt lệch', getApiErrorMessage(err, 'Không cập nhật được đợt cấp lệch.'));
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     if (!isOpen) return null;
 
     const isEditable = step === 'CREATE';
@@ -553,6 +806,14 @@ const RequestModal: React.FC<RequestModalProps> = ({
             || isWarehouseKeeperFor(user, sourceWarehouseId || request.sourceWarehouseId)
         );
     const canEditApprovalQuantities = isApproving || canPrepareIssue;
+    const canCreateFulfillmentBatch = !!request
+        && isBatchFulfillmentRequest
+        && (request.status === RequestStatus.APPROVED || request.status === RequestStatus.IN_TRANSIT)
+        && (
+            isAdmin(user)
+            || isGlobalWarehouseKeeper(user)
+            || isWarehouseKeeperFor(user, sourceWarehouseId || request.sourceWarehouseId)
+        );
     const canReturn = !!request
         && !request.relatedTransactionId
         && (request.status === RequestStatus.PENDING || request.status === RequestStatus.APPROVED)
@@ -561,8 +822,17 @@ const RequestModal: React.FC<RequestModalProps> = ({
             || (request.status === RequestStatus.PENDING && canApproveMaterialRequest(user, request))
             || canPrepareIssue
         );
-    const canExport = permissionRequest ? canExportMaterialRequest(user, permissionRequest) : false;
-    const canReceive = request ? canReceiveMaterialRequest(user, request) : false;
+    const canExport = !isBatchFulfillmentRequest && permissionRequest ? canExportMaterialRequest(user, permissionRequest) : false;
+    const canReceive = !isBatchFulfillmentRequest && request ? canReceiveMaterialRequest(user, request) : false;
+    const canReceiveFulfillmentBatch = !!request
+        && isBatchFulfillmentRequest
+        && actionableFulfillmentBatches.length > 0
+        && (
+            isAdmin(user)
+            || isGlobalWarehouseKeeper(user)
+            || isWarehouseKeeperFor(user, request.siteWarehouseId)
+            || (request.fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION && isWarehouseKeeperFor(user, sourceWarehouseId || request.sourceWarehouseId))
+        );
 
     const sourceWh = warehouses.find(w => w.id === sourceWarehouseId);
     const targetWh = warehouses.find(w => w.id === siteWarehouseId);
@@ -615,7 +885,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             {isEditable ? 'Tạo đề xuất vật tư' : `Phiếu đề xuất: ${request?.code}`}
                         </h3>
                         <p className="text-xs text-slate-500">
-                            {isEditable ? 'Gửi nhu cầu về bộ phận điều phối' : `Trạng thái: ${request?.status}`}
+                            {isEditable ? 'Gửi nhu cầu về bộ phận điều phối' : `Trạng thái: ${request?.status}${request?.submittedToName ? ` • Gửi: ${request.submittedToName}` : ''}`}
                         </p>
                     </div>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
@@ -653,6 +923,17 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 <span className="text-sm">{requester?.name || 'N/A'}</span>
                             </div>
                         </div>
+
+                        {!isEditable && request?.submittedToName && (
+                            <div className="bg-white p-4 rounded-xl border border-amber-100 shadow-sm space-y-2">
+                                <label className="text-[10px] uppercase font-black text-amber-500">Người nhận xử lý</label>
+                                <div className="flex items-center gap-2 text-amber-700 font-bold">
+                                    <User size={18} className="text-amber-400" />
+                                    <span className="text-sm">{request.submittedToName}</span>
+                                </div>
+                                {request.submissionNote && <div className="text-[10px] text-slate-400 truncate">{request.submissionNote}</div>}
+                            </div>
+                        )}
 
                         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
                             <label className="text-[10px] uppercase font-black text-slate-400">Kho nhận hàng</label>
@@ -822,7 +1103,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     {!isEditable && (
                                         <>
                                             <th className="p-4 w-32 text-right text-blue-600 bg-blue-50/30">{stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</th>
-                                            <th className="p-4 w-32 text-right text-emerald-600 bg-emerald-50/30">Duyệt xuất</th>
+                                            <th className="p-4 w-32 text-right text-emerald-600 bg-emerald-50/30">Cam kết</th>
+                                            <th className="p-4 w-28 text-right text-indigo-600 bg-indigo-50/30">Đã xuất</th>
+                                            <th className="p-4 w-28 text-right text-cyan-600 bg-cyan-50/30">Đã nhận</th>
+                                            <th className="p-4 w-28 text-right text-slate-500">Còn lại</th>
                                         </>
                                     )}
                                     {isEditable && <th className="p-4 w-12"></th>}
@@ -836,7 +1120,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     const stockSummary = getAggregateStockSummary(itemId, stockContextWarehouseId, request?.id);
                                     const sourceStock = stockSummary.available;
                                     const lineId = row.lineId;
+                                    const requestLineId = request && !isEditable ? getRequestLineId(request, row as RequestItem, idx) : lineId;
+                                    const lineFulfillment = requestLineId ? fulfillmentLineSummaryMap.get(requestLineId) : undefined;
                                     const approvedQty = approvedItems.find(ai => (lineId && ai.lineId === lineId) || (!lineId && ai.itemId === itemId))?.qty || 0;
+                                    const issuedQty = lineFulfillment?.issuedQty || Number((row as RequestItem).issuedQty || 0);
+                                    const receivedQty = lineFulfillment?.receivedQty || 0;
+                                    const remainingToReceive = lineFulfillment?.remainingToReceive ?? Math.max(0, requestQty - receivedQty);
                                     const isExcess = !isEditable && approvedQty > requestQty;
                                     const budgetSnapshot = buildLineBudgetSnapshot(row as RequestLineDraft);
                                     const needsReason = isEditable && isProjectRequest && (!row.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0);
@@ -896,7 +1185,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                         {canEditApprovalQuantities ? (
                                                             <div className="flex flex-col items-end">
                                                                 <input
-                                                                    type="number" min="0" max={itemInfo ? sourceStock : undefined}
+                                                                    type="number" min="0" max={!isProjectRequest && itemInfo ? sourceStock : undefined}
                                                                     value={approvedQty}
                                                                     onChange={(e) => handleUpdateApprovedItem(row as RequestItem, Number(e.target.value))}
                                                                     className={`w-20 text-right p-1 border rounded font-bold bg-white focus:ring-2 outline-none transition-colors ${isExcess ? 'border-orange-400 text-orange-700 focus:ring-orange-500' : 'border-emerald-200 text-emerald-700 focus:ring-emerald-500'}`}
@@ -909,6 +1198,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                             </span>
                                                         )}
                                                     </td>
+                                                    <td className="p-4 text-right font-bold text-indigo-600">{issuedQty.toLocaleString('vi-VN')}</td>
+                                                    <td className="p-4 text-right font-bold text-cyan-600">{receivedQty.toLocaleString('vi-VN')}</td>
+                                                    <td className="p-4 text-right font-bold text-slate-500">{remainingToReceive.toLocaleString('vi-VN')}</td>
                                                 </>
                                             )}
                                             {isEditable && (
@@ -939,7 +1231,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             const stockSummary = getAggregateStockSummary(itemId, stockContextWarehouseId, request?.id);
                             const sourceStock = stockSummary.available;
                             const lineId = row.lineId;
+                            const requestLineId = request && !isEditable ? getRequestLineId(request, row as RequestItem, idx) : lineId;
+                            const lineFulfillment = requestLineId ? fulfillmentLineSummaryMap.get(requestLineId) : undefined;
                             const approvedQty = approvedItems.find(ai => (lineId && ai.lineId === lineId) || (!lineId && ai.itemId === itemId))?.qty || 0;
+                            const issuedQty = lineFulfillment?.issuedQty || Number((row as RequestItem).issuedQty || 0);
+                            const receivedQty = lineFulfillment?.receivedQty || 0;
+                            const remainingToReceive = lineFulfillment?.remainingToReceive ?? Math.max(0, requestQty - receivedQty);
                             const isExcess = !isEditable && approvedQty > requestQty;
                             const budgetSnapshot = buildLineBudgetSnapshot(row as RequestLineDraft);
                             const needsReason = isEditable && isProjectRequest && (!row.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0);
@@ -998,7 +1295,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                     <div className="text-[9px] uppercase font-bold text-emerald-400 mb-0.5">Duyệt</div>
                                                     {canEditApprovalQuantities ? (
                                                         <input
-                                                            type="number" min="0" max={itemInfo ? sourceStock : undefined}
+                                                            type="number" min="0" max={!isProjectRequest && itemInfo ? sourceStock : undefined}
                                                             value={approvedQty}
                                                             onChange={(e) => handleUpdateApprovedItem(row as RequestItem, Number(e.target.value))}
                                                             className={`w-full text-center p-2 border rounded-lg font-bold text-sm ${isExcess ? 'border-orange-400 text-orange-700' : 'border-emerald-200 text-emerald-700'}`}
@@ -1012,6 +1309,22 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             </>
                                         )}
                                     </div>
+                                    {!isEditable && (
+                                        <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-slate-50 border border-slate-100 p-2">
+                                            <div>
+                                                <div className="text-[9px] uppercase font-bold text-indigo-400">Đã xuất</div>
+                                                <div className="text-xs font-black text-indigo-600">{issuedQty.toLocaleString('vi-VN')}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-[9px] uppercase font-bold text-cyan-400">Đã nhận</div>
+                                                <div className="text-xs font-black text-cyan-600">{receivedQty.toLocaleString('vi-VN')}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-[9px] uppercase font-bold text-slate-400">Còn lại</div>
+                                                <div className="text-xs font-black text-slate-600">{remainingToReceive.toLocaleString('vi-VN')}</div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
@@ -1021,6 +1334,90 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             </button>
                         )}
                     </div>
+
+                    {!isEditable && request && isBatchFulfillmentRequest && (
+                        <div className="mt-5 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
+                                <div>
+                                    <div className="text-xs font-black text-slate-700">Lịch sử cấp hàng</div>
+                                    <div className="text-[10px] font-bold text-slate-400">
+                                        {fulfillmentSummary
+                                            ? `Đã nhận ${fulfillmentSummary.receivedQty.toLocaleString('vi-VN')} / ${fulfillmentSummary.committedQty.toLocaleString('vi-VN')}`
+                                            : 'Đang tải lũy kế cấp hàng'}
+                                    </div>
+                                </div>
+                                {isLoadingFulfillment && <Loader2 size={14} className="text-slate-300 animate-spin" />}
+                            </div>
+                            {fulfillmentBatches.length === 0 ? (
+                                <div className="p-4 text-xs font-bold text-slate-400">Chưa có đợt cấp hàng nào cho phiếu này.</div>
+                            ) : (
+                                <div className="divide-y divide-slate-100">
+                                    {fulfillmentBatches.map(batch => (
+                                        <div key={batch.id} className="p-4">
+                                            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                                                <div>
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <span className="font-mono text-xs font-black text-indigo-600">{batch.batchNo}</span>
+                                                        <span className={`px-2 py-0.5 rounded-full border text-[9px] font-black ${batch.status === 'received' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : batch.status === 'issued' ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : batch.status === 'variance_pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : batch.status === 'cancelled' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                                                            {batch.status === 'received' ? 'Đã nhận' : batch.status === 'issued' ? 'Đã xuất' : batch.status === 'variance_pending' ? 'Chờ chốt lệch' : batch.status === 'cancelled' ? 'Đã huỷ' : 'Nháp'}
+                                                        </span>
+                                                        <span className="text-[10px] font-bold text-slate-400">{new Date(batch.batchDate).toLocaleString('vi-VN')}</span>
+                                                    </div>
+                                                    <div className="mt-1 text-[10px] text-slate-400">
+                                                        Nguồn: {getWarehouseName(batch.sourceWarehouseId)} • Đích: {batch.targetWarehouseId ? getWarehouseName(batch.targetWarehouseId) : 'Cấp thẳng sử dụng'}
+                                                    </div>
+                                                    {batch.note && <div className="mt-1 text-xs text-slate-500">{batch.note}</div>}
+                                                </div>
+                                                {canReceiveFulfillmentBatch && batch.status === 'issued' && (
+                                                    <button
+                                                        disabled={isSaving}
+                                                        onClick={() => openReceivePanel(batch)}
+                                                        className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-black hover:bg-emerald-700 disabled:opacity-60 flex items-center justify-center gap-1"
+                                                    >
+                                                        <CheckCircle size={14} /> Xác nhận nhận
+                                                    </button>
+                                                )}
+                                                {canReceiveFulfillmentBatch && batch.status === 'variance_pending' && (
+                                                    <button
+                                                        disabled={isSaving}
+                                                        onClick={() => handleResolveFulfillmentVariance(batch)}
+                                                        className="px-3 py-2 rounded-lg bg-amber-600 text-white text-xs font-black hover:bg-amber-700 disabled:opacity-60 flex items-center justify-center gap-1"
+                                                    >
+                                                        <AlertCircle size={14} /> Chốt lệch
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <div className="mt-3 overflow-x-auto">
+                                                <table className="w-full text-[11px]">
+                                                    <thead className="text-[9px] uppercase text-slate-400">
+                                                        <tr>
+                                                            <th className="py-1 text-left">Vật tư</th>
+                                                            <th className="py-1 text-right">Xuất</th>
+                                                            <th className="py-1 text-right">Nhận</th>
+                                                            <th className="py-1 text-left pl-3">Lý do lệch</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {batch.lines.map(line => {
+                                                            const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
+                                                            return (
+                                                                <tr key={line.id} className="border-t border-slate-50">
+                                                                    <td className="py-1.5 font-bold text-slate-600">{requestLine ? getLineName(requestLine) : line.itemId}</td>
+                                                                    <td className="py-1.5 text-right font-bold text-indigo-600">{Number(line.issuedQty || 0).toLocaleString('vi-VN')}</td>
+                                                                    <td className="py-1.5 text-right font-bold text-cyan-600">{Number(line.receivedQty || 0).toLocaleString('vi-VN')}</td>
+                                                                    <td className="py-1.5 pl-3 text-slate-400">{line.varianceReason || '-'}</td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* Footer Actions */}
@@ -1063,6 +1460,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             </button>
                         )}
 
+                        {canCreateFulfillmentBatch && (
+                            <button disabled={isSaving || !(sourceWarehouseId || request?.sourceWarehouseId)} onClick={openIssuePanel} className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-indigo-500/20">
+                                <Truck size={18} className="mr-2" /> Tạo đợt cấp
+                            </button>
+                        )}
+
                         {canExport && (
                             <button disabled={isSaving} onClick={() => handleAction(RequestStatus.IN_TRANSIT)} className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-indigo-500/20">
                                 {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Truck size={18} className="mr-2" />} {isSaving ? 'Đang xử lý...' : 'Xác nhận xuất kho'}
@@ -1077,6 +1480,159 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     </div>
                 </div>
             </div>
+
+            {isIssuePanelOpen && request && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
+                    <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col">
+                        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                            <div>
+                                <h4 className="text-base font-black text-slate-800">Tạo đợt cấp vật tư</h4>
+                                <p className="text-xs font-bold text-slate-400">{request.code} • Kho nguồn: {getWarehouseName(sourceWarehouseId || request.sourceWarehouseId)}</p>
+                            </div>
+                            <button onClick={() => setIsIssuePanelOpen(false)} className="p-2 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                        </div>
+                        <div className="p-5 overflow-y-auto space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <div>
+                                    <label className="text-[10px] uppercase font-black text-slate-400 block mb-1">Nguồn hàng</label>
+                                    <select
+                                        value={issueSourceType}
+                                        onChange={event => setIssueSourceType(event.target.value as MaterialRequestFulfillmentSourceType)}
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300"
+                                    >
+                                        <option value="stock">Tồn kho</option>
+                                        <option value="po_receipt">Hàng đã nhập từ PO</option>
+                                        <option value="mixed">Kết hợp</option>
+                                    </select>
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label className="text-[10px] uppercase font-black text-slate-400 block mb-1">Ghi chú đợt cấp</label>
+                                    <input
+                                        value={issueNote}
+                                        onChange={event => setIssueNote(event.target.value)}
+                                        placeholder="VD: cấp đợt 1 theo tiến độ thi công..."
+                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                                    />
+                                </div>
+                            </div>
+                            <div className="overflow-x-auto rounded-xl border border-slate-200">
+                                <table className="w-full text-xs">
+                                    <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+                                        <tr>
+                                            <th className="p-3 text-left">Vật tư</th>
+                                            <th className="p-3 text-right">Còn phải cấp</th>
+                                            <th className="p-3 text-right">Tồn kho</th>
+                                            <th className="p-3 text-right">Cấp đợt này</th>
+                                            <th className="p-3 text-left">Lý do</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {issueLines.map(line => {
+                                            const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
+                                            const lineSummary = fulfillmentLineSummaryMap.get(line.requestLineId);
+                                            const remaining = lineSummary?.remainingToIssue ?? (requestLine ? getCommittedQty(requestLine) : 0);
+                                            const onHand = getOnHandStock(line.itemId, sourceWarehouseId || request.sourceWarehouseId || '');
+                                            return (
+                                                <tr key={line.requestLineId}>
+                                                    <td className="p-3 font-bold text-slate-700">{requestLine ? getLineName(requestLine) : line.itemId}</td>
+                                                    <td className="p-3 text-right font-bold text-slate-500">{remaining.toLocaleString('vi-VN')}</td>
+                                                    <td className="p-3 text-right font-bold text-blue-600">{onHand.toLocaleString('vi-VN')}</td>
+                                                    <td className="p-3 text-right">
+                                                        <input
+                                                            type="number"
+                                                            min={0}
+                                                            value={line.qty}
+                                                            onChange={event => updateIssueLine(line.requestLineId, { qty: event.target.value })}
+                                                            className="w-24 rounded-lg border border-indigo-200 px-2 py-1 text-right font-black text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-300"
+                                                        />
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <input
+                                                            value={line.reason}
+                                                            onChange={event => updateIssueLine(line.requestLineId, { reason: event.target.value })}
+                                                            placeholder="Bắt buộc nếu cấp lệch phần còn lại"
+                                                            className="w-full rounded-lg border border-slate-200 px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-300"
+                                                        />
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-3">
+                            <button onClick={() => setIsIssuePanelOpen(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 font-bold">Huỷ</button>
+                            <button disabled={isSaving} onClick={handleCreateFulfillmentBatch} className="px-5 py-2 rounded-lg bg-indigo-600 text-white font-black hover:bg-indigo-700 disabled:opacity-60 flex items-center gap-2">
+                                {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Truck size={16} />} Tạo đợt cấp
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {receivingBatch && request && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
+                    <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col">
+                        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                            <div>
+                                <h4 className="text-base font-black text-slate-800">Xác nhận nhận hàng</h4>
+                                <p className="text-xs font-bold text-slate-400">{receivingBatch.batchNo} • {request.code}</p>
+                            </div>
+                            <button onClick={() => setReceivingBatch(null)} className="p-2 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                        </div>
+                        <div className="p-5 overflow-y-auto">
+                            <div className="overflow-x-auto rounded-xl border border-slate-200">
+                                <table className="w-full text-xs">
+                                    <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+                                        <tr>
+                                            <th className="p-3 text-left">Vật tư</th>
+                                            <th className="p-3 text-right">Đã xuất</th>
+                                            <th className="p-3 text-right">Thực nhận</th>
+                                            <th className="p-3 text-left">Lý do lệch</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {receivingBatch.lines.map(line => {
+                                            const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
+                                            const draft = receiveLines.find(item => item.lineId === line.id);
+                                            return (
+                                                <tr key={line.id}>
+                                                    <td className="p-3 font-bold text-slate-700">{requestLine ? getLineName(requestLine) : line.itemId}</td>
+                                                    <td className="p-3 text-right font-bold text-indigo-600">{Number(line.issuedQty || 0).toLocaleString('vi-VN')}</td>
+                                                    <td className="p-3 text-right">
+                                                        <input
+                                                            type="number"
+                                                            min={0}
+                                                            value={draft?.qty || '0'}
+                                                            onChange={event => updateReceiveLine(line.id, { qty: event.target.value })}
+                                                            className="w-24 rounded-lg border border-emerald-200 px-2 py-1 text-right font-black text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-300"
+                                                        />
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <input
+                                                            value={draft?.reason || ''}
+                                                            onChange={event => updateReceiveLine(line.id, { reason: event.target.value })}
+                                                            placeholder="Bắt buộc nếu nhận lệch số xuất"
+                                                            className="w-full rounded-lg border border-slate-200 px-2 py-1 outline-none focus:ring-2 focus:ring-emerald-300"
+                                                        />
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-3">
+                            <button onClick={() => setReceivingBatch(null)} className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 font-bold">Huỷ</button>
+                            <button disabled={isSaving} onClick={handleReceiveFulfillmentBatch} className="px-5 py-2 rounded-lg bg-emerald-600 text-white font-black hover:bg-emerald-700 disabled:opacity-60 flex items-center gap-2">
+                                {isSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />} Xác nhận nhận
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Modals for selection */}
             <ItemSelectionModal
@@ -1097,6 +1653,28 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     setScannerOpen(false);
                 }}
             />
+
+            {submittingProjectRequest && (
+                <ProjectSubmissionDialog
+                    title="Gửi đề xuất vật tư"
+                    actionLabel="Gửi đề xuất"
+                    documentLabel="Đề xuất vật tư dự án"
+                    documentName={`${submittingProjectRequest.code} • ${getWarehouseName(submittingProjectRequest.siteWarehouseId)}`}
+                    documentSubtitle="Trạng thái sau gửi: Chờ duyệt"
+                    projectId={effectiveProjectId || undefined}
+                    constructionSiteId={effectiveConstructionSiteId}
+                    recipientPermissionCodes={['approve']}
+                    recipientHint="Chọn đích danh người có quyền duyệt đề xuất vật tư trong tổ chức dự án."
+                    details={[
+                        { label: 'Kho nhận', value: getWarehouseName(submittingProjectRequest.siteWarehouseId) },
+                        { label: 'Số dòng vật tư', value: `${submittingProjectRequest.items.length} dòng` },
+                        { label: 'Cách cấp vật tư', value: submittingProjectRequest.fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Cấp thẳng sử dụng' : 'Nhập kho công trường' },
+                        { label: 'Ghi chú', value: submittingProjectRequest.note || '-' },
+                    ]}
+                    onCancel={() => setSubmittingProjectRequest(null)}
+                    onConfirm={target => submitCreatedRequest(submittingProjectRequest, target)}
+                />
+            )}
         </div>
     );
 };

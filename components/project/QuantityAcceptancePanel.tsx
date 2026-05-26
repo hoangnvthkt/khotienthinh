@@ -12,7 +12,7 @@ import {
   Trash2,
   XCircle,
 } from 'lucide-react';
-import { ContractItemType, QuantityAcceptance } from '../../types';
+import { ContractItemType, ProjectSubmissionTarget, QuantityAcceptance } from '../../types';
 import { quantityAcceptanceService, QuantityAcceptanceUnmappedVolume } from '../../lib/quantityAcceptanceService';
 import { paymentCertificateService } from '../../lib/paymentCertificateService';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
@@ -22,6 +22,7 @@ import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/project
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
+import ProjectSubmissionDialog from './ProjectSubmissionDialog';
 
 interface Props {
   contractId: string;
@@ -31,6 +32,10 @@ interface Props {
 }
 
 const fmt = (n: number) => n.toLocaleString('vi-VN');
+const fmtMoney = (n: number) => Number(n || 0).toLocaleString('vi-VN');
+const fmtPct = (n?: number | null) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
+const clampPercent = (value: number) => Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+const nonNegative = (value: number) => Math.max(0, Number.isFinite(value) ? value : 0);
 const today = () => new Date().toISOString().slice(0, 10);
 
 const STATUS_PERMISSION: Record<string, ProjectPermissionCode> = {
@@ -52,6 +57,7 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
   const [creating, setCreating] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [unmapped, setUnmapped] = useState<QuantityAcceptanceUnmappedVolume[]>([]);
+  const [submittingAcceptance, setSubmittingAcceptance] = useState<QuantityAcceptance | null>(null);
 
   const load = useCallback(async () => {
     setItems(await quantityAcceptanceService.listByContract(contractId, contractType));
@@ -100,7 +106,15 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
     }
   };
 
-  const handleSetStatus = async (item: QuantityAcceptance, status: 'submitted' | 'returned' | 'approved' | 'cancelled') => {
+  const handleSetStatus = async (
+    item: QuantityAcceptance,
+    status: 'submitted' | 'returned' | 'approved' | 'cancelled',
+    submissionTarget?: ProjectSubmissionTarget,
+  ) => {
+    if (status === 'submitted' && !submissionTarget) {
+      setSubmittingAcceptance(item);
+      return;
+    }
     const labels: Record<string, string> = {
       submitted: 'Gửi duyệt',
       returned: 'Trả lại',
@@ -118,12 +132,14 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
       toast.warning('Cần nhập lý do', 'Thao tác trả lại/huỷ cần lý do để truy vết.');
       return;
     }
-    const ok = await confirm({
-      title: labels[status] || status,
-      targetName: `Nghiệm thu Đợt ${item.periodNumber}`,
-      warningText: warningTexts[status],
-    });
-    if (!ok) return;
+    if (!(status === 'submitted' && submissionTarget)) {
+      const ok = await confirm({
+        title: labels[status] || status,
+        targetName: `Nghiệm thu Đợt ${item.periodNumber}`,
+        warningText: warningTexts[status],
+      });
+      if (!ok) return;
+    }
 
     try {
       if (user?.role !== 'ADMIN') {
@@ -134,6 +150,44 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
           code: STATUS_PERMISSION[status],
           actionLabel: labels[status].toLowerCase(),
         });
+      }
+      const policyAction = status === 'submitted'
+        ? 'submit'
+        : status === 'returned'
+          ? 'return'
+          : status === 'approved'
+            ? 'approve'
+            : 'cancel';
+      const statusPolicy = getProjectDocumentPolicy({
+        action: policyAction,
+        documentType: 'quantity_acceptance',
+        status: item.status,
+        user,
+        permissions: user?.role === 'ADMIN'
+          ? ADMIN_PROJECT_PERMS
+          : ['view', STATUS_PERMISSION[status]],
+        reason,
+        currentHandlerIds: [item.submittedToUserId],
+        relatedUserIds: [item.submittedBy],
+        everSubmitted: item.everSubmitted,
+        documentLabel: `Nghiệm thu Đợt ${item.periodNumber}`,
+      });
+      if (!statusPolicy.allowed) {
+        await projectDocumentActionLogService.logBlocked({
+          projectId,
+          constructionSiteId,
+          documentType: 'quantity_acceptance',
+          documentId: item.id,
+          documentLabel: `Nghiệm thu Đợt ${item.periodNumber}`,
+          action: policyAction,
+          fromStatus: item.status,
+          reason,
+          blockedReason: statusPolicy.reason,
+          requiredRollbackSteps: statusPolicy.requiredRollbackSteps,
+          createdBy: user?.id,
+        });
+        toast.error('Không thể xử lý nghiệm thu', formatPolicyMessage(statusPolicy));
+        return;
       }
       if (status === 'returned' || status === 'cancelled') {
         const deps = status === 'cancelled'
@@ -147,6 +201,8 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
           permissions: user?.role === 'ADMIN' ? ADMIN_PROJECT_PERMS : ['view', STATUS_PERMISSION[status]],
           dependencies: deps,
           reason,
+          currentHandlerIds: [item.submittedToUserId],
+          everSubmitted: item.everSubmitted,
           documentLabel: `Nghiệm thu Đợt ${item.periodNumber}`,
         });
         if (!policy.allowed) {
@@ -168,7 +224,7 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
           return;
         }
       }
-      await quantityAcceptanceService.setStatus(item.id, status, user.id, reason, user, projectId);
+      await quantityAcceptanceService.setStatus(item.id, status, user.id, reason, user, projectId, submissionTarget);
       await projectDocumentActionLogService.log({
         projectId,
         constructionSiteId,
@@ -183,9 +239,11 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
         createdBy: user?.id,
       });
       await load();
+      if (status === 'submitted') setSubmittingAcceptance(null);
       toast.success(`${labels[status]} thành công`);
     } catch (e: any) {
       toast.error('Lỗi', e?.message);
+      if (status === 'submitted' && submissionTarget) throw e;
     }
   };
 
@@ -208,6 +266,7 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
         user,
         permissions: user?.role === 'ADMIN' ? ADMIN_PROJECT_PERMS : ['view', 'delete'],
         dependencies: deps,
+        everSubmitted: item.everSubmitted,
         documentLabel: `Nghiệm thu Đợt ${item.periodNumber}`,
       });
       if (!policy.allowed) {
@@ -250,17 +309,25 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
     }
   };
 
-  const handleUpdateLine = async (acceptance: QuantityAcceptance, itemIdx: number, acceptedQuantity: number) => {
+  const handleUpdateLine = async (
+    acceptance: QuantityAcceptance,
+    itemIdx: number,
+    updates: { acceptedPercent?: number; acceptedAmount?: number; amountNote?: string },
+  ) => {
     if (acceptance.status !== 'draft' && acceptance.status !== 'returned') return;
     const updatedItems = acceptance.items.map((line, idx) => {
       if (idx !== itemIdx) return line;
-      const safeQty = Math.max(0, Number(acceptedQuantity || 0));
-      const cumulativeAcceptedQuantity = line.previousAcceptedQuantity + safeQty;
+      const acceptedPercent = updates.acceptedPercent !== undefined
+        ? clampPercent(updates.acceptedPercent)
+        : Number(line.acceptedPercent || 0);
+      const acceptedAmount = updates.acceptedAmount !== undefined
+        ? nonNegative(updates.acceptedAmount)
+        : Number(line.acceptedAmount || 0);
       return {
         ...line,
-        acceptedQuantity: safeQty,
-        cumulativeAcceptedQuantity,
-        acceptedAmount: safeQty * line.unitPrice,
+        acceptedPercent,
+        acceptedAmount,
+        amountNote: updates.amountNote !== undefined ? updates.amountNote : line.amountNote,
       };
     });
     try {
@@ -298,22 +365,6 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
         periodStart: acceptance.periodStart,
         periodEnd: acceptance.periodEnd,
         description: `Thanh toán từ nghiệm thu đợt ${acceptance.periodNumber}`,
-        items: acceptance.items.map(item => ({
-          contractItemId: item.contractItemId,
-          contractItemCode: item.contractItemCode,
-          contractItemName: item.contractItemName,
-          unit: item.unit,
-          contractQuantity: item.cumulativeAcceptedQuantity,
-          revisedContractQuantity: item.cumulativeAcceptedQuantity,
-          previousQuantity: item.previousAcceptedQuantity,
-          currentQuantity: item.acceptedQuantity,
-          certifiedQuantity: item.acceptedQuantity,
-          cumulativeQuantity: item.cumulativeAcceptedQuantity,
-          unitPrice: item.unitPrice,
-          currentAmount: item.acceptedAmount,
-          cumulativeAmount: item.cumulativeAcceptedQuantity * item.unitPrice,
-          sourceAcceptanceItemId: item.id,
-        })),
       });
       await load();
       toast.success('Đã tạo chứng từ thanh toán từ nghiệm thu');
@@ -343,8 +394,8 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
             <div className="flex items-start gap-2">
               <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-500" />
               <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-black text-amber-700">Có {unmapped.length} dòng khối lượng verified chưa đối chiếu BOQ</div>
-                <div className="mt-0.5 text-[10px] font-medium text-amber-700">Các dòng này chưa được đưa vào nghiệm thu cho tới khi thuộc nhóm đối chiếu reviewed/locked.</div>
+                <div className="text-[11px] font-black text-amber-700">Có {unmapped.length} dòng khối lượng verified chưa liên kết BOQ hợp đồng</div>
+                <div className="mt-0.5 text-[10px] font-medium text-amber-700">Các dòng này chưa được đưa vào nghiệm thu vì task/BOQ thi công chưa gắn dòng BOQ hợp đồng trong tiến độ.</div>
                 <div className="mt-2 divide-y divide-amber-100 rounded-lg bg-white/60">
                   {unmapped.slice(0, 5).map((row, idx) => (
                     <div key={`${row.dailyLogId}-${idx}`} className="flex items-center justify-between gap-3 px-2 py-1.5 text-[10px]">
@@ -383,67 +434,126 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
                     'bg-slate-50 text-slate-600 border-slate-200'
                   }`}>{item.status === 'cancelled' ? 'Đã huỷ' : item.status}</span>
                   <span className="text-xs font-black text-emerald-600">{fmt(item.totalAcceptedAmount)} đ</span>
+                </div>
+              </div>
+
+              {expandedId === item.id && item.items.length > 0 && (
+                <div className="mt-2 overflow-x-auto rounded-lg bg-slate-50">
+                  <table className="w-full min-w-[860px] text-[10px]">
+                    <thead className="bg-slate-100 text-[9px] font-black uppercase text-slate-400">
+                      <tr>
+                        <th className="px-2 py-2 text-left">BOQ hợp đồng</th>
+                        <th className="px-2 py-2 text-right">KL quy đổi</th>
+                        <th className="px-2 py-2 text-right">GT gợi ý</th>
+                        <th className="px-2 py-2 text-right">% nghiệm thu</th>
+                        <th className="px-2 py-2 text-right">GT nghiệm thu</th>
+                        <th className="px-2 py-2 text-left">Ghi chú</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white">
+                      {item.items.map((line, idx) => {
+                        const editable = item.status === 'draft' || item.status === 'returned';
+                        const suggestedAmount = Number(line.suggestedAmount ?? line.acceptedQuantity * line.unitPrice ?? 0);
+                        return (
+                          <tr key={idx}>
+                            <td className="px-2 py-1.5 font-bold text-slate-600">
+                              {line.contractItemCode} - {line.contractItemName}
+                            </td>
+                            <td className="px-2 py-1.5 text-right font-bold text-slate-500">
+                              {fmt(line.proposedQuantity)} {line.unit || ''}
+                            </td>
+                            <td className="px-2 py-1.5 text-right font-bold text-slate-500">
+                              {fmtMoney(suggestedAmount)} đ
+                            </td>
+                            <td className="px-2 py-1.5 text-right">
+                              {editable ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  step="0.01"
+                                  value={line.acceptedPercent || ''}
+                                  onChange={e => handleUpdateLine(item, idx, { acceptedPercent: Number(e.target.value) })}
+                                  className="w-20 rounded border border-emerald-200 bg-white px-1 py-0.5 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-emerald-300"
+                                />
+                              ) : (
+                                <span className="font-bold">{fmtPct(line.acceptedPercent)}%</span>
+                              )}
+                            </td>
+                            <td className="px-2 py-1.5 text-right">
+                              {editable ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={line.acceptedAmount || ''}
+                                  onChange={e => handleUpdateLine(item, idx, { acceptedAmount: Number(e.target.value) })}
+                                  className="w-28 rounded border border-emerald-200 bg-white px-1 py-0.5 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-emerald-300"
+                                />
+                              ) : (
+                                <span className="font-black text-emerald-700">{fmtMoney(line.acceptedAmount)} đ</span>
+                              )}
+                            </td>
+                            <td className="px-2 py-1.5">
+                              {editable ? (
+                                <input
+                                  value={line.amountNote || ''}
+                                  onChange={e => handleUpdateLine(item, idx, { amountNote: e.target.value })}
+                                  placeholder="Lý do/chốt tay..."
+                                  className="w-full rounded border border-slate-200 bg-white px-2 py-0.5 text-[10px] outline-none focus:ring-1 focus:ring-emerald-300"
+                                />
+                              ) : (
+                                <span className="text-slate-500">{line.amountNote || line.note || '—'}</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {expandedId === item.id && item.items.length === 0 && (
+                <div className="mt-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-[10px] font-bold text-amber-700">
+                  Phiếu này chưa có hạng mục. Cần tạo lại sau khi nhật ký verified có liên kết task/BOQ hợp đồng.
+                </div>
+              )}
+              {expandedId === item.id && (
+                <div className="mt-2 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-2">
                   {(item.status === 'draft' || item.status === 'returned') && (
-                    <button onClick={() => handleSetStatus(item, 'submitted')} title="Gửi duyệt" className="text-amber-500 hover:text-amber-700 transition-colors">
-                      <Send size={13} />
+                    <button onClick={() => handleSetStatus(item, 'submitted')} className="inline-flex items-center gap-1 rounded-lg bg-amber-500 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-amber-600">
+                      <Send size={11} /> Gửi duyệt
                     </button>
                   )}
                   {item.status === 'draft' && (
-                    <button onClick={() => handleDelete(item)} title="Xoá nghiệm thu" className="text-slate-400 hover:text-red-600 transition-colors">
-                      <Trash2 size={13} />
+                    <button onClick={() => handleDelete(item)} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[10px] font-bold text-red-600 hover:bg-red-100">
+                      <Trash2 size={11} /> Xoá
                     </button>
                   )}
                   {item.status === 'returned' && (
-                    <button onClick={() => handleSetStatus(item, 'cancelled')} title="Huỷ nghiệm thu" className="text-slate-400 hover:text-red-600 transition-colors">
-                      <XCircle size={13} />
+                    <button onClick={() => handleSetStatus(item, 'cancelled')} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[10px] font-bold text-red-600 hover:bg-red-100">
+                      <XCircle size={11} /> Huỷ
                     </button>
                   )}
                   {item.status === 'submitted' && (
                     <>
-                      <button onClick={() => handleSetStatus(item, 'returned')} title="Trả lại" className="text-red-500 hover:text-red-700 transition-colors">
-                        <RotateCcw size={13} />
+                      <button onClick={() => handleSetStatus(item, 'returned')} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[10px] font-bold text-red-600 hover:bg-red-100">
+                        <RotateCcw size={11} /> Trả lại
                       </button>
-                      <button onClick={() => handleSetStatus(item, 'approved')} title="Phê duyệt" className="text-emerald-500 hover:text-emerald-700 transition-colors">
-                        <Check size={13} />
+                      <button onClick={() => handleSetStatus(item, 'approved')} className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-emerald-700">
+                        <Check size={11} /> Phê duyệt
                       </button>
                     </>
                   )}
                   {item.status === 'approved' && (
                     <>
-                      <button onClick={() => createPayment(item)} title="Tạo thanh toán" className="text-indigo-500 hover:text-indigo-700 transition-colors">
-                        <CreditCard size={13} />
+                      <button onClick={() => createPayment(item)} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-indigo-700">
+                        <CreditCard size={11} /> Tạo thanh toán
                       </button>
-                      <button onClick={() => handleSetStatus(item, 'cancelled')} title="Huỷ nghiệm thu" className="text-slate-400 hover:text-red-600 transition-colors">
-                        <XCircle size={13} />
+                      <button onClick={() => handleSetStatus(item, 'cancelled')} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[10px] font-bold text-red-600 hover:bg-red-100">
+                        <XCircle size={11} /> Huỷ/Rollback
                       </button>
                     </>
                   )}
-                </div>
-              </div>
-
-              {expandedId === item.id && item.items.length > 0 && (
-                <div className="mt-2 rounded-lg bg-slate-50 overflow-hidden">
-                  {item.items.map((line, idx) => (
-                    <div key={idx} className="px-2 py-1 flex items-center justify-between text-[10px] border-b border-white">
-                      <span className="font-bold text-slate-600">{line.contractItemCode} - {line.contractItemName}</span>
-                      {(item.status === 'draft' || item.status === 'returned') ? (
-                        <input
-                          type="number"
-                          min={0}
-                          value={line.acceptedQuantity || ''}
-                          onChange={e => handleUpdateLine(item, idx, Number(e.target.value))}
-                          className="w-24 rounded border border-emerald-200 bg-white px-1 py-0.5 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-emerald-300"
-                        />
-                      ) : (
-                        <span>{fmt(line.acceptedQuantity)} {line.unit}</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {expandedId === item.id && item.items.length === 0 && (
-                <div className="mt-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-[10px] font-bold text-amber-700">
-                  Phiếu này chưa có hạng mục. Cần tạo lại sau khi hoàn tất đối chiếu BOQ.
                 </div>
               )}
             </div>
@@ -451,6 +561,27 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
           {items.length === 0 && <div className="p-6 text-center text-xs font-bold text-slate-400">Chưa có nghiệm thu</div>}
         </div>
       </div>
+      {submittingAcceptance && (
+        <ProjectSubmissionDialog
+          title="Gửi nghiệm thu khối lượng"
+          actionLabel="Gửi duyệt"
+          documentLabel="Nghiệm thu"
+          documentName={`Đợt ${submittingAcceptance.periodNumber} • ${submittingAcceptance.description || 'Nghiệm thu khối lượng'}`}
+          documentSubtitle={`Trạng thái hiện tại: ${submittingAcceptance.status}`}
+          projectId={projectId}
+          constructionSiteId={constructionSiteId}
+          recipientPermissionCodes={['approve']}
+          recipientHint="Chọn đích danh người có quyền phê duyệt nghiệm thu."
+          details={[
+            { label: 'Giá trị nghiệm thu', value: `${fmt(submittingAcceptance.totalAcceptedAmount)} đ` },
+            { label: 'Số dòng', value: `${submittingAcceptance.items.length} hạng mục` },
+            { label: 'Kỳ', value: `${new Date(submittingAcceptance.periodStart).toLocaleDateString('vi-VN')} - ${new Date(submittingAcceptance.periodEnd).toLocaleDateString('vi-VN')}` },
+            { label: 'Hợp đồng', value: submittingAcceptance.contractType === 'customer' ? 'Khách hàng' : 'Thầu phụ' },
+          ]}
+          onCancel={() => setSubmittingAcceptance(null)}
+          onConfirm={target => handleSetStatus(submittingAcceptance, 'submitted', target)}
+        />
+      )}
     </div>
   );
 };

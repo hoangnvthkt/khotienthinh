@@ -1,10 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { X, Save, ShieldAlert, Truck, MapPin, Loader2 } from 'lucide-react';
-import { InventoryItem, Role, Transaction, TransactionType, TransactionStatus } from '../types';
+import { BusinessPartner, InventoryItem, Role, Transaction, TransactionType, TransactionStatus } from '../types';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
+import { partnerService } from '../lib/partnerService';
+import { supplierPartnerBridge } from '../lib/supplierPartnerBridge';
 
 interface AddInventoryModalProps {
   isOpen: boolean;
@@ -13,9 +15,13 @@ interface AddInventoryModalProps {
 }
 
 const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, onAdd }) => {
-  const { warehouses, categories, units, suppliers, user, addTransaction, logActivity } = useApp();
+  const { warehouses, categories, units, user, addTransaction, logActivity } = useApp();
   const toast = useToast();
   const [saving, setSaving] = useState(false);
+  const [supplierPartners, setSupplierPartners] = useState<BusinessPartner[]>([]);
+  const [supplierSearch, setSupplierSearch] = useState('');
+  const [supplierOpen, setSupplierOpen] = useState(false);
+  const [supplierLoading, setSupplierLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     sku: '',
@@ -42,6 +48,59 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
       }
     }
   }, [isOpen, user]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let alive = true;
+    setSupplierLoading(true);
+    partnerService.list({ classification: 'supplier' })
+      .then(rows => {
+        if (!alive) return;
+        setSupplierPartners(rows);
+      })
+      .catch(error => {
+        if (!alive) return;
+        logApiError('addInventory.loadSupplierPartners', error);
+        toast.error('Không tải được HĐ đối tác', getApiErrorMessage(error, 'Không thể tải danh sách nhà cung cấp từ HĐ đối tác.'));
+      })
+      .finally(() => {
+        if (alive) setSupplierLoading(false);
+      });
+    return () => { alive = false; };
+  }, [isOpen, toast]);
+
+  const filteredSupplierPartners = useMemo(() => {
+    const keyword = supplierSearch.trim().toLowerCase();
+    const rows = supplierPartners.map(partner => ({
+      partner,
+      haystack: [partner.name, partner.code, partner.taxCode, partner.phone, partner.contactName, partner.contactPhone]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase(),
+    }));
+    if (!keyword) return rows.slice(0, 8).map(row => row.partner);
+    return rows
+      .filter(row => row.haystack.includes(keyword))
+      .slice(0, 8)
+      .map(row => row.partner);
+  }, [supplierPartners, supplierSearch]);
+
+  const selectedSupplierPartner = useMemo(
+    () => supplierPartners.find(partner => partner.id === formData.supplierId),
+    [formData.supplierId, supplierPartners],
+  );
+
+  const clearSupplier = () => {
+    setFormData(prev => ({ ...prev, supplierId: '' }));
+    setSupplierSearch('');
+    setSupplierOpen(false);
+  };
+
+  const pickSupplier = (partner: BusinessPartner) => {
+    setFormData(prev => ({ ...prev, supplierId: partner.id }));
+    setSupplierSearch(partner.name);
+    setSupplierOpen(false);
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -78,6 +137,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
 
     setSaving(true);
     try {
+      await supplierPartnerBridge.ensureLegacySupplier(selectedSupplierPartner);
       await onAdd(newItem);
 
       // 2. Nếu có nhập số lượng ban đầu, tạo Transaction
@@ -111,6 +171,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
         priceIn: 0, priceOut: 0, minStock: 0, location: '',
         initialWarehouseId: '', initialStock: 0
       });
+      setSupplierSearch('');
     } catch (err: any) {
       logApiError('addInventory.save', err);
       toast.error('Không thể thêm vật tư', getApiErrorMessage(err, 'Không thể lưu vật tư hoặc phiếu nhập kho lên Supabase.'));
@@ -215,13 +276,62 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
               <label className="text-sm font-medium text-slate-700 flex items-center">
                 <Truck size={14} className="mr-2 text-slate-400" /> Nhà cung cấp mặc định
               </label>
-              <select
-                name="supplierId" value={formData.supplierId} onChange={handleChange}
-                className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white"
-              >
-                <option value="">-- Không xác định --</option>
-                {suppliers.map(sup => <option key={sup.id} value={sup.id}>{sup.name}</option>)}
-              </select>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={supplierSearch || selectedSupplierPartner?.name || ''}
+                  onFocus={() => setSupplierOpen(true)}
+                  onBlur={() => window.setTimeout(() => setSupplierOpen(false), 140)}
+                  onChange={event => {
+                    setSupplierSearch(event.target.value);
+                    setFormData(prev => ({ ...prev, supplierId: '' }));
+                    setSupplierOpen(true);
+                  }}
+                  placeholder="Gõ tên để tìm NCC từ HĐ đối tác..."
+                  className="w-full p-2.5 pr-20 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white"
+                />
+                {(formData.supplierId || supplierSearch) && (
+                  <button
+                    type="button"
+                    onMouseDown={event => event.preventDefault()}
+                    onClick={clearSupplier}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-md text-[10px] font-bold text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  >
+                    Xoá
+                  </button>
+                )}
+                {supplierOpen && (
+                  <div className="absolute z-30 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+                    {supplierLoading && (
+                      <div className="px-3 py-3 text-xs font-bold text-slate-400 flex items-center gap-2">
+                        <Loader2 size={13} className="animate-spin" /> Đang tải HĐ đối tác...
+                      </div>
+                    )}
+                    {!supplierLoading && filteredSupplierPartners.map(partner => (
+                      <button
+                        key={partner.id}
+                        type="button"
+                        onMouseDown={event => event.preventDefault()}
+                        onClick={() => pickSupplier(partner)}
+                        className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50 border-b border-slate-50 last:border-b-0"
+                      >
+                        <div className="font-bold text-slate-700 truncate">{partner.name}</div>
+                        <div className="text-[10px] text-slate-400 truncate">
+                          {[partner.code, partner.taxCode, partner.phone, partner.contactName].filter(Boolean).join(' • ') || 'HĐ đối tác'}
+                        </div>
+                      </button>
+                    ))}
+                    {!supplierLoading && filteredSupplierPartners.length === 0 && (
+                      <div className="px-3 py-3 text-xs font-bold text-amber-600">
+                        Không tìm thấy NCC trong HĐ đối tác.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 font-medium">
+                Danh sách lấy từ Hợp đồng → HĐ đối tác, chỉ các đối tác được phân loại “Nhà cung cấp”.
+              </p>
             </div>
 
             <div className="space-y-2">

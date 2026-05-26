@@ -3,8 +3,8 @@ import {
   Plus, FileText, CheckCircle2, Clock, DollarSign, AlertTriangle,
   ChevronDown, ChevronRight, X, Send, Check, CreditCard, XCircle,
 } from 'lucide-react';
-import { PaymentCertificate, PaymentCertificateStatus, ContractItemType, AdvancePayment } from '../../types';
-import { paymentCertificateService, calculatePayableAmount } from '../../lib/paymentCertificateService';
+import { PaymentCertificate, PaymentCertificateStatus, ContractItemType, AdvancePayment, ProjectSubmissionTarget } from '../../types';
+import { paymentCertificateService } from '../../lib/paymentCertificateService';
 import { advancePaymentService } from '../../lib/advancePaymentService';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
 import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
@@ -13,6 +13,7 @@ import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/project
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
+import ProjectSubmissionDialog from './ProjectSubmissionDialog';
 
 interface Props {
   contractId: string;
@@ -27,6 +28,10 @@ const fmtM = (n: number) => {
   if (n >= 1e6) return (n / 1e6).toFixed(1) + ' tr';
   return fmt(n) + ' đ';
 };
+const fmtPct = (n?: number | null) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
+const nonNegative = (value: number) => Math.max(0, Number.isFinite(value) ? value : 0);
+const linePreviousAmount = (item: { cumulativeAmount?: number; currentAmount?: number }) =>
+  Math.max(0, Number(item.cumulativeAmount || 0) - Number(item.currentAmount || 0));
 
 const STATUS_CFG: Record<PaymentCertificateStatus, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
   draft:     { label: 'Nháp',       color: 'text-slate-600',   bg: 'bg-slate-50 border-slate-200',     icon: <Clock size={11} /> },
@@ -56,6 +61,8 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingCert, setEditingCert] = useState<PaymentCertificate | null>(null);
+  const [submittingCert, setSubmittingCert] = useState<PaymentCertificate | null>(null);
+  const [confirmingCert, setConfirmingCert] = useState<PaymentCertificate | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,7 +102,19 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
     } catch (e: any) { toast.error('Lỗi tạo đợt TT', e?.message); }
   };
 
-  const handleStatusChange = async (cert: PaymentCertificate, newStatus: PaymentCertificateStatus) => {
+  const handleStatusChange = async (
+    cert: PaymentCertificate,
+    newStatus: PaymentCertificateStatus,
+    submissionTarget?: ProjectSubmissionTarget,
+  ) => {
+    if (newStatus === 'submitted' && !submissionTarget) {
+      setSubmittingCert(cert);
+      return;
+    }
+    if (newStatus === 'approved' && !submissionTarget) {
+      setConfirmingCert(cert);
+      return;
+    }
     const labels: Record<string, string> = { submitted: 'Gửi duyệt', returned: 'Trả lại', approved: 'Phê duyệt', paid: 'Xác nhận thanh toán', cancelled: 'Huỷ/Rollback chứng từ' };
     const reason = newStatus === 'returned' || newStatus === 'cancelled'
       ? window.prompt(newStatus === 'returned' ? 'Nhập lý do trả lại chứng từ' : 'Nhập lý do huỷ/rollback chứng từ')?.trim()
@@ -107,8 +126,10 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
     const warningText = newStatus === 'cancelled'
       ? 'Rollback chứng từ sẽ hủy trạng thái thanh toán/phê duyệt và mở khóa BOQ liên quan nếu không còn chứng từ paid khác dùng cùng hạng mục.'
       : undefined;
-    const ok = await confirm({ title: labels[newStatus] || newStatus, targetName: `Đợt ${cert.periodNumber}`, warningText });
-    if (!ok) return;
+    if (!(newStatus === 'submitted' && submissionTarget)) {
+      const ok = await confirm({ title: labels[newStatus] || newStatus, targetName: `Đợt ${cert.periodNumber}`, warningText });
+      if (!ok) return;
+    }
     try {
       const requiredPermission = STATUS_PERMISSION[newStatus];
       if (requiredPermission && user?.role !== 'ADMIN') {
@@ -120,6 +141,46 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
           actionLabel: (labels[newStatus] || newStatus).toLowerCase(),
         });
       }
+      const policyAction = newStatus === 'submitted'
+        ? 'submit'
+        : newStatus === 'returned'
+          ? 'return'
+          : newStatus === 'approved'
+            ? 'approve'
+            : newStatus === 'paid'
+              ? 'confirm'
+              : 'cancel';
+      const statusPolicy = getProjectDocumentPolicy({
+        action: policyAction,
+        documentType: 'payment_certificate',
+        status: cert.status,
+        user,
+        permissions: user?.role === 'ADMIN'
+          ? ADMIN_PROJECT_PERMS
+          : ['view', requiredPermission || 'approve'],
+        reason,
+        currentHandlerIds: [cert.submittedToUserId],
+        relatedUserIds: [cert.submittedBy],
+        everSubmitted: cert.everSubmitted,
+        documentLabel: `Đợt ${cert.periodNumber}`,
+      });
+      if (!statusPolicy.allowed) {
+        await projectDocumentActionLogService.logBlocked({
+          projectId,
+          constructionSiteId,
+          documentType: 'payment_certificate',
+          documentId: cert.id,
+          documentLabel: `Đợt ${cert.periodNumber}`,
+          action: policyAction,
+          fromStatus: cert.status,
+          reason,
+          blockedReason: statusPolicy.reason,
+          requiredRollbackSteps: statusPolicy.requiredRollbackSteps,
+          createdBy: user?.id,
+        });
+        toast.error('Không thể xử lý chứng từ', formatPolicyMessage(statusPolicy));
+        return;
+      }
       if (newStatus === 'returned' || newStatus === 'cancelled') {
         const deps = await projectDocumentDependencyService.getPaymentCertificateDependencies(cert);
         const policy = getProjectDocumentPolicy({
@@ -128,8 +189,10 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
           status: cert.status,
           user,
           permissions: user?.role === 'ADMIN' ? ADMIN_PROJECT_PERMS : ['view', requiredPermission || 'approve'],
-          dependencies: newStatus === 'cancelled' ? null : deps,
+          dependencies: deps,
           reason,
+          currentHandlerIds: [cert.submittedToUserId],
+          everSubmitted: cert.everSubmitted,
           documentLabel: `Đợt ${cert.periodNumber}`,
         });
         if (!policy.allowed) {
@@ -151,7 +214,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
           return;
         }
       }
-      await paymentCertificateService.setStatus(cert.id, newStatus, user.id, reason, { approverUser: user, projectId });
+      await paymentCertificateService.setStatus(cert.id, newStatus, user.id, reason, { approverUser: user, projectId, submissionTarget });
       await projectDocumentActionLogService.log({
         projectId,
         constructionSiteId,
@@ -166,35 +229,36 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
         createdBy: user?.id,
       });
       await load();
+      if (newStatus === 'submitted') setSubmittingCert(null);
+      if (newStatus === 'approved') setConfirmingCert(null);
       toast.success(`${labels[newStatus]} thành công`);
-    } catch (e: any) { toast.error('Lỗi', e?.message); }
+    } catch (e: any) {
+      toast.error('Lỗi', e?.message);
+      if (newStatus === 'submitted' && submissionTarget) throw e;
+      if (newStatus === 'approved' && submissionTarget) throw e;
+    }
   };
 
-  const handleUpdateItem = async (cert: PaymentCertificate, itemIdx: number, currentQty: number) => {
+  const handleUpdateItem = async (
+    cert: PaymentCertificate,
+    itemIdx: number,
+    updates: { currentAmount?: number; paymentPercent?: number; paymentNote?: string },
+  ) => {
     const updatedItems = cert.items.map((item, i) => {
       if (i !== itemIdx) return item;
-      const cumQty = item.previousQuantity + currentQty;
+      const currentAmount = updates.currentAmount !== undefined
+        ? nonNegative(updates.currentAmount)
+        : Number(item.currentAmount || 0);
+      const previousAmount = linePreviousAmount(item);
       return {
         ...item,
-        currentQuantity: currentQty,
-        certifiedQuantity: currentQty,
-        cumulativeQuantity: cumQty,
-        currentAmount: currentQty * item.unitPrice,
-        cumulativeAmount: cumQty * item.unitPrice,
+        currentAmount,
+        cumulativeAmount: previousAmount + currentAmount,
+        paymentPercent: updates.paymentPercent !== undefined
+          ? Math.max(0, Number(updates.paymentPercent || 0))
+          : item.paymentPercent,
+        paymentNote: updates.paymentNote !== undefined ? updates.paymentNote : item.paymentNote,
       };
-    });
-    const currentCompletedValue = updatedItems.reduce((s, i) => s + i.currentAmount, 0);
-    const totalCompletedValue = updatedItems.reduce((s, i) => s + i.cumulativeAmount, 0);
-
-    // Auto calculate advance recovery
-    const advanceRecovery = await advancePaymentService.calculateRecovery(contractId, contractType, currentCompletedValue);
-    const retentionPercent = cert.retentionPercent || 5;
-    const { retentionAmount, currentPayableAmount } = calculatePayableAmount({
-      grossThisPeriod: currentCompletedValue,
-      advanceRecovery,
-      retentionPercent,
-      penaltyAmount: cert.penaltyAmount || 0,
-      deductionAmount: cert.deductionAmount || 0,
     });
 
     try {
@@ -209,16 +273,23 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
       }
       await paymentCertificateService.update(cert.id, {
         items: updatedItems,
-        currentCompletedValue,
-        totalCompletedValue,
-        advanceRecovery,
-        retentionAmount,
-        currentPayableAmount,
-        grossThisPeriod: currentCompletedValue,
-        grossCumulative: totalCompletedValue,
-        retentionThisPeriod: retentionAmount,
-        payableThisPeriod: currentPayableAmount,
       });
+      await load();
+    } catch (e: any) { toast.error('Lỗi cập nhật', e?.message); }
+  };
+
+  const handleUpdateCertificateAmounts = async (cert: PaymentCertificate, updates: Partial<PaymentCertificate>) => {
+    try {
+      if (user?.role !== 'ADMIN') {
+        await projectStaffService.requireProjectPermission({
+          userId: user?.id,
+          projectId,
+          constructionSiteId,
+          code: 'edit',
+          actionLabel: 'cập nhật chứng từ thanh toán',
+        });
+      }
+      await paymentCertificateService.update(cert.id, updates);
       await load();
     } catch (e: any) { toast.error('Lỗi cập nhật', e?.message); }
   };
@@ -242,6 +313,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
         user,
         permissions: user?.role === 'ADMIN' ? ADMIN_PROJECT_PERMS : ['view', 'delete'],
         dependencies: deps,
+        everSubmitted: cert.everSubmitted,
         documentLabel: `Đợt ${cert.periodNumber}`,
       });
       if (!policy.allowed) {
@@ -385,6 +457,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
             {certs.map(cert => {
               const st = STATUS_CFG[cert.status];
               const isExpanded = expandedId === cert.id;
+              const certEditable = cert.status === 'draft' || cert.status === 'returned';
               return (
                 <div key={cert.id}>
                   {/* Cert Header */}
@@ -404,7 +477,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
                     </div>
                     <div className="text-right">
                       <div className="text-sm font-black text-emerald-600">{fmtM(cert.payableThisPeriod ?? cert.currentPayableAmount)}</div>
-                      <div className="text-[10px] text-slate-400">GT đợt này</div>
+                      <div className="text-[10px] text-slate-400">GT thanh toán</div>
                     </div>
                   </div>
 
@@ -413,45 +486,80 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
                     <div className="px-4 pb-4 bg-slate-50/30 dark:bg-slate-700/20 border-t border-slate-100 dark:border-slate-700 space-y-3">
                       {/* Items Table */}
                       <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-600 mt-3">
-                        <table className="w-full text-left">
+                        <table className="w-full min-w-[980px] text-left">
                           <thead>
                             <tr className="bg-indigo-50/50 dark:bg-slate-700">
                               <th className="px-2 py-2 text-[8px] font-black text-slate-500 uppercase">Mã</th>
                               <th className="px-2 py-2 text-[8px] font-black text-slate-500 uppercase">Hạng mục</th>
-                              <th className="px-2 py-2 text-[8px] font-black text-slate-500 uppercase text-center">ĐVT</th>
-                              <th className="px-2 py-2 text-[8px] font-black text-slate-500 uppercase text-right">KL HĐ</th>
-                              <th className="px-2 py-2 text-[8px] font-black text-slate-500 uppercase text-right">Đã NT</th>
-                              <th className="px-2 py-2 text-[8px] font-black text-slate-500 uppercase text-right">KL đợt này</th>
-                              <th className="px-2 py-2 text-[8px] font-black text-slate-500 uppercase text-right">Lũy kế</th>
-                              <th className="px-2 py-2 text-[8px] font-black text-slate-500 uppercase text-right">Đơn giá</th>
-                              <th className="px-2 py-2 text-[8px] font-black text-slate-500 uppercase text-right">GT đợt này</th>
+                              <th className="px-2 py-2 text-[8px] font-black text-slate-500 uppercase text-right">GT HĐ</th>
+                              <th className="px-2 py-2 text-[8px] font-black text-slate-500 uppercase text-right">GT nghiệm thu</th>
+                              <th className="px-2 py-2 text-[8px] font-black text-slate-500 uppercase text-right">Đã TT trước</th>
+                              <th className="px-2 py-2 text-[8px] font-black text-slate-500 uppercase text-right">% TT</th>
+                              <th className="px-2 py-2 text-[8px] font-black text-slate-500 uppercase text-right">GT đề nghị TT</th>
+                              <th className="px-2 py-2 text-[8px] font-black text-slate-500 uppercase text-left">Ghi chú</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
-                            {cert.items.map((item, idx) => (
-                              <tr key={idx} className="hover:bg-indigo-50/20">
-                                <td className="px-2 py-1.5 text-[10px] font-bold text-indigo-600">{item.contractItemCode}</td>
-                                <td className="px-2 py-1.5 text-[10px] text-slate-700 dark:text-slate-300">{item.contractItemName}</td>
-                                <td className="px-2 py-1.5 text-[10px] text-center text-slate-500">{item.unit}</td>
-                                <td className="px-2 py-1.5 text-[10px] text-right">{fmt(item.contractQuantity)}</td>
-                                <td className="px-2 py-1.5 text-[10px] text-right text-slate-400">{fmt(item.previousQuantity)}</td>
-                                <td className="px-2 py-1.5 text-right">
-                                  {cert.status === 'draft' || cert.status === 'returned' ? (
-                                    <input type="number" value={item.currentQuantity || ''} min={0}
-                                      onChange={e => handleUpdateItem(cert, idx, Number(e.target.value))}
-                                      className="w-16 px-1 py-0.5 rounded border border-indigo-300 text-[10px] text-right outline-none focus:ring-1 focus:ring-indigo-400" />
-                                  ) : (
-                                    <span className="text-[10px] font-bold">{fmt(item.currentQuantity)}</span>
-                                  )}
-                                </td>
-                                <td className="px-2 py-1.5 text-[10px] text-right font-bold text-blue-600">{fmt(item.cumulativeQuantity)}</td>
-                                <td className="px-2 py-1.5 text-[10px] text-right">{fmt(item.unitPrice)}</td>
-                                <td className="px-2 py-1.5 text-[10px] text-right font-bold text-emerald-600">{fmtM(item.currentAmount)}</td>
-                              </tr>
-                            ))}
+                            {cert.items.map((item, idx) => {
+                              const contractAmount = Number(item.contractAmount ?? 0)
+                                || Number(item.revisedContractQuantity ?? item.contractQuantity ?? 0) * Number(item.unitPrice || 0);
+                              const previousAmount = linePreviousAmount(item);
+                              const sourceAcceptedAmount = Number(item.sourceAcceptedAmount || item.currentAmount || 0);
+                              return (
+                                <tr key={idx} className="hover:bg-indigo-50/20">
+                                  <td className="px-2 py-1.5 text-[10px] font-bold text-indigo-600">{item.contractItemCode}</td>
+                                  <td className="px-2 py-1.5 text-[10px] text-slate-700 dark:text-slate-300">
+                                    <div className="font-bold">{item.contractItemName}</div>
+                                    <div className="text-[9px] text-slate-400">KL tham chiếu {fmt(item.currentQuantity)} {item.unit || ''} • ĐG {fmt(item.unitPrice)}</div>
+                                  </td>
+                                  <td className="px-2 py-1.5 text-[10px] text-right">{fmtM(contractAmount)}</td>
+                                  <td className="px-2 py-1.5 text-[10px] text-right font-bold text-blue-600">{fmtM(sourceAcceptedAmount)}</td>
+                                  <td className="px-2 py-1.5 text-[10px] text-right text-slate-500">{fmtM(previousAmount)}</td>
+                                  <td className="px-2 py-1.5 text-right">
+                                    {certEditable ? (
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step="0.01"
+                                        value={item.paymentPercent || ''}
+                                        onChange={e => handleUpdateItem(cert, idx, { paymentPercent: Number(e.target.value) })}
+                                        className="w-20 px-1 py-0.5 rounded border border-indigo-300 text-[10px] text-right outline-none focus:ring-1 focus:ring-indigo-400"
+                                      />
+                                    ) : (
+                                      <span className="text-[10px] font-bold">{fmtPct(item.paymentPercent)}%</span>
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-right">
+                                    {certEditable ? (
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        value={item.currentAmount || ''}
+                                        onChange={e => handleUpdateItem(cert, idx, { currentAmount: Number(e.target.value) })}
+                                        className="w-28 px-1 py-0.5 rounded border border-indigo-300 text-[10px] text-right font-bold outline-none focus:ring-1 focus:ring-indigo-400"
+                                      />
+                                    ) : (
+                                      <span className="text-[10px] font-black text-emerald-600">{fmtM(item.currentAmount)}</span>
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    {certEditable ? (
+                                      <input
+                                        value={item.paymentNote || ''}
+                                        onChange={e => handleUpdateItem(cert, idx, { paymentNote: e.target.value })}
+                                        placeholder="Lý do/chốt số tiền..."
+                                        className="w-full px-2 py-0.5 rounded border border-slate-200 text-[10px] outline-none focus:ring-1 focus:ring-indigo-400"
+                                      />
+                                    ) : (
+                                      <span className="text-[10px] text-slate-500">{item.paymentNote || item.note || '—'}</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                             {cert.items.length === 0 && (
                               <tr>
-                                <td colSpan={9} className="px-3 py-4 text-center text-[10px] font-bold text-amber-600">
+                                <td colSpan={8} className="px-3 py-4 text-center text-[10px] font-bold text-amber-600">
                                   Chứng từ này chưa có hạng mục. Cần tạo lại sau khi có BOQ/nghiệm thu hợp lệ.
                                 </td>
                               </tr>
@@ -463,20 +571,95 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
                       {/* Calculation Block */}
                       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 p-4 space-y-2">
                         <h5 className="text-[10px] font-black text-slate-500 uppercase mb-2">Tính toán thanh toán</h5>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500">GT đề nghị thanh toán kỳ này</span>
+                          <span className="text-sm font-bold text-slate-800 dark:text-white">{fmtM(cert.grossThisPeriod ?? cert.currentCompletedValue)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500">GT đề nghị lũy kế</span>
+                          <span className="font-bold text-blue-600">{fmtM(cert.grossCumulative ?? cert.totalCompletedValue)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500">Đã TT đợt trước</span>
+                          <span className="font-bold text-slate-500">{fmtM(cert.previousCertifiedAmount)}</span>
+                        </div>
                         {[
-                          { label: 'GT hoàn thành kỳ này', value: cert.grossThisPeriod ?? cert.currentCompletedValue, color: 'text-slate-800 dark:text-white', bold: true },
-                          { label: 'GT hoàn thành lũy kế', value: cert.grossCumulative ?? cert.totalCompletedValue, color: 'text-blue-600' },
-                          { label: `(−) Thu hồi tạm ứng kỳ này`, value: -(cert.advanceRecoveryThisPeriod ?? cert.advanceRecovery), color: 'text-red-500' },
-                          { label: `(−) Giữ lại bảo hành kỳ này (${cert.retentionPercent}%)`, value: -(cert.retentionThisPeriod ?? cert.retentionAmount), color: 'text-red-500' },
-                          { label: '(−) Phạt', value: -cert.penaltyAmount, color: 'text-red-500', note: cert.penaltyReason },
-                          { label: '(−) Khấu trừ khác', value: -cert.deductionAmount, color: 'text-red-500', note: cert.deductionReason },
-                          { label: 'Đã TT đợt trước', value: cert.previousCertifiedAmount, color: 'text-slate-500' },
-                        ].map((row, i) => (
-                          <div key={i} className="flex items-center justify-between text-xs">
-                            <span className="text-slate-500">{row.label} {row.note && <span className="text-[9px] italic">({row.note})</span>}</span>
-                            <span className={`font-bold ${row.color} ${row.bold ? 'text-sm' : ''}`}>{fmtM(Math.abs(row.value))}</span>
+                          {
+                            label: '(−) Thu hồi tạm ứng nhập tay',
+                            value: cert.advanceRecoveryThisPeriod ?? cert.advanceRecovery,
+                            updates: (value: number) => ({ advanceRecoveryThisPeriod: value, advanceRecovery: value }),
+                          },
+                          {
+                            label: '(−) Giữ lại bảo hành nhập tay',
+                            value: cert.retentionThisPeriod ?? cert.retentionAmount,
+                            updates: (value: number) => ({ retentionThisPeriod: value, retentionAmount: value }),
+                          },
+                        ].map(row => (
+                          <div key={row.label} className="flex items-center justify-between gap-3 text-xs">
+                            <span className="text-slate-500">{row.label}</span>
+                            {certEditable ? (
+                              <input
+                                type="number"
+                                min={0}
+                                value={row.value || ''}
+                                onChange={e => handleUpdateCertificateAmounts(cert, row.updates(nonNegative(Number(e.target.value))))}
+                                className="w-32 rounded border border-indigo-300 px-2 py-1 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-indigo-400"
+                              />
+                            ) : (
+                              <span className="font-bold text-red-500">{fmtM(row.value)}</span>
+                            )}
                           </div>
                         ))}
+                        <div className="grid gap-2 md:grid-cols-[1fr_9rem_1.4fr] md:items-center text-xs">
+                          <span className="text-slate-500">(−) Phạt</span>
+                          {certEditable ? (
+                            <>
+                              <input
+                                type="number"
+                                min={0}
+                                value={cert.penaltyAmount || ''}
+                                onChange={e => handleUpdateCertificateAmounts(cert, { penaltyAmount: nonNegative(Number(e.target.value)) })}
+                                className="rounded border border-indigo-300 px-2 py-1 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-indigo-400"
+                              />
+                              <input
+                                value={cert.penaltyReason || ''}
+                                onChange={e => handleUpdateCertificateAmounts(cert, { penaltyReason: e.target.value })}
+                                placeholder="Lý do phạt..."
+                                className="rounded border border-slate-200 px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-indigo-400"
+                              />
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-right font-bold text-red-500">{fmtM(cert.penaltyAmount)}</span>
+                              <span className="text-[10px] italic text-slate-400">{cert.penaltyReason || '—'}</span>
+                            </>
+                          )}
+                        </div>
+                        <div className="grid gap-2 md:grid-cols-[1fr_9rem_1.4fr] md:items-center text-xs">
+                          <span className="text-slate-500">(−) Khấu trừ khác</span>
+                          {certEditable ? (
+                            <>
+                              <input
+                                type="number"
+                                min={0}
+                                value={cert.deductionAmount || ''}
+                                onChange={e => handleUpdateCertificateAmounts(cert, { deductionAmount: nonNegative(Number(e.target.value)) })}
+                                className="rounded border border-indigo-300 px-2 py-1 text-right text-[10px] font-bold outline-none focus:ring-1 focus:ring-indigo-400"
+                              />
+                              <input
+                                value={cert.deductionReason || ''}
+                                onChange={e => handleUpdateCertificateAmounts(cert, { deductionReason: e.target.value })}
+                                placeholder="Lý do khấu trừ..."
+                                className="rounded border border-slate-200 px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-indigo-400"
+                              />
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-right font-bold text-red-500">{fmtM(cert.deductionAmount)}</span>
+                              <span className="text-[10px] italic text-slate-400">{cert.deductionReason || '—'}</span>
+                            </>
+                          )}
+                        </div>
                         <div className="border-t-2 border-indigo-200 dark:border-indigo-800 pt-2 mt-2 flex items-center justify-between">
                           <span className="text-xs font-black text-indigo-700 dark:text-indigo-300 uppercase">GT thanh toán đợt này</span>
                           <span className="text-lg font-black text-indigo-700 dark:text-indigo-300">{fmtM(cert.payableThisPeriod ?? cert.currentPayableAmount)}</span>
@@ -527,6 +710,49 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
           </div>
         )}
       </div>
+
+      {submittingCert && (
+        <ProjectSubmissionDialog
+          title="Gửi chứng từ thanh toán"
+          actionLabel="Gửi duyệt"
+          documentLabel="Thanh toán"
+          documentName={`Đợt ${submittingCert.periodNumber} • ${submittingCert.description || 'Chứng từ thanh toán'}`}
+          documentSubtitle={`Trạng thái hiện tại: ${STATUS_CFG[submittingCert.status].label}`}
+          projectId={projectId}
+          constructionSiteId={constructionSiteId}
+          recipientPermissionCodes={['approve']}
+          recipientHint="Chọn đích danh người có quyền phê duyệt chứng từ thanh toán."
+          details={[
+            { label: 'Giá trị đề nghị', value: fmtM(submittingCert.grossThisPeriod ?? submittingCert.currentCompletedValue) },
+            { label: 'Giá trị thanh toán', value: fmtM(submittingCert.payableThisPeriod ?? submittingCert.currentPayableAmount) },
+            { label: 'Số dòng', value: `${submittingCert.items.length} hạng mục` },
+            { label: 'Kỳ', value: `${new Date(submittingCert.periodStart).toLocaleDateString('vi-VN')} - ${new Date(submittingCert.periodEnd).toLocaleDateString('vi-VN')}` },
+          ]}
+          onCancel={() => setSubmittingCert(null)}
+          onConfirm={target => handleStatusChange(submittingCert, 'submitted', target)}
+        />
+      )}
+      {confirmingCert && (
+        <ProjectSubmissionDialog
+          title="Phê duyệt chứng từ thanh toán"
+          actionLabel="Duyệt và chuyển xác nhận"
+          documentLabel="Thanh toán"
+          documentName={`Đợt ${confirmingCert.periodNumber} • ${confirmingCert.description || 'Chứng từ thanh toán'}`}
+          documentSubtitle={`Trạng thái hiện tại: ${STATUS_CFG[confirmingCert.status].label}`}
+          projectId={projectId}
+          constructionSiteId={constructionSiteId}
+          recipientPermissionCodes={['confirm']}
+          recipientHint="Chọn đích danh người xác nhận thanh toán/chi tiền ở bước tiếp theo."
+          details={[
+            { label: 'Giá trị đề nghị', value: fmtM(confirmingCert.grossThisPeriod ?? confirmingCert.currentCompletedValue) },
+            { label: 'Giá trị thanh toán', value: fmtM(confirmingCert.payableThisPeriod ?? confirmingCert.currentPayableAmount) },
+            { label: 'Số dòng', value: `${confirmingCert.items.length} hạng mục` },
+            { label: 'Kỳ', value: `${new Date(confirmingCert.periodStart).toLocaleDateString('vi-VN')} - ${new Date(confirmingCert.periodEnd).toLocaleDateString('vi-VN')}` },
+          ]}
+          onCancel={() => setConfirmingCert(null)}
+          onConfirm={target => handleStatusChange(confirmingCert, 'approved', target)}
+        />
+      )}
     </div>
   );
 };

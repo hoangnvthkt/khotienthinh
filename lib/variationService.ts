@@ -4,11 +4,13 @@ import {
   ContractVariation,
   ContractVariationItem,
   ContractVariationStatus,
+  ProjectSubmissionTarget,
   User,
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { auditService } from './auditService';
 import { approvalService } from './approvalService';
+import { projectSubmissionService } from './projectSubmissionService';
 
 const TABLE = 'contract_variations';
 const ITEM_TABLE = 'contract_variation_items';
@@ -113,7 +115,15 @@ export const variationService = {
     if (updates.items) await replaceItems(id, updates.items);
   },
 
-  async setStatus(id: string, status: ContractVariationStatus, userId?: string, reason?: string, approverUser?: User, projectId?: string): Promise<void> {
+  async setStatus(
+    id: string,
+    status: ContractVariationStatus,
+    userId?: string,
+    reason?: string,
+    approverUser?: User,
+    projectId?: string,
+    submissionTarget?: ProjectSubmissionTarget,
+  ): Promise<void> {
     const { data, error: readError } = await supabase.from(TABLE).select('*').eq('id', id).single();
     if (readError) throw readError;
     const variation = normalize(data);
@@ -143,12 +153,51 @@ export const variationService = {
         p_user_id: userId || null,
       });
       if (error) throw error;
+      const { error: metaError } = await supabase
+        .from(TABLE)
+        .update(toDb({
+          ...projectSubmissionService.actionMeta(userId),
+          ...projectSubmissionService.targetToUpdate(null),
+        }))
+        .eq('id', id);
+      if (metaError) throw metaError;
     } else {
-      const updates: any = { status };
-      if (status === 'submitted') { updates.submittedBy = userId; updates.submittedAt = now; }
-      if (status === 'rejected') { updates.rejectedBy = userId; updates.rejectedAt = now; updates.rejectionReason = reason; }
+      const updates: any = {
+        status,
+        ...projectSubmissionService.actionMeta(userId, status === 'submitted'),
+      };
+      if (status === 'submitted') {
+        updates.submittedBy = userId;
+        updates.submittedAt = now;
+        Object.assign(updates, projectSubmissionService.targetToUpdate(submissionTarget));
+      }
+      if (status === 'rejected') {
+        updates.rejectedBy = userId;
+        updates.rejectedAt = now;
+        updates.rejectionReason = reason;
+        Object.assign(updates, projectSubmissionService.returnToOwnerUpdate(variation.submittedBy, reason));
+      }
       const { error } = await supabase.from(TABLE).update(toDb(updates)).eq('id', id);
       if (error) throw error;
+      if (status === 'submitted' && submissionTarget) {
+        await projectSubmissionService.notifyTarget({
+          target: submissionTarget,
+          actorId: userId,
+          category: 'contract',
+          title: `Phát sinh BOQ ${variation.code} chờ duyệt`,
+          message: `Bạn được chọn duyệt phát sinh ${variation.title}.`,
+          sourceType: 'contract_variation',
+          sourceId: id,
+          constructionSiteId: variation.constructionSiteId,
+          link: '/da',
+          metadata: {
+            contractId: variation.contractId,
+            contractType: variation.contractType,
+            code: variation.code,
+            totalAmountDelta: variation.totalAmountDelta || 0,
+          },
+        }).catch(error => console.warn('Cannot notify variation recipient', error));
+      }
     }
     await auditService.log({
       tableName: TABLE,
@@ -163,9 +212,10 @@ export const variationService = {
   },
 
   async remove(id: string): Promise<void> {
-    const { data, error: readError } = await supabase.from(TABLE).select('status').eq('id', id).single();
+    const { data, error: readError } = await supabase.from(TABLE).select('status, ever_submitted').eq('id', id).single();
     if (readError) throw readError;
     if (data?.status !== 'draft') throw new Error('Chỉ xoá được phát sinh ở trạng thái Nháp.');
+    if (data?.ever_submitted) throw new Error('Phiếu phát sinh đã từng gửi duyệt, không được xoá cứng. Vui lòng huỷ/rollback để giữ lịch sử.');
     const { error } = await supabase.from(TABLE).delete().eq('id', id);
     if (error) throw error;
   },

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, FilePlus2, Loader2, Plus, Send, X } from 'lucide-react';
-import { ContractItem, ContractItemType, ContractVariation, ContractVariationItem } from '../../types';
+import { Check, FilePlus2, Loader2, Plus, RotateCcw, Send, X } from 'lucide-react';
+import { ContractItem, ContractItemType, ContractVariation, ContractVariationItem, ProjectSubmissionTarget } from '../../types';
 import { contractItemService } from '../../lib/contractItemService';
 import { variationService } from '../../lib/variationService';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
@@ -9,6 +9,9 @@ import { useConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
+import ProjectSubmissionDialog from './ProjectSubmissionDialog';
+import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
+import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
 
 interface Props {
   contractId: string;
@@ -73,6 +76,7 @@ const ContractVariationPanel: React.FC<Props> = ({ contractId, contractType, pro
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
   const [statusLoadingId, setStatusLoadingId] = useState<string | null>(null);
+  const [submittingVariation, setSubmittingVariation] = useState<ContractVariation | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -226,19 +230,36 @@ const ContractVariationPanel: React.FC<Props> = ({ contractId, contractType, pro
     }, { successTitle: 'Đã tạo điều chỉnh BOQ' });
   };
 
-  const setStatus = async (item: ContractVariation, status: 'submitted' | 'approved' | 'rejected') => {
+  const setStatus = async (
+    item: ContractVariation,
+    status: 'submitted' | 'approved' | 'rejected',
+    submissionTarget?: ProjectSubmissionTarget,
+  ) => {
+    if (status === 'submitted' && !submissionTarget) {
+      setSubmittingVariation(item);
+      return;
+    }
     const labels = { submitted: 'Gửi duyệt', approved: 'Duyệt điều chỉnh BOQ', rejected: 'Từ chối điều chỉnh BOQ' };
-    const ok = await confirm({
-      title: labels[status],
-      targetName: `${item.code} - ${item.title}`,
-      warningText: status === 'approved'
-        ? 'Khi duyệt, version này sẽ được áp dụng vào BOQ hiện hành và dùng cho nghiệm thu/thanh toán.'
-        : undefined,
-      intent: status === 'approved' ? 'success' : 'warning',
-      actionLabel: status === 'approved' ? 'Duyệt' : 'Xác nhận',
-      countdownSeconds: status === 'approved' ? 1 : 0,
-    });
-    if (!ok) return;
+    const reason = status === 'rejected'
+      ? window.prompt('Nhập lý do trả lại/từ chối điều chỉnh BOQ')?.trim()
+      : undefined;
+    if (status === 'rejected' && !reason) {
+      toast.warning('Cần nhập lý do', 'Thao tác trả lại cần lý do để người lập chỉnh đúng nội dung.');
+      return;
+    }
+    if (!(status === 'submitted' && submissionTarget)) {
+      const ok = await confirm({
+        title: labels[status],
+        targetName: `${item.code} - ${item.title}`,
+        warningText: status === 'approved'
+          ? 'Khi duyệt, version này sẽ được áp dụng vào BOQ hiện hành và dùng cho nghiệm thu/thanh toán.'
+          : undefined,
+        intent: status === 'approved' ? 'success' : 'warning',
+        actionLabel: status === 'approved' ? 'Duyệt' : 'Xác nhận',
+        countdownSeconds: status === 'approved' ? 1 : 0,
+      });
+      if (!ok) return;
+    }
     setStatusLoadingId(item.id);
     try {
       await projectStaffService.requireProjectPermission({
@@ -248,12 +269,58 @@ const ContractVariationPanel: React.FC<Props> = ({ contractId, contractType, pro
         code: STATUS_PERMISSION[status],
         actionLabel: labels[status].toLowerCase(),
       });
-      await variationService.setStatus(item.id, status, user?.id, undefined, user, projectId);
+      const policy = getProjectDocumentPolicy({
+        action: status === 'submitted' ? 'submit' : status === 'approved' ? 'approve' : 'return',
+        documentType: 'boq_item',
+        status: item.status,
+        user,
+        permissions: user?.role === 'ADMIN'
+          ? ['view', 'edit', 'delete', 'submit', 'verify', 'confirm', 'approve']
+          : ['view', STATUS_PERMISSION[status]],
+        currentHandlerIds: [item.submittedToUserId],
+        relatedUserIds: [item.submittedBy],
+        reason,
+        everSubmitted: item.everSubmitted,
+        documentLabel: `${item.code} - ${item.title}`,
+      });
+      if (!policy.allowed) {
+        await projectDocumentActionLogService.logBlocked({
+          projectId,
+          constructionSiteId,
+          documentType: 'boq_item',
+          documentId: item.id,
+          documentLabel: `${item.code} - ${item.title}`,
+          action: status === 'submitted' ? 'submit' : status === 'approved' ? 'approve' : 'return',
+          fromStatus: item.status,
+          reason,
+          blockedReason: policy.reason,
+          requiredRollbackSteps: policy.requiredRollbackSteps,
+          createdBy: user?.id,
+        });
+        toast.error('Không thể xử lý điều chỉnh BOQ', formatPolicyMessage(policy));
+        return;
+      }
+      await variationService.setStatus(item.id, status, user?.id, reason, user, projectId, submissionTarget);
+      await projectDocumentActionLogService.log({
+        projectId,
+        constructionSiteId,
+        documentType: 'boq_item',
+        documentId: item.id,
+        documentLabel: `${item.code} - ${item.title}`,
+        action: status === 'rejected' ? 'return' : status,
+        fromStatus: item.status,
+        toStatus: status,
+        reason,
+        warningAcknowledged: true,
+        createdBy: user?.id,
+      });
       await load();
+      if (status === 'submitted') setSubmittingVariation(null);
       toast.success(labels[status] + ' thành công');
     } catch (error) {
       logApiError('boqAdjustment.status', error);
       toast.error('Không thể cập nhật điều chỉnh BOQ', getApiErrorMessage(error, 'Không thể cập nhật trạng thái điều chỉnh BOQ.'));
+      if (status === 'submitted' && submissionTarget) throw error;
     } finally {
       setStatusLoadingId(null);
     }
@@ -360,7 +427,12 @@ const ContractVariationPanel: React.FC<Props> = ({ contractId, contractType, pro
                   {statusLoadingId === item.id ? <Loader2 size={13} className="animate-spin text-slate-400" /> : (
                     <>
                       {item.status === 'draft' && <button onClick={() => setStatus(item, 'submitted')} className="text-amber-500"><Send size={13} /></button>}
-                      {item.status === 'submitted' && <button onClick={() => setStatus(item, 'approved')} className="text-emerald-500"><Check size={13} /></button>}
+                      {item.status === 'submitted' && (
+                        <>
+                          <button onClick={() => setStatus(item, 'rejected')} className="text-red-500"><RotateCcw size={13} /></button>
+                          <button onClick={() => setStatus(item, 'approved')} className="text-emerald-500"><Check size={13} /></button>
+                        </>
+                      )}
                     </>
                   )}
                 </div>
@@ -379,6 +451,27 @@ const ContractVariationPanel: React.FC<Props> = ({ contractId, contractType, pro
           ))}
         </div>
       </div>
+      {submittingVariation && (
+        <ProjectSubmissionDialog
+          title="Gửi điều chỉnh BOQ"
+          actionLabel="Gửi duyệt"
+          documentLabel="Phát sinh BOQ"
+          documentName={`${submittingVariation.code} • ${submittingVariation.title}`}
+          documentSubtitle={`Version ${submittingVariation.versionNumber || '?'} • Trạng thái hiện tại: ${submittingVariation.status}`}
+          projectId={projectId}
+          constructionSiteId={constructionSiteId}
+          recipientPermissionCodes={['approve']}
+          recipientHint="Chọn đích danh người có quyền phê duyệt phát sinh BOQ."
+          details={[
+            { label: 'Giá trị phát sinh', value: fmt(submittingVariation.totalAmountDelta) },
+            { label: 'Số dòng', value: `${submittingVariation.items.length} hạng mục` },
+            { label: 'Ngày điều chỉnh', value: submittingVariation.adjustmentDate || submittingVariation.createdAt?.slice(0, 10) },
+            { label: 'Lý do', value: submittingVariation.reason || '-' },
+          ]}
+          onCancel={() => setSubmittingVariation(null)}
+          onConfirm={target => setStatus(submittingVariation, 'submitted', target)}
+        />
+      )}
     </div>
   );
 };

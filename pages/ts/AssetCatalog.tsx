@@ -19,6 +19,7 @@ import { usePagination } from '../../hooks/usePagination';
 import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import SearchableSelect from '../../components/common/SearchableSelect';
 
 const AssetCatalog: React.FC = () => {
     const navigate = useNavigate();
@@ -1078,11 +1079,22 @@ const AssetCatalog: React.FC = () => {
                                         <span className="text-base leading-none">+</span> Thêm mới
                                     </button>
                                 </div>
-                                <select value={form.supplierId} onChange={e => setForm(p => ({ ...p, supplierId: e.target.value }))}
-                                    className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-rose-500">
-                                    <option value="">-- Chọn nhà cung cấp --</option>
-                                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}{s.phone ? ` — ${s.phone}` : ''}</option>)}
-                                </select>
+                                <SearchableSelect
+                                    value={form.supplierId}
+                                    options={suppliers}
+                                    onChange={supplier => setForm(p => ({ ...p, supplierId: supplier?.id || '' }))}
+                                    getOptionValue={supplier => supplier.id}
+                                    getOptionLabel={supplier => supplier.name}
+                                    getOptionSearchText={supplier => [
+                                        supplier.name,
+                                        supplier.phone,
+                                        supplier.taxCode,
+                                        supplier.contactPerson,
+                                        supplier.email,
+                                    ].filter(Boolean).join(' ')}
+                                    placeholder="Gõ tên NCC, MST, SĐT..."
+                                    inputClassName="rounded-xl bg-slate-50 py-2.5 text-sm dark:bg-slate-800"
+                                />
                                 {showAddSupplier && (
                                     <div className="mt-2 p-3 bg-sky-50 dark:bg-sky-950/20 rounded-xl border border-sky-100 dark:border-sky-900/30 space-y-2">
                                         <div className="grid grid-cols-3 gap-2">

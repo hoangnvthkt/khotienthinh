@@ -13,11 +13,21 @@ const requestToDb = (request: ProjectTaskCompletionRequest): any => {
   return stripGeneratedColumns(toDb({
     ...request,
     attachments: request.attachments || [],
+    everSubmitted: request.everSubmitted ?? true,
+    lastActionBy: request.lastActionBy || request.submittedBy || null,
+    lastActionAt: request.lastActionAt || new Date().toISOString(),
   }));
 };
 
 const requestPatchToDb = (patch: Partial<ProjectTaskCompletionRequest>): any => {
-  return stripGeneratedColumns(toDb(patch));
+  return stripGeneratedColumns(toDb({
+    ...patch,
+    ...(patch.status ? {
+      everSubmitted: patch.everSubmitted ?? true,
+      lastActionBy: patch.lastActionBy || patch.verifiedBy || patch.approvedBy || patch.returnedBy || patch.cancelledBy || patch.submittedBy || null,
+      lastActionAt: patch.lastActionAt || new Date().toISOString(),
+    } : {}),
+  }));
 };
 
 export const taskCompletionRequestService = {
@@ -39,6 +49,15 @@ export const taskCompletionRequestService = {
   },
 
   async update(id: string, patch: Partial<ProjectTaskCompletionRequest>): Promise<void> {
+    const { data: current, error: readError } = await supabase
+      .from('project_task_completion_requests')
+      .select('status')
+      .eq('id', id)
+      .single();
+    if (readError) throw readError;
+    if (!['submitted', 'verified', 'returned', 'draft'].includes(current.status) && patch.status !== 'cancelled') {
+      throw new Error('Phiếu hoàn thành đã qua bước xử lý, cần rollback/trả lại trước khi sửa.');
+    }
     const { error } = await supabase
       .from('project_task_completion_requests')
       .update(requestPatchToDb(patch))
@@ -47,6 +66,15 @@ export const taskCompletionRequestService = {
   },
 
   async remove(id: string): Promise<void> {
+    const { data: current, error: readError } = await supabase
+      .from('project_task_completion_requests')
+      .select('status, ever_submitted')
+      .eq('id', id)
+      .single();
+    if (readError) throw readError;
+    if (current.status !== 'draft' || current.ever_submitted) {
+      throw new Error('Chỉ xoá cứng phiếu hoàn thành nháp chưa từng gửi duyệt.');
+    }
     const { error } = await supabase
       .from('project_task_completion_requests')
       .delete()

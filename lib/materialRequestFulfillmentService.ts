@@ -1,0 +1,582 @@
+import { supabase } from './supabase';
+import {
+  MaterialRequest,
+  MaterialRequestFulfillmentBatch,
+  MaterialRequestFulfillmentMode,
+  MaterialRequestLineFulfillmentSummary,
+  MaterialRequestFulfillmentSourceType,
+  MaterialRequestFulfillmentSummary,
+  RequestItem,
+  RequestStatus,
+  TransactionStatus,
+  TransactionType,
+} from '../types';
+
+const BATCH_TABLE = 'material_request_fulfillment_batches';
+const LINE_TABLE = 'material_request_fulfillment_lines';
+
+const toSnake = (s: string) => s.replace(/[A-Z]/g, l => `_${l.toLowerCase()}`);
+const toCamel = (s: string) => s.replace(/_([a-z])/g, (_, l) => l.toUpperCase());
+
+const mapKeys = (obj: any, fn: (k: string) => string): any => {
+  if (Array.isArray(obj)) return obj.map(v => mapKeys(v, fn));
+  if (obj && typeof obj === 'object' && !(obj instanceof Date)) {
+    return Object.fromEntries(Object.entries(obj).map(([k, v]) => [fn(k), v]));
+  }
+  return obj;
+};
+
+const toDb = (obj: any) => mapKeys(obj, toSnake);
+const fromDb = (obj: any) => mapKeys(obj, toCamel);
+
+const isMissingFulfillmentTable = (error: any): boolean =>
+  error?.code === '42P01' || String(error?.message || '').includes(BATCH_TABLE) || String(error?.message || '').includes(LINE_TABLE);
+
+const newId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+export const getRequestLineId = (request: MaterialRequest, line: RequestItem, index = 0): string =>
+  line.lineId || `${request.id}-${index}`;
+
+export const getCommittedQty = (line: RequestItem): number => {
+  return Number(line.requestQty || 0);
+};
+
+const lineName = (line: RequestItem): string =>
+  line.itemNameSnapshot || line.materialBudgetItemName || line.itemId;
+
+const normalizeBatch = (batch: any, lines: any[]): MaterialRequestFulfillmentBatch => ({
+  ...fromDb(batch),
+  fulfillmentMode: (batch.fulfillment_mode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK) as MaterialRequestFulfillmentMode,
+  sourceType: (batch.source_type || 'stock') as MaterialRequestFulfillmentSourceType,
+  lines: lines.map(fromDb),
+});
+
+export interface IssueFulfillmentLineInput {
+  requestLineId: string;
+  itemId: string;
+  issuedQty: number;
+  varianceReason?: string;
+  poId?: string | null;
+  poLineId?: string | null;
+}
+
+export interface IssueFulfillmentBatchInput {
+  request: MaterialRequest;
+  sourceWarehouseId: string;
+  sourceType: MaterialRequestFulfillmentSourceType;
+  actorUserId: string;
+  note?: string;
+  overrideReason?: string;
+  allowOverCommit?: boolean;
+  lines: IssueFulfillmentLineInput[];
+}
+
+export interface ReceiveFulfillmentLineInput {
+  lineId: string;
+  receivedQty: number;
+  varianceReason?: string;
+}
+
+export interface ReceiveFulfillmentBatchInput {
+  request: MaterialRequest;
+  batch: MaterialRequestFulfillmentBatch;
+  actorUserId: string;
+  overrideReason?: string;
+  allowOverCommit?: boolean;
+  lines: ReceiveFulfillmentLineInput[];
+}
+
+export interface ResolveFulfillmentVarianceInput {
+  batch: MaterialRequestFulfillmentBatch;
+  actorUserId: string;
+}
+
+const emptySummary = (request: MaterialRequest): MaterialRequestFulfillmentSummary => {
+  const lineSummaries = (request.items || []).map((line, index) => {
+    const requestedQty = Number(line.requestQty || 0);
+    const committedQty = getCommittedQty(line);
+    const orderedQty = Number(line.orderedQty || 0);
+    return {
+      materialRequestId: request.id,
+      requestLineId: getRequestLineId(request, line, index),
+      itemId: line.itemId,
+      requestedQty,
+      committedQty,
+      orderedQty,
+      issuedQty: 0,
+      receivedQty: 0,
+      remainingToIssue: committedQty,
+      remainingToReceive: committedQty,
+    };
+  });
+  const totals = lineSummaries.reduce((sum, line) => ({
+    requestedQty: sum.requestedQty + line.requestedQty,
+    committedQty: sum.committedQty + line.committedQty,
+    orderedQty: sum.orderedQty + line.orderedQty,
+    issuedQty: sum.issuedQty + line.issuedQty,
+    receivedQty: sum.receivedQty + line.receivedQty,
+    remainingToIssue: sum.remainingToIssue + line.remainingToIssue,
+    remainingToReceive: sum.remainingToReceive + line.remainingToReceive,
+  }), {
+    requestedQty: 0,
+    committedQty: 0,
+    orderedQty: 0,
+    issuedQty: 0,
+    receivedQty: 0,
+    remainingToIssue: 0,
+    remainingToReceive: 0,
+  });
+
+  return { materialRequestId: request.id, ...totals, lineSummaries };
+};
+
+export const materialRequestFulfillmentService = {
+  async listByRequest(materialRequestId: string): Promise<MaterialRequestFulfillmentBatch[]> {
+    const { data: batchRows, error: batchError } = await supabase
+      .from(BATCH_TABLE)
+      .select('*')
+      .eq('material_request_id', materialRequestId)
+      .order('batch_date', { ascending: false });
+    if (batchError) {
+      if (isMissingFulfillmentTable(batchError)) return [];
+      throw batchError;
+    }
+    const batches = batchRows || [];
+    if (batches.length === 0) return [];
+
+    const { data: lineRows, error: lineError } = await supabase
+      .from(LINE_TABLE)
+      .select('*')
+      .in('batch_id', batches.map(batch => batch.id))
+      .order('created_at', { ascending: true });
+    if (lineError) {
+      if (isMissingFulfillmentTable(lineError)) return [];
+      throw lineError;
+    }
+
+    const linesByBatch = new Map<string, any[]>();
+    (lineRows || []).forEach(line => {
+      const key = line.batch_id;
+      linesByBatch.set(key, [...(linesByBatch.get(key) || []), line]);
+    });
+
+    return batches.map(batch => normalizeBatch(batch, linesByBatch.get(batch.id) || []));
+  },
+
+  async listByRequests(materialRequestIds: string[]): Promise<Record<string, MaterialRequestFulfillmentBatch[]>> {
+    const ids = Array.from(new Set(materialRequestIds.filter(Boolean)));
+    if (ids.length === 0) return {};
+
+    const { data: batchRows, error: batchError } = await supabase
+      .from(BATCH_TABLE)
+      .select('*')
+      .in('material_request_id', ids)
+      .order('batch_date', { ascending: false });
+    if (batchError) {
+      if (isMissingFulfillmentTable(batchError)) return {};
+      throw batchError;
+    }
+    const batches = batchRows || [];
+    if (batches.length === 0) return {};
+
+    const { data: lineRows, error: lineError } = await supabase
+      .from(LINE_TABLE)
+      .select('*')
+      .in('batch_id', batches.map(batch => batch.id))
+      .order('created_at', { ascending: true });
+    if (lineError) {
+      if (isMissingFulfillmentTable(lineError)) return {};
+      throw lineError;
+    }
+
+    const linesByBatch = new Map<string, any[]>();
+    (lineRows || []).forEach(line => {
+      const key = line.batch_id;
+      linesByBatch.set(key, [...(linesByBatch.get(key) || []), line]);
+    });
+
+    return batches.reduce<Record<string, MaterialRequestFulfillmentBatch[]>>((map, batch) => {
+      const requestId = batch.material_request_id;
+      map[requestId] = [...(map[requestId] || []), normalizeBatch(batch, linesByBatch.get(batch.id) || [])];
+      return map;
+    }, {});
+  },
+
+  summarizeRequest(request: MaterialRequest, batches: MaterialRequestFulfillmentBatch[] = []): MaterialRequestFulfillmentSummary {
+    const summary = emptySummary(request);
+    const lineMap = new Map(summary.lineSummaries.map(line => [line.requestLineId, line]));
+
+    batches
+      .filter(batch => batch.status !== 'cancelled' && batch.status !== 'draft')
+      .forEach(batch => {
+        batch.lines.forEach(line => {
+          const target = lineMap.get(line.requestLineId);
+          if (!target) return;
+          target.issuedQty += Number(line.issuedQty || 0);
+          if (batch.status === 'received') {
+            target.receivedQty += Number(line.receivedQty || 0);
+            (target as any).allocatedQty = Number((target as any).allocatedQty || 0) + Number(line.receivedQty || 0);
+          } else if (batch.status === 'variance_pending') {
+            (target as any).allocatedQty = Number((target as any).allocatedQty || 0) + Number(line.receivedQty || 0);
+          } else if (batch.status === 'issued') {
+            (target as any).allocatedQty = Number((target as any).allocatedQty || 0) + Number(line.issuedQty || 0);
+          }
+        });
+      });
+
+    summary.lineSummaries.forEach(line => {
+      const allocatedQty = Number((line as any).allocatedQty || 0);
+      line.remainingToIssue = Math.max(0, line.committedQty - allocatedQty);
+      line.remainingToReceive = Math.max(0, line.committedQty - line.receivedQty);
+      delete (line as any).allocatedQty;
+    });
+
+    const totals = summary.lineSummaries.reduce((sum, line) => ({
+      requestedQty: sum.requestedQty + line.requestedQty,
+      committedQty: sum.committedQty + line.committedQty,
+      orderedQty: sum.orderedQty + line.orderedQty,
+      issuedQty: sum.issuedQty + line.issuedQty,
+      receivedQty: sum.receivedQty + line.receivedQty,
+      remainingToIssue: sum.remainingToIssue + line.remainingToIssue,
+      remainingToReceive: sum.remainingToReceive + line.remainingToReceive,
+    }), {
+      requestedQty: 0,
+      committedQty: 0,
+      orderedQty: 0,
+      issuedQty: 0,
+      receivedQty: 0,
+      remainingToIssue: 0,
+      remainingToReceive: 0,
+    });
+
+    return { ...summary, ...totals };
+  },
+
+  nextRequestStatus(request: MaterialRequest, batches: MaterialRequestFulfillmentBatch[]): RequestStatus {
+    if (request.status === RequestStatus.REJECTED || request.status === RequestStatus.PENDING || request.status === RequestStatus.DRAFT) {
+      return request.status;
+    }
+    const summary = this.summarizeRequest(request, batches);
+    if (summary.committedQty > 0 && summary.receivedQty >= summary.committedQty) return RequestStatus.COMPLETED;
+    if (summary.issuedQty > 0 || summary.receivedQty > 0) return RequestStatus.IN_TRANSIT;
+    return RequestStatus.APPROVED;
+  },
+
+  async createIssuedBatch(input: IssueFulfillmentBatchInput): Promise<MaterialRequestFulfillmentBatch> {
+    const validLines = input.lines
+      .map(line => ({ ...line, issuedQty: Number(line.issuedQty || 0) }))
+      .filter(line => line.issuedQty > 0);
+    if (validLines.length === 0) throw new Error('Chưa có dòng vật tư nào có số lượng cấp.');
+    if (!input.sourceWarehouseId) throw new Error('Chưa chọn kho nguồn để cấp vật tư.');
+
+    const existingBatches = await this.listByRequest(input.request.id);
+    const currentSummary = this.summarizeRequest(input.request, existingBatches);
+    const currentByLine = new Map<string, MaterialRequestLineFulfillmentSummary>(currentSummary.lineSummaries.map(line => [line.requestLineId, line]));
+    const requestLineMap = new Map<string, RequestItem>((input.request.items || []).map((line, index) => [getRequestLineId(input.request, line, index), line]));
+
+    validLines.forEach(line => {
+      const requestLine = requestLineMap.get(line.requestLineId);
+      if (!requestLine) throw new Error('Không tìm thấy dòng yêu cầu cần cấp.');
+      const current = currentByLine.get(line.requestLineId);
+      const requestQty = Number(current?.requestedQty || requestLine.requestQty || 0);
+      const remainingToIssue = Number(current?.remainingToIssue ?? requestQty);
+      if (line.issuedQty > remainingToIssue) {
+        throw new Error(`Số lượng cấp lũy kế của "${lineName(requestLine)}" vượt số lượng công trường đề xuất. Vui lòng tạo đề xuất bổ sung nếu cần cấp thêm.`);
+      }
+      if (line.issuedQty !== remainingToIssue && !line.varianceReason?.trim()) {
+        throw new Error(`Dòng "${lineName(requestLine)}" cấp lệch phần còn lại phải nhập lý do.`);
+      }
+    });
+
+    const batchId = newId();
+    const transactionId = `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const isDirectConsumption = input.request.fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION;
+    const targetWarehouseId = isDirectConsumption ? null : input.request.siteWarehouseId;
+    const batchNumber = `${input.request.code}-DOT-${existingBatches.length + 1}`;
+    const now = new Date().toISOString();
+
+    const transactionPayload = {
+      id: transactionId,
+      type: isDirectConsumption ? TransactionType.EXPORT : TransactionType.TRANSFER,
+      date: now,
+      items: validLines.map(line => ({
+        itemId: line.itemId,
+        quantity: line.issuedQty,
+        materialRequestId: input.request.id,
+        requestLineId: line.requestLineId,
+        fulfillmentBatchId: batchId,
+      })),
+      sourceWarehouseId: input.sourceWarehouseId,
+      targetWarehouseId,
+      requesterId: input.request.requesterId,
+      approverId: input.actorUserId,
+      status: TransactionStatus.PENDING,
+      note: `Đợt cấp vật tư ${batchNumber} từ phiếu ${input.request.code}${input.note ? ` - ${input.note}` : ''}`,
+      relatedRequestId: input.request.id,
+    };
+
+    const batchPayload = {
+      id: batchId,
+      projectId: input.request.projectId || null,
+      constructionSiteId: input.request.constructionSiteId || null,
+      materialRequestId: input.request.id,
+      batchNo: batchNumber,
+      batchDate: now,
+      sourceWarehouseId: input.sourceWarehouseId,
+      targetWarehouseId,
+      fulfillmentMode: input.request.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
+      sourceType: input.sourceType,
+      status: 'issued',
+      transactionId,
+      reason: input.overrideReason || null,
+      note: input.note || null,
+      createdBy: input.actorUserId,
+      issuedBy: input.actorUserId,
+      issuedAt: now,
+    };
+
+    const linePayloads = validLines.map(line => {
+      const requestLine = requestLineMap.get(line.requestLineId)!;
+      return {
+        id: newId(),
+        batchId,
+        materialRequestId: input.request.id,
+        requestLineId: line.requestLineId,
+        itemId: line.itemId,
+        materialBudgetItemId: requestLine.materialBudgetItemId || null,
+        workBoqItemId: requestLine.workBoqItemId || null,
+        poId: line.poId || null,
+        poLineId: line.poLineId || null,
+        requestedQtySnapshot: Number(requestLine.requestQty || 0),
+        committedQtySnapshot: getCommittedQty(requestLine),
+        issuedQty: line.issuedQty,
+        receivedQty: 0,
+        unit: requestLine.unitSnapshot || null,
+        varianceReason: line.varianceReason || null,
+      };
+    });
+
+    let transactionCreated = false;
+    let batchCreated = false;
+    try {
+      const { error: txError } = await supabase
+        .from('transactions')
+        .insert({
+          id: transactionPayload.id,
+          type: transactionPayload.type,
+          date: transactionPayload.date,
+          items: transactionPayload.items,
+          source_warehouse_id: transactionPayload.sourceWarehouseId,
+          target_warehouse_id: transactionPayload.targetWarehouseId,
+          requester_id: transactionPayload.requesterId,
+          approver_id: transactionPayload.approverId,
+          status: transactionPayload.status,
+          note: transactionPayload.note,
+          related_request_id: transactionPayload.relatedRequestId,
+        });
+      if (txError) throw txError;
+      transactionCreated = true;
+
+      const { data: batchRow, error: batchError } = await supabase
+        .from(BATCH_TABLE)
+        .insert(toDb(batchPayload))
+        .select('*')
+        .single();
+      if (batchError) throw batchError;
+      batchCreated = true;
+
+      const { data: lineRows, error: lineError } = await supabase
+        .from(LINE_TABLE)
+        .insert(linePayloads.map(toDb))
+        .select('*');
+      if (lineError) throw lineError;
+
+      return normalizeBatch(batchRow, lineRows || []);
+    } catch (error) {
+      if (batchCreated) {
+        await supabase.from(BATCH_TABLE).delete().eq('id', batchId);
+      }
+      if (transactionCreated) {
+        await supabase.from('transactions').delete().eq('id', transactionId);
+      }
+      throw error;
+    }
+  },
+
+  async receiveBatch(input: ReceiveFulfillmentBatchInput): Promise<MaterialRequestFulfillmentBatch> {
+    if (input.batch.status !== 'issued') {
+      throw new Error('Chỉ xác nhận nhận hàng cho đợt đang ở trạng thái đã xuất.');
+    }
+
+    const receivedByLineId = new Map(input.lines.map(line => [line.lineId, {
+      receivedQty: Number(line.receivedQty || 0),
+      varianceReason: line.varianceReason || '',
+    }]));
+
+    input.batch.lines.forEach(line => {
+      const received = receivedByLineId.get(line.id);
+      if (!received) throw new Error('Thiếu dữ liệu nhận hàng cho một dòng trong đợt cấp.');
+      if (received.receivedQty < 0) throw new Error('Số lượng nhận không được âm.');
+      if (received.receivedQty !== Number(line.issuedQty || 0) && !received.varianceReason.trim()) {
+        throw new Error('Dòng nhận lệch số lượng xuất phải nhập lý do.');
+      }
+    });
+
+    const existingBatches = await this.listByRequest(input.request.id);
+    const requestLineMap = new Map<string, RequestItem>((input.request.items || []).map((line, index) => [getRequestLineId(input.request, line, index), line]));
+    const receivedByRequestLine = new Map<string, number>();
+    existingBatches
+      .filter(batch => batch.id !== input.batch.id && (batch.status === 'received' || batch.status === 'variance_pending'))
+      .forEach(batch => {
+        batch.lines.forEach(line => {
+          receivedByRequestLine.set(line.requestLineId, (receivedByRequestLine.get(line.requestLineId) || 0) + Number(line.receivedQty || 0));
+        });
+      });
+
+    let hasVariance = false;
+    input.batch.lines.forEach(line => {
+      const received = receivedByLineId.get(line.id)!;
+      if (received.receivedQty !== Number(line.issuedQty || 0)) hasVariance = true;
+      const requestLine = requestLineMap.get(line.requestLineId);
+      const requestQty = Number(requestLine?.requestQty || line.requestedQtySnapshot || 0);
+      const nextReceived = (receivedByRequestLine.get(line.requestLineId) || 0) + received.receivedQty;
+      if (nextReceived > requestQty) {
+        throw new Error(`Số lượng nhận lũy kế của "${requestLine ? lineName(requestLine) : line.itemId}" vượt số lượng công trường đề xuất. Vui lòng tạo đề xuất bổ sung nếu cần nhận thêm.`);
+      }
+      receivedByRequestLine.set(line.requestLineId, nextReceived);
+    });
+
+    const now = new Date().toISOString();
+    for (const line of input.batch.lines) {
+      const received = receivedByLineId.get(line.id)!;
+      const { error } = await supabase
+        .from(LINE_TABLE)
+        .update({
+          received_qty: received.receivedQty,
+          variance_reason: received.varianceReason.trim() || line.varianceReason || null,
+        })
+        .eq('id', line.id)
+        .select('id')
+        .single();
+      if (error) throw error;
+    }
+
+    if (hasVariance) {
+      const { data: batchRow, error: batchError } = await supabase
+        .from(BATCH_TABLE)
+        .update({
+          status: 'variance_pending',
+          received_by: input.actorUserId,
+          received_at: now,
+          reason: input.overrideReason || input.batch.reason || null,
+        })
+        .eq('id', input.batch.id)
+        .select('*')
+        .single();
+      if (batchError) throw batchError;
+
+      const { data: lineRows, error: lineError } = await supabase
+        .from(LINE_TABLE)
+        .select('*')
+        .eq('batch_id', input.batch.id)
+        .order('created_at', { ascending: true });
+      if (lineError) throw lineError;
+
+      return normalizeBatch(batchRow, lineRows || []);
+    }
+
+    if (input.batch.transactionId) {
+      const { data: txRow, error: txReadError } = await supabase
+        .from('transactions')
+        .select('status')
+        .eq('id', input.batch.transactionId)
+        .maybeSingle();
+      if (txReadError) throw txReadError;
+      if (txRow?.status !== TransactionStatus.COMPLETED) {
+        const { error: txError } = await supabase.rpc('process_transaction_status', {
+          p_transaction_id: input.batch.transactionId,
+          p_status: TransactionStatus.COMPLETED,
+          p_approver_id: input.actorUserId,
+        });
+        if (txError) throw txError;
+      }
+    }
+
+    const { data: batchRow, error: batchError } = await supabase
+      .from(BATCH_TABLE)
+      .update({
+        status: 'received',
+        received_by: input.actorUserId,
+        received_at: now,
+        reason: input.overrideReason || input.batch.reason || null,
+      })
+      .eq('id', input.batch.id)
+      .select('*')
+      .single();
+    if (batchError) throw batchError;
+
+    const { data: lineRows, error: lineError } = await supabase
+      .from(LINE_TABLE)
+      .select('*')
+      .eq('batch_id', input.batch.id)
+      .order('created_at', { ascending: true });
+    if (lineError) throw lineError;
+
+    return normalizeBatch(batchRow, lineRows || []);
+  },
+
+  async resolveVarianceBatch(input: ResolveFulfillmentVarianceInput): Promise<MaterialRequestFulfillmentBatch> {
+    if (input.batch.status !== 'variance_pending') {
+      throw new Error('Chỉ chốt lệch cho đợt đang chờ xử lý lệch.');
+    }
+
+    if (input.batch.transactionId) {
+      const { data: txRow, error: txReadError } = await supabase
+        .from('transactions')
+        .select('status, items')
+        .eq('id', input.batch.transactionId)
+        .maybeSingle();
+      if (txReadError) throw txReadError;
+
+      if (txRow && txRow.status !== TransactionStatus.COMPLETED) {
+        const receivedQtyByLine = new Map(input.batch.lines.map(line => [line.requestLineId, Number(line.receivedQty || 0)]));
+        const adjustedItems = (txRow.items || []).map((item: any) => ({
+          ...item,
+          quantity: receivedQtyByLine.get(item.requestLineId) ?? Number(item.quantity || 0),
+        }));
+        const { error: updateTxError } = await supabase
+          .from('transactions')
+          .update({ items: adjustedItems })
+          .eq('id', input.batch.transactionId);
+        if (updateTxError) throw updateTxError;
+
+        const { error: txError } = await supabase.rpc('process_transaction_status', {
+          p_transaction_id: input.batch.transactionId,
+          p_status: TransactionStatus.COMPLETED,
+          p_approver_id: input.actorUserId,
+        });
+        if (txError) throw txError;
+      }
+    }
+
+    const { data: batchRow, error: batchError } = await supabase
+      .from(BATCH_TABLE)
+      .update({
+        status: 'received',
+        reason: input.batch.reason || 'Đã chốt lệch theo số lượng công trường thực nhận',
+      })
+      .eq('id', input.batch.id)
+      .select('*')
+      .single();
+    if (batchError) throw batchError;
+
+    const { data: lineRows, error: lineError } = await supabase
+      .from(LINE_TABLE)
+      .select('*')
+      .eq('batch_id', input.batch.id)
+      .order('created_at', { ascending: true });
+    if (lineError) throw lineError;
+
+    return normalizeBatch(batchRow, lineRows || []);
+  },
+};

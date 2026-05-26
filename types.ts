@@ -229,6 +229,23 @@ export interface ProjectStaffPermission {
   permissionName?: string;
 }
 
+export interface ProjectSubmissionTarget {
+  userId: string;
+  name: string;
+  permissionCode?: string;
+  note?: string;
+}
+
+export interface ProjectSubmissionFields {
+  submittedToUserId?: string | null;
+  submittedToName?: string | null;
+  submittedToPermission?: string | null;
+  submissionNote?: string | null;
+  everSubmitted?: boolean;
+  lastActionBy?: string | null;
+  lastActionAt?: string | null;
+}
+
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed';
 export type ProjectProgressCalculationMode = 'gantt_weighted' | 'budget' | 'duration' | 'task_count' | 'manual';
 
@@ -493,7 +510,7 @@ export interface ProjectTask {
 
 }
 
-export interface ProjectTaskCompletionRequest {
+export interface ProjectTaskCompletionRequest extends ProjectSubmissionFields {
   id: string;
   projectId?: string | null;
   constructionSiteId?: string | null;
@@ -582,7 +599,7 @@ export interface BoqReconciliationWorkLine {
   updatedAt?: string;
 }
 
-export interface BoqReconciliationGroup {
+export interface BoqReconciliationGroup extends ProjectSubmissionFields {
   id: string;
   projectId?: string | null;
   constructionSiteId?: string | null;
@@ -790,12 +807,18 @@ export interface DailyLog {
   submittedById?: string;
   submittedAt?: string;
   submittedToUserId?: string;
+  submittedToName?: string;
+  submittedToPermission?: string;
+  submissionNote?: string;
   requestedVerifierId?: string;
   requestedVerifierName?: string;
   rejectedBy?: string;
   rejectedById?: string;
   rejectedAt?: string;
   rejectionReason?: string;
+  everSubmitted?: boolean;
+  lastActionBy?: string | null;
+  lastActionAt?: string | null;
   createdBy: string;
   createdById?: string;
   createdAt: string;
@@ -917,13 +940,17 @@ export interface PaymentCertificateItem {
   certifiedQuantity?: number;   // Alias nghiệp vụ cho currentQuantity
   cumulativeQuantity: number;   // Auto = previousQuantity + currentQuantity
   unitPrice: number;            // Đơn giá
-  currentAmount: number;        // Auto = currentQuantity × unitPrice
-  cumulativeAmount: number;     // Auto = cumulativeQuantity × unitPrice
+  contractAmount?: number;      // GT hạng mục HĐ sau phát sinh
+  currentAmount: number;        // GT đề nghị thanh toán kỳ này, nhập tay
+  cumulativeAmount: number;     // GT thanh toán lũy kế
+  paymentPercent?: number;      // % thanh toán kỳ này so với giá trị hạng mục HĐ
+  sourceAcceptedAmount?: number;// GT nghiệm thu làm tham chiếu khi tạo thanh toán
   sourceAcceptanceItemId?: string;
+  paymentNote?: string;
   note?: string;
 }
 
-export interface PaymentCertificate {
+export interface PaymentCertificate extends ProjectSubmissionFields {
   id: string;
   contractId: string;           // FK → CustomerContract hoặc SubcontractorContract
   contractType: ContractItemType; // 'customer' | 'subcontractor'
@@ -942,11 +969,11 @@ export interface PaymentCertificate {
   grossThisPeriod?: number;         // GT hoàn thành kỳ này
   grossCumulative?: number;         // GT hoàn thành lũy kế
   // Khấu trừ & Phạt
-  advanceRecovery: number;          // Thu hồi tạm ứng (auto từ AdvancePayment)
+  advanceRecovery: number;          // Thu hồi tạm ứng kỳ này, nhập tay
   advanceRecoveryThisPeriod?: number;
   advanceRecoveryCumulative?: number;
-  retentionPercent: number;         // % giữ lại bảo hành (VD: 5%)
-  retentionAmount: number;          // Auto = totalCompletedValue × retentionPercent / 100
+  retentionPercent: number;         // Legacy/reference
+  retentionAmount: number;          // Giữ lại bảo hành kỳ này, nhập tay
   retentionThisPeriod?: number;
   retentionCumulative?: number;
   penaltyAmount: number;            // Phạt (nhập tay)
@@ -955,7 +982,7 @@ export interface PaymentCertificate {
   deductionReason?: string;
   // Lũy kế
   previousCertifiedAmount: number;  // GT đã TT các đợt trước
-  currentPayableAmount: number;     // GT TT đợt này (= Completed - Recovery - Retention - Penalty - Deduction - Previous)
+  currentPayableAmount: number;     // GT TT đợt này (= Gross - Recovery - Retention - Penalty - Deduction)
   payableThisPeriod?: number;
   // Workflow
   status: PaymentCertificateStatus;
@@ -1009,12 +1036,15 @@ export interface QuantityAcceptanceItem {
   acceptedQuantity: number;
   cumulativeAcceptedQuantity: number;
   unitPrice: number;
-  acceptedAmount: number;
+  acceptedPercent?: number;     // % nghiệm thu kỳ này do hai bên chốt
+  suggestedAmount?: number;     // GT gợi ý từ KL quy đổi × đơn giá
+  acceptedAmount: number;       // GT nghiệm thu kỳ này, nhập tay
   sourceDailyLogVolumeIds?: string[];
+  amountNote?: string;
   note?: string;
 }
 
-export interface QuantityAcceptance {
+export interface QuantityAcceptance extends ProjectSubmissionFields {
   id: string;
   contractId: string;
   contractType: ContractItemType;
@@ -1059,7 +1089,7 @@ export interface ContractVariationItem {
   note?: string;
 }
 
-export interface ContractVariation {
+export interface ContractVariation extends ProjectSubmissionFields {
   id: string;
   contractId: string;
   contractType: ContractItemType;
@@ -1196,7 +1226,7 @@ export interface MaterialBudgetItem {
   notes?: string;
 }
 
-export interface ProjectMaterialRequest {
+export interface ProjectMaterialRequest extends ProjectSubmissionFields {
   id: string;
   projectId?: string | null;
   constructionSiteId?: string | null;
@@ -1235,7 +1265,7 @@ export interface ProjectVendor {
   createdAt: string;
 }
 
-export interface PurchaseOrder {
+export interface PurchaseOrder extends ProjectSubmissionFields {
   id: string;
   projectId?: string | null;
   constructionSiteId?: string | null;
@@ -1249,6 +1279,8 @@ export interface PurchaseOrder {
   actualDeliveryDate?: string;
   status: POStatus;
   sourceMode?: PurchaseOrderSourceMode;
+  procurementGroupId?: string | null;
+  procurementGroupNo?: string | null;
   qrToken?: string;
   targetWarehouseId?: string;
   receivedTransactionIds?: string[];
@@ -1261,6 +1293,8 @@ export interface PurchaseOrder {
 export interface PurchaseOrderItem {
   lineId?: string;
   itemId: string;
+  vendorId?: string | null;
+  vendorName?: string | null;
   sku: string;
   name: string;
   unit: string;
@@ -1408,6 +1442,9 @@ export interface TransactionItem {
   itemId: string;
   quantity: number;            // Số lượng theo đơn vị tồn kho (Cây, Cái...)
   price?: number;              // Snapshot giá tại thời điểm giao dịch
+  materialRequestId?: string;
+  requestLineId?: string;
+  fulfillmentBatchId?: string;
   // --- Thông tin kế toán (chỉ áp dụng khi NHẬP KHO với đơn vị mua khác) ---
   accountingQty?: number;      // Số lượng theo đơn vị mua (VD: 10.05 KG)
   accountingUnit?: string;     // Đơn vị mua (VD: 'KG') - snapshot tại thời điểm nhập
@@ -1522,7 +1559,7 @@ export interface RequestItem {
   lineId?: string;
   itemId: string;
   requestQty: number;
-  approvedQty: number; // Thực xuất (Bộ phận tiếp nhận quyết định)
+  approvedQty: number; // Số lượng cam kết/cấp duyệt, thực xuất tính từ fulfillment batches
   issuedQty?: number;
   orderedQty?: number;
   procurementQty?: number;
@@ -1548,7 +1585,82 @@ export interface RequestItem {
   manualReason?: string;
 }
 
-export interface MaterialRequest {
+export type MaterialRequestFulfillmentBatchStatus = 'draft' | 'issued' | 'received' | 'variance_pending' | 'cancelled';
+export type MaterialRequestFulfillmentSourceType = 'stock' | 'po_receipt' | 'mixed';
+
+export interface MaterialRequestFulfillmentLine {
+  id: string;
+  batchId: string;
+  materialRequestId: string;
+  requestLineId: string;
+  itemId: string;
+  materialBudgetItemId?: string | null;
+  workBoqItemId?: string | null;
+  poId?: string | null;
+  poLineId?: string | null;
+  requestedQtySnapshot: number;
+  committedQtySnapshot: number;
+  issuedQty: number;
+  receivedQty: number;
+  unit?: string | null;
+  varianceReason?: string | null;
+  note?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface MaterialRequestFulfillmentBatch {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  materialRequestId: string;
+  batchNo: string;
+  batchDate: string;
+  sourceWarehouseId?: string | null;
+  targetWarehouseId?: string | null;
+  fulfillmentMode: MaterialRequestFulfillmentMode;
+  sourceType: MaterialRequestFulfillmentSourceType;
+  status: MaterialRequestFulfillmentBatchStatus;
+  transactionId?: string | null;
+  reason?: string | null;
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  issuedBy?: string | null;
+  issuedAt?: string | null;
+  receivedBy?: string | null;
+  receivedAt?: string | null;
+  cancelReason?: string | null;
+  updatedAt?: string;
+  lines: MaterialRequestFulfillmentLine[];
+}
+
+export interface MaterialRequestLineFulfillmentSummary {
+  materialRequestId: string;
+  requestLineId: string;
+  itemId: string;
+  requestedQty: number;
+  committedQty: number;
+  orderedQty: number;
+  issuedQty: number;
+  receivedQty: number;
+  remainingToIssue: number;
+  remainingToReceive: number;
+}
+
+export interface MaterialRequestFulfillmentSummary {
+  materialRequestId: string;
+  requestedQty: number;
+  committedQty: number;
+  orderedQty: number;
+  issuedQty: number;
+  receivedQty: number;
+  remainingToIssue: number;
+  remainingToReceive: number;
+  lineSummaries: MaterialRequestLineFulfillmentSummary[];
+}
+
+export interface MaterialRequest extends ProjectSubmissionFields {
   id: string;
   code: string; // e.g., MR-2023-001
   projectId?: string | null;

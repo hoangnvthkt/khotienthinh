@@ -7,6 +7,7 @@ import {
   PaymentCertificateAdvanceRecovery,
   PaymentCertificateItem,
   PaymentCertificateStatus,
+  ProjectSubmissionTarget,
 } from '../types';
 import { contractItemService } from './contractItemService';
 import { advancePaymentService } from './advancePaymentService';
@@ -16,6 +17,7 @@ import { auditService } from './auditService';
 import { approvalService } from './approvalService';
 import { projectTransactionService } from './projectTransactionService';
 import { User } from '../types';
+import { projectSubmissionService } from './projectSubmissionService';
 
 const TABLE = 'payment_certificates';
 const ITEM_TABLE = 'payment_certificate_items';
@@ -37,9 +39,10 @@ const normalizeCert = (row: any): PaymentCertificate => {
   };
 };
 
-const itemFromContract = (item: ContractItem, previousQuantity = 0): PaymentCertificateItem => {
+const itemFromContract = (item: ContractItem, previousQuantity = 0, previousAmount = 0): PaymentCertificateItem => {
   const revisedQuantity = item.revisedQuantity ?? item.quantity;
   const unitPrice = item.revisedUnitPrice ?? item.unitPrice ?? 0;
+  const contractAmount = item.revisedTotalPrice ?? item.totalPrice ?? revisedQuantity * unitPrice;
   return {
     contractItemId: item.id,
     contractItemCode: item.code,
@@ -52,8 +55,11 @@ const itemFromContract = (item: ContractItem, previousQuantity = 0): PaymentCert
     certifiedQuantity: 0,
     cumulativeQuantity: previousQuantity,
     unitPrice,
+    contractAmount,
     currentAmount: 0,
-    cumulativeAmount: previousQuantity * unitPrice,
+    cumulativeAmount: previousAmount,
+    paymentPercent: 0,
+    sourceAcceptedAmount: 0,
   };
 };
 
@@ -211,36 +217,55 @@ export const paymentCertificateService = {
     const boqItems = await contractItemService.listByContract(contractId, contractType);
     const totalContractValue = boqItems.reduce((s, i) => s + (i.revisedTotalPrice ?? i.totalPrice ?? 0), 0);
 
-    // M5: Auto-fill currentQuantity từ nghiệm thu liên kết nếu có acceptanceId
-    let acceptanceItemMap = new Map<string, number>();
+    // M5: Auto-fill amount từ nghiệm thu liên kết nếu có acceptanceId
+    let acceptanceItemMap = new Map<string, any>();
     if (cert.acceptanceId) {
       const { data: accItems } = await supabase
         .from('quantity_acceptance_items')
-        .select('contract_item_id, accepted_quantity')
+        .select('id, contract_item_id, accepted_quantity, cumulative_accepted_quantity, accepted_amount, accepted_percent, unit_price, amount_note')
         .eq('acceptance_id', cert.acceptanceId);
       for (const row of accItems || []) {
-        acceptanceItemMap.set(row.contract_item_id, Number(row.accepted_quantity) || 0);
+        acceptanceItemMap.set(row.contract_item_id, row);
       }
     }
 
-    const items = cert.items && cert.items.length > 0 ? cert.items : boqItems.map(bi => {
+    const generatedItems = boqItems.map(bi => {
       const prevQty = approvedCerts.reduce((sum, c) => {
         const pi = c.items.find(i => i.contractItemId === bi.id);
         return sum + (pi ? pi.currentQuantity : 0);
       }, 0);
-      const base = itemFromContract(bi, prevQty);
-      // Auto-fill currentQuantity = acceptedQuantity từ nghiệm thu nếu có
-      const acceptedQty = acceptanceItemMap.get(bi.id);
-      return acceptedQty !== undefined
-        ? { ...base, currentQuantity: acceptedQty, certifiedQuantity: acceptedQty, currentAmount: acceptedQty * bi.unitPrice }
+      const previousAmount = approvedCerts.reduce((sum, c) => {
+        const pi = c.items.find(i => i.contractItemId === bi.id);
+        return sum + (pi ? Number(pi.currentAmount || 0) : 0);
+      }, 0);
+      const base = itemFromContract(bi, prevQty, previousAmount);
+      const accepted = acceptanceItemMap.get(bi.id);
+      return accepted
+        ? {
+            ...base,
+            currentQuantity: Number(accepted.accepted_quantity || 0),
+            certifiedQuantity: Number(accepted.accepted_quantity || 0),
+            cumulativeQuantity: prevQty + Number(accepted.accepted_quantity || 0),
+            currentAmount: Number(accepted.accepted_amount || 0),
+            cumulativeAmount: previousAmount + Number(accepted.accepted_amount || 0),
+            paymentPercent: Number(accepted.accepted_percent || 0),
+            sourceAcceptedAmount: Number(accepted.accepted_amount || 0),
+            sourceAcceptanceItemId: accepted.id,
+            paymentNote: accepted.amount_note || undefined,
+          }
         : base;
     });
+    const items = cert.items && cert.items.length > 0
+      ? cert.items
+      : generatedItems.filter(item => !cert.acceptanceId || !!item.sourceAcceptanceItemId || item.currentAmount > 0);
 
     const advances = await advancePaymentService.listByContract(contractId, contractType);
     const calculation = calculatePaymentCertificate({
       items,
       advances,
-      retentionPercent: cert.retentionPercent ?? 5,
+      retentionPercent: cert.retentionPercent ?? 0,
+      advanceRecoveryThisPeriod: cert.advanceRecoveryThisPeriod ?? cert.advanceRecovery ?? 0,
+      retentionThisPeriod: cert.retentionThisPeriod ?? cert.retentionAmount ?? 0,
       penaltyAmount: cert.penaltyAmount ?? 0,
       deductionAmount: cert.deductionAmount ?? 0,
       previousRetentionCumulative,
@@ -249,6 +274,7 @@ export const paymentCertificateService = {
     if (calculation.items.length === 0) {
       throw new Error('Không thể tạo đợt thanh toán vì chưa có hạng mục BOQ/nghiệm thu hợp lệ.');
     }
+    if (calculation.errors.length > 0) throw new Error(calculation.errors[0]);
 
     const newCert: Partial<PaymentCertificate> = {
       contractId,
@@ -267,11 +293,11 @@ export const paymentCertificateService = {
       grossCumulative: calculation.grossCumulative,
       advanceRecovery: calculation.advanceRecoveryThisPeriod,
       advanceRecoveryThisPeriod: calculation.advanceRecoveryThisPeriod,
-      advanceRecoveryCumulative: previousAdvanceRecoveryCumulative,
-      retentionPercent: cert.retentionPercent ?? 5,
+      advanceRecoveryCumulative: calculation.advanceRecoveryCumulative,
+      retentionPercent: cert.retentionPercent ?? 0,
       retentionAmount: calculation.retentionThisPeriod,
       retentionThisPeriod: calculation.retentionThisPeriod,
-      retentionCumulative: previousRetentionCumulative,
+      retentionCumulative: calculation.retentionCumulative,
       penaltyAmount: cert.penaltyAmount ?? 0,
       deductionAmount: cert.deductionAmount ?? 0,
       previousCertifiedAmount,
@@ -288,6 +314,7 @@ export const paymentCertificateService = {
     if (error) throw error;
     try {
       await replaceItems(data.id, calculation.items);
+      await replaceAdvanceRecoveries(data.id, calculation.advanceRecoveries);
     } catch (insertItemsError) {
       await supabase.from(TABLE).delete().eq('id', data.id);
       throw insertItemsError;
@@ -317,7 +344,9 @@ export const paymentCertificateService = {
     const calculation = calculatePaymentCertificate({
       items: baseItems,
       advances,
-      retentionPercent: updates.retentionPercent ?? currentCert.retentionPercent ?? 5,
+      retentionPercent: updates.retentionPercent ?? currentCert.retentionPercent ?? 0,
+      advanceRecoveryThisPeriod: updates.advanceRecoveryThisPeriod ?? updates.advanceRecovery ?? currentCert.advanceRecoveryThisPeriod ?? currentCert.advanceRecovery ?? 0,
+      retentionThisPeriod: updates.retentionThisPeriod ?? updates.retentionAmount ?? currentCert.retentionThisPeriod ?? currentCert.retentionAmount ?? 0,
       penaltyAmount: updates.penaltyAmount ?? currentCert.penaltyAmount ?? 0,
       deductionAmount: updates.deductionAmount ?? currentCert.deductionAmount ?? 0,
       previousRetentionCumulative,
@@ -356,7 +385,7 @@ export const paymentCertificateService = {
     status: PaymentCertificateStatus,
     userId?: string,
     reason?: string,
-    options?: { allowZeroOrNegativePayable?: boolean; approverUser?: User; projectId?: string },
+    options?: { allowZeroOrNegativePayable?: boolean; approverUser?: User; projectId?: string; submissionTarget?: ProjectSubmissionTarget },
   ): Promise<void> {
     const { data, error: readError } = await supabase.from(TABLE).select('*').eq('id', id).single();
     if (readError) throw readError;
@@ -415,14 +444,60 @@ export const paymentCertificateService = {
       }
     }
 
-    const updates: any = { status };
+    const updates: any = {
+      status,
+      ...projectSubmissionService.actionMeta(userId, status === 'submitted'),
+    };
     const now = new Date().toISOString();
-    if (status === 'submitted') { updates.submittedBy = userId; updates.submittedAt = now; }
-    if (status === 'returned') { updates.returnedBy = userId; updates.returnedAt = now; updates.returnReason = reason; }
-    if (status === 'approved') { updates.approvedBy = userId; updates.approvedAt = now; }
-    if (status === 'paid') { updates.paidAt = now; }
+    if (status === 'submitted') {
+      updates.submittedBy = userId;
+      updates.submittedAt = now;
+      Object.assign(updates, projectSubmissionService.targetToUpdate(options?.submissionTarget));
+    }
+    if (status === 'returned') {
+      updates.returnedBy = userId;
+      updates.returnedAt = now;
+      updates.returnReason = reason;
+      Object.assign(updates, projectSubmissionService.returnToOwnerUpdate(cert.submittedBy, reason));
+    }
+    if (status === 'approved') {
+      updates.approvedBy = userId;
+      updates.approvedAt = now;
+      Object.assign(updates, projectSubmissionService.targetToUpdate(options?.submissionTarget || null));
+    }
+    if (status === 'paid') {
+      updates.paidAt = now;
+      Object.assign(updates, projectSubmissionService.targetToUpdate(null));
+    }
+    if (status === 'cancelled') {
+      Object.assign(updates, projectSubmissionService.targetToUpdate(null));
+    }
     const { error } = await supabase.from(TABLE).update(toDb(updates)).eq('id', id);
     if (error) throw error;
+    if ((status === 'submitted' || status === 'approved') && options?.submissionTarget) {
+      const isConfirmStep = status === 'approved';
+      await projectSubmissionService.notifyTarget({
+        target: options.submissionTarget,
+        actorId: userId,
+        category: 'payment',
+        title: isConfirmStep
+          ? `Chứng từ thanh toán đợt ${cert.periodNumber} chờ xác nhận thanh toán`
+          : `Chứng từ thanh toán đợt ${cert.periodNumber} chờ duyệt`,
+        message: isConfirmStep
+          ? `Bạn được chọn xác nhận thanh toán chứng từ ${cert.description || `đợt ${cert.periodNumber}`}.`
+          : `Bạn được chọn duyệt chứng từ thanh toán ${cert.description || `đợt ${cert.periodNumber}`}.`,
+        sourceType: 'payment_certificate',
+        sourceId: id,
+        constructionSiteId: cert.constructionSiteId,
+        link: '/da',
+        metadata: {
+          contractId: cert.contractId,
+          contractType: cert.contractType,
+          periodNumber: cert.periodNumber,
+          payableThisPeriod: cert.payableThisPeriod ?? cert.currentPayableAmount ?? 0,
+        },
+      }).catch(error => console.warn('Cannot notify payment certificate recipient', error));
+    }
     await auditService.log({
       tableName: TABLE,
       recordId: id,
@@ -493,9 +568,10 @@ export const paymentCertificateService = {
   },
 
   async remove(id: string): Promise<void> {
-    const { data, error: readError } = await supabase.from(TABLE).select('status').eq('id', id).single();
+    const { data, error: readError } = await supabase.from(TABLE).select('status, ever_submitted').eq('id', id).single();
     if (readError) throw readError;
     if (data?.status !== 'draft') throw new Error('Chỉ xoá được đợt thanh toán ở trạng thái Nháp.');
+    if (data?.ever_submitted) throw new Error('Chứng từ đã từng gửi duyệt, không được xoá cứng. Vui lòng huỷ/rollback để giữ lịch sử.');
     const { error } = await supabase.from(TABLE).delete().eq('id', id);
     if (error) throw error;
   },

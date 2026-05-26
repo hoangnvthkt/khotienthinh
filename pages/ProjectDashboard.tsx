@@ -3263,6 +3263,20 @@ const ProjectDashboard: React.FC = () => {
                                             </div>
                                         </div>
                                         {canManageProjects && !project.isHidden && (
+                                            <button
+                                                onClick={() => handleToggleProjectPin(project)}
+                                                className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                                                    project.isPinned
+                                                        ? 'text-amber-600 bg-amber-50 border border-amber-100 hover:bg-amber-100'
+                                                        : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
+                                                }`}
+                                                title={project.isPinned ? 'Bỏ ghim dự án' : 'Ghim dự án'}
+                                                aria-label={project.isPinned ? 'Bỏ ghim dự án' : 'Ghim dự án'}
+                                            >
+                                                <Pin size={14} className={project.isPinned ? 'fill-amber-500' : ''} />
+                                            </button>
+                                        )}
+                                        {canManageProjects && !project.isHidden && (
                                             <button onClick={() => openEditProject(project)}
                                                 className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 hover:text-slate-700 hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-all" title="Sửa dự án">
                                                 <Edit2 size={14} />

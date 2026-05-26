@@ -7,6 +7,7 @@ import { useModuleData } from '../hooks/useModuleData';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { materialCodeRequestService } from '../lib/materialCodeRequestService';
 import { isGlobalWarehouseKeeper } from '../lib/wmsPermissions';
+import SearchableSelect from '../components/common/SearchableSelect';
 
 const statusLabel: Record<MaterialCodeRequest['status'], string> = {
   pending: 'Chờ cấp mã',
@@ -477,14 +478,22 @@ const MaterialCodeRequests: React.FC = () => {
               </div>
               <div className="space-y-2 md:col-span-2">
                 <label className="text-xs font-bold text-slate-600">Nhà cung cấp mặc định</label>
-                <select
+                <SearchableSelect
                   value={approvalForm.supplierId}
-                  onChange={e => setApprovalForm(prev => ({ ...prev, supplierId: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
-                >
-                  <option value="">Chưa chọn</option>
-                  {suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
-                </select>
+                  options={suppliers}
+                  onChange={supplier => setApprovalForm(prev => ({ ...prev, supplierId: supplier?.id || '' }))}
+                  getOptionValue={supplier => supplier.id}
+                  getOptionLabel={supplier => supplier.name}
+                  getOptionSearchText={supplier => [
+                    supplier.name,
+                    supplier.phone,
+                    supplier.taxCode,
+                    supplier.contactPerson,
+                    supplier.email,
+                  ].filter(Boolean).join(' ')}
+                  placeholder="Gõ tên NCC, MST, SĐT..."
+                  inputClassName="py-2"
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-600">Giá nhập tham khảo</label>

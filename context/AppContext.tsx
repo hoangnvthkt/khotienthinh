@@ -202,7 +202,7 @@ interface AppContextType {
     date: string;
   }) => Promise<AssetTransfer | null>;
   isModuleAdmin: (moduleKey: string) => boolean;
-  loadModuleData: (module: AppModule) => Promise<void>;
+  loadModuleData: (module: AppModule, force?: boolean) => Promise<void>;
   isLoading: boolean;
   isRefreshing: boolean;
   connectionError: string | null;
@@ -247,6 +247,10 @@ const mapMaterialRequestFromDb = (r: any): MaterialRequest => ({
   fulfillmentMode: r.fulfillment_mode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
   overrideReason: r.override_reason || undefined,
   relatedTransactionId: r.related_transaction_id || undefined,
+  submittedToUserId: r.submitted_to_user_id ?? r.submittedToUserId ?? undefined,
+  submittedToName: r.submitted_to_name ?? r.submittedToName ?? undefined,
+  submittedToPermission: r.submitted_to_permission ?? r.submittedToPermission ?? undefined,
+  submissionNote: r.submission_note ?? r.submissionNote ?? undefined,
 });
 
 const mapAssetLocationStockFromDb = (l: any): AssetLocationStock => ({
@@ -668,8 +672,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     construction_site_id: tx.constructionSiteId || null,
   });
 
-  const loadModuleData = useCallback(async (module: AppModule) => {
-    if (!isSupabaseConfigured || loadedModulesRef.current.has(module)) return;
+  const loadModuleData = useCallback(async (module: AppModule, force = false) => {
+    if (!isSupabaseConfigured) return;
+    if (!force && loadedModulesRef.current.has(module)) return;
     loadedModulesRef.current.add(module);
 
     try {
@@ -964,7 +969,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           expected_date: data.expectedDate, note: data.note, logs: data.logs,
           fulfillment_mode: data.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
           override_reason: data.overrideReason || null,
-          related_transaction_id: data.relatedTransactionId || null
+          related_transaction_id: data.relatedTransactionId || null,
+          submitted_to_user_id: data.submittedToUserId || null,
+          submitted_to_name: data.submittedToName || null,
+          submitted_to_permission: data.submittedToPermission || null,
+          submission_note: data.submissionNote || null
         };
       } else if (table === 'activities') {
         payload = {
@@ -1468,6 +1477,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const getMaterialRequestApproverIds = (request: MaterialRequest) => {
+    if (request.submittedToUserId) return [request.submittedToUserId];
     return users
       .filter(u =>
         u.role === Role.ADMIN ||
@@ -1554,6 +1564,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const req = requests.find(r => r.id === id);
     if (!req) return false;
     const isReturnAction = actionOverride === 'RETURNED';
+    const isFulfillmentSync = actionOverride === 'FULFILLMENT_SYNC';
 
     if (isReturnAction && req.relatedTransactionId) {
       throw new Error('Phiếu đã phát sinh phiếu kho liên kết. Cần huỷ/rollback phiếu kho trước khi trả lại bước trước.');
@@ -1564,9 +1575,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const approvedQty = Number(line.approvedQty || 0);
       const orderedQty = Number(line.orderedQty || 0);
       const existingIssuedQty = Number(line.issuedQty || 0);
-      const issuedQty = (nextStatus === RequestStatus.IN_TRANSIT || nextStatus === RequestStatus.COMPLETED) && approvedQty > 0
-        ? Math.max(existingIssuedQty, approvedQty)
-        : existingIssuedQty;
+      const issuedQty = existingIssuedQty;
       const stockCoveredQty = Math.max(approvedQty, issuedQty);
       const procurementQty = Math.max(0, requestQty - stockCoveredQty - orderedQty);
       const fulfillmentStatus =
@@ -1598,7 +1607,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     let updatedItems = [...req.items];
-    if (isReturnAction) {
+    if (isFulfillmentSync) {
+      updatedItems = req.items;
+    } else if (isReturnAction) {
       updatedItems = req.items.map(item => applyLineFulfillment({
         ...item,
         approvedQty: 0,
@@ -1626,15 +1637,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return items.some(item => item.id === line.itemId);
     });
 
-    if ((status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && stockFulfillmentLines.length === 0) {
+    if (!isFulfillmentSync && (status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && stockFulfillmentLines.length === 0) {
       throw new Error('Chưa có dòng vật tư nào được duyệt xuất. Vui lòng nhập số lượng duyệt lớn hơn 0 cho ít nhất một dòng.');
     }
 
-    if ((status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && stockFulfillmentLines.length > 0 && !effectiveSourceWhId) {
+    if (!isFulfillmentSync && (status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && stockFulfillmentLines.length > 0 && !effectiveSourceWhId) {
       throw new Error('Chưa chọn kho nguồn. Phòng vật tư cần chọn kho nguồn trước khi xuất vật tư có mã tồn kho.');
     }
 
-    if ((status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && effectiveSourceWhId) {
+    if (!isFulfillmentSync && (status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && effectiveSourceWhId) {
       const shortage = stockFulfillmentLines.find(line => {
         const item = items.find(i => i.id === line.itemId);
         const onHand = item?.stockByWarehouse[effectiveSourceWhId] || 0;
@@ -1649,7 +1660,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    const shouldCreateTransaction = status === RequestStatus.COMPLETED && !req.relatedTransactionId && !!effectiveSourceWhId && stockFulfillmentLines.length > 0;
+    const shouldCreateTransaction = !isFulfillmentSync && status === RequestStatus.COMPLETED && !req.relatedTransactionId && !!effectiveSourceWhId && stockFulfillmentLines.length > 0;
     const relatedTransactionId = shouldCreateTransaction
       ? `tx-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
       : req.relatedTransactionId;

@@ -17,6 +17,7 @@ import ConfirmTransferModal from '../components/ConfirmTransferModal';
 import TransactionDetailModal from '../components/TransactionDetailModal';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import Pagination from '../components/Pagination';
+import SearchableSelect from '../components/common/SearchableSelect';
 import { usePagination } from '../hooks/usePagination';
 import { useReservedStock } from '../hooks/useReservedStock';
 import { useModuleData } from '../hooks/useModuleData';
@@ -563,14 +564,22 @@ const Operations: React.FC = () => {
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                       Nguồn cung cấp <span className="text-slate-300 normal-case font-normal">(tùy chọn)</span>
                     </label>
-                    <select
-                      className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:ring-2 focus:ring-accent outline-none font-black text-sm"
+                    <SearchableSelect
                       value={supplierId}
-                      onChange={e => setSupplierId(e.target.value)}
-                    >
-                      <option value="">— Không xác định —</option>
-                      {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
+                      options={suppliers}
+                      onChange={supplier => setSupplierId(supplier?.id || '')}
+                      getOptionValue={supplier => supplier.id}
+                      getOptionLabel={supplier => supplier.name}
+                      getOptionSearchText={supplier => [
+                        supplier.name,
+                        supplier.phone,
+                        supplier.taxCode,
+                        supplier.contactPerson,
+                        supplier.email,
+                      ].filter(Boolean).join(' ')}
+                      placeholder="Gõ tên NCC, MST, SĐT..."
+                      inputClassName="rounded-xl bg-slate-50 p-3 text-sm"
+                    />
                   </div>
                 )}
 

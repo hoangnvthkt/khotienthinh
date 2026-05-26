@@ -52,6 +52,10 @@ export function useReservedStock() {
           req.status === RequestStatus.IN_TRANSIT)
       )
       .forEach(req => {
+        const isProjectFulfillmentRequest = req.requestOrigin === 'project' || !!req.projectId || !!req.constructionSiteId;
+        if (isProjectFulfillmentRequest && req.status !== RequestStatus.PENDING) {
+          return;
+        }
         const level: 'soft' | 'hard' = req.status === RequestStatus.PENDING ? 'soft' : 'hard';
         req.items.forEach(ri => {
           const quantity = level === 'soft' ? ri.requestQty : ri.approvedQty;

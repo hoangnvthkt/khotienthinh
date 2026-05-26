@@ -3483,7 +3483,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 	                            {contractItems.length > 0 && (
 	                                <div className="border border-slate-100 dark:border-slate-700 rounded-xl p-3">
 	                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1">Liên kết BOQ hợp đồng tham khảo</label>
-	                                    <p className="text-[10px] text-slate-400 mb-2">Đối chiếu chính thức nằm ở BOQ triển khai &gt; Đối chiếu BOQ hợp đồng.</p>
+	                                    <p className="text-[10px] text-slate-400 mb-2">Đối chiếu tham khảo nằm ở BOQ triển khai &gt; Đối chiếu BOQ hợp đồng.</p>
 	                                    <div className="max-h-28 overflow-y-auto space-y-1">
 	                                        {contractItems.map(item => (
 	                                            <label key={item.id} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">

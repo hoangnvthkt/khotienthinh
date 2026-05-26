@@ -10,6 +10,7 @@ import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 import { createPoQrToken } from './poQr';
 import { projectTransactionService } from './projectTransactionService';
 import { projectDocumentDependencyService } from './projectDocumentDependencyService';
+import { projectSubmissionService } from './projectSubmissionService';
 
 // ==================== HELPER ====================
 // snake_case ↔ camelCase mapping
@@ -137,7 +138,10 @@ export const dailyLogService = {
         const { volumes, materials, laborDetails, machines, ...metaItem } = item;
         const { error } = await supabase
             .from('daily_logs')
-            .upsert(toDb(metaItem), { onConflict: 'id' });
+            .upsert(toDb({
+                ...metaItem,
+                ...projectSubmissionService.actionMeta(undefined, (metaItem.status || 'draft') !== 'draft'),
+            }), { onConflict: 'id' });
         if (error) throw error;
         await dailyLogDetailService.replaceForLog(item.id, item.projectId || null, item.constructionSiteId || null, {
             volumes: volumes || [],
@@ -158,7 +162,7 @@ export const dailyLogService = {
         if (input.status === 'rejected') {
             const { data: current, error: currentError } = await supabase
                 .from('daily_logs')
-                .select('status')
+                .select('status, created_by_id, submitted_by_id, submitted_by')
                 .eq('id', input.logId)
                 .single();
             if (currentError) throw currentError;
@@ -175,6 +179,11 @@ export const dailyLogService = {
                         rejected_by_id: input.actorUserId || null,
                         rejected_at: new Date().toISOString(),
                         rejection_reason: input.rejectionReason,
+                        submitted_to_user_id: current.created_by_id || current.submitted_by_id || current.submitted_by || null,
+                        submitted_to_permission: 'edit',
+                        submission_note: input.rejectionReason,
+                        last_action_by: input.actorUserId || null,
+                        last_action_at: new Date().toISOString(),
                     })
                     .eq('id', input.logId);
                 if (updateError) throw updateError;
@@ -194,12 +203,15 @@ export const dailyLogService = {
     async remove(id: string): Promise<void> {
         const { data, error: readError } = await supabase
             .from('daily_logs')
-            .select('status')
+            .select('status, ever_submitted')
             .eq('id', id)
             .single();
         if (readError) throw readError;
         if ((data?.status || 'draft') !== 'draft') {
             throw new Error('Chỉ xoá được nhật ký ở trạng thái Nháp. Phiếu đã gửi/duyệt cần được trả lại hoặc rollback theo đúng quy trình.');
+        }
+        if (data?.ever_submitted) {
+            throw new Error('Nhật ký đã từng gửi xác nhận, không được xoá cứng. Vui lòng trả lại/rollback để giữ lịch sử.');
         }
         const { error } = await supabase
             .from('daily_logs')
@@ -426,10 +438,22 @@ export const matRequestService = {
     async upsert(item: ProjectMaterialRequest): Promise<void> {
         const { error } = await supabase
             .from('project_material_requests')
-            .upsert(toDb(item), { onConflict: 'id' });
+            .upsert(toDb({
+                ...item,
+                ...projectSubmissionService.actionMeta(undefined, true),
+            }), { onConflict: 'id' });
         if (error) throw error;
     },
     async remove(id: string): Promise<void> {
+        const { data: current, error: readError } = await supabase
+            .from('project_material_requests')
+            .select('status, ever_submitted')
+            .eq('id', id)
+            .single();
+        if (readError) throw readError;
+        if (current.status !== 'draft' || current.ever_submitted) {
+            throw new Error('Chỉ xoá cứng yêu cầu vật tư nháp chưa từng gửi duyệt.');
+        }
         const { error } = await supabase
             .from('project_material_requests')
             .delete()
@@ -478,7 +502,10 @@ export const poService = {
     async upsert(item: PurchaseOrder): Promise<void> {
         const { error } = await supabase
             .from('purchase_orders')
-            .upsert(poToDb(item), { onConflict: 'id' });
+            .upsert(poToDb({
+                ...item,
+                ...projectSubmissionService.actionMeta(undefined, item.status !== 'draft'),
+            }), { onConflict: 'id' });
         if (error) throw error;
     },
     async listStockOrders(): Promise<PurchaseOrder[]> {
@@ -574,6 +601,15 @@ export const poService = {
         return updated;
     },
     async remove(id: string): Promise<void> {
+        const { data: current, error: readError } = await supabase
+            .from('purchase_orders')
+            .select('status, ever_submitted')
+            .eq('id', id)
+            .single();
+        if (readError) throw readError;
+        if (current.status !== 'draft' || current.ever_submitted) {
+            throw new Error('Chỉ xoá cứng PO nháp chưa từng gửi duyệt.');
+        }
         const { error } = await supabase
             .from('purchase_orders')
             .delete()

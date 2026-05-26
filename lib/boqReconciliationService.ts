@@ -6,10 +6,12 @@ import {
   BoqReconciliationWorkLine,
   ContractItem,
   ContractItemType,
+  ProjectSubmissionTarget,
   ProjectWorkBoqItem,
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
+import { projectSubmissionService } from './projectSubmissionService';
 
 const GROUP_TABLE = 'boq_reconciliation_groups';
 const CONTRACT_LINE_TABLE = 'boq_reconciliation_contract_lines';
@@ -153,17 +155,41 @@ export const boqReconciliationService = {
   },
 
   async removeGroup(groupId: string): Promise<void> {
-    const { error } = await supabase.from(GROUP_TABLE).delete().eq('id', groupId);
+    const { data: current, error: readError } = await supabase
+      .from(GROUP_TABLE)
+      .select('status')
+      .eq('id', groupId)
+      .single();
+    if (readError) throw readError;
+    if (current?.status !== 'draft') throw new Error('Chỉ xoá được nhóm đối chiếu ở trạng thái Nháp.');
+    const { data: deletedRow, error } = await supabase
+      .from(GROUP_TABLE)
+      .delete()
+      .eq('id', groupId)
+      .select('id')
+      .maybeSingle();
     if (error) throw error;
+    if (!deletedRow) {
+      throw new Error('Không xoá được nhóm đối chiếu. Có thể RLS đang chặn thao tác hoặc bản ghi không còn tồn tại.');
+    }
   },
 
   async setStatus(
     groupId: string,
     status: BoqReconciliationStatus,
     user?: { id?: string; name?: string },
+    submissionTarget?: ProjectSubmissionTarget,
   ): Promise<void> {
     const now = new Date().toISOString();
-    const updates: Partial<BoqReconciliationGroup> = { status };
+    const { data: current } = await supabase.from(GROUP_TABLE).select('*').eq('id', groupId).maybeSingle();
+    const currentGroup = current ? fromDb(current) as BoqReconciliationGroup : null;
+    const updates: Partial<BoqReconciliationGroup> = {
+      status,
+      ...projectSubmissionService.actionMeta(user?.id, status === 'submitted'),
+    };
+    if (status === 'submitted') {
+      Object.assign(updates, projectSubmissionService.targetToUpdate(submissionTarget));
+    }
     if (status === 'reviewed') {
       updates.reviewedById = user?.id || null;
       updates.reviewedByName = user?.name || user?.id || null;
@@ -173,9 +199,50 @@ export const boqReconciliationService = {
       updates.lockedById = user?.id || null;
       updates.lockedByName = user?.name || user?.id || null;
       updates.lockedAt = now;
+      Object.assign(updates, projectSubmissionService.targetToUpdate(null));
     }
-    const { error } = await supabase.from(GROUP_TABLE).update(toDb(updates)).eq('id', groupId);
+    if (status !== 'locked') {
+      updates.lockedById = null;
+      updates.lockedByName = null;
+      updates.lockedAt = null;
+    }
+    if (status === 'draft' || status === 'submitted') {
+      updates.reviewedById = null;
+      updates.reviewedByName = null;
+      updates.reviewedAt = null;
+    }
+    const { data: updatedRow, error } = await supabase
+      .from(GROUP_TABLE)
+      .update(toDb(updates))
+      .eq('id', groupId)
+      .select('id, status')
+      .maybeSingle();
     if (error) throw error;
+    if (!updatedRow) {
+      throw new Error('Không cập nhật được trạng thái đối chiếu. Có thể RLS đang chặn thao tác hoặc bản ghi không còn tồn tại.');
+    }
+    if (updatedRow.status !== status) {
+      throw new Error(`Trạng thái đối chiếu chưa đổi sang ${status}. Vui lòng tải lại và kiểm tra quyền xử lý bước hiện tại.`);
+    }
+    if (status === 'submitted' && submissionTarget) {
+      await projectSubmissionService.notifyTarget({
+        target: submissionTarget,
+        actorId: user?.id,
+        category: 'contract',
+        title: `Nhóm đối chiếu BOQ ${currentGroup?.code || ''} chờ rà soát`.trim(),
+        message: `Bạn được chọn rà soát nhóm đối chiếu ${currentGroup?.name || groupId}.`,
+        sourceType: 'boq_reconciliation_group',
+        sourceId: groupId,
+        constructionSiteId: currentGroup?.constructionSiteId || undefined,
+        link: '/da',
+        metadata: {
+          contractId: currentGroup?.contractId,
+          contractType: currentGroup?.contractType,
+          code: currentGroup?.code,
+          name: currentGroup?.name,
+        },
+      }).catch(error => console.warn('Cannot notify BOQ reconciliation recipient', error));
+    }
   },
 
   async addContractLines(groupId: string, lines: BoqReconciliationContractLine[]): Promise<void> {
