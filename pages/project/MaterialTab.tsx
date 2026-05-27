@@ -104,11 +104,41 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         return scoped;
     }, [allRequests, constructionSiteId, projectId, resolvedWhId]);
 
+    const sortedRequests = useMemo(
+        () => [...requests].sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || '')),
+        [requests],
+    );
+
+    const inventoryItemById = useMemo(
+        () => new Map(inventoryItems.map(item => [item.id, item])),
+        [inventoryItems],
+    );
+    const workBoqItemById = useMemo(
+        () => new Map(workBoqItems.map(item => [item.id, item])),
+        [workBoqItems],
+    );
+    const contractItemById = useMemo(
+        () => new Map(contractItems.map(item => [item.id, item])),
+        [contractItems],
+    );
+    const userById = useMemo(
+        () => new Map(users.map(item => [item.id, item])),
+        [users],
+    );
+
     // Request Modal state
     const [isReqModalOpen, setReqModalOpen] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<MaterialRequest | undefined>(undefined);
     const [requestFulfillmentSummaries, setRequestFulfillmentSummaries] = useState<Record<string, MaterialRequestFulfillmentSummary>>({});
     const [requestFulfillmentBatchCounts, setRequestFulfillmentBatchCounts] = useState<Record<string, number>>({});
+
+    const requestFulfillmentLineSummaries = useMemo(() => {
+        const map: Record<string, Map<string, MaterialRequestFulfillmentSummary['lineSummaries'][number]>> = {};
+        Object.entries(requestFulfillmentSummaries).forEach(([requestId, summary]) => {
+            map[requestId] = new Map((summary.lineSummaries || []).map(line => [line.requestLineId, line]));
+        });
+        return map;
+    }, [requestFulfillmentSummaries]);
 
     const loadBoqData = async () => {
         if (!effectiveId) return;
@@ -241,14 +271,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 const rItems = r.items || [];
                 const requestSummary = requestFulfillmentSummaries[r.id];
                 const hasFulfillmentBatches = (requestFulfillmentBatchCounts[r.id] || 0) > 0;
-                const summaryByLine = new Map((requestSummary?.lineSummaries || []).map(line => [line.requestLineId, line]));
+                const summaryByLine = requestFulfillmentLineSummaries[r.id];
                 rItems.forEach((ri: any, index: number) => {
                     const sameBudgetLine = ri.materialBudgetItemId && ri.materialBudgetItemId === b.id;
                     const legacySameItem = !ri.materialBudgetItemId && ri.itemId === b.inventoryItemId;
                     if (sameBudgetLine || legacySameItem) {
                         totalRequested += (ri.requestQty || 0);
                         const requestLineId = getRequestLineId(r, ri, index);
-                        const lineSummary = summaryByLine.get(requestLineId);
+                        const lineSummary = summaryByLine?.get(requestLineId);
                         if (hasFulfillmentBatches && lineSummary) {
                             totalReceived += lineSummary.receivedQty;
                         } else if (r.status === RequestStatus.COMPLETED || r.status === RequestStatus.IN_TRANSIT) {
@@ -275,7 +305,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 autoAlert: budgetOverPercent > 0 ? 'Vượt ngân sách' : wastePercent > b.wasteThreshold ? 'Vượt định mức hao hụt' : undefined,
             };
         });
-    }, [boqItems, requestFulfillmentBatchCounts, requestFulfillmentSummaries, requests]);
+    }, [boqItems, requestFulfillmentBatchCounts, requestFulfillmentLineSummaries, requests]);
 
     const boqItemsByWork = useMemo(() => {
         const map = new Map<string, MaterialBudgetItem[]>();
@@ -300,7 +330,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         });
         const rows: Array<{ item: ProjectWorkBoqItem; level: number }> = [];
         const visit = (items: ProjectWorkBoqItem[], level: number) => {
-            items.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)).forEach(item => {
+            [...items].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)).forEach(item => {
                 rows.push({ item, level });
                 visit(children.get(item.id) || [], level + 1);
             });
@@ -316,7 +346,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     const getWorkComparison = (workItem: ProjectWorkBoqItem) => {
         const linkedIds = workItem.sourceTaskId ? taskContractLinks[workItem.sourceTaskId] || [] : [];
-        const linkedContractItems = linkedIds.map(id => contractItems.find(item => item.id === id)).filter(Boolean) as ContractItem[];
+        const linkedContractItems = linkedIds.map(id => contractItemById.get(id)).filter(Boolean) as ContractItem[];
         const contractQty = linkedContractItems.reduce((sum, item) => sum + (item.revisedQuantity ?? item.quantity ?? 0), 0);
         const contractValue = linkedContractItems.reduce((sum, item) => sum + (item.revisedTotalPrice ?? item.totalPrice ?? 0), 0);
         const plannedQty = Number(workItem.plannedQty || 0);
@@ -331,6 +361,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             valueDiff: plannedValue - contractValue,
         };
     };
+
+    const sortedWasteBoqItems = useMemo(
+        () => [...computedBoqItems].sort((a, b) => (b.wastePercent || 0) - (a.wastePercent || 0)),
+        [computedBoqItems],
+    );
 
     const handleSyncWithSchedule = async () => {
         if (!ensureCanManage('đồng bộ BOQ vật tư')) return;
@@ -963,7 +998,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
-                                    {requests.sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || '')).map(req => {
+                                    {sortedRequests.map(req => {
                                         const latestLog = req.logs?.[req.logs.length - 1];
                                         const isReturnedDraft = req.status === RequestStatus.DRAFT && latestLog?.action === 'RETURNED';
                                         const stCfg = isReturnedDraft ? REQ_STATUS_MAP.RETURNED_DRAFT : (REQ_STATUS_MAP[req.status] || REQ_STATUS_MAP.PENDING);
@@ -973,7 +1008,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                             : 0;
                                         const hasPartialFulfillment = fulfillment && fulfillment.receivedQty > 0 && fulfillment.receivedQty < fulfillment.committedQty;
                                         const hasIssuedFulfillment = fulfillment && fulfillment.issuedQty > 0 && fulfillment.receivedQty < fulfillment.committedQty;
-                                        const reqUser = users.find(u => u.id === req.requesterId);
+                                        const reqUser = userById.get(req.requesterId);
                                         const reqItems = (req.items || []) as any[];
                                         return (
                                             <tr key={req.id} className="hover:bg-slate-50/50 group">
@@ -988,8 +1023,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                 <td className="px-4 py-3">
                                                     <div className="flex flex-wrap gap-1">
                                                         {reqItems.slice(0, 3).map((ri: any, idx: number) => {
-                                                            const inv = inventoryItems.find(i => i.id === ri.itemId);
-                                                            const work = ri.workBoqItemId ? workBoqItems.find(item => item.id === ri.workBoqItemId) : undefined;
+                                                            const inv = inventoryItemById.get(ri.itemId);
+                                                            const work = ri.workBoqItemId ? workBoqItemById.get(ri.workBoqItemId) : undefined;
                                                             return (
                                                                 <span key={idx} className="px-1.5 py-0.5 rounded text-[9px] bg-slate-50 border border-slate-100 text-slate-600 font-medium">
                                                                     {work?.wbsCode ? `${work.wbsCode} • ` : ''}{inv?.name || ri.itemId} ({ri.requestQty})
@@ -1093,7 +1128,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
-                                            {computedBoqItems.sort((a, b) => (b.wastePercent || 0) - (a.wastePercent || 0)).map(item => {
+                                            {sortedWasteBoqItems.map(item => {
                                                 const isOver = (item.wastePercent || 0) > item.wasteThreshold;
                                                 const isNeg = (item.wastePercent || 0) <= 0;
                                                 return (

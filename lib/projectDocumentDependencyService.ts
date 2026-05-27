@@ -1,4 +1,4 @@
-import { DailyLog, PaymentCertificate, ProjectTask, QuantityAcceptance } from '../types';
+import { ContractItemType, DailyLog, PaymentCertificate, ProjectTask, QuantityAcceptance } from '../types';
 import { ProjectDocumentDependencies } from './projectDocumentPolicy';
 import { supabase } from './supabase';
 
@@ -24,6 +24,24 @@ async function countRows(table: string, column: string, value: string, optional 
   } catch (error: any) {
     if (!optional) throw error;
     console.warn(`Cannot count ${table}.${column} dependencies`, error?.message || error);
+    return 0;
+  }
+}
+
+async function countRowsByFilters(table: string, filters: Record<string, string>, optional = true): Promise<number> {
+  try {
+    let query = supabase
+      .from(table)
+      .select('*', { count: 'exact', head: true });
+    Object.entries(filters).forEach(([column, value]) => {
+      query = query.eq(column, value);
+    });
+    const { count, error } = await query;
+    if (error) throw error;
+    return count || 0;
+  } catch (error: any) {
+    if (!optional) throw error;
+    console.warn(`Cannot count ${table} dependencies`, error?.message || error);
     return 0;
   }
 }
@@ -165,6 +183,65 @@ export const projectDocumentDependencyService = {
       countRows('project_transactions', 'source_ref', `payment_certificate:${cert.id}`),
     ]);
     deps.metadata = { recoveryCount, transactionCount };
+    return deps;
+  },
+
+  async getContractDependencies(contractId: string, contractType: ContractItemType): Promise<ProjectDocumentDependencies> {
+    const deps = emptyDependencies();
+    const [
+      boqCount,
+      acceptanceCount,
+      paymentCount,
+      variationCount,
+      appendixCount,
+      scheduleCount,
+      guaranteeCount,
+      advanceCount,
+    ] = await Promise.all([
+      countRowsByFilters('contract_items', { contract_id: contractId, contract_type: contractType }),
+      countRowsByFilters('quantity_acceptances', { contract_id: contractId, contract_type: contractType }),
+      countRowsByFilters('payment_certificates', { contract_id: contractId, contract_type: contractType }),
+      countRowsByFilters('contract_variations', { contract_id: contractId, contract_type: contractType }),
+      countRowsByFilters('contract_appendices', { contract_id: contractId, contract_type: contractType }),
+      countRowsByFilters('payment_schedules', { contract_id: contractId, contract_type: contractType }),
+      contractType === 'customer' ? countRows('contract_guarantees', 'contract_id', contractId) : Promise.resolve(0),
+      countRowsByFilters('advance_payments', { contract_id: contractId, contract_type: contractType }),
+    ]);
+
+    deps.metadata = {
+      boqCount,
+      acceptanceCount,
+      paymentCount,
+      variationCount,
+      appendixCount,
+      scheduleCount,
+      guaranteeCount,
+      advanceCount,
+    };
+    if (boqCount > 0) {
+      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${boqCount} dòng BOQ hợp đồng.`, 'Xoá/rollback BOQ hợp đồng trước khi xoá hợp đồng.');
+    }
+    if (acceptanceCount > 0) {
+      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${acceptanceCount} nghiệm thu liên kết.`, 'Rollback nghiệm thu trước khi xoá hợp đồng.');
+    }
+    if (paymentCount > 0) {
+      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${paymentCount} chứng từ thanh toán liên kết.`, 'Rollback/xoá chứng từ thanh toán trước khi xoá hợp đồng.');
+    }
+    if (variationCount > 0) {
+      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${variationCount} điều chỉnh BOQ/phát sinh.`, 'Xử lý điều chỉnh BOQ/phát sinh trước khi xoá hợp đồng.');
+    }
+    if (appendixCount > 0) {
+      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${appendixCount} phụ lục hợp đồng.`, 'Xoá phụ lục hợp đồng trước khi xoá hợp đồng.');
+    }
+    if (scheduleCount > 0) {
+      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${scheduleCount} lịch thanh toán.`, 'Xoá lịch thanh toán trước khi xoá hợp đồng.');
+    }
+    if (guaranteeCount > 0) {
+      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${guaranteeCount} bảo lãnh hợp đồng.`, 'Xử lý bảo lãnh hợp đồng trước khi xoá hợp đồng.');
+    }
+    if (advanceCount > 0) {
+      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${advanceCount} khoản tạm ứng.`, 'Rollback/xử lý tạm ứng trước khi xoá hợp đồng.');
+    }
     return deps;
   },
 

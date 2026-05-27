@@ -99,4 +99,40 @@ export const projectTransactionService = {
     if (error) throw error;
     return data ? normalize(data) : tx;
   },
+
+  async reverseWorkflowTransaction(input: {
+    sourceRef: string;
+    reversalSourceRef?: string;
+    description?: string;
+    date?: string;
+    createdBy?: string;
+  }): Promise<ProjectTransaction | null> {
+    const original = await this.findBySourceRef(input.sourceRef);
+    if (!original) return null;
+
+    const reversalSourceRef = input.reversalSourceRef || `${input.sourceRef}:reversal`;
+    const existing = await this.findBySourceRef(reversalSourceRef);
+    if (existing) return existing;
+
+    const tx: ProjectTransaction = {
+      ...original,
+      id: crypto.randomUUID(),
+      amount: -Number(original.amount || 0),
+      description: input.description || `Rollback: ${original.description}`,
+      date: input.date || new Date().toISOString().slice(0, 10),
+      source: 'workflow',
+      sourceRef: reversalSourceRef,
+      attachments: [],
+      createdBy: input.createdBy,
+      createdAt: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from(TABLE)
+      .upsert(txPayload(tx), { onConflict: 'source_ref' })
+      .select()
+      .single();
+    if (error) throw error;
+    return data ? normalize(data) : tx;
+  },
 };

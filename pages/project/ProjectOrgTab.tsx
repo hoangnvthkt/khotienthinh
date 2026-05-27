@@ -10,6 +10,7 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { supabase } from '../../lib/supabase';
 import { fromDb } from '../../lib/dbMapping';
+import PremiumMemberSelect, { MemberOption } from '../../components/common/PremiumMemberSelect';
 
 interface Props {
   projectId: string;
@@ -99,14 +100,19 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
       (a.level || 0) - (b.level || 0) || a.name.localeCompare(b.name, 'vi')),
   [hrmPositions, positions]);
 
-  // Filter users for search
-  const filteredUsers = useMemo(() => {
-    const q = searchQuery.toLowerCase();
-    return users.filter(u =>
-      u.name?.toLowerCase().includes(q) ||
-      u.email?.toLowerCase().includes(q)
-    ).slice(0, 20);
-  }, [users, searchQuery]);
+  // Filter active users who are not yet added to the project staff
+  const memberOptions: MemberOption[] = useMemo(() => {
+    const existingIds = new Set(staff.map(s => s.userId));
+    return users
+      .filter(u => !existingIds.has(u.id) && u.isActive !== false)
+      .map(u => ({
+        id: u.id,
+        name: u.name || u.username || u.email || 'Nhân sự',
+        avatarUrl: u.avatar || null,
+        roleLabel: u.role || null,
+        subtitle: u.email || null
+      }));
+  }, [users, staff]);
 
   const resetForm = () => {
     setEditingStaff(null);
@@ -399,30 +405,22 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId, canMana
                     {editingStaff.userName} (không đổi được — xoá rồi thêm mới nếu cần)
                   </div>
                 ) : (
-                  <>
-                    <div className="relative">
-                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
-                      <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                        placeholder="Tìm nhân viên..."
-                        className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400 dark:bg-slate-700 dark:border-slate-600" />
-                    </div>
-                    {searchQuery && (
-                      <div className="mt-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:bg-slate-700 shadow-lg">
-                        {filteredUsers.map(u => (
-                          <button key={u.id} onClick={() => { setFUserId(u.id); setSearchQuery(u.name); }}
-                            className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-bold hover:bg-indigo-50 dark:hover:bg-slate-600 transition-colors ${fUserId === u.id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600'}`}>
-                            {u.avatar ? (
-                              <img src={u.avatar} alt="" className="w-6 h-6 rounded-lg object-cover" />
-                            ) : (
-                              <div className="w-6 h-6 rounded-lg bg-slate-200 flex items-center justify-center text-[10px] font-black">{u.name?.[0]}</div>
-                            )}
-                            {u.name}
-                            <span className="text-[9px] text-slate-400 ml-auto">{u.email}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
+                  <div className="border border-slate-100 dark:border-slate-700 rounded-2xl overflow-hidden p-1 bg-slate-50/50 dark:bg-slate-900/30">
+                    <PremiumMemberSelect
+                      options={memberOptions}
+                      selectedIds={fUserId ? [fUserId] : []}
+                      onChange={ids => {
+                        if (ids.length > 0) {
+                          setFUserId(ids[0]);
+                        } else {
+                          setFUserId('');
+                        }
+                      }}
+                      isMulti={false}
+                      placeholder="Tìm nhân viên để thêm..."
+                      className="!shadow-none !border-none bg-transparent"
+                    />
+                  </div>
                 )}
               </div>
 

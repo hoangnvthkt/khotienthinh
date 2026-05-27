@@ -49,6 +49,9 @@ import {
     Users, UserPlus, Loader2, RefreshCcw, Search, EyeOff, ArchiveRestore, Shield, Pin
 } from 'lucide-react';
 
+import PremiumMemberSelect, { MemberOption } from '../components/common/PremiumMemberSelect';
+import PremiumEntitySelect, { EntityOption } from '../components/common/PremiumEntitySelect';
+
 const CashFlowTab = React.lazy(() => import('./project/CashFlowTab'));
 const ContractTab = React.lazy(() => import('./project/ContractTab'));
 const GanttTab = React.lazy(() => import('./project/GanttTab'));
@@ -104,6 +107,14 @@ const fmt = (n: number) => {
     return n.toLocaleString('vi-VN');
 };
 const fmtFull = (n: number) => n.toLocaleString('vi-VN') + ' đ';
+const signedTxAmount = (tx: ProjectTransaction) =>
+    tx.type === 'expense' ? -Number(tx.amount || 0) : Number(tx.amount || 0);
+const fmtSignedTxAmount = (tx: ProjectTransaction) => {
+    const signed = signedTxAmount(tx);
+    return `${signed >= 0 ? '+' : '-'}${fmtFull(Math.abs(signed))}`;
+};
+const txAmountClass = (tx: ProjectTransaction) =>
+    signedTxAmount(tx) < 0 ? 'text-red-500' : 'text-emerald-600';
 
 const emptyFinance = (siteId: string): ProjectFinance => ({
     id: crypto.randomUUID(),
@@ -362,6 +373,7 @@ const ProjectDashboard: React.FC = () => {
     const [showProjectAdvanced, setShowProjectAdvanced] = useState(false);
     const [quickCategoryKind, setQuickCategoryKind] = useState<'group' | 'type' | 'sector' | null>(null);
     const [quickCategoryForm, setQuickCategoryForm] = useState({ code: '', name: '', description: '' });
+    const [activeSelectPopover, setActiveSelectPopover] = useState<{ field: string; type: 'user' | 'group' } | null>(null);
 
     const canViewProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
         if (user.role === Role.ADMIN) return true;
@@ -1980,12 +1992,34 @@ const ProjectDashboard: React.FC = () => {
             onGroupChange: (ids: string[]) => void,
         ) => {
             const selectedUsers = selectedIds.map(id => activeUsers.find(u => u.id === id)).filter(Boolean) as typeof activeUsers;
-            const availableUsers = activeUsers.filter(u => !selectedIds.includes(u.id));
             const selectedGroups = selectedGroupIds.map(id => workGroupMap.get(id)).filter(Boolean) as WorkGroupWithMembers[];
-            const availableGroups = activeWorkGroups.filter(group => !selectedGroupIds.includes(group.id));
             const expandedFromGroups = expandParticipantUserIds([], selectedGroupIds);
             const getGroupMemberCount = (group: WorkGroupWithMembers) =>
                 group.members.filter(member => member.isActive && activeUserIdSet.has(member.userId)).length;
+
+            const memberOptions: MemberOption[] = activeUsers.map(u => {
+                const employee = employeeByUserId.get(u.id);
+                const positionName = employee?.positionId
+                    ? (hrmPositions.find(pos => pos.id === employee.positionId)?.name || null)
+                    : null;
+                return {
+                    id: u.id,
+                    name: u.name || u.username || u.email || 'Nhân sự',
+                    avatarUrl: u.avatar || null,
+                    roleLabel: positionName || u.role || null,
+                    subtitle: u.email || null
+                };
+            });
+
+            const groupOptions: EntityOption[] = activeWorkGroups.map(g => ({
+                id: g.id,
+                name: g.name,
+                subtitle: `${getGroupMemberCount(g)} người`,
+                icon: <Users size={14} />
+            }));
+
+            const isUserPopoverOpen = activeSelectPopover?.field === label && activeSelectPopover?.type === 'user';
+            const isGroupPopoverOpen = activeSelectPopover?.field === label && activeSelectPopover?.type === 'group';
 
             return (
                 <div>
@@ -1998,7 +2032,7 @@ const ProjectDashboard: React.FC = () => {
                         )}
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-white px-2 py-2 min-h-[46px]">
-                        <div className="flex flex-wrap gap-2 mb-2">
+                        <div className="flex flex-wrap gap-2 mb-3">
                             {selectedGroups.map(group => (
                                 <span key={group.id} className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-50 px-2 py-1 text-xs font-bold text-cyan-700 border border-cyan-100">
                                     <Users size={12} />
@@ -2024,38 +2058,69 @@ const ProjectDashboard: React.FC = () => {
                                 );
                             })}
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            <div className="flex items-center gap-1 text-cyan-500 min-w-[170px] rounded-lg bg-cyan-50 px-2">
-                                <Users size={13} />
-                                <select
-                                    value=""
-                                    onChange={e => {
-                                        if (e.target.value) onGroupChange([...selectedGroupIds, e.target.value]);
-                                        e.target.value = '';
-                                    }}
-                                    className="flex-1 min-w-0 bg-transparent text-xs font-bold outline-none py-2"
+                        <div className="flex flex-wrap gap-3">
+                            {/* Select Work Groups Trigger Button */}
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveSelectPopover(isGroupPopoverOpen ? null : { field: label, type: 'group' })}
+                                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all shadow-sm ${
+                                        isGroupPopoverOpen
+                                            ? 'bg-cyan-600 text-white border-cyan-600'
+                                            : 'bg-cyan-50 text-cyan-600 hover:bg-cyan-100 border-cyan-150'
+                                    }`}
                                 >
-                                    <option value="">{workGroupsLoading ? 'Đang tải nhóm...' : availableGroups.length === 0 ? 'Không còn nhóm' : 'Chọn nhóm làm việc'}</option>
-                                    {availableGroups.map(group => (
-                                        <option key={group.id} value={group.id}>{group.name} ({getGroupMemberCount(group)} người)</option>
-                                    ))}
-                                </select>
+                                    <Users size={13} />
+                                    <span>Chọn nhóm...</span>
+                                </button>
+                                {isGroupPopoverOpen && (
+                                    <>
+                                        <div className="fixed inset-0 z-[1001]" onClick={() => setActiveSelectPopover(null)} />
+                                        <div className="absolute left-0 mt-1.5 z-[1002] w-80 shadow-2xl animate-in fade-in slide-in-from-top-2 duration-150">
+                                            <PremiumEntitySelect
+                                                options={groupOptions}
+                                                selectedIds={selectedGroupIds}
+                                                onChange={onGroupChange}
+                                                isMulti={true}
+                                                placeholder="Tìm nhóm làm việc..."
+                                                onClose={() => setActiveSelectPopover(null)}
+                                                onConfirm={() => setActiveSelectPopover(null)}
+                                            />
+                                        </div>
+                                    </>
+                                )}
                             </div>
-                            <div className="flex items-center gap-1 text-slate-400 min-w-[170px] rounded-lg bg-slate-50 px-2">
-                                {icon}
-                                <select
-                                    value=""
-                                    onChange={e => {
-                                        if (e.target.value) onChange([...selectedIds, e.target.value]);
-                                        e.target.value = '';
-                                    }}
-                                    className="flex-1 min-w-0 bg-transparent text-xs font-bold outline-none py-1"
+
+                            {/* Select Members Trigger Button */}
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveSelectPopover(isUserPopoverOpen ? null : { field: label, type: 'user' })}
+                                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all shadow-sm ${
+                                        isUserPopoverOpen
+                                            ? 'bg-slate-700 text-white border-slate-700 dark:bg-slate-600 dark:border-slate-600'
+                                            : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:border-slate-600'
+                                    }`}
                                 >
-                                    <option value="">{availableUsers.length === 0 ? 'Không còn người dùng' : 'Chọn thành viên'}</option>
-                                    {availableUsers.map(item => (
-                                        <option key={item.id} value={item.id}>{item.name || item.username || item.email}</option>
-                                    ))}
-                                </select>
+                                    {icon}
+                                    <span>Chọn thành viên...</span>
+                                </button>
+                                {isUserPopoverOpen && (
+                                    <>
+                                        <div className="fixed inset-0 z-[1001]" onClick={() => setActiveSelectPopover(null)} />
+                                        <div className="absolute left-0 mt-1.5 z-[1002] w-80 shadow-2xl animate-in fade-in slide-in-from-top-2 duration-150">
+                                            <PremiumMemberSelect
+                                                options={memberOptions}
+                                                selectedIds={selectedIds}
+                                                onChange={onChange}
+                                                isMulti={true}
+                                                placeholder="Tìm thành viên..."
+                                                onClose={() => setActiveSelectPopover(null)}
+                                                onConfirm={() => setActiveSelectPopover(null)}
+                                            />
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -2946,8 +3011,8 @@ const ProjectDashboard: React.FC = () => {
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <span className={`text-sm font-black ${tx.type === 'expense' ? 'text-red-500' : 'text-emerald-600'}`}>
-                                                {tx.type === 'expense' ? '-' : '+'}{fmtFull(tx.amount)}
+                                            <span className={`text-sm font-black ${txAmountClass(tx)}`}>
+                                                {fmtSignedTxAmount(tx)}
                                             </span>
                                             {canManageCashflowTab && (
                                                 <>
