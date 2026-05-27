@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { CustomerContract, SubcontractorContract, HdContractStatus, ContractItemType } from '../../types';
 import { customerContractService, subcontractorContractService } from '../../lib/hdService';
+import { projectDocumentDependencyService } from '../../lib/projectDocumentDependencyService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import ContractItemTable from '../../components/project/ContractItemTable';
@@ -129,9 +130,18 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
     const handleDelete = async (id: string, type: 'customer' | 'subcontractor') => {
         if (!ensureCanManage('xoá hợp đồng khỏi dự án')) return;
         const c = contracts.find(x => x.id === id);
-        const ok = await confirm({ targetName: c?.code || 'hợp đồng này', title: 'Xoá hợp đồng' });
-        if (!ok) return;
         try {
+            const deps = await projectDocumentDependencyService.getContractDependencies(id, type);
+            if (deps.blockers.length > 0) {
+                toast.error('Không thể xoá hợp đồng', deps.blockers.join('\n'));
+                return;
+            }
+            const ok = await confirm({
+                targetName: c?.code || 'hợp đồng này',
+                title: 'Xoá hợp đồng',
+                warningText: 'Chỉ xóa được hợp đồng chưa có BOQ, nghiệm thu, thanh toán, phụ lục, lịch thanh toán hoặc bảo lãnh liên kết.',
+            });
+            if (!ok) return;
             if (type === 'customer') await customerContractService.remove(id);
             else await subcontractorContractService.remove(id);
             await loadContracts();

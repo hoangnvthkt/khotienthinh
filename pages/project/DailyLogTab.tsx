@@ -17,7 +17,7 @@ import { projectDocumentDependencyService } from '../../lib/projectDocumentDepen
 import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
 import { useVoiceInput } from '../../hooks/useVoiceInput';
 import { useToast } from '../../context/ToastContext';
-import { useConfirm } from '../../context/ConfirmContext';
+import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import DailyLogDetailTabs from '../../components/project/DailyLogDetailTabs';
 
@@ -213,11 +213,11 @@ interface DailyLogViewerProps {
     busy: boolean;
     onClose: () => void;
     onEdit: () => void;
-    onRollback: () => void;
+    onRollback: () => void | Promise<void>;
     onSubmit: () => void;
     onDelete: () => void;
     onVerify: () => void;
-    onReject: () => void;
+    onReject: () => void | Promise<void>;
 }
 
 const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
@@ -497,6 +497,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const location = useLocation();
     const toast = useToast();
     const confirm = useConfirm();
+    const reasonConfirm = useReasonConfirm();
     const { user, users, items: inventoryItems, warehouses, hrmConstructionSites, loadModuleData } = useApp();
     const effectiveId = projectId || constructionSiteId || '';
     const [logs, setLogs] = useState<DailyLog[]>([]);
@@ -1643,12 +1644,17 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         setViewLogId(null);
                         openEdit(viewingLog);
                     }}
-                    onRollback={() => {
-                        const reason = window.prompt('Nhập lý do rollback nhật ký đã xác nhận')?.trim();
-                        if (!reason) {
-                            toast.warning('Cần lý do rollback', 'Admin rollback nhật ký đã xác nhận bắt buộc nhập lý do để truy vết.');
-                            return;
-                        }
+                    onRollback={async () => {
+                        const reason = await reasonConfirm({
+                            title: 'Rollback nhật ký đã xác nhận',
+                            targetName: viewingLog.description || new Date(viewingLog.date).toLocaleDateString('vi-VN'),
+                            warningText: 'Admin rollback nhật ký đã xác nhận bắt buộc nhập lý do để truy vết.',
+                            reasonPlaceholder: 'Nhập lý do rollback nhật ký đã xác nhận...',
+                            actionLabel: 'Rollback',
+                            intent: 'danger',
+                            countdownSeconds: 1,
+                        });
+                        if (!reason) return;
                         handleStatusChange(viewingLog, 'rejected', undefined, reason);
                     }}
                     onSubmit={() => {
@@ -1660,12 +1666,16 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         handleDelete(viewingLog.id);
                     }}
                     onVerify={() => handleStatusChange(viewingLog, 'verified')}
-                    onReject={() => {
-                        const reason = window.prompt('Nhập lý do trả lại nhật ký')?.trim();
-                        if (!reason) {
-                            toast.warning('Cần lý do trả lại', 'Vui lòng nhập lý do để người lập bổ sung đúng nội dung.');
-                            return;
-                        }
+                    onReject={async () => {
+                        const reason = await reasonConfirm({
+                            title: 'Trả lại nhật ký',
+                            targetName: viewingLog.description || new Date(viewingLog.date).toLocaleDateString('vi-VN'),
+                            warningText: 'Vui lòng nhập lý do để người lập bổ sung đúng nội dung.',
+                            reasonPlaceholder: 'Nhập lý do trả lại nhật ký...',
+                            actionLabel: 'Trả lại',
+                            intent: 'danger',
+                        });
+                        if (!reason) return;
                         handleStatusChange(viewingLog, 'rejected', undefined, reason);
                     }}
                 />

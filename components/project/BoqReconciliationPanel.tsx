@@ -17,7 +17,7 @@ import {
 import { contractItemService } from '../../lib/contractItemService';
 import { workBoqService } from '../../lib/projectService';
 import { useApp } from '../../context/AppContext';
-import { useConfirm } from '../../context/ConfirmContext';
+import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import ProjectSubmissionDialog from './ProjectSubmissionDialog';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
@@ -70,6 +70,7 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
   const effectiveId = projectId || constructionSiteId || '';
   const toast = useToast();
   const confirm = useConfirm();
+  const reasonConfirm = useReasonConfirm();
   const { user } = useApp();
   const isAdminUser = user?.role === 'ADMIN';
   const [contractType, setContractType] = useState<ContractItemType>('customer');
@@ -181,13 +182,18 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
       return;
     }
     const rollbackReason = isRollback
-      ? window.prompt('Nhập lý do rollback/hạ trạng thái nhóm đối chiếu')?.trim()
+      ? await reasonConfirm({
+        title: 'Hạ trạng thái đối chiếu',
+        targetName: activeGroup.name,
+        warningText: `Admin sẽ đưa nhóm từ "${statusLabel[activeGroup.status]}" về "${statusLabel[status]}" để chỉnh sửa.`,
+        reasonPlaceholder: 'Nhập lý do rollback/hạ trạng thái nhóm đối chiếu...',
+        actionLabel: 'Hạ trạng thái',
+        intent: 'danger',
+        countdownSeconds: 1,
+      })
       : undefined;
-    if (isRollback && !rollbackReason) {
-      toast.warning('Cần nhập lý do', 'Rollback nhóm đối chiếu bắt buộc có lý do để truy vết.');
-      return;
-    }
-    if (!(status === 'submitted' && submissionTarget)) {
+    if (isRollback && !rollbackReason) return;
+    if (!(status === 'submitted' && submissionTarget) && !isRollback) {
       const ok = await confirm({
         title: isRollback ? 'Hạ trạng thái đối chiếu' : statusActionLabel[status],
         targetName: activeGroup.name,

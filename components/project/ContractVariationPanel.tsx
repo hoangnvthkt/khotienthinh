@@ -5,7 +5,7 @@ import { contractItemService } from '../../lib/contractItemService';
 import { variationService } from '../../lib/variationService';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
 import { useToast } from '../../context/ToastContext';
-import { useConfirm } from '../../context/ConfirmContext';
+import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
@@ -56,6 +56,7 @@ const emptyLine = (): DraftLine => ({
 const ContractVariationPanel: React.FC<Props> = ({ contractId, contractType, projectId, constructionSiteId }) => {
   const toast = useToast();
   const confirm = useConfirm();
+  const reasonConfirm = useReasonConfirm();
   const { user } = useApp();
   const { loading: saving, run } = useAsyncAction({
     errorTitle: 'Không thể lưu điều chỉnh BOQ',
@@ -241,13 +242,17 @@ const ContractVariationPanel: React.FC<Props> = ({ contractId, contractType, pro
     }
     const labels = { submitted: 'Gửi duyệt', approved: 'Duyệt điều chỉnh BOQ', rejected: 'Từ chối điều chỉnh BOQ' };
     const reason = status === 'rejected'
-      ? window.prompt('Nhập lý do trả lại/từ chối điều chỉnh BOQ')?.trim()
+      ? await reasonConfirm({
+        title: 'Từ chối điều chỉnh BOQ',
+        targetName: `${item.code} - ${item.title}`,
+        warningText: 'Lý do trả lại sẽ được lưu để người lập chỉnh đúng nội dung.',
+        reasonPlaceholder: 'Nhập lý do trả lại/từ chối điều chỉnh BOQ...',
+        actionLabel: 'Từ chối',
+        intent: 'danger',
+      })
       : undefined;
-    if (status === 'rejected' && !reason) {
-      toast.warning('Cần nhập lý do', 'Thao tác trả lại cần lý do để người lập chỉnh đúng nội dung.');
-      return;
-    }
-    if (!(status === 'submitted' && submissionTarget)) {
+    if (status === 'rejected' && !reason) return;
+    if (!(status === 'submitted' && submissionTarget) && status !== 'rejected') {
       const ok = await confirm({
         title: labels[status],
         targetName: `${item.code} - ${item.title}`,

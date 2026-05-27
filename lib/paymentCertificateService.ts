@@ -545,10 +545,15 @@ export const paymentCertificateService = {
 
       // Revert advance recoveries nếu đã paid: tính lại từ các cert còn active
       if (cert.status === 'paid') {
+        await projectTransactionService.reverseWorkflowTransaction({
+          sourceRef: `payment_certificate:${id}`,
+          reversalSourceRef: `payment_certificate:${id}:reversal`,
+          description: `Rollback chứng từ thanh toán đợt ${cert.periodNumber}`,
+          date: now.slice(0, 10),
+          createdBy: userId,
+        });
+
         const activeCerts = otherPaidCerts.filter(c => c.id !== id && c.status === 'paid');
-        const advanceIds = new Set(
-          cert.items.map(i => i.contractItemId),
-        );
         // Lấy tất cả advance payments của hợp đồng này
         const advances = await advancePaymentService.listByContract(cert.contractId, cert.contractType);
         for (const adv of advances) {

@@ -11,7 +11,7 @@ import { projectDocumentActionLogService } from '../../lib/projectDocumentAction
 import { projectDocumentDependencyService } from '../../lib/projectDocumentDependencyService';
 import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
 import { useToast } from '../../context/ToastContext';
-import { useConfirm } from '../../context/ConfirmContext';
+import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import ProjectSubmissionDialog from './ProjectSubmissionDialog';
 
@@ -55,6 +55,7 @@ const ADMIN_PROJECT_PERMS: ProjectPermissionCode[] = ['view', 'edit', 'delete', 
 const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, projectId, constructionSiteId }) => {
   const toast = useToast();
   const confirm = useConfirm();
+  const reasonConfirm = useReasonConfirm();
   const { user } = useApp();
   const [certs, setCerts] = useState<PaymentCertificate[]>([]);
   const [advances, setAdvances] = useState<AdvancePayment[]>([]);
@@ -96,6 +97,15 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
           actionLabel: 'tạo đợt thanh toán',
         });
       }
+      const ok = await confirm({
+        title: 'Tạo chứng từ thanh toán',
+        targetName: `Hợp đồng ${contractId}`,
+        warningText: 'Chứng từ mới sẽ lấy dữ liệu nghiệm thu/BOQ hiện tại để lập đợt thanh toán nháp.',
+        intent: 'warning',
+        actionLabel: 'Tạo chứng từ',
+        countdownSeconds: 0,
+      });
+      if (!ok) return;
       await paymentCertificateService.create(contractId, contractType, constructionSiteId, {});
       await load();
       toast.success('Tạo đợt thanh toán mới');
@@ -116,17 +126,26 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
       return;
     }
     const labels: Record<string, string> = { submitted: 'Gửi duyệt', returned: 'Trả lại', approved: 'Phê duyệt', paid: 'Xác nhận thanh toán', cancelled: 'Huỷ/Rollback chứng từ' };
-    const reason = newStatus === 'returned' || newStatus === 'cancelled'
-      ? window.prompt(newStatus === 'returned' ? 'Nhập lý do trả lại chứng từ' : 'Nhập lý do huỷ/rollback chứng từ')?.trim()
-      : undefined;
-    if ((newStatus === 'returned' || newStatus === 'cancelled') && !reason) {
-      toast.warning('Cần nhập lý do', 'Thao tác trả lại/huỷ cần lý do để truy vết.');
-      return;
-    }
     const warningText = newStatus === 'cancelled'
       ? 'Rollback chứng từ sẽ hủy trạng thái thanh toán/phê duyệt và mở khóa BOQ liên quan nếu không còn chứng từ paid khác dùng cùng hạng mục.'
       : undefined;
-    if (!(newStatus === 'submitted' && submissionTarget)) {
+    const reason = newStatus === 'returned' || newStatus === 'cancelled'
+      ? await reasonConfirm({
+        title: newStatus === 'returned' ? 'Trả lại chứng từ' : 'Huỷ/Rollback chứng từ',
+        targetName: `Đợt ${cert.periodNumber}`,
+        warningText: newStatus === 'returned'
+          ? 'Lý do trả lại sẽ được lưu vào audit trail để người lập chỉnh đúng nội dung.'
+          : warningText,
+        reasonPlaceholder: newStatus === 'returned'
+          ? 'Nhập lý do trả lại chứng từ...'
+          : 'Nhập lý do huỷ/rollback chứng từ...',
+        actionLabel: newStatus === 'returned' ? 'Trả lại' : 'Huỷ/Rollback',
+        intent: 'danger',
+        countdownSeconds: newStatus === 'cancelled' ? 1 : 0,
+      })
+      : undefined;
+    if ((newStatus === 'returned' || newStatus === 'cancelled') && !reason) return;
+    if (!(newStatus === 'submitted' && submissionTarget) && newStatus !== 'returned' && newStatus !== 'cancelled') {
       const ok = await confirm({ title: labels[newStatus] || newStatus, targetName: `Đợt ${cert.periodNumber}`, warningText });
       if (!ok) return;
     }
@@ -360,6 +379,16 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
   const handleAddAdvance = async () => {
     if (advForm.amount <= 0) { toast.warning('Nhập số tiền tạm ứng'); return; }
     try {
+      const ok = await confirm({
+        title: 'Ghi nhận tạm ứng',
+        targetName: fmtM(advForm.amount),
+        subtitle: `Ngày ${advForm.date} - Thu hồi ${fmtPct(advForm.recoveryPercent)}%`,
+        warningText: 'Khoản tạm ứng sẽ được dùng để tính thu hồi trong các chứng từ thanh toán sau.',
+        intent: 'warning',
+        actionLabel: 'Ghi nhận',
+        countdownSeconds: 0,
+      });
+      if (!ok) return;
       await advancePaymentService.create({ contractId, contractType, constructionSiteId, amount: advForm.amount, date: advForm.date, recoveryPercent: advForm.recoveryPercent, note: advForm.note });
       setShowAddAdvance(false);
       setAdvForm({ amount: 0, date: new Date().toISOString().slice(0, 10), recoveryPercent: 30, note: '' });

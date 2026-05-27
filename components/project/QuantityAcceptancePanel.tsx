@@ -20,7 +20,7 @@ import { projectDocumentActionLogService } from '../../lib/projectDocumentAction
 import { projectDocumentDependencyService } from '../../lib/projectDocumentDependencyService';
 import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
 import { useToast } from '../../context/ToastContext';
-import { useConfirm } from '../../context/ConfirmContext';
+import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import ProjectSubmissionDialog from './ProjectSubmissionDialog';
 
@@ -50,6 +50,7 @@ const ADMIN_PROJECT_PERMS: ProjectPermissionCode[] = ['view', 'edit', 'delete', 
 const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, projectId, constructionSiteId }) => {
   const toast = useToast();
   const confirm = useConfirm();
+  const reasonConfirm = useReasonConfirm();
   const { user } = useApp();
   const [items, setItems] = useState<QuantityAcceptance[]>([]);
   const [periodStart, setPeriodStart] = useState(today().slice(0, 8) + '01');
@@ -126,13 +127,22 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
       cancelled: 'Huỷ sẽ mở khoá hạng mục BOQ và hoàn trả KL hoàn thành về trạng thái trước.',
     };
     const reason = status === 'returned' || status === 'cancelled'
-      ? window.prompt(status === 'returned' ? 'Nhập lý do trả lại nghiệm thu' : 'Nhập lý do huỷ/rollback nghiệm thu')?.trim()
+      ? await reasonConfirm({
+        title: status === 'returned' ? 'Trả lại nghiệm thu' : 'Huỷ/Rollback nghiệm thu',
+        targetName: `Nghiệm thu Đợt ${item.periodNumber}`,
+        warningText: status === 'returned'
+          ? 'Lý do trả lại sẽ được lưu để người lập chỉnh đúng nội dung.'
+          : 'Huỷ sẽ mở khoá hạng mục BOQ và hoàn trả KL hoàn thành về trạng thái trước.',
+        reasonPlaceholder: status === 'returned'
+          ? 'Nhập lý do trả lại nghiệm thu...'
+          : 'Nhập lý do huỷ/rollback nghiệm thu...',
+        actionLabel: status === 'returned' ? 'Trả lại' : 'Huỷ nghiệm thu',
+        intent: 'danger',
+        countdownSeconds: status === 'cancelled' ? 1 : 0,
+      })
       : undefined;
-    if ((status === 'returned' || status === 'cancelled') && !reason) {
-      toast.warning('Cần nhập lý do', 'Thao tác trả lại/huỷ cần lý do để truy vết.');
-      return;
-    }
-    if (!(status === 'submitted' && submissionTarget)) {
+    if ((status === 'returned' || status === 'cancelled') && !reason) return;
+    if (!(status === 'submitted' && submissionTarget) && status !== 'returned' && status !== 'cancelled') {
       const ok = await confirm({
         title: labels[status] || status,
         targetName: `Nghiệm thu Đợt ${item.periodNumber}`,
@@ -427,12 +437,11 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
                   </div>
                 </button>
                 <div className="flex items-center gap-2">
-                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${
-                    item.status === 'approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                    item.status === 'submitted' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                    item.status === 'cancelled' ? 'bg-slate-100 text-slate-500 border-slate-200' :
-                    'bg-slate-50 text-slate-600 border-slate-200'
-                  }`}>{item.status === 'cancelled' ? 'Đã huỷ' : item.status}</span>
+                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${item.status === 'approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                      item.status === 'submitted' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                        item.status === 'cancelled' ? 'bg-slate-100 text-slate-500 border-slate-200' :
+                          'bg-slate-50 text-slate-600 border-slate-200'
+                    }`}>{item.status === 'cancelled' ? 'Đã huỷ' : item.status}</span>
                   <span className="text-xs font-black text-emerald-600">{fmt(item.totalAcceptedAmount)} đ</span>
                 </div>
               </div>
@@ -453,7 +462,9 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
                     <tbody className="divide-y divide-white">
                       {item.items.map((line, idx) => {
                         const editable = item.status === 'draft' || item.status === 'returned';
-                        const suggestedAmount = Number(line.suggestedAmount ?? line.acceptedQuantity * line.unitPrice ?? 0);
+                        const fallbackAmount = Number(line.acceptedQuantity || 0) * Number(line.unitPrice || 0);
+                        const rawSuggestedAmount = Number(line.suggestedAmount ?? fallbackAmount);
+                        const suggestedAmount = Number.isFinite(rawSuggestedAmount) ? rawSuggestedAmount : 0;
                         return (
                           <tr key={idx}>
                             <td className="px-2 py-1.5 font-bold text-slate-600">

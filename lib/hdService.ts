@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { ContractAppendix, CustomerContract, SubcontractorContract, SupplierContract } from '../types';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
+import { projectDocumentDependencyService } from './projectDocumentDependencyService';
 
 // ══════════════════════════════════════════════════════════════
 //  HD SERVICE — CRUD cho 3 bảng Hợp Đồng
@@ -74,6 +75,8 @@ export const customerContractService = {
   },
 
   async remove(id: string): Promise<void> {
+    const deps = await projectDocumentDependencyService.getContractDependencies(id, 'customer');
+    if (deps.blockers.length > 0) throw new Error(deps.blockers.join('\n'));
     const { error } = await supabase
       .from('customer_contracts')
       .delete()
@@ -121,6 +124,8 @@ export const subcontractorContractService = {
   },
 
   async remove(id: string): Promise<void> {
+    const deps = await projectDocumentDependencyService.getContractDependencies(id, 'subcontractor');
+    if (deps.blockers.length > 0) throw new Error(deps.blockers.join('\n'));
     const { error } = await supabase
       .from('subcontractor_contracts')
       .delete()
