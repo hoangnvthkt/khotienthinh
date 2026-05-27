@@ -34,6 +34,8 @@ const fmt = (n: number) => {
 };
 
 const REQ_STATUS_MAP: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
+    DRAFT: { label: 'Nháp', color: 'text-slate-600', bg: 'bg-slate-50 border-slate-200', icon: <Edit2 size={12} /> },
+    RETURNED_DRAFT: { label: 'Bị trả lại', color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200', icon: <AlertTriangle size={12} /> },
     PENDING: { label: 'Chờ duyệt', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', icon: <Clock size={12} /> },
     APPROVED: { label: 'Chờ xuất kho', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', icon: <CheckCircle2 size={12} /> },
     IN_TRANSIT: { label: 'Đang giao', color: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-200', icon: <Truck size={12} /> },
@@ -962,7 +964,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                 </thead>
                                 <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                     {requests.sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || '')).map(req => {
-                                        const stCfg = REQ_STATUS_MAP[req.status] || REQ_STATUS_MAP.PENDING;
+                                        const latestLog = req.logs?.[req.logs.length - 1];
+                                        const isReturnedDraft = req.status === RequestStatus.DRAFT && latestLog?.action === 'RETURNED';
+                                        const stCfg = isReturnedDraft ? REQ_STATUS_MAP.RETURNED_DRAFT : (REQ_STATUS_MAP[req.status] || REQ_STATUS_MAP.PENDING);
                                         const fulfillment = requestFulfillmentSummaries[req.id];
                                         const progressPercent = fulfillment && fulfillment.committedQty > 0
                                             ? Math.min(100, Math.round((fulfillment.receivedQty / fulfillment.committedQty) * 100))

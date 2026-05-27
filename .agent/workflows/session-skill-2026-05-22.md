@@ -10,6 +10,12 @@ Read this before making code changes in `/Users/admin/khotienthinh`.
 
 The user is Vietnamese and expects direct anh/em communication. Keep responses pragmatic, concrete, and implementation-focused. Read code before changing it, do not guess from memory, and do not break flows that already work.
 
+Important workflow governance update from 2026-05-26:
+
+- Before changing any draft/submission/approval/return/rejection/completion, user handoff, delete/rollback, inventory, cost, payment, or real-world side-effect flow, read:
+  - `.agent/workflows/fastcons-workflow-governance-skill-2026-05-26.md`
+- Core rule: every action must have a confirm dialog, write traceable audit/system history, respect current-step ownership, and Admin cannot bypass physical/financial reality.
+
 ## Collaboration Rules
 
 - Address the user as `anh`; refer to self as `em`.
@@ -353,4 +359,3 @@ git grep -n 'sbp_' HEAD
 ```
 
 Both should be empty before `git push`.
-

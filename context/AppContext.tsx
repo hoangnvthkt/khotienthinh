@@ -21,6 +21,7 @@ import { auditService } from '../lib/auditService';
 import { realtimeService, RealtimeStatus } from '../lib/realtimeService';
 import { notificationService } from '../lib/notificationService';
 import { logApiError } from '../lib/apiError';
+import { projectSubmissionService } from '../lib/projectSubmissionService';
 
 interface AppSettings {
   name: string;
@@ -136,6 +137,7 @@ interface AppContextType {
   removeWarehouse: (warehouseId: string) => void;
   addRequest: (request: MaterialRequest) => Promise<boolean>;
   updateRequestStatus: (id: string, status: RequestStatus, note?: string, approvedItems?: { lineId?: string, itemId: string, qty: number }[], sourceWarehouseId?: string, overrideReason?: string, actionOverride?: string) => Promise<boolean>;
+  removeRequest: (id: string) => Promise<void>;
   logActivity: (type: ActivityType, action: string, description: string, status?: GlobalActivity['status'], warehouseId?: string) => void;
   addCategory: (name: string) => void;
   updateCategory: (category: ItemCategory) => void;
@@ -251,6 +253,9 @@ const mapMaterialRequestFromDb = (r: any): MaterialRequest => ({
   submittedToName: r.submitted_to_name ?? r.submittedToName ?? undefined,
   submittedToPermission: r.submitted_to_permission ?? r.submittedToPermission ?? undefined,
   submissionNote: r.submission_note ?? r.submissionNote ?? undefined,
+  everSubmitted: r.ever_submitted ?? r.everSubmitted ?? undefined,
+  lastActionBy: r.last_action_by ?? r.lastActionBy ?? undefined,
+  lastActionAt: r.last_action_at ?? r.lastActionAt ?? undefined,
 });
 
 const mapAssetLocationStockFromDb = (l: any): AssetLocationStock => ({
@@ -973,7 +978,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           submitted_to_user_id: data.submittedToUserId || null,
           submitted_to_name: data.submittedToName || null,
           submitted_to_permission: data.submittedToPermission || null,
-          submission_note: data.submissionNote || null
+          submission_note: data.submissionNote || null,
+          ever_submitted: data.everSubmitted || false,
+          last_action_by: data.lastActionBy || null,
+          last_action_at: data.lastActionAt || null
         };
       } else if (table === 'activities') {
         payload = {
@@ -1549,15 +1557,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (exists) return prev.map(req => req.id === requestToSave.id ? requestToSave : req);
       return [requestToSave, ...prev];
     });
-    logActivity('REQUEST', 'Yêu cầu vật tư', `Phiếu yêu cầu ${r.code} đã được gửi`, 'INFO', r.siteWarehouseId);
-    void notifyWmsUsers(getMaterialRequestApproverIds(requestToSave), {
-      type: 'info',
-      title: 'Phiếu vật tư chờ duyệt',
-      message: `Phiếu ${requestToSave.code} đang chờ Thủ kho/Admin duyệt.`,
-      severity: 'info',
-      sourceId: requestToSave.id,
-    });
+    logActivity('REQUEST', 'Yêu cầu vật tư', `Phiếu yêu cầu ${r.code} đã được ${requestToSave.status === RequestStatus.DRAFT ? 'tạo nháp' : 'gửi'}`, 'INFO', r.siteWarehouseId);
+    if (requestToSave.status === RequestStatus.PENDING) {
+      void notifyWmsUsers(getMaterialRequestApproverIds(requestToSave), {
+        type: 'info',
+        title: 'Phiếu vật tư chờ duyệt',
+        message: `Phiếu ${requestToSave.code} đang chờ Thủ kho/Admin duyệt.`,
+        severity: 'info',
+        sourceId: requestToSave.id,
+      });
+    }
     return true;
+  };
+
+  const removeRequest = async (id: string): Promise<void> => {
+    const req = requests.find(r => r.id === id);
+    if (!req) throw new Error('Không tìm thấy phiếu đề xuất cần xoá.');
+
+    const isOwner = req.requesterId === user.id;
+    const deletableStatus = [RequestStatus.DRAFT, RequestStatus.PENDING, RequestStatus.REJECTED].includes(req.status);
+    const canDelete =
+      deletableStatus &&
+      (
+        user.role === Role.ADMIN ||
+        (isOwner && (req.status === RequestStatus.DRAFT || req.status === RequestStatus.REJECTED))
+      );
+    if (!canDelete) {
+      throw new Error('Bạn không có quyền xoá phiếu này hoặc phiếu không còn ở trạng thái được xoá.');
+    }
+
+    const localHasTransaction = transactions.some(tx => tx.relatedRequestId === id);
+    if (!isSupabaseConfigured && (req.relatedTransactionId || localHasTransaction)) {
+      throw new Error('Phiếu đã phát sinh phiếu kho, không thể xoá cứng.');
+    }
+
+    if (isSupabaseConfigured) {
+      const [{ data: batchRows, error: batchError }, { count: poLinkCount, error: poLinkError }, { count: txCount, error: txError }] = await Promise.all([
+        supabase.from('material_request_fulfillment_batches').select('id,status,transaction_id').eq('material_request_id', id),
+        supabase.from('purchase_order_request_lines').select('id', { count: 'exact', head: true }).eq('material_request_id', id),
+        supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('related_request_id', id),
+      ]);
+      if (batchError && batchError.code !== '42P01') throw batchError;
+      if (poLinkError && poLinkError.code !== '42P01') throw poLinkError;
+      if (txError && txError.code !== '42P01') throw txError;
+
+      const relatedBatches = batchError?.code === '42P01' ? [] : (batchRows || []);
+      const activeBatches = relatedBatches.filter((batch: any) => !['returned', 'cancelled'].includes(String(batch.status || '').toLowerCase()));
+      if (activeBatches.length > 0) throw new Error('Phiếu còn đợt cấp vật tư chưa huỷ/hoàn trả, không thể xoá cứng.');
+      if ((poLinkCount || 0) > 0) throw new Error('Phiếu đã được liên kết PO, không thể xoá cứng.');
+      if ((txCount || 0) > 0 && relatedBatches.length === 0) throw new Error('Phiếu đã phát sinh phiếu kho, không thể xoá cứng.');
+
+      if ((txCount || 0) > 0) {
+        const { error: detachTxError } = await supabase
+          .from('transactions')
+          .update({ related_request_id: null })
+          .eq('related_request_id', id);
+        if (detachTxError) throw detachTxError;
+      }
+
+      const { error } = await supabase.from('requests').delete().eq('id', id);
+      if (error) throw error;
+    }
+
+    setRequests(prev => prev.filter(item => item.id !== id));
+    if (localHasTransaction) {
+      setTransactions(prev => prev.map(tx => tx.relatedRequestId === id ? { ...tx, relatedRequestId: undefined } : tx));
+    }
+    logActivity('REQUEST', 'Xoá phiếu vật tư', `Phiếu ${req.code} đã được xoá`, 'WARNING', req.siteWarehouseId);
   };
 
   const updateRequestStatus = async (id: string, status: RequestStatus, note?: string, approvedItems?: { lineId?: string, itemId: string, qty: number }[], sourceWarehouseId?: string, overrideReason?: string, actionOverride?: string): Promise<boolean> => {
@@ -1616,7 +1682,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         issuedQty: 0,
         procurementQty: 0,
         fulfillmentStatus: 'pending',
-      }, RequestStatus.PENDING));
+      }, RequestStatus.DRAFT));
     } else if ((status === RequestStatus.APPROVED || status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && approvedItems) {
       updatedItems = req.items.map(item => {
         const approved = approvedItems.find(i =>
@@ -1668,9 +1734,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updatedReq = {
       ...req,
       status,
-      sourceWarehouseId: isReturnAction ? undefined : effectiveSourceWhId,
+      sourceWarehouseId: isReturnAction ? req.sourceWarehouseId : effectiveSourceWhId,
       fulfillmentMode: req.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
       overrideReason: isReturnAction ? undefined : (overrideReason || req.overrideReason),
+      ...(isReturnAction ? projectSubmissionService.returnToOwnerUpdate(req.requesterId, note) : {}),
       relatedTransactionId,
       items: updatedItems,
       logs: [...req.logs, newLog]
@@ -2382,7 +2449,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addHrmItem, updateHrmItem, removeHrmItem,
       orgUnits, addOrgUnit, updateOrgUnit, removeOrgUnit,
       addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,
-      addRequest, updateRequestStatus, logActivity, addCategory, updateCategory, removeCategory, addUnit, updateUnit, removeUnit,
+      addRequest, updateRequestStatus, removeRequest, logActivity, addCategory, updateCategory, removeCategory, addUnit, updateUnit, removeUnit,
       addSupplier, updateSupplier, removeSupplier, addEmployee, updateEmployee, removeEmployee, updateAppSettings, approvePartialTransaction, clearAllData,
       lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
       auditSessions, addAuditSession,
