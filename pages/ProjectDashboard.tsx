@@ -35,10 +35,14 @@ import { workGroupService } from '../lib/workGroupService';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import {
     PROJECT_TAB_PERMISSIONS,
+    PROJECT_MATERIAL_TAB_PERMISSIONS,
+    PROJECT_MATERIAL_TAB_ROUTE_BY_KEY,
     PROJECT_TAB_ROUTE_BY_KEY,
     LEGACY_PROJECT_SUPPLY_ROUTE,
+    hasProjectMaterialTabPermissionRoute,
     hasProjectTabPermissionRoute,
     isProjectOverviewTabKey,
+    type ProjectMaterialTabPermissionMap,
     type ProjectOverviewTabKey,
 } from '../lib/projectTabPermissions';
 import {
@@ -387,9 +391,13 @@ const ProjectDashboard: React.FC = () => {
         const hasExplicitTabRoutes = hasProjectTabPermissionRoute(allowedRoutes);
         if (!hasExplicitTabRoutes && allowedRoutes.includes('/da')) return true;
         if (tabKey === 'material' && allowedRoutes.includes(LEGACY_PROJECT_SUPPLY_ROUTE)) return true;
+        if (tabKey === 'material' && (
+            hasProjectMaterialTabPermissionRoute(allowedRoutes) ||
+            hasProjectMaterialTabPermissionRoute(user.adminSubModules?.DA)
+        )) return true;
 
         return allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY[tabKey]);
-    }, [user.allowedModules, user.allowedSubModules, user.role]);
+    }, [user.adminSubModules, user.allowedModules, user.allowedSubModules, user.role]);
 
     const canManageProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
         if (user.role === Role.ADMIN) return true;
@@ -397,6 +405,29 @@ const ProjectDashboard: React.FC = () => {
         if (tabKey === 'material' && user.adminSubModules?.DA?.includes(LEGACY_PROJECT_SUPPLY_ROUTE)) return true;
         return Boolean(user.adminSubModules?.DA?.includes(PROJECT_TAB_ROUTE_BY_KEY[tabKey]));
     }, [user.adminModules, user.adminSubModules, user.role]);
+
+    const materialTabPermissions = useMemo<ProjectMaterialTabPermissionMap>(() => {
+        const allowedRoutes = user.allowedSubModules?.DA || [];
+        const adminRoutes = user.adminSubModules?.DA || [];
+        const hasDaSubModuleRestriction = Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, 'DA');
+        const canManageAllMaterial = canManageProjectTab('material');
+        const canViewAllMaterial = canManageAllMaterial
+            || user.role === Role.ADMIN
+            || !hasDaSubModuleRestriction
+            || (!hasProjectTabPermissionRoute(allowedRoutes) && allowedRoutes.includes('/da'))
+            || allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY.material)
+            || allowedRoutes.includes(LEGACY_PROJECT_SUPPLY_ROUTE);
+
+        return PROJECT_MATERIAL_TAB_PERMISSIONS.reduce<ProjectMaterialTabPermissionMap>((acc, tab) => {
+            const route = PROJECT_MATERIAL_TAB_ROUTE_BY_KEY[tab.key];
+            const canManage = canManageAllMaterial || adminRoutes.includes(route);
+            acc[tab.key] = {
+                canView: canViewAllMaterial || canManage || allowedRoutes.includes(route),
+                canManage,
+            };
+            return acc;
+        }, {} as ProjectMaterialTabPermissionMap);
+    }, [canManageProjectTab, user.adminSubModules, user.allowedSubModules, user.role]);
 
     const visibleOverviewTabs = useMemo(
         () => PROJECT_TAB_PERMISSIONS.filter(tab => canViewProjectTab(tab.key)),
@@ -2827,7 +2858,12 @@ const ProjectDashboard: React.FC = () => {
                     ) : overviewTab === 'subcontract' ? (
                         <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('subcontract')} />
                     ) : overviewTab === 'material' ? (
-                        <MaterialTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('material')} />
+                        <MaterialTab
+                            constructionSiteId={effectiveSiteId || undefined}
+                            projectId={selectedProject.id}
+                            canManageTab={canManageProjectTab('material')}
+                            materialPermissions={materialTabPermissions}
+                        />
                     ) : overviewTab === 'report' ? (
                         hasSiteLink ? (
                             <ReportTab

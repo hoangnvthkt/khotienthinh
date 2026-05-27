@@ -25,6 +25,26 @@ export const PROJECT_TAB_ROUTE_BY_KEY = PROJECT_TAB_PERMISSIONS.reduce((acc, tab
   return acc;
 }, {} as Record<ProjectOverviewTabKey, ProjectTabPermissionRoute>);
 
+export const PROJECT_MATERIAL_TAB_ROUTE_PREFIX = `${PROJECT_TAB_ROUTE_BY_KEY.material}/`;
+
+export const PROJECT_MATERIAL_TAB_PERMISSIONS = [
+  { key: 'summary', label: 'Tổng hợp', route: '/da/tabs/material/summary' },
+  { key: 'boq', label: 'BOQ', route: '/da/tabs/material/boq' },
+  { key: 'request', label: 'Yêu cầu', route: '/da/tabs/material/request' },
+  { key: 'po', label: 'Đơn hàng PO', route: '/da/tabs/material/po' },
+  { key: 'waste', label: 'Hao hụt', route: '/da/tabs/material/waste' },
+  { key: 'dashboard', label: 'Dashboard', route: '/da/tabs/material/dashboard' },
+] as const;
+
+export type ProjectMaterialTabKey = typeof PROJECT_MATERIAL_TAB_PERMISSIONS[number]['key'];
+export type ProjectMaterialTabPermissionRoute = typeof PROJECT_MATERIAL_TAB_PERMISSIONS[number]['route'];
+export type ProjectMaterialTabPermissionMap = Record<ProjectMaterialTabKey, { canView: boolean; canManage: boolean }>;
+
+export const PROJECT_MATERIAL_TAB_ROUTE_BY_KEY = PROJECT_MATERIAL_TAB_PERMISSIONS.reduce((acc, tab) => {
+  acc[tab.key] = tab.route;
+  return acc;
+}, {} as Record<ProjectMaterialTabKey, ProjectMaterialTabPermissionRoute>);
+
 export const isProjectOverviewTabKey = (value?: string | null): value is ProjectOverviewTabKey =>
   PROJECT_TAB_PERMISSIONS.some(tab => tab.key === value);
 
@@ -33,6 +53,16 @@ export const isProjectTabPermissionRoute = (route?: string | null): route is Pro
 
 export const hasProjectTabPermissionRoute = (routes?: string[] | null) =>
   Array.isArray(routes) && routes.some(route => isProjectTabPermissionRoute(route));
+
+export const isProjectMaterialTabPermissionRoute = (route?: string | null): route is ProjectMaterialTabPermissionRoute =>
+  Boolean(route && route.startsWith(PROJECT_MATERIAL_TAB_ROUTE_PREFIX));
+
+export const hasProjectMaterialTabPermissionRoute = (routes?: string[] | null) =>
+  Array.isArray(routes) && routes.some(route =>
+    route === PROJECT_TAB_ROUTE_BY_KEY.material ||
+    route === LEGACY_PROJECT_SUPPLY_ROUTE ||
+    isProjectMaterialTabPermissionRoute(route)
+  );
 
 export const getProjectAllowedSubModuleRedirect = (routes: string[]) => {
   if (routes.includes('/da') || hasProjectTabPermissionRoute(routes)) return '/da';

@@ -19,12 +19,14 @@ import { useConfirm } from '../../context/ConfirmContext';
 import { taskContractItemService } from '../../lib/taskContractItemService';
 import { contractItemService } from '../../lib/contractItemService';
 import { loadXlsx } from '../../lib/loadXlsx';
+import { PROJECT_MATERIAL_TAB_PERMISSIONS, type ProjectMaterialTabKey, type ProjectMaterialTabPermissionMap } from '../../lib/projectTabPermissions';
 
 interface MaterialTabProps {
     constructionSiteId?: string;
     projectId?: string;
     siteWarehouseId?: string; // ID kho công trường
     canManageTab?: boolean;
+    materialPermissions?: ProjectMaterialTabPermissionMap;
 }
 
 const fmt = (n: number) => {
@@ -64,12 +66,37 @@ const isValidWbsCode = (value: string) => /^\d+(\.\d+)*$/.test(value.trim());
 const summarizeSync = (preview: WorkBoqSyncPreview) =>
     `Thêm mới ${preview.created}, cập nhật ${preview.updated}, bỏ qua ${preview.skipped}, đánh dấu orphan ${preview.orphaned}.`;
 
-const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, siteWarehouseId, canManageTab = true }) => {
+const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, siteWarehouseId, canManageTab = true, materialPermissions }) => {
     const { items: inventoryItems, requests: allRequests, warehouses, users, loadModuleData } = useApp();
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';
-    const [activeSubTab, setActiveSubTab] = useState<'summary' | 'boq' | 'request' | 'po' | 'waste' | 'dashboard'>('summary');
+    const [activeSubTab, setActiveSubTab] = useState<ProjectMaterialTabKey>('summary');
+    const materialAccess = useMemo<ProjectMaterialTabPermissionMap>(() => {
+        const hasScopedPermissions = Boolean(materialPermissions);
+        return PROJECT_MATERIAL_TAB_PERMISSIONS.reduce<ProjectMaterialTabPermissionMap>((acc, tab) => {
+            const scoped = materialPermissions?.[tab.key];
+            const canManage = canManageTab || Boolean(scoped?.canManage);
+            acc[tab.key] = {
+                canView: canManage || (hasScopedPermissions ? Boolean(scoped?.canView) : true),
+                canManage,
+            };
+            return acc;
+        }, {} as ProjectMaterialTabPermissionMap);
+    }, [canManageTab, materialPermissions]);
+    const canManageBoq = materialAccess.boq.canManage;
+    const canManageRequest = materialAccess.request.canManage;
+    const canManagePo = materialAccess.po.canManage;
+    const visibleMaterialTabs = useMemo(
+        () => PROJECT_MATERIAL_TAB_PERMISSIONS.filter(tab => materialAccess[tab.key].canView),
+        [materialAccess],
+    );
+
+    useEffect(() => {
+        if (visibleMaterialTabs.length > 0 && !materialAccess[activeSubTab].canView) {
+            setActiveSubTab(visibleMaterialTabs[0].key);
+        }
+    }, [activeSubTab, materialAccess, visibleMaterialTabs]);
 
     // BOQ Data
     const [boqItems, setBoqItems] = useState<MaterialBudgetItem[]>([]);
@@ -211,9 +238,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [bMaterialCode, setBMaterialCode] = useState('');
     const [bWorkBoqItemId, setBWorkBoqItemId] = useState('');
 
-    const ensureCanManage = (action: string) => {
-        if (canManageTab) return true;
-        toast.warning('Không có quyền quản trị tab', `Bạn cần quyền quản trị "Vật tư" để ${action}.`);
+    const ensureCanManage = (allowed: boolean, scopeLabel: string, action: string) => {
+        if (allowed) return true;
+        toast.warning('Không có quyền quản trị', `Bạn cần quyền quản trị "${scopeLabel}" để ${action}.`);
         return false;
     };
 
@@ -248,7 +275,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const openEditBoq = (item: MaterialBudgetItem) => {
-        if (!ensureCanManage('sửa BOQ vật tư')) return;
+        if (!ensureCanManage(canManageBoq, 'Vật tư: BOQ', 'sửa BOQ vật tư')) return;
         setEditingBoq(item);
         setBCat(item.category); setBName(item.itemName); setBUnit(item.unit);
         setBBudgetQty(String(item.budgetQty)); setBPrice(String(item.budgetUnitPrice));
@@ -368,7 +395,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     );
 
     const handleSyncWithSchedule = async () => {
-        if (!ensureCanManage('đồng bộ BOQ vật tư')) return;
+        if (!ensureCanManage(canManageBoq, 'Vật tư: BOQ', 'đồng bộ BOQ vật tư')) return;
         if (tasks.length === 0) {
             toast.warning('Chưa có tiến độ', 'Cần tạo hoặc import tiến độ trước khi đồng bộ BOQ.');
             return;
@@ -397,7 +424,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const handleSaveBoq = async () => {
-        if (!ensureCanManage('lưu BOQ vật tư')) return;
+        if (!ensureCanManage(canManageBoq, 'Vật tư: BOQ', 'lưu BOQ vật tư')) return;
         if (!bName || !bUnit || !bBudgetQty || !bPrice) return;
         const budgetQty = Number(bBudgetQty);
         const budgetUnitPrice = Number(bPrice);
@@ -425,7 +452,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const handleDeleteBoq = async (id: string, name: string) => {
-        if (!ensureCanManage('xoá BOQ vật tư')) return;
+        if (!ensureCanManage(canManageBoq, 'Vật tư: BOQ', 'xoá BOQ vật tư')) return;
         const ok = await confirm({ targetName: name, title: 'Xoá mục BOQ' });
         if (!ok) return;
         try {
@@ -487,7 +514,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const handleImportWorkBoq = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        if (!ensureCanManage('import BOQ vật tư')) {
+        if (!ensureCanManage(canManageBoq, 'Vật tư: BOQ', 'import BOQ vật tư')) {
             event.target.value = '';
             return;
         }
@@ -626,7 +653,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const confirmImportWorkBoq = async () => {
-        if (!ensureCanManage('áp dụng import BOQ vật tư')) return;
+        if (!ensureCanManage(canManageBoq, 'Vật tư: BOQ', 'áp dụng import BOQ vật tư')) return;
         if (!importPreview) return;
         const validWorkRows = importPreview.workRows.filter(row => row.status !== 'error');
         const validMaterialRows = importPreview.materialRows.filter(row => row.status !== 'error');
@@ -671,6 +698,22 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             isOver: (b.wastePercent || 0) > b.wasteThreshold,
         }));
     }, [computedBoqItems]);
+    const materialTabLabels: Record<ProjectMaterialTabKey, string> = {
+        summary: '🔗 Tổng hợp',
+        boq: '📋 BOQ',
+        request: '📦 Yêu cầu',
+        po: '🛒 Đơn hàng (PO)',
+        waste: '📊 Hao hụt',
+        dashboard: '📈 Dashboard',
+    };
+    const materialTabCounts: Record<ProjectMaterialTabKey, number> = {
+        summary: computedBoqItems.length,
+        boq: workBoqItems.length + computedBoqItems.length,
+        request: requests.length,
+        po: 0,
+        waste: stats.overWaste,
+        dashboard: 0,
+    };
 
     return (
         <div className="space-y-6">
@@ -709,24 +752,25 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
             {/* Sub-tabs */}
             <div className="flex gap-1 bg-white dark:bg-slate-850 rounded-2xl p-1.5 border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
-                {[
-                    { key: 'summary' as const, label: '🔗 Tổng hợp', count: computedBoqItems.length },
-                    { key: 'boq' as const, label: '📋 BOQ', count: workBoqItems.length + computedBoqItems.length },
-                    { key: 'request' as const, label: '📦 Yêu cầu', count: requests.length },
-                    { key: 'po' as const, label: '🛒 Đơn hàng (PO)', count: 0 },
-                    { key: 'waste' as const, label: '📊 Hao hụt', count: stats.overWaste },
-                    { key: 'dashboard' as const, label: '📈 Dashboard', count: 0 },
-                ].map(t => (
+                {visibleMaterialTabs.map(t => (
                     <button key={t.key} onClick={() => setActiveSubTab(t.key)}
                         className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${activeSubTab === t.key ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'
                             }`}>
-                        {t.label} {t.count > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] ${activeSubTab === t.key ? 'bg-white/20' : 'bg-slate-100'}`}>{t.count}</span>}
+                        {materialTabLabels[t.key]} {materialTabCounts[t.key] > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] ${activeSubTab === t.key ? 'bg-white/20' : 'bg-slate-100'}`}>{materialTabCounts[t.key]}</span>}
                     </button>
                 ))}
             </div>
 
+            {visibleMaterialTabs.length === 0 && (
+                <div className="rounded-2xl border border-slate-100 bg-white p-12 text-center shadow-sm">
+                    <Package size={36} className="mx-auto mb-2 text-slate-200" />
+                    <p className="text-sm font-bold text-slate-500">Tài khoản chưa được cấp quyền xem phần Vật tư</p>
+                    <p className="mt-1 text-[10px] text-slate-300">Admin có thể cấp quyền tại DA - Dự án / Vật tư.</p>
+                </div>
+            )}
+
             {/* ===== SUMMARY TAB - Bảng tổng hợp 1 dòng ===== */}
-            {activeSubTab === 'summary' && (
+            {materialAccess.summary.canView && activeSubTab === 'summary' && (
                 <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                     <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                         <div><h4 className="text-sm font-black text-slate-800">📊 Bảng tổng hợp vật tư</h4><p className="text-[10px] text-slate-400">Toàn bộ chỉ số trên 1 dòng — liên kết BOQ↔YC↔PO↔Kho</p></div>
@@ -789,7 +833,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             )}
 
             {/* BOQ Tab */}
-            {activeSubTab === 'boq' && (
+            {materialAccess.boq.canView && activeSubTab === 'boq' && (
                 <div className="space-y-4">
                     <details className="group border-y border-slate-100 dark:border-slate-700/60">
                         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4">
@@ -812,7 +856,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                 <p className="text-[10px] text-slate-400 mt-1">Đầu mục lấy từ tiến độ, vật tư dự toán nằm dưới từng đầu mục.</p>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                {canManageTab && (
+                                {canManageBoq && (
                                     <button onClick={handleSyncWithSchedule} disabled={syncingBoq}
                                         className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50">
                                         <RefreshCcw size={12} className={syncingBoq ? 'animate-spin' : ''} /> Đồng bộ với tiến độ
@@ -822,7 +866,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                     className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100">
                                     <Download size={12} /> Export
                                 </button>
-                                {canManageTab && (
+                                {canManageBoq && (
                                     <>
                                         <button onClick={() => boqImportRef.current?.click()} disabled={importingBoq}
                                             className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 hover:bg-amber-100 disabled:opacity-50">
@@ -891,7 +935,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                             </span>
                                                         </td>
                                                         <td className="px-4 py-2.5 text-center">
-                                                            {canManageTab && (
+                                                            {canManageBoq && (
                                                                 <button onClick={() => { resetBoqForm(); setBWorkBoqItemId(item.id); setShowBoqForm(true); }}
                                                                     className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold text-indigo-600 hover:bg-indigo-100">
                                                                     <Plus size={10} /> Vật tư
@@ -923,7 +967,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                                     {isOver ? <AlertTriangle size={12} className="inline text-red-500" /> : <CheckCircle2 size={12} className="inline text-emerald-500" />}
                                                                 </td>
                                                                 <td className="px-4 py-2.5">
-                                                                    {canManageTab && (
+                                                                    {canManageBoq && (
                                                                         <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
                                                                             <button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
                                                                             <button onClick={() => handleDeleteBoq(mat.id, mat.itemName)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
@@ -944,7 +988,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                 <td className="px-4 py-2.5 text-right text-slate-500">{fmt(mat.budgetUnitPrice)}</td>
                                                 <td className="px-4 py-2.5 text-right font-bold text-slate-700">{fmt(mat.budgetTotal || 0)}</td>
                                                 <td colSpan={4}></td>
-                                                <td className="px-4 py-2.5"><button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button></td>
+                                                <td className="px-4 py-2.5">
+                                                    {canManageBoq && (
+                                                        <button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
+                                                    )}
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -967,11 +1015,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             )}
 
             {/* Material Request Tab — using MaterialRequest from Inventory module */}
-            {activeSubTab === 'request' && (
+            {materialAccess.request.canView && activeSubTab === 'request' && (
                 <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
                     <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><Package size={16} className="text-purple-500" /> Đề xuất vật tư ({requests.length})</h3>
-                        {canManageTab && (
+                        {canManageRequest && (
                             <button onClick={() => { setSelectedRequest(undefined); setReqModalOpen(true); }}
                                 className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-purple-600 bg-purple-50 border border-purple-200 hover:bg-purple-100">
                                 <Plus size={12} /> Tạo đề xuất
@@ -1052,7 +1100,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-400 max-w-[200px] truncate">{req.note || '—'}</td>
                                                 <td className="px-4 py-3 text-center">
-                                                    {canManageTab && (
+                                                    {materialAccess.request.canView && (
                                                         <button onClick={() => { setSelectedRequest(req); setReqModalOpen(true); }}
                                                             className="text-slate-300 hover:text-indigo-500 opacity-0 group-hover:opacity-100 transition">
                                                             <ArrowRight size={14} />
@@ -1069,17 +1117,17 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 </div>
             )}
 
-            {activeSubTab === 'po' && (
+            {materialAccess.po.canView && activeSubTab === 'po' && (
                 <SupplyChainTab
                     constructionSiteId={constructionSiteId}
                     projectId={projectId}
-                    canManageTab={canManageTab}
+                    canManageTab={canManagePo}
                     compact
                 />
             )}
 
             {/* Waste Comparison Tab */}
-            {activeSubTab === 'waste' && (
+            {materialAccess.waste.canView && activeSubTab === 'waste' && (
                 <div className="space-y-4">
                     {computedBoqItems.length === 0 ? (
                         <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm p-12 text-center">
@@ -1292,7 +1340,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             )}
 
             {/* ===== DASHBOARD TAB ===== */}
-            {activeSubTab === 'dashboard' && (
+            {materialAccess.dashboard.canView && activeSubTab === 'dashboard' && (
                 <div className="space-y-6">
                     {/* Row 1: Pie + Bar */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1456,7 +1504,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         </div>
                         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
                             <button onClick={() => setImportPreview(null)} disabled={importingBoq} className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600">Huỷ</button>
-                            <button onClick={confirmImportWorkBoq} disabled={!canManageTab || importingBoq || [...importPreview.workRows, ...importPreview.materialRows].every(row => row.status === 'error')}
+                            <button onClick={confirmImportWorkBoq} disabled={!canManageBoq || importingBoq || [...importPreview.workRows, ...importPreview.materialRows].every(row => row.status === 'error')}
                                 className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 disabled:opacity-50 flex items-center gap-2">
                                 <FileSpreadsheet size={15} /> Ghi dữ liệu hợp lệ
                             </button>
