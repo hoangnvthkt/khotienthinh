@@ -178,18 +178,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     useEffect(() => {
-        loadModuleData('wms');
+        loadModuleData('wms-core');
     }, [loadModuleData]);
 
     const loadSupplyData = async () => {
         if (!effectiveId) return;
         try {
-            const [partnerRows, poRows, stockPoRows, workRows, budgetRows, linkRows] = await Promise.all([
+            const [partnerRows, poRows, stockPoRows, linkRows] = await Promise.all([
                 partnerService.list({ classification: 'supplier' }),
                 poService.list(effectiveId, constructionSiteId || null),
                 poService.listStockOrders().catch(() => [] as PurchaseOrder[]),
-                workBoqService.list(effectiveId, constructionSiteId || null),
-                boqService.list(effectiveId, constructionSiteId || null),
                 poService.listRequestLineLinks(effectiveId, constructionSiteId || null).catch(() => [] as PurchaseOrderRequestLineLink[]),
             ]);
             setPartners(partnerRows);
@@ -198,8 +196,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             const byId = new Map<string, PurchaseOrder>();
             [...poRows, ...scopedStockRows].forEach(po => byId.set(po.id, po));
             setPos([...byId.values()]);
-            setWorkBoqItems(workRows);
-            setMaterialBudgetItems(budgetRows);
             setPoRequestLinks(linkRows);
         } catch (error) {
             console.error(error);
@@ -246,6 +242,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [savingPo, setSavingPo] = useState(false);
     const poSubmitLockRef = useRef(false);
     const poImportModeRef = useRef<ExcelImportMode>('create');
+    const poBoqMetaScopeRef = useRef<string | null>(null);
     const workBoqMap = useMemo(() => new Map(workBoqItems.map(item => [item.id, item])), [workBoqItems]);
     const materialBudgetMap = useMemo(() => new Map(materialBudgetItems.map(item => [item.id, item])), [materialBudgetItems]);
     const supplierById = useMemo(() => new Map(partners.map(partner => [partner.id, partner])), [partners]);
@@ -258,6 +255,26 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         if (pVendorId && supplierById.has(pVendorId)) return getSupplierPatch(pVendorId);
         return { vendorId: null, vendorName: null };
     };
+
+    const loadPoBoqMetaData = React.useCallback(async () => {
+        const currentRows = { workRows: workBoqItems, budgetRows: materialBudgetItems };
+        if (!effectiveId) return currentRows;
+        const scopeKey = `${effectiveId}:${constructionSiteId || ''}`;
+        if (poBoqMetaScopeRef.current === scopeKey) return currentRows;
+        poBoqMetaScopeRef.current = scopeKey;
+        try {
+            const [workRows, budgetRows] = await Promise.all([
+                workBoqService.list(effectiveId, constructionSiteId || null),
+                boqService.list(effectiveId, constructionSiteId || null),
+            ]);
+            setWorkBoqItems(workRows);
+            setMaterialBudgetItems(budgetRows);
+            return { workRows, budgetRows };
+        } catch (error) {
+            poBoqMetaScopeRef.current = null;
+            throw error;
+        }
+    }, [constructionSiteId, effectiveId, materialBudgetItems, workBoqItems]);
     const orderedQtyByRequestLine = useMemo(() => {
         const map = new Map<string, number>();
         poRequestLinks.forEach(link => {
@@ -435,8 +452,23 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setPTargetWarehouseId(''); setPExpDate(''); setPItems([createEmptyPoItem()]); setPNote('');
         setSelectedRequestLineKeys([]);
     };
-    const openEditPo = (po: PurchaseOrder) => {
+    const openCreatePo = async () => {
+        if (!ensureCanManage('tạo PO')) return;
+        await loadPoBoqMetaData().catch(error => console.warn('Failed to load PO BOQ metadata:', error));
+        resetPoForm();
+        setPNum(`PO-${String(pos.length + 1).padStart(3, '0')}`);
+        setShowPoForm(true);
+    };
+
+    const openRequestPicker = async () => {
+        if (!ensureCanManage('tạo PO từ đề xuất')) return;
+        await loadPoBoqMetaData().catch(error => console.warn('Failed to load PO BOQ metadata:', error));
+        setShowRequestPicker(true);
+    };
+
+    const openEditPo = async (po: PurchaseOrder) => {
         if (!ensureCanManage('sửa đơn hàng')) return;
+        await loadPoBoqMetaData().catch(error => console.warn('Failed to load PO BOQ metadata:', error));
         const normalizedItems = po.items.map(i => normalizePoItem({
             ...i,
             vendorId: i.vendorId || po.vendorId,
@@ -450,8 +482,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         setPNote(po.note || ''); setShowPoForm(true);
     };
 
-    const openPoFromSelectedRequests = () => {
+    const openPoFromSelectedRequests = async () => {
         if (!ensureCanManage('tạo PO từ đề xuất')) return;
+        const { workRows, budgetRows } = await loadPoBoqMetaData().catch(error => {
+            console.warn('Failed to load PO BOQ metadata:', error);
+            return { workRows: workBoqItems, budgetRows: materialBudgetItems };
+        });
+        const budgetLookup = new Map(budgetRows.map(item => [item.id, item]));
+        const workLookup = new Map(workRows.map(item => [item.id, item]));
         const selectedRows = scopedRequestLines.filter(row => selectedRequestLineKeys.includes(row.key));
         if (selectedRows.length === 0) {
             toast.warning('Chưa chọn dòng đề xuất', 'Vui lòng chọn ít nhất một dòng vật tư từ đề xuất công trường.');
@@ -465,8 +503,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const rows = selectedRows.map(row => {
             const inventory = inventoryItems.find(item => item.id === row.line.itemId);
             const remainingQty = row.remainingQty;
-            const budget = row.line.materialBudgetItemId ? materialBudgetMap.get(row.line.materialBudgetItemId) : undefined;
-            const work = row.line.workBoqItemId ? workBoqMap.get(row.line.workBoqItemId) : undefined;
+            const budget = row.line.materialBudgetItemId ? budgetLookup.get(row.line.materialBudgetItemId) : undefined;
+            const work = row.line.workBoqItemId ? workLookup.get(row.line.workBoqItemId) : undefined;
             const supplierPatch = getDefaultSupplierPatchForInventory(inventory);
             return normalizePoItem({
                 lineId: crypto.randomUUID(),
@@ -1391,12 +1429,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             </button>
                             {canManageTab && (
                                 <>
-                                    <button onClick={() => setShowRequestPicker(true)}
+                                    <button onClick={openRequestPicker}
                                         disabled={scopedRequestLines.length === 0}
                                         className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed">
                                         <Package size={12} /> Tạo từ đề xuất
                                     </button>
-                                    <button onClick={() => { resetPoForm(); setPNum(`PO-${String(pos.length + 1).padStart(3, '0')}`); setShowPoForm(true); }}
+                                    <button onClick={openCreatePo}
                                         disabled={partners.length === 0 || inventoryItems.length === 0 || warehouses.length === 0}
                                         className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed">
                                         <Plus size={12} /> Tạo PO

@@ -65,7 +65,7 @@ const userToDbPayload = (data: User) => {
   return payload;
 };
 
-export type AppModule = 'wms' | 'hrm' | 'da' | 'ts' | 'ex';
+export type AppModule = 'wms' | 'wms-core' | 'hrm' | 'da' | 'ts' | 'ex';
 
 interface AppContextType {
   user: User;
@@ -679,11 +679,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const loadModuleData = useCallback(async (module: AppModule, force = false) => {
     if (!isSupabaseConfigured) return;
-    if (!force && loadedModulesRef.current.has(module)) return;
+    if (!force && (loadedModulesRef.current.has(module) || (module === 'wms-core' && loadedModulesRef.current.has('wms')))) return;
     loadedModulesRef.current.add(module);
 
     try {
-      if (module === 'wms') {
+      const loadWmsCoreData = async () => {
+        const [itemsData, whData, reqData] = await Promise.all([
+          fetchTableHelper('items'),
+          fetchTableHelper('warehouses'),
+          fetchTableHelper('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
+        ]);
+        if (itemsData) setItems(itemsData.map(mapInventoryItemFromDb));
+        if (whData) setWarehouses(whData.map((w: any) => ({ ...w, isArchived: w.is_archived })));
+        if (reqData) setRequests(reqData.map(mapMaterialRequestFromDb));
+      };
+
+      if (module === 'wms-core') {
+        await loadWmsCoreData();
+      } else if (module === 'wms') {
         const [itemsData, whData, supData, txData, reqData, actData, catData, unitData, lossNormsData, auditSessionsData] = await Promise.all([
           fetchTableHelper('items'),
           fetchTableHelper('warehouses'),
@@ -721,6 +734,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           createdAt: n.created_at,
         })));
         if (auditSessionsData) setAuditSessions(auditSessionsData);
+        loadedModulesRef.current.add('wms-core');
       } else if (module === 'hrm') {
         const [
           empData, areasData, officesData, empTypesData, positionsData, salaryData, schedulesData, constructionSitesData, orgUnitsData,

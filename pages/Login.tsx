@@ -32,7 +32,7 @@ const Login: React.FC = () => {
       const loggedUser = await login(username, password);
       if (loggedUser) {
         // Award daily login XP (fire-and-forget)
-        xpService.awardXP(loggedUser.id, 'daily_login').catch(() => {});
+        xpService.awardXP(loggedUser.id, 'daily_login').catch(() => { });
         navigate('/');
       } else {
         const message = 'Tên đăng nhập hoặc mật khẩu không chính xác.';

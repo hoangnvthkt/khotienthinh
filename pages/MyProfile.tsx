@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { useModuleData } from '../hooks/useModuleData';
 import { Employee, AssetStatus, Asset } from '../types';
@@ -6,9 +6,10 @@ import {
     User as UserIcon, Briefcase, Phone, Calendar, MapPin, Building,
     Heart, Landmark, Mail, Shield, Clock, Award, ChevronRight,
     Settings, Package, FileText, Hash, Edit3, Save, X, Check,
-    Sparkles, Zap, TrendingUp, Activity, Medal
+    Sparkles, Zap, TrendingUp, Activity, Medal, Camera, Loader2
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { supabase } from '../lib/supabase';
 import AchievementWall from '../components/AchievementWall';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 
@@ -28,6 +29,49 @@ const MyProfile: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabKey>('personal');
     const [isEditing, setIsEditing] = useState(false);
     const [savingProfile, setSavingProfile] = useState(false);
+    const [uploadingAvatar, setUploadingAvatar] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleAvatarUpload = async (file: File) => {
+        if (file.size > 2 * 1024 * 1024) {
+            toast.warning('Ảnh quá lớn', 'Dung lượng tối đa là 2MB.');
+            return;
+        }
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+            toast.warning('File không hợp lệ', 'Chỉ chấp nhận JPG, PNG hoặc WEBP.');
+            return;
+        }
+        setUploadingAvatar(true);
+        try {
+            const ext = file.name.split('.').pop();
+            const path = `employees/${employee?.id || user.id}_${Date.now()}.${ext}`;
+            const { error } = await supabase.storage.from('avatars').upload(path, file, { cacheControl: '3600', upsert: true });
+            if (error) throw error;
+            const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+            const url = urlData.publicUrl;
+
+            // 1. Update user avatar
+            await updateUser({
+                ...linkedUser,
+                avatar: url,
+            });
+
+            // 2. Update employee avatarUrl if linked
+            if (employee) {
+                await updateEmployee({
+                    ...employee,
+                    avatarUrl: url,
+                });
+            }
+
+            toast.success('Đã thay đổi ảnh đại diện mới thành công!');
+        } catch (err: any) {
+            logApiError('myProfile.avatarUpload', err);
+            toast.error('Không thể tải ảnh đại diện', getApiErrorMessage(err, 'Lỗi kết nối hoặc quyền truy cập Storage.'));
+        } finally {
+            setUploadingAvatar(false);
+        }
+    };
 
     const employee = useMemo(() => {
         return employees.find(e => e.userId === user.id);
@@ -217,17 +261,53 @@ const MyProfile: React.FC = () => {
                 {/* Content */}
                 <div className="relative px-6 sm:px-8 py-8 sm:py-10">
                     <div className="flex flex-col sm:flex-row items-center sm:items-end gap-5 sm:gap-6">
-                        {/* Avatar */}
-                        <div className="relative group">
-                            <div className="absolute -inset-1 bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500 rounded-2xl blur opacity-60 group-hover:opacity-80 transition-opacity duration-500" />
-                            <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center text-3xl sm:text-4xl font-black text-white overflow-hidden ring-2 ring-white/20">
-                                {linkedUser.avatar
-                                    ? <img src={linkedUser.avatar} className="w-full h-full object-cover" alt="" />
-                                    : (employee?.fullName || linkedUser.name || '?').charAt(0).toUpperCase()
-                                }
+                        {/* Avatar with dynamic premium hover change overlay */}
+                        <div className="relative group select-none">
+                            <div className="absolute -inset-1.5 bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500 rounded-2xl blur-md opacity-50 group-hover:opacity-100 transition-all duration-500 scale-95 group-hover:scale-105" />
+                            <div
+                                onClick={() => !uploadingAvatar && fileInputRef.current?.click()}
+                                className={`relative w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center text-3xl sm:text-4xl font-black text-white overflow-hidden ring-4 ring-white/10 dark:ring-slate-900/40 transition-all duration-300 ${
+                                    uploadingAvatar ? 'cursor-wait opacity-80' : 'cursor-pointer hover:scale-102 hover:rotate-1'
+                                }`}
+                            >
+                                {linkedUser.avatar ? (
+                                    <img src={linkedUser.avatar} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt="Avatar" />
+                                ) : (
+                                    <span className="group-hover:scale-110 transition-transform duration-500">
+                                        {(employee?.fullName || linkedUser.name || '?').charAt(0).toUpperCase()}
+                                    </span>
+                                )}
+
+                                {/* Glassmorphism Hover Overlay */}
+                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col items-center justify-center gap-1.5 text-white">
+                                    {uploadingAvatar ? (
+                                        <Loader2 size={18} className="animate-spin text-cyan-300" />
+                                    ) : (
+                                        <>
+                                            <Camera size={18} className="text-white transform translate-y-1 group-hover:translate-y-0 transition-transform duration-300" />
+                                            <span className="text-[9px] font-black uppercase tracking-wider">Đổi ảnh</span>
+                                        </>
+                                    )}
+                                </div>
                             </div>
-                            {/* Online indicator */}
-                            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-400 rounded-full border-3 border-[#302b63] shadow-lg shadow-emerald-400/50" />
+
+                            {/* Hidden File Input */}
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                className="hidden"
+                                disabled={uploadingAvatar}
+                                onChange={e => {
+                                    const f = e.target.files?.[0];
+                                    if (f) handleAvatarUpload(f);
+                                }}
+                            />
+
+                            {/* Online indicator with pulse */}
+                            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-400 rounded-full border-3 border-[#24243e] shadow-lg shadow-emerald-400/50 flex items-center justify-center">
+                                <span className="absolute w-2 h-2 rounded-full bg-emerald-100 animate-ping" />
+                            </div>
                         </div>
 
                         {/* Info */}
@@ -316,7 +396,7 @@ const MyProfile: React.FC = () => {
                     {/* === CÁ NHÂN === */}
                     {activeTab === 'personal' && (
                         <div>
-                            <div className="flex justify-end mb-3 gap-2">
+                            <div className="flex justify-end mb-4 gap-2">
                                 {!isEditing ? (
                                     <button onClick={startEditing}
                                         className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 bg-indigo-500/5 text-indigo-600 hover:bg-indigo-500/10 border border-indigo-500/10 hover:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20 group"
@@ -339,7 +419,7 @@ const MyProfile: React.FC = () => {
                             </div>
 
                             {isEditing ? (
-                                <>
+                                <div className="space-y-1 bg-slate-50/30 dark:bg-slate-900/5 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-inner">
                                     <EditRow icon={<UserIcon size={14} />} label="Họ & Tên" value={editForm.fullName} onChange={v => setEditForm({...editForm, fullName: v})} />
                                     <EditRow icon={<Heart size={14} />} label="Giới tính" type="select" value={editForm.gender} onChange={v => setEditForm({...editForm, gender: v as any})}
                                         options={[{ value: 'Nam', label: 'Nam' }, { value: 'Nữ', label: 'Nữ' }, { value: 'Khác', label: 'Khác' }]} />
@@ -349,17 +429,29 @@ const MyProfile: React.FC = () => {
                                     <EditRow icon={<Phone size={14} />} label="Số điện thoại" value={editForm.phone} onChange={v => setEditForm({...editForm, phone: v})} />
                                     <InfoRow icon={<Award size={14} />} label="Chức danh" value={employee?.title} />
                                     <InfoRow icon={<Settings size={14} />} label="Tài khoản" value={`${linkedUser.username} (${linkedUser.email})`} />
-                                </>
+                                </div>
                             ) : (
-                                <>
-                                    <InfoRow icon={<UserIcon size={14} />} label="Họ & Tên" value={employee?.fullName || linkedUser.name} />
-                                    <InfoRow icon={<Heart size={14} />} label="Giới tính" value={employee?.gender} />
-                                    <InfoRow icon={<Calendar size={14} />} label="Ngày sinh" value={formatDate(employee?.dateOfBirth)} />
-                                    <InfoRow icon={<Heart size={14} />} label="Tình trạng HN" value={employee?.maritalStatus} />
-                                    <InfoRow icon={<Phone size={14} />} label="Số điện thoại" value={employee?.phone || linkedUser.phone} />
-                                    <InfoRow icon={<Award size={14} />} label="Chức danh" value={employee?.title} />
-                                    <InfoRow icon={<Settings size={14} />} label="Tài khoản" value={`${linkedUser.username} (${linkedUser.email})`} />
-                                </>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* Left Column Card: Basic Info */}
+                                    <div className="bg-slate-50/50 dark:bg-slate-900/10 border border-slate-100 dark:border-slate-700/50 rounded-2xl p-5 shadow-sm space-y-1 hover:shadow-md transition-shadow duration-300">
+                                        <h4 className="text-[11px] font-black text-indigo-500 uppercase tracking-widest mb-3 flex items-center gap-1.5 border-b border-slate-200/50 dark:border-slate-700/50 pb-2">
+                                            <UserIcon size={12} /> Thông tin cơ bản
+                                        </h4>
+                                        <InfoRow icon={<UserIcon size={14} />} label="Họ & Tên" value={employee?.fullName || linkedUser.name} />
+                                        <InfoRow icon={<Heart size={14} />} label="Giới tính" value={employee?.gender} />
+                                        <InfoRow icon={<Calendar size={14} />} label="Ngày sinh" value={formatDate(employee?.dateOfBirth)} />
+                                        <InfoRow icon={<Heart size={14} />} label="Hôn nhân" value={employee?.maritalStatus} />
+                                    </div>
+                                    {/* Right Column Card: Account & Work */}
+                                    <div className="bg-slate-50/50 dark:bg-slate-900/10 border border-slate-100 dark:border-slate-700/50 rounded-2xl p-5 shadow-sm space-y-1 hover:shadow-md transition-shadow duration-300">
+                                        <h4 className="text-[11px] font-black text-indigo-500 uppercase tracking-widest mb-3 flex items-center gap-1.5 border-b border-slate-200/50 dark:border-slate-700/50 pb-2">
+                                            <Settings size={12} /> Tài khoản & Chức danh
+                                        </h4>
+                                        <InfoRow icon={<Phone size={14} />} label="Số điện thoại" value={employee?.phone || linkedUser.phone} />
+                                        <InfoRow icon={<Award size={14} />} label="Chức danh" value={employee?.title} />
+                                        <InfoRow icon={<Settings size={14} />} label="Tài khoản" value={`${linkedUser.username} (${linkedUser.email})`} />
+                                    </div>
+                                </div>
                             )}
                             {!employee && (
                                 <div className="mt-6 p-4 rounded-xl border border-amber-400/20 bg-amber-400/5 backdrop-blur-sm">
@@ -373,26 +465,42 @@ const MyProfile: React.FC = () => {
 
                     {/* === CÔNG VIỆC === */}
                     {activeTab === 'work' && (
-                        <div>
-                            <InfoRow icon={<MapPin size={14} />} label="Khu vực" value={area?.name} badge badgeColor="bg-blue-500/10 text-blue-500 border border-blue-500/20" />
-                            <InfoRow icon={<Building size={14} />} label="Văn phòng" value={office?.name} badge badgeColor="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" />
-                            <InfoRow icon={<Award size={14} />} label="Vị trí" value={position?.name} badge badgeColor="bg-amber-500/10 text-amber-500 border border-amber-500/20" />
-                            <InfoRow icon={<FileText size={14} />} label="Loại NV" value={empType?.name} />
-                            <InfoRow icon={<Package size={14} />} label="Chính sách lương" value={salaryPolicy?.name} />
-                            <InfoRow icon={<Clock size={14} />} label="Lịch làm việc" value={workSchedule?.name} />
-                            <InfoRow icon={<Building size={14} />} label="Công trường" value={constructionSite?.name} badge badgeColor="bg-orange-500/10 text-orange-500 border border-orange-500/20" />
-                            <InfoRow icon={<Building size={14} />} label="Phòng / Ban" value={department?.name} badge badgeColor="bg-sky-500/10 text-sky-500 border border-sky-500/20" />
-                            <InfoRow icon={<Building size={14} />} label="Nhà máy" value={factory?.name} badge badgeColor="bg-purple-500/10 text-purple-500 border border-purple-500/20" />
-                            <InfoRow icon={<Calendar size={14} />} label="Ngày vào" value={formatDate(employee?.startDate)} />
-                            <InfoRow icon={<Calendar size={14} />} label="Ngày chính thức" value={formatDate(employee?.officialDate)} />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Left Card: Placement */}
+                            <div className="bg-slate-50/50 dark:bg-slate-900/10 border border-slate-100 dark:border-slate-700/50 rounded-2xl p-5 shadow-sm space-y-1 hover:shadow-md transition-shadow duration-300">
+                                <h4 className="text-[11px] font-black text-emerald-500 uppercase tracking-widest mb-3 flex items-center gap-1.5 border-b border-slate-200/50 dark:border-slate-700/50 pb-2">
+                                    <Building size={12} /> Đơn vị & Cơ sở
+                                </h4>
+                                <InfoRow icon={<MapPin size={14} />} label="Khu vực" value={area?.name} badge badgeColor="bg-blue-500/10 text-blue-500 dark:text-blue-400 border border-blue-500/20" />
+                                <InfoRow icon={<Building size={14} />} label="Văn phòng" value={office?.name} badge badgeColor="bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border border-emerald-500/20" />
+                                <InfoRow icon={<Building size={14} />} label="Công trường" value={constructionSite?.name} badge badgeColor="bg-orange-500/10 text-orange-500 dark:text-orange-400 border border-orange-500/20" />
+                                <InfoRow icon={<Building size={14} />} label="Phòng / Ban" value={department?.name} badge badgeColor="bg-sky-500/10 text-sky-500 dark:text-sky-400 border border-sky-500/20" />
+                                <InfoRow icon={<Building size={14} />} label="Nhà máy" value={factory?.name} badge badgeColor="bg-purple-500/10 text-purple-500 dark:text-purple-400 border border-purple-500/20" />
+                            </div>
+
+                            {/* Right Card: Contract & Policy */}
+                            <div className="bg-slate-50/50 dark:bg-slate-900/10 border border-slate-100 dark:border-slate-700/50 rounded-2xl p-5 shadow-sm space-y-1 hover:shadow-md transition-shadow duration-300">
+                                <h4 className="text-[11px] font-black text-emerald-500 uppercase tracking-widest mb-3 flex items-center gap-1.5 border-b border-slate-200/50 dark:border-slate-700/50 pb-2">
+                                    <Briefcase size={12} /> Hợp đồng & Vai trò
+                                </h4>
+                                <InfoRow icon={<Award size={14} />} label="Vị trí" value={position?.name} badge badgeColor="bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-400/20" />
+                                <InfoRow icon={<FileText size={14} />} label="Loại NV" value={empType?.name} />
+                                <InfoRow icon={<Package size={14} />} label="Chính sách" value={salaryPolicy?.name} />
+                                <InfoRow icon={<Clock size={14} />} label="Lịch làm việc" value={workSchedule?.name} />
+                                <InfoRow icon={<Calendar size={14} />} label="Ngày vào" value={formatDate(employee?.startDate)} />
+                                <InfoRow icon={<Calendar size={14} />} label="Ngày chính thức" value={formatDate(employee?.officialDate)} />
+                            </div>
                         </div>
                     )}
 
                     {/* === LIÊN HỆ === */}
                     {activeTab === 'contact' && (
-                        <div>
+                        <div className="max-w-md mx-auto bg-slate-50/50 dark:bg-slate-900/10 border border-slate-100 dark:border-slate-700/50 rounded-2xl p-6 shadow-sm space-y-1 hover:shadow-md transition-shadow duration-300">
+                            <h4 className="text-[11px] font-black text-indigo-500 uppercase tracking-widest mb-4 flex items-center gap-1.5 border-b border-slate-200/50 dark:border-slate-700/50 pb-2">
+                                <Phone size={12} /> Thông tin liên hệ
+                            </h4>
                             <InfoRow icon={<Phone size={14} />} label="Số điện thoại" value={employee?.phone || linkedUser.phone} />
-                            <InfoRow icon={<Mail size={14} />} label="Email" value={employee?.email || linkedUser.email} />
+                            <InfoRow icon={<Mail size={14} />} label="Email liên hệ" value={employee?.email || linkedUser.email} />
                         </div>
                     )}
 

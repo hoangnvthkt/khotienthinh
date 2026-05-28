@@ -319,7 +319,7 @@ const ProjectDashboard: React.FC = () => {
     const toast = useToast();
     const { canManage, isAdmin } = usePermission();
     const canManageProjects = canManage('/da');
-    const { templates: workflowTemplates } = useWorkflow();
+    const { templates: workflowTemplates, refreshData: refreshWorkflowData } = useWorkflow();
     useModuleData('da');
 
     const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
@@ -503,7 +503,7 @@ const ProjectDashboard: React.FC = () => {
         loadProjectMasterData();
     }, []);
 
-    const loadWorkGroups = async () => {
+    const loadWorkGroups = useCallback(async () => {
         setWorkGroupsLoading(true);
         try {
             const groups = await workGroupService.listGroupsWithMembers({ activeOnly: false, memberActiveOnly: false });
@@ -514,11 +514,13 @@ const ProjectDashboard: React.FC = () => {
         } finally {
             setWorkGroupsLoading(false);
         }
-    };
+    }, [toast]);
 
     useEffect(() => {
+        if (!showProjectForm) return;
+        refreshWorkflowData().catch(err => console.warn('Failed to load workflow templates for project form:', err));
         loadWorkGroups();
-    }, []);
+    }, [loadWorkGroups, refreshWorkflowData, showProjectForm]);
 
     const projectRows = useMemo(() => {
         if (projects.length > 0) return projects;
@@ -858,7 +860,6 @@ const ProjectDashboard: React.FC = () => {
         setProjectForm(emptyProjectForm());
         setShowProjectAdvanced(false);
         setShowProjectForm(true);
-        loadWorkGroups();
     };
 
     const openEditProject = (project: Project) => {

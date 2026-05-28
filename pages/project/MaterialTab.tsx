@@ -108,9 +108,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [importPreview, setImportPreview] = useState<WorkBoqImportPreview | null>(null);
     const [importingBoq, setImportingBoq] = useState(false);
     const boqImportRef = useRef<HTMLInputElement>(null);
+    const loadedBoqScopeRef = useRef<string | null>(null);
 
     useEffect(() => {
-        loadModuleData('wms');
+        loadModuleData('wms-core');
     }, [loadModuleData]);
 
     // Resolve siteWarehouseId: use prop or find warehouse named 'RICO'
@@ -167,7 +168,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         return map;
     }, [requestFulfillmentSummaries]);
 
-    const loadBoqData = async () => {
+    const loadBoqData = React.useCallback(async () => {
         if (!effectiveId) return;
         const [boq, workItems, taskRows, contractRows, linkRows] = await Promise.all([
             boqService.list(effectiveId, constructionSiteId || null),
@@ -185,11 +186,19 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             acc[link.taskId].push(link.contractItemId);
             return acc;
         }, {}));
-    };
+    }, [constructionSiteId, effectiveId]);
 
     useEffect(() => {
-        loadBoqData().catch(console.error);
-    }, [effectiveId, constructionSiteId]);
+        if (!materialAccess[activeSubTab].canView) return;
+        if (activeSubTab === 'po') return;
+        const boqScopeKey = `${effectiveId || ''}:${constructionSiteId || ''}`;
+        if (loadedBoqScopeRef.current === boqScopeKey) return;
+        loadedBoqScopeRef.current = boqScopeKey;
+        loadBoqData().catch(err => {
+            loadedBoqScopeRef.current = null;
+            console.error(err);
+        });
+    }, [activeSubTab, constructionSiteId, effectiveId, loadBoqData, materialAccess]);
 
     useEffect(() => {
         let cancelled = false;

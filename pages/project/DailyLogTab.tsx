@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import AiInsightPanel from '../../components/AiInsightPanel';
-import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight, Loader2, UserCheck, Eye, Layers, Package, Wrench, Paperclip } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight, Loader2, UserCheck, Eye, Layers, Package, Wrench, Paperclip, Search, SlidersHorizontal, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
 import { DailyLog, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, DailyLogStatus, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectTaskCompletionRequest, ProjectStaff, BusinessPartner, ProjectWorkBoqItem } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { dailyLogService, taskService, workBoqService } from '../../lib/projectService';
@@ -185,11 +185,10 @@ const VoiceTextarea: React.FC<{
                 <button
                     type="button"
                     onClick={toggleListening}
-                    className={`absolute top-2 right-2 w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
-                        isListening
+                    className={`absolute top-2 right-2 w-7 h-7 rounded-lg flex items-center justify-center transition-all ${isListening
                             ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 animate-pulse'
                             : 'bg-slate-100 text-slate-400 hover:bg-teal-50 hover:text-teal-600'
-                    }`}
+                        }`}
                     title={isListening ? 'Dừng ghi âm' : 'Voice input (tiếng Việt)'}
                 >
                     {isListening ? <MicOff size={14} /> : <Mic size={14} />}
@@ -630,6 +629,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [showForm, setShowForm] = useState(false);
     const [editing, setEditing] = useState<DailyLog | null>(null);
     const [filterMonth, setFilterMonth] = useState('');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [filterStatus, setFilterStatus] = useState<string>('all');
+    const [filterWeather, setFilterWeather] = useState<string>('all');
+    const [showAdvanced, setShowAdvanced] = useState(false);
     const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
     const [calendarMonth, setCalendarMonth] = useState(monthKeyFromDate(new Date()));
     const [dayLogPicker, setDayLogPicker] = useState<{ date: string; logs: DailyLog[] } | null>(null);
@@ -643,7 +646,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
     const [gpsLoading, setGpsLoading] = useState(false);
-    
+
     const [photoRequired, setPhotoRequired] = useState(true);
     const [fPhotos, setFPhotos] = useState<{ name: string; url: string }[]>([]);
     const [uploading, setUploading] = useState(false);
@@ -664,6 +667,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         if (constructionSiteId) params.set('siteId', constructionSiteId);
         params.set('tab', 'dailylog');
         params.set('dailyLogId', logId);
+        return `/da?${params.toString()}`;
+    }, [constructionSiteId, projectId]);
+
+    const buildDailyLogReportLink = useCallback(() => {
+        const params = new URLSearchParams();
+        if (projectId) params.set('projectId', projectId);
+        if (constructionSiteId) params.set('siteId', constructionSiteId);
+        params.set('tab', 'report');
+        params.set('reportView', 'dailylog');
         return `/da?${params.toString()}`;
     }, [constructionSiteId, projectId]);
 
@@ -886,173 +898,173 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setSavingLog(true);
         try {
             const workerCount = getWorkerCountFromLabor(fLabor);
-	        const baseItem = {
-	            date: fDate, weather: fWeather, workerCount,
-	            description: fDesc, issues: fIssues || undefined,
-	            gpsLat: gpsCoords?.lat, gpsLng: gpsCoords?.lng, gpsAccuracy: gpsCoords?.accuracy,
-	            photos: fPhotos, photoRequired, delayTasks: fDelayTasks,
-	            volumes: fVolumes, materials: fMaterials, laborDetails: fLabor, machines: fMachines,
-	            status: editing?.status || 'draft',
-	            verified: editing?.status === 'verified' || editing?.verified || false,
-	        };
-        
-	        const item: DailyLog = editing ? {
-	            ...editing, ...baseItem
-	        } : {
-	            id: crypto.randomUUID(), projectId: projectId || constructionSiteId || null, constructionSiteId: constructionSiteId || null, ...baseItem,
-	            createdBy: user?.name || user?.id || 'admin', createdById: user?.id, createdAt: new Date().toISOString(),
-		    };
-	        await dailyLogService.upsert(item);
-	        const nextLogs = await dailyLogService.list(effectiveId, constructionSiteId || null);
-	        setLogs(nextLogs);
+            const baseItem = {
+                date: fDate, weather: fWeather, workerCount,
+                description: fDesc, issues: fIssues || undefined,
+                gpsLat: gpsCoords?.lat, gpsLng: gpsCoords?.lng, gpsAccuracy: gpsCoords?.accuracy,
+                photos: fPhotos, photoRequired, delayTasks: fDelayTasks,
+                volumes: fVolumes, materials: fMaterials, laborDetails: fLabor, machines: fMachines,
+                status: editing?.status || 'draft',
+                verified: editing?.status === 'verified' || editing?.verified || false,
+            };
+
+            const item: DailyLog = editing ? {
+                ...editing, ...baseItem
+            } : {
+                id: crypto.randomUUID(), projectId: projectId || constructionSiteId || null, constructionSiteId: constructionSiteId || null, ...baseItem,
+                createdBy: user?.name || user?.id || 'admin', createdById: user?.id, createdAt: new Date().toISOString(),
+            };
+            await dailyLogService.upsert(item);
+            const nextLogs = await dailyLogService.list(effectiveId, constructionSiteId || null);
+            setLogs(nextLogs);
             if (item.status === 'verified' || item.verified) await recalculateTaskProgress(nextLogs);
-	        toast.success(editing ? 'Cập nhật nhật ký' : 'Ghi nhật ký thành công');
-	        resetForm();
+            toast.success(editing ? 'Cập nhật nhật ký' : 'Ghi nhật ký thành công');
+            resetForm();
         } catch (e: any) {
             toast.error('Lỗi lưu nhật ký', e?.message);
         } finally {
             savingLogRef.current = false;
             setSavingLog(false);
         }
-	    };
+    };
 
-        const beginStatusAction = (logId: string) => {
-            if (statusBusyRef.current.has(logId)) return false;
-            statusBusyRef.current.add(logId);
-            setBusyLogIds(new Set(statusBusyRef.current));
-            return true;
-        };
+    const beginStatusAction = (logId: string) => {
+        if (statusBusyRef.current.has(logId)) return false;
+        statusBusyRef.current.add(logId);
+        setBusyLogIds(new Set(statusBusyRef.current));
+        return true;
+    };
 
-        const endStatusAction = (logId: string) => {
-            statusBusyRef.current.delete(logId);
-            setBusyLogIds(new Set(statusBusyRef.current));
-        };
+    const endStatusAction = (logId: string) => {
+        statusBusyRef.current.delete(logId);
+        setBusyLogIds(new Set(statusBusyRef.current));
+    };
 
-	    const handleStatusChange = async (log: DailyLog, status: DailyLogStatus, requestedVerifier?: ProjectStaff, rejectionReason?: string): Promise<boolean> => {
-            if (!beginStatusAction(log.id)) return false;
-	        // ── PBAC Check ──
-	        const permCode = DAILY_LOG_STATUS_PERMISSION[status];
-            if (permCode && !ensureDailyLogPermission(
-                permCode,
-                status === 'submitted' ? 'gửi nhật ký' : status === 'verified' ? 'xác nhận nhật ký' : 'trả lại nhật ký',
-            )) {
-                endStatusAction(log.id);
-                return false;
+    const handleStatusChange = async (log: DailyLog, status: DailyLogStatus, requestedVerifier?: ProjectStaff, rejectionReason?: string): Promise<boolean> => {
+        if (!beginStatusAction(log.id)) return false;
+        // ── PBAC Check ──
+        const permCode = DAILY_LOG_STATUS_PERMISSION[status];
+        if (permCode && !ensureDailyLogPermission(
+            permCode,
+            status === 'submitted' ? 'gửi nhật ký' : status === 'verified' ? 'xác nhận nhật ký' : 'trả lại nhật ký',
+        )) {
+            endStatusAction(log.id);
+            return false;
+        }
+
+        try {
+            if (status === 'submitted') {
+                if (!requestedVerifier?.userId) {
+                    throw new Error('Vui lòng chọn người xác nhận từ Tổ chức dự án.');
+                }
+                if (requestedVerifier.userId === user?.id && !isAdminUser) {
+                    throw new Error('Người xác nhận phải khác người gửi để hệ thống gửi được thông báo.');
+                }
+                const permissionCheck = projectId
+                    ? await projectStaffService.checkProjectPermission(requestedVerifier.userId, projectId, 'verify', constructionSiteId)
+                    : constructionSiteId
+                        ? await projectStaffService.checkPermission(requestedVerifier.userId, constructionSiteId, 'verify')
+                        : { allowed: false };
+                if (!permissionCheck.allowed) {
+                    throw new Error(`${requestedVerifier.userName || 'Người được chọn'} chưa có quyền verify trong Tổ chức dự án.`);
+                }
             }
-
-            try {
-                if (status === 'submitted') {
-                    if (!requestedVerifier?.userId) {
-                        throw new Error('Vui lòng chọn người xác nhận từ Tổ chức dự án.');
-                    }
-                    if (requestedVerifier.userId === user?.id && !isAdminUser) {
-                        throw new Error('Người xác nhận phải khác người gửi để hệ thống gửi được thông báo.');
-                    }
-                    const permissionCheck = projectId
-                        ? await projectStaffService.checkProjectPermission(requestedVerifier.userId, projectId, 'verify', constructionSiteId)
-                        : constructionSiteId
-                            ? await projectStaffService.checkPermission(requestedVerifier.userId, constructionSiteId, 'verify')
-                            : { allowed: false };
-                    if (!permissionCheck.allowed) {
-                        throw new Error(`${requestedVerifier.userName || 'Người được chọn'} chưa có quyền verify trong Tổ chức dự án.`);
-                    }
-                }
-                if (status === 'submitted' || status === 'verified') {
-                    const policy = getProjectDocumentPolicy({
-                        action: status === 'submitted' ? 'submit' : 'verify',
-                        documentType: 'daily_log',
-                        status: getLogStatus(log),
-                        user,
-                        permissions: userPerms,
-                        relatedUserIds: [log.createdById, log.submittedById, log.submittedBy],
-                        currentHandlerIds: [log.requestedVerifierId, log.submittedToUserId],
-                        everSubmitted: log.everSubmitted,
-                        documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
-                    });
-                    if (!policy.allowed) {
-                        await projectDocumentActionLogService.logBlocked({
-                            projectId: projectId || log.projectId || effectiveId,
-                            constructionSiteId: constructionSiteId || log.constructionSiteId || null,
-                            documentType: 'daily_log',
-                            documentId: log.id,
-                            documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
-                            action: status === 'submitted' ? 'submit' : 'verify',
-                            fromStatus: getLogStatus(log),
-                            blockedReason: policy.reason,
-                            requiredRollbackSteps: policy.requiredRollbackSteps,
-                            createdBy: user?.id,
-                        });
-                        toast.error(status === 'submitted' ? 'Không thể gửi nhật ký' : 'Không thể xác nhận nhật ký', formatPolicyMessage(policy));
-                        endStatusAction(log.id);
-                        return false;
-                    }
-                }
-                if (status === 'rejected') {
-                    const policy = getProjectDocumentPolicy({
-                        action: 'return',
-                        documentType: 'daily_log',
-                        status: getLogStatus(log),
-                        user,
-                        permissions: userPerms,
-                        relatedUserIds: [log.createdById, log.submittedById, log.submittedBy],
-                        currentHandlerIds: [log.requestedVerifierId, log.submittedToUserId],
-                        reason: rejectionReason,
-                        documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
-                    });
-                    if (!policy.allowed) {
-                        await projectDocumentActionLogService.logBlocked({
-                            projectId: projectId || log.projectId || effectiveId,
-                            constructionSiteId: constructionSiteId || log.constructionSiteId || null,
-                            documentType: 'daily_log',
-                            documentId: log.id,
-                            documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
-                            action: 'return',
-                            fromStatus: getLogStatus(log),
-                            reason: rejectionReason,
-                            blockedReason: policy.reason,
-                            requiredRollbackSteps: policy.requiredRollbackSteps,
-                            createdBy: user?.id,
-                        });
-                        toast.error('Không thể trả lại nhật ký', formatPolicyMessage(policy));
-                        endStatusAction(log.id);
-                        return false;
-                    }
-                }
-
-	            await dailyLogService.updateStatus({
-	                logId: log.id,
-	                status,
-	                requestedVerifierId: status === 'submitted' ? requestedVerifier?.userId : undefined,
-	                requestedVerifierName: status === 'submitted' ? (requestedVerifier?.userName || requestedVerifier?.userId) : undefined,
-	                rejectionReason: status === 'rejected' ? rejectionReason : undefined,
-                    actorUserId: user?.id,
-	            });
-                if (status === 'verified' && (log.delayTasks || []).length > 0) {
-                    try {
-                        await delayEventService.createFromDailyLog({ ...log, status: 'verified', verified: true }, user?.id || null);
-                    } catch (delayError: any) {
-                        console.warn('Cannot create schedule delay events from daily log', delayError?.message || delayError);
-                        toast.warning('Chưa ghi được sự kiện chậm tiến độ', 'Nhật ký vẫn đã xác nhận; kiểm tra migration forecast trước khi dùng bảng dự báo.');
-                    }
-                }
-	            const nextLogs = await dailyLogService.list(effectiveId, constructionSiteId || null);
-	            setLogs(nextLogs);
-                if (status === 'verified' || status === 'rejected') await recalculateTaskProgress(nextLogs);
-                if (status === 'submitted' || status === 'verified' || status === 'rejected') {
-                    await projectDocumentActionLogService.log({
+            if (status === 'submitted' || status === 'verified') {
+                const policy = getProjectDocumentPolicy({
+                    action: status === 'submitted' ? 'submit' : 'verify',
+                    documentType: 'daily_log',
+                    status: getLogStatus(log),
+                    user,
+                    permissions: userPerms,
+                    relatedUserIds: [log.createdById, log.submittedById, log.submittedBy],
+                    currentHandlerIds: [log.requestedVerifierId, log.submittedToUserId],
+                    everSubmitted: log.everSubmitted,
+                    documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
+                });
+                if (!policy.allowed) {
+                    await projectDocumentActionLogService.logBlocked({
                         projectId: projectId || log.projectId || effectiveId,
                         constructionSiteId: constructionSiteId || log.constructionSiteId || null,
                         documentType: 'daily_log',
                         documentId: log.id,
                         documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
-                        action: status === 'rejected' ? 'return' : status,
+                        action: status === 'submitted' ? 'submit' : 'verify',
                         fromStatus: getLogStatus(log),
-                        toStatus: status,
-                        reason: status === 'rejected' ? rejectionReason : undefined,
-                        warningAcknowledged: true,
+                        blockedReason: policy.reason,
+                        requiredRollbackSteps: policy.requiredRollbackSteps,
                         createdBy: user?.id,
                     });
+                    toast.error(status === 'submitted' ? 'Không thể gửi nhật ký' : 'Không thể xác nhận nhật ký', formatPolicyMessage(policy));
+                    endStatusAction(log.id);
+                    return false;
                 }
+            }
+            if (status === 'rejected') {
+                const policy = getProjectDocumentPolicy({
+                    action: 'return',
+                    documentType: 'daily_log',
+                    status: getLogStatus(log),
+                    user,
+                    permissions: userPerms,
+                    relatedUserIds: [log.createdById, log.submittedById, log.submittedBy],
+                    currentHandlerIds: [log.requestedVerifierId, log.submittedToUserId],
+                    reason: rejectionReason,
+                    documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
+                });
+                if (!policy.allowed) {
+                    await projectDocumentActionLogService.logBlocked({
+                        projectId: projectId || log.projectId || effectiveId,
+                        constructionSiteId: constructionSiteId || log.constructionSiteId || null,
+                        documentType: 'daily_log',
+                        documentId: log.id,
+                        documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
+                        action: 'return',
+                        fromStatus: getLogStatus(log),
+                        reason: rejectionReason,
+                        blockedReason: policy.reason,
+                        requiredRollbackSteps: policy.requiredRollbackSteps,
+                        createdBy: user?.id,
+                    });
+                    toast.error('Không thể trả lại nhật ký', formatPolicyMessage(policy));
+                    endStatusAction(log.id);
+                    return false;
+                }
+            }
+
+            await dailyLogService.updateStatus({
+                logId: log.id,
+                status,
+                requestedVerifierId: status === 'submitted' ? requestedVerifier?.userId : undefined,
+                requestedVerifierName: status === 'submitted' ? (requestedVerifier?.userName || requestedVerifier?.userId) : undefined,
+                rejectionReason: status === 'rejected' ? rejectionReason : undefined,
+                actorUserId: user?.id,
+            });
+            if (status === 'verified' && (log.delayTasks || []).length > 0) {
+                try {
+                    await delayEventService.createFromDailyLog({ ...log, status: 'verified', verified: true }, user?.id || null);
+                } catch (delayError: any) {
+                    console.warn('Cannot create schedule delay events from daily log', delayError?.message || delayError);
+                    toast.warning('Chưa ghi được sự kiện chậm tiến độ', 'Nhật ký vẫn đã xác nhận; kiểm tra migration forecast trước khi dùng bảng dự báo.');
+                }
+            }
+            const nextLogs = await dailyLogService.list(effectiveId, constructionSiteId || null);
+            setLogs(nextLogs);
+            if (status === 'verified' || status === 'rejected') await recalculateTaskProgress(nextLogs);
+            if (status === 'submitted' || status === 'verified' || status === 'rejected') {
+                await projectDocumentActionLogService.log({
+                    projectId: projectId || log.projectId || effectiveId,
+                    constructionSiteId: constructionSiteId || log.constructionSiteId || null,
+                    documentType: 'daily_log',
+                    documentId: log.id,
+                    documentLabel: new Date(log.date).toLocaleDateString('vi-VN'),
+                    action: status === 'rejected' ? 'return' : status,
+                    fromStatus: getLogStatus(log),
+                    toStatus: status,
+                    reason: status === 'rejected' ? rejectionReason : undefined,
+                    warningAcknowledged: true,
+                    createdBy: user?.id,
+                });
+            }
 
             // Notify if submitted
             if (status === 'submitted') {
@@ -1111,19 +1123,19 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 }
             }
 
-	        toast.success(
-	            status === 'submitted' ? 'Đã gửi nhật ký' :
-	            status === 'verified' ? 'Đã xác nhận nhật ký' :
-	            status === 'rejected' ? 'Đã trả lại nhật ký' : 'Đã cập nhật trạng thái'
-	        );
+            toast.success(
+                status === 'submitted' ? 'Đã gửi nhật ký' :
+                    status === 'verified' ? 'Đã xác nhận nhật ký' :
+                        status === 'rejected' ? 'Đã trả lại nhật ký' : 'Đã cập nhật trạng thái'
+            );
             return true;
-            } catch (e: any) {
-                toast.error('Lỗi cập nhật trạng thái', e?.message);
-                return false;
-            } finally {
-                endStatusAction(log.id);
-            }
-	    };
+        } catch (e: any) {
+            toast.error('Lỗi cập nhật trạng thái', e?.message);
+            return false;
+        } finally {
+            endStatusAction(log.id);
+        }
+    };
 
     const filteredVerifierOptions = useMemo(() => {
         const keyword = verifierSearch.trim().toLowerCase();
@@ -1244,9 +1256,42 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     const filtered = useMemo(() => {
         let list = [...logs];
-        if (filterMonth) list = list.filter(l => l.date.startsWith(filterMonth));
+        if (filterMonth) {
+            list = list.filter(l => l.date.startsWith(filterMonth));
+        }
+        if (filterStatus && filterStatus !== 'all') {
+            list = list.filter(l => getLogStatus(l) === filterStatus);
+        }
+        if (filterWeather && filterWeather !== 'all') {
+            list = list.filter(l => l.weather === filterWeather);
+        }
+        if (searchQuery.trim()) {
+            const query = normalizeLookupText(searchQuery);
+            list = list.filter(l => {
+                const desc = normalizeLookupText(l.description);
+                const issues = normalizeLookupText(l.issues);
+                const creator = normalizeLookupText(l.createdBy || l.submittedBy);
+                const verifier = normalizeLookupText(l.requestedVerifierName || l.verifiedBy);
+
+                const volumesMatch = (l.volumes || []).some(v =>
+                    normalizeLookupText(v.workBoqItemName).includes(query) ||
+                    normalizeLookupText(v.taskName).includes(query)
+                );
+
+                const materialsMatch = (l.materials || []).some(m =>
+                    normalizeLookupText(m.itemName).includes(query)
+                );
+
+                return desc.includes(query) ||
+                    issues.includes(query) ||
+                    creator.includes(query) ||
+                    verifier.includes(query) ||
+                    volumesMatch ||
+                    materialsMatch;
+            });
+        }
         return list.sort((a, b) => b.date.localeCompare(a.date));
-    }, [logs, filterMonth]);
+    }, [logs, filterMonth, filterStatus, filterWeather, searchQuery]);
 
     // Stats
     const stats = useMemo(() => {
@@ -1266,7 +1311,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     const logsByDate = useMemo(() => {
         const map = new Map<string, DailyLog[]>();
-        logs.forEach(log => {
+        filtered.forEach(log => {
             const list = map.get(log.date) || [];
             list.push(log);
             map.set(log.date, list);
@@ -1275,7 +1320,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
         }
         return map;
-    }, [logs]);
+    }, [filtered]);
 
     const verifiedQuantityByTaskId = useMemo(() => {
         const totals: Record<string, number> = {};
@@ -1333,7 +1378,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             {/* AI Analysis */}
             <div className="flex items-center justify-between">
                 <h3 className="text-sm font-black text-slate-700 dark:text-white">Nhật ký công trường</h3>
-                <AiInsightPanel module="dailylog" siteId={constructionSiteId} />
+                <div className="flex items-center gap-2">
+                    <a
+                        href={buildDailyLogReportLink()}
+                        className="flex items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-[10px] font-black text-teal-700 transition-colors hover:bg-teal-100"
+                    >
+                        <BarChart3 size={13} /> Xem báo cáo nhật ký
+                    </a>
+                    <AiInsightPanel module="dailylog" siteId={constructionSiteId} />
+                </div>
             </div>
             {/* Summary */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1411,6 +1464,161 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     </div>
                 </div>
 
+                {/* Search and Filters Section */}
+                <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700/60 bg-slate-50/40 dark:bg-slate-900/20">
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        {/* Search Input */}
+                        <div className="relative flex-1">
+                            <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
+                                <Search size={15} />
+                            </span>
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                placeholder="Gõ để tìm kiếm theo nội dung, sự cố, người lập, vật tư, thiết bị, hạng mục..."
+                                className="w-full text-xs pl-9 pr-8 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:border-teal-500 dark:focus:border-teal-500 transition-all font-medium text-slate-700 dark:text-slate-200"
+                            />
+                            {searchQuery && (
+                                <button
+                                    onClick={() => setSearchQuery('')}
+                                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Month Selector in List View */}
+                        {viewMode !== 'calendar' && (
+                            <select
+                                value={filterMonth}
+                                onChange={e => setFilterMonth(e.target.value)}
+                                className="text-xs font-bold text-slate-600 dark:text-slate-300 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:border-teal-500 transition-all cursor-pointer min-w-[120px]"
+                            >
+                                <option value="">Tất cả các tháng</option>
+                                {availableMonths.map(m => (
+                                    <option key={m} value={m}>{m}</option>
+                                ))}
+                            </select>
+                        )}
+
+                        {/* Advanced Filters Button */}
+                        <button
+                            onClick={() => setShowAdvanced(!showAdvanced)}
+                            className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${showAdvanced || filterStatus !== 'all' || filterWeather !== 'all'
+                                    ? 'text-teal-600 bg-teal-50 border-teal-200 dark:bg-teal-950/30 dark:border-teal-800 dark:text-teal-400'
+                                    : 'text-slate-600 bg-white border-slate-200 dark:text-slate-300 dark:bg-slate-900 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                }`}
+                        >
+                            <SlidersHorizontal size={14} />
+                            <span>Bộ lọc nâng cao</span>
+                            {(filterStatus !== 'all' || filterWeather !== 'all') && (
+                                <span className="w-2 h-2 rounded-full bg-teal-500 dark:bg-teal-400 animate-pulse shrink-0" />
+                            )}
+                            {showAdvanced ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
+                        </button>
+                    </div>
+
+                    {/* Accordion Content with smooth height transition */}
+                    <div
+                        className={`transition-all duration-300 ease-in-out overflow-hidden ${showAdvanced ? 'max-h-[300px] mt-4 opacity-100' : 'max-h-0 opacity-0 pointer-events-none'
+                            }`}
+                    >
+                        <div className="pt-4 border-t border-dashed border-slate-200 dark:border-slate-700/60 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Status Filter */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                                    Trạng thái phê duyệt
+                                </label>
+                                <div className="flex flex-wrap gap-1.5">
+                                    <button
+                                        onClick={() => setFilterStatus('all')}
+                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${filterStatus === 'all'
+                                                ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
+                                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700'
+                                            }`}
+                                    >
+                                        Tất cả
+                                    </button>
+                                    {(Object.keys(STATUS_CFG) as DailyLogStatus[]).map(statusKey => {
+                                        const active = filterStatus === statusKey;
+                                        const cfg = STATUS_CFG[statusKey];
+                                        return (
+                                            <button
+                                                key={statusKey}
+                                                onClick={() => setFilterStatus(statusKey)}
+                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 ${active
+                                                        ? 'bg-teal-600 text-white border-teal-600 dark:bg-teal-500 dark:border-teal-500'
+                                                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700'
+                                                    }`}
+                                            >
+                                                <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-white' : STATUS_DOT[statusKey]}`} />
+                                                <span>{cfg.label}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Weather Filter */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                                    Điều kiện thời tiết
+                                </label>
+                                <div className="flex flex-wrap gap-1.5">
+                                    <button
+                                        onClick={() => setFilterWeather('all')}
+                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${filterWeather === 'all'
+                                                ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
+                                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700'
+                                            }`}
+                                    >
+                                        Tất cả
+                                    </button>
+                                    {(Object.keys(WEATHER) as WeatherType[]).map(weatherKey => {
+                                        const active = filterWeather === weatherKey;
+                                        const cfg = WEATHER[weatherKey];
+                                        return (
+                                            <button
+                                                key={weatherKey}
+                                                onClick={() => setFilterWeather(weatherKey)}
+                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 ${active
+                                                        ? 'bg-teal-600 text-white border-teal-600 dark:bg-teal-500 dark:border-teal-500'
+                                                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700'
+                                                    }`}
+                                            >
+                                                <span>{cfg.emoji}</span>
+                                                <span>{cfg.label}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Reset filters panel */}
+                        {(filterStatus !== 'all' || filterWeather !== 'all' || searchQuery.trim() !== '') && (
+                            <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500">
+                                    Đang lọc ra {filtered.length} nhật ký
+                                </span>
+                                <button
+                                    onClick={() => {
+                                        setSearchQuery('');
+                                        setFilterStatus('all');
+                                        setFilterWeather('all');
+                                    }}
+                                    className="flex items-center gap-1 text-[10px] font-black text-red-500 hover:text-red-600 transition-colors uppercase tracking-wider"
+                                >
+                                    <RotateCcw size={10} />
+                                    Đặt lại bộ lọc
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
                 {viewMode === 'calendar' ? (
                     <div className="p-3 sm:p-5">
                         <div className="grid grid-cols-7 border-l border-t border-slate-100 rounded-2xl overflow-hidden">
@@ -1463,31 +1671,30 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     </div>
                 ) : (
                     <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
-	                        {filtered.map(l => {
-                                const w = WEATHER[l.weather];
-                                const status = (l.status || (l.verified ? 'verified' : 'draft')) as DailyLogStatus;
-                                const statusCfg = STATUS_CFG[status];
-	                            return (
-	                                <div
-                                        key={l.id}
-                                        ref={el => { logRefs.current[l.id] = el; }}
-                                        className={`px-5 py-4 hover:bg-slate-50/50 transition-colors group ${
-                                            highlightLogId === l.id ? 'bg-amber-50/80 ring-2 ring-amber-300 ring-inset' : ''
+                        {filtered.map(l => {
+                            const w = WEATHER[l.weather];
+                            const status = (l.status || (l.verified ? 'verified' : 'draft')) as DailyLogStatus;
+                            const statusCfg = STATUS_CFG[status];
+                            return (
+                                <div
+                                    key={l.id}
+                                    ref={el => { logRefs.current[l.id] = el; }}
+                                    className={`px-5 py-4 hover:bg-slate-50/50 transition-colors group ${highlightLogId === l.id ? 'bg-amber-50/80 ring-2 ring-amber-300 ring-inset' : ''
                                         }`}
-                                    >
-	                                    <div className="flex items-start justify-between gap-3">
+                                >
+                                    <div className="flex items-start justify-between gap-3">
                                         <div className="flex items-start gap-3 flex-1 min-w-0">
                                             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-50 to-cyan-50 border border-teal-100 flex flex-col items-center justify-center shrink-0">
                                                 <div className="text-[9px] font-black text-teal-600">{new Date(l.date).getDate()}</div>
                                                 <div className="text-[8px] text-teal-400">T{new Date(l.date).getMonth() + 1}</div>
                                             </div>
                                             <div className="min-w-0 flex-1">
-	                                                <div className="flex items-center gap-2 mb-1">
-	                                                    <span className="text-sm font-bold text-slate-800">{new Date(l.date).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
-	                                                    <span className="text-xs">{w.emoji}</span>
-	                                                    <span className="text-[10px] font-bold text-blue-500 flex items-center gap-0.5"><Users size={10} /> {l.workerCount}</span>
-	                                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${statusCfg.cls}`}>{statusCfg.label}</span>
-	                                                </div>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="text-sm font-bold text-slate-800">{new Date(l.date).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                                                    <span className="text-xs">{w.emoji}</span>
+                                                    <span className="text-[10px] font-bold text-blue-500 flex items-center gap-0.5"><Users size={10} /> {l.workerCount}</span>
+                                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${statusCfg.cls}`}>{statusCfg.label}</span>
+                                                </div>
                                                 <p className="text-xs text-slate-600 leading-relaxed">{l.description}</p>
                                                 {status === 'submitted' && l.requestedVerifierName && (
                                                     <div className="mt-1 text-[10px] font-bold text-amber-600 flex items-center gap-1">
@@ -1502,11 +1709,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                 )}
                                             </div>
                                         </div>
-	                                        <div className="flex gap-1 opacity-100 transition-opacity shrink-0">
-                                                <button onClick={() => openView(l)} title="Xem chi tiết" className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-teal-600 hover:bg-teal-50">
-                                                    <Eye size={13} />
-                                                </button>
-	                                        </div>
+                                        <div className="flex gap-1 opacity-100 transition-opacity shrink-0">
+                                            <button onClick={() => openView(l)} title="Xem chi tiết" className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-teal-600 hover:bg-teal-50">
+                                                <Eye size={13} />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             );
@@ -1554,9 +1761,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                             key={staff.userId}
                                             type="button"
                                             onClick={() => setSelectedVerifier(staff)}
-                                            className={`w-full px-4 py-3 text-left border-b border-slate-100 last:border-b-0 transition-colors ${
-                                                selected ? 'bg-amber-50' : 'hover:bg-slate-50'
-                                            }`}
+                                            className={`w-full px-4 py-3 text-left border-b border-slate-100 last:border-b-0 transition-colors ${selected ? 'bg-amber-50' : 'hover:bg-slate-50'
+                                                }`}
                                         >
                                             <div className="flex items-center justify-between gap-3">
                                                 <div className="min-w-0">
@@ -1738,7 +1944,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     className="w-full px-3 py-2.5 rounded-xl border border-red-100 bg-red-50/30 text-sm focus:ring-2 focus:ring-red-400 outline-none resize-none"
                                 />
                             </div>
-                            
+
                             <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-4">
                                 {/* GPS */}
                                 <div>
@@ -1793,7 +1999,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     )}
                                 </div>
                             </div>
-                            
+
                             {/* Delay Tasks */}
                             {tasks && tasks.length > 0 && (
                                 <div className="border-t border-slate-100 pt-4">

@@ -110,6 +110,16 @@ const parseExcelDate = (value: unknown): string | null => {
     return Number.isNaN(parsed.getTime()) ? null : toIsoDate(parsed);
 };
 
+const normalizeLookupText = (value?: string | null) =>
+    String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd')
+        .replace(/Đ/g, 'D')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+
 const parseProgress = (value: unknown): number => {
     const progress = Number(value || 0);
     if (!Number.isFinite(progress)) return 0;
@@ -450,7 +460,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     // View
     const [viewMode, setViewMode] = useState<ViewMode>('split');
     const ganttOffset = viewMode === 'gantt' ? 140 : 0;
-    const [splitTableWidth, setSplitTableWidth] = useState(520); // px
+    const [splitTableWidth, setSplitTableWidth] = useState(580); // px
     const [zoom, setZoom] = useState(28);
     const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
     const [searchQuery, setSearchQuery] = useState('');
@@ -1162,11 +1172,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 actualStartDate: fActualStart || undefined, actualEndDate: fActualEnd || undefined,
                 watchers: fWatchers,
             };
-	        const item = normalizedProgressMode === 'manual' ? applyProgressGateTransition(baseItem, normalizedProgress) : baseItem;
-	        await taskService.upsert(item);
-	        await taskContractItemService.replaceForTask(item.id, effectiveId, constructionSiteId || null, fContractItemIds);
+            const item = normalizedProgressMode === 'manual' ? applyProgressGateTransition(baseItem, normalizedProgress) : baseItem;
+            await taskService.upsert(item);
+            await taskContractItemService.replaceForTask(item.id, effectiveId, constructionSiteId || null, fContractItemIds);
             const rawNextTasks = await taskService.list(effectiveId, constructionSiteId || null);
-	        const nextTasks = deriveProjectTaskProgress(rawNextTasks, completionRequests, dailyLogs);
+            const nextTasks = deriveProjectTaskProgress(rawNextTasks, completionRequests, dailyLogs);
             const derivedChanges = nextTasks.filter(next => {
                 const prev = rawNextTasks.find(task => task.id === next.id);
                 return !!prev && (
@@ -1177,24 +1187,24 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 );
             });
             if (derivedChanges.length > 0) await taskService.upsertMany(derivedChanges);
-	        const nextLinks = await taskContractItemService.listBySite(effectiveId, constructionSiteId || null);
-	        setTasks(nextTasks);
-	        setTaskContractLinks(nextLinks.reduce<Record<string, string[]>>((acc, link) => {
-	            if (!acc[link.taskId]) acc[link.taskId] = [];
-	            acc[link.taskId].push(link.contractItemId);
-	            return acc;
-	        }, {}));
-        syncProjectFinanceProgress(nextTasks);
-        await notifyTaskAssignment(item, editing);
-        resetForm();
-        if (item.progress >= 100 && item.gateStatus === 'pending') {
-            toast.info('Đã chuyển sang chờ nghiệm thu', 'Hạng mục 100% cần được duyệt trước khi tính là hoàn thành.');
-            const wasAlreadyPending = editing?.progress >= 100 && editing?.gateStatus === 'pending';
-            if (!wasAlreadyPending) {
-                const approverIds = await notifyGateApprovers(item);
-                await notifyTaskWatchers(item, 'pending', approverIds);
+            const nextLinks = await taskContractItemService.listBySite(effectiveId, constructionSiteId || null);
+            setTasks(nextTasks);
+            setTaskContractLinks(nextLinks.reduce<Record<string, string[]>>((acc, link) => {
+                if (!acc[link.taskId]) acc[link.taskId] = [];
+                acc[link.taskId].push(link.contractItemId);
+                return acc;
+            }, {}));
+            syncProjectFinanceProgress(nextTasks);
+            await notifyTaskAssignment(item, editing);
+            resetForm();
+            if (item.progress >= 100 && item.gateStatus === 'pending') {
+                toast.info('Đã chuyển sang chờ nghiệm thu', 'Hạng mục 100% cần được duyệt trước khi tính là hoàn thành.');
+                const wasAlreadyPending = editing?.progress >= 100 && editing?.gateStatus === 'pending';
+                if (!wasAlreadyPending) {
+                    const approverIds = await notifyGateApprovers(item);
+                    await notifyTaskWatchers(item, 'pending', approverIds);
+                }
             }
-        }
             toast.success(editing ? 'Đã cập nhật hạng mục' : 'Đã thêm hạng mục');
         } catch (e: any) {
             toast.error('Lỗi lưu tiến độ', e?.message);
@@ -1513,15 +1523,48 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     };
 
     const filteredTasks = useMemo(() => {
-        let result = [...tasks];
-        if (searchQuery) {
-            const q = searchQuery.toLowerCase();
-            result = result.filter(t => t.name.toLowerCase().includes(q) || (t.assignee || '').toLowerCase().includes(q));
-        }
-        if (filterStatus !== 'all') {
-            result = result.filter(t => getStatus(t) === filterStatus);
-        }
-        return result;
+        if (!searchQuery && filterStatus === 'all') return tasks;
+
+        const q = searchQuery.trim().toLowerCase();
+        const matches = new Set<string>();
+
+        tasks.forEach(t => {
+            let isMatch = true;
+            if (q) {
+                const searchStr = normalizeLookupText(t.name);
+                const searchAssignee = normalizeLookupText(t.assignee);
+                const searchWbs = normalizeLookupText(t.wbsCode);
+                const searchNotes = normalizeLookupText(t.notes);
+                const query = normalizeLookupText(searchQuery);
+
+                isMatch = searchStr.includes(query) ||
+                    searchAssignee.includes(query) ||
+                    searchWbs.includes(query) ||
+                    searchNotes.includes(query);
+            }
+            if (isMatch && filterStatus !== 'all') {
+                isMatch = getStatus(t) === filterStatus;
+            }
+            if (isMatch) {
+                matches.add(t.id);
+            }
+        });
+
+        const visible = new Set<string>();
+        const addWithAncestors = (taskId: string) => {
+            let curr = tasks.find(t => t.id === taskId);
+            while (curr) {
+                if (visible.has(curr.id)) break;
+                visible.add(curr.id);
+                curr = curr.parentId ? tasks.find(t => t.id === curr.parentId) : undefined;
+            }
+        };
+
+        matches.forEach(id => {
+            addWithAncestors(id);
+        });
+
+        return tasks.filter(t => visible.has(t.id));
     }, [tasks, searchQuery, filterStatus]);
 
     const sortedTasks = useMemo(() => {
@@ -1543,17 +1586,53 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         const roots = filteredTasks.filter(t => !t.parentId).sort((a, b) => a.order - b.order);
         const getChildren = (parentId: string): ProjectTask[] =>
             filteredTasks.filter(t => t.parentId === parentId).sort((a, b) => a.order - b.order);
+
+        // Find which parents contain matching tasks to force expansion
+        const parentsToForceExpand = new Set<string>();
+        if (searchQuery.trim() || filterStatus !== 'all') {
+            const q = searchQuery.trim().toLowerCase();
+            tasks.forEach(t => {
+                let isMatch = true;
+                if (q) {
+                    const searchStr = normalizeLookupText(t.name);
+                    const searchAssignee = normalizeLookupText(t.assignee);
+                    const searchWbs = normalizeLookupText(t.wbsCode);
+                    const searchNotes = normalizeLookupText(t.notes);
+                    const query = normalizeLookupText(searchQuery);
+
+                    isMatch = searchStr.includes(query) ||
+                        searchAssignee.includes(query) ||
+                        searchWbs.includes(query) ||
+                        searchNotes.includes(query);
+                }
+                if (isMatch && filterStatus !== 'all') {
+                    isMatch = getStatus(t) === filterStatus;
+                }
+                if (isMatch) {
+                    let curr = t.parentId ? tasks.find(x => x.id === t.parentId) : null;
+                    while (curr) {
+                        parentsToForceExpand.add(curr.id);
+                        curr = curr.parentId ? tasks.find(x => x.id === curr.parentId) : null;
+                    }
+                }
+            });
+        }
+
         const flatList: { task: ProjectTask; level: number; hasChildren: boolean }[] = [];
         const buildFlat = (items: ProjectTask[], level: number) => {
             items.forEach(t => {
                 const children = getChildren(t.id);
                 flatList.push({ task: t, level, hasChildren: children.length > 0 });
-                if (!collapsedParents.has(t.id)) buildFlat(children, level + 1);
+
+                const shouldExpand = !collapsedParents.has(t.id) || parentsToForceExpand.has(t.id);
+                if (shouldExpand) {
+                    buildFlat(children, level + 1);
+                }
             });
         };
         buildFlat(roots, 0);
         return flatList;
-    }, [filteredTasks, collapsedParents]);
+    }, [filteredTasks, collapsedParents, searchQuery, filterStatus, tasks]);
 
     // ====== Stats ======
     const stats = useMemo(() => {
@@ -1642,8 +1721,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             }
             toast.success(
                 status === 'approved' ? 'Đã duyệt nghiệm thu' :
-                status === 'rejected' ? 'Đã từ chối nghiệm thu' :
-                'Đã gửi chờ nghiệm thu'
+                    status === 'rejected' ? 'Đã từ chối nghiệm thu' :
+                        'Đã gửi chờ nghiệm thu'
             );
             // Sync modal task
             setGateModalTask(prev => prev?.id === taskId ? updated : prev);
@@ -2002,8 +2081,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             return (
                                 <button onClick={() => setShowGatePanel(v => !v)}
                                     className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showGatePanel
-                                            ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700'
-                                            : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                        ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700'
+                                        : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
                                         }`}
                                     title="Danh sách chờ nghiệm thu">
                                     <Shield size={13} /> Gate
@@ -2025,21 +2104,19 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         {/* T3: Baseline Compare Panel toggle */}
                         {baselines.length > 0 && (
                             <button onClick={() => setShowBaselinePanel(v => !v)}
-                                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${
-                                    showBaselinePanel
+                                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showBaselinePanel
                                         ? 'border-sky-400 bg-sky-50 dark:bg-sky-900/20 text-sky-700'
                                         : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-                                }`}
+                                    }`}
                                 title="So sánh kế hoạch vs thực tế">
                                 <BarChart3 size={13} /> So sánh BL
                             </button>
                         )}
                         <button onClick={() => setShowForecastPanel(v => !v)}
-                            className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${
-                                showForecastPanel
+                            className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showForecastPanel
                                     ? 'border-red-400 bg-red-50 dark:bg-red-900/20 text-red-700'
                                     : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-                            }`}
+                                }`}
                             title="Dự báo tác động chậm tiến độ">
                             <AlertTriangle size={13} /> Dự báo
                             {activeDelayEventCount > 0 && (
@@ -2051,8 +2128,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         {/* GĐ5: Sandbox Toggle */}
                         <button onClick={toggleSandbox}
                             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${isSandboxMode
-                                    ? 'border-violet-400 bg-violet-50 dark:bg-violet-900/30 text-violet-700 ring-2 ring-violet-300 shadow-lg shadow-violet-500/20'
-                                    : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                ? 'border-violet-400 bg-violet-50 dark:bg-violet-900/30 text-violet-700 ring-2 ring-violet-300 shadow-lg shadow-violet-500/20'
+                                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                             title="Chế độ giả lập (không lưu vào DB)">
                             <FlaskConical size={13} /> {isSandboxMode ? 'Tắt Giả lập' : 'Giả lập'}
@@ -2060,8 +2137,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         {/* GĐ5: AI Insights Toggle */}
                         <button onClick={() => setShowAiInsights(v => !v)}
                             className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showAiInsights
-                                    ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700'
-                                    : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700'
+                                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                             title="AI Dự báo rủi ro">
                             <Lightbulb size={13} /> AI
@@ -2310,9 +2387,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                 const isDelayed = endDelta > 0;
                                                 const isAhead = endDelta < 0;
                                                 return (
-                                                    <tr key={task.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors ${
-                                                        isDelayed ? 'bg-red-50/30 dark:bg-red-900/10' : isAhead ? 'bg-emerald-50/30 dark:bg-emerald-900/10' : ''
-                                                    }`}>
+                                                    <tr key={task.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors ${isDelayed ? 'bg-red-50/30 dark:bg-red-900/10' : isAhead ? 'bg-emerald-50/30 dark:bg-emerald-900/10' : ''
+                                                        }`}>
                                                         <td className="px-4 py-2">
                                                             <div className="font-bold text-slate-800 dark:text-slate-200 truncate max-w-[200px]">{task.name}</div>
                                                             {task.assignee && <div className="text-[9px] text-slate-400">{task.assignee}</div>}
@@ -2320,9 +2396,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                         <td className="px-3 py-2 text-center">
                                                             <div className="flex items-center gap-1">
                                                                 <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                                                    <div className={`h-full rounded-full ${
-                                                                        task.progress >= 100 ? 'bg-emerald-500' : task.progress > 0 ? 'bg-blue-500' : 'bg-slate-200'
-                                                                    }`} style={{ width: `${task.progress}%` }} />
+                                                                    <div className={`h-full rounded-full ${task.progress >= 100 ? 'bg-emerald-500' : task.progress > 0 ? 'bg-blue-500' : 'bg-slate-200'
+                                                                        }`} style={{ width: `${task.progress}%` }} />
                                                                 </div>
                                                                 <span className="text-[10px] font-bold text-slate-600">{task.progress}%</span>
                                                             </div>
@@ -2335,11 +2410,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                             {endDelta === 0 ? (
                                                                 <span className="text-[10px] font-bold text-emerald-600">✔ Đúng hạn</span>
                                                             ) : (
-                                                                <span className={`inline-flex items-center gap-0.5 text-[10px] font-black px-2 py-0.5 rounded-full ${
-                                                                    isDelayed
+                                                                <span className={`inline-flex items-center gap-0.5 text-[10px] font-black px-2 py-0.5 rounded-full ${isDelayed
                                                                         ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
                                                                         : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                                                                }`}>
+                                                                    }`}>
                                                                     {isDelayed ? '⏰' : '⚡'} {isDelayed ? '+' : ''}{endDelta} ngày
                                                                 </span>
                                                             )}
@@ -2408,7 +2482,15 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                             <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                                 placeholder="Tìm hạng mục..."
-                                className="pl-7 pr-3 py-1.5 w-44 rounded-xl border border-slate-200 dark:border-slate-600 text-xs bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                className="pl-7 pr-7 py-1.5 w-44 rounded-xl border border-slate-200 dark:border-slate-600 text-xs bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                            {searchQuery && (
+                                <button
+                                    onClick={() => setSearchQuery('')}
+                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                >
+                                    <X size={10} />
+                                </button>
+                            )}
                         </div>
 
                         {/* Filter */}
@@ -2466,10 +2548,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                     <div className="flex flex-col lg:flex-row overflow-hidden">
                         {/* ====== TABLE VIEW ====== */}
                         {(viewMode === 'table' || viewMode === 'split') && (
-                            <div 
+                            <div
                                 style={{ width: viewMode === 'split' ? `${splitTableWidth}px` : undefined }}
                                 className={`${viewMode === 'split' ? 'shrink-0 lg:border-r border-b lg:border-b-0 border-slate-100 dark:border-slate-700' : 'flex-1'} overflow-auto`}>
-                                <table className={`${viewMode === 'table' ? 'w-full min-w-[760px] lg:min-w-[1280px] table-fixed' : 'w-full min-w-[680px] table-fixed'} text-xs`}>
+                                <table className={`${viewMode === 'table' ? 'w-full min-w-[760px] lg:min-w-[1280px] table-fixed' : 'w-full min-w-[760px] table-fixed'} text-xs`}>
                                     <thead>
                                         <tr className="bg-slate-50/80 dark:bg-slate-700/50 border-b border-slate-100 dark:border-slate-700" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
                                             {viewMode === 'table' && (
@@ -2477,8 +2559,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">STT</span>
                                                 </th>
                                             )}
-                                            {viewMode === 'table' && (
-                                                <th className="hidden sm:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[76px]">
+                                            {(viewMode === 'table' || viewMode === 'split') && (
+                                                <th className={`sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left ${viewMode === 'split' ? 'w-[80px]' : 'hidden sm:table-cell w-[76px]'}`}>
                                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Mã WBS</span>
                                                 </th>
                                             )}
@@ -2541,10 +2623,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                             )}
                                             {viewMode === 'table' && (
                                                 <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[96px]">
-                                                <button onClick={() => handleSort('status')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
-                                                    T.Thái <SortIcon field="status" />
-                                                </button>
-                                            </th>
+                                                    <button onClick={() => handleSort('status')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                        T.Thái <SortIcon field="status" />
+                                                    </button>
+                                                </th>
                                             )}
                                             <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[80px]">
                                                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Thao tác</span>
@@ -2569,10 +2651,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                         <td className="px-2 py-2.5 text-center text-slate-400 font-bold">{idx + 1}</td>
                                                     )}
                                                     {/* Mã WBS */}
-                                                    {viewMode === 'table' && (
-                                                        <td className="hidden sm:table-cell px-2 py-2.5">
+                                                    {(viewMode === 'table' || viewMode === 'split') && (
+                                                        <td className={`px-2 py-2.5 ${viewMode === 'split' ? '' : 'hidden sm:table-cell'}`}>
                                                             {task.wbsCode ? (
-                                                                <span className="text-indigo-600 dark:text-indigo-400 font-bold">{task.wbsCode}</span>
+                                                                <span className="text-indigo-600 dark:text-indigo-400 font-bold font-mono">{task.wbsCode}</span>
                                                             ) : (
                                                                 <span className="text-slate-300">–</span>
                                                             )}
@@ -2724,20 +2806,20 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     e.stopPropagation();
                                     const startX = e.clientX;
                                     const startWidth = splitTableWidth;
-                                    
+
                                     const onMouseMove = (moveEvent: MouseEvent) => {
                                         const deltaX = moveEvent.clientX - startX;
                                         // Restrict width to reasonable bounds (e.g. between 250px and 900px)
                                         const newWidth = Math.max(250, Math.min(900, startWidth + deltaX));
                                         setSplitTableWidth(newWidth);
                                     };
-                                    
+
                                     const onMouseUp = () => {
                                         document.removeEventListener('mousemove', onMouseMove);
                                         document.removeEventListener('mouseup', onMouseUp);
                                         document.body.style.cursor = '';
                                     };
-                                    
+
                                     document.body.style.cursor = 'col-resize';
                                     document.addEventListener('mousemove', onMouseMove);
                                     document.addEventListener('mouseup', onMouseUp);
@@ -2940,10 +3022,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                         {task.progress >= 100 && task.gateStatus !== 'approved' && (
                                                             <button
                                                                 className={`absolute -bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-0.5 text-[7px] font-bold px-1.5 py-0.5 rounded-full border whitespace-nowrap z-20 hover:scale-110 transition-all shadow-sm ${task.gateStatus === 'pending'
-                                                                        ? 'text-amber-700 bg-amber-50 border-amber-300 animate-pulse'
-                                                                        : task.gateStatus === 'rejected'
-                                                                            ? 'text-red-600 bg-red-50 border-red-300'
-                                                                            : 'text-slate-600 bg-white border-slate-300'
+                                                                    ? 'text-amber-700 bg-amber-50 border-amber-300 animate-pulse'
+                                                                    : task.gateStatus === 'rejected'
+                                                                        ? 'text-red-600 bg-red-50 border-red-300'
+                                                                        : 'text-slate-600 bg-white border-slate-300'
                                                                     }`}
                                                                 onClick={e => { e.stopPropagation(); setGateModalTask(task); }}
                                                                 title="Mở quy trình nghiệm thu">
@@ -3188,8 +3270,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                         <button key={t.id}
                                             onClick={() => setGateModalTask(t)}
                                             className={`w-full flex items-center gap-2 p-2 rounded-xl border text-left hover:scale-[1.01] transition-all ${t.gateStatus === 'pending'
-                                                    ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800'
-                                                    : 'bg-slate-50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600'
+                                                ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800'
+                                                : 'bg-slate-50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600'
                                                 }`}>
                                             <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#f97316' }} />
                                             <div className="flex-1 min-w-0">
@@ -3277,21 +3359,19 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         ) : (
                             <div className="space-y-2">
                                 {aiInsights.map((insight, i) => (
-                                    <div key={i} className={`flex items-start gap-3 p-3 rounded-xl border ${
-                                        insight.severity === 'high' ? 'bg-red-50/50 dark:bg-red-900/10 border-red-200 dark:border-red-800' :
-                                        insight.severity === 'medium' ? 'bg-amber-50/50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800' :
-                                        'bg-slate-50 dark:bg-slate-700/30 border-slate-200 dark:border-slate-600'
-                                    }`}>
+                                    <div key={i} className={`flex items-start gap-3 p-3 rounded-xl border ${insight.severity === 'high' ? 'bg-red-50/50 dark:bg-red-900/10 border-red-200 dark:border-red-800' :
+                                            insight.severity === 'medium' ? 'bg-amber-50/50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800' :
+                                                'bg-slate-50 dark:bg-slate-700/30 border-slate-200 dark:border-slate-600'
+                                        }`}>
                                         <span className="text-lg shrink-0 mt-0.5">{insight.icon}</span>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{insight.title}</p>
                                             <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">{insight.desc}</p>
                                         </div>
-                                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full shrink-0 ${
-                                            insight.severity === 'high' ? 'bg-red-100 text-red-600' :
-                                            insight.severity === 'medium' ? 'bg-amber-100 text-amber-600' :
-                                            'bg-slate-100 text-slate-500'
-                                        }`}>{insight.severity === 'high' ? 'Cao' : insight.severity === 'medium' ? 'TB' : 'Thấp'}</span>
+                                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full shrink-0 ${insight.severity === 'high' ? 'bg-red-100 text-red-600' :
+                                                insight.severity === 'medium' ? 'bg-amber-100 text-amber-600' :
+                                                    'bg-slate-100 text-slate-500'
+                                            }`}>{insight.severity === 'high' ? 'Cao' : insight.severity === 'medium' ? 'TB' : 'Thấp'}</span>
                                     </div>
                                 ))}
                             </div>
@@ -3377,22 +3457,22 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
                             {/* Progress + Assignee */}
                             <div className="grid grid-cols-2 gap-3">
-	                                <div>
-	                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">
-	                                        Tiến độ: <span className="text-orange-600">{fProgress}%</span>
-	                                    </label>
-	                                    <input type="range" min={0} max={100} step={5} value={fProgress} disabled={formProgressReadOnly} onChange={e => setFProgress(e.target.value)}
-	                                        className="w-full accent-orange-500 disabled:opacity-40" />
-	                                    <div className="flex justify-between text-[9px] text-slate-400 mt-0.5">
-	                                        <span>0%</span><span>50%</span><span>100%</span>
-	                                    </div>
-                                        {formProgressReadOnly && (
-                                            <p className="mt-1 text-[9px] font-bold text-blue-500">
-                                                {formTaskHasChildren ? 'Tự tính từ công việc con' : 'Tự tính theo nguồn tiến độ đã chọn'}
-                                            </p>
-                                        )}
-	                                </div>
-	                                <div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">
+                                        Tiến độ: <span className="text-orange-600">{fProgress}%</span>
+                                    </label>
+                                    <input type="range" min={0} max={100} step={5} value={fProgress} disabled={formProgressReadOnly} onChange={e => setFProgress(e.target.value)}
+                                        className="w-full accent-orange-500 disabled:opacity-40" />
+                                    <div className="flex justify-between text-[9px] text-slate-400 mt-0.5">
+                                        <span>0%</span><span>50%</span><span>100%</span>
+                                    </div>
+                                    {formProgressReadOnly && (
+                                        <p className="mt-1 text-[9px] font-bold text-blue-500">
+                                            {formTaskHasChildren ? 'Tự tính từ công việc con' : 'Tự tính theo nguồn tiến độ đã chọn'}
+                                        </p>
+                                    )}
+                                </div>
+                                <div>
                                     <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><User size={10} /> Người phụ trách</label>
                                     <select
                                         value={fAssigneeUserId}
@@ -3410,51 +3490,51 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     </select>
                                     <input value={fAssignee} onChange={e => setFAssignee(e.target.value)} placeholder="Tên hiển thị"
                                         className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
-	                                </div>
-	                            </div>
-
-                                <div className="rounded-xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/30 dark:bg-blue-900/10 p-3">
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-1 mb-2">
-                                        <Eye size={11} className="text-blue-500" /> Người theo dõi
-                                    </label>
-                                    {fWatchers.length > 0 && (
-                                        <div className="flex flex-wrap gap-1.5 mb-2">
-                                            {fWatchers.map(uid => (
-                                                <span key={uid} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                                                    {staffUserMap.get(uid)?.name || uid}
-                                                    <button onClick={() => setFWatchers(prev => prev.filter(id => id !== uid))} className="hover:text-red-500 transition-colors" title="Gỡ người theo dõi">
-                                                        <X size={11} />
-                                                    </button>
-                                                </span>
-                                            ))}
-                                        </div>
-                                    )}
-                                    <select
-                                        value=""
-                                        onChange={e => {
-                                            if (!e.target.value) return;
-                                            setFWatchers(prev => prev.includes(e.target.value) ? prev : [...prev, e.target.value]);
-                                        }}
-                                        disabled={watcherOptions.length === 0}
-                                        className="w-full px-3 py-2 rounded-xl border border-blue-100 dark:border-blue-800 text-xs bg-white/70 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50"
-                                    >
-                                        <option value="">{watcherOptions.length === 0 ? 'Chưa có nhân sự dự án' : '+ Thêm người theo dõi'}</option>
-                                        {watcherOptions.filter(opt => !fWatchers.includes(opt.id)).map(opt => (
-                                            <option key={opt.id} value={opt.id}>{opt.name}{opt.position ? ` — ${opt.position}` : ''}</option>
-                                        ))}
-                                    </select>
                                 </div>
+                            </div>
 
-	                            <div>
-	                                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Nguồn tiến độ</label>
-	                                <select value={fProgressMode} onChange={e => setFProgressMode(e.target.value as ProjectTaskProgressMode)}
-	                                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none">
-                                        <option value="daily_log">Nhật ký thi công đã xác nhận</option>
-	                                    <option value="manual">Nhập tay theo kế hoạch thi công</option>
-	                                    <option value="derived_from_acceptance">Tự tính từ nghiệm thu khối lượng</option>
-                                        {formTaskHasChildren && <option value="children_auto">Tự tính từ công việc con</option>}
-	                                </select>
-	                            </div>
+                            <div className="rounded-xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/30 dark:bg-blue-900/10 p-3">
+                                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-1 mb-2">
+                                    <Eye size={11} className="text-blue-500" /> Người theo dõi
+                                </label>
+                                {fWatchers.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5 mb-2">
+                                        {fWatchers.map(uid => (
+                                            <span key={uid} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                                                {staffUserMap.get(uid)?.name || uid}
+                                                <button onClick={() => setFWatchers(prev => prev.filter(id => id !== uid))} className="hover:text-red-500 transition-colors" title="Gỡ người theo dõi">
+                                                    <X size={11} />
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                                <select
+                                    value=""
+                                    onChange={e => {
+                                        if (!e.target.value) return;
+                                        setFWatchers(prev => prev.includes(e.target.value) ? prev : [...prev, e.target.value]);
+                                    }}
+                                    disabled={watcherOptions.length === 0}
+                                    className="w-full px-3 py-2 rounded-xl border border-blue-100 dark:border-blue-800 text-xs bg-white/70 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50"
+                                >
+                                    <option value="">{watcherOptions.length === 0 ? 'Chưa có nhân sự dự án' : '+ Thêm người theo dõi'}</option>
+                                    {watcherOptions.filter(opt => !fWatchers.includes(opt.id)).map(opt => (
+                                        <option key={opt.id} value={opt.id}>{opt.name}{opt.position ? ` — ${opt.position}` : ''}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Nguồn tiến độ</label>
+                                <select value={fProgressMode} onChange={e => setFProgressMode(e.target.value as ProjectTaskProgressMode)}
+                                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none">
+                                    <option value="daily_log">Nhật ký thi công đã xác nhận</option>
+                                    <option value="manual">Nhập tay theo kế hoạch thi công</option>
+                                    <option value="derived_from_acceptance">Tự tính từ nghiệm thu khối lượng</option>
+                                    {formTaskHasChildren && <option value="children_auto">Tự tính từ công việc con</option>}
+                                </select>
+                            </div>
 
                             {/* Parent + Color */}
                             <div className="grid grid-cols-2 gap-3">
@@ -3478,34 +3558,34 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                         ))}
                                     </div>
                                 </div>
-	                            </div>
+                            </div>
 
-	                            {contractItems.length > 0 && (
-	                                <div className="border border-slate-100 dark:border-slate-700 rounded-xl p-3">
-	                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1">Liên kết BOQ hợp đồng tham khảo</label>
-	                                    <p className="text-[10px] text-slate-400 mb-2">Đối chiếu tham khảo nằm ở BOQ triển khai &gt; Đối chiếu BOQ hợp đồng.</p>
-	                                    <div className="max-h-28 overflow-y-auto space-y-1">
-	                                        {contractItems.map(item => (
-	                                            <label key={item.id} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-	                                                <input
-	                                                    type="checkbox"
-	                                                    checked={fContractItemIds.includes(item.id)}
-	                                                    onChange={e => {
-	                                                        setFContractItemIds(prev => e.target.checked
-	                                                            ? [...prev, item.id]
-	                                                            : prev.filter(id => id !== item.id));
-	                                                    }}
-	                                                    className="accent-orange-500"
-	                                                />
-	                                                <span className="font-bold text-indigo-600">{item.code}</span>
-	                                                <span className="truncate">{item.name}</span>
-	                                            </label>
-	                                        ))}
-	                                    </div>
-	                                </div>
-	                            )}
+                            {contractItems.length > 0 && (
+                                <div className="border border-slate-100 dark:border-slate-700 rounded-xl p-3">
+                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1">Liên kết BOQ hợp đồng tham khảo</label>
+                                    <p className="text-[10px] text-slate-400 mb-2">Đối chiếu tham khảo nằm ở BOQ triển khai &gt; Đối chiếu BOQ hợp đồng.</p>
+                                    <div className="max-h-28 overflow-y-auto space-y-1">
+                                        {contractItems.map(item => (
+                                            <label key={item.id} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={fContractItemIds.includes(item.id)}
+                                                    onChange={e => {
+                                                        setFContractItemIds(prev => e.target.checked
+                                                            ? [...prev, item.id]
+                                                            : prev.filter(id => id !== item.id));
+                                                    }}
+                                                    className="accent-orange-500"
+                                                />
+                                                <span className="font-bold text-indigo-600">{item.code}</span>
+                                                <span className="truncate">{item.name}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
-	                            {/* Milestone */}
+                            {/* Milestone */}
                             <label className="flex items-center gap-2.5 cursor-pointer p-2.5 rounded-xl border border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                                 <input type="checkbox" checked={fMilestone} onChange={e => setFMilestone(e.target.checked)}
                                     className="w-4 h-4 rounded accent-red-500" />
@@ -3525,24 +3605,24 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                             <option value="">— Chọn task —</option>
                                             {tasks.filter(t => t.id !== editing?.id).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                                         </select>
-	                                        <select value={dep.type} onChange={e => {
-	                                            const newDeps = [...fDeps];
-	                                            newDeps[i] = { ...newDeps[i], type: e.target.value as TaskDependencyType };
-	                                            setFDeps(newDeps);
-	                                        }} className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-xs bg-transparent font-bold">
+                                        <select value={dep.type} onChange={e => {
+                                            const newDeps = [...fDeps];
+                                            newDeps[i] = { ...newDeps[i], type: e.target.value as TaskDependencyType };
+                                            setFDeps(newDeps);
+                                        }} className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-xs bg-transparent font-bold">
                                             <option value="FS">FS</option>
                                             <option value="SS">SS</option>
                                             <option value="FF">FF</option>
-	                                            <option value="SF">SF</option>
-	                                        </select>
-	                                        <label className="flex items-center gap-1 text-[9px] font-bold text-slate-500 whitespace-nowrap">
-	                                            <input type="checkbox" checked={!!dep.requiresGateApproval} onChange={e => {
-	                                                const newDeps = [...fDeps];
-	                                                newDeps[i] = { ...newDeps[i], requiresGateApproval: e.target.checked };
-	                                                setFDeps(newDeps);
-	                                            }} className="accent-orange-500" />
-	                                            Chặn gate
-	                                        </label>
+                                            <option value="SF">SF</option>
+                                        </select>
+                                        <label className="flex items-center gap-1 text-[9px] font-bold text-slate-500 whitespace-nowrap">
+                                            <input type="checkbox" checked={!!dep.requiresGateApproval} onChange={e => {
+                                                const newDeps = [...fDeps];
+                                                newDeps[i] = { ...newDeps[i], requiresGateApproval: e.target.checked };
+                                                setFDeps(newDeps);
+                                            }} className="accent-orange-500" />
+                                            Chặn gate
+                                        </label>
                                         <button onClick={() => setFDeps(fDeps.filter((_, j) => j !== i))} className="w-6 h-6 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-50 transition-colors"><X size={12} /></button>
                                     </div>
                                 ))}
@@ -3760,23 +3840,23 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-700/40 dark:divide-slate-700">
-	                                            {importRows.map((row, idx) => {
-	                                                const err = importErrors[idx];
-	                                                const plannedStart = parseExcelDate(row['Bắt đầu KH (*)']);
-	                                                const plannedEnd = parseExcelDate(row['Kết thúc KH (*)']);
+                                            {importRows.map((row, idx) => {
+                                                const err = importErrors[idx];
+                                                const plannedStart = parseExcelDate(row['Bắt đầu KH (*)']);
+                                                const plannedEnd = parseExcelDate(row['Kết thúc KH (*)']);
                                                 const wbsPreview = row['Mã WBS'] ? String(row['Mã WBS']) : '-';
                                                 const taskPreview = row['Công việc (*)'] ? String(row['Công việc (*)']) : '-';
                                                 const progressPreview = parseProgress(row['Tiến độ (%)']);
-	                                                return (
+                                                return (
                                                     <tr key={idx} className={`hover:bg-slate-50 transition-colors ${err ? 'bg-red-50/50 dark:bg-red-900/10' : ''}`}>
                                                         <td className="px-3 py-2 text-center text-slate-400">{idx + 1}</td>
-	                                                        <td className="px-3 py-2 font-mono text-slate-600">{wbsPreview}</td>
-	                                                        <td className="px-3 py-2 font-semibold text-slate-700">{taskPreview}</td>
+                                                        <td className="px-3 py-2 font-mono text-slate-600">{wbsPreview}</td>
+                                                        <td className="px-3 py-2 font-semibold text-slate-700">{taskPreview}</td>
                                                         <td className="px-3 py-2 text-slate-600">{plannedStart ? fmtDate(plannedStart) : '-'}</td>
                                                         <td className="px-3 py-2 text-slate-600">{plannedEnd ? fmtDate(plannedEnd) : '-'}</td>
                                                         <td className="px-3 py-2 text-slate-600">{formatQuantity(parseNonNegativeNumber(row['Khối lượng tạm tính']))}</td>
                                                         <td className="px-3 py-2">
-	                                                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-bold">{progressPreview}%</span>
+                                                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-bold">{progressPreview}%</span>
                                                         </td>
                                                         <td className="px-3 py-2">
                                                             {err ? (
