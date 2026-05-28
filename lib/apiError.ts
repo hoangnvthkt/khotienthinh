@@ -53,6 +53,9 @@ export const getApiErrorMessage = (
   if (rawMessage.includes('foreign key') || rawMessage.includes('23503') || rawMessage.includes('referenced from table')) {
     return 'Dữ liệu đang được sử dụng ở nơi khác nên chưa thể xoá.';
   }
+  if (rawMessage.includes('insufficient stock') || rawMessage.includes('không đủ tồn') || rawMessage.includes('tồn khả dụng')) {
+    return originalMessage || 'Không đủ tồn kho khả dụng để thực hiện thao tác.';
+  }
 
   if (
     originalMessage &&

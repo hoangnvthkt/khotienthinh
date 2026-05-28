@@ -31,6 +31,7 @@ import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { projectSubmissionService } from '../lib/projectSubmissionService';
 import { materialRequestFulfillmentService, getCommittedQty, getRequestLineId } from '../lib/materialRequestFulfillmentService';
 import { buildFulfillmentBatchReceiveUrl } from '../lib/fulfillmentBatchQr';
+import { formatReservationSourceList } from '../lib/inventoryStockGuard';
 
 interface RequestModalProps {
     isOpen: boolean;
@@ -715,13 +716,17 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 return;
             }
             const stockShortages = stockLines
-                .map(line => ({ ...line, onHand: getOnHandStock(line.itemId, sourceWarehouseId) }))
-                .filter(line => Number(line.qty) > line.onHand);
+                .map(line => ({ ...line, summary: getStockSummary(line.itemId, sourceWarehouseId, { excludeRequestId: request.id }) }))
+                .filter(line => Number(line.qty) > line.summary.available);
             if (stockShortages.length > 0) {
                 const shortage = stockShortages[0];
                 const item = getLineInventory(shortage.itemId);
                 const whName = warehouses.find(w => w.id === sourceWarehouseId)?.name || sourceWarehouseId;
-                toast.error('Không đủ tồn thực tế', `Kho nguồn "${whName}" không đủ tồn cho dòng "${item?.name || shortage.itemId}". Tồn ${shortage.onHand}, cần ${shortage.qty}.`);
+                const reason = Number(shortage.qty) > shortage.summary.onHand
+                    ? `tồn thực ${shortage.summary.onHand}`
+                    : `tồn thực ${shortage.summary.onHand}, đang giữ ${shortage.summary.reserved}, khả dụng ${shortage.summary.available}`;
+                const blockers = formatReservationSourceList(shortage.summary.entries);
+                toast.error('Không đủ tồn khả dụng', `Kho nguồn "${whName}" không đủ tồn cho dòng "${item?.name || shortage.itemId}". Cần ${shortage.qty}; ${reason}.${blockers ? ` Vị trí giữ chỗ: ${blockers}.` : ''} Vui lòng xử lý phiếu đang giữ chỗ hoặc giảm số lượng xuất.`);
                 return;
             }
         }
@@ -850,14 +855,17 @@ const RequestModal: React.FC<RequestModalProps> = ({
             toast.warning('Thiếu số lượng cấp', 'Vui lòng nhập ít nhất một dòng có số lượng cấp lớn hơn 0.');
             return;
         }
-        const shortage = validLines.find(line => {
-            const onHand = getOnHandStock(line.itemId, effectiveSource);
-            return line.issuedQty > onHand && !isAdmin(user);
-        });
+        const shortage = validLines
+            .map(line => ({ ...line, summary: getStockSummary(line.itemId, effectiveSource) }))
+            .find(line => line.issuedQty > line.summary.available);
         if (shortage) {
             const item = getLineInventory(shortage.itemId);
-            const onHand = getOnHandStock(shortage.itemId, effectiveSource);
-            toast.error('Không đủ tồn thực tế', `${item?.name || shortage.itemId}: tồn ${onHand}, cần cấp ${shortage.issuedQty}.`);
+            const whName = warehouses.find(w => w.id === effectiveSource)?.name || effectiveSource;
+            const reason = shortage.issuedQty > shortage.summary.onHand
+                ? `tồn thực ${shortage.summary.onHand}`
+                : `tồn thực ${shortage.summary.onHand}, đang giữ ${shortage.summary.reserved}, khả dụng ${shortage.summary.available}`;
+            const blockers = formatReservationSourceList(shortage.summary.entries);
+            toast.error('Không đủ tồn khả dụng', `Kho "${whName}" - ${item?.name || shortage.itemId}: cần cấp ${shortage.issuedQty}; ${reason}.${blockers ? ` Vị trí giữ chỗ: ${blockers}.` : ''} Vui lòng xử lý phiếu pending/giữ chỗ trước.`);
             return;
         }
 
@@ -977,15 +985,17 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 toast.warning('Không thể hoàn trả', 'Đợt cấp đã nhận thiếu kho nguồn hoặc kho nhận để tạo phiếu hoàn kho.');
                 return;
             }
-            const shortage = batch.lines.find(line => {
-                const item = items.find(inv => inv.id === line.itemId);
-                const onHand = Number(item?.stockByWarehouse?.[batch.targetWarehouseId!] || 0);
-                return onHand < Number(line.receivedQty || 0);
-            });
+            const shortage = batch.lines
+                .map(line => ({ ...line, summary: getStockSummary(line.itemId, batch.targetWarehouseId!) }))
+                .find(line => Number(line.receivedQty || 0) > line.summary.available);
             if (shortage) {
                 const item = items.find(inv => inv.id === shortage.itemId);
-                const onHand = Number(item?.stockByWarehouse?.[batch.targetWarehouseId!] || 0);
-                toast.error('Không đủ tồn để hoàn trả', `${item?.name || shortage.itemId}: tồn kho nhận còn ${onHand.toLocaleString('vi-VN')}, cần hoàn ${Number(shortage.receivedQty || 0).toLocaleString('vi-VN')}.`);
+                const needQty = Number(shortage.receivedQty || 0);
+                const reason = needQty > shortage.summary.onHand
+                    ? `tồn thực còn ${shortage.summary.onHand.toLocaleString('vi-VN')}`
+                    : `tồn thực ${shortage.summary.onHand.toLocaleString('vi-VN')}, đang giữ ${shortage.summary.reserved.toLocaleString('vi-VN')}, khả dụng ${shortage.summary.available.toLocaleString('vi-VN')}`;
+                const blockers = formatReservationSourceList(shortage.summary.entries);
+                toast.error('Không đủ tồn để hoàn trả', `${item?.name || shortage.itemId}: cần hoàn ${needQty.toLocaleString('vi-VN')}; ${reason}.${blockers ? ` Vị trí giữ chỗ: ${blockers}.` : ''} Vui lòng xử lý phiếu pending/giữ chỗ tại kho nhận trước.`);
                 return;
             }
 

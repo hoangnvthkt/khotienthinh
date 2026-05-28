@@ -12,7 +12,7 @@ import {
   Trash2,
   XCircle,
 } from 'lucide-react';
-import { ContractItemType, ProjectSubmissionTarget, QuantityAcceptance } from '../../types';
+import { ContractItemType, ProjectSubmissionTarget, QuantityAcceptance, QuantityAcceptanceScope } from '../../types';
 import { quantityAcceptanceService, QuantityAcceptanceUnmappedVolume } from '../../lib/quantityAcceptanceService';
 import { paymentCertificateService } from '../../lib/paymentCertificateService';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
@@ -59,10 +59,13 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [unmapped, setUnmapped] = useState<QuantityAcceptanceUnmappedVolume[]>([]);
   const [submittingAcceptance, setSubmittingAcceptance] = useState<QuantityAcceptance | null>(null);
+  const [acceptanceScope, setAcceptanceScope] = useState<QuantityAcceptanceScope>('internal');
+
+  const isInternalScope = acceptanceScope === 'internal';
 
   const load = useCallback(async () => {
-    setItems(await quantityAcceptanceService.listByContract(contractId, contractType));
-  }, [contractId, contractType]);
+    setItems(await quantityAcceptanceService.listByContract(contractId, contractType, acceptanceScope));
+  }, [acceptanceScope, contractId, contractType]);
 
   const loadUnmapped = useCallback(async () => {
     setUnmapped(await quantityAcceptanceService.listUnmappedVerifiedVolumes({
@@ -71,8 +74,9 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
       constructionSiteId,
       periodStart,
       periodEnd,
+      scope: acceptanceScope,
     }));
-  }, [contractId, contractType, constructionSiteId, periodStart, periodEnd]);
+  }, [acceptanceScope, contractId, contractType, constructionSiteId, periodStart, periodEnd]);
 
   useEffect(() => { load().catch(console.error); }, [load]);
   useEffect(() => { loadUnmapped().catch(console.error); }, [loadUnmapped]);
@@ -95,10 +99,14 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
         constructionSiteId,
         periodStart,
         periodEnd,
+        scope: acceptanceScope,
       });
       await load();
       await loadUnmapped();
-      toast.success('Đã tạo nghiệm thu nháp', `${acceptance.items.length} hạng mục từ nhật ký đã xác nhận`);
+      toast.success(
+        'Đã tạo nghiệm thu nháp',
+        `${acceptance.items.length} hạng mục ${isInternalScope ? 'nội bộ' : 'hợp đồng'} từ nhật ký đã xác nhận`,
+      );
     } catch (e: any) {
       await loadUnmapped().catch(console.error);
       toast.error('Không tạo được nghiệm thu', e?.message);
@@ -123,8 +131,12 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
       cancelled: 'Huỷ nghiệm thu',
     };
     const warningTexts: Record<string, string | undefined> = {
-      approved: 'Duyệt nghiệm thu sẽ khóa các hạng mục BOQ liên quan và cập nhật KL hoàn thành.',
-      cancelled: 'Huỷ sẽ mở khoá hạng mục BOQ và hoàn trả KL hoàn thành về trạng thái trước.',
+      approved: item.acceptanceScope === 'internal'
+        ? 'Duyệt nghiệm thu nội bộ chỉ ghi nhận khối lượng theo tiến độ/BOQ thi công, chưa khóa BOQ hợp đồng và chưa dùng để thanh toán.'
+        : 'Duyệt nghiệm thu sẽ khóa các hạng mục BOQ liên quan và cập nhật KL hoàn thành.',
+      cancelled: item.acceptanceScope === 'internal'
+        ? 'Huỷ sẽ rollback trạng thái phiếu nghiệm thu nội bộ, không ảnh hưởng BOQ hợp đồng.'
+        : 'Huỷ sẽ mở khoá hạng mục BOQ và hoàn trả KL hoàn thành về trạng thái trước.',
     };
     const reason = status === 'returned' || status === 'cancelled'
       ? await reasonConfirm({
@@ -132,7 +144,7 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
         targetName: `Nghiệm thu Đợt ${item.periodNumber}`,
         warningText: status === 'returned'
           ? 'Lý do trả lại sẽ được lưu để người lập chỉnh đúng nội dung.'
-          : 'Huỷ sẽ mở khoá hạng mục BOQ và hoàn trả KL hoàn thành về trạng thái trước.',
+          : warningTexts.cancelled,
         reasonPlaceholder: status === 'returned'
           ? 'Nhập lý do trả lại nghiệm thu...'
           : 'Nhập lý do huỷ/rollback nghiệm thu...',
@@ -358,6 +370,10 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
   };
 
   const createPayment = async (acceptance: QuantityAcceptance) => {
+    if (acceptance.acceptanceScope === 'internal') {
+      toast.warning('Chưa thể tạo thanh toán', 'Nghiệm thu nội bộ không dùng để lập chứng từ thanh toán. Hãy tạo nghiệm thu hợp đồng khi cần thanh toán thật.');
+      return;
+    }
     if (acceptance.status !== 'approved') {
       toast.warning('Chưa thể tạo thanh toán', 'Nghiệm thu cần được duyệt trước.');
       return;
@@ -388,13 +404,34 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
       <div className="rounded-xl border border-slate-100 bg-white overflow-hidden">
         <div className="p-3 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
           <h4 className="text-xs font-black text-slate-700 flex items-center gap-1.5">
-            <ClipboardCheck size={13} className="text-emerald-500" /> Nghiệm thu khối lượng
+            <ClipboardCheck size={13} className="text-emerald-500" /> {isInternalScope ? 'Nghiệm thu nội bộ' : 'Nghiệm thu khối lượng hợp đồng'}
           </h4>
           <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+              {([
+                ['internal', 'Nội bộ'],
+                ['contract', 'Hợp đồng'],
+              ] as [QuantityAcceptanceScope, string][]).map(([scope, label]) => (
+                <button
+                  key={scope}
+                  onClick={() => {
+                    setAcceptanceScope(scope);
+                    setExpandedId(null);
+                  }}
+                  className={`rounded-md px-2 py-1 text-[10px] font-black transition ${
+                    acceptanceScope === scope
+                      ? 'bg-white text-emerald-700 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} className="px-2 py-1.5 rounded-lg border border-slate-200 text-[10px]" />
             <input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} className="px-2 py-1.5 rounded-lg border border-slate-200 text-[10px]" />
             <button onClick={createDraft} disabled={creating} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 disabled:opacity-50">
-              <Plus size={10} /> Tạo từ nhật ký verified
+              <Plus size={10} /> {isInternalScope ? 'Tạo nghiệm thu nội bộ' : 'Tạo từ nhật ký verified'}
             </button>
           </div>
         </div>
@@ -404,8 +441,14 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
             <div className="flex items-start gap-2">
               <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-500" />
               <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-black text-amber-700">Có {unmapped.length} dòng khối lượng verified chưa liên kết BOQ hợp đồng</div>
-                <div className="mt-0.5 text-[10px] font-medium text-amber-700">Các dòng này chưa được đưa vào nghiệm thu vì task/BOQ thi công chưa gắn dòng BOQ hợp đồng trong tiến độ.</div>
+                <div className="text-[11px] font-black text-amber-700">
+                  Có {unmapped.length} dòng khối lượng verified chưa đủ liên kết {isInternalScope ? 'tiến độ nội bộ' : 'BOQ hợp đồng'}
+                </div>
+                <div className="mt-0.5 text-[10px] font-medium text-amber-700">
+                  {isInternalScope
+                    ? 'Các dòng này chưa được đưa vào nghiệm thu nội bộ vì nhật ký chưa chọn task/BOQ thi công trong tiến độ.'
+                    : 'Các dòng này chưa được đưa vào nghiệm thu vì task/BOQ thi công chưa gắn dòng BOQ hợp đồng trong tiến độ.'}
+                </div>
                 <div className="mt-2 divide-y divide-amber-100 rounded-lg bg-white/60">
                   {unmapped.slice(0, 5).map((row, idx) => (
                     <div key={`${row.dailyLogId}-${idx}`} className="flex items-center justify-between gap-3 px-2 py-1.5 text-[10px]">
@@ -451,11 +494,11 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
                   <table className="w-full min-w-[860px] text-[10px]">
                     <thead className="bg-slate-100 text-[9px] font-black uppercase text-slate-400">
                       <tr>
-                        <th className="px-2 py-2 text-left">BOQ hợp đồng</th>
+                        <th className="px-2 py-2 text-left">{item.acceptanceScope === 'internal' ? 'Hạng mục nội bộ' : 'BOQ hợp đồng'}</th>
                         <th className="px-2 py-2 text-right">KL quy đổi</th>
                         <th className="px-2 py-2 text-right">GT gợi ý</th>
                         <th className="px-2 py-2 text-right">% nghiệm thu</th>
-                        <th className="px-2 py-2 text-right">GT nghiệm thu</th>
+                        <th className="px-2 py-2 text-right">{item.acceptanceScope === 'internal' ? 'GT nội bộ' : 'GT nghiệm thu'}</th>
                         <th className="px-2 py-2 text-left">Ghi chú</th>
                       </tr>
                     </thead>
@@ -468,7 +511,7 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
                         return (
                           <tr key={idx}>
                             <td className="px-2 py-1.5 font-bold text-slate-600">
-                              {line.contractItemCode} - {line.contractItemName}
+                              {line.contractItemCode ? `${line.contractItemCode} - ` : ''}{line.contractItemName || line.workBoqItemName || line.taskName || 'Hạng mục nội bộ'}
                             </td>
                             <td className="px-2 py-1.5 text-right font-bold text-slate-500">
                               {fmt(line.proposedQuantity)} {line.unit || ''}
@@ -525,7 +568,9 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
               )}
               {expandedId === item.id && item.items.length === 0 && (
                 <div className="mt-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-[10px] font-bold text-amber-700">
-                  Phiếu này chưa có hạng mục. Cần tạo lại sau khi nhật ký verified có liên kết task/BOQ hợp đồng.
+                  {item.acceptanceScope === 'internal'
+                    ? 'Phiếu này chưa có hạng mục. Cần tạo lại sau khi nhật ký verified có liên kết task/BOQ thi công.'
+                    : 'Phiếu này chưa có hạng mục. Cần tạo lại sau khi nhật ký verified có liên kết task/BOQ hợp đồng.'}
                 </div>
               )}
               {expandedId === item.id && (
@@ -557,9 +602,11 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
                   )}
                   {item.status === 'approved' && (
                     <>
-                      <button onClick={() => createPayment(item)} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-indigo-700">
-                        <CreditCard size={11} /> Tạo thanh toán
-                      </button>
+                      {item.acceptanceScope !== 'internal' && (
+                        <button onClick={() => createPayment(item)} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-indigo-700">
+                          <CreditCard size={11} /> Tạo thanh toán
+                        </button>
+                      )}
                       <button onClick={() => handleSetStatus(item, 'cancelled')} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[10px] font-bold text-red-600 hover:bg-red-100">
                         <XCircle size={11} /> Huỷ/Rollback
                       </button>
@@ -569,25 +616,29 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
               )}
             </div>
           ))}
-          {items.length === 0 && <div className="p-6 text-center text-xs font-bold text-slate-400">Chưa có nghiệm thu</div>}
+          {items.length === 0 && (
+            <div className="p-6 text-center text-xs font-bold text-slate-400">
+              {isInternalScope ? 'Chưa có nghiệm thu nội bộ' : 'Chưa có nghiệm thu hợp đồng'}
+            </div>
+          )}
         </div>
       </div>
       {submittingAcceptance && (
         <ProjectSubmissionDialog
-          title="Gửi nghiệm thu khối lượng"
+          title={submittingAcceptance.acceptanceScope === 'internal' ? 'Gửi nghiệm thu nội bộ' : 'Gửi nghiệm thu khối lượng'}
           actionLabel="Gửi duyệt"
           documentLabel="Nghiệm thu"
-          documentName={`Đợt ${submittingAcceptance.periodNumber} • ${submittingAcceptance.description || 'Nghiệm thu khối lượng'}`}
+          documentName={`Đợt ${submittingAcceptance.periodNumber} • ${submittingAcceptance.description || (submittingAcceptance.acceptanceScope === 'internal' ? 'Nghiệm thu nội bộ' : 'Nghiệm thu khối lượng')}`}
           documentSubtitle={`Trạng thái hiện tại: ${submittingAcceptance.status}`}
           projectId={projectId}
           constructionSiteId={constructionSiteId}
           recipientPermissionCodes={['approve']}
           recipientHint="Chọn đích danh người có quyền phê duyệt nghiệm thu."
           details={[
-            { label: 'Giá trị nghiệm thu', value: `${fmt(submittingAcceptance.totalAcceptedAmount)} đ` },
+            { label: submittingAcceptance.acceptanceScope === 'internal' ? 'Giá trị nội bộ' : 'Giá trị nghiệm thu', value: `${fmt(submittingAcceptance.totalAcceptedAmount)} đ` },
             { label: 'Số dòng', value: `${submittingAcceptance.items.length} hạng mục` },
             { label: 'Kỳ', value: `${new Date(submittingAcceptance.periodStart).toLocaleDateString('vi-VN')} - ${new Date(submittingAcceptance.periodEnd).toLocaleDateString('vi-VN')}` },
-            { label: 'Hợp đồng', value: submittingAcceptance.contractType === 'customer' ? 'Khách hàng' : 'Thầu phụ' },
+            { label: 'Loại nghiệm thu', value: submittingAcceptance.acceptanceScope === 'internal' ? 'Nội bộ theo tiến độ' : (submittingAcceptance.contractType === 'customer' ? 'Hợp đồng khách hàng' : 'Hợp đồng thầu phụ') },
           ]}
           onCancel={() => setSubmittingAcceptance(null)}
           onConfirm={target => handleSetStatus(submittingAcceptance, 'submitted', target)}

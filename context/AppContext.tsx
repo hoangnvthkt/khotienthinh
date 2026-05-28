@@ -22,6 +22,11 @@ import { realtimeService, RealtimeStatus } from '../lib/realtimeService';
 import { notificationService } from '../lib/notificationService';
 import { logApiError } from '../lib/apiError';
 import { projectSubmissionService } from '../lib/projectSubmissionService';
+import {
+  formatStockDecreaseIssues,
+  getStockDecreaseIssues,
+  getStockDecreaseLinesForTransaction,
+} from '../lib/inventoryStockGuard';
 
 interface AppSettings {
   name: string;
@@ -1277,7 +1282,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (oldItem) auditService.log({ tableName: 'items', recordId: id, action: 'DELETE', oldData: oldItem as any, userId: user.id, userName: user.name || user.username });
   };
 
-  const applyStockChange = async (tx: Transaction) => {
+  const assertTransactionStockAvailable = (
+    tx: Transaction,
+    options: { excludeRequestId?: string; excludeTransactionId?: string; actionLabel?: string } = {},
+  ) => {
+    const decreaseLines = getStockDecreaseLinesForTransaction(tx);
+    if (decreaseLines.length === 0) return;
+    const issues = getStockDecreaseIssues({
+      items,
+      warehouses,
+      transactions,
+      requests,
+      lines: decreaseLines,
+      options: {
+        excludeRequestId: options.excludeRequestId || tx.relatedRequestId,
+        excludeTransactionId: options.excludeTransactionId,
+      },
+    });
+    if (issues.length > 0) {
+      throw new Error(formatStockDecreaseIssues(issues, options.actionLabel || 'xuất/trả kho'));
+    }
+  };
+
+  const refreshInventoryItemsFromSupabase = async () => {
+    if (!isSupabaseConfigured) return;
+    const { data: itemsData, error: itemsError } = await supabase.from('items').select('*');
+    if (itemsError) {
+      logApiError('refreshInventoryItemsFromSupabase', itemsError);
+      return;
+    }
+    if (itemsData) setItems(itemsData.map(mapInventoryItemFromDb));
+  };
+
+  const applyStockChange = async (
+    tx: Transaction,
+    options: { excludeRequestId?: string; excludeTransactionId?: string; actionLabel?: string } = {},
+  ) => {
+    assertTransactionStockAvailable(tx, {
+      actionLabel: options.actionLabel || 'xuất/trả kho',
+      excludeRequestId: options.excludeRequestId,
+      excludeTransactionId: options.excludeTransactionId,
+    });
     const changedItems: InventoryItem[] = [];
     const baseItems = tx.pendingItems?.length
       ? [
@@ -1296,12 +1341,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (tx.type === TransactionType.IMPORT && tx.targetWarehouseId) {
         newStock[tx.targetWarehouseId] = (newStock[tx.targetWarehouseId] || 0) + qty;
       } else if ((tx.type === TransactionType.EXPORT || tx.type === TransactionType.LIQUIDATION) && tx.sourceWarehouseId) {
-        newStock[tx.sourceWarehouseId] = Math.max(0, (newStock[tx.sourceWarehouseId] || 0) - qty);
+        const current = newStock[tx.sourceWarehouseId] || 0;
+        if (current - qty < 0) throw new Error(`Kho nguồn không đủ tồn cho "${item.name}". Tồn ${current}, cần ${qty}.`);
+        newStock[tx.sourceWarehouseId] = current - qty;
       } else if (tx.type === TransactionType.TRANSFER && tx.sourceWarehouseId && tx.targetWarehouseId) {
-        newStock[tx.sourceWarehouseId] = Math.max(0, (newStock[tx.sourceWarehouseId] || 0) - qty);
+        const current = newStock[tx.sourceWarehouseId] || 0;
+        if (current - qty < 0) throw new Error(`Kho nguồn không đủ tồn cho "${item.name}". Tồn ${current}, cần ${qty}.`);
+        newStock[tx.sourceWarehouseId] = current - qty;
         newStock[tx.targetWarehouseId] = (newStock[tx.targetWarehouseId] || 0) + qty;
       } else if (tx.type === TransactionType.ADJUSTMENT && tx.targetWarehouseId) {
-        newStock[tx.targetWarehouseId] = (newStock[tx.targetWarehouseId] || 0) + qty;
+        const current = newStock[tx.targetWarehouseId] || 0;
+        if (current + qty < 0) throw new Error(`Điều chỉnh làm âm kho cho "${item.name}". Tồn ${current}, điều chỉnh ${qty}.`);
+        newStock[tx.targetWarehouseId] = current + qty;
       }
 
       const updatedItem = { ...item, stockByWarehouse: newStock };
@@ -1318,14 +1369,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addTransaction = async (tx: Transaction) => {
+    const isImmediateCompleted = tx.status === TransactionStatus.COMPLETED;
+    if (isImmediateCompleted) {
+      assertTransactionStockAvailable(tx, { actionLabel: 'xuất/trả kho' });
+    }
+
     if (isSupabaseConfigured) {
-      const synced = await syncToSupabase('transactions', tx);
+      const shouldProcessCompletedViaRpc = isImmediateCompleted && tx.type !== TransactionType.ADJUSTMENT;
+      const initialTx = shouldProcessCompletedViaRpc ? { ...tx, status: TransactionStatus.PENDING } : tx;
+      const synced = await syncToSupabase('transactions', initialTx);
       if (!synced) {
         throw new Error('Không thể lưu phiếu kho lên Supabase.');
       }
+
+      let storedTx = initialTx;
+      if (shouldProcessCompletedViaRpc) {
+        const { data, error } = await supabase.rpc('process_transaction_status', {
+          p_transaction_id: tx.id,
+          p_status: TransactionStatus.COMPLETED,
+          p_approver_id: tx.approverId || user.id,
+        });
+        if (error) {
+          await supabase.from('transactions').delete().eq('id', tx.id).eq('status', TransactionStatus.PENDING);
+          logApiError('addTransaction.process_transaction_status', error);
+          throw error;
+        }
+        storedTx = data ? mapTransactionFromDb(data) : tx;
+        await refreshInventoryItemsFromSupabase();
+      } else if (isImmediateCompleted) {
+        await applyStockChange(tx);
+      }
+
+      setTransactions(prev => [storedTx, ...prev.filter(existing => existing.id !== storedTx.id)]);
+      const whId = tx.targetWarehouseId || tx.sourceWarehouseId;
+      logActivity('TRANSACTION', `Tạo phiếu ${tx.type}`, `Phiếu mã ${tx.id.slice(-6)} đã được tạo`, 'INFO', whId);
+      return;
     }
 
-    setTransactions(prev => [tx, ...prev]);
     const whId = tx.targetWarehouseId || tx.sourceWarehouseId;
 
     if (tx.status === TransactionStatus.COMPLETED || tx.status === TransactionStatus.APPROVED) {
@@ -1336,12 +1416,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     logActivity('TRANSACTION', `Tạo phiếu ${tx.type}`, `Phiếu mã ${tx.id.slice(-6)} đã được tạo`, 'INFO', whId);
     if (tx.status === TransactionStatus.COMPLETED) await applyStockChange(tx);
+    setTransactions(prev => [tx, ...prev]);
     if (!isSupabaseConfigured) syncToSupabase('transactions', tx);
   };
 
   const updateTransactionStatus = async (id: string, status: TransactionStatus, approverId?: string) => {
+    const tx = transactions.find(t => t.id === id);
+    if (!tx) throw new Error('Không tìm thấy phiếu kho cần cập nhật.');
+
+    if (status === TransactionStatus.APPROVED || status === TransactionStatus.COMPLETED) {
+      assertTransactionStockAvailable(tx, {
+        excludeTransactionId: id,
+        actionLabel: status === TransactionStatus.APPROVED ? 'giữ chỗ' : 'xuất/trả kho',
+      });
+    }
+
     if (isSupabaseConfigured) {
-      const tx = transactions.find(t => t.id === id);
       const { data, error } = await supabase.rpc('process_transaction_status', {
         p_transaction_id: id,
         p_status: status,
@@ -1354,9 +1444,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (data) setTransactions(prev => prev.map(t => t.id === id ? mapTransactionFromDb(data) : t));
 
-      const { data: itemsData, error: itemsError } = await supabase.from('items').select('*');
-      if (itemsError) logApiError('updateTransactionStatus.refreshItems', itemsError);
-      else if (itemsData) setItems(itemsData.map(mapInventoryItemFromDb));
+      await refreshInventoryItemsFromSupabase();
 
       const whId = tx?.targetWarehouseId || tx?.sourceWarehouseId;
       logActivity('TRANSACTION', `Cập nhật phiếu`, `Phiếu mã ${id.slice(-6)} chuyển sang ${status}`, status === TransactionStatus.COMPLETED ? 'SUCCESS' : 'INFO', whId);
@@ -1375,7 +1463,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         logActivity('TRANSACTION', `Cập nhật phiếu`, `Phiếu mã ${tx.id.slice(-6)} chuyển sang ${status}`, status === TransactionStatus.COMPLETED ? 'SUCCESS' : 'INFO', whId);
-        if (status === TransactionStatus.COMPLETED) void applyStockChange(updatedTx);
+        if (status === TransactionStatus.COMPLETED) void applyStockChange(updatedTx, { excludeTransactionId: id });
         syncToSupabase('transactions', updatedTx);
         return updatedTx;
       }
@@ -1394,12 +1482,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let selectedPendingItems: InventoryItem[] = [];
     if (tx.pendingItems && tx.pendingItems.length > 0) {
       selectedPendingItems = tx.pendingItems.filter(ni => selectedItemIds.includes(ni.id));
-      if (selectedPendingItems.length > 0) {
-        addItems(selectedPendingItems);
-      }
     }
 
-    const updatedTx = {
+    const updatedTx: Transaction = {
       ...tx,
       items: filteredItems,
       status: nextStatus,
@@ -1407,19 +1492,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       note: selectedItemIds.length < tx.items.length
         ? `${tx.note} (Đã lọc bớt ${tx.items.length - selectedItemIds.length} món)`
         : tx.note,
-      pendingItems: []
+      pendingItems: selectedPendingItems
     };
 
-    const synced = await syncToSupabase('transactions', updatedTx);
-    if (!synced) {
-      throw new Error('Không thể cập nhật phiếu kho trên Supabase.');
+    assertTransactionStockAvailable(updatedTx, {
+      excludeTransactionId: id,
+      actionLabel: nextStatus === TransactionStatus.APPROVED ? 'giữ chỗ' : 'xuất/trả kho',
+    });
+
+    if (isSupabaseConfigured) {
+      const synced = await syncToSupabase('transactions', { ...updatedTx, status: TransactionStatus.PENDING });
+      if (!synced) {
+        throw new Error('Không thể cập nhật phiếu kho trên Supabase.');
+      }
+
+      const { data, error } = await supabase.rpc('process_transaction_status', {
+        p_transaction_id: id,
+        p_status: nextStatus,
+        p_approver_id: approverId,
+      });
+      if (error) {
+        logApiError('approvePartialTransaction.process_transaction_status', error);
+        throw error;
+      }
+
+      const storedTx = data ? mapTransactionFromDb(data) : updatedTx;
+      setTransactions(prev => prev.map(item => item.id === id ? storedTx : item));
+      await refreshInventoryItemsFromSupabase();
+    } else {
+      if (selectedPendingItems.length > 0) {
+        addItems(selectedPendingItems);
+      }
+      if (nextStatus === TransactionStatus.COMPLETED) {
+        await applyStockChange(updatedTx, { excludeTransactionId: id });
+      }
+      setTransactions(prev => prev.map(item => item.id === id ? { ...updatedTx, pendingItems: [] } : item));
     }
 
-    setTransactions(prev => prev.map(item => item.id === id ? updatedTx : item));
     const whId = tx.targetWarehouseId || tx.sourceWarehouseId;
     logActivity('TRANSACTION', `Phê duyệt phiếu`, `Phiếu mã ${tx.id.slice(-6)} đã được phê duyệt một phần (${selectedItemIds.length}/${tx.items.length} món)`, 'SUCCESS', whId);
-
-    if (nextStatus === TransactionStatus.COMPLETED) await applyStockChange({ ...updatedTx, pendingItems: selectedPendingItems });
   };
 
   const clearTransactionHistory = async () => {
@@ -1726,17 +1837,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (!isFulfillmentSync && (status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && effectiveSourceWhId) {
-      const shortage = stockFulfillmentLines.find(line => {
-        const item = items.find(i => i.id === line.itemId);
-        const onHand = item?.stockByWarehouse[effectiveSourceWhId] || 0;
-        return (line.approvedQty || 0) > onHand;
+      const stockIssues = getStockDecreaseIssues({
+        items,
+        warehouses,
+        transactions,
+        requests,
+        defaultWarehouseId: effectiveSourceWhId,
+        options: { excludeRequestId: req.id },
+        lines: stockFulfillmentLines.map(line => ({
+          itemId: line.itemId,
+          quantity: Number(line.approvedQty || 0),
+          lineName: line.itemNameSnapshot || line.materialBudgetItemName || line.itemId,
+        })),
       });
-      if (shortage) {
-        const item = items.find(i => i.id === shortage.itemId);
-        const onHand = item?.stockByWarehouse[effectiveSourceWhId] || 0;
-        const whName = warehouses.find(w => w.id === effectiveSourceWhId)?.name || effectiveSourceWhId;
-        const lineName = item?.name || shortage.itemNameSnapshot || shortage.materialBudgetItemName || shortage.itemId;
-        throw new Error(`Kho nguồn "${whName}" không đủ tồn cho dòng "${lineName}". Tồn ${onHand}, cần ${shortage.approvedQty || 0}.`);
+      if (stockIssues.length > 0) {
+        throw new Error(formatStockDecreaseIssues(stockIssues, 'xuất kho'));
       }
     }
 

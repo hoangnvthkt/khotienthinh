@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useToast } from '../../context/ToastContext';
 import {
   Activity,
   AlertTriangle,
@@ -435,43 +436,87 @@ const ReconciliationTable = ({
 const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteId, projectId }) => {
   const [metrics, setMetrics] = useState<ProjectDashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    projectDashboardMetricsService.getMetrics({ projectId, constructionSiteId })
-      .then(result => {
-        if (!cancelled) setMetrics(result);
+    projectDashboardMetricsService.getSnapshot(projectId, constructionSiteId)
+      .then(snapshot => {
+        if (!cancelled) {
+          setMetrics(snapshot);
+          setLoading(false);
+        }
       })
       .catch(err => {
-        if (!cancelled) setError(err?.message || 'Không tải được dashboard');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setError(err?.message || 'Không tải được cấu hình dashboard');
+          setLoading(false);
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [constructionSiteId, projectId]);
 
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      toast.info('Đang đồng bộ...', 'Đang tổng hợp dữ liệu thực tế từ các phân hệ...');
+      const result = await projectDashboardMetricsService.getMetrics({ projectId, constructionSiteId });
+      await projectDashboardMetricsService.saveSnapshot(projectId, constructionSiteId, result);
+      setMetrics(result);
+      toast.success('Đồng bộ thành công', 'Dữ liệu dashboard điều hành đã được cập nhật mới nhất.');
+    } catch (err: any) {
+      toast.error('Lỗi đồng bộ', err?.message || 'Không thể tổng hợp số liệu dashboard.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-        <div className="flex items-center gap-2 text-xs font-black text-slate-500">
-          <RefreshCw size={14} className="animate-spin" />
-          Đang tổng hợp dashboard FastCons...
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8 text-center">
+        <div className="flex flex-col items-center justify-center gap-3">
+          <RefreshCw size={28} className="animate-spin text-slate-400" />
+          <div className="text-xs font-black text-slate-500">Đang tải dashboard điều hành...</div>
         </div>
       </div>
     );
   }
 
-  if (error || !metrics) {
+  if (error) {
     return (
-      <div className="bg-red-50 rounded-2xl border border-red-200 p-5 text-sm font-bold text-red-700 flex items-center gap-2">
+      <div className="bg-red-50 rounded-2xl border border-red-200 p-5 text-sm font-bold text-red-700 flex items-center gap-2 justify-center">
         <AlertTriangle size={16} />
-        {error || 'Không có dữ liệu dashboard'}
+        {error}
+      </div>
+    );
+  }
+
+  if (!metrics) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 text-center max-w-md mx-auto space-y-6 my-8">
+        <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center mx-auto border border-slate-100 shadow-sm">
+          <Activity size={28} />
+        </div>
+        <div className="space-y-2">
+          <h3 className="text-sm font-black text-slate-800">Chưa có dữ liệu snapshot</h3>
+          <p className="text-xs text-slate-400 leading-relaxed font-semibold">
+            Dashboard điều hành dự án tổng hợp số liệu thực tế từ các phân hệ Gantt, BOQ, Nghiệm thu và PO. Nhấn nút dưới đây để bắt đầu tính toán và đồng bộ dữ liệu lần đầu.
+          </p>
+        </div>
+        <button
+          onClick={handleSync}
+          disabled={isSyncing}
+          className="px-6 py-3 bg-slate-900 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 active:scale-95 transition flex items-center justify-center gap-2 mx-auto disabled:opacity-50"
+        >
+          {isSyncing ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+          Đồng bộ & Cập nhật
+        </button>
       </div>
     );
   }
@@ -504,8 +549,19 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
               Tổng hợp từ Gantt, BOQ, nghiệm thu, thanh toán, tạm ứng, PO và dòng tiền hiện có.
             </p>
           </div>
-          <div className="text-[10px] font-bold text-slate-400">
-            Cập nhật {new Date(metrics.calculatedAt).toLocaleString('vi-VN')}
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="text-[10px] font-bold text-slate-400">
+              Lần tính: {new Date(metrics.calculatedAt).toLocaleString('vi-VN')}
+            </span>
+            <button
+              onClick={handleSync}
+              disabled={isSyncing}
+              className="px-3 py-1.5 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-slate-800 active:scale-95 transition flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+              title="Đồng bộ lại toàn bộ dữ liệu mới nhất"
+            >
+              {isSyncing ? <RefreshCw size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+              Cập nhật
+            </button>
           </div>
         </div>
         <div className="p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">

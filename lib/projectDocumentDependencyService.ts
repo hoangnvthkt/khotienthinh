@@ -132,14 +132,15 @@ export const projectDocumentDependencyService = {
     const deps = emptyDependencies();
     const childCount = tasks.filter(task => task.parentId === taskId).length;
     const dependentCount = tasks.filter(task => (task.dependencies || []).some(dep => dep.taskId === taskId)).length;
-    const [completionCount, volumeCount, delayCount, contractLinkCount] = await Promise.all([
+    const [completionCount, volumeCount, delayCount, contractLinkCount, internalAcceptanceCount] = await Promise.all([
       countRows('project_task_completion_requests', 'task_id', taskId),
       countRows('daily_log_volumes', 'task_id', taskId),
       countRows('project_delay_events', 'task_id', taskId),
       countRows('task_contract_items', 'task_id', taskId),
+      countRows('quantity_acceptance_items', 'task_id', taskId),
     ]);
 
-    deps.metadata = { childCount, dependentCount, completionCount, volumeCount, delayCount, contractLinkCount };
+    deps.metadata = { childCount, dependentCount, completionCount, volumeCount, delayCount, contractLinkCount, internalAcceptanceCount };
     if (childCount > 0) {
       pushBlocker(deps, `Không thể xoá hạng mục vì còn ${childCount} công việc con.`, 'Xoá hoặc chuyển công việc con sang hạng mục khác trước.');
     }
@@ -157,6 +158,9 @@ export const projectDocumentDependencyService = {
     }
     if (contractLinkCount > 0) {
       pushBlocker(deps, `Không thể xoá hạng mục vì đã map với ${contractLinkCount} dòng BOQ hợp đồng.`, 'Gỡ liên kết BOQ trước khi xoá task.');
+    }
+    if (internalAcceptanceCount > 0) {
+      pushBlocker(deps, `Không thể xoá hạng mục vì đã có ${internalAcceptanceCount} dòng nghiệm thu nội bộ liên kết.`, 'Huỷ/rollback nghiệm thu nội bộ trước khi xoá task.');
     }
     return deps;
   },

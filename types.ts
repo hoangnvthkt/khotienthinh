@@ -1024,12 +1024,18 @@ export interface AdvancePayment {
   createdAt: string;
 }
 
+export type QuantityAcceptanceScope = 'internal' | 'contract';
+
 export interface QuantityAcceptanceItem {
   id?: string;
   acceptanceId?: string;
-  contractItemId: string;
+  contractItemId?: string | null;
   contractItemCode?: string;
   contractItemName?: string;
+  taskId?: string | null;
+  taskName?: string | null;
+  workBoqItemId?: string | null;
+  workBoqItemName?: string | null;
   unit?: string;
   previousAcceptedQuantity: number;
   proposedQuantity: number;
@@ -1048,6 +1054,7 @@ export interface QuantityAcceptance extends ProjectSubmissionFields {
   id: string;
   contractId: string;
   contractType: ContractItemType;
+  acceptanceScope?: QuantityAcceptanceScope;
   constructionSiteId: string;
   periodNumber: number;
   periodStart: string;

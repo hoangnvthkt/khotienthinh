@@ -41,6 +41,8 @@ import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPre
 import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
 import { projectSubmissionService } from '../../lib/projectSubmissionService';
 import SupplierCombobox from '../../components/SupplierCombobox';
+import { useReservedStock } from '../../hooks/useReservedStock';
+import { formatReservationSourceList } from '../../lib/inventoryStockGuard';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -157,6 +159,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const toast = useToast();
     const confirm = useConfirm();
     const { items: inventoryItems, warehouses, requests: materialRequests, loadModuleData, user, addTransaction, updateRequestStatus } = useApp();
+    const { getStockSummary } = useReservedStock();
     const effectiveId = projectId || constructionSiteId || '';
     const [subTab] = useState<'vendor' | 'po'>('po');
 
@@ -786,15 +789,22 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     toast.warning('Không có số lượng hoàn', 'PO đã đóng nhưng chưa có số lượng đã nhận để hoàn hàng.');
                     return;
                 }
-                const invalidReturnLine = po.items.find(item => {
+                const invalidReturnLine = po.items.map(item => ({
+                    ...item,
+                    returnQty: Number(item.receivedQty || 0),
+                    summary: getStockSummary(item.itemId, po.targetWarehouseId!),
+                })).find(item => {
                     const qty = Number(item.receivedQty || 0);
                     if (qty <= 0) return false;
-                    const stockItem = inventoryItems.find(inv => inv.id === item.itemId);
-                    const stockQty = Number(stockItem?.stockByWarehouse?.[po.targetWarehouseId!] || 0);
-                    return !stockItem || stockQty < qty;
+                    return item.summary.available < qty;
                 });
                 if (invalidReturnLine) {
-                    toast.warning('Không đủ tồn để hoàn', `${invalidReturnLine.sku || invalidReturnLine.name} không đủ tồn tại kho nhận để xuất hoàn NCC.`);
+                    const needQty = Number(invalidReturnLine.returnQty || 0);
+                    const reason = needQty > invalidReturnLine.summary.onHand
+                        ? `tồn thực ${invalidReturnLine.summary.onHand.toLocaleString('vi-VN')}`
+                        : `tồn thực ${invalidReturnLine.summary.onHand.toLocaleString('vi-VN')}, đang giữ ${invalidReturnLine.summary.reserved.toLocaleString('vi-VN')}, khả dụng ${invalidReturnLine.summary.available.toLocaleString('vi-VN')}`;
+                    const blockers = formatReservationSourceList(invalidReturnLine.summary.entries);
+                    toast.warning('Không đủ tồn để hoàn', `${invalidReturnLine.sku || invalidReturnLine.name} tại kho nhận cần hoàn ${needQty.toLocaleString('vi-VN')}; ${reason}.${blockers ? ` Vị trí giữ chỗ: ${blockers}.` : ''} Vui lòng xử lý phiếu pending/giữ chỗ trước khi hoàn PO.`);
                     return;
                 }
             }
