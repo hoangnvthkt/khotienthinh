@@ -15,6 +15,7 @@ import CostAnalysisPanel from '../../components/project/CostAnalysisPanel';
 
 interface CashFlowTabProps {
     constructionSiteId: string;
+    projectId?: string;
     transactions: ProjectTransaction[];
     contractValue: number;
 }
@@ -40,9 +41,10 @@ const STATUS_BADGES: Record<PaymentScheduleStatus, { label: string; color: strin
     overdue: { label: 'Quá hạn', color: 'text-red-700', bg: 'bg-red-50 border-red-200' },
 };
 
-const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transactions, contractValue }) => {
+const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, projectId, transactions, contractValue }) => {
     const toast = useToast();
     const confirm = useConfirm();
+    const projectScopeId = projectId || constructionSiteId;
     const [range, setRange] = useState<'3m' | '6m' | '12m' | 'all'>('12m');
     const [showPaymentForm, setShowPaymentForm] = useState(false);
     const [editingPayment, setEditingPayment] = useState<PaymentSchedule | null>(null);
@@ -51,8 +53,8 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
     const [paymentSchedules, setPaymentSchedules] = useState<PaymentSchedule[]>([]);
 
     useEffect(() => {
-        paymentService.list(constructionSiteId).then(setPaymentSchedules).catch(console.error);
-    }, [constructionSiteId]);
+        paymentService.list(projectScopeId, constructionSiteId).then(setPaymentSchedules).catch(console.error);
+    }, [constructionSiteId, projectScopeId]);
 
     // Payment form state
     const [pDesc, setPDesc] = useState('');
@@ -93,7 +95,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
             type: pType, contactName: pContact,
         };
         await paymentService.upsert(item);
-        setPaymentSchedules(await paymentService.list(constructionSiteId));
+        setPaymentSchedules(await paymentService.list(projectScopeId, constructionSiteId));
         toast.success(editingPayment ? 'Cập nhật lịch TT' : 'Thêm đợt thanh toán thành công');
         resetPaymentForm();
     };
@@ -102,7 +104,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
         const p = paymentSchedules.find(x => x.id === id);
         if (!p) return;
         await paymentService.upsert({ ...p, status: 'paid', paidDate: new Date().toISOString().split('T')[0], paidAmount: p.amount });
-        setPaymentSchedules(await paymentService.list(constructionSiteId));
+        setPaymentSchedules(await paymentService.list(projectScopeId, constructionSiteId));
     };
 
     const deletePayment = async (id: string) => {
@@ -111,7 +113,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
         if (!ok) return;
         try {
             await paymentService.remove(id);
-            setPaymentSchedules(await paymentService.list(constructionSiteId));
+            setPaymentSchedules(await paymentService.list(projectScopeId, constructionSiteId));
             toast.success('Xoá thành công');
         } catch (e: any) {
             toast.error('Lỗi xoá', e?.message);
@@ -124,7 +126,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
         const overdueItems = paymentSchedules.filter(p => p.status === 'pending' && p.dueDate < now);
         if (overdueItems.length > 0) {
             Promise.all(overdueItems.map(p => paymentService.upsert({ ...p, status: 'overdue' as const })))
-                .then(() => paymentService.list(constructionSiteId))
+                .then(() => paymentService.list(projectScopeId, constructionSiteId))
                 .then(setPaymentSchedules)
                 .catch(console.error);
         }
@@ -453,7 +455,7 @@ const CashFlowTab: React.FC<CashFlowTabProps> = ({ constructionSiteId, transacti
                 <h3 className="text-sm font-black text-slate-700 dark:text-white mb-4 flex items-center gap-2">
                     📊 Phân tích chi phí dự án (FastCons)
                 </h3>
-	                <CostAnalysisPanel constructionSiteId={constructionSiteId} />
+	                <CostAnalysisPanel constructionSiteId={constructionSiteId} projectId={projectId} />
             </div>
         </div>
     );

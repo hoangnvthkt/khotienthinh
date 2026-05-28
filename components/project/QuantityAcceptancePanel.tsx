@@ -71,12 +71,13 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
     setUnmapped(await quantityAcceptanceService.listUnmappedVerifiedVolumes({
       contractId,
       contractType,
+      projectId,
       constructionSiteId,
       periodStart,
       periodEnd,
       scope: acceptanceScope,
     }));
-  }, [acceptanceScope, contractId, contractType, constructionSiteId, periodStart, periodEnd]);
+  }, [acceptanceScope, contractId, contractType, constructionSiteId, periodStart, periodEnd, projectId]);
 
   useEffect(() => { load().catch(console.error); }, [load]);
   useEffect(() => { loadUnmapped().catch(console.error); }, [loadUnmapped]);
@@ -96,6 +97,7 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
       const acceptance = await quantityAcceptanceService.createDraftFromVerifiedLogs({
         contractId,
         contractType,
+        projectId,
         constructionSiteId,
         periodStart,
         periodEnd,
@@ -387,6 +389,7 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
 
     try {
       await paymentCertificateService.create(contractId, contractType, constructionSiteId, {
+        projectId,
         acceptanceId: acceptance.id,
         periodStart: acceptance.periodStart,
         periodEnd: acceptance.periodEnd,

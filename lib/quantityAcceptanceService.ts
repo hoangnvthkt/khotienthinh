@@ -262,26 +262,29 @@ async function syncContractCompletedQuantities(
 
 async function collectVerifiedVolumeMapping(params: {
   contractType: ContractItemType;
+  projectId?: string | null;
   constructionSiteId: string;
   periodStart: string;
   periodEnd: string;
 }, contractItems: ContractItem[]) {
   const contractItemIds = new Set(contractItems.map(item => item.id));
-  const { data: logs, error } = await supabase
+  let logQuery = supabase
     .from('daily_logs')
     .select('*')
-    .eq('construction_site_id', params.constructionSiteId)
     .eq('status', 'verified')
     .gte('date', params.periodStart)
     .lte('date', params.periodEnd);
+  logQuery = params.projectId ? logQuery.eq('project_id', params.projectId) : logQuery.eq('construction_site_id', params.constructionSiteId);
+  const { data: logs, error } = await logQuery;
   if (error) throw error;
 
+  const scopeId = params.projectId || params.constructionSiteId;
+  const workBoqQuery = supabase
+    .from('project_work_boq_items')
+    .select('id, name, source_task_id');
   const [taskContractLinks, workBoqRows] = await Promise.all([
-    taskContractItemService.listBySite(params.constructionSiteId, params.constructionSiteId),
-    supabase
-      .from('project_work_boq_items')
-      .select('id, name, source_task_id')
-      .eq('construction_site_id', params.constructionSiteId),
+    taskContractItemService.listBySite(scopeId, params.constructionSiteId),
+    params.projectId ? workBoqQuery.eq('project_id', params.projectId) : workBoqQuery.eq('construction_site_id', params.constructionSiteId),
   ]);
   if (workBoqRows.error) throw workBoqRows.error;
 
@@ -377,28 +380,30 @@ async function collectVerifiedVolumeMapping(params: {
 }
 
 async function collectInternalVerifiedVolumeMapping(params: {
+  projectId?: string | null;
   constructionSiteId: string;
   periodStart: string;
   periodEnd: string;
 }) {
-  const { data: logs, error } = await supabase
+  let logQuery = supabase
     .from('daily_logs')
     .select('*')
-    .eq('construction_site_id', params.constructionSiteId)
     .eq('status', 'verified')
     .gte('date', params.periodStart)
     .lte('date', params.periodEnd);
+  logQuery = params.projectId ? logQuery.eq('project_id', params.projectId) : logQuery.eq('construction_site_id', params.constructionSiteId);
+  const { data: logs, error } = await logQuery;
   if (error) throw error;
 
+  const workBoqQuery = supabase
+    .from('project_work_boq_items')
+    .select('id, name, source_task_id, wbs_code, unit, planned_qty, unit_price, total_amount');
+  const taskQuery = supabase
+    .from('project_tasks')
+    .select('id, name, wbs_code, fallback_unit, provisional_quantity, quantity, unit, unit_price');
   const [workBoqRows, taskRows] = await Promise.all([
-    supabase
-      .from('project_work_boq_items')
-      .select('id, name, source_task_id, wbs_code, unit, planned_qty, unit_price, total_amount')
-      .eq('construction_site_id', params.constructionSiteId),
-    supabase
-      .from('project_tasks')
-      .select('id, name, wbs_code, fallback_unit, provisional_quantity, quantity, unit, unit_price')
-      .eq('construction_site_id', params.constructionSiteId),
+    params.projectId ? workBoqQuery.eq('project_id', params.projectId) : workBoqQuery.eq('construction_site_id', params.constructionSiteId),
+    params.projectId ? taskQuery.eq('project_id', params.projectId) : taskQuery.eq('construction_site_id', params.constructionSiteId),
   ]);
   if (workBoqRows.error) throw workBoqRows.error;
   if (taskRows.error) throw taskRows.error;
@@ -522,13 +527,14 @@ export const quantityAcceptanceService = {
     return acceptances.map(a => ({ ...a, items: itemMap[a.id] || a.items || [] }));
   },
 
-  async listBySite(constructionSiteId: string, scope: QuantityAcceptanceScope = DEFAULT_SCOPE): Promise<QuantityAcceptance[]> {
-    const { data, error } = await supabase
+  async listBySite(constructionSiteId: string, scope: QuantityAcceptanceScope = DEFAULT_SCOPE, projectId?: string | null): Promise<QuantityAcceptance[]> {
+    let query = supabase
       .from(TABLE)
       .select('*')
-      .eq('construction_site_id', constructionSiteId)
       .eq('acceptance_scope', scope)
       .order('created_at', { ascending: false });
+    query = projectId ? query.eq('project_id', projectId) : query.eq('construction_site_id', constructionSiteId);
+    const { data, error } = await query;
     if (error) throw error;
     const acceptances = (data || []).map(normalize);
     const itemMap = await fetchItems(acceptances.map(a => a.id));
@@ -538,6 +544,7 @@ export const quantityAcceptanceService = {
   async listUnmappedVerifiedVolumes(params: {
     contractId: string;
     contractType: ContractItemType;
+    projectId?: string | null;
     constructionSiteId: string;
     periodStart: string;
     periodEnd: string;
@@ -556,6 +563,7 @@ export const quantityAcceptanceService = {
   async createDraftFromVerifiedLogs(params: {
     contractId: string;
     contractType: ContractItemType;
+    projectId?: string | null;
     constructionSiteId: string;
     periodStart: string;
     periodEnd: string;
@@ -637,6 +645,7 @@ export const quantityAcceptanceService = {
       contractId: params.contractId,
       contractType: params.contractType,
       acceptanceScope: scope,
+      projectId: params.projectId || null,
       constructionSiteId: params.constructionSiteId,
       periodNumber,
       periodStart: params.periodStart,

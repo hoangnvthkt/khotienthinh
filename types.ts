@@ -952,6 +952,7 @@ export interface PaymentCertificateItem {
 
 export interface PaymentCertificate extends ProjectSubmissionFields {
   id: string;
+  projectId?: string | null;
   contractId: string;           // FK → CustomerContract hoặc SubcontractorContract
   contractType: ContractItemType; // 'customer' | 'subcontractor'
   constructionSiteId: string;
@@ -1011,6 +1012,7 @@ export type AdvancePaymentStatus = 'active' | 'fully_recovered' | 'cancelled';
 
 export interface AdvancePayment {
   id: string;
+  projectId?: string | null;
   contractId: string;           // FK → HĐ
   contractType: ContractItemType;
   constructionSiteId: string;
@@ -1052,6 +1054,7 @@ export interface QuantityAcceptanceItem {
 
 export interface QuantityAcceptance extends ProjectSubmissionFields {
   id: string;
+  projectId?: string | null;
   contractId: string;
   contractType: ContractItemType;
   acceptanceScope?: QuantityAcceptanceScope;
@@ -1154,6 +1157,7 @@ export type CostItemSource = 'manual' | 'contract' | 'dailylog' | 'payment';
 
 export interface ProjectCostItem {
   id: string;
+  projectId?: string | null;
   constructionSiteId: string;
   code: string;                 // Mã phân cấp: "I", "I.1", "II", "II.3"
   name: string;                 // Tên khoản mục: "Chi phí vật liệu"

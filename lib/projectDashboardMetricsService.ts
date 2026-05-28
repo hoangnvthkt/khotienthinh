@@ -1005,9 +1005,9 @@ export const projectDashboardMetricsService = {
       safeLoad('contract_items subcontractor', warnings, () => contractItemService.listBySite(projectScopeId, 'subcontractor', constructionSite), [] as ContractItem[]),
       safeLoad('task_contract_items', warnings, () => taskContractItemService.listBySite(projectScopeId, constructionSite), [] as TaskContractItem[]),
       safeLoad('project_task_completion_requests', warnings, () => taskCompletionRequestService.list(projectScopeId, constructionSite), [] as ProjectTaskCompletionRequest[]),
-      safeLoad('quantity_acceptances', warnings, () => quantityAcceptanceService.listBySite(constructionSite), [] as QuantityAcceptance[]),
-      safeLoad('payment_certificates', warnings, () => paymentCertificateService.listBySite(constructionSite), [] as PaymentCertificate[]),
-      safeLoad('advance_payments', warnings, () => advancePaymentService.listBySite(constructionSite), [] as AdvancePayment[]),
+      safeLoad('quantity_acceptances', warnings, () => quantityAcceptanceService.listBySite(constructionSite, undefined, project?.id || params.projectId), [] as QuantityAcceptance[]),
+      safeLoad('payment_certificates', warnings, () => paymentCertificateService.listBySite(constructionSite, project?.id || params.projectId), [] as PaymentCertificate[]),
+      safeLoad('advance_payments', warnings, () => advancePaymentService.listBySite(constructionSite, project?.id || params.projectId), [] as AdvancePayment[]),
       safeLoad('project_transactions', warnings, () => listTransactions(projectScopeId, constructionSite), [] as ProjectTransaction[]),
       safeLoad('purchase_orders', warnings, () => poService.list(projectScopeId, constructionSite), [] as PurchaseOrder[]),
       safeLoad('material_budget_items', warnings, () => boqService.list(projectScopeId, constructionSite), [] as MaterialBudgetItem[]),
@@ -1015,7 +1015,7 @@ export const projectDashboardMetricsService = {
       safeLoad('project_delay_events', warnings, () => delayEventService.list(projectScopeId, constructionSite), [] as ProjectDelayEvent[]),
       safeLoad('contract_variations', warnings, () => listContractVariations(projectScopeId, constructionSite), [] as ContractVariation[]),
       safeLoad('boq_reconciliation submitted', warnings, () => boqReconciliationService.listByProject(projectScopeId, constructionSite), [] as BoqReconciliationGroup[]),
-      safeLoad('financial_kpis', warnings, () => projectFinancialService.getKPIs(constructionSite), undefined as ProjectFinancialKPIs | undefined),
+      safeLoad('financial_kpis', warnings, () => projectFinancialService.getKPIs(constructionSite, [], project?.id || params.projectId), undefined as ProjectFinancialKPIs | undefined),
     ]);
 
     const allContractItems = [...customerItems, ...subcontractorItems];

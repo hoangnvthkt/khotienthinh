@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import AiInsightPanel from '../../components/AiInsightPanel';
 import SupplyChainTab from './SupplyChainTab';
 import {
@@ -20,6 +20,7 @@ import { taskContractItemService } from '../../lib/taskContractItemService';
 import { contractItemService } from '../../lib/contractItemService';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { PROJECT_MATERIAL_TAB_PERMISSIONS, type ProjectMaterialTabKey, type ProjectMaterialTabPermissionMap } from '../../lib/projectTabPermissions';
+import { materialRequestService } from '../../lib/materialRequestService';
 
 interface MaterialTabProps {
     constructionSiteId?: string;
@@ -62,12 +63,22 @@ const importNumber = (value: unknown) => {
 
 const normalizeKey = (value?: string | null) => String(value || '').trim().toLowerCase();
 const isValidWbsCode = (value: string) => /^\d+(\.\d+)*$/.test(value.trim());
+const normalizeLookupText = (value?: string | null) =>
+    String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd')
+        .replace(/Đ/g, 'D')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+const SITE_WAREHOUSE_STOP_WORDS = new Set(['kho', 'cong', 'truong', 'du', 'an', 'ct', 'tai', 'khu']);
 
 const summarizeSync = (preview: WorkBoqSyncPreview) =>
     `Thêm mới ${preview.created}, cập nhật ${preview.updated}, bỏ qua ${preview.skipped}, đánh dấu orphan ${preview.orphaned}.`;
 
 const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, siteWarehouseId, canManageTab = true, materialPermissions }) => {
-    const { items: inventoryItems, requests: allRequests, warehouses, users, loadModuleData } = useApp();
+    const { items: inventoryItems, requests: allRequests, warehouses, users, hrmConstructionSites, loadModuleData } = useApp();
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';
@@ -109,28 +120,66 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [importingBoq, setImportingBoq] = useState(false);
     const boqImportRef = useRef<HTMLInputElement>(null);
     const loadedBoqScopeRef = useRef<string | null>(null);
+    const [projectRequests, setProjectRequests] = useState<MaterialRequest[]>([]);
 
     useEffect(() => {
         loadModuleData('wms-core');
     }, [loadModuleData]);
 
-    // Resolve siteWarehouseId: use prop or find warehouse named 'RICO'
-    const resolvedWhId = useMemo(() => {
-        if (siteWarehouseId) return siteWarehouseId;
-        const ricoWh = warehouses.find(w => w.name.toUpperCase().includes('RICO'));
-        return ricoWh?.id || 'wh-1';
-    }, [siteWarehouseId, warehouses]);
+    const loadProjectRequests = useCallback(async () => {
+        if (!projectId) {
+            setProjectRequests([]);
+            return;
+        }
+        try {
+            setProjectRequests(await materialRequestService.listByProject(projectId));
+        } catch (error: any) {
+            console.error('Failed to load project material requests', error);
+            toast.error('Không tải được phiếu vật tư dự án', error?.message || 'Vui lòng thử lại.');
+        }
+    }, [projectId]);
 
-    // Material Requests — filtered to this site's warehouse
-    const requests = useMemo(() => {
-        const scoped = allRequests.filter(r => {
-            const projectMatch = projectId && r.projectId === projectId;
-            const siteMatch = constructionSiteId && r.constructionSiteId === constructionSiteId;
-            if (r.requestOrigin === 'project' || r.projectId || r.constructionSiteId) return !!(projectMatch || siteMatch);
-            return r.siteWarehouseId === resolvedWhId;
+    useEffect(() => {
+        void loadProjectRequests();
+    }, [loadProjectRequests]);
+
+    const closeRequestModal = () => {
+        setReqModalOpen(false);
+        setSelectedRequest(undefined);
+        void loadProjectRequests();
+    };
+
+    const defaultSiteWarehouseId = useMemo(() => {
+        if (siteWarehouseId) return siteWarehouseId;
+        const activeSiteWarehouses = warehouses.filter(warehouse => !warehouse.isArchived && warehouse.type === 'SITE');
+        const site = constructionSiteId ? hrmConstructionSites.find(item => item.id === constructionSiteId) : undefined;
+        const siteName = normalizeLookupText(site?.name);
+        if (!siteName) return undefined;
+        const exactName = activeSiteWarehouses.find(warehouse => normalizeLookupText(warehouse.name).includes(siteName));
+        if (exactName) return exactName.id;
+        const tokens = siteName.split(' ').filter(token => token.length > 1 && !SITE_WAREHOUSE_STOP_WORDS.has(token));
+        if (tokens.length === 0) return undefined;
+        const allTokenMatch = activeSiteWarehouses.find(warehouse => {
+            const warehouseName = normalizeLookupText(warehouse.name);
+            return tokens.every(token => warehouseName.includes(token));
         });
-        return scoped;
-    }, [allRequests, constructionSiteId, projectId, resolvedWhId]);
+        if (allTokenMatch) return allTokenMatch.id;
+        return activeSiteWarehouses.find(warehouse => {
+            const warehouseName = normalizeLookupText(warehouse.name);
+            return tokens.some(token => warehouseName.includes(token));
+        })?.id;
+    }, [constructionSiteId, hrmConstructionSites, siteWarehouseId, warehouses]);
+
+    // Material Requests — project screens only show rows explicitly tied to this project.
+    const requests = useMemo(() => {
+        if (!projectId) return [];
+        const byId = new Map<string, MaterialRequest>();
+        projectRequests.forEach(request => byId.set(request.id, request));
+        allRequests
+            .filter(request => request.requestOrigin === 'project' && request.projectId === projectId)
+            .forEach(request => byId.set(request.id, request));
+        return [...byId.values()];
+    }, [allRequests, projectId, projectRequests]);
 
     const sortedRequests = useMemo(
         () => [...requests].sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || '')),
@@ -1444,9 +1493,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             {isReqModalOpen && (
                 <RequestModal
                     isOpen={isReqModalOpen}
-                    onClose={() => { setReqModalOpen(false); setSelectedRequest(undefined); }}
+                    onClose={closeRequestModal}
                     request={selectedRequest}
-                    defaultSiteWarehouseId={resolvedWhId}
+                    defaultSiteWarehouseId={defaultSiteWarehouseId}
                     projectId={projectId || null}
                     constructionSiteId={constructionSiteId || null}
                     requestOrigin="project"

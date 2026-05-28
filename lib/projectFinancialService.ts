@@ -61,7 +61,9 @@ export const projectFinancialService = {
   async getKPIs(
     constructionSiteId: string,
     transactions: ProjectTransaction[] = [],
+    projectId?: string | null,
   ): Promise<ProjectFinancialKPIs> {
+    const projectScopeId = projectId || constructionSiteId;
     // ── Load song song tất cả data cần thiết ──
     const [
       customerContracts,
@@ -70,21 +72,21 @@ export const projectFinancialService = {
       costSummary,
       poData,
     ] = await Promise.all([
-      customerContractService.listBySite(constructionSiteId),
-      subcontractorContractService.listBySite(constructionSiteId),
+      customerContractService.listBySite(projectScopeId, constructionSiteId),
+      subcontractorContractService.listBySite(projectScopeId, constructionSiteId),
       // Transactions: dùng prop nếu đã có, fallback fetch từ DB
       transactions.length > 0
         ? Promise.resolve(transactions.map(t => ({ type: t.type, amount: t.amount })))
         : supabase
             .from('project_transactions')
             .select('type, amount')
-            .eq('construction_site_id', constructionSiteId)
+            .eq(projectId ? 'project_id' : 'construction_site_id', projectId || constructionSiteId)
             .then(r => (r.data || []) as { type: string; amount: number }[]),
-      projectCostItemService.getSummary(constructionSiteId),
+      projectCostItemService.getSummary(constructionSiteId, projectId),
       supabase
         .from('project_purchase_orders')
         .select('total_amount, status')
-        .eq('construction_site_id', constructionSiteId)
+        .eq(projectId ? 'project_id' : 'construction_site_id', projectId || constructionSiteId)
         .then(r => r.data || []),
     ]);
 
@@ -96,7 +98,7 @@ export const projectFinancialService = {
       .reduce((s, c) => s + c.value, 0);
 
     // Revised value từ BOQ (có variation delta)
-    const allBoqItems = await contractItemService.listBySite(constructionSiteId, 'customer');
+    const allBoqItems = await contractItemService.listBySite(projectScopeId, 'customer', constructionSiteId);
     const revisedContractValue = allBoqItems.length > 0
       ? allBoqItems.reduce((s, i) => s + (i.revisedTotalPrice ?? i.totalPrice ?? 0), 0)
       : originalContractValue;
@@ -110,7 +112,7 @@ export const projectFinancialService = {
     let totalAdvanceOutstanding = 0;
 
     // Dùng listBySite để lấy tất cả certs của công trình (cross-contract)
-    const allCerts = await paymentCertificateService.listBySite(constructionSiteId);
+    const allCerts = await paymentCertificateService.listBySite(constructionSiteId, projectId);
     totalCertifiedRevenue = allCerts
       .filter(c => c.status === 'approved' || c.status === 'paid')
       .reduce((s, c) => s + (c.grossThisPeriod ?? c.currentCompletedValue ?? 0), 0);
@@ -198,11 +200,13 @@ export const projectFinancialService = {
 export const buildFinancialSummary = async (
   constructionSiteId: string,
   transactions: ProjectTransaction[] = [],
+  projectId?: string | null,
 ): Promise<ProjectFinancialSummary> => {
+  const projectScopeId = projectId || constructionSiteId;
   const [contractItems, certs, costSummary] = await Promise.all([
-    contractItemService.listBySite(constructionSiteId),
-    paymentCertificateService.listBySite(constructionSiteId),
-    projectCostItemService.getSummary(constructionSiteId),
+    contractItemService.listBySite(projectScopeId, undefined, constructionSiteId),
+    paymentCertificateService.listBySite(constructionSiteId, projectId),
+    projectCostItemService.getSummary(constructionSiteId, projectId),
   ]);
 
   const originalContractValue = contractItems.reduce((sum, item) => sum + (item.totalPrice || 0), 0);

@@ -568,13 +568,17 @@ const ProjectDashboard: React.FC = () => {
     const effectiveSiteId = selectedProject?.constructionSiteId || selectedSiteId || null;
     const selectedSite = effectiveSiteId ? hrmConstructionSites.find(s => s.id === effectiveSiteId) || null : null;
     const selectedFinance = useMemo(() =>
-        effectiveSiteId ? projectFinances.find(pf => pf.constructionSiteId === effectiveSiteId) || null : null,
-        [effectiveSiteId, projectFinances]
+        selectedProject
+            ? projectFinances.find(pf => pf.projectId === selectedProject.id) || null
+            : effectiveSiteId ? projectFinances.find(pf => pf.constructionSiteId === effectiveSiteId) || null : null,
+        [effectiveSiteId, projectFinances, selectedProject]
     );
 
     // === AUTO-AGGREGATE from transactions ===
-    const getAggregated = (siteId: string) => {
-        const txs = projectTransactions.filter(t => t.constructionSiteId === siteId);
+    const getAggregated = (projectId?: string | null, siteId?: string | null) => {
+        const txs = projectTransactions.filter(t =>
+            projectId ? t.projectId === projectId : !!siteId && t.constructionSiteId === siteId
+        );
         const sumExpense = (cat: ProjectCostCategory) => txs.filter(t => t.type === 'expense' && t.category === cat).reduce((s, t) => s + t.amount, 0);
         return {
             actualMaterials: sumExpense('materials'),
@@ -600,17 +604,14 @@ const ProjectDashboard: React.FC = () => {
 
     const getProjectFinance = (project: Project) => {
         const site = getProjectSite(project);
-        return projectFinances.find(finance =>
-            (project.id && finance.projectId === project.id) ||
-            (site && finance.constructionSiteId === site.id)
-        ) || null;
+        return projectFinances.find(finance => finance.projectId === project.id) ||
+            (!project.id && site ? projectFinances.find(finance => finance.constructionSiteId === site.id) || null : null);
     };
 
     const getProjectAggregated = (project: Project) => {
         const site = getProjectSite(project);
         const txs = projectTransactions.filter(tx =>
-            (project.id && tx.projectId === project.id) ||
-            (site && tx.constructionSiteId === site.id)
+            project.id ? tx.projectId === project.id : !!site && tx.constructionSiteId === site.id
         );
         return {
             totalExpense: txs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0),
@@ -724,13 +725,15 @@ const ProjectDashboard: React.FC = () => {
         return rows;
     }, [projectRows, projectFilters, projectSort, projectSortAsc, projectFinances, projectTransactions, hrmConstructionSites, isAdmin, taskProgressBySite]);
 
-    const selectedAgg = effectiveSiteId ? getAggregated(effectiveSiteId) : null;
+    const selectedAgg = selectedProject || effectiveSiteId ? getAggregated(selectedProject?.id, effectiveSiteId) : null;
     const siteTxs = useMemo(() => {
-        if (!effectiveSiteId) return [];
-        let txs = projectTransactions.filter(t => t.constructionSiteId === effectiveSiteId);
+        if (!selectedProject && !effectiveSiteId) return [];
+        let txs = projectTransactions.filter(t =>
+            selectedProject ? t.projectId === selectedProject.id : t.constructionSiteId === effectiveSiteId
+        );
         if (txFilter !== 'all') txs = txs.filter(t => t.category === txFilter);
         return txs.sort((a, b) => b.date.localeCompare(a.date));
-    }, [effectiveSiteId, projectTransactions, txFilter]);
+    }, [effectiveSiteId, projectTransactions, selectedProject, txFilter]);
 
     const employeeByUserId = useMemo(() => {
         const map = new Map<string, typeof employees[number]>();
@@ -2846,7 +2849,8 @@ const ProjectDashboard: React.FC = () => {
                         hasSiteLink ? (
                             <CashFlowTab
                                 constructionSiteId={effectiveSiteId!}
-                                transactions={projectTransactions.filter(t => t.constructionSiteId === effectiveSiteId)}
+                                projectId={selectedProject.id}
+                                transactions={projectTransactions.filter(t => t.projectId === selectedProject.id)}
                                 contractValue={contractValue}
                             />
                         ) : renderSiteRequired('Dòng tiền')

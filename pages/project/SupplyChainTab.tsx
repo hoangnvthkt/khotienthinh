@@ -20,6 +20,7 @@ import {
     PurchaseOrderItem,
     PurchaseOrderRequestLineLink,
     PurchaseOrderSourceMode,
+    MaterialRequest,
     MaterialRequestFulfillmentSummary,
     RequestStatus,
     Transaction,
@@ -43,6 +44,7 @@ import { projectSubmissionService } from '../../lib/projectSubmissionService';
 import SupplierCombobox from '../../components/SupplierCombobox';
 import { useReservedStock } from '../../hooks/useReservedStock';
 import { formatReservationSourceList } from '../../lib/inventoryStockGuard';
+import { materialRequestService } from '../../lib/materialRequestService';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -173,6 +175,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [poRequestLinks, setPoRequestLinks] = useState<PurchaseOrderRequestLineLink[]>([]);
     const [requestFulfillmentSummaries, setRequestFulfillmentSummaries] = useState<Record<string, MaterialRequestFulfillmentSummary>>({});
     const [requestFulfillmentBatchCounts, setRequestFulfillmentBatchCounts] = useState<Record<string, number>>({});
+    const [projectMaterialRequests, setProjectMaterialRequests] = useState<MaterialRequest[]>([]);
 
     const ensureCanManage = (action: string) => {
         if (canManageTab) return true;
@@ -183,6 +186,23 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     useEffect(() => {
         loadModuleData('wms-core');
     }, [loadModuleData]);
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!projectId) {
+            setProjectMaterialRequests([]);
+            return;
+        }
+        materialRequestService.listByProject(projectId)
+            .then(rows => {
+                if (!cancelled) setProjectMaterialRequests(rows);
+            })
+            .catch(error => {
+                console.error('Failed to load project material requests for supply chain', error);
+                if (!cancelled) setProjectMaterialRequests([]);
+            });
+        return () => { cancelled = true; };
+    }, [projectId]);
 
     const loadSupplyData = async () => {
         if (!effectiveId) return;
@@ -287,10 +307,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         return map;
     }, [poRequestLinks]);
     const scopedMaterialRequests = useMemo(() => {
-        return materialRequests
-            .filter(req => req.requestOrigin === 'project' || req.projectId || req.constructionSiteId)
-            .filter(req => (projectId && req.projectId === projectId) || (constructionSiteId && req.constructionSiteId === constructionSiteId));
-    }, [constructionSiteId, materialRequests, projectId]);
+        if (!projectId) return [];
+        const byId = new Map<string, MaterialRequest>();
+        projectMaterialRequests.forEach(req => byId.set(req.id, req));
+        materialRequests
+            .filter(req => req.requestOrigin === 'project' && req.projectId === projectId)
+            .forEach(req => byId.set(req.id, req));
+        return [...byId.values()].sort((a, b) => (b.createdDate || '').localeCompare(a.createdDate || ''));
+    }, [materialRequests, projectId, projectMaterialRequests]);
     useEffect(() => {
         let cancelled = false;
         const loadFulfillment = async () => {
@@ -861,7 +885,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             if (status === 'returned') {
                 const affectedRequestIds = await materialRequestFulfillmentService.markPoReceiptBatchesReturned(po.id, `PO ${po.poNumber} đã trả lại/hoàn hàng`);
                 for (const requestId of affectedRequestIds) {
-                    const request = materialRequests.find(item => item.id === requestId);
+                    const request = scopedMaterialRequests.find(item => item.id === requestId);
                     if (!request) continue;
                     const batches = await materialRequestFulfillmentService.listByRequest(requestId);
                     const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, batches);

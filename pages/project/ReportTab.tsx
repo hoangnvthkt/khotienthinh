@@ -57,6 +57,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
     const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
     const [financialKPIs, setFinancialKPIs] = useState<ProjectFinancialKPIs | null>(null);
     const [kpisLoading, setKpisLoading] = useState(true);
+    const projectScopeId = projectId || constructionSiteId;
 
     useEffect(() => {
         if (queryReportView === 'dailylog') setActiveReportView('dailylog');
@@ -65,8 +66,8 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
     useEffect(() => {
         // Fetch new contract models and map to generic ProjectContract shape for reporting
         Promise.all([
-            customerContractService.listBySite(constructionSiteId),
-            subcontractorContractService.listBySite(constructionSiteId)
+            customerContractService.listBySite(projectScopeId, constructionSiteId),
+            subcontractorContractService.listBySite(projectScopeId, constructionSiteId)
         ]).then(([customers, subs]) => {
             const mainContracts: ProjectContract[] = customers.map(c => ({
                 id: c.id,
@@ -97,19 +98,19 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
             setContracts([...mainContracts, ...subContracts]);
         }).catch(console.error);
 
-        acceptanceService.list(constructionSiteId).then(setAcceptances).catch(console.error);
-        boqService.list(constructionSiteId).then(setBoqItems).catch(console.error);
-        matRequestService.list(constructionSiteId).then(setMatRequests).catch(console.error);
-        vendorService.list(constructionSiteId).then(setVendors).catch(console.error);
-        poService.list(constructionSiteId).then(setPurchaseOrders).catch(console.error);
-        taskService.list(constructionSiteId).then(setTasks).catch(console.error);
-        dailyLogService.list(constructionSiteId).then(setDailyLogs).catch(console.error);
+        acceptanceService.list(projectScopeId, constructionSiteId).then(setAcceptances).catch(console.error);
+        boqService.list(projectScopeId, constructionSiteId).then(setBoqItems).catch(console.error);
+        matRequestService.list(projectScopeId, constructionSiteId).then(setMatRequests).catch(console.error);
+        vendorService.list(projectScopeId, constructionSiteId).then(setVendors).catch(console.error);
+        poService.list(projectScopeId, constructionSiteId).then(setPurchaseOrders).catch(console.error);
+        taskService.list(projectScopeId, constructionSiteId).then(setTasks).catch(console.error);
+        dailyLogService.list(projectScopeId, constructionSiteId).then(setDailyLogs).catch(console.error);
         setKpisLoading(true);
-        projectFinancialService.getKPIs(constructionSiteId)
+        projectFinancialService.getKPIs(constructionSiteId, [], projectId)
             .then(setFinancialKPIs)
             .catch(console.error)
             .finally(() => setKpisLoading(false));
-    }, [constructionSiteId]);
+    }, [constructionSiteId, projectId, projectScopeId]);
 
     // ==================== COMPUTED DATA (PHASE 4) ====================
     const allDelays = useMemo(() => {

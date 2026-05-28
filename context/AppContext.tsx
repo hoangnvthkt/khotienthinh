@@ -22,6 +22,7 @@ import { realtimeService, RealtimeStatus } from '../lib/realtimeService';
 import { notificationService } from '../lib/notificationService';
 import { logApiError } from '../lib/apiError';
 import { projectSubmissionService } from '../lib/projectSubmissionService';
+import { mapMaterialRequestFromDb } from '../lib/materialRequestService';
 import {
   formatStockDecreaseIssues,
   getStockDecreaseIssues,
@@ -239,28 +240,6 @@ const mapTransactionFromDb = (t: any): Transaction => ({
   approverId: t.approver_id,
   relatedRequestId: t.related_request_id,
   pendingItems: t.pending_items,
-});
-
-const mapMaterialRequestFromDb = (r: any): MaterialRequest => ({
-  ...r,
-  projectId: r.project_id ?? r.projectId ?? null,
-  constructionSiteId: r.construction_site_id ?? r.constructionSiteId ?? null,
-  requestOrigin: r.request_origin ?? r.requestOrigin ?? 'wms',
-  siteWarehouseId: r.site_warehouse_id,
-  sourceWarehouseId: r.source_warehouse_id,
-  requesterId: r.requester_id,
-  createdDate: r.created_date,
-  expectedDate: r.expected_date,
-  fulfillmentMode: r.fulfillment_mode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
-  overrideReason: r.override_reason || undefined,
-  relatedTransactionId: r.related_transaction_id || undefined,
-  submittedToUserId: r.submitted_to_user_id ?? r.submittedToUserId ?? undefined,
-  submittedToName: r.submitted_to_name ?? r.submittedToName ?? undefined,
-  submittedToPermission: r.submitted_to_permission ?? r.submittedToPermission ?? undefined,
-  submissionNote: r.submission_note ?? r.submissionNote ?? undefined,
-  everSubmitted: r.ever_submitted ?? r.everSubmitted ?? undefined,
-  lastActionBy: r.last_action_by ?? r.lastActionBy ?? undefined,
-  lastActionAt: r.last_action_at ?? r.lastActionAt ?? undefined,
 });
 
 const mapAssetLocationStockFromDb = (l: any): AssetLocationStock => ({

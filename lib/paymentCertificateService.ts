@@ -185,12 +185,13 @@ export const paymentCertificateService = {
     }));
   },
 
-  async listBySite(constructionSiteId: string): Promise<PaymentCertificate[]> {
-    const { data, error } = await supabase
+  async listBySite(constructionSiteId: string, projectId?: string | null): Promise<PaymentCertificate[]> {
+    let query = supabase
       .from(TABLE)
       .select('*')
-      .eq('construction_site_id', constructionSiteId)
       .order('created_at', { ascending: false });
+    query = projectId ? query.eq('project_id', projectId) : query.eq('construction_site_id', constructionSiteId);
+    const { data, error } = await query;
     if (error) throw error;
 
     const certs = (data || []).map(normalizeCert);
@@ -279,6 +280,7 @@ export const paymentCertificateService = {
     const newCert: Partial<PaymentCertificate> = {
       contractId,
       contractType,
+      projectId: cert.projectId || null,
       constructionSiteId,
       periodNumber,
       periodStart: cert.periodStart || new Date().toISOString().slice(0, 10),
