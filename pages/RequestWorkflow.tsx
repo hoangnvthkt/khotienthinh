@@ -1,11 +1,12 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { MaterialRequest, RequestStatus } from '../types';
-import { Plus, Search, FileText, ArrowRight, Truck, CheckCircle, Clock, AlertCircle, Inbox, Send as SendIcon, PackageSearch, ShieldAlert } from 'lucide-react';
+import { MaterialRequest, MaterialRequestFulfillmentSummary, RequestStatus } from '../types';
+import { Plus, Search, FileText, ArrowRight, Truck, CheckCircle, Clock, AlertCircle, Inbox, Send as SendIcon, PackageSearch } from 'lucide-react';
 import RequestModal from '../components/RequestModal';
 import { useModuleData } from '../hooks/useModuleData';
 import { canApproveMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, canViewMaterialRequest } from '../lib/wmsPermissions';
+import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
 
 const RequestWorkflow: React.FC = () => {
   const { requests, warehouses, user, users } = useApp();
@@ -17,16 +18,58 @@ const RequestWorkflow: React.FC = () => {
   
   const [isModalOpen, setModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<MaterialRequest | undefined>(undefined);
+  const [fulfillmentSummaries, setFulfillmentSummaries] = useState<Record<string, MaterialRequestFulfillmentSummary>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const candidates = requests.filter(req =>
+      (req.requestOrigin === 'project' || !!req.projectId) &&
+      ![RequestStatus.DRAFT, RequestStatus.PENDING, RequestStatus.REJECTED].includes(req.status as RequestStatus)
+    );
+    if (candidates.length === 0) {
+      setFulfillmentSummaries({});
+      return;
+    }
+
+    Promise.all(candidates.map(async req => {
+      const batches = await materialRequestFulfillmentService.listByRequest(req.id);
+      return [req.id, materialRequestFulfillmentService.summarizeRequest(req, batches)] as const;
+    }))
+      .then(entries => {
+        if (!cancelled) setFulfillmentSummaries(Object.fromEntries(entries));
+      })
+      .catch(error => {
+        console.warn('Failed to load material request fulfillment summaries:', error);
+        if (!cancelled) setFulfillmentSummaries({});
+      });
+
+    return () => { cancelled = true; };
+  }, [requests]);
+
+  const getEffectiveStatus = (req: MaterialRequest): RequestStatus => {
+    if ([RequestStatus.DRAFT, RequestStatus.PENDING, RequestStatus.REJECTED].includes(req.status as RequestStatus)) return req.status;
+    const summary = fulfillmentSummaries[req.id];
+    if (!summary) return req.status;
+    if (summary.committedQty > 0 && summary.receivedQty >= summary.committedQty) return RequestStatus.COMPLETED;
+    if (summary.issuedQty > 0 || summary.receivedQty > 0) return RequestStatus.IN_TRANSIT;
+    return req.status;
+  };
+
+  const withEffectiveStatus = (req: MaterialRequest): MaterialRequest => {
+    const status = getEffectiveStatus(req);
+    return status === req.status ? req : { ...req, status };
+  };
 
   const filteredRequests = useMemo(() => {
      return requests.filter(req => {
         if (!canViewMaterialRequest(user, req)) return false;
 
-        const matchStatus = filterStatus === 'ALL' || req.status === filterStatus;
+        const effectiveStatus = getEffectiveStatus(req);
+        const matchStatus = filterStatus === 'ALL' || effectiveStatus === filterStatus;
         const matchSearch = req.code.toLowerCase().includes(searchTerm.toLowerCase());
         return matchStatus && matchSearch;
      });
-  }, [requests, filterStatus, searchTerm, user]);
+  }, [requests, filterStatus, searchTerm, user, fulfillmentSummaries]);
 
   const handleOpenCreate = () => {
      setSelectedRequest(undefined);
@@ -34,7 +77,7 @@ const RequestWorkflow: React.FC = () => {
   };
 
   const handleOpenRequest = (req: MaterialRequest) => {
-     setSelectedRequest(req);
+     setSelectedRequest(withEffectiveStatus(req));
      setModalOpen(true);
   };
 
@@ -96,6 +139,7 @@ const RequestWorkflow: React.FC = () => {
 
       <div className="grid grid-cols-1 gap-4">
          {filteredRequests.map((req) => {
+             const effectiveReq = withEffectiveStatus(req);
              const siteName = warehouses.find(w => w.id === req.siteWarehouseId)?.name || 'N/A';
              const sourceName = warehouses.find(w => w.id === req.sourceWarehouseId)?.name || 'Chưa gán';
              
@@ -103,8 +147,8 @@ const RequestWorkflow: React.FC = () => {
              const isOutgoing = user.assignedWarehouseId === req.sourceWarehouseId;
 
              // Logic hiển thị nút hành động nhanh
-             const needsExport = canExportMaterialRequest(user, req);
-             const needsReceive = canReceiveMaterialRequest(user, req);
+             const needsExport = canExportMaterialRequest(user, effectiveReq);
+             const needsReceive = canReceiveMaterialRequest(user, effectiveReq);
 
              return (
                  <div key={req.id} onClick={() => handleOpenRequest(req)} className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 hover:border-accent/50 transition-all cursor-pointer group relative overflow-hidden">
@@ -115,7 +159,7 @@ const RequestWorkflow: React.FC = () => {
                        <div className="flex-1">
                           <div className="flex items-center gap-3 mb-3">
                              <span className="font-mono text-[10px] font-bold bg-slate-100 px-2 py-1 rounded border border-slate-200 text-slate-600">{req.code}</span>
-                             {getStatusBadge(req.status)}
+                             {getStatusBadge(effectiveReq.status)}
                              
                              <span className="text-[10px] font-bold text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
                                 BY: {users.find(u => u.id === req.requesterId)?.name || 'N/A'}
@@ -165,7 +209,7 @@ const RequestWorkflow: React.FC = () => {
                               </button>
                           )}
 
-                          {req.status === RequestStatus.PENDING && canApproveMaterialRequest(user, req) && (
+                          {effectiveReq.status === RequestStatus.PENDING && canApproveMaterialRequest(user, req) && (
                               <button className="w-full px-4 py-2 bg-yellow-500 text-white rounded-lg text-xs font-bold hover:bg-yellow-600 flex items-center justify-center transition-all shadow-md shadow-yellow-500/20 whitespace-nowrap">
                                  <AlertCircle size={14} className="mr-2" /> THẨM ĐỊNH PHIẾU
                               </button>

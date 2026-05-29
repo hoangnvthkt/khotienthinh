@@ -579,8 +579,8 @@ export const poService = {
         if (error) throw error;
 
         const po = fromDb(data) as PurchaseOrder;
-        if (['cancelled', 'closed', 'returned'].includes(po.status)) {
-            throw new Error('PO đã huỷ/đóng/hoàn hàng, không thể nhập kho.');
+        if (['cancelled', 'closed', 'returned', 'delivered'].includes(po.status)) {
+            throw new Error('PO đã huỷ/đóng/hoàn hàng/hoàn thành, không thể nhập kho.');
         }
         const receiptMap = new Map(receiptLines.map(line => [line.lineId || line.itemId, Number(line.quantity) || 0]));
         let hasReceipt = false;

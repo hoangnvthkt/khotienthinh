@@ -244,6 +244,49 @@ export interface ProjectSubmissionFields {
   everSubmitted?: boolean;
   lastActionBy?: string | null;
   lastActionAt?: string | null;
+  workflowStep?: MaterialRequestWorkflowStep | string | null;
+  workflowStepStartedAt?: string | null;
+  workflowStepDueAt?: string | null;
+  workflowStepSlaHours?: number | null;
+  workflowStepActorUserId?: string | null;
+}
+
+export type MaterialRequestWorkflowStep =
+  | 'draft'
+  | 'site_manager_review'
+  | 'material_department_review'
+  | 'batch_planning'
+  | 'site_quality_check'
+  | 'site_receipt'
+  | 'completed'
+  | 'rejected'
+  | 'returned_to_creator';
+
+export type MaterialRequestKanbanStage =
+  | 'draft'
+  | 'site_manager_review'
+  | 'material_department_review'
+  | 'batch_planning'
+  | 'site_quality_check'
+  | 'site_receipt'
+  | 'completed'
+  | 'closed';
+
+export interface MaterialRequestEvent {
+  id: string;
+  requestId: string;
+  projectId: string;
+  fromStep?: string | null;
+  toStep?: string | null;
+  action: string;
+  actorUserId: string;
+  targetUserId?: string | null;
+  targetPermission?: string | null;
+  note?: string | null;
+  slaHours?: number | null;
+  dueAt?: string | null;
+  metadata?: Record<string, any>;
+  createdAt: string;
 }
 
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed';
@@ -1221,7 +1264,7 @@ export interface MaterialBudgetItem {
   budgetQty: number;            // Khối lượng dự toán (BOQ)
   budgetUnitPrice: number;      // Đơn giá dự toán
   budgetTotal?: number;         // Auto: budgetQty * budgetUnitPrice
-  actualQty: number;            // Khối lượng thực xuất (auto cộng dồn)
+  actualQty: number;            // Khối lượng thực tế công trường đã nhận thành công
   actualTotal?: number;         // Auto: actualQty * budgetUnitPrice
   wasteQty?: number;            // Auto: actualQty - budgetQty
   wastePercent?: number;        // Auto: (actualQty - budgetQty)/budgetQty * 100
@@ -1456,6 +1499,7 @@ export interface TransactionItem {
   materialRequestId?: string;
   requestLineId?: string;
   fulfillmentBatchId?: string;
+  varianceReason?: string;
   // --- Thông tin kế toán (chỉ áp dụng khi NHẬP KHO với đơn vị mua khác) ---
   accountingQty?: number;      // Số lượng theo đơn vị mua (VD: 10.05 KG)
   accountingUnit?: string;     // Đơn vị mua (VD: 'KG') - snapshot tại thời điểm nhập

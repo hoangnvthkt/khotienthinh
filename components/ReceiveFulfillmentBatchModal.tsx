@@ -98,7 +98,7 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
         undefined,
         request.sourceWarehouseId,
         request.overrideReason,
-        'FULFILLMENT_SYNC',
+        'FULFILLMENT_RECEIVED',
       );
       await loadModuleData('wms', true);
       toast.success(

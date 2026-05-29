@@ -73,6 +73,7 @@ export const canViewMaterialRequest = (user: User, request: MaterialRequest): bo
   if (isAdmin(user)) return true;
   if (request.requesterId === user.id) return true;
   if (isGlobalWarehouseKeeper(user)) return true;
+  if (request.requestOrigin === 'project' || request.projectId) return true;
   if (!isWarehouseKeeper(user)) return false;
   return user.assignedWarehouseId === request.sourceWarehouseId || user.assignedWarehouseId === request.siteWarehouseId;
 };

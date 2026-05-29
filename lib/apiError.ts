@@ -56,6 +56,9 @@ export const getApiErrorMessage = (
   if (rawMessage.includes('insufficient stock') || rawMessage.includes('không đủ tồn') || rawMessage.includes('tồn khả dụng')) {
     return originalMessage || 'Không đủ tồn kho khả dụng để thực hiện thao tác.';
   }
+  if (originalMessage && /[À-ỹ]/.test(originalMessage)) {
+    return originalMessage;
+  }
 
   if (
     originalMessage &&
