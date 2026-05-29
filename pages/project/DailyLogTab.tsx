@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import AiInsightPanel from '../../components/AiInsightPanel';
-import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight, Loader2, UserCheck, Eye, Layers, Package, Wrench, Paperclip, Search, SlidersHorizontal, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight, Loader2, UserCheck, Eye, Layers, Package, Wrench, Paperclip, Search, SlidersHorizontal, ChevronDown, ChevronUp, BarChart3, FileSpreadsheet } from 'lucide-react';
 import { DailyLog, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, DailyLogStatus, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectTaskCompletionRequest, ProjectStaff, BusinessPartner, ProjectWorkBoqItem } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { dailyLogService, taskService, workBoqService } from '../../lib/projectService';
@@ -211,6 +211,7 @@ interface DailyLogViewerProps {
     canDelete: boolean;
     busy: boolean;
     onClose: () => void;
+    onPreviewImage?: (img: { url: string; title?: string }) => void;
     onEdit: () => void;
     onRollback: () => void | Promise<void>;
     onSubmit: () => void;
@@ -232,6 +233,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
     canDelete,
     busy,
     onClose,
+    onPreviewImage,
     onEdit,
     onRollback,
     onSubmit,
@@ -318,14 +320,22 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                     </div>
 
                     {(log.photos || []).length > 0 && (
-                        <section className="rounded-2xl border border-slate-100 p-4">
-                            <h4 className="text-xs font-black text-slate-600 uppercase mb-3 flex items-center gap-1"><Camera size={13} /> Ảnh công trường</h4>
+                        <section className="rounded-2xl border border-slate-100 dark:border-slate-700/60 p-4">
+                            <h4 className="text-xs font-black text-slate-600 dark:text-slate-400 uppercase mb-3 flex items-center gap-1"><Camera size={13} /> Ảnh công trường</h4>
                             <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
                                 {(log.photos || []).map((photo, index) => (
-                                    <a key={`${photo.url}-${index}`} href={photo.url} target="_blank" rel="noreferrer" className="group">
-                                        <img src={photo.url} alt={photo.name || `Ảnh ${index + 1}`} className="w-full aspect-square object-cover rounded-xl border border-slate-100 group-hover:border-teal-300 transition-colors" />
-                                        <div className="mt-1 text-[10px] font-bold text-slate-400 truncate">{photo.name}</div>
-                                    </a>
+                                    <div 
+                                        key={`${photo.url}-${index}`} 
+                                        onClick={() => {
+                                            if (onPreviewImage) {
+                                                onPreviewImage({ url: photo.url, title: photo.name || `Ảnh công trường ${index + 1}` });
+                                            }
+                                        }}
+                                        className="group cursor-zoom-in"
+                                    >
+                                        <img src={photo.url} alt={photo.name || `Ảnh ${index + 1}`} className="w-full aspect-square object-cover rounded-xl border border-slate-100 dark:border-slate-700/60 group-hover:border-teal-300 dark:group-hover:border-teal-500 hover:scale-[1.03] transition-all duration-200" />
+                                        <div className="mt-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 truncate">{photo.name}</div>
+                                    </div>
                                 ))}
                             </div>
                         </section>
@@ -360,10 +370,19 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                                         const attachmentUrl = normalizeAttachmentUrl(file);
                                                         if (attachmentUrl && isImageAttachment({ ...file, url: attachmentUrl })) {
                                                             return (
-                                                                <a key={file.id || attachmentUrl} href={attachmentUrl} target="_blank" rel="noreferrer" className="group w-24">
-                                                                    <img src={attachmentUrl} alt={label} className="w-24 h-20 object-cover rounded-lg border border-white shadow-sm group-hover:border-blue-200" />
-                                                                    <div className="mt-1 text-[10px] font-bold text-blue-600 truncate">{label}</div>
-                                                                </a>
+                                                                <div 
+                                                                    key={file.id || attachmentUrl} 
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (onPreviewImage) {
+                                                                            onPreviewImage({ url: attachmentUrl, title: label });
+                                                                        }
+                                                                    }}
+                                                                    className="group w-24 cursor-zoom-in"
+                                                                >
+                                                                    <img src={attachmentUrl} alt={label} className="w-24 h-20 object-cover rounded-lg border border-white dark:border-slate-700/80 shadow-sm group-hover:border-blue-200 dark:group-hover:border-blue-500 hover:scale-[1.03] transition-all duration-200" />
+                                                                    <div className="mt-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 truncate">{label}</div>
+                                                                </div>
                                                             );
                                                         }
                                                         return (
@@ -637,6 +656,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [calendarMonth, setCalendarMonth] = useState(monthKeyFromDate(new Date()));
     const [dayLogPicker, setDayLogPicker] = useState<{ date: string; logs: DailyLog[] } | null>(null);
     const [viewLogId, setViewLogId] = useState<string | null>(null);
+    const [previewImage, setPreviewImage] = useState<{ url: string; title?: string } | null>(null);
 
     // Form state
     const [fDate, setFDate] = useState(new Date().toISOString().split('T')[0]);
@@ -667,7 +687,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         if (constructionSiteId) params.set('siteId', constructionSiteId);
         params.set('tab', 'dailylog');
         params.set('dailyLogId', logId);
-        return `/da?${params.toString()}`;
+        return `/#/da?${params.toString()}`;
     }, [constructionSiteId, projectId]);
 
     const buildDailyLogReportLink = useCallback(() => {
@@ -676,7 +696,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         if (constructionSiteId) params.set('siteId', constructionSiteId);
         params.set('tab', 'report');
         params.set('reportView', 'dailylog');
-        return `/da?${params.toString()}`;
+        return `/#/da?${params.toString()}`;
     }, [constructionSiteId, projectId]);
 
     const isAdminUser = user?.role === 'ADMIN';
@@ -1390,22 +1410,38 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             </div>
             {/* Summary */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">📝 Tổng nhật ký</div>
-                    <div className="text-2xl font-black text-slate-800">{stats.total}</div>
-                    <div className="text-[10px] text-blue-500 font-bold mt-1">Tháng này: {stats.monthCount}</div>
+                {/* Tổng nhật ký */}
+                <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-teal-500/5 dark:bg-teal-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
+                    <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><FileSpreadsheet size={11} className="text-teal-500" /> Tổng nhật ký</div>
+                    <div className="text-3xl font-black text-slate-800 dark:text-white leading-none tracking-tight">{stats.total}</div>
+                    <div className="text-[10px] text-teal-600 dark:text-teal-400 font-bold mt-2 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-teal-50 dark:bg-teal-400 animate-pulse" /> Tháng này: {stats.monthCount}
+                    </div>
                 </div>
-                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Users size={10} /> CN TB/ngày</div>
-                    <div className="text-2xl font-black text-blue-600">{stats.avgWorkers}</div>
+
+                {/* Nhân công trung bình */}
+                <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 dark:bg-blue-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
+                    <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={11} className="text-blue-500" /> CN TB/ngày</div>
+                    <div className="text-3xl font-black text-blue-600 dark:text-blue-400 leading-none tracking-tight">{stats.avgWorkers}</div>
+                    <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mt-2">Nhân công bình quân công trường</div>
                 </div>
-                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">🌧️ Ngày mưa</div>
-                    <div className="text-2xl font-black text-cyan-600">{stats.rainyDays}</div>
+
+                {/* Ngày mưa */}
+                <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 dark:bg-cyan-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
+                    <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><CloudRain size={11} className="text-cyan-500" /> Ngày mưa</div>
+                    <div className="text-3xl font-black text-cyan-600 dark:text-cyan-400 leading-none tracking-tight">{stats.rainyDays}</div>
+                    <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mt-2">Ảnh hưởng đến tiến độ</div>
                 </div>
-                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><AlertTriangle size={10} /> Vấn đề</div>
-                    <div className="text-2xl font-black text-red-500">{stats.issueCount}</div>
+
+                {/* Vấn đề sự cố */}
+                <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-red-500/5 dark:bg-red-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
+                    <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><AlertTriangle size={11} className="text-red-500" /> Vấn đề ghi nhận</div>
+                    <div className="text-3xl font-black text-red-500 dark:text-red-400 leading-none tracking-tight">{stats.issueCount}</div>
+                    <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mt-2">Sự cố, vướng mắc phát sinh</div>
                 </div>
             </div>
 
@@ -1670,49 +1706,59 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         <p className="text-sm font-bold text-slate-400">Chưa có nhật ký nào</p>
                     </div>
                 ) : (
-                    <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
+                    <div className="divide-y divide-slate-100 dark:divide-slate-750">
                         {filtered.map(l => {
                             const w = WEATHER[l.weather];
                             const status = (l.status || (l.verified ? 'verified' : 'draft')) as DailyLogStatus;
                             const statusCfg = STATUS_CFG[status];
+                            const borderAccentCls = 
+                                status === 'verified' ? 'bg-emerald-500 dark:bg-emerald-400' :
+                                status === 'submitted' ? 'bg-amber-500 dark:bg-amber-400' :
+                                status === 'rejected' ? 'bg-rose-500 dark:bg-rose-400' :
+                                'bg-slate-400 dark:bg-slate-500';
+
                             return (
                                 <div
                                     key={l.id}
                                     ref={el => { logRefs.current[l.id] = el; }}
-                                    className={`px-5 py-4 hover:bg-slate-50/50 transition-colors group ${highlightLogId === l.id ? 'bg-amber-50/80 ring-2 ring-amber-300 ring-inset' : ''
+                                    onClick={() => openView(l)}
+                                    className={`relative pl-7 pr-5 py-4 bg-white dark:bg-slate-800/40 hover:bg-slate-50/70 dark:hover:bg-slate-700/20 border-b border-slate-100 dark:border-slate-700/40 transition-all duration-200 cursor-pointer group flex items-start justify-between gap-3 overflow-hidden ${highlightLogId === l.id ? 'bg-amber-50/80 dark:bg-amber-950/30 ring-2 ring-amber-300 dark:ring-amber-800 ring-inset' : ''
                                         }`}
                                 >
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="flex items-start gap-3 flex-1 min-w-0">
-                                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-50 to-cyan-50 border border-teal-100 flex flex-col items-center justify-center shrink-0">
-                                                <div className="text-[9px] font-black text-teal-600">{new Date(l.date).getDate()}</div>
-                                                <div className="text-[8px] text-teal-400">T{new Date(l.date).getMonth() + 1}</div>
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <span className="text-sm font-bold text-slate-800">{new Date(l.date).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
-                                                    <span className="text-xs">{w.emoji}</span>
-                                                    <span className="text-[10px] font-bold text-blue-500 flex items-center gap-0.5"><Users size={10} /> {l.workerCount}</span>
-                                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${statusCfg.cls}`}>{statusCfg.label}</span>
-                                                </div>
-                                                <p className="text-xs text-slate-600 leading-relaxed">{l.description}</p>
-                                                {status === 'submitted' && l.requestedVerifierName && (
-                                                    <div className="mt-1 text-[10px] font-bold text-amber-600 flex items-center gap-1">
-                                                        <UserCheck size={11} /> Chờ {l.requestedVerifierName} xác nhận
-                                                    </div>
-                                                )}
-                                                {l.issues && (
-                                                    <div className="mt-1.5 flex items-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-50 border border-red-100">
-                                                        <AlertTriangle size={12} className="text-red-400 shrink-0 mt-0.5" />
-                                                        <span className="text-xs text-red-600 font-medium">{l.issues}</span>
-                                                    </div>
-                                                )}
-                                            </div>
+                                    {/* Left Accent Status Border */}
+                                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${borderAccentCls} transition-all duration-200 group-hover:w-2`} />
+                                    
+                                    <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                                        <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 border border-slate-200/60 dark:border-slate-700/60 flex flex-col items-center justify-center shrink-0 shadow-sm transition-transform duration-250 group-hover:scale-105">
+                                            <div className="text-[10px] font-black text-slate-700 dark:text-slate-200">{new Date(l.date).getDate()}</div>
+                                            <div className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase">T{new Date(l.date).getMonth() + 1}</div>
                                         </div>
-                                        <div className="flex gap-1 opacity-100 transition-opacity shrink-0">
-                                            <button onClick={() => openView(l)} title="Xem chi tiết" className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-teal-600 hover:bg-teal-50">
-                                                <Eye size={13} />
-                                            </button>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                <span className="text-xs font-bold text-slate-800 dark:text-slate-150 transition-colors group-hover:text-teal-600 dark:group-hover:text-teal-400">
+                                                    {new Date(l.date).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                                </span>
+                                                <span className="text-xs">{w.emoji}</span>
+                                                <span className="text-[10px] font-bold text-blue-500 dark:text-blue-400 flex items-center gap-0.5"><Users size={10} /> {l.workerCount} người</span>
+                                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${statusCfg.cls}`}>{statusCfg.label}</span>
+                                            </div>
+                                            <p className="text-xs text-slate-600 dark:text-slate-350 leading-relaxed line-clamp-2">{l.description}</p>
+                                            {status === 'submitted' && l.requestedVerifierName && (
+                                                <div className="mt-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                                                    <UserCheck size={11} /> Chờ {l.requestedVerifierName} xác nhận
+                                                </div>
+                                            )}
+                                            {l.issues && (
+                                                <div className="mt-1.5 flex items-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-50/80 dark:bg-red-950/20 border border-red-100/60 dark:border-red-900/30">
+                                                    <AlertTriangle size={12} className="text-red-400 dark:text-red-500 shrink-0 mt-0.5" />
+                                                    <span className="text-xs text-red-600 dark:text-red-450 font-medium">{l.issues}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0 self-center transform translate-x-2 group-hover:translate-x-0">
+                                        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 border border-teal-100 dark:border-teal-900/30 shadow-sm">
+                                            <Eye size={13} />
                                         </div>
                                     </div>
                                 </div>
@@ -1846,6 +1892,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     canDelete={canDeleteViewingLog}
                     busy={busyLogIds.has(viewingLog.id)}
                     onClose={() => setViewLogId(null)}
+                    onPreviewImage={setPreviewImage}
                     onEdit={() => {
                         setViewLogId(null);
                         openEdit(viewingLog);
@@ -1889,35 +1936,35 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
             {/* Form Modal */}
             {showForm && (
-                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-[95vw] h-[90vh] sm:w-[80vw] sm:h-[80vh] max-w-[1280px] min-w-[320px] flex flex-col">
-                        <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-t-3xl flex items-center justify-between">
+                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/45 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700/80 w-[95vw] h-[90vh] sm:w-[80vw] sm:h-[80vh] max-w-[1280px] min-w-[320px] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700/60 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-t-3xl flex items-center justify-between shrink-0">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editing ? <><Edit2 size={18} /> Sửa nhật ký</> : <><Plus size={18} /> Ghi nhật ký</>}
                             </span>
-                            <button onClick={resetForm} disabled={savingLog} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center disabled:opacity-50"><X size={18} /></button>
+                            <button onClick={resetForm} disabled={savingLog} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center disabled:opacity-50 transition-colors"><X size={18} /></button>
                         </div>
-                        <div className="p-6 space-y-4 overflow-y-auto flex-1">
-                            <div className="grid grid-cols-2 gap-3">
+                        <div className="p-6 space-y-5 overflow-y-auto flex-1 bg-white dark:bg-slate-800">
+                            <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ngày</label>
+                                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-1">Ngày</label>
                                     <input type="date" value={fDate} onChange={e => setFDate(e.target.value)}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-teal-500 outline-none" />
+                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-sm focus:ring-2 focus:ring-teal-500 outline-none transition-all" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nhân công</label>
-                                    <div className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-black text-slate-700">
+                                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-1">Nhân công</label>
+                                    <div className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-900/50 text-sm font-black text-slate-700 dark:text-slate-300">
                                         {getWorkerCountFromLabor(fLabor)} người
                                     </div>
-                                    <p className="mt-1 text-[10px] font-medium text-slate-400">Tự cộng từ Chi tiết thi công &gt; Nhân công.</p>
+                                    <p className="mt-1 text-[10px] font-medium text-slate-400 dark:text-slate-500">Tự cộng từ Chi tiết thi công &gt; Nhân công.</p>
                                 </div>
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Thời tiết</label>
+                                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-1.5">Thời tiết</label>
                                 <div className="grid grid-cols-4 gap-2">
                                     {(Object.entries(WEATHER) as [WeatherType, typeof WEATHER[WeatherType]][]).map(([k, v]) => (
                                         <button key={k} onClick={() => setFWeather(k)}
-                                            className={`py-2 rounded-xl text-xs font-bold border transition-all flex flex-col items-center gap-1 ${fWeather === k ? 'bg-teal-50 border-teal-300 text-teal-700 shadow-sm' : 'border-slate-200 text-slate-500'}`}>
+                                            className={`py-2.5 rounded-xl text-xs font-bold border transition-all flex flex-col items-center gap-1 ${fWeather === k ? 'bg-teal-50 dark:bg-teal-950/40 border-teal-300 dark:border-teal-800 text-teal-700 dark:text-teal-400 shadow-sm scale-[1.02]' : 'border-slate-200 dark:border-slate-700/60 bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-750'}`}>
                                             <span className="text-lg">{v.emoji}</span>
                                             <span>{v.label}</span>
                                         </button>
@@ -1925,44 +1972,44 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 </div>
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Nội dung công việc</label>
+                                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-1">Nội dung công việc</label>
                                 <VoiceTextarea
                                     value={fDesc}
                                     onChange={setFDesc}
                                     rows={3}
                                     placeholder="Mô tả công việc đã thực hiện trong ngày... (nhấn 🎤 để voice input)"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-teal-500 outline-none resize-none"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-sm focus:ring-2 focus:ring-teal-500 outline-none resize-none transition-all"
                                 />
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 flex items-center gap-1"><AlertTriangle size={10} className="text-red-400" /> Vấn đề / Sự cố</label>
+                                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-1 flex items-center gap-1"><AlertTriangle size={10} className="text-red-400" /> Vấn đề / Sự cố</label>
                                 <VoiceTextarea
                                     value={fIssues}
                                     onChange={setFIssues}
                                     rows={2}
                                     placeholder="Ghi lại vấn đề, sự cố nếu có... (nhấn 🎤 để voice input)"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-red-100 bg-red-50/30 text-sm focus:ring-2 focus:ring-red-400 outline-none resize-none"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-red-100 dark:border-red-900/30 bg-red-50/20 dark:bg-red-950/10 text-slate-850 dark:text-slate-100 text-sm focus:ring-2 focus:ring-red-400 outline-none resize-none transition-all"
                                 />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-4">
+                            <div className="grid grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-700/60 pt-4">
                                 {/* GPS */}
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-2">Vị trí hiện trường</label>
+                                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-2">Vị trí hiện trường</label>
                                     {gpsCoords ? (
-                                        <div className="flex items-center justify-between p-2.5 rounded-xl border border-teal-200 bg-teal-50">
+                                        <div className="flex items-center justify-between p-2.5 rounded-xl border border-teal-200/60 dark:border-teal-900/40 bg-teal-50/40 dark:bg-teal-950/15">
                                             <div className="flex items-center gap-2">
-                                                <MapPin size={14} className="text-teal-600" />
+                                                <MapPin size={14} className="text-teal-600 dark:text-teal-400 shrink-0" />
                                                 <div className="text-xs">
-                                                    <div className="font-bold text-slate-700">{gpsCoords.lat.toFixed(5)}, {gpsCoords.lng.toFixed(5)}</div>
-                                                    <div className="text-[10px] text-teal-600">Sai số: {Math.round(gpsCoords.accuracy)}m</div>
+                                                    <div className="font-bold text-slate-700 dark:text-slate-200">{gpsCoords.lat.toFixed(5)}, {gpsCoords.lng.toFixed(5)}</div>
+                                                    <div className="text-[10px] text-teal-600 dark:text-teal-400">Sai số: {Math.round(gpsCoords.accuracy)}m</div>
                                                 </div>
                                             </div>
-                                            <button onClick={() => setGpsCoords(null)} className="text-slate-400 hover:text-red-500"><X size={14} /></button>
+                                            <button onClick={() => setGpsCoords(null)} className="text-slate-400 hover:text-red-500 transition-colors"><X size={14} /></button>
                                         </div>
                                     ) : (
                                         <button onClick={captureGPS} disabled={gpsLoading}
-                                            className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border border-dashed border-slate-300 text-sm font-bold text-slate-500 hover:bg-slate-50 hover:text-teal-600 hover:border-teal-300 transition-colors disabled:opacity-50">
+                                            className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 text-sm font-bold text-slate-550 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-750 hover:text-teal-600 dark:hover:text-teal-400 hover:border-teal-300 dark:hover:border-teal-800 transition-all disabled:opacity-50">
                                             <MapPin size={16} /> {gpsLoading ? 'Đang lấy vị trí...' : 'Lấy tọa độ GPS'}
                                         </button>
                                     )}
@@ -1970,25 +2017,30 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 {/* Photos */}
                                 <div>
                                     <div className="flex items-center justify-between mb-2">
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase flex items-center gap-1">
                                             Ảnh chụp <span className="text-red-500">*</span>
                                         </label>
-                                        <label className="flex items-center gap-1.5 text-[10px] cursor-pointer">
-                                            <input type="checkbox" checked={photoRequired} onChange={e => setPhotoRequired(e.target.checked)} className="accent-teal-500" /> Bắt buộc
+                                        <label className="flex items-center gap-1.5 text-[10px] cursor-pointer text-slate-500 dark:text-slate-400">
+                                            <input type="checkbox" checked={photoRequired} onChange={e => setPhotoRequired(e.target.checked)} className="accent-teal-500 rounded" /> Bắt buộc
                                         </label>
                                     </div>
                                     <div className="flex gap-2 flex-wrap">
                                         {fPhotos.map((p, i) => (
                                             <div key={i} className="relative group">
-                                                <img src={p.url} alt={p.name} className="w-12 h-12 object-cover rounded-lg border border-slate-200" />
+                                                <img 
+                                                    src={p.url} 
+                                                    alt={p.name} 
+                                                    onClick={() => setPreviewImage({ url: p.url, title: p.name || `Ảnh công trường ${i + 1}` })}
+                                                    className="w-12 h-12 object-cover rounded-lg border border-slate-200 dark:border-slate-700 cursor-zoom-in hover:scale-105 transition-transform duration-150" 
+                                                />
                                                 <button onClick={() => setFPhotos(fPhotos.filter((_, idx) => idx !== i))}
-                                                    className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    className="absolute -top-1.5 -right-1.5 w-4.5 h-4.5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
                                                     <X size={10} />
                                                 </button>
                                             </div>
                                         ))}
-                                        <label className={`w-12 h-12 rounded-lg border border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 hover:border-teal-300 hover:text-teal-600 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : 'text-slate-400'}`}>
-                                            <Camera size={16} />
+                                        <label className={`w-12 h-12 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-750 hover:border-teal-300 dark:hover:border-teal-800 hover:text-teal-600 dark:hover:text-teal-400 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : 'text-slate-400'}`}>
+                                            {uploading ? <Loader2 size={16} className="animate-spin text-teal-500" /> : <Camera size={16} />}
                                             <input type="file" accept="image/*" className="hidden" onChange={handleUploadPhoto} disabled={uploading} />
                                         </label>
                                     </div>
@@ -2002,14 +2054,14 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
                             {/* Delay Tasks */}
                             {tasks && tasks.length > 0 && (
-                                <div className="border-t border-slate-100 pt-4">
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1 mb-2">
+                                <div className="border-t border-slate-100 dark:border-slate-700/60 pt-4">
+                                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase flex items-center gap-1 mb-2">
                                         <Clock size={12} className="text-amber-500" /> Ghi nhận trễ tiến độ
                                     </label>
-                                    <div className="space-y-2">
+                                    <div className="space-y-2.5">
                                         {fDelayTasks.map((dt, i) => (
-                                            <div key={i} className="flex gap-2 items-start bg-amber-50/50 p-2 rounded-xl border border-amber-100">
-                                                <select className="flex-1 text-xs border border-amber-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:ring-1 focus:ring-amber-400"
+                                            <div key={i} className="flex gap-2 items-start bg-amber-50/20 dark:bg-amber-950/10 p-2.5 rounded-xl border border-amber-100/50 dark:border-amber-900/30">
+                                                <select className="flex-1 text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-amber-400"
                                                     value={dt.taskId} onChange={e => {
                                                         const newDt = [...fDelayTasks];
                                                         const t = tasks.find(x => x.id === e.target.value);
@@ -2017,41 +2069,41 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                         if (t) newDt[i].taskName = t.name;
                                                         setFDelayTasks(newDt);
                                                     }}>
-                                                    <option value="" disabled>Chọn hạng mục...</option>
-                                                    {tasks.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                                    <option value="" disabled className="dark:bg-slate-900">Chọn hạng mục...</option>
+                                                    {tasks.map(t => <option key={t.id} value={t.id} className="dark:bg-slate-900">{t.name}</option>)}
                                                 </select>
-                                                <div className="flex items-center gap-1 bg-white border border-amber-200 rounded-lg px-2 w-[80px]">
-                                                    <input type="number" className="w-full text-xs text-center py-1.5 outline-none bg-transparent" placeholder="Số" min="1"
+                                                <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 w-[80px]">
+                                                    <input type="number" className="w-full text-xs text-center py-1.5 outline-none bg-transparent text-slate-800 dark:text-slate-200" placeholder="Số" min="1"
                                                         value={dt.delayDays || ''} onChange={e => {
                                                             const newDt = [...fDelayTasks];
                                                             newDt[i].delayDays = Number(e.target.value);
                                                             setFDelayTasks(newDt);
                                                         }} />
-                                                    <span className="text-[10px] text-slate-400">ngày</span>
+                                                    <span className="text-[10px] text-slate-400 dark:text-slate-500">ngày</span>
                                                 </div>
-                                                <select className="w-[110px] text-xs border border-amber-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:ring-1 focus:ring-amber-400"
+                                                <select className="w-[110px] text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-amber-400"
                                                     value={dt.category} onChange={e => {
                                                         const newDt = [...fDelayTasks];
                                                         newDt[i].category = e.target.value as DelayCategory;
                                                         setFDelayTasks(newDt);
                                                     }}>
-                                                    <option value="material">Vật tư</option>
-                                                    <option value="labor">Nhân công</option>
-                                                    <option value="weather">Thời tiết</option>
-                                                    <option value="drawing">Bản vẽ</option>
-                                                    <option value="other">Khác</option>
+                                                    <option value="material" className="dark:bg-slate-900">Vật tư</option>
+                                                    <option value="labor" className="dark:bg-slate-900">Nhân công</option>
+                                                    <option value="weather" className="dark:bg-slate-900">Thời tiết</option>
+                                                    <option value="drawing" className="dark:bg-slate-900">Bản vẽ</option>
+                                                    <option value="other" className="dark:bg-slate-900">Khác</option>
                                                 </select>
-                                                <input type="text" className="flex-1 text-xs border border-amber-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:ring-1 focus:ring-amber-400" placeholder="Ghi chú thêm..."
+                                                <input type="text" className="flex-1 text-xs border border-slate-250 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-amber-400" placeholder="Ghi chú thêm..."
                                                     value={dt.reason} onChange={e => {
                                                         const newDt = [...fDelayTasks];
                                                         newDt[i].reason = e.target.value;
                                                         setFDelayTasks(newDt);
                                                     }} />
-                                                <button onClick={() => setFDelayTasks(fDelayTasks.filter((_, idx) => idx !== i))} className="w-7 h-7 flex items-center justify-center text-amber-400 hover:text-red-500 hover:bg-white rounded-lg shrink-0 mt-0.5"><X size={14} /></button>
+                                                <button onClick={() => setFDelayTasks(fDelayTasks.filter((_, idx) => idx !== i))} className="w-7 h-7 flex items-center justify-center text-amber-400 dark:text-amber-500 hover:text-red-500 hover:bg-white dark:hover:bg-slate-700 rounded-lg shrink-0 mt-0.5 transition-colors"><X size={14} /></button>
                                             </div>
                                         ))}
                                         <button onClick={() => setFDelayTasks([...fDelayTasks, { taskId: '', taskName: '', delayDays: 1, reason: '', category: 'weather' }])}
-                                            className="flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors border border-amber-200">
+                                            className="flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 px-3 py-1.5 rounded-lg transition-colors border border-amber-200 dark:border-amber-900/40">
                                             <Plus size={12} /> Thêm hạng mục bị trễ
                                         </button>
                                     </div>
@@ -2076,13 +2128,30 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 verifiedQuantityByWorkBoqItemId={verifiedQuantityByWorkBoqItemId}
                             />
                         </div>
-                        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
-                            <button onClick={resetForm} disabled={savingLog} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50">Huỷ</button>
+                        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/45 flex justify-end gap-3 shrink-0">
+                            <button onClick={resetForm} disabled={savingLog} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60 disabled:opacity-50 transition-colors">Huỷ</button>
                             <button onClick={handleSave} disabled={savingLog || !fDate || !fDesc || (photoRequired && fPhotos.length === 0)}
-                                className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-teal-500 to-cyan-500 shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50">
+                                className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-teal-500 to-cyan-500 shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50 transition-all hover:-translate-y-0.5 active:translate-y-0">
                                 {savingLog ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {savingLog ? 'Đang lưu...' : editing ? 'Lưu' : 'Ghi nhật ký'}
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Lightbox Component Overlay */}
+            {previewImage && (
+                <div className="fixed inset-0 z-[1000] flex flex-col items-center justify-center bg-black/85 backdrop-blur-md transition-all duration-300 px-4 animate-in fade-in-0" onClick={() => setPreviewImage(null)}>
+                    <button onClick={() => setPreviewImage(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all duration-200 hover:rotate-90">
+                        <X size={20} />
+                    </button>
+                    <div className="max-w-[90vw] max-h-[80vh] flex flex-col items-center select-none" onClick={e => e.stopPropagation()}>
+                        <img src={previewImage.url} alt={previewImage.title || "Xem ảnh"} className="max-w-full max-h-[75vh] object-contain rounded-2xl shadow-2xl border border-white/10 animate-in zoom-in-95 duration-200" />
+                        {previewImage.title && (
+                            <p className="mt-3 text-xs font-bold text-slate-200 text-center tracking-wide px-4 py-2 rounded-xl bg-slate-900/50 backdrop-blur-sm max-w-lg truncate border border-white/5">
+                                {previewImage.title}
+                            </p>
+                        )}
                     </div>
                 </div>
             )}

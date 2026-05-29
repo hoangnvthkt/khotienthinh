@@ -1092,15 +1092,15 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         </div>
                     ) : (
                         <div className="overflow-x-auto">
-                            <table className="w-full text-xs">
-                                <thead className="bg-slate-50/80">
+                            <table className="w-full text-xs min-w-[800px]">
+                                <thead className="bg-slate-50/80 whitespace-nowrap">
                                     <tr className="text-[10px] font-bold text-slate-400 uppercase">
-                                        <th className="text-left px-4 py-3">Mã phiếu</th>
-                                        <th className="text-left px-4 py-3">Ngày tạo</th>
+                                        <th className="text-left px-4 py-3 w-28">Mã phiếu</th>
+                                        <th className="text-left px-4 py-3 w-36">Ngày tạo</th>
                                         <th className="text-left px-4 py-3">Vật tư</th>
-                                        <th className="text-center px-4 py-3">Trạng thái</th>
-                                        <th className="text-left px-4 py-3">Ghi chú</th>
-                                        <th className="text-center px-4 py-3"></th>
+                                        <th className="text-center px-4 py-3 w-40">Trạng thái</th>
+                                        <th className="text-left px-4 py-3 w-48">Ghi chú</th>
+                                        <th className="text-center px-4 py-3 w-12"></th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
@@ -1118,10 +1118,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                         const reqItems = (req.items || []) as any[];
                                         return (
                                             <tr key={req.id} className="hover:bg-slate-50/50 group">
-                                                <td className="px-4 py-3">
+                                                <td className="px-4 py-3 whitespace-nowrap">
                                                     <span className="font-mono font-bold text-indigo-600">{req.code}</span>
                                                 </td>
-                                                <td className="px-4 py-3 text-slate-500">
+                                                <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
                                                     {req.createdDate ? new Date(req.createdDate).toLocaleDateString('vi-VN') : '—'}
                                                     <div className="text-[10px] text-slate-300 mt-0.5">{reqUser?.name || 'N/A'}</div>
                                                     {req.submittedToName && <div className="text-[10px] font-bold text-amber-500 mt-0.5">Gửi: {req.submittedToName}</div>}
@@ -1141,7 +1141,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                         {reqItems.length > 3 && <span className="text-[9px] text-slate-400">+{reqItems.length - 3}</span>}
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-3 text-center">
+                                                <td className="px-4 py-3 text-center whitespace-nowrap">
                                                     <span className={`inline-flex items-center gap-0.5 px-2 py-1 rounded-full text-[9px] font-bold border ${stCfg.bg} ${stCfg.color}`}>
                                                         {stCfg.icon} {hasPartialFulfillment ? 'Cấp một phần' : hasIssuedFulfillment ? 'Đang cấp' : stCfg.label}
                                                     </span>

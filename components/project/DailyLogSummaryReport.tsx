@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   CalendarDays,
@@ -560,9 +561,9 @@ const DailyLogSummaryReport: React.FC<DailyLogSummaryReportProps> = ({ dailyLogs
                       ) : selectedPeriod.logs.map(log => {
                         const status = (log.status || (log.verified ? 'verified' : 'draft')) as DailyLogStatus;
                         return (
-                          <a
+                          <Link
                             key={log.id}
-                            href={buildLogLink(log.id, projectId, constructionSiteId)}
+                            to={buildLogLink(log.id, projectId, constructionSiteId)}
                             className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-2 text-xs font-bold text-slate-600 transition-colors hover:border-teal-200 hover:bg-teal-50"
                           >
                             <span>
@@ -573,7 +574,7 @@ const DailyLogSummaryReport: React.FC<DailyLogSummaryReportProps> = ({ dailyLogs
                               {STATUS_LABELS[status]}
                             </span>
                             <Eye size={13} className="shrink-0 text-teal-600" />
-                          </a>
+                          </Link>
                         );
                       })}
                     </div>

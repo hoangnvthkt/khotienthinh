@@ -306,6 +306,13 @@ const AppDataWarmup: React.FC = () => {
   return null;
 };
 
+const RouteErrorBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const location = useLocation();
+  const resetKey = `${location.pathname}${location.search}${location.hash}`;
+
+  return <ErrorBoundary resetKey={resetKey}>{children}</ErrorBoundary>;
+};
+
 const App: React.FC = () => {
   return (
     <ErrorBoundary>
@@ -318,8 +325,10 @@ const App: React.FC = () => {
                   <ChatProvider>
                     <CelebrationProvider>
                       <Router>
-                        <AppDataWarmup />
-                        <AppRoutes />
+                        <RouteErrorBoundary>
+                          <AppDataWarmup />
+                          <AppRoutes />
+                        </RouteErrorBoundary>
                       </Router>
                     </CelebrationProvider>
                   </ChatProvider>

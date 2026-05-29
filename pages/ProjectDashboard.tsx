@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
     Project,
@@ -197,6 +197,25 @@ const emptyProjectFilters = (): ProjectFilterState => ({
     hidden: 'active',
 });
 
+const buildProjectDashboardPath = (
+    projectId: string | null | undefined,
+    siteId: string | null | undefined,
+    tab: ProjectOverviewTabKey,
+    extraParams?: Record<string, string | undefined>
+): string => {
+    const params = new URLSearchParams();
+    if (projectId) params.set('projectId', projectId);
+    if (siteId) params.set('siteId', siteId);
+    params.set('tab', tab);
+
+    Object.entries(extraParams || {}).forEach(([key, value]) => {
+        if (value) params.set(key, value);
+        else params.delete(key);
+    });
+
+    return `/da?${params.toString()}`;
+};
+
 const emptyProjectForm = (): ProjectFormState => ({
     name: '',
     code: '',
@@ -311,6 +330,7 @@ const siteToProjectFallback = (site: { id: string; name: string; address?: strin
 
 const ProjectDashboard: React.FC = () => {
     const location = useLocation();
+    const navigate = useNavigate();
     const {
         hrmConstructionSites, projectFinances, addProjectFinance, updateProjectFinance, removeProjectFinance,
         projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction,
@@ -444,15 +464,6 @@ const ProjectDashboard: React.FC = () => {
         return false;
     }, [canManageProjectTab, toast]);
 
-    const goToProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
-        if (canViewProjectTab(tabKey)) {
-            setOverviewTab(tabKey);
-            return;
-        }
-        const tab = PROJECT_TAB_PERMISSIONS.find(item => item.key === tabKey);
-        toast.warning('Không có quyền xem tab', `Tài khoản chưa được cấp quyền xem "${tab?.label || tabKey}".`);
-    }, [canViewProjectTab, toast]);
-
     useEffect(() => {
         if (activeView !== 'overview') return;
         if (visibleOverviewTabs.length === 0) return;
@@ -526,6 +537,20 @@ const ProjectDashboard: React.FC = () => {
         if (projects.length > 0) return projects;
         return hrmConstructionSites.map(siteToProjectFallback);
     }, [projects, hrmConstructionSites]);
+
+    const goToProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
+        if (canViewProjectTab(tabKey)) {
+            const project = selectedProjectId ? projectRows.find(item => item.id === selectedProjectId) : null;
+            const siteId = project?.constructionSiteId || selectedSiteId;
+            setOverviewTab(tabKey);
+            if (selectedProjectId) {
+                navigate(buildProjectDashboardPath(selectedProjectId, siteId, tabKey));
+            }
+            return;
+        }
+        const tab = PROJECT_TAB_PERMISSIONS.find(item => item.key === tabKey);
+        toast.warning('Không có quyền xem tab', `Tài khoản chưa được cấp quyền xem "${tab?.label || tabKey}".`);
+    }, [canViewProjectTab, navigate, projectRows, selectedProjectId, selectedSiteId, toast]);
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
@@ -852,6 +877,7 @@ const ProjectDashboard: React.FC = () => {
         setSelectedSiteId(project.constructionSiteId || null);
         setOverviewTab(defaultOverviewTab);
         setActiveView('overview');
+        navigate(buildProjectDashboardPath(project.id, project.constructionSiteId || null, defaultOverviewTab));
     };
 
     const openCreateProject = () => {

@@ -214,6 +214,30 @@ export const materialRequestFulfillmentService = {
     return normalizeBatch(batchRow, lineRows || []);
   },
 
+  async getByTransactionId(transactionId: string): Promise<MaterialRequestFulfillmentBatch | null> {
+    if (!transactionId) return null;
+
+    const { data: batchRow, error: batchError } = await supabase
+      .from(BATCH_TABLE)
+      .select('*')
+      .eq('transaction_id', transactionId)
+      .maybeSingle();
+    if (batchError) {
+      if (isMissingFulfillmentTable(batchError)) return null;
+      throw batchError;
+    }
+    if (!batchRow) return null;
+
+    const { data: lineRows, error: lineError } = await supabase
+      .from(LINE_TABLE)
+      .select('*')
+      .eq('batch_id', batchRow.id)
+      .order('created_at', { ascending: true });
+    if (lineError) throw lineError;
+
+    return normalizeBatch(batchRow, lineRows || []);
+  },
+
   async ensureQrToken(batch: MaterialRequestFulfillmentBatch): Promise<MaterialRequestFulfillmentBatch> {
     if (batch.qrToken) return batch;
     const qrToken = createFulfillmentBatchQrToken();
@@ -669,37 +693,36 @@ export const materialRequestFulfillmentService = {
       if (error) throw error;
     }
 
-    if (hasVariance) {
-      const { data: batchRow, error: batchError } = await supabase
-        .from(BATCH_TABLE)
-        .update({
-          status: 'variance_pending',
-          received_by: input.actorUserId,
-          received_at: now,
-          reason: input.overrideReason || input.batch.reason || null,
-        })
-        .eq('id', input.batch.id)
-        .select('*')
-        .single();
-      if (batchError) throw batchError;
-
-      const { data: lineRows, error: lineError } = await supabase
-        .from(LINE_TABLE)
-        .select('*')
-        .eq('batch_id', input.batch.id)
-        .order('created_at', { ascending: true });
-      if (lineError) throw lineError;
-
-      return normalizeBatch(batchRow, lineRows || []);
-    }
-
     if (input.batch.transactionId) {
       const { data: txRow, error: txReadError } = await supabase
         .from('transactions')
-        .select('status')
+        .select('status, items')
         .eq('id', input.batch.transactionId)
         .maybeSingle();
       if (txReadError) throw txReadError;
+
+      if (txRow?.status === TransactionStatus.PENDING) {
+        throw new Error('Đợt cấp cần được thủ kho công trường duyệt số lượng/chất lượng trước khi xác nhận nhập kho.');
+      }
+      if (txRow?.status && txRow.status !== TransactionStatus.APPROVED && txRow.status !== TransactionStatus.COMPLETED) {
+        throw new Error('Phiếu kho của đợt cấp không còn ở trạng thái có thể xác nhận nhập kho.');
+      }
+
+      if (hasVariance && txRow?.status !== TransactionStatus.COMPLETED) {
+        const receivedQtyByRequestLine = new Map(
+          input.batch.lines.map(line => [line.requestLineId, receivedByLineId.get(line.id)?.receivedQty ?? Number(line.issuedQty || 0)])
+        );
+        const adjustedItems = (txRow?.items || []).map((item: any) => ({
+          ...item,
+          quantity: receivedQtyByRequestLine.get(item.requestLineId) ?? Number(item.quantity || 0),
+        }));
+        const { error: updateTxError } = await supabase
+          .from('transactions')
+          .update({ items: adjustedItems })
+          .eq('id', input.batch.transactionId);
+        if (updateTxError) throw updateTxError;
+      }
+
       if (txRow?.status !== TransactionStatus.COMPLETED) {
         const { error: txError } = await supabase.rpc('process_transaction_status', {
           p_transaction_id: input.batch.transactionId,
@@ -716,7 +739,7 @@ export const materialRequestFulfillmentService = {
         status: 'received',
         received_by: input.actorUserId,
         received_at: now,
-        reason: input.overrideReason || input.batch.reason || null,
+        reason: input.overrideReason || input.batch.reason || (hasVariance ? 'Thủ kho công trường xác nhận nhận lệch theo thực tế.' : null),
       })
       .eq('id', input.batch.id)
       .select('*')

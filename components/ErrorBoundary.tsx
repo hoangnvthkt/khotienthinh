@@ -3,42 +3,93 @@ import React, { Component, ErrorInfo, ReactNode } from 'react';
 
 interface Props {
     children: ReactNode;
+    resetKey?: string;
 }
 
 interface State {
     hasError: boolean;
     error?: Error;
+    errorInfo?: ErrorInfo;
 }
 
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error?: Error }> {
-    constructor(props: { children: React.ReactNode }) {
+const reloadOnce = (storageKey: string, throttleMs: number) => {
+    if (typeof window === 'undefined') return false;
+
+    try {
+        const now = Date.now();
+        const lastReloadAt = Number(sessionStorage.getItem(storageKey) || 0);
+
+        if (Number.isFinite(lastReloadAt) && now - lastReloadAt < throttleMs) {
+            return false;
+        }
+
+        sessionStorage.setItem(storageKey, String(now));
+        window.setTimeout(() => window.location.reload(), 50);
+        return true;
+    } catch (err) {
+        console.warn('Unable to persist reload guard:', err);
+        return false;
+    }
+};
+
+class ErrorBoundary extends Component<Props, State> {
+    constructor(props: Props) {
         super(props);
         this.state = { hasError: false };
     }
 
     componentDidMount() {
-        // Xóa cờ reload khi app load thành công
+        this.clearExpiredReloadMarker('chunk_failed_reload_at', 5 * 60 * 1000);
+        this.clearExpiredReloadMarker('dev_app_context_reload_at', 60 * 1000);
         sessionStorage.removeItem('chunk_failed_reload');
     }
 
-    static getDerivedStateFromError(error: Error) {
+    componentDidUpdate(prevProps: Props) {
+        if (this.state.hasError && this.props.resetKey !== prevProps.resetKey) {
+            this.setState({ hasError: false, error: undefined, errorInfo: undefined });
+        }
+    }
+
+    static getDerivedStateFromError(error: Error): Partial<State> {
         return { hasError: true, error };
     }
 
-    componentDidCatch(error: Error, info: React.ErrorInfo) {
-        console.error('ErrorBoundary caught:', error, info);
+    componentDidCatch(error: Error, info: ErrorInfo) {
+        this.setState({ errorInfo: info });
+
+        if (import.meta.env.DEV) {
+            console.error('ErrorBoundary caught:', error, info.componentStack);
+        } else {
+            console.error('ErrorBoundary caught:', error);
+        }
         
         // Tự động reload 1 lần nếu lỗi do Vercel build mới làm mất chunk cũ (ChunkLoadError)
+        const message = error.message || '';
         const isChunkLoadError = error.name === 'ChunkLoadError' || 
-                                 error.message.includes('Failed to fetch dynamically imported module') ||
-                                 error.message.includes('Importing a module script failed');
+                                 message.includes('Failed to fetch dynamically imported module') ||
+                                 message.includes('Importing a module script failed');
                                  
         if (isChunkLoadError) {
-            const hasReloaded = sessionStorage.getItem('chunk_failed_reload');
-            if (!hasReloaded) {
-                sessionStorage.setItem('chunk_failed_reload', 'true');
-                window.location.reload();
+            reloadOnce('chunk_failed_reload_at', 30000);
+        }
+
+        const isDevContextMismatch =
+            import.meta.env.DEV &&
+            message.includes('useApp must be used within AppProvider');
+
+        if (isDevContextMismatch) {
+            reloadOnce('dev_app_context_reload_at', 10000);
+        }
+    }
+
+    private clearExpiredReloadMarker(storageKey: string, maxAgeMs: number) {
+        try {
+            const lastReloadAt = Number(sessionStorage.getItem(storageKey) || 0);
+            if (lastReloadAt && Date.now() - lastReloadAt > maxAgeMs) {
+                sessionStorage.removeItem(storageKey);
             }
+        } catch {
+            // Ignore storage cleanup failures; the boundary can still render recovery UI.
         }
     }
 
@@ -53,6 +104,11 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
                         {this.state.error && (
                             <pre className="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 text-red-700 dark:text-red-400 text-xs p-4 rounded-xl text-left overflow-auto mb-6 max-h-32">
                                 {this.state.error.message}
+                            </pre>
+                        )}
+                        {import.meta.env.DEV && this.state.errorInfo?.componentStack && (
+                            <pre className="bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs p-4 rounded-xl text-left overflow-auto mb-6 max-h-40">
+                                {this.state.errorInfo.componentStack.trim()}
                             </pre>
                         )}
                         <button

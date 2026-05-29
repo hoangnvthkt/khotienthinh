@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, AreaChart, Area, LineChart, Line, RadarChart, Radar,
@@ -40,6 +40,7 @@ const GRADIENT_PAIRS = [
 
 const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, projectId, contractValue = 0, totalSpent = 0 }) => {
     const location = useLocation();
+    const navigate = useNavigate();
     const [selectedChart, setSelectedChart] = useState<string | null>(null);
     const queryReportView = useMemo(() => new URLSearchParams(location.search).get('reportView'), [location.search]);
     const [activeReportView, setActiveReportView] = useState<'overview' | 'dailylog'>(
@@ -60,8 +61,26 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
     const projectScopeId = projectId || constructionSiteId;
 
     useEffect(() => {
-        if (queryReportView === 'dailylog') setActiveReportView('dailylog');
+        setActiveReportView(queryReportView === 'dailylog' ? 'dailylog' : 'overview');
     }, [queryReportView]);
+
+    const changeReportView = (view: 'overview' | 'dailylog') => {
+        setActiveReportView(view);
+
+        const params = new URLSearchParams(location.search);
+        if (projectId) params.set('projectId', projectId);
+        if (constructionSiteId) params.set('siteId', constructionSiteId);
+        params.set('tab', 'report');
+        params.delete('dailyLogId');
+
+        if (view === 'dailylog') {
+            params.set('reportView', 'dailylog');
+        } else {
+            params.delete('reportView');
+        }
+
+        navigate(`/da?${params.toString()}`, { replace: true });
+    };
 
     useEffect(() => {
         // Fetch new contract models and map to generic ProjectContract shape for reporting
@@ -368,7 +387,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                 </div>
                 <div className="flex rounded-xl bg-slate-100 p-1 dark:bg-slate-900">
                     <button
-                        onClick={() => setActiveReportView('overview')}
+                        onClick={() => changeReportView('overview')}
                         className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black transition-colors ${
                             activeReportView === 'overview' ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-800' : 'text-slate-500 hover:text-slate-700'
                         }`}
@@ -376,7 +395,7 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                         <BarChart3 size={14} /> Tổng hợp dự án
                     </button>
                     <button
-                        onClick={() => setActiveReportView('dailylog')}
+                        onClick={() => changeReportView('dailylog')}
                         className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black transition-colors ${
                             activeReportView === 'dailylog' ? 'bg-white text-teal-700 shadow-sm dark:bg-slate-800' : 'text-slate-500 hover:text-slate-700'
                         }`}

@@ -902,7 +902,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
             await updateRequestStatus(request.id, nextStatus, issueNote.trim() || 'Tạo đợt cấp vật tư', undefined, effectiveSource, overrideReason.trim() || undefined, 'FULFILLMENT_SYNC');
             await loadModuleData('wms', true);
-            toast.success('Đã tạo đợt cấp', 'Đợt cấp đã được ghi nhận và tạo phiếu kho chờ xác nhận nhận hàng.');
+            toast.success('Đã tạo đợt cấp', 'Đợt cấp đã được ghi nhận; thủ kho công trường sẽ duyệt SL/CL rồi xác nhận nhập kho.');
             onClose();
         } catch (err: any) {
             logApiError('requestModal.fulfillment.issue', err);
@@ -932,7 +932,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             title: 'Xác nhận thực nhận đợt cấp',
             targetName: receivingBatch.batchNo,
             subtitle: hasVariance
-                ? 'Có chênh lệch giữa số xuất và số thực nhận. Hệ thống sẽ ghi nhận lệch để chốt theo quy trình.'
+                ? 'Có chênh lệch giữa số xuất và số thực nhận. Hệ thống sẽ ghi nhận theo số thực nhận và cập nhật tồn kho ngay sau xác nhận.'
                 : 'Hệ thống sẽ cập nhật lũy kế thực nhận của phiếu đề xuất.',
             confirmText: 'Xác nhận nhận hàng',
             actionLabel: 'Xác nhận nhận',
@@ -960,10 +960,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
             await updateRequestStatus(request.id, nextStatus, 'Xác nhận nhận đợt cấp vật tư', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_SYNC');
             await loadModuleData('wms', true);
             toast.success(
-                savedBatch.status === 'variance_pending' ? 'Đã ghi nhận lệch' : 'Đã xác nhận nhận hàng',
-                savedBatch.status === 'variance_pending'
-                    ? 'Đợt cấp đang chờ phòng vật tư/admin chốt theo số thực nhận trước khi cập nhật tồn kho.'
-                    : nextStatus === RequestStatus.COMPLETED ? 'Phiếu đề xuất đã đủ số lượng công trường đề xuất.' : 'Đã cập nhật lũy kế nhận hàng cho phiếu.'
+                hasVariance ? 'Đã xác nhận nhận lệch' : 'Đã xác nhận nhận hàng',
+                nextStatus === RequestStatus.COMPLETED ? 'Phiếu đề xuất đã đủ số lượng công trường đề xuất.' : 'Đã cập nhật tồn kho và lũy kế nhận hàng cho phiếu.'
             );
             onClose();
         } catch (err: any) {
@@ -1827,8 +1825,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                     <thead className="text-[9px] uppercase text-slate-400">
                                                         <tr>
                                                             <th className="py-1 text-left">Vật tư</th>
-                                                            <th className="py-1 text-right">Xuất</th>
-                                                            <th className="py-1 text-right">Nhận</th>
+                                                            <th className="py-1 text-right">Đã xuất</th>
+                                                            <th className="py-1 text-right">Thực nhận</th>
                                                             <th className="py-1 text-left pl-3">Lý do lệch</th>
                                                         </tr>
                                                     </thead>

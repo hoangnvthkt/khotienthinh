@@ -379,7 +379,7 @@ const ReconciliationTable = ({
   ];
 
   const colHeader = (icon: React.ReactNode, title: string, sub: string, bg: string) => (
-    <th className={`px-3 py-3 text-center ${bg}`}>
+    <th className={`px-3 py-3 text-center ${bg} whitespace-nowrap`}>
       <div className="flex items-center justify-center gap-1.5">
         {icon}
         <span className="text-xs font-black text-slate-800 uppercase tracking-wide">{title}</span>
@@ -391,10 +391,10 @@ const ReconciliationTable = ({
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-[11px]">
+        <table className="w-full text-[11px] min-w-[700px]">
           <thead>
             <tr className="border-b-2 border-slate-200">
-              <th className="px-4 py-3 text-left w-[200px] bg-slate-50">
+              <th className="px-4 py-3 text-left w-[200px] bg-slate-50 whitespace-nowrap">
                 <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Hạng mục</div>
               </th>
               {colHeader(<Building2 size={13} className="text-orange-600" />, 'Chủ đầu tư', 'HĐ nhận thầu', 'bg-orange-50/50')}

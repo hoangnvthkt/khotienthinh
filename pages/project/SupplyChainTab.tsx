@@ -1685,18 +1685,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             </div>
                             <button onClick={() => setShowRequestPicker(false)} className="w-8 h-8 rounded-xl text-slate-400 hover:bg-slate-100 flex items-center justify-center"><X size={18} /></button>
                         </div>
-                        <div className="overflow-y-auto flex-1">
-                            <table className="w-full text-xs">
-                                <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase sticky top-0">
+                        <div className="overflow-auto flex-1">
+                            <table className="w-full text-xs min-w-[850px]">
+                                <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase sticky top-0 whitespace-nowrap">
                                     <tr>
-                                        <th className="px-4 py-3 text-center"></th>
-                                        <th className="px-4 py-3 text-left">Phiếu</th>
+                                        <th className="px-4 py-3 text-center w-12"></th>
+                                        <th className="px-4 py-3 text-left w-36">Phiếu</th>
                                         <th className="px-4 py-3 text-left">BOQ / Vật tư</th>
-                                        <th className="px-4 py-3 text-right">YC</th>
-                                        <th className="px-4 py-3 text-right">Đã cấp</th>
-                                        <th className="px-4 py-3 text-right">Đã đưa PO</th>
-                                        <th className="px-4 py-3 text-right">Còn lại</th>
-                                        <th className="px-4 py-3 text-left">Ngày cần</th>
+                                        <th className="px-4 py-3 text-right w-20">YC</th>
+                                        <th className="px-4 py-3 text-right w-20">Đã cấp</th>
+                                        <th className="px-4 py-3 text-right w-24">Đã đưa PO</th>
+                                        <th className="px-4 py-3 text-right w-24">Còn lại</th>
+                                        <th className="px-4 py-3 text-left w-28">Ngày cần</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
@@ -1707,7 +1707,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         const lineName = inv?.name || row.line.itemNameSnapshot || row.line.materialBudgetItemName || row.line.itemId;
                                         return (
                                             <tr key={row.key} className="hover:bg-amber-50/40">
-                                                <td className="px-4 py-3 text-center">
+                                                <td className="px-4 py-3 text-center whitespace-nowrap">
                                                     <input
                                                         type="checkbox"
                                                         checked={selectedRequestLineKeys.includes(row.key)}
@@ -1715,7 +1715,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         className="accent-amber-500"
                                                     />
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td className="px-4 py-3 whitespace-nowrap">
                                                     <div className="font-mono font-black text-indigo-600">{row.request.code}</div>
                                                     <div className="text-[10px] text-slate-400">{new Date(row.request.createdDate).toLocaleDateString('vi-VN')}</div>
                                                 </td>
@@ -1728,11 +1728,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     {row.line.isManualItem ? <div className="text-[10px] font-bold text-amber-600">Dòng cần cấp mã vật tư trước</div> : null}
                                                     {row.line.overBudgetQtySnapshot ? <div className="text-[10px] font-bold text-orange-600">Vượt định mức: {row.line.overBudgetReason || 'Đã nhập lý do'}</div> : null}
                                                 </td>
-                                                <td className="px-4 py-3 text-right font-bold">{row.requestedQty.toLocaleString('vi-VN')}</td>
-                                                <td className="px-4 py-3 text-right text-blue-600 font-bold">{row.stockCoveredQty.toLocaleString('vi-VN')}</td>
-                                                <td className="px-4 py-3 text-right text-slate-500">{row.orderedQty.toLocaleString('vi-VN')}</td>
-                                                <td className="px-4 py-3 text-right font-black text-amber-700">{remaining.toLocaleString('vi-VN')}</td>
-                                                <td className="px-4 py-3 text-slate-500">{row.line.neededDate || row.request.expectedDate?.slice(0, 10) || '—'}</td>
+                                                <td className="px-4 py-3 text-right font-bold whitespace-nowrap">{row.requestedQty.toLocaleString('vi-VN')}</td>
+                                                <td className="px-4 py-3 text-right text-blue-600 font-bold whitespace-nowrap">{row.stockCoveredQty.toLocaleString('vi-VN')}</td>
+                                                <td className="px-4 py-3 text-right text-slate-500 whitespace-nowrap">{row.orderedQty.toLocaleString('vi-VN')}</td>
+                                                <td className="px-4 py-3 text-right font-black text-amber-700 whitespace-nowrap">{remaining.toLocaleString('vi-VN')}</td>
+                                                <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{row.line.neededDate || row.request.expectedDate?.slice(0, 10) || '—'}</td>
                                             </tr>
                                         );
                                     })}

@@ -23,6 +23,7 @@ import { notificationService } from '../lib/notificationService';
 import { logApiError } from '../lib/apiError';
 import { projectSubmissionService } from '../lib/projectSubmissionService';
 import { mapMaterialRequestFromDb } from '../lib/materialRequestService';
+import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
 import {
   formatStockDecreaseIssues,
   getStockDecreaseIssues,
@@ -1399,6 +1400,75 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!isSupabaseConfigured) syncToSupabase('transactions', tx);
   };
 
+  const syncFulfillmentBatchFromCompletedTransaction = async (completedTx: Transaction, actorUserId: string) => {
+    if (!isSupabaseConfigured) return;
+    if (completedTx.status !== TransactionStatus.COMPLETED) return;
+    if (!completedTx.relatedRequestId) return;
+    if (!(completedTx.items || []).some(item => !!item.fulfillmentBatchId)) return;
+
+    try {
+      const batch = await materialRequestFulfillmentService.getByTransactionId(completedTx.id);
+      if (!batch || batch.status !== 'issued') return;
+
+      const { data: requestRow, error: requestError } = await supabase
+        .from('requests')
+        .select('*')
+        .eq('id', completedTx.relatedRequestId)
+        .maybeSingle();
+      if (requestError) throw requestError;
+      if (!requestRow) return;
+
+      const request = mapMaterialRequestFromDb(requestRow);
+      const receivedByRequestLine = new Map<string, number>();
+      const receivedByItem = new Map<string, number>();
+      (completedTx.items || []).forEach(line => {
+        const qty = Number(line.quantity || 0);
+        if (line.requestLineId) {
+          receivedByRequestLine.set(line.requestLineId, (receivedByRequestLine.get(line.requestLineId) || 0) + qty);
+        }
+        if (line.itemId) {
+          receivedByItem.set(line.itemId, (receivedByItem.get(line.itemId) || 0) + qty);
+        }
+      });
+
+      await materialRequestFulfillmentService.receiveBatch({
+        request,
+        batch,
+        actorUserId,
+        allowOverCommit: user.role === Role.ADMIN,
+        lines: batch.lines.map(line => {
+          const receivedQty = receivedByRequestLine.has(line.requestLineId)
+            ? receivedByRequestLine.get(line.requestLineId)!
+            : receivedByItem.has(line.itemId)
+              ? receivedByItem.get(line.itemId)!
+              : Number(line.issuedQty || 0);
+          return {
+            lineId: line.id,
+            receivedQty,
+            varianceReason: receivedQty === Number(line.issuedQty || 0)
+              ? undefined
+              : 'Thủ kho công trường duyệt số lượng thực nhận trên phiếu kho.',
+          };
+        }),
+      });
+
+      const freshBatches = await materialRequestFulfillmentService.listByRequest(request.id);
+      const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
+      await updateRequestStatus(
+        request.id,
+        nextStatus,
+        'Xác nhận nhập kho công trường từ phiếu kho',
+        undefined,
+        request.sourceWarehouseId,
+        request.overrideReason,
+        'FULFILLMENT_SYNC',
+      );
+    } catch (err) {
+      logApiError('syncFulfillmentBatchFromCompletedTransaction', err);
+      throw err;
+    }
+  };
+
   const updateTransactionStatus = async (id: string, status: TransactionStatus, approverId?: string) => {
     const tx = transactions.find(t => t.id === id);
     if (!tx) throw new Error('Không tìm thấy phiếu kho cần cập nhật.');
@@ -1421,9 +1491,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         throw error;
       }
 
-      if (data) setTransactions(prev => prev.map(t => t.id === id ? mapTransactionFromDb(data) : t));
+      const storedTx = data ? mapTransactionFromDb(data) : { ...tx, status, approverId: approverId || user.id };
+      setTransactions(prev => prev.map(t => t.id === id ? storedTx : t));
 
       await refreshInventoryItemsFromSupabase();
+
+      if (status === TransactionStatus.COMPLETED) {
+        await syncFulfillmentBatchFromCompletedTransaction(storedTx, approverId || user.id);
+      }
 
       const whId = tx?.targetWarehouseId || tx?.sourceWarehouseId;
       logActivity('TRANSACTION', `Cập nhật phiếu`, `Phiếu mã ${id.slice(-6)} chuyển sang ${status}`, status === TransactionStatus.COMPLETED ? 'SUCCESS' : 'INFO', whId);
@@ -1442,7 +1517,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         logActivity('TRANSACTION', `Cập nhật phiếu`, `Phiếu mã ${tx.id.slice(-6)} chuyển sang ${status}`, status === TransactionStatus.COMPLETED ? 'SUCCESS' : 'INFO', whId);
-        if (status === TransactionStatus.COMPLETED) void applyStockChange(updatedTx, { excludeTransactionId: id });
+        if (status === TransactionStatus.COMPLETED) {
+          void applyStockChange(updatedTx, { excludeTransactionId: id });
+          void syncFulfillmentBatchFromCompletedTransaction(updatedTx, approverId || user.id);
+        }
         syncToSupabase('transactions', updatedTx);
         return updatedTx;
       }
@@ -1622,6 +1700,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       message: string;
       severity: 'info' | 'warning' | 'critical';
       sourceId: string;
+      link?: string;
+      sourceType?: string;
+      metadata?: Record<string, any>;
     }
   ) => {
     if (!isSupabaseConfigured) return;
@@ -1635,11 +1716,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           title: notification.title,
           message: notification.message,
           icon: 'package',
-          link: '/requests',
+          link: notification.link || '/requests',
           severity: notification.severity,
-          sourceType: 'material_request',
+          sourceType: notification.sourceType || 'material_request',
           sourceId: notification.sourceId,
-          metadata: {},
+          metadata: notification.metadata || {},
         });
       }
     } catch (err) {
@@ -1731,7 +1812,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateRequestStatus = async (id: string, status: RequestStatus, note?: string, approvedItems?: { lineId?: string, itemId: string, qty: number }[], sourceWarehouseId?: string, overrideReason?: string, actionOverride?: string): Promise<boolean> => {
-    const req = requests.find(r => r.id === id);
+    let req = requests.find(r => r.id === id);
+    if (!req && isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('requests')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) req = mapMaterialRequestFromDb(data);
+    }
     if (!req) return false;
     const isReturnAction = actionOverride === 'RETURNED';
     const isFulfillmentSync = actionOverride === 'FULFILLMENT_SYNC';
@@ -1876,10 +1966,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (keeperRecipients.length > 0) {
       void notifyWmsUsers(keeperRecipients, {
         type: status === RequestStatus.COMPLETED ? 'success' : 'info',
-        title: 'Phiếu vật tư cần theo dõi',
-        message: `Phiếu ${req.code} chuyển sang ${status}; kho liên quan cần kiểm tra thao tác tiếp theo.`,
+        title: status === RequestStatus.IN_TRANSIT ? 'Đợt cấp chờ kiểm tra SL/CL' : 'Phiếu vật tư cần theo dõi',
+        message: status === RequestStatus.IN_TRANSIT
+          ? `Phiếu ${req.code} đã có đợt cấp tới kho công trường. Thủ kho cần duyệt số lượng/chất lượng rồi xác nhận nhận hàng.`
+          : `Phiếu ${req.code} chuyển sang ${status}; kho liên quan cần kiểm tra thao tác tiếp theo.`,
         severity: 'info',
         sourceId: `${req.id}_${status}_${Date.now()}`,
+        link: status === RequestStatus.IN_TRANSIT ? '/operations' : '/requests',
+        metadata: {
+          requestId: req.id,
+          projectId: req.projectId || undefined,
+          constructionSiteId: req.constructionSiteId || undefined,
+          siteWarehouseId: req.siteWarehouseId,
+          sourceWarehouseId: effectiveSourceWhId,
+        },
       });
     }
 
@@ -2580,3 +2680,9 @@ export const useApp = () => {
   if (!context) throw new Error("useApp must be used within AppProvider");
   return context;
 };
+
+if (import.meta.env.DEV && import.meta.hot) {
+  import.meta.hot.accept(() => {
+    import.meta.hot?.invalidate('AppContext changed; forcing full reload to keep provider and consumers in sync.');
+  });
+}

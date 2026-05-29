@@ -102,8 +102,11 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
       );
       await loadModuleData('wms', true);
       toast.success(
-        savedBatch.status === 'variance_pending' ? 'Đã ghi nhận nhận lệch' : 'Đã xác nhận nhập kho nội bộ',
-        nextStatus === RequestStatus.COMPLETED ? 'Phiếu đề xuất đã nhận đủ số lượng yêu cầu.' : 'Đã cập nhật lũy kế thực nhận cho phiếu.',
+        receiveLines.some(line => {
+          const batchLine = batch.lines.find(item => item.id === line.lineId);
+          return Number(line.qty || 0) !== Number(batchLine?.issuedQty || 0);
+        }) ? 'Đã xác nhận nhận lệch' : 'Đã xác nhận nhập kho nội bộ',
+        nextStatus === RequestStatus.COMPLETED ? 'Phiếu đề xuất đã nhận đủ số lượng yêu cầu.' : 'Đã cập nhật tồn kho và lũy kế thực nhận cho phiếu.',
       );
       onReceived?.();
       onClose();
@@ -140,11 +143,11 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
           )}
 
           <div className="overflow-x-auto rounded-2xl border border-slate-100">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50 text-[10px] uppercase text-slate-400 font-black tracking-widest border-b border-slate-100">
+            <table className="w-full text-left min-w-[650px]">
+              <thead className="bg-slate-50 text-[10px] uppercase text-slate-400 font-black tracking-widest border-b border-slate-100 whitespace-nowrap">
                 <tr>
                   <th className="p-4">Vật tư</th>
-                  <th className="p-4 text-right">Đã xuất</th>
+                  <th className="p-4 text-right w-28">Đã xuất</th>
                   <th className="p-4 text-center w-44">Thực nhận</th>
                   <th className="p-4">Lý do lệch</th>
                 </tr>
@@ -157,7 +160,7 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
                   return (
                     <tr key={line.id}>
                       <td className="p-4 font-black text-sm text-slate-800">{getLineName(line.requestLineId, line.itemId)}</td>
-                      <td className="p-4 text-right font-black text-indigo-600">{Number(line.issuedQty || 0).toLocaleString('vi-VN')} {line.unit || ''}</td>
+                      <td className="p-4 text-right font-black text-indigo-600 whitespace-nowrap">{Number(line.issuedQty || 0).toLocaleString('vi-VN')} {line.unit || ''}</td>
                       <td className="p-4">
                         <input
                           type="number"
