@@ -22,6 +22,14 @@ import { realtimeService, RealtimeStatus } from '../lib/realtimeService';
 import { notificationService } from '../lib/notificationService';
 import { logApiError } from '../lib/apiError';
 import { projectSubmissionService } from '../lib/projectSubmissionService';
+import { getDefaultMaterialRequestWorkflowStep, getMaterialRequestWorkflowPatch, mapMaterialRequestFromDb, materialRequestService } from '../lib/materialRequestService';
+import { materialRequestBoqLineSnapshotService } from '../lib/materialRequestBoqLineSnapshotService';
+import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
+import {
+  formatStockDecreaseIssues,
+  getStockDecreaseIssues,
+  getStockDecreaseLinesForTransaction,
+} from '../lib/inventoryStockGuard';
 
 interface AppSettings {
   name: string;
@@ -65,7 +73,7 @@ const userToDbPayload = (data: User) => {
   return payload;
 };
 
-export type AppModule = 'wms' | 'hrm' | 'da' | 'ts' | 'ex';
+export type AppModule = 'wms' | 'wms-core' | 'hrm' | 'da' | 'ts' | 'ex';
 
 interface AppContextType {
   user: User;
@@ -234,28 +242,6 @@ const mapTransactionFromDb = (t: any): Transaction => ({
   approverId: t.approver_id,
   relatedRequestId: t.related_request_id,
   pendingItems: t.pending_items,
-});
-
-const mapMaterialRequestFromDb = (r: any): MaterialRequest => ({
-  ...r,
-  projectId: r.project_id ?? r.projectId ?? null,
-  constructionSiteId: r.construction_site_id ?? r.constructionSiteId ?? null,
-  requestOrigin: r.request_origin ?? r.requestOrigin ?? 'wms',
-  siteWarehouseId: r.site_warehouse_id,
-  sourceWarehouseId: r.source_warehouse_id,
-  requesterId: r.requester_id,
-  createdDate: r.created_date,
-  expectedDate: r.expected_date,
-  fulfillmentMode: r.fulfillment_mode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
-  overrideReason: r.override_reason || undefined,
-  relatedTransactionId: r.related_transaction_id || undefined,
-  submittedToUserId: r.submitted_to_user_id ?? r.submittedToUserId ?? undefined,
-  submittedToName: r.submitted_to_name ?? r.submittedToName ?? undefined,
-  submittedToPermission: r.submitted_to_permission ?? r.submittedToPermission ?? undefined,
-  submissionNote: r.submission_note ?? r.submissionNote ?? undefined,
-  everSubmitted: r.ever_submitted ?? r.everSubmitted ?? undefined,
-  lastActionBy: r.last_action_by ?? r.lastActionBy ?? undefined,
-  lastActionAt: r.last_action_at ?? r.lastActionAt ?? undefined,
 });
 
 const mapAssetLocationStockFromDb = (l: any): AssetLocationStock => ({
@@ -446,7 +432,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Set up Realtime via centralized service
     const CRITICAL_TABLES = [
       'items', 'transactions', 'warehouses', 'requests',
-      'users', 'app_settings'
+      'users', 'app_settings',
+      'suppliers', 'activities', 'employees', 'categories',
+      'units', 'org_units', 'notifications',
     ];
 
     // Status tracking
@@ -679,11 +667,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const loadModuleData = useCallback(async (module: AppModule, force = false) => {
     if (!isSupabaseConfigured) return;
-    if (!force && loadedModulesRef.current.has(module)) return;
+    if (!force && (loadedModulesRef.current.has(module) || (module === 'wms-core' && loadedModulesRef.current.has('wms')))) return;
     loadedModulesRef.current.add(module);
 
     try {
-      if (module === 'wms') {
+      const loadWmsCoreData = async () => {
+        const [itemsData, whData, reqData] = await Promise.all([
+          fetchTableHelper('items'),
+          fetchTableHelper('warehouses'),
+          fetchTableHelper('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
+        ]);
+        if (itemsData) setItems(itemsData.map(mapInventoryItemFromDb));
+        if (whData) setWarehouses(whData.map((w: any) => ({ ...w, isArchived: w.is_archived })));
+        if (reqData) setRequests(reqData.map(mapMaterialRequestFromDb));
+      };
+
+      if (module === 'wms-core') {
+        await loadWmsCoreData();
+      } else if (module === 'wms') {
         const [itemsData, whData, supData, txData, reqData, actData, catData, unitData, lossNormsData, auditSessionsData] = await Promise.all([
           fetchTableHelper('items'),
           fetchTableHelper('warehouses'),
@@ -721,6 +722,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           createdAt: n.created_at,
         })));
         if (auditSessionsData) setAuditSessions(auditSessionsData);
+        loadedModulesRef.current.add('wms-core');
       } else if (module === 'hrm') {
         const [
           empData, areasData, officesData, empTypesData, positionsData, salaryData, schedulesData, constructionSitesData, orgUnitsData,
@@ -981,7 +983,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           submission_note: data.submissionNote || null,
           ever_submitted: data.everSubmitted || false,
           last_action_by: data.lastActionBy || null,
-          last_action_at: data.lastActionAt || null
+          last_action_at: data.lastActionAt || null,
+          workflow_step: data.workflowStep || null,
+          workflow_step_started_at: data.workflowStepStartedAt || null,
+          workflow_step_due_at: data.workflowStepDueAt || null,
+          workflow_step_sla_hours: data.workflowStepSlaHours ?? null,
+          workflow_step_actor_user_id: data.workflowStepActorUserId || null
         };
       } else if (table === 'activities') {
         payload = {
@@ -1263,7 +1270,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (oldItem) auditService.log({ tableName: 'items', recordId: id, action: 'DELETE', oldData: oldItem as any, userId: user.id, userName: user.name || user.username });
   };
 
-  const applyStockChange = async (tx: Transaction) => {
+  const assertTransactionStockAvailable = (
+    tx: Transaction,
+    options: { excludeRequestId?: string; excludeTransactionId?: string; actionLabel?: string } = {},
+  ) => {
+    const decreaseLines = getStockDecreaseLinesForTransaction(tx);
+    if (decreaseLines.length === 0) return;
+    const issues = getStockDecreaseIssues({
+      items,
+      warehouses,
+      transactions,
+      requests,
+      lines: decreaseLines,
+      options: {
+        excludeRequestId: options.excludeRequestId || tx.relatedRequestId,
+        excludeTransactionId: options.excludeTransactionId,
+      },
+    });
+    if (issues.length > 0) {
+      throw new Error(formatStockDecreaseIssues(issues, options.actionLabel || 'xuất/trả kho'));
+    }
+  };
+
+  const refreshInventoryItemsFromSupabase = async () => {
+    if (!isSupabaseConfigured) return;
+    const { data: itemsData, error: itemsError } = await supabase.from('items').select('*');
+    if (itemsError) {
+      logApiError('refreshInventoryItemsFromSupabase', itemsError);
+      return;
+    }
+    if (itemsData) setItems(itemsData.map(mapInventoryItemFromDb));
+  };
+
+  const applyStockChange = async (
+    tx: Transaction,
+    options: { excludeRequestId?: string; excludeTransactionId?: string; actionLabel?: string } = {},
+  ) => {
+    assertTransactionStockAvailable(tx, {
+      actionLabel: options.actionLabel || 'xuất/trả kho',
+      excludeRequestId: options.excludeRequestId,
+      excludeTransactionId: options.excludeTransactionId,
+    });
     const changedItems: InventoryItem[] = [];
     const baseItems = tx.pendingItems?.length
       ? [
@@ -1282,12 +1329,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (tx.type === TransactionType.IMPORT && tx.targetWarehouseId) {
         newStock[tx.targetWarehouseId] = (newStock[tx.targetWarehouseId] || 0) + qty;
       } else if ((tx.type === TransactionType.EXPORT || tx.type === TransactionType.LIQUIDATION) && tx.sourceWarehouseId) {
-        newStock[tx.sourceWarehouseId] = Math.max(0, (newStock[tx.sourceWarehouseId] || 0) - qty);
+        const current = newStock[tx.sourceWarehouseId] || 0;
+        if (current - qty < 0) throw new Error(`Kho nguồn không đủ tồn cho "${item.name}". Tồn ${current}, cần ${qty}.`);
+        newStock[tx.sourceWarehouseId] = current - qty;
       } else if (tx.type === TransactionType.TRANSFER && tx.sourceWarehouseId && tx.targetWarehouseId) {
-        newStock[tx.sourceWarehouseId] = Math.max(0, (newStock[tx.sourceWarehouseId] || 0) - qty);
+        const current = newStock[tx.sourceWarehouseId] || 0;
+        if (current - qty < 0) throw new Error(`Kho nguồn không đủ tồn cho "${item.name}". Tồn ${current}, cần ${qty}.`);
+        newStock[tx.sourceWarehouseId] = current - qty;
         newStock[tx.targetWarehouseId] = (newStock[tx.targetWarehouseId] || 0) + qty;
       } else if (tx.type === TransactionType.ADJUSTMENT && tx.targetWarehouseId) {
-        newStock[tx.targetWarehouseId] = (newStock[tx.targetWarehouseId] || 0) + qty;
+        const current = newStock[tx.targetWarehouseId] || 0;
+        if (current + qty < 0) throw new Error(`Điều chỉnh làm âm kho cho "${item.name}". Tồn ${current}, điều chỉnh ${qty}.`);
+        newStock[tx.targetWarehouseId] = current + qty;
       }
 
       const updatedItem = { ...item, stockByWarehouse: newStock };
@@ -1304,14 +1357,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addTransaction = async (tx: Transaction) => {
+    const isImmediateCompleted = tx.status === TransactionStatus.COMPLETED;
+    if (isImmediateCompleted) {
+      assertTransactionStockAvailable(tx, { actionLabel: 'xuất/trả kho' });
+    }
+
     if (isSupabaseConfigured) {
-      const synced = await syncToSupabase('transactions', tx);
+      const shouldProcessCompletedViaRpc = isImmediateCompleted && tx.type !== TransactionType.ADJUSTMENT;
+      const initialTx = shouldProcessCompletedViaRpc ? { ...tx, status: TransactionStatus.PENDING } : tx;
+      const synced = await syncToSupabase('transactions', initialTx);
       if (!synced) {
         throw new Error('Không thể lưu phiếu kho lên Supabase.');
       }
+
+      let storedTx = initialTx;
+      if (shouldProcessCompletedViaRpc) {
+        const { data, error } = await supabase.rpc('process_transaction_status', {
+          p_transaction_id: tx.id,
+          p_status: TransactionStatus.COMPLETED,
+          p_approver_id: tx.approverId || user.id,
+        });
+        if (error) {
+          await supabase.from('transactions').delete().eq('id', tx.id).eq('status', TransactionStatus.PENDING);
+          logApiError('addTransaction.process_transaction_status', error);
+          throw error;
+        }
+        storedTx = data ? mapTransactionFromDb(data) : tx;
+        await refreshInventoryItemsFromSupabase();
+      } else if (isImmediateCompleted) {
+        await applyStockChange(tx);
+      }
+
+      setTransactions(prev => [storedTx, ...prev.filter(existing => existing.id !== storedTx.id)]);
+      const whId = tx.targetWarehouseId || tx.sourceWarehouseId;
+      logActivity('TRANSACTION', `Tạo phiếu ${tx.type}`, `Phiếu mã ${tx.id.slice(-6)} đã được tạo`, 'INFO', whId);
+      return;
     }
 
-    setTransactions(prev => [tx, ...prev]);
     const whId = tx.targetWarehouseId || tx.sourceWarehouseId;
 
     if (tx.status === TransactionStatus.COMPLETED || tx.status === TransactionStatus.APPROVED) {
@@ -1322,12 +1404,102 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     logActivity('TRANSACTION', `Tạo phiếu ${tx.type}`, `Phiếu mã ${tx.id.slice(-6)} đã được tạo`, 'INFO', whId);
     if (tx.status === TransactionStatus.COMPLETED) await applyStockChange(tx);
+    setTransactions(prev => [tx, ...prev]);
     if (!isSupabaseConfigured) syncToSupabase('transactions', tx);
   };
 
+  const syncFulfillmentBatchFromCompletedTransaction = async (completedTx: Transaction, actorUserId: string) => {
+    if (!isSupabaseConfigured) return;
+    if (completedTx.status !== TransactionStatus.COMPLETED) return;
+    if (!completedTx.relatedRequestId) return;
+    if (!(completedTx.items || []).some(item => !!item.fulfillmentBatchId)) return;
+
+    try {
+      await materialRequestFulfillmentService.syncFulfillmentReceiptForTransaction({
+        transactionId: completedTx.id,
+        actorUserId,
+      });
+
+      const batch = await materialRequestFulfillmentService.getByTransactionId(completedTx.id);
+      if (!batch) return;
+
+      const { data: requestRow, error: requestError } = await supabase
+        .from('requests')
+        .select('*')
+        .eq('id', completedTx.relatedRequestId)
+        .maybeSingle();
+      if (requestError) throw requestError;
+      if (!requestRow) return;
+
+      const request = mapMaterialRequestFromDb(requestRow);
+      if (batch.status === 'issued') {
+        const receivedByRequestLine = new Map<string, number>();
+        const receivedByItem = new Map<string, number>();
+        const varianceReasonByRequestLine = new Map<string, string>();
+        (completedTx.items || []).forEach(line => {
+          const qty = Number(line.quantity || 0);
+          if (line.requestLineId) {
+            receivedByRequestLine.set(line.requestLineId, (receivedByRequestLine.get(line.requestLineId) || 0) + qty);
+            if (line.varianceReason?.trim()) {
+              varianceReasonByRequestLine.set(line.requestLineId, line.varianceReason.trim());
+            }
+          }
+          if (line.itemId) {
+            receivedByItem.set(line.itemId, (receivedByItem.get(line.itemId) || 0) + qty);
+          }
+        });
+
+        await materialRequestFulfillmentService.receiveBatch({
+          request,
+          batch,
+          actorUserId,
+          allowOverCommit: user.role === Role.ADMIN,
+          lines: batch.lines.map(line => {
+            const receivedQty = receivedByRequestLine.has(line.requestLineId)
+              ? receivedByRequestLine.get(line.requestLineId)!
+              : receivedByItem.has(line.itemId)
+                ? receivedByItem.get(line.itemId)!
+                : Number(line.issuedQty || 0);
+            return {
+              lineId: line.id,
+              receivedQty,
+              varianceReason: receivedQty === Number(line.issuedQty || 0)
+                ? undefined
+                : varianceReasonByRequestLine.get(line.requestLineId) || 'Thủ kho công trường duyệt số lượng thực nhận trên phiếu kho.',
+            };
+          }),
+        });
+      }
+
+      const freshBatches = await materialRequestFulfillmentService.listByRequest(request.id);
+      const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
+      await updateRequestStatus(
+        request.id,
+        nextStatus,
+        'Xác nhận nhập kho công trường từ phiếu kho',
+        undefined,
+        request.sourceWarehouseId,
+        request.overrideReason,
+        'FULFILLMENT_RECEIVED',
+      );
+    } catch (err) {
+      logApiError('syncFulfillmentBatchFromCompletedTransaction', err);
+      throw err;
+    }
+  };
+
   const updateTransactionStatus = async (id: string, status: TransactionStatus, approverId?: string) => {
+    const tx = transactions.find(t => t.id === id);
+    if (!tx) throw new Error('Không tìm thấy phiếu kho cần cập nhật.');
+
+    if (status === TransactionStatus.APPROVED || status === TransactionStatus.COMPLETED) {
+      assertTransactionStockAvailable(tx, {
+        excludeTransactionId: id,
+        actionLabel: status === TransactionStatus.APPROVED ? 'giữ chỗ' : 'xuất/trả kho',
+      });
+    }
+
     if (isSupabaseConfigured) {
-      const tx = transactions.find(t => t.id === id);
       const { data, error } = await supabase.rpc('process_transaction_status', {
         p_transaction_id: id,
         p_status: status,
@@ -1338,11 +1510,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         throw error;
       }
 
-      if (data) setTransactions(prev => prev.map(t => t.id === id ? mapTransactionFromDb(data) : t));
+      const storedTx = data ? mapTransactionFromDb(data) : { ...tx, status, approverId: approverId || user.id };
+      setTransactions(prev => prev.map(t => t.id === id ? storedTx : t));
 
-      const { data: itemsData, error: itemsError } = await supabase.from('items').select('*');
-      if (itemsError) logApiError('updateTransactionStatus.refreshItems', itemsError);
-      else if (itemsData) setItems(itemsData.map(mapInventoryItemFromDb));
+      await refreshInventoryItemsFromSupabase();
+
+      if (status === TransactionStatus.COMPLETED) {
+        await syncFulfillmentBatchFromCompletedTransaction(storedTx, approverId || user.id);
+      }
 
       const whId = tx?.targetWarehouseId || tx?.sourceWarehouseId;
       logActivity('TRANSACTION', `Cập nhật phiếu`, `Phiếu mã ${id.slice(-6)} chuyển sang ${status}`, status === TransactionStatus.COMPLETED ? 'SUCCESS' : 'INFO', whId);
@@ -1361,7 +1536,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         logActivity('TRANSACTION', `Cập nhật phiếu`, `Phiếu mã ${tx.id.slice(-6)} chuyển sang ${status}`, status === TransactionStatus.COMPLETED ? 'SUCCESS' : 'INFO', whId);
-        if (status === TransactionStatus.COMPLETED) void applyStockChange(updatedTx);
+        if (status === TransactionStatus.COMPLETED) {
+          void applyStockChange(updatedTx, { excludeTransactionId: id });
+          void syncFulfillmentBatchFromCompletedTransaction(updatedTx, approverId || user.id);
+        }
         syncToSupabase('transactions', updatedTx);
         return updatedTx;
       }
@@ -1380,12 +1558,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let selectedPendingItems: InventoryItem[] = [];
     if (tx.pendingItems && tx.pendingItems.length > 0) {
       selectedPendingItems = tx.pendingItems.filter(ni => selectedItemIds.includes(ni.id));
-      if (selectedPendingItems.length > 0) {
-        addItems(selectedPendingItems);
-      }
     }
 
-    const updatedTx = {
+    const updatedTx: Transaction = {
       ...tx,
       items: filteredItems,
       status: nextStatus,
@@ -1393,19 +1568,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       note: selectedItemIds.length < tx.items.length
         ? `${tx.note} (Đã lọc bớt ${tx.items.length - selectedItemIds.length} món)`
         : tx.note,
-      pendingItems: []
+      pendingItems: selectedPendingItems
     };
 
-    const synced = await syncToSupabase('transactions', updatedTx);
-    if (!synced) {
-      throw new Error('Không thể cập nhật phiếu kho trên Supabase.');
+    assertTransactionStockAvailable(updatedTx, {
+      excludeTransactionId: id,
+      actionLabel: nextStatus === TransactionStatus.APPROVED ? 'giữ chỗ' : 'xuất/trả kho',
+    });
+
+    if (isSupabaseConfigured) {
+      const synced = await syncToSupabase('transactions', { ...updatedTx, status: TransactionStatus.PENDING });
+      if (!synced) {
+        throw new Error('Không thể cập nhật phiếu kho trên Supabase.');
+      }
+
+      const { data, error } = await supabase.rpc('process_transaction_status', {
+        p_transaction_id: id,
+        p_status: nextStatus,
+        p_approver_id: approverId,
+      });
+      if (error) {
+        logApiError('approvePartialTransaction.process_transaction_status', error);
+        throw error;
+      }
+
+      const storedTx = data ? mapTransactionFromDb(data) : updatedTx;
+      setTransactions(prev => prev.map(item => item.id === id ? storedTx : item));
+      await refreshInventoryItemsFromSupabase();
+    } else {
+      if (selectedPendingItems.length > 0) {
+        addItems(selectedPendingItems);
+      }
+      if (nextStatus === TransactionStatus.COMPLETED) {
+        await applyStockChange(updatedTx, { excludeTransactionId: id });
+      }
+      setTransactions(prev => prev.map(item => item.id === id ? { ...updatedTx, pendingItems: [] } : item));
     }
 
-    setTransactions(prev => prev.map(item => item.id === id ? updatedTx : item));
     const whId = tx.targetWarehouseId || tx.sourceWarehouseId;
     logActivity('TRANSACTION', `Phê duyệt phiếu`, `Phiếu mã ${tx.id.slice(-6)} đã được phê duyệt một phần (${selectedItemIds.length}/${tx.items.length} món)`, 'SUCCESS', whId);
-
-    if (nextStatus === TransactionStatus.COMPLETED) await applyStockChange({ ...updatedTx, pendingItems: selectedPendingItems });
   };
 
   const clearTransactionHistory = async () => {
@@ -1510,6 +1711,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .map(u => u.id);
   };
 
+  const getDefaultWarehouseKeeper = (warehouseId?: string) => {
+    if (warehouseId) {
+      const assignedKeeper = users.find(u => u.role === Role.WAREHOUSE_KEEPER && u.assignedWarehouseId === warehouseId);
+      if (assignedKeeper) return assignedKeeper;
+    }
+    return users.find(u => u.role === Role.WAREHOUSE_KEEPER && !u.assignedWarehouseId)
+      || users.find(u => u.role === Role.ADMIN);
+  };
+
   const notifyWmsUsers = async (
     recipientIds: string[],
     notification: {
@@ -1518,6 +1728,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       message: string;
       severity: 'info' | 'warning' | 'critical';
       sourceId: string;
+      link?: string;
+      sourceType?: string;
+      metadata?: Record<string, any>;
     }
   ) => {
     if (!isSupabaseConfigured) return;
@@ -1531,11 +1744,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           title: notification.title,
           message: notification.message,
           icon: 'package',
-          link: '/requests',
+          link: notification.link || '/requests',
           severity: notification.severity,
-          sourceType: 'material_request',
+          sourceType: notification.sourceType || 'material_request',
           sourceId: notification.sourceId,
-          metadata: {},
+          metadata: notification.metadata || {},
         });
       }
     } catch (err) {
@@ -1557,6 +1770,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (exists) return prev.map(req => req.id === requestToSave.id ? requestToSave : req);
       return [requestToSave, ...prev];
     });
+    if (requestToSave.requestOrigin === 'project' && requestToSave.projectId) {
+      try {
+        await materialRequestBoqLineSnapshotService.upsertForRequest(requestToSave);
+      } catch (err) {
+        console.warn('Failed to sync material request BOQ line snapshots:', err);
+      }
+      try {
+        const workflowStep = requestToSave.workflowStep || getDefaultMaterialRequestWorkflowStep(requestToSave.status);
+        await materialRequestService.recordEvent({
+          requestId: requestToSave.id,
+          projectId: requestToSave.projectId,
+          fromStep: null,
+          toStep: workflowStep,
+          action: requestToSave.status === RequestStatus.PENDING ? 'SUBMITTED' : 'CREATED',
+          actorUserId: user.id,
+          targetUserId: requestToSave.submittedToUserId || null,
+          targetPermission: requestToSave.submittedToPermission || null,
+          note: requestToSave.submissionNote || requestToSave.note || null,
+          slaHours: requestToSave.workflowStepSlaHours ?? null,
+          dueAt: requestToSave.workflowStepDueAt || null,
+        });
+      } catch (err) {
+        console.warn('Failed to record material request event:', err);
+      }
+    }
     logActivity('REQUEST', 'Yêu cầu vật tư', `Phiếu yêu cầu ${r.code} đã được ${requestToSave.status === RequestStatus.DRAFT ? 'tạo nháp' : 'gửi'}`, 'INFO', r.siteWarehouseId);
     if (requestToSave.status === RequestStatus.PENDING) {
       void notifyWmsUsers(getMaterialRequestApproverIds(requestToSave), {
@@ -1627,10 +1865,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateRequestStatus = async (id: string, status: RequestStatus, note?: string, approvedItems?: { lineId?: string, itemId: string, qty: number }[], sourceWarehouseId?: string, overrideReason?: string, actionOverride?: string): Promise<boolean> => {
-    const req = requests.find(r => r.id === id);
+    let req = requests.find(r => r.id === id);
+    if (!req && isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('requests')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) req = mapMaterialRequestFromDb(data);
+    }
     if (!req) return false;
     const isReturnAction = actionOverride === 'RETURNED';
-    const isFulfillmentSync = actionOverride === 'FULFILLMENT_SYNC';
+    const isFulfillmentSync = actionOverride === 'FULFILLMENT_SYNC'
+      || actionOverride === 'FULFILLMENT_ISSUED'
+      || actionOverride === 'FULFILLMENT_RECEIVED';
+    const isFulfillmentIssued = actionOverride === 'FULFILLMENT_ISSUED'
+      || (actionOverride === 'FULFILLMENT_SYNC' && status === RequestStatus.IN_TRANSIT && req.workflowStep === 'batch_planning');
+    const isFulfillmentReceived = actionOverride === 'FULFILLMENT_RECEIVED';
 
     if (isReturnAction && req.relatedTransactionId) {
       throw new Error('Phiếu đã phát sinh phiếu kho liên kết. Cần huỷ/rollback phiếu kho trước khi trả lại bước trước.');
@@ -1696,6 +1948,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const effectiveSourceWhId = sourceWarehouseId || req.sourceWarehouseId;
+    const workflowStep = req.requestOrigin === 'project'
+      ? getDefaultMaterialRequestWorkflowStep(status, actionOverride)
+      : undefined;
+    const workflowPatch = workflowStep
+      ? getMaterialRequestWorkflowPatch(workflowStep, user.id)
+      : {};
+    const siteKeeperTarget = req.requestOrigin === 'project' && isFulfillmentSync && workflowStep === 'site_quality_check'
+      ? getDefaultWarehouseKeeper(req.siteWarehouseId)
+      : undefined;
+    const plannerTarget = req.requestOrigin === 'project' && isFulfillmentReceived && workflowStep === 'batch_planning' && req.workflowStepActorUserId
+      ? users.find(u => u.id === req.workflowStepActorUserId)
+      : undefined;
+    const fulfillmentHandlerPatch = req.requestOrigin === 'project' && isFulfillmentIssued && workflowStep === 'site_quality_check'
+      ? {
+        submittedToUserId: siteKeeperTarget?.id || null,
+        submittedToName: siteKeeperTarget?.name || siteKeeperTarget?.username || null,
+        submittedToPermission: siteKeeperTarget ? 'approve' : null,
+        submissionNote: siteKeeperTarget
+          ? 'Đợt cấp đã tạo. Thủ kho công trường duyệt SL/CL rồi xác nhận nhập kho.'
+          : 'Đợt cấp đã tạo nhưng chưa tìm thấy thủ kho công trường để gán tự động.',
+      }
+      : req.requestOrigin === 'project' && isFulfillmentReceived && workflowStep === 'batch_planning'
+        ? {
+          submittedToUserId: plannerTarget?.id || req.workflowStepActorUserId || req.submittedToUserId || null,
+          submittedToName: plannerTarget?.name || plannerTarget?.username || req.submittedToName || null,
+          submittedToPermission: plannerTarget || req.workflowStepActorUserId || req.submittedToUserId ? 'approve' : null,
+          submissionNote: 'Đợt cấp đã nhận xong nhưng phiếu còn thiếu. Quay lại người phụ trách tạo đợt cấp để xử lý phần còn lại.',
+        }
+        : req.requestOrigin === 'project' && isFulfillmentReceived && workflowStep === 'completed'
+          ? {
+            submittedToUserId: null,
+            submittedToName: null,
+            submittedToPermission: null,
+            submissionNote: null,
+          }
+      : {};
 
     const stockFulfillmentLines = updatedItems.filter(line => {
       const approvedQty = Number(line.approvedQty || 0);
@@ -1712,17 +2000,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (!isFulfillmentSync && (status === RequestStatus.IN_TRANSIT || status === RequestStatus.COMPLETED) && effectiveSourceWhId) {
-      const shortage = stockFulfillmentLines.find(line => {
-        const item = items.find(i => i.id === line.itemId);
-        const onHand = item?.stockByWarehouse[effectiveSourceWhId] || 0;
-        return (line.approvedQty || 0) > onHand;
+      const stockIssues = getStockDecreaseIssues({
+        items,
+        warehouses,
+        transactions,
+        requests,
+        defaultWarehouseId: effectiveSourceWhId,
+        options: { excludeRequestId: req.id },
+        lines: stockFulfillmentLines.map(line => ({
+          itemId: line.itemId,
+          quantity: Number(line.approvedQty || 0),
+          lineName: line.itemNameSnapshot || line.materialBudgetItemName || line.itemId,
+        })),
       });
-      if (shortage) {
-        const item = items.find(i => i.id === shortage.itemId);
-        const onHand = item?.stockByWarehouse[effectiveSourceWhId] || 0;
-        const whName = warehouses.find(w => w.id === effectiveSourceWhId)?.name || effectiveSourceWhId;
-        const lineName = item?.name || shortage.itemNameSnapshot || shortage.materialBudgetItemName || shortage.itemId;
-        throw new Error(`Kho nguồn "${whName}" không đủ tồn cho dòng "${lineName}". Tồn ${onHand}, cần ${shortage.approvedQty || 0}.`);
+      if (stockIssues.length > 0) {
+        throw new Error(formatStockDecreaseIssues(stockIssues, 'xuất kho'));
       }
     }
 
@@ -1740,11 +2032,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...(isReturnAction ? projectSubmissionService.returnToOwnerUpdate(req.requesterId, note) : {}),
       relatedTransactionId,
       items: updatedItems,
-      logs: [...req.logs, newLog]
+      logs: [...req.logs, newLog],
+      ...workflowPatch,
+      ...fulfillmentHandlerPatch,
     };
 
     const synced = await syncToSupabase('requests', updatedReq);
     if (!synced) throw new Error('Không thể cập nhật phiếu đề xuất trên Supabase.');
+
+    if (updatedReq.requestOrigin === 'project' && updatedReq.projectId) {
+      try {
+        await materialRequestBoqLineSnapshotService.upsertForRequest(updatedReq);
+      } catch (err) {
+        console.warn('Failed to sync material request BOQ line snapshots:', err);
+      }
+    }
+
+    if (req.requestOrigin === 'project' && req.projectId && updatedReq.workflowStep) {
+      try {
+        await materialRequestService.recordEvent({
+          requestId: req.id,
+          projectId: req.projectId,
+          fromStep: req.workflowStep || getDefaultMaterialRequestWorkflowStep(req.status),
+          toStep: updatedReq.workflowStep,
+          action: actionOverride || status,
+          actorUserId: user.id,
+          targetUserId: updatedReq.submittedToUserId || null,
+          targetPermission: updatedReq.submittedToPermission || null,
+          note: note || null,
+          slaHours: updatedReq.workflowStepSlaHours ?? null,
+          dueAt: updatedReq.workflowStepDueAt || null,
+        });
+      } catch (err) {
+        console.warn('Failed to record material request event:', err);
+      }
+    }
 
     setRequests(prev => prev.map(r => r.id === id ? updatedReq : r));
     logActivity('REQUEST', 'Cập nhật yêu cầu', `Yêu cầu ${req.code} chuyển sang ${status}`, 'INFO', req.siteWarehouseId);
@@ -1768,10 +2090,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (keeperRecipients.length > 0) {
       void notifyWmsUsers(keeperRecipients, {
         type: status === RequestStatus.COMPLETED ? 'success' : 'info',
-        title: 'Phiếu vật tư cần theo dõi',
-        message: `Phiếu ${req.code} chuyển sang ${status}; kho liên quan cần kiểm tra thao tác tiếp theo.`,
+        title: status === RequestStatus.IN_TRANSIT ? 'Đợt cấp chờ kiểm tra SL/CL' : 'Phiếu vật tư cần theo dõi',
+        message: status === RequestStatus.IN_TRANSIT
+          ? `Phiếu ${req.code} đã có đợt cấp tới kho công trường. Thủ kho cần duyệt số lượng/chất lượng rồi xác nhận nhận hàng.`
+          : `Phiếu ${req.code} chuyển sang ${status}; kho liên quan cần kiểm tra thao tác tiếp theo.`,
         severity: 'info',
         sourceId: `${req.id}_${status}_${Date.now()}`,
+        link: status === RequestStatus.IN_TRANSIT ? '/operations' : '/requests',
+        metadata: {
+          requestId: req.id,
+          projectId: req.projectId || undefined,
+          constructionSiteId: req.constructionSiteId || undefined,
+          siteWarehouseId: req.siteWarehouseId,
+          sourceWarehouseId: effectiveSourceWhId,
+        },
       });
     }
 
@@ -2472,3 +2804,9 @@ export const useApp = () => {
   if (!context) throw new Error("useApp must be used within AppProvider");
   return context;
 };
+
+if (import.meta.env.DEV && import.meta.hot) {
+  import.meta.hot.accept(() => {
+    import.meta.hot?.invalidate('AppContext changed; forcing full reload to keep provider and consumers in sync.');
+  });
+}

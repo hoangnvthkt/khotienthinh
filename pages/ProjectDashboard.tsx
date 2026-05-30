@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
     Project,
@@ -35,10 +35,14 @@ import { workGroupService } from '../lib/workGroupService';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import {
     PROJECT_TAB_PERMISSIONS,
+    PROJECT_MATERIAL_TAB_PERMISSIONS,
+    PROJECT_MATERIAL_TAB_ROUTE_BY_KEY,
     PROJECT_TAB_ROUTE_BY_KEY,
     LEGACY_PROJECT_SUPPLY_ROUTE,
+    hasProjectMaterialTabPermissionRoute,
     hasProjectTabPermissionRoute,
     isProjectOverviewTabKey,
+    type ProjectMaterialTabPermissionMap,
     type ProjectOverviewTabKey,
 } from '../lib/projectTabPermissions';
 import {
@@ -193,6 +197,25 @@ const emptyProjectFilters = (): ProjectFilterState => ({
     hidden: 'active',
 });
 
+const buildProjectDashboardPath = (
+    projectId: string | null | undefined,
+    siteId: string | null | undefined,
+    tab: ProjectOverviewTabKey,
+    extraParams?: Record<string, string | undefined>
+): string => {
+    const params = new URLSearchParams();
+    if (projectId) params.set('projectId', projectId);
+    if (siteId) params.set('siteId', siteId);
+    params.set('tab', tab);
+
+    Object.entries(extraParams || {}).forEach(([key, value]) => {
+        if (value) params.set(key, value);
+        else params.delete(key);
+    });
+
+    return `/da?${params.toString()}`;
+};
+
 const emptyProjectForm = (): ProjectFormState => ({
     name: '',
     code: '',
@@ -307,6 +330,7 @@ const siteToProjectFallback = (site: { id: string; name: string; address?: strin
 
 const ProjectDashboard: React.FC = () => {
     const location = useLocation();
+    const navigate = useNavigate();
     const {
         hrmConstructionSites, projectFinances, addProjectFinance, updateProjectFinance, removeProjectFinance,
         projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction,
@@ -315,7 +339,7 @@ const ProjectDashboard: React.FC = () => {
     const toast = useToast();
     const { canManage, isAdmin } = usePermission();
     const canManageProjects = canManage('/da');
-    const { templates: workflowTemplates } = useWorkflow();
+    const { templates: workflowTemplates, refreshData: refreshWorkflowData } = useWorkflow();
     useModuleData('da');
 
     const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
@@ -387,9 +411,13 @@ const ProjectDashboard: React.FC = () => {
         const hasExplicitTabRoutes = hasProjectTabPermissionRoute(allowedRoutes);
         if (!hasExplicitTabRoutes && allowedRoutes.includes('/da')) return true;
         if (tabKey === 'material' && allowedRoutes.includes(LEGACY_PROJECT_SUPPLY_ROUTE)) return true;
+        if (tabKey === 'material' && (
+            hasProjectMaterialTabPermissionRoute(allowedRoutes) ||
+            hasProjectMaterialTabPermissionRoute(user.adminSubModules?.DA)
+        )) return true;
 
         return allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY[tabKey]);
-    }, [user.allowedModules, user.allowedSubModules, user.role]);
+    }, [user.adminSubModules, user.allowedModules, user.allowedSubModules, user.role]);
 
     const canManageProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
         if (user.role === Role.ADMIN) return true;
@@ -397,6 +425,29 @@ const ProjectDashboard: React.FC = () => {
         if (tabKey === 'material' && user.adminSubModules?.DA?.includes(LEGACY_PROJECT_SUPPLY_ROUTE)) return true;
         return Boolean(user.adminSubModules?.DA?.includes(PROJECT_TAB_ROUTE_BY_KEY[tabKey]));
     }, [user.adminModules, user.adminSubModules, user.role]);
+
+    const materialTabPermissions = useMemo<ProjectMaterialTabPermissionMap>(() => {
+        const allowedRoutes = user.allowedSubModules?.DA || [];
+        const adminRoutes = user.adminSubModules?.DA || [];
+        const hasDaSubModuleRestriction = Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, 'DA');
+        const canManageAllMaterial = canManageProjectTab('material');
+        const canViewAllMaterial = canManageAllMaterial
+            || user.role === Role.ADMIN
+            || !hasDaSubModuleRestriction
+            || (!hasProjectTabPermissionRoute(allowedRoutes) && allowedRoutes.includes('/da'))
+            || allowedRoutes.includes(PROJECT_TAB_ROUTE_BY_KEY.material)
+            || allowedRoutes.includes(LEGACY_PROJECT_SUPPLY_ROUTE);
+
+        return PROJECT_MATERIAL_TAB_PERMISSIONS.reduce<ProjectMaterialTabPermissionMap>((acc, tab) => {
+            const route = PROJECT_MATERIAL_TAB_ROUTE_BY_KEY[tab.key];
+            const canManage = canManageAllMaterial || adminRoutes.includes(route);
+            acc[tab.key] = {
+                canView: canViewAllMaterial || canManage || allowedRoutes.includes(route),
+                canManage,
+            };
+            return acc;
+        }, {} as ProjectMaterialTabPermissionMap);
+    }, [canManageProjectTab, user.adminSubModules, user.allowedSubModules, user.role]);
 
     const visibleOverviewTabs = useMemo(
         () => PROJECT_TAB_PERMISSIONS.filter(tab => canViewProjectTab(tab.key)),
@@ -412,15 +463,6 @@ const ProjectDashboard: React.FC = () => {
         toast.warning('Không có quyền quản trị tab', `Bạn cần quyền quản trị "${tab?.label || tabKey}" để ${actionLabel}.`);
         return false;
     }, [canManageProjectTab, toast]);
-
-    const goToProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
-        if (canViewProjectTab(tabKey)) {
-            setOverviewTab(tabKey);
-            return;
-        }
-        const tab = PROJECT_TAB_PERMISSIONS.find(item => item.key === tabKey);
-        toast.warning('Không có quyền xem tab', `Tài khoản chưa được cấp quyền xem "${tab?.label || tabKey}".`);
-    }, [canViewProjectTab, toast]);
 
     useEffect(() => {
         if (activeView !== 'overview') return;
@@ -472,7 +514,7 @@ const ProjectDashboard: React.FC = () => {
         loadProjectMasterData();
     }, []);
 
-    const loadWorkGroups = async () => {
+    const loadWorkGroups = useCallback(async () => {
         setWorkGroupsLoading(true);
         try {
             const groups = await workGroupService.listGroupsWithMembers({ activeOnly: false, memberActiveOnly: false });
@@ -483,16 +525,32 @@ const ProjectDashboard: React.FC = () => {
         } finally {
             setWorkGroupsLoading(false);
         }
-    };
+    }, [toast]);
 
     useEffect(() => {
+        if (!showProjectForm) return;
+        refreshWorkflowData().catch(err => console.warn('Failed to load workflow templates for project form:', err));
         loadWorkGroups();
-    }, []);
+    }, [loadWorkGroups, refreshWorkflowData, showProjectForm]);
 
     const projectRows = useMemo(() => {
         if (projects.length > 0) return projects;
         return hrmConstructionSites.map(siteToProjectFallback);
     }, [projects, hrmConstructionSites]);
+
+    const goToProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
+        if (canViewProjectTab(tabKey)) {
+            const project = selectedProjectId ? projectRows.find(item => item.id === selectedProjectId) : null;
+            const siteId = project?.constructionSiteId || selectedSiteId;
+            setOverviewTab(tabKey);
+            if (selectedProjectId) {
+                navigate(buildProjectDashboardPath(selectedProjectId, siteId, tabKey));
+            }
+            return;
+        }
+        const tab = PROJECT_TAB_PERMISSIONS.find(item => item.key === tabKey);
+        toast.warning('Không có quyền xem tab', `Tài khoản chưa được cấp quyền xem "${tab?.label || tabKey}".`);
+    }, [canViewProjectTab, navigate, projectRows, selectedProjectId, selectedSiteId, toast]);
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
@@ -535,13 +593,17 @@ const ProjectDashboard: React.FC = () => {
     const effectiveSiteId = selectedProject?.constructionSiteId || selectedSiteId || null;
     const selectedSite = effectiveSiteId ? hrmConstructionSites.find(s => s.id === effectiveSiteId) || null : null;
     const selectedFinance = useMemo(() =>
-        effectiveSiteId ? projectFinances.find(pf => pf.constructionSiteId === effectiveSiteId) || null : null,
-        [effectiveSiteId, projectFinances]
+        selectedProject
+            ? projectFinances.find(pf => pf.projectId === selectedProject.id) || null
+            : effectiveSiteId ? projectFinances.find(pf => pf.constructionSiteId === effectiveSiteId) || null : null,
+        [effectiveSiteId, projectFinances, selectedProject]
     );
 
     // === AUTO-AGGREGATE from transactions ===
-    const getAggregated = (siteId: string) => {
-        const txs = projectTransactions.filter(t => t.constructionSiteId === siteId);
+    const getAggregated = (projectId?: string | null, siteId?: string | null) => {
+        const txs = projectTransactions.filter(t =>
+            projectId ? t.projectId === projectId : !!siteId && t.constructionSiteId === siteId
+        );
         const sumExpense = (cat: ProjectCostCategory) => txs.filter(t => t.type === 'expense' && t.category === cat).reduce((s, t) => s + t.amount, 0);
         return {
             actualMaterials: sumExpense('materials'),
@@ -567,17 +629,14 @@ const ProjectDashboard: React.FC = () => {
 
     const getProjectFinance = (project: Project) => {
         const site = getProjectSite(project);
-        return projectFinances.find(finance =>
-            (project.id && finance.projectId === project.id) ||
-            (site && finance.constructionSiteId === site.id)
-        ) || null;
+        return projectFinances.find(finance => finance.projectId === project.id) ||
+            (!project.id && site ? projectFinances.find(finance => finance.constructionSiteId === site.id) || null : null);
     };
 
     const getProjectAggregated = (project: Project) => {
         const site = getProjectSite(project);
         const txs = projectTransactions.filter(tx =>
-            (project.id && tx.projectId === project.id) ||
-            (site && tx.constructionSiteId === site.id)
+            project.id ? tx.projectId === project.id : !!site && tx.constructionSiteId === site.id
         );
         return {
             totalExpense: txs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0),
@@ -691,13 +750,15 @@ const ProjectDashboard: React.FC = () => {
         return rows;
     }, [projectRows, projectFilters, projectSort, projectSortAsc, projectFinances, projectTransactions, hrmConstructionSites, isAdmin, taskProgressBySite]);
 
-    const selectedAgg = effectiveSiteId ? getAggregated(effectiveSiteId) : null;
+    const selectedAgg = selectedProject || effectiveSiteId ? getAggregated(selectedProject?.id, effectiveSiteId) : null;
     const siteTxs = useMemo(() => {
-        if (!effectiveSiteId) return [];
-        let txs = projectTransactions.filter(t => t.constructionSiteId === effectiveSiteId);
+        if (!selectedProject && !effectiveSiteId) return [];
+        let txs = projectTransactions.filter(t =>
+            selectedProject ? t.projectId === selectedProject.id : t.constructionSiteId === effectiveSiteId
+        );
         if (txFilter !== 'all') txs = txs.filter(t => t.category === txFilter);
         return txs.sort((a, b) => b.date.localeCompare(a.date));
-    }, [effectiveSiteId, projectTransactions, txFilter]);
+    }, [effectiveSiteId, projectTransactions, selectedProject, txFilter]);
 
     const employeeByUserId = useMemo(() => {
         const map = new Map<string, typeof employees[number]>();
@@ -816,6 +877,7 @@ const ProjectDashboard: React.FC = () => {
         setSelectedSiteId(project.constructionSiteId || null);
         setOverviewTab(defaultOverviewTab);
         setActiveView('overview');
+        navigate(buildProjectDashboardPath(project.id, project.constructionSiteId || null, defaultOverviewTab));
     };
 
     const openCreateProject = () => {
@@ -827,7 +889,6 @@ const ProjectDashboard: React.FC = () => {
         setProjectForm(emptyProjectForm());
         setShowProjectAdvanced(false);
         setShowProjectForm(true);
-        loadWorkGroups();
     };
 
     const openEditProject = (project: Project) => {
@@ -2814,7 +2875,8 @@ const ProjectDashboard: React.FC = () => {
                         hasSiteLink ? (
                             <CashFlowTab
                                 constructionSiteId={effectiveSiteId!}
-                                transactions={projectTransactions.filter(t => t.constructionSiteId === effectiveSiteId)}
+                                projectId={selectedProject.id}
+                                transactions={projectTransactions.filter(t => t.projectId === selectedProject.id)}
                                 contractValue={contractValue}
                             />
                         ) : renderSiteRequired('Dòng tiền')
@@ -2827,7 +2889,12 @@ const ProjectDashboard: React.FC = () => {
                     ) : overviewTab === 'subcontract' ? (
                         <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('subcontract')} />
                     ) : overviewTab === 'material' ? (
-                        <MaterialTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('material')} />
+                        <MaterialTab
+                            constructionSiteId={effectiveSiteId || undefined}
+                            projectId={selectedProject.id}
+                            canManageTab={canManageProjectTab('material')}
+                            materialPermissions={materialTabPermissions}
+                        />
                     ) : overviewTab === 'report' ? (
                         hasSiteLink ? (
                             <ReportTab

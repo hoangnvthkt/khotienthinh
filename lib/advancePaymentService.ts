@@ -25,12 +25,13 @@ export const advancePaymentService = {
   },
 
   /** Lấy theo site */
-  async listBySite(constructionSiteId: string): Promise<AdvancePayment[]> {
-    const { data, error } = await supabase
+  async listBySite(constructionSiteId: string, projectId?: string | null): Promise<AdvancePayment[]> {
+    let query = supabase
       .from(TABLE)
       .select('*')
-      .eq('construction_site_id', constructionSiteId)
       .order('created_at', { ascending: false });
+    query = projectId ? query.eq('project_id', projectId) : query.eq('construction_site_id', constructionSiteId);
+    const { data, error } = await query;
     if (error) throw error;
     return (data || []).map(fromDb);
   },

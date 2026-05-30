@@ -38,21 +38,22 @@ const DEFAULT_COST_STRUCTURE: Array<{
 ];
 
 export const projectCostItemService = {
-  /** Lấy tất cả khoản mục theo site */
-  async listBySite(constructionSiteId: string): Promise<ProjectCostItem[]> {
-    const { data, error } = await supabase
+  /** Lấy tất cả khoản mục theo dự án; fallback theo site chỉ dùng cho luồng không có projectId. */
+  async listBySite(constructionSiteId: string, projectId?: string | null): Promise<ProjectCostItem[]> {
+    let query = supabase
       .from(TABLE)
       .select('*')
-      .eq('construction_site_id', constructionSiteId)
       .order('order', { ascending: true });
+    query = projectId ? query.eq('project_id', projectId) : query.eq('construction_site_id', constructionSiteId);
+    const { data, error } = await query;
     if (error) throw error;
     return (data || []).map(fromDb);
   },
 
   /** Khởi tạo danh mục mặc định cho 1 dự án */
-  async initDefault(constructionSiteId: string): Promise<ProjectCostItem[]> {
+  async initDefault(constructionSiteId: string, projectId?: string | null): Promise<ProjectCostItem[]> {
     // Check if already initialized
-    const existing = await this.listBySite(constructionSiteId);
+    const existing = await this.listBySite(constructionSiteId, projectId);
     if (existing.length > 0) return existing;
 
     // First pass: create root items (no parentCode)
@@ -60,6 +61,7 @@ export const projectCostItemService = {
     const roots = DEFAULT_COST_STRUCTURE.filter(d => !d.parentCode);
     for (const item of roots) {
       const { data, error } = await supabase.from(TABLE).insert({
+        project_id: projectId || null,
         construction_site_id: constructionSiteId,
         code: item.code,
         name: item.name,
@@ -77,6 +79,7 @@ export const projectCostItemService = {
     for (const item of children) {
       const parentId = codeToId.get(item.parentCode!);
       const { data, error } = await supabase.from(TABLE).insert({
+        project_id: projectId || null,
         construction_site_id: constructionSiteId,
         code: item.code,
         name: item.name,
@@ -90,7 +93,7 @@ export const projectCostItemService = {
       codeToId.set(item.code, data.id);
     }
 
-    return this.listBySite(constructionSiteId);
+    return this.listBySite(constructionSiteId, projectId);
   },
 
   /** Tạo mới khoản mục */
@@ -132,8 +135,8 @@ export const projectCostItemService = {
   },
 
   /** Kiểm tra cảnh báo ngưỡng */
-  async checkThresholds(constructionSiteId: string): Promise<Array<{ item: ProjectCostItem; overPercent: number }>> {
-    const items = await this.listBySite(constructionSiteId);
+  async checkThresholds(constructionSiteId: string, projectId?: string | null): Promise<Array<{ item: ProjectCostItem; overPercent: number }>> {
+    const items = await this.listBySite(constructionSiteId, projectId);
     const warnings: Array<{ item: ProjectCostItem; overPercent: number }> = [];
     for (const item of items) {
       if (item.budgetAmount <= 0 || !item.warningThreshold) continue;
@@ -146,8 +149,8 @@ export const projectCostItemService = {
   },
 
   /** Tổng hợp ngân sách vs thực tế */
-  async getSummary(constructionSiteId: string) {
-    const items = await this.listBySite(constructionSiteId);
+  async getSummary(constructionSiteId: string, projectId?: string | null) {
+    const items = await this.listBySite(constructionSiteId, projectId);
     // Chỉ tính root items (không parentId) để tránh double count
     const rootItems = items.filter(i => !i.parentId);
     const totalBudget = rootItems.reduce((s, i) => s + i.budgetAmount, 0);

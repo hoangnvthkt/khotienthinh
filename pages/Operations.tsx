@@ -21,7 +21,7 @@ import SearchableSelect from '../components/common/SearchableSelect';
 import { usePagination } from '../hooks/usePagination';
 import { useReservedStock } from '../hooks/useReservedStock';
 import { useModuleData } from '../hooks/useModuleData';
-import { canApproveWmsTransaction, canReceiveWmsTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
+import { canApproveWmsTransaction, canReceiveWmsTransaction, isFulfillmentBatchTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 
 const Operations: React.FC = () => {
@@ -221,13 +221,16 @@ const Operations: React.FC = () => {
 
     if (type === 'APPROVE') {
       const isNeedReceipt = tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER;
+      const isFulfillmentTx = isFulfillmentBatchTransaction(tx);
       setApprovalModal({
         isOpen: true,
         txId,
         type,
-        title: isNeedReceipt ? "Phê duyệt (Chờ kho nhận)" : "Phê duyệt & Hoàn tất",
-        message: isNeedReceipt
-          ? "Bạn đang phê duyệt lệnh này. Sau khi duyệt, phiếu sẽ chuyển tới Kho đích để xác nhận nhận hàng thực tế."
+        title: isFulfillmentTx ? "Duyệt số lượng/chất lượng đợt cấp" : isNeedReceipt ? "Phê duyệt (Chờ kho nhận)" : "Phê duyệt & Hoàn tất",
+        message: isFulfillmentTx
+          ? "Bạn đang kiểm tra và duyệt số lượng/chất lượng đợt cấp tới kho công trường. Sau bước này, phiếu sẽ chuyển sang chờ xác nhận nhận hàng."
+          : isNeedReceipt
+            ? "Bạn đang phê duyệt lệnh này. Sau khi duyệt, phiếu sẽ chuyển tới Kho đích để xác nhận nhận hàng thực tế."
           : "Phê duyệt lệnh này sẽ trừ kho ngay lập tức. Bạn có chắc chắn?"
       });
     } else if (type === 'RECEIVE') {
@@ -360,17 +363,17 @@ const Operations: React.FC = () => {
         <div className="p-6 bg-white">
           {activeTab === 'PENDING' ? (
             <div className="space-y-12">
-              {/* PHIẾU CHỜ ADMIN DUYỆT */}
+              {/* PHIẾU CHỜ DUYỆT */}
               <section className="space-y-4">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-bold text-slate-800 flex items-center text-sm">
                     <ShieldAlert size={18} className="mr-2 text-red-500" />
-                    {isAdmin ? 'Đề xuất chờ bạn phê duyệt (Giai đoạn 1)' : 'Đề xuất bạn đã gửi (Đang chờ Admin)'}
+                    {isAdmin ? 'Phiếu chờ duyệt (Giai đoạn 1)' : 'Phiếu chờ bạn duyệt số lượng/chất lượng'}
                   </h3>
                   <span className="text-[10px] font-black bg-slate-100 px-2 py-0.5 rounded text-slate-500 uppercase">{pendingAdminTxs.length} PHIẾU</span>
                 </div>
                 {pendingAdminTxs.length === 0 ? (
-                  <div className="py-10 text-center border border-dashed border-slate-100 rounded-2xl text-slate-300 text-xs italic">Không có đề xuất nào đang chờ Admin.</div>
+                  <div className="py-10 text-center border border-dashed border-slate-100 rounded-2xl text-slate-300 text-xs italic">Không có phiếu nào đang chờ duyệt.</div>
                 ) : (
                   <div className="grid grid-cols-1 gap-4">
                     {pendingAdminTxs.map(tx => {
@@ -391,6 +394,8 @@ const Operations: React.FC = () => {
                           })).filter(ti => ti.summary.reserved > 0 || ti.quantity > ti.summary.available)
                         : [];
                       const hasStockConflict = stockConflicts.length > 0;
+                      const isFulfillmentTx = isFulfillmentBatchTransaction(tx);
+                      const pendingLabel = isFulfillmentTx ? 'CHỜ DUYỆT SL/CL' : 'CHỜ DUYỆT';
 
                       return (
                         <div key={tx.id} onClick={() => setViewingHistoryTx(tx)}
@@ -400,7 +405,7 @@ const Operations: React.FC = () => {
                           <div className="flex flex-col md:flex-row justify-between gap-4">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider bg-orange-100 text-orange-700">CHỜ ADMIN DUYỆT</span>
+                                <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider bg-orange-100 text-orange-700">{pendingLabel}</span>
                                 <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider bg-blue-50 text-blue-600 border border-blue-100">
                                   {tx.type === 'IMPORT' ? '📥 Nhập kho' : tx.type === 'EXPORT' ? '📤 Xuất kho' : tx.type === 'TRANSFER' ? '🔄 Chuyển kho' : '🗑️ Xuất hủy'}
                                 </span>
@@ -455,7 +460,9 @@ const Operations: React.FC = () => {
                             </div>
                             {canApproveWmsTransaction(user, tx) && (
                               <div className="flex md:flex-col gap-2 min-w-[140px] pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 md:pl-4" onClick={(e) => e.stopPropagation()}>
-                                <button onClick={() => triggerApproval(tx.id, 'APPROVE')} className="flex-1 py-2 bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-700">Duyệt Phiếu</button>
+                                <button onClick={() => (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) ? setViewingHistoryTx(tx) : triggerApproval(tx.id, 'APPROVE')} className="flex-1 py-2 bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-700">
+                                  {isFulfillmentTx ? 'Duyệt SL/CL' : 'Duyệt Phiếu'}
+                                </button>
                                 <button onClick={() => triggerApproval(tx.id, 'CANCEL')} className="flex-1 py-2 bg-white border border-red-200 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50">Từ Chối</button>
                               </div>
                             )}
@@ -506,7 +513,7 @@ const Operations: React.FC = () => {
                             </div>
                             {canReceiveWmsTransaction(user, tx) && (
                               <div className="flex md:flex-col gap-2 min-w-[160px] pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 md:pl-4" onClick={(e) => e.stopPropagation()}>
-                                <button onClick={() => triggerApproval(tx.id, 'RECEIVE')} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2">
+                                <button onClick={() => (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) ? setViewingHistoryTx(tx) : triggerApproval(tx.id, 'RECEIVE')} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2">
                                   <CheckCircle size={14} /> XÁC NHẬN NHẬN
                                 </button>
                                 {isAdmin && <div className="text-[9px] text-slate-400 text-center italic mt-1 font-bold">Chờ kho đích bấm nhận</div>}

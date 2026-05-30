@@ -244,6 +244,49 @@ export interface ProjectSubmissionFields {
   everSubmitted?: boolean;
   lastActionBy?: string | null;
   lastActionAt?: string | null;
+  workflowStep?: MaterialRequestWorkflowStep | string | null;
+  workflowStepStartedAt?: string | null;
+  workflowStepDueAt?: string | null;
+  workflowStepSlaHours?: number | null;
+  workflowStepActorUserId?: string | null;
+}
+
+export type MaterialRequestWorkflowStep =
+  | 'draft'
+  | 'site_manager_review'
+  | 'material_department_review'
+  | 'batch_planning'
+  | 'site_quality_check'
+  | 'site_receipt'
+  | 'completed'
+  | 'rejected'
+  | 'returned_to_creator';
+
+export type MaterialRequestKanbanStage =
+  | 'draft'
+  | 'site_manager_review'
+  | 'material_department_review'
+  | 'batch_planning'
+  | 'site_quality_check'
+  | 'site_receipt'
+  | 'completed'
+  | 'closed';
+
+export interface MaterialRequestEvent {
+  id: string;
+  requestId: string;
+  projectId: string;
+  fromStep?: string | null;
+  toStep?: string | null;
+  action: string;
+  actorUserId: string;
+  targetUserId?: string | null;
+  targetPermission?: string | null;
+  note?: string | null;
+  slaHours?: number | null;
+  dueAt?: string | null;
+  metadata?: Record<string, any>;
+  createdAt: string;
 }
 
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed';
@@ -952,6 +995,7 @@ export interface PaymentCertificateItem {
 
 export interface PaymentCertificate extends ProjectSubmissionFields {
   id: string;
+  projectId?: string | null;
   contractId: string;           // FK → CustomerContract hoặc SubcontractorContract
   contractType: ContractItemType; // 'customer' | 'subcontractor'
   constructionSiteId: string;
@@ -1011,6 +1055,7 @@ export type AdvancePaymentStatus = 'active' | 'fully_recovered' | 'cancelled';
 
 export interface AdvancePayment {
   id: string;
+  projectId?: string | null;
   contractId: string;           // FK → HĐ
   contractType: ContractItemType;
   constructionSiteId: string;
@@ -1024,12 +1069,18 @@ export interface AdvancePayment {
   createdAt: string;
 }
 
+export type QuantityAcceptanceScope = 'internal' | 'contract';
+
 export interface QuantityAcceptanceItem {
   id?: string;
   acceptanceId?: string;
-  contractItemId: string;
+  contractItemId?: string | null;
   contractItemCode?: string;
   contractItemName?: string;
+  taskId?: string | null;
+  taskName?: string | null;
+  workBoqItemId?: string | null;
+  workBoqItemName?: string | null;
   unit?: string;
   previousAcceptedQuantity: number;
   proposedQuantity: number;
@@ -1046,8 +1097,10 @@ export interface QuantityAcceptanceItem {
 
 export interface QuantityAcceptance extends ProjectSubmissionFields {
   id: string;
+  projectId?: string | null;
   contractId: string;
   contractType: ContractItemType;
+  acceptanceScope?: QuantityAcceptanceScope;
   constructionSiteId: string;
   periodNumber: number;
   periodStart: string;
@@ -1147,6 +1200,7 @@ export type CostItemSource = 'manual' | 'contract' | 'dailylog' | 'payment';
 
 export interface ProjectCostItem {
   id: string;
+  projectId?: string | null;
   constructionSiteId: string;
   code: string;                 // Mã phân cấp: "I", "I.1", "II", "II.3"
   name: string;                 // Tên khoản mục: "Chi phí vật liệu"
@@ -1210,7 +1264,7 @@ export interface MaterialBudgetItem {
   budgetQty: number;            // Khối lượng dự toán (BOQ)
   budgetUnitPrice: number;      // Đơn giá dự toán
   budgetTotal?: number;         // Auto: budgetQty * budgetUnitPrice
-  actualQty: number;            // Khối lượng thực xuất (auto cộng dồn)
+  actualQty: number;            // Khối lượng thực tế công trường đã nhận thành công
   actualTotal?: number;         // Auto: actualQty * budgetUnitPrice
   wasteQty?: number;            // Auto: actualQty - budgetQty
   wastePercent?: number;        // Auto: (actualQty - budgetQty)/budgetQty * 100
@@ -1310,9 +1364,14 @@ export interface PurchaseOrderItem {
   requestCode?: string | null;
   requestLineId?: string | null;
   budgetQtySnapshot?: number;
+  reservedBeforeQtySnapshot?: number;
   previousRequestedQtySnapshot?: number;
   previousOrderedQtySnapshot?: number;
   previousReceivedQtySnapshot?: number;
+  isOverBoq?: boolean;
+  overQty?: number;
+  overPercent?: number;
+  overReason?: string;
   overBudgetQtySnapshot?: number;
   overBudgetPercentSnapshot?: number;
   overBudgetReason?: string;
@@ -1445,6 +1504,7 @@ export interface TransactionItem {
   materialRequestId?: string;
   requestLineId?: string;
   fulfillmentBatchId?: string;
+  varianceReason?: string;
   // --- Thông tin kế toán (chỉ áp dụng khi NHẬP KHO với đơn vị mua khác) ---
   accountingQty?: number;      // Số lượng theo đơn vị mua (VD: 10.05 KG)
   accountingUnit?: string;     // Đơn vị mua (VD: 'KG') - snapshot tại thời điểm nhập
@@ -1571,9 +1631,14 @@ export interface RequestItem {
   neededDate?: string;
   note?: string;
   budgetQtySnapshot?: number;
+  reservedBeforeQtySnapshot?: number;
   previousRequestedQtySnapshot?: number;
   previousOrderedQtySnapshot?: number;
   previousReceivedQtySnapshot?: number;
+  isOverBoq?: boolean;
+  overQty?: number;
+  overPercent?: number;
+  overReason?: string;
   overBudgetQtySnapshot?: number;
   overBudgetPercentSnapshot?: number;
   overBudgetReason?: string;
@@ -1583,6 +1648,29 @@ export interface RequestItem {
   skuSnapshot?: string;
   specification?: string;
   manualReason?: string;
+}
+
+export interface MaterialRequestBoqLineSnapshot {
+  id?: string;
+  requestId: string;
+  requestLineId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  workBoqItemId?: string | null;
+  materialBudgetItemId: string;
+  inventoryItemId?: string | null;
+  itemNameSnapshot?: string | null;
+  unitSnapshot?: string | null;
+  requestQty: number;
+  budgetQtySnapshot: number;
+  reservedBeforeQty: number;
+  isOverBoq: boolean;
+  overQty: number;
+  overPercent: number;
+  overReason?: string | null;
+  requestStatusSnapshot?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type MaterialRequestFulfillmentBatchStatus = 'draft' | 'issued' | 'received' | 'variance_pending' | 'returned' | 'cancelled';

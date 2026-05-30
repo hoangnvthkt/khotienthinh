@@ -101,12 +101,15 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const [requests, setRequests] = useState<RequestInstance[]>([]);
     const [logs, setLogs] = useState<RequestLog[]>([]);
     const [printTemplates, setPrintTemplates] = useState<RequestPrintTemplate[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
     const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const hasLoadedRef = useRef(false);
+    const inflightRefreshRef = useRef<Promise<void> | null>(null);
 
     const refreshData = useCallback(async () => {
+        if (inflightRefreshRef.current) return inflightRefreshRef.current;
         setIsLoading(true);
-        try {
+        const refreshTask = (async () => {
             const [catRes, reqRes, ptRes] = await Promise.all([
                 supabase.from('request_categories').select('*').order('created_at', { ascending: false }),
                 supabase.from('request_instances').select('*').order('created_at', { ascending: false }).limit(REQUEST_INSTANCE_LIST_LIMIT),
@@ -129,20 +132,25 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 id: r.id, categoryId: r.category_id, name: r.name, fileName: r.file_name,
                 storagePath: r.storage_path, createdAt: r.created_at, updatedAt: r.updated_at,
             })));
+        })();
+        inflightRefreshRef.current = refreshTask;
+        try {
+            await refreshTask;
+            hasLoadedRef.current = true;
         } catch (err) {
             console.error('RequestContext fetch error:', err);
         } finally {
+            inflightRefreshRef.current = null;
             setIsLoading(false);
         }
     }, []);
 
     // Debounced refresh for realtime events
     const debouncedRefresh = useCallback(() => {
+        if (!hasLoadedRef.current) return;
         if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
         refreshTimeoutRef.current = setTimeout(() => refreshData(), 1000);
     }, [refreshData]);
-
-    useEffect(() => { refreshData(); }, [refreshData]);
 
     // ---- Realtime subscriptions ----
     useEffect(() => {

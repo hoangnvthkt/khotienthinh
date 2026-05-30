@@ -521,8 +521,8 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
 
                 <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-[11px] md:text-xs">
-                      <thead className="bg-slate-50 text-slate-400 font-bold border-b border-slate-200 uppercase tracking-widest text-[9px]">
+                    <table className="w-full text-left text-[11px] md:text-xs min-w-[650px]">
+                      <thead className="bg-slate-50 text-slate-400 font-bold border-b border-slate-200 uppercase tracking-widest text-[9px] whitespace-nowrap">
                         <tr>
                           <th className="p-3">Thời gian</th>
                           <th className="p-3">Loại hình</th>
@@ -542,11 +542,11 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
 
                             return (
                               <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
-                                <td className="p-3 text-slate-500 font-medium">
+                                <td className="p-3 text-slate-500 font-medium whitespace-nowrap">
                                   {new Date(tx.date).toLocaleDateString('vi-VN')}
                                   <div className="text-[9px] opacity-60 uppercase">{new Date(tx.date).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</div>
                                 </td>
-                                <td className="p-3">
+                                <td className="p-3 whitespace-nowrap">
                                   <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-bold ${badge.color}`}>
                                     {badge.icon} {badge.label}
                                   </div>
@@ -565,7 +565,7 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                                     )}
                                   </div>
                                 </td>
-                                <td className={`p-3 text-right font-black ${tx.type === TransactionType.IMPORT ? 'text-emerald-600' :
+                                <td className={`p-3 text-right font-black whitespace-nowrap ${tx.type === TransactionType.IMPORT ? 'text-emerald-600' :
                                   tx.type === TransactionType.LIQUIDATION ? 'text-red-600' : 'text-orange-600'
                                   }`}>
                                   {tx.type === TransactionType.IMPORT ? '+' : '-'}{txItem?.quantity.toLocaleString()} {item.unit}
@@ -579,7 +579,7 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                                     </div>
                                   )}
                                 </td>
-                                <td className="p-3 text-slate-500 truncate italic">
+                                <td className="p-3 text-slate-500 truncate italic whitespace-nowrap">
                                   {requester?.name || 'Hệ thống'}
                                 </td>
                               </tr>

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, AreaChart, Area, LineChart, Line, RadarChart, Radar,
@@ -15,6 +16,7 @@ import { acceptanceService, boqService, matRequestService, vendorService, poServ
 import { customerContractService, subcontractorContractService } from '../../lib/hdService';
 import { calculateProjectProgress } from '../../lib/projectScheduleRules';
 import { projectFinancialService, ProjectFinancialKPIs } from '../../lib/projectFinancialService';
+import DailyLogSummaryReport from '../../components/project/DailyLogSummaryReport';
 
 interface ReportTabProps {
     constructionSiteId: string;
@@ -37,7 +39,13 @@ const GRADIENT_PAIRS = [
 ];
 
 const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, projectId, contractValue = 0, totalSpent = 0 }) => {
+    const location = useLocation();
+    const navigate = useNavigate();
     const [selectedChart, setSelectedChart] = useState<string | null>(null);
+    const queryReportView = useMemo(() => new URLSearchParams(location.search).get('reportView'), [location.search]);
+    const [activeReportView, setActiveReportView] = useState<'overview' | 'dailylog'>(
+        queryReportView === 'dailylog' ? 'dailylog' : 'overview'
+    );
 
     // Load all data from Supabase
     const [contracts, setContracts] = useState<ProjectContract[]>([]);
@@ -50,12 +58,35 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
     const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
     const [financialKPIs, setFinancialKPIs] = useState<ProjectFinancialKPIs | null>(null);
     const [kpisLoading, setKpisLoading] = useState(true);
+    const projectScopeId = projectId || constructionSiteId;
+
+    useEffect(() => {
+        setActiveReportView(queryReportView === 'dailylog' ? 'dailylog' : 'overview');
+    }, [queryReportView]);
+
+    const changeReportView = (view: 'overview' | 'dailylog') => {
+        setActiveReportView(view);
+
+        const params = new URLSearchParams(location.search);
+        if (projectId) params.set('projectId', projectId);
+        if (constructionSiteId) params.set('siteId', constructionSiteId);
+        params.set('tab', 'report');
+        params.delete('dailyLogId');
+
+        if (view === 'dailylog') {
+            params.set('reportView', 'dailylog');
+        } else {
+            params.delete('reportView');
+        }
+
+        navigate(`/da?${params.toString()}`, { replace: true });
+    };
 
     useEffect(() => {
         // Fetch new contract models and map to generic ProjectContract shape for reporting
         Promise.all([
-            customerContractService.listBySite(constructionSiteId),
-            subcontractorContractService.listBySite(constructionSiteId)
+            customerContractService.listBySite(projectScopeId, constructionSiteId),
+            subcontractorContractService.listBySite(projectScopeId, constructionSiteId)
         ]).then(([customers, subs]) => {
             const mainContracts: ProjectContract[] = customers.map(c => ({
                 id: c.id,
@@ -86,19 +117,19 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
             setContracts([...mainContracts, ...subContracts]);
         }).catch(console.error);
 
-        acceptanceService.list(constructionSiteId).then(setAcceptances).catch(console.error);
-        boqService.list(constructionSiteId).then(setBoqItems).catch(console.error);
-        matRequestService.list(constructionSiteId).then(setMatRequests).catch(console.error);
-        vendorService.list(constructionSiteId).then(setVendors).catch(console.error);
-        poService.list(constructionSiteId).then(setPurchaseOrders).catch(console.error);
-        taskService.list(constructionSiteId).then(setTasks).catch(console.error);
-        dailyLogService.list(constructionSiteId).then(setDailyLogs).catch(console.error);
+        acceptanceService.list(projectScopeId, constructionSiteId).then(setAcceptances).catch(console.error);
+        boqService.list(projectScopeId, constructionSiteId).then(setBoqItems).catch(console.error);
+        matRequestService.list(projectScopeId, constructionSiteId).then(setMatRequests).catch(console.error);
+        vendorService.list(projectScopeId, constructionSiteId).then(setVendors).catch(console.error);
+        poService.list(projectScopeId, constructionSiteId).then(setPurchaseOrders).catch(console.error);
+        taskService.list(projectScopeId, constructionSiteId).then(setTasks).catch(console.error);
+        dailyLogService.list(projectScopeId, constructionSiteId).then(setDailyLogs).catch(console.error);
         setKpisLoading(true);
-        projectFinancialService.getKPIs(constructionSiteId)
+        projectFinancialService.getKPIs(constructionSiteId, [], projectId)
             .then(setFinancialKPIs)
             .catch(console.error)
             .finally(() => setKpisLoading(false));
-    }, [constructionSiteId]);
+    }, [constructionSiteId, projectId, projectScopeId]);
 
     // ==================== COMPUTED DATA (PHASE 4) ====================
     const allDelays = useMemo(() => {
@@ -349,6 +380,39 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
 
     return (
         <div className="space-y-6">
+            <div className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-2 shadow-sm dark:border-slate-700/60 dark:bg-slate-800 sm:flex-row sm:items-center sm:justify-between">
+                <div className="px-3 py-2">
+                    <div className="text-sm font-black text-slate-800 dark:text-white">Báo cáo dự án</div>
+                    <div className="text-xs font-bold text-slate-400">Tổng hợp điều hành và báo cáo nhật ký công trường</div>
+                </div>
+                <div className="flex rounded-xl bg-slate-100 p-1 dark:bg-slate-900">
+                    <button
+                        onClick={() => changeReportView('overview')}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black transition-colors ${
+                            activeReportView === 'overview' ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-800' : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                    >
+                        <BarChart3 size={14} /> Tổng hợp dự án
+                    </button>
+                    <button
+                        onClick={() => changeReportView('dailylog')}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-black transition-colors ${
+                            activeReportView === 'dailylog' ? 'bg-white text-teal-700 shadow-sm dark:bg-slate-800' : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                    >
+                        <Calendar size={14} /> Nhật ký công trường
+                    </button>
+                </div>
+            </div>
+
+            {activeReportView === 'dailylog' ? (
+                <DailyLogSummaryReport
+                    dailyLogs={dailyLogs}
+                    projectId={projectId}
+                    constructionSiteId={constructionSiteId}
+                />
+            ) : (
+                <>
             {/* T1: 4 Financial KPIs Banner */}
             {!kpisLoading && financialKPIs && (
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -795,6 +859,8 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                     </table>
                 </div>
             </div>
+                </>
+            )}
         </div>
     );
 });

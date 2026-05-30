@@ -883,7 +883,83 @@ const buildExecutiveMetric = (
   };
 };
 
+const getScopeKey = (projectId: string | undefined, constructionSiteId: string): string => {
+  if (projectId && constructionSiteId) return `${projectId}_${constructionSiteId}`;
+  return projectId || constructionSiteId;
+};
+
 export const projectDashboardMetricsService = {
+  async getSnapshot(projectId: string | undefined, constructionSiteId: string): Promise<ProjectDashboardMetrics | null> {
+    const scopeKey = getScopeKey(projectId, constructionSiteId);
+
+    // Try Supabase first
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase
+          .from('project_dashboard_snapshots')
+          .select('metrics')
+          .eq('scope_key', scopeKey)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (data?.metrics) {
+          return data.metrics as ProjectDashboardMetrics;
+        }
+      } catch (err) {
+        console.warn('Failed to load dashboard snapshot from Supabase:', err);
+      }
+    }
+
+    // Fallback to localStorage
+    try {
+      const cached = localStorage.getItem(`vioo_dashboard_snapshot_${scopeKey}`);
+      if (cached) {
+        return JSON.parse(cached) as ProjectDashboardMetrics;
+      }
+    } catch (err) {
+      console.warn('Failed to load dashboard snapshot from localStorage:', err);
+    }
+
+    return null;
+  },
+
+  async saveSnapshot(projectId: string | undefined, constructionSiteId: string, metrics: ProjectDashboardMetrics): Promise<boolean> {
+    const scopeKey = getScopeKey(projectId, constructionSiteId);
+
+    // Try saving to Supabase
+    let supabaseOk = false;
+    if (isSupabaseConfigured) {
+      try {
+        const payload = {
+          scope_key: scopeKey,
+          project_id: projectId || null,
+          construction_site_id: constructionSiteId || null,
+          metrics,
+          calculated_at: metrics.calculatedAt,
+          updated_at: new Date().toISOString(),
+        };
+
+        const { error } = await supabase
+          .from('project_dashboard_snapshots')
+          .upsert(payload, { onConflict: 'scope_key' });
+
+        if (error) throw error;
+        supabaseOk = true;
+      } catch (err) {
+        console.warn('Failed to save dashboard snapshot to Supabase:', err);
+      }
+    }
+
+    // Save to localStorage regardless (for local copy/cache)
+    try {
+      localStorage.setItem(`vioo_dashboard_snapshot_${scopeKey}`, JSON.stringify(metrics));
+    } catch (err) {
+      console.warn('Failed to save dashboard snapshot to localStorage:', err);
+    }
+
+    return supabaseOk || !isSupabaseConfigured;
+  },
+
   async getMetrics(params: { projectId?: string; constructionSiteId: string }): Promise<ProjectDashboardMetrics> {
     const warnings: string[] = [];
     const sourceNotes = [
@@ -900,7 +976,7 @@ export const projectDashboardMetricsService = {
       undefined,
     );
     const projectScopeId = project?.id || params.projectId || params.constructionSiteId;
-    const constructionSiteId = project?.constructionSiteId || params.constructionSiteId;
+    const constructionSite = project?.constructionSiteId || params.constructionSiteId;
 
     const [
       tasks,
@@ -922,24 +998,24 @@ export const projectDashboardMetricsService = {
       reconciliationGroups,
       financialKPIs,
     ] = await Promise.all([
-      safeLoad('project_tasks', warnings, () => taskService.list(projectScopeId, constructionSiteId), [] as ProjectTask[]),
-      safeLoad('daily_logs', warnings, () => dailyLogService.list(projectScopeId, constructionSiteId), [] as DailyLog[]),
-      safeLoad('project_work_boq_items', warnings, () => workBoqService.list(projectScopeId, constructionSiteId), [] as ProjectWorkBoqItem[]),
-      safeLoad('contract_items customer', warnings, () => contractItemService.listBySite(projectScopeId, 'customer', constructionSiteId), [] as ContractItem[]),
-      safeLoad('contract_items subcontractor', warnings, () => contractItemService.listBySite(projectScopeId, 'subcontractor', constructionSiteId), [] as ContractItem[]),
-      safeLoad('task_contract_items', warnings, () => taskContractItemService.listBySite(projectScopeId, constructionSiteId), [] as TaskContractItem[]),
-      safeLoad('project_task_completion_requests', warnings, () => taskCompletionRequestService.list(projectScopeId, constructionSiteId), [] as ProjectTaskCompletionRequest[]),
-      safeLoad('quantity_acceptances', warnings, () => quantityAcceptanceService.listBySite(constructionSiteId), [] as QuantityAcceptance[]),
-      safeLoad('payment_certificates', warnings, () => paymentCertificateService.listBySite(constructionSiteId), [] as PaymentCertificate[]),
-      safeLoad('advance_payments', warnings, () => advancePaymentService.listBySite(constructionSiteId), [] as AdvancePayment[]),
-      safeLoad('project_transactions', warnings, () => listTransactions(projectScopeId, constructionSiteId), [] as ProjectTransaction[]),
-      safeLoad('purchase_orders', warnings, () => poService.list(projectScopeId, constructionSiteId), [] as PurchaseOrder[]),
-      safeLoad('material_budget_items', warnings, () => boqService.list(projectScopeId, constructionSiteId), [] as MaterialBudgetItem[]),
-      safeLoad('payment_schedules', warnings, () => paymentService.list(projectScopeId, constructionSiteId), [] as PaymentSchedule[]),
-      safeLoad('project_delay_events', warnings, () => delayEventService.list(projectScopeId, constructionSiteId), [] as ProjectDelayEvent[]),
-      safeLoad('contract_variations', warnings, () => listContractVariations(projectScopeId, constructionSiteId), [] as ContractVariation[]),
-      safeLoad('boq_reconciliation submitted', warnings, () => boqReconciliationService.listByProject(projectScopeId, constructionSiteId), [] as BoqReconciliationGroup[]),
-      safeLoad('financial_kpis', warnings, () => projectFinancialService.getKPIs(constructionSiteId), undefined as ProjectFinancialKPIs | undefined),
+      safeLoad('project_tasks', warnings, () => taskService.list(projectScopeId, constructionSite), [] as ProjectTask[]),
+      safeLoad('daily_logs', warnings, () => dailyLogService.list(projectScopeId, constructionSite), [] as DailyLog[]),
+      safeLoad('project_work_boq_items', warnings, () => workBoqService.list(projectScopeId, constructionSite), [] as ProjectWorkBoqItem[]),
+      safeLoad('contract_items customer', warnings, () => contractItemService.listBySite(projectScopeId, 'customer', constructionSite), [] as ContractItem[]),
+      safeLoad('contract_items subcontractor', warnings, () => contractItemService.listBySite(projectScopeId, 'subcontractor', constructionSite), [] as ContractItem[]),
+      safeLoad('task_contract_items', warnings, () => taskContractItemService.listBySite(projectScopeId, constructionSite), [] as TaskContractItem[]),
+      safeLoad('project_task_completion_requests', warnings, () => taskCompletionRequestService.list(projectScopeId, constructionSite), [] as ProjectTaskCompletionRequest[]),
+      safeLoad('quantity_acceptances', warnings, () => quantityAcceptanceService.listBySite(constructionSite, undefined, project?.id || params.projectId), [] as QuantityAcceptance[]),
+      safeLoad('payment_certificates', warnings, () => paymentCertificateService.listBySite(constructionSite, project?.id || params.projectId), [] as PaymentCertificate[]),
+      safeLoad('advance_payments', warnings, () => advancePaymentService.listBySite(constructionSite, project?.id || params.projectId), [] as AdvancePayment[]),
+      safeLoad('project_transactions', warnings, () => listTransactions(projectScopeId, constructionSite), [] as ProjectTransaction[]),
+      safeLoad('purchase_orders', warnings, () => poService.list(projectScopeId, constructionSite), [] as PurchaseOrder[]),
+      safeLoad('material_budget_items', warnings, () => boqService.list(projectScopeId, constructionSite), [] as MaterialBudgetItem[]),
+      safeLoad('payment_schedules', warnings, () => paymentService.list(projectScopeId, constructionSite), [] as PaymentSchedule[]),
+      safeLoad('project_delay_events', warnings, () => delayEventService.list(projectScopeId, constructionSite), [] as ProjectDelayEvent[]),
+      safeLoad('contract_variations', warnings, () => listContractVariations(projectScopeId, constructionSite), [] as ContractVariation[]),
+      safeLoad('boq_reconciliation submitted', warnings, () => boqReconciliationService.listByProject(projectScopeId, constructionSite), [] as BoqReconciliationGroup[]),
+      safeLoad('financial_kpis', warnings, () => projectFinancialService.getKPIs(constructionSite, [], project?.id || params.projectId), undefined as ProjectFinancialKPIs | undefined),
     ]);
 
     const allContractItems = [...customerItems, ...subcontractorItems];

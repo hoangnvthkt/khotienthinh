@@ -11,6 +11,7 @@ import { useToast } from '../../context/ToastContext';
 
 interface Props {
   constructionSiteId: string;
+  projectId?: string | null;
 }
 
 const fmt = (n: number) => {
@@ -19,7 +20,7 @@ const fmt = (n: number) => {
   return n.toLocaleString('vi-VN') + ' đ';
 };
 
-const CostAnalysisPanel: React.FC<Props> = ({ constructionSiteId }) => {
+const CostAnalysisPanel: React.FC<Props> = ({ constructionSiteId, projectId }) => {
   const toast = useToast();
   const [items, setItems] = useState<ProjectCostItem[]>([]);
   const [warnings, setWarnings] = useState<Array<{ item: ProjectCostItem; overPercent: number }>>([]);
@@ -31,25 +32,25 @@ const CostAnalysisPanel: React.FC<Props> = ({ constructionSiteId }) => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      let costItems = await projectCostItemService.listBySite(constructionSiteId);
+      let costItems = await projectCostItemService.listBySite(constructionSiteId, projectId);
       // Auto-init if empty
       if (costItems.length === 0) {
-        costItems = await projectCostItemService.initDefault(constructionSiteId);
+        costItems = await projectCostItemService.initDefault(constructionSiteId, projectId);
       }
       setItems(costItems);
 
-      const w = await projectCostItemService.checkThresholds(constructionSiteId);
+      const w = await projectCostItemService.checkThresholds(constructionSiteId, projectId);
       setWarnings(w);
 
       // Payment summary across all contracts
-      const certs = await paymentCertificateService.listBySite(constructionSiteId);
+      const certs = await paymentCertificateService.listBySite(constructionSiteId, projectId);
 	      const totalPaid = certs.filter(c => c.status === 'paid').reduce((s, c) => s + (c.payableThisPeriod ?? c.currentPayableAmount ?? 0), 0);
 	      const totalApproved = certs.filter(c => c.status === 'approved' || c.status === 'paid').reduce((s, c) => s + (c.grossThisPeriod ?? c.currentCompletedValue ?? 0), 0);
 	      setPaymentSummary({ totalPaid, totalApproved });
-	      setFinancialSummary(await buildFinancialSummary(constructionSiteId));
+	      setFinancialSummary(await buildFinancialSummary(constructionSiteId, [], projectId));
     } catch (e: any) { toast.error('Lỗi tải CP', e?.message); }
     finally { setLoading(false); }
-  }, [constructionSiteId]);
+  }, [constructionSiteId, projectId]);
 
   useEffect(() => { load(); }, [load]);
 

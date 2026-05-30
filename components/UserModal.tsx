@@ -5,8 +5,8 @@ import { Role, User, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
-import { PROJECT_TAB_PERMISSIONS } from '../lib/projectTabPermissions';
-import type { ProjectOverviewTabKey } from '../lib/projectTabPermissions';
+import { PROJECT_MATERIAL_TAB_PERMISSIONS, PROJECT_TAB_PERMISSIONS } from '../lib/projectTabPermissions';
+import type { ProjectMaterialTabKey, ProjectOverviewTabKey } from '../lib/projectTabPermissions';
 
 const PROJECT_TAB_PERMISSION_ICONS: Record<ProjectOverviewTabKey, any> = {
   executive: LayoutDashboard,
@@ -22,11 +22,31 @@ const PROJECT_TAB_PERMISSION_ICONS: Record<ProjectOverviewTabKey, any> = {
   report: BarChart3,
 };
 
-const PROJECT_TAB_SUB_MODULES = PROJECT_TAB_PERMISSIONS.map(tab => ({
+const PROJECT_MATERIAL_TAB_PERMISSION_ICONS: Record<ProjectMaterialTabKey, any> = {
+  summary: BarChart3,
+  boq: FileSpreadsheet,
+  request: Package,
+  po: FileSignature,
+  waste: History,
+  dashboard: LayoutDashboard,
+};
+
+const PROJECT_MATERIAL_TAB_SUB_MODULES = PROJECT_MATERIAL_TAB_PERMISSIONS.map(tab => ({
   to: tab.route,
-  icon: PROJECT_TAB_PERMISSION_ICONS[tab.key],
-  label: `Tab: ${tab.label}`,
+  icon: PROJECT_MATERIAL_TAB_PERMISSION_ICONS[tab.key],
+  label: `Vật tư: ${tab.label}`,
 }));
+
+const PROJECT_TAB_SUB_MODULES = PROJECT_TAB_PERMISSIONS.flatMap(tab => {
+  const tabPermission = {
+    to: tab.route,
+    icon: PROJECT_TAB_PERMISSION_ICONS[tab.key],
+    label: `Tab: ${tab.label}`,
+  };
+  return tab.key === 'material'
+    ? [tabPermission, ...PROJECT_MATERIAL_TAB_SUB_MODULES]
+    : [tabPermission];
+});
 
 // Sub-app definitions per module (matches Sidebar's moduleNavMap)
 const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }[]> = {

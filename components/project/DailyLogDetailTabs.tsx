@@ -34,7 +34,7 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'machines', label: 'Máy TC', icon: <Wrench size={12} /> },
 ];
 
-const inputCls = 'w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none focus:ring-1 focus:ring-teal-400 bg-white dark:bg-slate-700';
+const inputCls = 'w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs outline-none focus:ring-1 focus:ring-teal-400 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200';
 
 const partnerClassLabel: Record<string, string> = {
   owner: 'Chủ đầu tư',
@@ -163,7 +163,7 @@ const SearchablePicker = <T,>({
         className={`${inputCls} pr-7`}
       />
       {open && filtered.length > 0 && (
-        <div className="absolute z-30 mt-1 w-full max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+        <div className="absolute z-30 mt-1 w-full max-h-48 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl">
           {filtered.map((option, index) => (
             <button
               key={`${option.label}-${index}`}
@@ -173,10 +173,10 @@ const SearchablePicker = <T,>({
                 onPick(option.item);
                 setOpen(false);
               }}
-              className="w-full px-3 py-2 text-left text-xs hover:bg-teal-50 border-b border-slate-50 last:border-b-0"
+              className="w-full px-3 py-2 text-left text-xs hover:bg-teal-50 dark:hover:bg-teal-950/30 border-b border-slate-50 dark:border-slate-700/50 last:border-b-0"
             >
-              <div className="font-bold text-slate-700 truncate">{option.label}</div>
-              {option.meta && <div className="text-[10px] text-slate-400 truncate">{option.meta}</div>}
+              <div className="font-bold text-slate-700 dark:text-slate-200 truncate">{option.label}</div>
+              {option.meta && <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate">{option.meta}</div>}
             </button>
           ))}
         </div>

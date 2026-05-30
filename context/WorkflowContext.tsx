@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import {
     WorkflowTemplate, WorkflowNode, WorkflowEdge,
@@ -127,11 +127,13 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const [instances, setInstances] = useState<WorkflowInstance[]>([]);
     const [logs, setLogs] = useState<WorkflowInstanceLog[]>([]);
     const [printTemplates, setPrintTemplates] = useState<WorkflowPrintTemplate[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
+    const inflightRefreshRef = useRef<Promise<void> | null>(null);
 
     const refreshData = useCallback(async () => {
+        if (inflightRefreshRef.current) return inflightRefreshRef.current;
         setIsLoading(true);
-        try {
+        const refreshTask = (async () => {
             const [tRes, nRes, eRes, iRes, ptRes] = await Promise.all([
                 supabase.from('workflow_templates').select('*').order('created_at', { ascending: false }),
                 supabase.from('workflow_nodes').select('*'),
@@ -155,16 +157,17 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 setLogs([]);
             }
             if (ptRes.data) setPrintTemplates(ptRes.data.map(mapPrintTemplateFromDB));
+        })();
+        inflightRefreshRef.current = refreshTask;
+        try {
+            await refreshTask;
         } catch (err) {
             console.error('WorkflowContext fetch error:', err);
         } finally {
+            inflightRefreshRef.current = null;
             setIsLoading(false);
         }
     }, []);
-
-    useEffect(() => {
-        refreshData();
-    }, [refreshData]);
 
     const getWorkflowRoleRecipients = useCallback(async (role?: Role): Promise<string[]> => {
         if (!role) return [];

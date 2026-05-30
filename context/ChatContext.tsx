@@ -44,6 +44,7 @@ interface ChatContextType {
     startCallSession: (conversationId: string, mode: 'audio' | 'video') => Promise<string>;
     endCallSession: (sessionId: string, conversationId: string, durationSeconds: number) => Promise<void>;
     totalUnread: number;
+    loadChatData: (force?: boolean) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -130,8 +131,15 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const conversationsRef = useRef<ChatConversation[]>([]);
     const workspacesRef = useRef<ChatWorkspace[]>([]);
     const processedMsgIds = useRef<Set<string>>(new Set());
+    const chatLoadedRef = useRef(false);
+    const chatLoadingRef = useRef<Promise<void> | null>(null);
 
     const isAppAdmin = String(user?.role || '') === 'ADMIN';
+
+    useEffect(() => {
+        chatLoadedRef.current = false;
+        chatLoadingRef.current = null;
+    }, [user?.id]);
 
     useEffect(() => {
         conversationsRef.current = conversations;
@@ -1201,12 +1209,30 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await insertSystemMessage(conversationId, `Cuộc gọi đã kết thúc (${formatDuration(durationSeconds)})`);
     }, [insertSystemMessage, user?.id]);
 
+    const loadChatData = useCallback(async (force = false) => {
+        if (!isSupabaseConfigured || !user?.id) return;
+        if (!force && chatLoadedRef.current) return;
+        if (chatLoadingRef.current) return chatLoadingRef.current;
+
+        const task = (async () => {
+            await Promise.all([
+                loadWorkspaces(),
+                loadConversations(),
+            ]);
+            await loadPinnedMessages();
+            chatLoadedRef.current = true;
+        })();
+
+        chatLoadingRef.current = task;
+        try {
+            await task;
+        } finally {
+            chatLoadingRef.current = null;
+        }
+    }, [loadConversations, loadPinnedMessages, loadWorkspaces, user?.id]);
+
     useEffect(() => {
         if (!isSupabaseConfigured || !user?.id) return;
-
-        loadWorkspaces();
-        loadConversations();
-        loadPinnedMessages();
 
         const channelName = `chat-realtime-${user.id}`;
         channelRef.current = supabase
@@ -1331,7 +1357,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 event: '*',
                 schema: 'public',
                 table: 'chat_pins',
-            }, () => loadPinnedMessages())
+            }, () => {
+                if (chatLoadedRef.current) loadPinnedMessages();
+            })
             .subscribe();
 
         return () => {
@@ -1339,7 +1367,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (presenceRef.current) supabase.removeChannel(presenceRef.current);
             supabase.removeChannel(pinsChannel);
         };
-    }, [loadConversations, loadPinnedMessages, loadWorkspaces, user?.id]);
+    }, [loadConversations, loadPinnedMessages, user?.id]);
 
     const totalUnread = conversations.reduce((sum, c) => sum + (c.type === 'channel_voice' ? 0 : (c.unreadCount || 0)), 0);
 
@@ -1377,6 +1405,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             startCallSession,
             endCallSession,
             totalUnread,
+            loadChatData,
         }}>
             {children}
         </ChatContext.Provider>

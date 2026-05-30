@@ -8,9 +8,9 @@ import { AppProvider, useApp } from './context/AppContext';
 import { ToastProvider } from './context/ToastContext';
 import { ConfirmProvider } from './context/ConfirmContext';
 import { ThemeProvider } from './context/ThemeContext';
-import { WorkflowProvider } from './context/WorkflowContext';
-import { ChatProvider } from './context/ChatContext';
-import { RequestProvider } from './context/RequestContext';
+import { WorkflowProvider, useWorkflow } from './context/WorkflowContext';
+import { ChatProvider, useChat } from './context/ChatContext';
+import { RequestProvider, useRequest } from './context/RequestContext';
 import { CelebrationProvider } from './components/Celebration';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Role } from './types';
@@ -273,6 +273,46 @@ const AppRoutes: React.FC = () => {
   );
 };
 
+const AppDataWarmup: React.FC = () => {
+  const { pathname } = useLocation();
+  const { refreshData: refreshWorkflowData } = useWorkflow();
+  const { refreshData: refreshRequestData } = useRequest();
+  const { loadChatData } = useChat();
+
+  useEffect(() => {
+    const needsWorkflowData = pathname.startsWith('/wf') || pathname === '/employee-dashboard' || pathname === '/custom-dashboard';
+    if (!needsWorkflowData) return;
+    refreshWorkflowData().catch(err => console.warn('Workflow warmup failed:', err));
+  }, [pathname, refreshWorkflowData]);
+
+  useEffect(() => {
+    const needsRequestData = pathname.startsWith('/rq') || pathname === '/employee-dashboard' || pathname === '/custom-dashboard';
+    if (!needsRequestData) return;
+    refreshRequestData().catch(err => console.warn('Request warmup failed:', err));
+  }, [pathname, refreshRequestData]);
+
+  useEffect(() => {
+    if (pathname === '/login') return;
+    if (pathname === '/chat') {
+      loadChatData().catch(err => console.warn('Chat warmup failed:', err));
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      loadChatData().catch(err => console.warn('Chat idle warmup failed:', err));
+    }, 6000);
+    return () => window.clearTimeout(timer);
+  }, [pathname, loadChatData]);
+
+  return null;
+};
+
+const RouteErrorBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const location = useLocation();
+  const resetKey = `${location.pathname}${location.search}${location.hash}`;
+
+  return <ErrorBoundary resetKey={resetKey}>{children}</ErrorBoundary>;
+};
+
 const App: React.FC = () => {
   return (
     <ErrorBoundary>
@@ -285,7 +325,10 @@ const App: React.FC = () => {
                   <ChatProvider>
                     <CelebrationProvider>
                       <Router>
-                        <AppRoutes />
+                        <RouteErrorBoundary>
+                          <AppDataWarmup />
+                          <AppRoutes />
+                        </RouteErrorBoundary>
                       </Router>
                     </CelebrationProvider>
                   </ChatProvider>

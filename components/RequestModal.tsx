@@ -1,7 +1,7 @@
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save, FileDown } from 'lucide-react';
+import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save, FileDown, Clock } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from '../context/AppContext';
 import {
@@ -12,6 +12,7 @@ import {
     ProjectWorkBoqItem,
     ProjectSubmissionTarget,
     MaterialRequestFulfillmentBatch,
+    MaterialRequestFulfillmentSummary,
     MaterialRequestFulfillmentSourceType,
     RequestItem,
     RequestStatus,
@@ -29,8 +30,33 @@ import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { projectSubmissionService } from '../lib/projectSubmissionService';
+import { getMaterialRequestWorkflowPatch } from '../lib/materialRequestService';
 import { materialRequestFulfillmentService, getCommittedQty, getRequestLineId } from '../lib/materialRequestFulfillmentService';
 import { buildFulfillmentBatchReceiveUrl } from '../lib/fulfillmentBatchQr';
+import { formatReservationSourceList } from '../lib/inventoryStockGuard';
+
+const formatFullDateTime = (isoString?: string | null) => {
+    if (!isoString) return '-';
+    const date = new Date(isoString);
+    if (Number.isNaN(date.getTime())) return '-';
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
+const toDatetimeLocalString = (isoString?: string | null) => {
+    if (!isoString) return '';
+    const d = new Date(isoString);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const toISOStringFromLocal = (localString?: string | null) => {
+    if (!localString) return '';
+    const d = new Date(localString);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toISOString();
+};
 
 interface RequestModalProps {
     isOpen: boolean;
@@ -42,6 +68,11 @@ interface RequestModalProps {
     requestOrigin?: MaterialRequestOrigin;
     workBoqItems?: ProjectWorkBoqItem[];
     materialBudgetItems?: MaterialBudgetItem[];
+    requestFulfillmentSummariesByRequestId?: Record<string, MaterialRequestFulfillmentSummary>;
+    initialAction?: 'createFulfillmentBatch';
+    canProcessProjectWorkflow?: boolean;
+    onProjectWorkflowApprove?: (request: MaterialRequest) => void | Promise<void>;
+    onProjectWorkflowReturn?: (request: MaterialRequest) => void | Promise<void>;
 }
 
 type RequestLineDraft = {
@@ -76,14 +107,28 @@ type ReceiveQtyDraft = {
     reason: string;
 };
 
-const activeBudgetStatuses = new Set<RequestStatus | string>([
+const budgetHoldingStatuses = new Set<RequestStatus | string>([
+    RequestStatus.DRAFT,
     RequestStatus.PENDING,
     RequestStatus.APPROVED,
     RequestStatus.IN_TRANSIT,
-    RequestStatus.COMPLETED,
     RequestStatus.LEGACY_PENDING,
     RequestStatus.LEGACY_APPROVED,
 ]);
+
+const budgetCompletedStatuses = new Set<RequestStatus | string>([
+    RequestStatus.COMPLETED,
+]);
+
+type BudgetReservationSource = {
+    requestId: string;
+    code: string;
+    qty: number;
+    status: RequestStatus | string;
+    statusLabel: string;
+    requesterName: string;
+    isCompleted: boolean;
+};
 
 const toDraftLine = (item: RequestItem): RequestLineDraft => ({
     lineId: item.lineId || crypto.randomUUID(),
@@ -95,7 +140,7 @@ const toDraftLine = (item: RequestItem): RequestLineDraft => ({
     materialBudgetItemName: item.materialBudgetItemName || null,
     neededDate: item.neededDate || '',
     note: item.note || '',
-    overBudgetReason: item.overBudgetReason || '',
+    overBudgetReason: item.overBudgetReason || item.overReason || '',
     isManualItem: item.isManualItem || false,
     itemNameSnapshot: item.itemNameSnapshot || '',
     unitSnapshot: item.unitSnapshot || '',
@@ -114,6 +159,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
     requestOrigin,
     workBoqItems = [],
     materialBudgetItems = [],
+    requestFulfillmentSummariesByRequestId = {},
+    initialAction,
+    canProcessProjectWorkflow = false,
+    onProjectWorkflowApprove,
+    onProjectWorkflowReturn,
 }) => {
     const { items, warehouses, user, users, requests, addRequest, updateRequestStatus, removeRequest, loadModuleData, addTransaction } = useApp();
     const { getStockSummary, getOnHandStock } = useReservedStock();
@@ -128,6 +178,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [sourceWarehouseId, setSourceWarehouseId] = useState('');
     const [stockPreviewWarehouseId, setStockPreviewWarehouseId] = useState('');
     const [note, setNote] = useState('');
+    const [expectedDate, setExpectedDate] = useState('');
     const [fulfillmentMode, setFulfillmentMode] = useState<MaterialRequestFulfillmentMode>(MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
     const [overrideReason, setOverrideReason] = useState('');
     const [reqItems, setReqItems] = useState<RequestLineDraft[]>([]);
@@ -141,6 +192,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [fulfillmentBatches, setFulfillmentBatches] = useState<MaterialRequestFulfillmentBatch[]>([]);
     const [isLoadingFulfillment, setIsLoadingFulfillment] = useState(false);
     const [isIssuePanelOpen, setIsIssuePanelOpen] = useState(false);
+    const initialActionHandledRef = useRef(false);
     const [issueSourceType, setIssueSourceType] = useState<MaterialRequestFulfillmentSourceType>('stock');
     const [issueLines, setIssueLines] = useState<FulfillmentQtyDraft[]>([]);
     const [issueNote, setIssueNote] = useState('');
@@ -154,22 +206,95 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const isProjectRequest = requestOrigin === 'project' || request?.requestOrigin === 'project' || !!projectId || !!constructionSiteId;
     const effectiveProjectId = projectId || request?.projectId || null;
     const effectiveConstructionSiteId = constructionSiteId || request?.constructionSiteId || null;
+    const isProjectWorkflowReviewStep = !!request
+        && isProjectRequest
+        && request.status === RequestStatus.PENDING
+        && (request.workflowStep === 'site_manager_review' || request.workflowStep === 'material_department_review');
+    const canReviewProjectWorkflow = isProjectWorkflowReviewStep && canProcessProjectWorkflow;
+    const canPlanProjectFulfillment = !!request
+        && isProjectRequest
+        && request.status === RequestStatus.APPROVED
+        && (request.workflowStep === 'batch_planning' || !request.workflowStep)
+        && canProcessProjectWorkflow;
     const workBoqMap = useMemo(() => new Map(workBoqItems.map(item => [item.id, item])), [workBoqItems]);
     const materialBudgetMap = useMemo(() => new Map(materialBudgetItems.map(item => [item.id, item])), [materialBudgetItems]);
     const budgetOptions = useMemo(
-        () => materialBudgetItems.filter(item => !draftWorkBoqItemId || item.workBoqItemId === draftWorkBoqItemId),
+        () => materialBudgetItems
+            .filter(item => !draftWorkBoqItemId || item.workBoqItemId === draftWorkBoqItemId)
+            .filter(item => Number(item.budgetQty || 0) > 0),
         [draftWorkBoqItemId, materialBudgetItems],
     );
 
-    const getBudgetRequestedQty = (materialBudgetItemId?: string | null, excludeRequestId?: string) => {
-        if (!materialBudgetItemId) return 0;
+    const getRequestStatusLabel = (status: RequestStatus | string) => {
+        switch (status) {
+            case RequestStatus.DRAFT: return 'Nháp';
+            case RequestStatus.PENDING:
+            case RequestStatus.LEGACY_PENDING: return 'Chờ duyệt';
+            case RequestStatus.APPROVED:
+            case RequestStatus.LEGACY_APPROVED: return 'Chờ tạo đợt cấp';
+            case RequestStatus.IN_TRANSIT: return 'Đang cấp';
+            case RequestStatus.COMPLETED: return 'Đã nhận';
+            case RequestStatus.REJECTED: return 'Từ chối';
+            default: return String(status || '-');
+        }
+    };
+
+    const isSameBudgetScope = (req: MaterialRequest) => {
+        if (effectiveProjectId) return req.projectId === effectiveProjectId;
+        if (effectiveConstructionSiteId) return req.constructionSiteId === effectiveConstructionSiteId;
+        return true;
+    };
+
+    const getCompletedReceivedQtyForBudgetLine = (req: MaterialRequest, line: RequestItem, lineIndex: number) => {
+        const summary = requestFulfillmentSummariesByRequestId[req.id];
+        if (summary) {
+            const requestLineId = getRequestLineId(req, line, lineIndex);
+            const lineSummary = summary.lineSummaries.find(item => item.requestLineId === requestLineId);
+            return Number(lineSummary?.receivedQty || 0);
+        }
+        return Number((line as any).receivedQty ?? line.issuedQty ?? line.approvedQty ?? line.requestQty ?? 0);
+    };
+
+    const getBudgetReservationSources = (materialBudgetItemId?: string | null, excludeRequestId?: string): BudgetReservationSource[] => {
+        if (!materialBudgetItemId) return [];
         return requests
             .filter(req => req.id !== excludeRequestId)
-            .filter(req => !effectiveConstructionSiteId || req.constructionSiteId === effectiveConstructionSiteId)
-            .filter(req => activeBudgetStatuses.has(req.status))
-            .flatMap(req => req.items || [])
-            .filter(line => line.materialBudgetItemId === materialBudgetItemId)
-            .reduce((sum, line) => sum + Number(line.requestQty || 0), 0);
+            .filter(isSameBudgetScope)
+            .filter(req => budgetHoldingStatuses.has(req.status) || budgetCompletedStatuses.has(req.status))
+            .flatMap(req => (req.items || []).map((line, index) => ({ req, line, index })))
+            .filter(({ line }) => line.materialBudgetItemId === materialBudgetItemId)
+            .map(({ req, line, index }) => {
+                const isCompleted = budgetCompletedStatuses.has(req.status);
+                const qty = isCompleted
+                    ? getCompletedReceivedQtyForBudgetLine(req, line, index)
+                    : Number(line.requestQty || 0);
+                return {
+                    requestId: req.id,
+                    code: req.code,
+                    qty,
+                    status: req.status,
+                    statusLabel: getRequestStatusLabel(req.status),
+                    requesterName: users.find(item => item.id === req.requesterId)?.name || req.requesterId || '-',
+                    isCompleted,
+                };
+            })
+            .filter(source => source.qty > 0);
+    };
+
+    const getBudgetReservationSnapshot = (materialBudgetItemId?: string | null, excludeRequestId?: string) => {
+        const budget = materialBudgetItemId ? materialBudgetMap.get(materialBudgetItemId) : undefined;
+        const budgetQty = Number(budget?.budgetQty || 0);
+        const sources = getBudgetReservationSources(materialBudgetItemId, excludeRequestId);
+        const reservedQty = sources.reduce((sum, source) => sum + source.qty, 0);
+        return {
+            budget,
+            budgetQty,
+            sources,
+            pendingSources: sources.filter(source => !source.isCompleted),
+            completedSources: sources.filter(source => source.isCompleted),
+            reservedQty,
+            availableQty: budgetQty - reservedQty,
+        };
     };
 
     const getDraftRequestedQty = (materialBudgetItemId?: string | null, excludeLineId?: string) => {
@@ -179,21 +304,40 @@ const RequestModal: React.FC<RequestModalProps> = ({
             .reduce((sum, line) => sum + Number(line.qty || 0), 0);
     };
 
-    const buildLineBudgetSnapshot = (line: RequestLineDraft, excludeRequestId?: string) => {
+    const buildLineBudgetSnapshot = (line: RequestLineDraft, excludeRequestId?: string, draftBeforeQtyOverride?: number) => {
         const budget = line.materialBudgetItemId ? materialBudgetMap.get(line.materialBudgetItemId) : undefined;
-        const previousRequested = getBudgetRequestedQty(line.materialBudgetItemId, excludeRequestId);
-        const draftRequested = getDraftRequestedQty(line.materialBudgetItemId, line.lineId);
-        const totalRequested = previousRequested + draftRequested + Number(line.qty || 0);
-        const budgetQty = Number(budget?.budgetQty || 0);
-        const overBudgetQty = budgetQty > 0 ? Math.max(0, totalRequested - budgetQty) : 0;
+        const reservation = getBudgetReservationSnapshot(line.materialBudgetItemId, excludeRequestId);
+        const previousRequested = reservation.reservedQty;
+        const draftRequested = draftBeforeQtyOverride ?? getDraftRequestedQty(line.materialBudgetItemId, line.lineId);
+        const budgetQty = reservation.budgetQty;
+        const reservedBeforeQty = previousRequested + draftRequested;
+        const totalRequested = reservedBeforeQty + Number(line.qty || 0);
+        const overBeforeQty = budgetQty > 0 ? Math.max(0, reservedBeforeQty - budgetQty) : 0;
+        const overAfterQty = budgetQty > 0 ? Math.max(0, totalRequested - budgetQty) : 0;
+        const overBudgetQty = Math.max(0, overAfterQty - overBeforeQty);
         return {
             budget,
             previousRequested,
+            reservedQty: previousRequested,
+            reservedBeforeQty,
+            availableQty: budgetQty - reservedBeforeQty,
+            pendingSources: reservation.pendingSources,
             totalRequested,
             budgetQty,
             overBudgetQty,
             overBudgetPercent: budgetQty > 0 ? (overBudgetQty / budgetQty) * 100 : 0,
         };
+    };
+
+    const buildSequentialLineBudgetSnapshots = (lines: RequestLineDraft[], excludeRequestId?: string) => {
+        const runningDraftQtyByBudget = new Map<string, number>();
+        return new Map(lines.map(line => {
+            const budgetId = line.materialBudgetItemId || '';
+            const draftBeforeQty = budgetId ? runningDraftQtyByBudget.get(budgetId) || 0 : 0;
+            const snapshot = buildLineBudgetSnapshot(line, excludeRequestId, draftBeforeQty);
+            if (budgetId) runningDraftQtyByBudget.set(budgetId, draftBeforeQty + Number(line.qty || 0));
+            return [line.lineId, snapshot] as const;
+        }));
     };
 
     const getLineInventory = (itemId?: string) => items.find(i => i.id === itemId);
@@ -262,12 +406,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     useEffect(() => {
         if (isOpen) {
+            initialActionHandledRef.current = false;
             setShowApprovalPanel(false);
             setIsSaving(false);
             setIsIssuePanelOpen(false);
             setReceivingBatch(null);
             if (request) {
-                if (request.status === RequestStatus.PENDING && canApproveMaterialRequest(user, request)) {
+                if (request.status === RequestStatus.PENDING && (canReviewProjectWorkflow || (!isProjectRequest && canApproveMaterialRequest(user, request)))) {
                     setStep('APPROVE');
                 } else if (request.status === RequestStatus.DRAFT && request.requesterId === user.id) {
                     setStep('CREATE');
@@ -279,6 +424,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 setSourceWarehouseId(request.sourceWarehouseId || '');
                 setStockPreviewWarehouseId('');
                 setNote(request.note || '');
+                setExpectedDate(request.expectedDate || '');
                 setFulfillmentMode(request.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
                 setOverrideReason(request.overrideReason || '');
                 setReqItems(request.items.map(toDraftLine));
@@ -289,6 +435,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 setSourceWarehouseId('');
                 setStockPreviewWarehouseId('');
                 setNote('');
+                setExpectedDate(new Date(Date.now() + 86400000 * 3).toISOString());
                 setFulfillmentMode(MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
                 setOverrideReason('');
                 setReqItems([]);
@@ -300,7 +447,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 setDraftLineNote('');
             }
         }
-    }, [isOpen, request, user, items, defaultSiteWarehouseId]);
+    }, [canReviewProjectWorkflow, defaultSiteWarehouseId, isOpen, isProjectRequest, items, request, user]);
 
     useEffect(() => {
         if (!isOpen || !request) {
@@ -392,6 +539,15 @@ const RequestModal: React.FC<RequestModalProps> = ({
             toast.warning('Thiếu khối lượng', 'Vui lòng nhập khối lượng đề xuất lớn hơn 0.');
             return;
         }
+        const reservation = getBudgetReservationSnapshot(budget.id, request?.id);
+        const currentDraftQty = getDraftRequestedQty(budget.id);
+        const nextReservedQty = reservation.reservedQty + currentDraftQty + qty;
+        if (reservation.budgetQty > 0 && nextReservedQty > reservation.budgetQty) {
+            toast.warning(
+                'Vượt KL khả dụng BOQ',
+                `${budget.itemName}: khả dụng ${Math.max(0, reservation.budgetQty - reservation.reservedQty - currentDraftQty).toLocaleString('vi-VN')} ${budget.unit}; sau dòng này vượt ${(nextReservedQty - reservation.budgetQty).toLocaleString('vi-VN')} ${budget.unit}. Phiếu vẫn tạo được nếu nhập lý do.`,
+            );
+        }
         const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
         setReqItems(prev => [...prev, {
             lineId: crypto.randomUUID(),
@@ -454,6 +610,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             status: RequestStatus.PENDING,
             ...projectSubmissionService.targetToUpdate(submissionTarget),
             ...projectSubmissionService.actionMeta(user.id, true),
+            ...(isProjectRequest ? getMaterialRequestWorkflowPatch('site_manager_review', user.id) : {}),
             logs: [
                 ...(draftRequest.logs || []),
                 { action: 'SUBMITTED', userId: user.id, timestamp: now, note: submissionTarget.note || undefined },
@@ -482,6 +639,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const buildDraftRequestFromForm = (): MaterialRequest => {
         const now = new Date().toISOString();
         const isExistingDraft = !!request && request.status === RequestStatus.DRAFT;
+        const workflowPatch = isProjectRequest
+            ? getMaterialRequestWorkflowPatch(request?.workflowStep === 'returned_to_creator' ? 'returned_to_creator' : 'draft', user.id)
+            : {};
+        const sequentialSnapshots = buildSequentialLineBudgetSnapshots(reqItems, request?.id);
         return {
             ...(request || {}),
             id: request?.id || `mr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -497,13 +658,15 @@ const RequestModal: React.FC<RequestModalProps> = ({
             submittedToName: null,
             submittedToPermission: null,
             submissionNote: null,
+            ...workflowPatch,
             createdDate: request?.createdDate || now,
-            expectedDate: request?.expectedDate || new Date(Date.now() + 86400000 * 3).toISOString(),
+            expectedDate: expectedDate || new Date(Date.now() + 86400000 * 3).toISOString(),
             note,
             fulfillmentMode,
             items: reqItems.map(i => {
-                const snapshot = buildLineBudgetSnapshot(i);
+                const snapshot = sequentialSnapshots.get(i.lineId) || buildLineBudgetSnapshot(i, request?.id);
                 const work = i.workBoqItemId ? workBoqMap.get(i.workBoqItemId) : undefined;
+                const overReason = i.overBudgetReason || undefined;
                 return {
                     lineId: i.lineId,
                     itemId: i.itemId,
@@ -516,10 +679,15 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     neededDate: i.neededDate || undefined,
                     note: i.note || undefined,
                     budgetQtySnapshot: snapshot.budgetQty,
+                    reservedBeforeQtySnapshot: snapshot.reservedBeforeQty,
                     previousRequestedQtySnapshot: snapshot.previousRequested,
+                    isOverBoq: snapshot.overBudgetQty > 0,
+                    overQty: snapshot.overBudgetQty,
+                    overPercent: snapshot.overBudgetPercent,
+                    overReason,
                     overBudgetQtySnapshot: snapshot.overBudgetQty,
                     overBudgetPercentSnapshot: snapshot.overBudgetPercent,
-                    overBudgetReason: i.overBudgetReason || undefined,
+                    overBudgetReason: overReason,
                     isManualItem: i.isManualItem || false,
                     itemNameSnapshot: i.itemNameSnapshot || getLineInventory(i.itemId)?.name || snapshot.budget?.itemName || undefined,
                     unitSnapshot: i.unitSnapshot || getLineInventory(i.itemId)?.unit || snapshot.budget?.unit || undefined,
@@ -542,8 +710,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
 
         if (isProjectRequest) {
+            const sequentialSnapshots = buildSequentialLineBudgetSnapshots(reqItems, request?.id);
             const invalidLine = reqItems.find(line => {
-                const snapshot = buildLineBudgetSnapshot(line);
+                const snapshot = sequentialSnapshots.get(line.lineId) || buildLineBudgetSnapshot(line, request?.id);
                 const outsideBoq = !line.materialBudgetItemId;
                 return (outsideBoq || snapshot.overBudgetQty > 0) && !line.overBudgetReason?.trim();
             });
@@ -715,13 +884,17 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 return;
             }
             const stockShortages = stockLines
-                .map(line => ({ ...line, onHand: getOnHandStock(line.itemId, sourceWarehouseId) }))
-                .filter(line => Number(line.qty) > line.onHand);
+                .map(line => ({ ...line, summary: getStockSummary(line.itemId, sourceWarehouseId, { excludeRequestId: request.id }) }))
+                .filter(line => Number(line.qty) > line.summary.available);
             if (stockShortages.length > 0) {
                 const shortage = stockShortages[0];
                 const item = getLineInventory(shortage.itemId);
                 const whName = warehouses.find(w => w.id === sourceWarehouseId)?.name || sourceWarehouseId;
-                toast.error('Không đủ tồn thực tế', `Kho nguồn "${whName}" không đủ tồn cho dòng "${item?.name || shortage.itemId}". Tồn ${shortage.onHand}, cần ${shortage.qty}.`);
+                const reason = Number(shortage.qty) > shortage.summary.onHand
+                    ? `tồn thực ${shortage.summary.onHand}`
+                    : `tồn thực ${shortage.summary.onHand}, đang giữ ${shortage.summary.reserved}, khả dụng ${shortage.summary.available}`;
+                const blockers = formatReservationSourceList(shortage.summary.entries);
+                toast.error('Không đủ tồn khả dụng', `Kho nguồn "${whName}" không đủ tồn cho dòng "${item?.name || shortage.itemId}". Cần ${shortage.qty}; ${reason}.${blockers ? ` Vị trí giữ chỗ: ${blockers}.` : ''} Vui lòng xử lý phiếu đang giữ chỗ hoặc giảm số lượng xuất.`);
                 return;
             }
         }
@@ -828,6 +1001,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
         setIsIssuePanelOpen(true);
     };
 
+    useEffect(() => {
+        if (!isOpen || !request || initialAction !== 'createFulfillmentBatch' || initialActionHandledRef.current || isLoadingFulfillment) return;
+        initialActionHandledRef.current = true;
+        openIssuePanel();
+    }, [isOpen, request?.id, initialAction, isLoadingFulfillment]);
+
     const updateIssueLine = (requestLineId: string, patch: Partial<FulfillmentQtyDraft>) => {
         setIssueLines(prev => prev.map(line => line.requestLineId === requestLineId ? { ...line, ...patch } : line));
     };
@@ -850,14 +1029,17 @@ const RequestModal: React.FC<RequestModalProps> = ({
             toast.warning('Thiếu số lượng cấp', 'Vui lòng nhập ít nhất một dòng có số lượng cấp lớn hơn 0.');
             return;
         }
-        const shortage = validLines.find(line => {
-            const onHand = getOnHandStock(line.itemId, effectiveSource);
-            return line.issuedQty > onHand && !isAdmin(user);
-        });
+        const shortage = validLines
+            .map(line => ({ ...line, summary: getStockSummary(line.itemId, effectiveSource) }))
+            .find(line => line.issuedQty > line.summary.available);
         if (shortage) {
             const item = getLineInventory(shortage.itemId);
-            const onHand = getOnHandStock(shortage.itemId, effectiveSource);
-            toast.error('Không đủ tồn thực tế', `${item?.name || shortage.itemId}: tồn ${onHand}, cần cấp ${shortage.issuedQty}.`);
+            const whName = warehouses.find(w => w.id === effectiveSource)?.name || effectiveSource;
+            const reason = shortage.issuedQty > shortage.summary.onHand
+                ? `tồn thực ${shortage.summary.onHand}`
+                : `tồn thực ${shortage.summary.onHand}, đang giữ ${shortage.summary.reserved}, khả dụng ${shortage.summary.available}`;
+            const blockers = formatReservationSourceList(shortage.summary.entries);
+            toast.error('Không đủ tồn khả dụng', `Kho "${whName}" - ${item?.name || shortage.itemId}: cần cấp ${shortage.issuedQty}; ${reason}.${blockers ? ` Vị trí giữ chỗ: ${blockers}.` : ''} Vui lòng xử lý phiếu pending/giữ chỗ trước.`);
             return;
         }
 
@@ -892,9 +1074,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
             });
             const freshBatches = await refreshFulfillmentBatches(request.id);
             const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
-            await updateRequestStatus(request.id, nextStatus, issueNote.trim() || 'Tạo đợt cấp vật tư', undefined, effectiveSource, overrideReason.trim() || undefined, 'FULFILLMENT_SYNC');
+            await updateRequestStatus(request.id, nextStatus, issueNote.trim() || 'Tạo đợt cấp vật tư', undefined, effectiveSource, overrideReason.trim() || undefined, 'FULFILLMENT_ISSUED');
             await loadModuleData('wms', true);
-            toast.success('Đã tạo đợt cấp', 'Đợt cấp đã được ghi nhận và tạo phiếu kho chờ xác nhận nhận hàng.');
+            toast.success('Đã tạo đợt cấp', 'Đợt cấp đã được ghi nhận; thủ kho công trường sẽ duyệt SL/CL rồi xác nhận nhập kho.');
             onClose();
         } catch (err: any) {
             logApiError('requestModal.fulfillment.issue', err);
@@ -924,7 +1106,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             title: 'Xác nhận thực nhận đợt cấp',
             targetName: receivingBatch.batchNo,
             subtitle: hasVariance
-                ? 'Có chênh lệch giữa số xuất và số thực nhận. Hệ thống sẽ ghi nhận lệch để chốt theo quy trình.'
+                ? 'Có chênh lệch giữa số xuất và số thực nhận. Hệ thống sẽ ghi nhận theo số thực nhận và cập nhật tồn kho ngay sau xác nhận.'
                 : 'Hệ thống sẽ cập nhật lũy kế thực nhận của phiếu đề xuất.',
             confirmText: 'Xác nhận nhận hàng',
             actionLabel: 'Xác nhận nhận',
@@ -949,13 +1131,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
             });
             const freshBatches = await refreshFulfillmentBatches(request.id);
             const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
-            await updateRequestStatus(request.id, nextStatus, 'Xác nhận nhận đợt cấp vật tư', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_SYNC');
+            await updateRequestStatus(request.id, nextStatus, 'Xác nhận nhận đợt cấp vật tư', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_RECEIVED');
             await loadModuleData('wms', true);
             toast.success(
-                savedBatch.status === 'variance_pending' ? 'Đã ghi nhận lệch' : 'Đã xác nhận nhận hàng',
-                savedBatch.status === 'variance_pending'
-                    ? 'Đợt cấp đang chờ phòng vật tư/admin chốt theo số thực nhận trước khi cập nhật tồn kho.'
-                    : nextStatus === RequestStatus.COMPLETED ? 'Phiếu đề xuất đã đủ số lượng công trường đề xuất.' : 'Đã cập nhật lũy kế nhận hàng cho phiếu.'
+                hasVariance ? 'Đã xác nhận nhận lệch' : 'Đã xác nhận nhận hàng',
+                nextStatus === RequestStatus.COMPLETED ? 'Phiếu đề xuất đã đủ số lượng công trường đề xuất.' : 'Đã cập nhật tồn kho và lũy kế nhận hàng cho phiếu.'
             );
             onClose();
         } catch (err: any) {
@@ -977,15 +1157,17 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 toast.warning('Không thể hoàn trả', 'Đợt cấp đã nhận thiếu kho nguồn hoặc kho nhận để tạo phiếu hoàn kho.');
                 return;
             }
-            const shortage = batch.lines.find(line => {
-                const item = items.find(inv => inv.id === line.itemId);
-                const onHand = Number(item?.stockByWarehouse?.[batch.targetWarehouseId!] || 0);
-                return onHand < Number(line.receivedQty || 0);
-            });
+            const shortage = batch.lines
+                .map(line => ({ ...line, summary: getStockSummary(line.itemId, batch.targetWarehouseId!) }))
+                .find(line => Number(line.receivedQty || 0) > line.summary.available);
             if (shortage) {
                 const item = items.find(inv => inv.id === shortage.itemId);
-                const onHand = Number(item?.stockByWarehouse?.[batch.targetWarehouseId!] || 0);
-                toast.error('Không đủ tồn để hoàn trả', `${item?.name || shortage.itemId}: tồn kho nhận còn ${onHand.toLocaleString('vi-VN')}, cần hoàn ${Number(shortage.receivedQty || 0).toLocaleString('vi-VN')}.`);
+                const needQty = Number(shortage.receivedQty || 0);
+                const reason = needQty > shortage.summary.onHand
+                    ? `tồn thực còn ${shortage.summary.onHand.toLocaleString('vi-VN')}`
+                    : `tồn thực ${shortage.summary.onHand.toLocaleString('vi-VN')}, đang giữ ${shortage.summary.reserved.toLocaleString('vi-VN')}, khả dụng ${shortage.summary.available.toLocaleString('vi-VN')}`;
+                const blockers = formatReservationSourceList(shortage.summary.entries);
+                toast.error('Không đủ tồn để hoàn trả', `${item?.name || shortage.itemId}: cần hoàn ${needQty.toLocaleString('vi-VN')}; ${reason}.${blockers ? ` Vị trí giữ chỗ: ${blockers}.` : ''} Vui lòng xử lý phiếu pending/giữ chỗ tại kho nhận trước.`);
                 return;
             }
 
@@ -1015,7 +1197,6 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             quantity: Number(line.receivedQty || 0),
                             materialRequestId: request.id,
                             requestLineId: line.requestLineId,
-                            fulfillmentBatchId: batch.id,
                         })),
                     sourceWarehouseId: batch.targetWarehouseId,
                     targetWarehouseId: batch.sourceWarehouseId,
@@ -1034,7 +1215,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 });
                 const freshBatches = await refreshFulfillmentBatches(request.id);
                 const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
-                await updateRequestStatus(request.id, nextStatus, 'Admin hoàn trả đợt cấp đã nhận và đảo tồn kho', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_SYNC');
+                await updateRequestStatus(request.id, nextStatus, 'Admin hoàn trả đợt cấp đã nhận và đảo tồn kho', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_RECEIVED');
                 await loadModuleData('wms', true);
                 toast.success('Đã hoàn trả đợt cấp', nextStatus === RequestStatus.APPROVED ? 'Phiếu đề xuất đã quay lại trạng thái chờ cấp hàng.' : 'Đã trừ kho nhận, hoàn về kho nguồn và cập nhật lại lũy kế.');
                 onClose();
@@ -1067,7 +1248,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             });
             const freshBatches = await refreshFulfillmentBatches(request.id);
             const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
-            await updateRequestStatus(request.id, nextStatus, 'Trả lại/hoàn hàng đợt cấp vật tư', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_SYNC');
+            await updateRequestStatus(request.id, nextStatus, 'Trả lại/hoàn hàng đợt cấp vật tư', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_RECEIVED');
             await loadModuleData('wms', true);
             toast.success('Đã trả lại đợt cấp', nextStatus === RequestStatus.APPROVED ? 'Phiếu đề xuất đã quay lại trạng thái chờ cấp hàng.' : 'Đã cập nhật lại lũy kế cấp/nhận cho phiếu.');
             onClose();
@@ -1100,7 +1281,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             });
             const freshBatches = await refreshFulfillmentBatches(request.id);
             const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
-            await updateRequestStatus(request.id, nextStatus, 'Chốt lệch đợt cấp vật tư theo thực nhận', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_SYNC');
+            await updateRequestStatus(request.id, nextStatus, 'Chốt lệch đợt cấp vật tư theo thực nhận', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_RECEIVED');
             await loadModuleData('wms', true);
             toast.success('Đã chốt lệch', nextStatus === RequestStatus.COMPLETED ? 'Phiếu đề xuất đã đủ số lượng công trường đề xuất.' : 'Tồn kho đã cập nhật theo số thực nhận.');
             onClose();
@@ -1205,7 +1386,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
     if (!isOpen) return null;
 
     const isEditable = step === 'CREATE';
-    const isApproving = step === 'APPROVE';
+    const isProjectWorkflowApproving = step === 'APPROVE' && canReviewProjectWorkflow;
+    const isApproving = step === 'APPROVE' && !isProjectWorkflowApproving;
     const isViewing = step === 'VIEW';
 
     const permissionRequest = request ? { ...request, sourceWarehouseId: sourceWarehouseId || request.sourceWarehouseId } : undefined;
@@ -1217,17 +1399,20 @@ const RequestModal: React.FC<RequestModalProps> = ({
             || isGlobalWarehouseKeeper(user)
             || isWarehouseKeeperFor(user, sourceWarehouseId || request.sourceWarehouseId)
         );
-    const canEditApprovalQuantities = isApproving || canPrepareIssue;
+    const canEditApprovalQuantities = isApproving || canPrepareIssue || canPlanProjectFulfillment;
     const canCreateFulfillmentBatch = !!request
         && isBatchFulfillmentRequest
         && (request.status === RequestStatus.APPROVED || request.status === RequestStatus.IN_TRANSIT)
         && (
+            canPlanProjectFulfillment
+            ||
             isAdmin(user)
             || isGlobalWarehouseKeeper(user)
             || isWarehouseKeeperFor(user, sourceWarehouseId || request.sourceWarehouseId)
         );
     const canReturn = !!request
         && !request.relatedTransactionId
+        && !isProjectWorkflowApproving
         && (request.status === RequestStatus.PENDING || request.status === RequestStatus.APPROVED)
         && (
             isAdmin(user)
@@ -1258,6 +1443,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
             : request?.status || 'NEW';
     const showSourceWarehouseField = !isEditable || !isProjectRequest || canEditApprovalQuantities;
     const stockContextWarehouseId = isEditable && isProjectRequest ? stockPreviewWarehouseId : sourceWarehouseId;
+    const draftBudgetReservation = isEditable && draftMaterialBudgetItemId
+        ? getBudgetReservationSnapshot(draftMaterialBudgetItemId, request?.id)
+        : null;
+    const editableBudgetSnapshots = isEditable ? buildSequentialLineBudgetSnapshots(reqItems, request?.id) : null;
     const canDeleteRequest = !!request
         && [RequestStatus.DRAFT, RequestStatus.PENDING, RequestStatus.REJECTED].includes(request.status)
         && (
@@ -1424,6 +1613,39 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             </div>
                         )}
 
+                        {/* Ngày giờ yêu cầu */}
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
+                            <label className="text-[10px] uppercase font-black text-slate-400">Ngày giờ yêu cầu</label>
+                            <div className="flex items-center gap-2 text-slate-800 font-bold">
+                                <Clock size={18} className="text-slate-400" />
+                                <span className="text-sm font-bold font-mono">
+                                    {isEditable && !request
+                                        ? formatFullDateTime(new Date().toISOString())
+                                        : formatFullDateTime(request?.createdDate || request?.date)}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Hạn giao mong muốn */}
+                        <div className="bg-white p-4 rounded-xl border border-rose-100 shadow-sm space-y-2">
+                            <label className="text-[10px] uppercase font-black text-rose-500">Hạn giao mong muốn (Ngày cần)</label>
+                            <div className="flex items-center gap-2 text-slate-800 font-bold">
+                                <Clock size={18} className="text-rose-400" />
+                                {isEditable ? (
+                                    <input
+                                        type="datetime-local"
+                                        value={toDatetimeLocalString(expectedDate)}
+                                        onChange={(e) => setExpectedDate(toISOStringFromLocal(e.target.value))}
+                                        className="w-full bg-transparent outline-none text-sm font-bold text-slate-700 font-mono"
+                                    />
+                                ) : (
+                                    <span className="text-sm font-bold font-mono text-rose-700">
+                                        {formatFullDateTime(request?.expectedDate)}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
                         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
                             <label className="text-[10px] uppercase font-black text-slate-400">Ghi chú phiếu</label>
                             <input
@@ -1472,7 +1694,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             <div className="flex items-center justify-between gap-3 mb-3">
                                 <div>
                                     <div className="text-xs font-black text-slate-700">Thêm vật tư theo BOQ triển khai</div>
-                                    <div className="text-[10px] font-bold text-slate-400">Warning tính theo định mức vật tư trong BOQ triển khai, gồm cả phiếu đang chờ duyệt.</div>
+                                    <div className="text-[10px] font-bold text-slate-400">BOQ là mức trần cảnh báo; đề xuất vượt vẫn gửi được khi nhập lý do.</div>
                                 </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
@@ -1493,7 +1715,20 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     className="md:col-span-4 px-3 py-2 rounded-xl border border-amber-100 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300"
                                 >
                                     <option value="">Chọn vật tư/định mức...</option>
-                                    {budgetOptions.map(item => <option key={item.id} value={item.id}>{item.itemName} • Còn {Math.max(0, Number(item.budgetQty || 0) - getBudgetRequestedQty(item.id)).toLocaleString('vi-VN')} {item.unit}</option>)}
+                                    {budgetOptions.length === 0 && (
+                                        <option value="" disabled>
+                                            {draftWorkBoqItemId ? 'Đầu mục này chưa khai báo vật tư có KL dự toán' : 'Chưa có vật tư BOQ nào có KL dự toán'}
+                                        </option>
+                                    )}
+                                    {budgetOptions.map(item => {
+                                        const reservation = getBudgetReservationSnapshot(item.id, request?.id);
+                                        const overQty = Math.max(0, reservation.reservedQty - reservation.budgetQty);
+                                        return (
+                                            <option key={item.id} value={item.id}>
+                                                {item.itemName} • Dự toán {reservation.budgetQty.toLocaleString('vi-VN')} {item.unit} • Đã giữ/nhận {reservation.reservedQty.toLocaleString('vi-VN')} • Khả dụng {Math.max(0, reservation.availableQty).toLocaleString('vi-VN')}{overQty > 0 ? ` • Vượt ${overQty.toLocaleString('vi-VN')}` : ''}
+                                            </option>
+                                        );
+                                    })}
                                 </select>
                                 <input
                                     type="number"
@@ -1512,6 +1747,28 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 <button onClick={handleAddBudgetLine} className="md:col-span-1 px-3 py-2 rounded-xl bg-amber-500 text-white text-xs font-black hover:bg-amber-600">
                                     Thêm
                                 </button>
+                                {draftBudgetReservation && (
+                                    <div className={`md:col-span-12 rounded-xl border px-3 py-2 text-[10px] ${draftBudgetReservation.availableQty < 0 ? 'border-orange-200 bg-orange-50 text-orange-700' : 'border-amber-100 bg-white text-slate-500'}`}>
+                                        <div className="flex flex-wrap gap-x-4 gap-y-1 font-bold">
+                                            <span>Dự toán: {draftBudgetReservation.budgetQty.toLocaleString('vi-VN')} {draftBudgetReservation.budget?.unit || ''}</span>
+                                            <span>Đã giữ/nhận: {draftBudgetReservation.reservedQty.toLocaleString('vi-VN')} {draftBudgetReservation.budget?.unit || ''}</span>
+                                            <span>Khả dụng: {Math.max(0, draftBudgetReservation.availableQty).toLocaleString('vi-VN')} {draftBudgetReservation.budget?.unit || ''}</span>
+                                        </div>
+                                        {draftBudgetReservation.pendingSources.length > 0 && (
+                                            <div className="mt-1.5 space-y-0.5">
+                                                <div className="font-black uppercase text-amber-600">Phiếu đang chiếm chỗ/chờ xử lý</div>
+                                                {draftBudgetReservation.pendingSources.slice(0, 4).map(source => (
+                                                    <div key={`${source.requestId}-${source.status}`} className="font-semibold">
+                                                        {source.code} • {source.statusLabel} • {source.requesterName} • {source.qty.toLocaleString('vi-VN')} {draftBudgetReservation.budget?.unit || ''}
+                                                    </div>
+                                                ))}
+                                                {draftBudgetReservation.pendingSources.length > 4 && (
+                                                    <div className="font-semibold">+{draftBudgetReservation.pendingSources.length - 4} phiếu khác đang giữ chỗ.</div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                                 <input
                                     value={draftLineNote}
                                     onChange={event => setDraftLineNote(event.target.value)}
@@ -1557,7 +1814,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     const receivedQty = lineFulfillment?.receivedQty || 0;
                                     const remainingToReceive = lineFulfillment?.remainingToReceive ?? Math.max(0, requestQty - receivedQty);
                                     const isExcess = !isEditable && approvedQty > requestQty;
-                                    const budgetSnapshot = buildLineBudgetSnapshot(row as RequestLineDraft);
+                                    const budgetSnapshot = editableBudgetSnapshots?.get((row as RequestLineDraft).lineId) || buildLineBudgetSnapshot(row as RequestLineDraft, request?.id);
                                     const needsReason = isEditable && isProjectRequest && (!row.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0);
 
                                     return (
@@ -1576,6 +1833,16 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                                     </span>
                                                                 )}
                                                                 {!row.materialBudgetItemId && <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100 text-[9px] font-bold">Ngoài BOQ</span>}
+                                                                {isEditable && row.materialBudgetItemId && (
+                                                                    <span className="px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700 border border-cyan-100 text-[9px] font-bold">
+                                                                        Khả dụng trước dòng {Math.max(0, budgetSnapshot.availableQty).toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}
+                                                                    </span>
+                                                                )}
+                                                                {isEditable && budgetSnapshot.pendingSources.length > 0 && (
+                                                                    <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 text-[9px] font-bold">
+                                                                        {budgetSnapshot.pendingSources.length} phiếu đang giữ chỗ
+                                                                    </span>
+                                                                )}
                                                                 {budgetSnapshot.overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 border border-orange-100 text-[9px] font-bold">Vượt {budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}</span>}
                                                             </div>
                                                             {needsReason && (
@@ -1668,7 +1935,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             const receivedQty = lineFulfillment?.receivedQty || 0;
                             const remainingToReceive = lineFulfillment?.remainingToReceive ?? Math.max(0, requestQty - receivedQty);
                             const isExcess = !isEditable && approvedQty > requestQty;
-                            const budgetSnapshot = buildLineBudgetSnapshot(row as RequestLineDraft);
+                            const budgetSnapshot = editableBudgetSnapshots?.get((row as RequestLineDraft).lineId) || buildLineBudgetSnapshot(row as RequestLineDraft, request?.id);
                             const needsReason = isEditable && isProjectRequest && (!row.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0);
 
                             return (
@@ -1682,6 +1949,16 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                 <div className="mt-1 flex flex-wrap gap-1">
                                                     {(row.workBoqItemName || row.materialBudgetItemName) && <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 text-[9px] font-bold">{row.workBoqItemName || 'BOQ'}{row.materialBudgetItemName ? ` • ${row.materialBudgetItemName}` : ''}</span>}
                                                     {!row.materialBudgetItemId && <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100 text-[9px] font-bold">Ngoài BOQ</span>}
+                                                    {isEditable && row.materialBudgetItemId && (
+                                                        <span className="px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700 border border-cyan-100 text-[9px] font-bold">
+                                                            Khả dụng trước dòng {Math.max(0, budgetSnapshot.availableQty).toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}
+                                                        </span>
+                                                    )}
+                                                    {isEditable && budgetSnapshot.pendingSources.length > 0 && (
+                                                        <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 text-[9px] font-bold">
+                                                            {budgetSnapshot.pendingSources.length} phiếu đang giữ chỗ
+                                                        </span>
+                                                    )}
                                                     {budgetSnapshot.overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 border border-orange-100 text-[9px] font-bold">Vượt {budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}</span>}
                                                 </div>
                                             )}
@@ -1817,8 +2094,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                     <thead className="text-[9px] uppercase text-slate-400">
                                                         <tr>
                                                             <th className="py-1 text-left">Vật tư</th>
-                                                            <th className="py-1 text-right">Xuất</th>
-                                                            <th className="py-1 text-right">Nhận</th>
+                                                            <th className="py-1 text-right">Đã xuất</th>
+                                                            <th className="py-1 text-right">Thực nhận</th>
                                                             <th className="py-1 text-left pl-3">Lý do lệch</th>
                                                         </tr>
                                                     </thead>
@@ -1878,6 +2155,26 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             <button disabled={isSaving} onClick={handleOpenSubmitDraft} className="px-6 py-2 rounded-lg bg-accent text-white font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20">
                                 {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Send size={18} className="mr-2" />} Gửi duyệt
                             </button>
+                        )}
+
+                        {isProjectWorkflowApproving && request && (
+                            <>
+                                <button
+                                    disabled={isSaving || !onProjectWorkflowReturn}
+                                    onClick={() => onProjectWorkflowReturn?.(request)}
+                                    className="px-5 py-2 rounded-lg border border-amber-200 text-amber-700 bg-amber-50 font-bold hover:bg-amber-100 disabled:opacity-60 disabled:cursor-not-allowed flex items-center"
+                                >
+                                    <AlertCircle size={18} className="mr-2" /> Trả lại bước trước
+                                </button>
+                                <button
+                                    disabled={isSaving || !onProjectWorkflowApprove}
+                                    onClick={() => onProjectWorkflowApprove?.(request)}
+                                    className="px-6 py-2 rounded-lg bg-accent text-white font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20"
+                                >
+                                    <CheckCircle size={18} className="mr-2" />
+                                    {request.workflowStep === 'site_manager_review' ? 'Duyệt, gửi phòng vật tư' : 'Duyệt phiếu'}
+                                </button>
+                            </>
                         )}
 
                         {isApproving && (

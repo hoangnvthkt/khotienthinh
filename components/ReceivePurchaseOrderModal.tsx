@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { poService } from '../lib/projectService';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
+import { materialRequestService } from '../lib/materialRequestService';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { usePermission } from '../hooks/usePermission';
 
@@ -121,7 +122,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
           receiptLines,
         });
         for (const requestId of affectedRequestIds) {
-          const request = requests.find(item => item.id === requestId);
+          const request = requests.find(item => item.id === requestId) || await materialRequestService.getById(requestId);
           if (!request) continue;
           const batches = await materialRequestFulfillmentService.listByRequest(requestId);
           const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, batches);
@@ -133,7 +134,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
               undefined,
               request.sourceWarehouseId,
               request.overrideReason,
-              'FULFILLMENT_SYNC',
+              'FULFILLMENT_RECEIVED',
             );
           }
         }

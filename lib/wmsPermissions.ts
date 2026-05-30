@@ -10,13 +10,21 @@ export const isGlobalWarehouseKeeper = (user: User): boolean =>
 export const isWarehouseKeeperFor = (user: User, warehouseId?: string): boolean =>
   isWarehouseKeeper(user) && !!warehouseId && user.assignedWarehouseId === warehouseId;
 
+export const isFulfillmentBatchTransaction = (tx: Transaction): boolean =>
+  (tx.items || []).some(item => !!item.fulfillmentBatchId);
+
 export const canApproveWmsTransaction = (user: User, tx: Transaction): boolean => {
   if (isAdmin(user)) return true;
   if (isGlobalWarehouseKeeper(user)) return true;
   if (!isWarehouseKeeper(user)) return false;
 
   if (tx.type === TransactionType.IMPORT) return isWarehouseKeeperFor(user, tx.targetWarehouseId);
-  if (tx.type === TransactionType.TRANSFER) return isWarehouseKeeperFor(user, tx.sourceWarehouseId);
+  if (tx.type === TransactionType.TRANSFER) {
+    if (isFulfillmentBatchTransaction(tx) && tx.targetWarehouseId) {
+      return isWarehouseKeeperFor(user, tx.targetWarehouseId);
+    }
+    return isWarehouseKeeperFor(user, tx.sourceWarehouseId);
+  }
   if (tx.type === TransactionType.EXPORT || tx.type === TransactionType.LIQUIDATION) {
     return isWarehouseKeeperFor(user, tx.sourceWarehouseId);
   }
@@ -65,6 +73,7 @@ export const canViewMaterialRequest = (user: User, request: MaterialRequest): bo
   if (isAdmin(user)) return true;
   if (request.requesterId === user.id) return true;
   if (isGlobalWarehouseKeeper(user)) return true;
+  if (request.requestOrigin === 'project' || request.projectId) return true;
   if (!isWarehouseKeeper(user)) return false;
   return user.assignedWarehouseId === request.sourceWarehouseId || user.assignedWarehouseId === request.siteWarehouseId;
 };

@@ -149,40 +149,16 @@ export const projectStaffService = {
     return hydrateStaffRows(staffRows || []);
   },
 
-  /** Load staff theo Project master, kèm fallback dữ liệu cũ theo construction site nếu có */
+  /** Load staff theo Project master. Dữ liệu site legacy không được kéo sang project khác. */
   async listByProject(projectId: string, constructionSiteId?: string): Promise<ProjectStaff[]> {
-    const queries = [
-      supabase
-        .from(STAFF_TABLE)
-        .select('*')
-        .eq('project_id', projectId)
-        .order('sort_order'),
-    ];
-
-    if (constructionSiteId) {
-      queries.push(
-        supabase
-          .from(STAFF_TABLE)
-          .select('*')
-          .eq('construction_site_id', constructionSiteId)
-          .order('sort_order')
-      );
-    }
-
-    const results = await Promise.all(queries);
-    for (const result of results) {
-      if (result.error) throw result.error;
-    }
-
-    const byId = new Map<string, any>();
-    for (const result of results) {
-      for (const row of result.data || []) {
-        byId.set(row.id, row);
-      }
-    }
-
-    const rows = [...byId.values()].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-    return hydrateStaffRows(rows);
+    void constructionSiteId;
+    const { data, error } = await supabase
+      .from(STAFF_TABLE)
+      .select('*')
+      .eq('project_id', projectId)
+      .order('sort_order');
+    if (error) throw error;
+    return hydrateStaffRows(data || []);
   },
 
   async add(staff: {
@@ -371,9 +347,7 @@ export const projectStaffService = {
     return { allowed: (permMatch?.length || 0) > 0 };
   },
 
-  /**
-   * PBAC check theo project master. Nếu project chưa backfill đủ, có thể fallback theo CT liên kết.
-   */
+  /** PBAC check theo project master, không fallback theo công trường liên kết. */
   async checkProjectPermission(
     userId: string,
     projectId: string,
@@ -391,16 +365,7 @@ export const projectStaffService = {
       .is('end_date', null);
     if (error) throw error;
 
-    if ((!staffRows || staffRows.length === 0) && constructionSiteId) {
-      const fallback = await supabase
-        .from(STAFF_TABLE)
-        .select('id')
-        .eq('construction_site_id', constructionSiteId)
-        .eq('user_id', userId)
-        .is('end_date', null);
-      if (fallback.error) throw fallback.error;
-      staffRows = fallback.data || [];
-    }
+    void constructionSiteId;
 
     if (!staffRows?.length) return { allowed: false };
 

@@ -106,7 +106,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
         countdownSeconds: 0,
       });
       if (!ok) return;
-      await paymentCertificateService.create(contractId, contractType, constructionSiteId, {});
+      await paymentCertificateService.create(contractId, contractType, constructionSiteId, { projectId });
       await load();
       toast.success('Tạo đợt thanh toán mới');
     } catch (e: any) { toast.error('Lỗi tạo đợt TT', e?.message); }
