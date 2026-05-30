@@ -133,9 +133,14 @@ const normalizePoItem = (item: Partial<PurchaseOrderItem>, inventoryItems: Inven
         requestCode: item.requestCode || null,
         requestLineId: item.requestLineId || null,
         budgetQtySnapshot: Number(item.budgetQtySnapshot || 0),
+        reservedBeforeQtySnapshot: Number(item.reservedBeforeQtySnapshot || 0),
         previousRequestedQtySnapshot: Number(item.previousRequestedQtySnapshot || 0),
         previousOrderedQtySnapshot: Number(item.previousOrderedQtySnapshot || 0),
         previousReceivedQtySnapshot: Number(item.previousReceivedQtySnapshot || 0),
+        isOverBoq: Boolean(item.isOverBoq ?? Number(item.overQty ?? item.overBudgetQtySnapshot ?? 0) > 0),
+        overQty: Number(item.overQty ?? item.overBudgetQtySnapshot ?? 0),
+        overPercent: Number(item.overPercent ?? item.overBudgetPercentSnapshot ?? 0),
+        overReason: item.overReason || item.overBudgetReason || '',
         overBudgetQtySnapshot: Number(item.overBudgetQtySnapshot || 0),
         overBudgetPercentSnapshot: Number(item.overBudgetPercentSnapshot || 0),
         overBudgetReason: item.overBudgetReason || '',
@@ -451,7 +456,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const previousOrdered = existingOrderedQtyByBudget.get(budget.id) || 0;
         const currentOtherQty = getFormQtyByBudget(budget.id, line.lineId);
         const totalCommitted = previousRequested + previousOrdered + currentOtherQty + Number(line.qty || 0);
-        const overBudgetQty = Math.max(0, totalCommitted - Number(budget.budgetQty || 0));
+        const reservedBeforeQty = previousRequested + previousOrdered + currentOtherQty;
+        const budgetQty = Number(budget.budgetQty || 0);
+        const overBeforeQty = Math.max(0, reservedBeforeQty - budgetQty);
+        const overAfterQty = Math.max(0, totalCommitted - budgetQty);
+        const overBudgetQty = Math.max(0, overAfterQty - overBeforeQty);
+        const overBudgetPercent = budgetQty > 0 ? Math.round((overBudgetQty / budgetQty) * 1000) / 10 : 0;
         return {
             ...line,
             workBoqItemId: line.workBoqItemId || budget.workBoqItemId || null,
@@ -459,11 +469,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             materialBudgetItemId: budget.id,
             materialBudgetItemName: line.materialBudgetItemName || budget.itemName,
             budgetQtySnapshot: Number(budget.budgetQty || 0),
+            reservedBeforeQtySnapshot: reservedBeforeQty,
             previousRequestedQtySnapshot: previousRequested,
             previousOrderedQtySnapshot: previousOrdered,
             previousReceivedQtySnapshot: Number(budget.cumulativeImported || 0),
+            isOverBoq: overBudgetQty > 0,
+            overQty: overBudgetQty,
+            overPercent: overBudgetPercent,
+            overReason: line.overReason || line.overBudgetReason || '',
             overBudgetQtySnapshot: overBudgetQty,
-            overBudgetPercentSnapshot: budget.budgetQty > 0 ? Math.round((overBudgetQty / budget.budgetQty) * 1000) / 10 : 0,
+            overBudgetPercentSnapshot: overBudgetPercent,
         };
     };
 
@@ -579,7 +594,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 requestCode: row.request.code,
                 requestLineId: row.requestLineId,
                 budgetQtySnapshot: row.line.budgetQtySnapshot,
+                reservedBeforeQtySnapshot: row.line.reservedBeforeQtySnapshot,
                 previousRequestedQtySnapshot: row.line.previousRequestedQtySnapshot,
+                isOverBoq: row.line.isOverBoq,
+                overQty: row.line.overQty,
+                overPercent: row.line.overPercent,
+                overReason: row.line.overReason || row.line.overBudgetReason,
                 overBudgetQtySnapshot: row.line.overBudgetQtySnapshot,
                 overBudgetPercentSnapshot: row.line.overBudgetPercentSnapshot,
                 overBudgetReason: row.line.overBudgetReason,
@@ -619,9 +639,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 requestCode: null,
                 requestLineId: null,
                 budgetQtySnapshot: 0,
+                reservedBeforeQtySnapshot: 0,
                 previousRequestedQtySnapshot: 0,
                 previousOrderedQtySnapshot: 0,
                 previousReceivedQtySnapshot: 0,
+                isOverBoq: false,
+                overQty: 0,
+                overPercent: 0,
+                overReason: '',
                 overBudgetQtySnapshot: 0,
                 overBudgetPercentSnapshot: 0,
                 overBudgetReason: '',
@@ -665,13 +690,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const missingOverBudgetReason = validItems.find(line =>
             pSourceMode !== 'proactive_stock' &&
             line.materialBudgetItemId &&
-            Number(line.overBudgetQtySnapshot || 0) > 0 &&
-            !line.overBudgetReason?.trim()
+            Number(line.overQty ?? line.overBudgetQtySnapshot ?? 0) > 0 &&
+            !(line.overReason || line.overBudgetReason)?.trim()
         );
         if (missingOverBudgetReason) {
+            const missingOverQty = Number(missingOverBudgetReason.overQty ?? missingOverBudgetReason.overBudgetQtySnapshot ?? 0);
             toast.warning(
                 'Cần nhập lý do vượt ngân sách',
-                `${missingOverBudgetReason.materialBudgetItemName || missingOverBudgetReason.name} vượt ${Number(missingOverBudgetReason.overBudgetQtySnapshot || 0).toLocaleString('vi-VN')} ${missingOverBudgetReason.unit || ''}.`
+                `${missingOverBudgetReason.materialBudgetItemName || missingOverBudgetReason.name} vượt ${missingOverQty.toLocaleString('vi-VN')} ${missingOverBudgetReason.unit || ''}.`
             );
             return;
         }
@@ -1090,9 +1116,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 materialBudgetItemId: null,
                 materialBudgetItemName: null,
                 budgetQtySnapshot: 0,
+                reservedBeforeQtySnapshot: 0,
                 previousRequestedQtySnapshot: 0,
                 previousOrderedQtySnapshot: 0,
                 previousReceivedQtySnapshot: 0,
+                isOverBoq: false,
+                overQty: 0,
+                overPercent: 0,
+                overReason: '',
                 overBudgetQtySnapshot: 0,
                 overBudgetPercentSnapshot: 0,
                 overBudgetReason: '',

@@ -12,6 +12,7 @@ import {
   Transaction,
   TransactionStatus,
 } from '../types';
+import { materialRequestBoqLineSnapshotService } from './materialRequestBoqLineSnapshotService';
 
 const EVENT_TABLE = 'material_request_events';
 
@@ -304,6 +305,14 @@ export const materialRequestService = {
       .single();
     if (error) throw error;
 
+    const updatedRequest = mapMaterialRequestFromDb(data);
+
+    try {
+      await materialRequestBoqLineSnapshotService.upsertForRequest(updatedRequest);
+    } catch (err) {
+      console.warn('Failed to sync material request BOQ line snapshots:', err);
+    }
+
     await this.recordEvent({
       requestId: input.request.id,
       projectId: input.request.projectId,
@@ -319,6 +328,6 @@ export const materialRequestService = {
       metadata: input.metadata || {},
     });
 
-    return mapMaterialRequestFromDb(data);
+    return updatedRequest;
   },
 };

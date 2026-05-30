@@ -140,7 +140,7 @@ const toDraftLine = (item: RequestItem): RequestLineDraft => ({
     materialBudgetItemName: item.materialBudgetItemName || null,
     neededDate: item.neededDate || '',
     note: item.note || '',
-    overBudgetReason: item.overBudgetReason || '',
+    overBudgetReason: item.overBudgetReason || item.overReason || '',
     isManualItem: item.isManualItem || false,
     itemNameSnapshot: item.itemNameSnapshot || '',
     unitSnapshot: item.unitSnapshot || '',
@@ -304,25 +304,40 @@ const RequestModal: React.FC<RequestModalProps> = ({
             .reduce((sum, line) => sum + Number(line.qty || 0), 0);
     };
 
-    const buildLineBudgetSnapshot = (line: RequestLineDraft, excludeRequestId?: string) => {
+    const buildLineBudgetSnapshot = (line: RequestLineDraft, excludeRequestId?: string, draftBeforeQtyOverride?: number) => {
         const budget = line.materialBudgetItemId ? materialBudgetMap.get(line.materialBudgetItemId) : undefined;
         const reservation = getBudgetReservationSnapshot(line.materialBudgetItemId, excludeRequestId);
         const previousRequested = reservation.reservedQty;
-        const draftRequested = getDraftRequestedQty(line.materialBudgetItemId, line.lineId);
-        const totalRequested = previousRequested + draftRequested + Number(line.qty || 0);
+        const draftRequested = draftBeforeQtyOverride ?? getDraftRequestedQty(line.materialBudgetItemId, line.lineId);
         const budgetQty = reservation.budgetQty;
-        const overBudgetQty = budgetQty > 0 ? Math.max(0, totalRequested - budgetQty) : 0;
+        const reservedBeforeQty = previousRequested + draftRequested;
+        const totalRequested = reservedBeforeQty + Number(line.qty || 0);
+        const overBeforeQty = budgetQty > 0 ? Math.max(0, reservedBeforeQty - budgetQty) : 0;
+        const overAfterQty = budgetQty > 0 ? Math.max(0, totalRequested - budgetQty) : 0;
+        const overBudgetQty = Math.max(0, overAfterQty - overBeforeQty);
         return {
             budget,
             previousRequested,
             reservedQty: previousRequested,
-            availableQty: budgetQty - previousRequested - draftRequested,
+            reservedBeforeQty,
+            availableQty: budgetQty - reservedBeforeQty,
             pendingSources: reservation.pendingSources,
             totalRequested,
             budgetQty,
             overBudgetQty,
             overBudgetPercent: budgetQty > 0 ? (overBudgetQty / budgetQty) * 100 : 0,
         };
+    };
+
+    const buildSequentialLineBudgetSnapshots = (lines: RequestLineDraft[], excludeRequestId?: string) => {
+        const runningDraftQtyByBudget = new Map<string, number>();
+        return new Map(lines.map(line => {
+            const budgetId = line.materialBudgetItemId || '';
+            const draftBeforeQty = budgetId ? runningDraftQtyByBudget.get(budgetId) || 0 : 0;
+            const snapshot = buildLineBudgetSnapshot(line, excludeRequestId, draftBeforeQty);
+            if (budgetId) runningDraftQtyByBudget.set(budgetId, draftBeforeQty + Number(line.qty || 0));
+            return [line.lineId, snapshot] as const;
+        }));
     };
 
     const getLineInventory = (itemId?: string) => items.find(i => i.id === itemId);
@@ -627,6 +642,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         const workflowPatch = isProjectRequest
             ? getMaterialRequestWorkflowPatch(request?.workflowStep === 'returned_to_creator' ? 'returned_to_creator' : 'draft', user.id)
             : {};
+        const sequentialSnapshots = buildSequentialLineBudgetSnapshots(reqItems, request?.id);
         return {
             ...(request || {}),
             id: request?.id || `mr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -648,8 +664,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
             note,
             fulfillmentMode,
             items: reqItems.map(i => {
-                const snapshot = buildLineBudgetSnapshot(i, request?.id);
+                const snapshot = sequentialSnapshots.get(i.lineId) || buildLineBudgetSnapshot(i, request?.id);
                 const work = i.workBoqItemId ? workBoqMap.get(i.workBoqItemId) : undefined;
+                const overReason = i.overBudgetReason || undefined;
                 return {
                     lineId: i.lineId,
                     itemId: i.itemId,
@@ -662,10 +679,15 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     neededDate: i.neededDate || undefined,
                     note: i.note || undefined,
                     budgetQtySnapshot: snapshot.budgetQty,
+                    reservedBeforeQtySnapshot: snapshot.reservedBeforeQty,
                     previousRequestedQtySnapshot: snapshot.previousRequested,
+                    isOverBoq: snapshot.overBudgetQty > 0,
+                    overQty: snapshot.overBudgetQty,
+                    overPercent: snapshot.overBudgetPercent,
+                    overReason,
                     overBudgetQtySnapshot: snapshot.overBudgetQty,
                     overBudgetPercentSnapshot: snapshot.overBudgetPercent,
-                    overBudgetReason: i.overBudgetReason || undefined,
+                    overBudgetReason: overReason,
                     isManualItem: i.isManualItem || false,
                     itemNameSnapshot: i.itemNameSnapshot || getLineInventory(i.itemId)?.name || snapshot.budget?.itemName || undefined,
                     unitSnapshot: i.unitSnapshot || getLineInventory(i.itemId)?.unit || snapshot.budget?.unit || undefined,
@@ -688,8 +710,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
 
         if (isProjectRequest) {
+            const sequentialSnapshots = buildSequentialLineBudgetSnapshots(reqItems, request?.id);
             const invalidLine = reqItems.find(line => {
-                const snapshot = buildLineBudgetSnapshot(line, request?.id);
+                const snapshot = sequentialSnapshots.get(line.lineId) || buildLineBudgetSnapshot(line, request?.id);
                 const outsideBoq = !line.materialBudgetItemId;
                 return (outsideBoq || snapshot.overBudgetQty > 0) && !line.overBudgetReason?.trim();
             });
@@ -1423,6 +1446,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const draftBudgetReservation = isEditable && draftMaterialBudgetItemId
         ? getBudgetReservationSnapshot(draftMaterialBudgetItemId, request?.id)
         : null;
+    const editableBudgetSnapshots = isEditable ? buildSequentialLineBudgetSnapshots(reqItems, request?.id) : null;
     const canDeleteRequest = !!request
         && [RequestStatus.DRAFT, RequestStatus.PENDING, RequestStatus.REJECTED].includes(request.status)
         && (
@@ -1790,7 +1814,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     const receivedQty = lineFulfillment?.receivedQty || 0;
                                     const remainingToReceive = lineFulfillment?.remainingToReceive ?? Math.max(0, requestQty - receivedQty);
                                     const isExcess = !isEditable && approvedQty > requestQty;
-                                    const budgetSnapshot = buildLineBudgetSnapshot(row as RequestLineDraft, request?.id);
+                                    const budgetSnapshot = editableBudgetSnapshots?.get((row as RequestLineDraft).lineId) || buildLineBudgetSnapshot(row as RequestLineDraft, request?.id);
                                     const needsReason = isEditable && isProjectRequest && (!row.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0);
 
                                     return (
@@ -1911,7 +1935,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             const receivedQty = lineFulfillment?.receivedQty || 0;
                             const remainingToReceive = lineFulfillment?.remainingToReceive ?? Math.max(0, requestQty - receivedQty);
                             const isExcess = !isEditable && approvedQty > requestQty;
-                            const budgetSnapshot = buildLineBudgetSnapshot(row as RequestLineDraft, request?.id);
+                            const budgetSnapshot = editableBudgetSnapshots?.get((row as RequestLineDraft).lineId) || buildLineBudgetSnapshot(row as RequestLineDraft, request?.id);
                             const needsReason = isEditable && isProjectRequest && (!row.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0);
 
                             return (

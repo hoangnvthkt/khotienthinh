@@ -32,7 +32,7 @@ const corsHeaders = {
 };
 
 const GEMINI_FAST_MODEL = Deno.env.get('GEMINI_FAST_MODEL') || 'gemini-2.5-flash';
-const GEMINI_REASONING_MODEL = Deno.env.get('GEMINI_REASONING_MODEL') || 'gemini-3.0-flash';
+const GEMINI_REASONING_MODEL = Deno.env.get('GEMINI_REASONING_MODEL') || 'gemini-2.5-pro';
 const MAX_ROWS_FOR_CONTEXT = 80;
 const MAX_CATALOG_CHARS = 18000;
 const MAX_RESULT_CHARS = 26000;

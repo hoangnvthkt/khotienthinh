@@ -1364,9 +1364,14 @@ export interface PurchaseOrderItem {
   requestCode?: string | null;
   requestLineId?: string | null;
   budgetQtySnapshot?: number;
+  reservedBeforeQtySnapshot?: number;
   previousRequestedQtySnapshot?: number;
   previousOrderedQtySnapshot?: number;
   previousReceivedQtySnapshot?: number;
+  isOverBoq?: boolean;
+  overQty?: number;
+  overPercent?: number;
+  overReason?: string;
   overBudgetQtySnapshot?: number;
   overBudgetPercentSnapshot?: number;
   overBudgetReason?: string;
@@ -1626,9 +1631,14 @@ export interface RequestItem {
   neededDate?: string;
   note?: string;
   budgetQtySnapshot?: number;
+  reservedBeforeQtySnapshot?: number;
   previousRequestedQtySnapshot?: number;
   previousOrderedQtySnapshot?: number;
   previousReceivedQtySnapshot?: number;
+  isOverBoq?: boolean;
+  overQty?: number;
+  overPercent?: number;
+  overReason?: string;
   overBudgetQtySnapshot?: number;
   overBudgetPercentSnapshot?: number;
   overBudgetReason?: string;
@@ -1638,6 +1648,29 @@ export interface RequestItem {
   skuSnapshot?: string;
   specification?: string;
   manualReason?: string;
+}
+
+export interface MaterialRequestBoqLineSnapshot {
+  id?: string;
+  requestId: string;
+  requestLineId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  workBoqItemId?: string | null;
+  materialBudgetItemId: string;
+  inventoryItemId?: string | null;
+  itemNameSnapshot?: string | null;
+  unitSnapshot?: string | null;
+  requestQty: number;
+  budgetQtySnapshot: number;
+  reservedBeforeQty: number;
+  isOverBoq: boolean;
+  overQty: number;
+  overPercent: number;
+  overReason?: string | null;
+  requestStatusSnapshot?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type MaterialRequestFulfillmentBatchStatus = 'draft' | 'issued' | 'received' | 'variance_pending' | 'returned' | 'cancelled';

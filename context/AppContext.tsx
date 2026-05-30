@@ -23,6 +23,7 @@ import { notificationService } from '../lib/notificationService';
 import { logApiError } from '../lib/apiError';
 import { projectSubmissionService } from '../lib/projectSubmissionService';
 import { getDefaultMaterialRequestWorkflowStep, getMaterialRequestWorkflowPatch, mapMaterialRequestFromDb, materialRequestService } from '../lib/materialRequestService';
+import { materialRequestBoqLineSnapshotService } from '../lib/materialRequestBoqLineSnapshotService';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
 import {
   formatStockDecreaseIssues,
@@ -1771,6 +1772,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     if (requestToSave.requestOrigin === 'project' && requestToSave.projectId) {
       try {
+        await materialRequestBoqLineSnapshotService.upsertForRequest(requestToSave);
+      } catch (err) {
+        console.warn('Failed to sync material request BOQ line snapshots:', err);
+      }
+      try {
         const workflowStep = requestToSave.workflowStep || getDefaultMaterialRequestWorkflowStep(requestToSave.status);
         await materialRequestService.recordEvent({
           requestId: requestToSave.id,
@@ -2033,6 +2039,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const synced = await syncToSupabase('requests', updatedReq);
     if (!synced) throw new Error('Không thể cập nhật phiếu đề xuất trên Supabase.');
+
+    if (updatedReq.requestOrigin === 'project' && updatedReq.projectId) {
+      try {
+        await materialRequestBoqLineSnapshotService.upsertForRequest(updatedReq);
+      } catch (err) {
+        console.warn('Failed to sync material request BOQ line snapshots:', err);
+      }
+    }
 
     if (req.requestOrigin === 'project' && req.projectId && updatedReq.workflowStep) {
       try {
