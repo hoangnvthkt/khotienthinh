@@ -168,6 +168,11 @@ Style trả lời:
 - Trình bày số liệu dạng bảng nếu có nhiều hàng.
 - Cuối câu trả lời nêu nguồn dữ liệu (tên tool đã gọi).
 - Sử dụng emoji phù hợp để tăng trải nghiệm đọc.
+- BẮT BUỘC: Luôn thêm chính xác 3 câu hỏi gợi ý liên quan ở cuối cùng theo đúng cấu trúc bên dưới (để hệ thống tự động bóc tách thành các nút bấm gợi ý):
+Gợi ý câu hỏi:
+1. [Câu hỏi gợi ý 1 liên quan đến chủ đề vừa thảo luận]
+2. [Câu hỏi gợi ý 2 liên quan đến chủ đề vừa thảo luận]
+3. [Câu hỏi gợi ý 3 liên quan đến chủ đề vừa thảo luận]
 `.trim();
 
 // ─── Knowledge Assistant System Prompt ───────────────────────
@@ -179,6 +184,11 @@ Quy tắc:
 - Nếu tài liệu không đủ căn cứ, nói rõ chưa tìm thấy nội dung phù hợp.
 - Ưu tiên câu trả lời ngắn, có cấu trúc và trích nguồn theo tên tài liệu.
 - Không bịa quy định, số liệu, điều khoản hoặc ngày tháng.
+- BẮT BUỘC: Luôn thêm chính xác 3 câu hỏi gợi ý liên quan ở cuối cùng theo đúng cấu trúc bên dưới (để hệ thống tự động bóc tách thành các nút bấm gợi ý):
+Gợi ý câu hỏi:
+1. [Câu hỏi gợi ý 1 liên quan đến chủ đề vừa thảo luận]
+2. [Câu hỏi gợi ý 2 liên quan đến chủ đề vừa thảo luận]
+3. [Câu hỏi gợi ý 3 liên quan đến chủ đề vừa thảo luận]
 `.trim();
 
 // ─── Deprecated: SQL Planner Prompt (kept for reference) ─────

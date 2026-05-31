@@ -7,7 +7,7 @@ import {
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
   Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot, FolderKanban,
-  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw
+  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
@@ -22,6 +22,7 @@ import SignaturePad from '../components/SignaturePad';
 import SettingsChibiBot from './settings/SettingsChibiBot';
 import SettingsProjectMasterData from './settings/SettingsProjectMasterData';
 import SettingsWorkGroups from './settings/SettingsWorkGroups';
+import SettingsInspectionTemplates from './settings/SettingsInspectionTemplates';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -738,6 +739,7 @@ const Settings: React.FC = () => {
     { id: 'warehouses', label: 'Kho bãi', icon: Building, roles: [Role.ADMIN] },
     { id: 'master-data', label: 'Dữ liệu gốc', icon: Database, roles: [Role.ADMIN] },
     { id: 'project-master-data', label: 'Danh mục DA', icon: FolderKanban, roles: [Role.ADMIN] },
+    { id: 'inspection-templates', label: 'Mẫu nghiệm thu', icon: ClipboardCheck, roles: [Role.ADMIN] },
     { id: 'work-groups', label: 'Nhóm làm việc', icon: Users, roles: [Role.ADMIN] },
     { id: 'org-chart', label: 'Sơ đồ tổ chức', icon: GitBranch, roles: [Role.ADMIN] },
     { id: 'loss-norms', label: 'Định mức hao hụt', icon: TrendingDown, roles: [Role.ADMIN] },
@@ -1270,6 +1272,10 @@ const Settings: React.FC = () => {
 
           {activeTab === 'project-master-data' && (
             <SettingsProjectMasterData />
+          )}
+
+          {activeTab === 'inspection-templates' && (
+            <SettingsInspectionTemplates />
           )}
 
           {activeTab === 'work-groups' && (

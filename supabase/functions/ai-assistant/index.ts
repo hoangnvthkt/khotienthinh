@@ -23,6 +23,7 @@ interface AssistantRequest {
   history?: ChatMessage[];
   messageId?: string;
   rating?: 1 | -1;
+  model?: string;
 }
 
 const corsHeaders = {
@@ -56,6 +57,114 @@ function compactJson(value: unknown, maxChars: number) {
   const text = JSON.stringify(value ?? null);
   return text.length > maxChars ? `${text.slice(0, maxChars)}... [truncated]` : text;
 }
+
+const CLASSIFICATION_PROMPT = `
+Bạn là bộ phân loại câu hỏi (Classifier Agent) cho hệ thống ERP Kho Tiến Thịnh.
+Nhiệm vụ của bạn là kiểm tra xem câu hỏi hiện tại của người dùng có liên quan đến các chủ đề được phép hỗ trợ sau đây hay không.
+
+Các chủ đề ĐƯỢC PHÉP HỖ TRỢ (được coi là liên quan):
+- Chào hỏi hoặc giao tiếp cơ bản (như "xin chào", "hello", "chào bạn", "bạn là ai").
+- Hỏi về danh sách dự án, công trường, tiến độ thi công, tiến độ dự án.
+- Hỏi về vật tư, thiết bị, giá vật tư, tồn kho ở các kho, nhập xuất kho.
+- Hỏi về nhân sự, thông tin nhân viên, phòng ban, chấm công, nghỉ phép, lương.
+- Hỏi về tài sản công ty, danh mục thiết bị, lịch bảo trì thiết bị.
+- Hỏi về tài chính của dự án, doanh thu, ngân sách dự toán, chi phí thực tế, lãi lỗ.
+- Hỏi về nhật ký thi công (daily logs), nghiệm thu chất lượng (quality checklists), biên bản nghiệm thu.
+- Hỏi về các quy trình, tài liệu quy định nội bộ hoặc chính sách công ty có trong Kho Kiến Thức.
+- Hướng dẫn hoặc giải đáp thắc mắc về cách sử dụng phần mềm Vioo/Kho Tiến Thịnh.
+
+Các câu hỏi KHÔNG ĐƯỢC PHÉP HỖ TRỢ (câu hỏi ngoài lề, vu vơ):
+- Các câu hỏi tâm sự đời sống, tán gẫu sâu, trò đùa, đố vui.
+- Các kiến thức khoa học, toán học, địa lý, thời tiết hoặc kỹ thuật lập trình chung chung không liên quan đến công ty (VD: "thời tiết hôm nay thế nào", "phương trình bậc 2 giải sao", "viết code python kết nối database", "dịch từ hello").
+- Hỏi về các công ty khác hoặc tin tức thế giới không liên quan đến Kho Tiến Thịnh.
+- Ý kiến chính trị, tôn giáo, các cuộc bàn luận nhạy cảm.
+
+Hãy trả về định dạng JSON duy nhất sau:
+{
+  "is_related": true hoặc false,
+  "friendly_rejection": "Lời từ chối lịch sự bằng tiếng Việt (nếu is_related = false, null nếu true). Lời từ chối cần giải thích rõ phần mềm chỉ hỗ trợ tra cứu thông tin doanh nghiệp, tồn kho, nhân sự, dự án hoặc quy trình nội bộ công ty.",
+  "suggestions": ["Gợi ý câu hỏi 1", "Gợi ý câu hỏi 2", "Gợi ý câu hỏi 3"] (3 câu hỏi gợi ý liên quan đến chức năng phần mềm để hướng dẫn người dùng quay lại đúng chủ đề, ví dụ: 'Tổng tồn kho hiện tại?', 'Danh sách các dự án?', 'Quy trình xin nghỉ phép?')
+}
+`;
+
+async function classifyQuestionRelation(
+  question: string,
+  history: ChatMessage[],
+  selectedModel?: string | null
+): Promise<{ isRelated: boolean; friendlyRejection?: string; suggestions?: string[] }> {
+  const historyText = history.length > 0
+    ? `\nLịch sử chat gần đây:\n${history.map(m => `${m.role}: ${m.content}`).join('\n')}\n`
+    : '';
+
+  const prompt = `
+${CLASSIFICATION_PROMPT}
+
+${historyText}
+Câu hỏi hiện tại của người dùng:
+"${question}"
+`.trim();
+
+  try {
+    const raw = await callGemini(prompt, 0, selectedModel || GEMINI_FAST_MODEL, 'application/json');
+    const parsed = extractJsonObject(raw);
+    return {
+      isRelated: parsed.is_related === true,
+      friendlyRejection: parsed.friendly_rejection || undefined,
+      suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions.map(String) : undefined,
+    };
+  } catch (err) {
+    console.error('classifyQuestionRelation error:', err);
+    return { isRelated: true };
+  }
+}
+
+function extractSuggestionsAndCleanAnswer(content: string): { cleanAnswer: string; suggestions: string[] } {
+  const lines = content.split('\n');
+  let suggestionsIndex = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].toLowerCase().includes('gợi ý câu hỏi:')) {
+      suggestionsIndex = i;
+      break;
+    }
+  }
+
+  if (suggestionsIndex === -1) {
+    return { cleanAnswer: content, suggestions: [] };
+  }
+
+  const cleanAnswer = lines.slice(0, suggestionsIndex).join('\n').trim();
+  const suggestionLines = lines.slice(suggestionsIndex + 1);
+  const suggestions: string[] = [];
+
+  for (const line of suggestionLines) {
+    const match = line.trim().match(/^\d+\.\s*(.+)$/);
+    if (match) {
+      suggestions.push(match[1].trim());
+    } else if (line.trim().startsWith('-') || line.trim().startsWith('*')) {
+      suggestions.push(line.replace(/^[-*]\s*/, '').trim());
+    } else if (line.trim().length > 0) {
+      suggestions.push(line.trim());
+    }
+  }
+
+  const finalSuggestions = suggestions.map(s => s.replace(/^[123]\.\s*/, '').trim()).filter(s => s.length > 0).slice(0, 3);
+  return { cleanAnswer, suggestions: finalSuggestions };
+}
+
+const TOOL_SOURCES: Record<string, { title: string; fileName: string }> = {
+  ai_tool_project_list: { title: 'Danh sách dự án', fileName: 'Hệ thống Quản lý Dự án (ERP)' },
+  ai_tool_project_summary: { title: 'Chi tiết dự án', fileName: 'Hệ thống Quản lý Dự án (ERP)' },
+  ai_tool_project_progress: { title: 'Tiến độ thi công', fileName: 'Hệ thống Quản lý Dự án (ERP)' },
+  ai_tool_daily_log_summary: { title: 'Nhật ký thi công', fileName: 'Hệ thống Quản lý Dự án (ERP)' },
+  ai_tool_inventory_summary: { title: 'Tồn kho hệ thống', fileName: 'Hệ thống Quản lý Kho (WMS)' },
+  ai_tool_material_search: { title: 'Tìm kiếm vật tư', fileName: 'Hệ thống Quản lý Kho (WMS)' },
+  ai_tool_material_request_status: { title: 'Yêu cầu vật tư (MR)', fileName: 'Hệ thống Quản lý Kho (WMS)' },
+  ai_tool_purchase_order_summary: { title: 'Đơn mua hàng (PO)', fileName: 'Hệ thống Quản lý Kho (WMS)' },
+  ai_tool_project_finance: { title: 'Tài chính dự án', fileName: 'Hệ thống Quản lý Tài chính' },
+  ai_tool_employee_summary: { title: 'Hồ sơ nhân sự', fileName: 'Hệ thống Quản lý Nhân sự (HRM)' },
+  ai_tool_attendance_report: { title: 'Báo cáo chấm công', fileName: 'Hệ thống Quản lý Nhân sự (HRM)' },
+  ai_tool_executive_dashboard: { title: 'Dashboard tổng hợp', fileName: 'Hệ thống Quản lý Vioo ERP' },
+};
 
 function extractJsonObject(text: string): any {
   const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
@@ -105,7 +214,7 @@ async function callGemini(
 
 const ALLOWED_TOOL_NAMES = AI_TOOL_DEFINITIONS.map(t => t.name);
 
-async function routeToTool(question: string, history: ChatMessage[]) {
+async function routeToTool(question: string, history: ChatMessage[], selectedModel?: string | null) {
   const prompt = `
 ${TOOL_ROUTER_PROMPT}
 
@@ -119,7 +228,7 @@ Question:
 ${question}
 `.trim();
 
-  const raw = await callGemini(prompt, 0.05, GEMINI_FAST_MODEL, 'application/json');
+  const raw = await callGemini(prompt, 0.05, selectedModel || GEMINI_FAST_MODEL, 'application/json');
   const parsed = extractJsonObject(raw);
 
   return {
@@ -165,6 +274,7 @@ async function formatToolResult(
   toolName: string,
   result: unknown,
   history: ChatMessage[],
+  selectedModel?: string | null,
 ) {
   const prompt = `
 ${DATA_ASSISTANT_SYSTEM_PROMPT}
@@ -182,7 +292,7 @@ ${compactJson(result, MAX_RESULT_CHARS)}
 Hãy trả lời bằng tiếng Việt, đúng trọng tâm. Trình bày số liệu đẹp mắt bằng bảng/danh sách nếu phù hợp. Nêu nguồn dữ liệu ở cuối.
 `.trim();
 
-  return callGemini(prompt, 0.2, GEMINI_FAST_MODEL);
+  return callGemini(prompt, 0.2, selectedModel || GEMINI_FAST_MODEL);
 }
 
 // ═══ Knowledge Mode (unchanged) ═════════════════════════════
@@ -228,7 +338,7 @@ async function classifyComplexity(question: string): Promise<boolean> {
   return res.trim().toUpperCase().includes('COMPLEX');
 }
 
-async function answerFromKnowledge(question: string, chunks: any[], history: ChatMessage[], isComplex: boolean) {
+async function answerFromKnowledge(question: string, chunks: any[], history: ChatMessage[], isComplex: boolean, selectedModel?: string | null) {
   const prompt = `
 ${KNOWLEDGE_ASSISTANT_SYSTEM_PROMPT}
 
@@ -244,7 +354,7 @@ ${compactJson(chunks, MAX_RESULT_CHARS)}
 Hãy trả lời bằng tiếng Việt, đúng trọng tâm, có phần "Nguồn" ở cuối.
 `.trim();
 
-  return callGemini(prompt, 0.2, isComplex ? GEMINI_REASONING_MODEL : GEMINI_FAST_MODEL);
+  return callGemini(prompt, 0.2, selectedModel || (isComplex ? GEMINI_REASONING_MODEL : GEMINI_FAST_MODEL));
 }
 
 // ═══ Conversation & Messages ════════════════════════════════
@@ -314,29 +424,71 @@ Deno.serve(async (request: Request) => {
 
     const mode: AiMode = req.mode === 'knowledge' ? 'knowledge' : 'data';
     const history = (req.history || []).slice(-10);
+    const selectedModel = req.model || null;
+
+    // ── Off-topic classification ──
+    const relation = await classifyQuestionRelation(question, history, selectedModel);
+    if (!relation.isRelated) {
+      const conversationId = await ensureConversation({ ...req, mode }, question);
+      await saveMessage({ conversationId, role: 'user', content: question, mode });
+
+      const friendlyRejection = relation.friendlyRejection || 'Xin chào! Em là Trợ lý AI của Kho Tiến Thịnh. Em chỉ có thể hỗ trợ giải đáp các thông tin liên quan đến dữ liệu phần mềm ERP (tồn kho, nhân sự, dự án, tài chính) hoặc tài liệu quy trình trong công ty. Anh/chị vui lòng hỏi đúng chủ đề nhé!';
+      const rejectionSuggestions = relation.suggestions || [
+        'Tổng tồn kho hiện tại bao nhiêu?',
+        'Danh sách dự án đang hoạt động?',
+        'Quy trình xin nghỉ phép?',
+      ];
+
+      await saveMessage({ conversationId, role: 'assistant', content: friendlyRejection, mode: 'general' });
+
+      return jsonResponse({
+        conversationId,
+        answer: friendlyRejection,
+        mode: 'general',
+        suggestions: rejectionSuggestions,
+        hasMemory: false,
+      });
+    }
+
     const conversationId = await ensureConversation({ ...req, mode }, question);
     await saveMessage({ conversationId, role: 'user', content: question, mode });
 
-    // ── Knowledge Mode (unchanged) ──
+    // ── Knowledge Mode ──
     if (mode === 'knowledge') {
       const chunks = await searchKnowledge(question);
       const isComplex = await classifyComplexity(question);
-      const answer = chunks.length > 0
-        ? await answerFromKnowledge(question, chunks, history, isComplex)
-        : 'Em chưa tìm thấy tài liệu nội bộ phù hợp trong Kho Kiến Thức. Anh có thể upload/sync thêm tài liệu hoặc hỏi cụ thể hơn theo tên tài liệu, quy trình, phòng ban.';
+      
+      const rawAnswer = chunks.length > 0
+        ? await answerFromKnowledge(question, chunks, history, isComplex, selectedModel)
+        : 'Em chưa tìm thấy tài liệu nội bộ phù hợp trong Kho Kiến Thức. Anh có thể upload/sync thêm tài liệu hoặc hỏi cụ thể hơn theo tên tài liệu, quy trình, phòng ban.\n\nGợi ý câu hỏi:\n1. Quy trình xin nghỉ phép theo nội quy công ty?\n2. Quy định bảo mật thông tin nội bộ là gì?\n3. Tiêu chuẩn an toàn lao động trên công trường?';
+
+      const { cleanAnswer, suggestions } = extractSuggestionsAndCleanAnswer(rawAnswer);
+
       const sources = chunks.map((c: any) => ({
         title: c.title,
         fileName: c.file_name,
         similarity: c.rank || 0,
       }));
-      await saveMessage({ conversationId, role: 'assistant', content: answer, mode: 'rag', sources });
-      return jsonResponse({ conversationId, answer, mode: 'rag', sources, hasMemory: chunks.length > 0 });
+
+      await saveMessage({ conversationId, role: 'assistant', content: cleanAnswer, mode: 'rag', sources });
+      return jsonResponse({
+        conversationId,
+        answer: cleanAnswer,
+        mode: 'rag',
+        sources,
+        suggestions: suggestions.length > 0 ? suggestions : [
+          'Quy trình xin nghỉ phép theo nội quy công ty?',
+          'Quy định bảo mật thông tin nội bộ là gì?',
+          'Tiêu chuẩn an toàn lao động trên công trường?',
+        ],
+        hasMemory: chunks.length > 0,
+      });
     }
 
     // ── Data Mode — Agentic Tool-calling ──
     let route: any = null;
     try {
-      route = await routeToTool(question, history);
+      route = await routeToTool(question, history, selectedModel);
     } catch (routeErr) {
       console.error('ai-assistant routing failed:', routeErr);
       return jsonResponse({ error: `Routing failed: ${(routeErr as Error).message}` }, 500);
@@ -368,21 +520,31 @@ Deno.serve(async (request: Request) => {
         }, 500);
       }
 
-      const answer = await formatToolResult(question, route.toolName, toolResult, history);
+      const rawAnswer = await formatToolResult(question, route.toolName, toolResult, history, selectedModel);
+      const { cleanAnswer, suggestions } = extractSuggestionsAndCleanAnswer(rawAnswer);
+
+      const toolSource = TOOL_SOURCES[route.toolName]
+        ? [{ ...TOOL_SOURCES[route.toolName], similarity: 1 }]
+        : [{ title: 'Dữ liệu ERP', fileName: 'Cơ sở dữ liệu hệ thống', similarity: 1 }];
+
+      const finalSuggestions = suggestions.length > 0 ? suggestions : (route.suggestions || []);
+
       await saveMessage({
         conversationId,
         role: 'assistant',
-        content: answer,
+        content: cleanAnswer,
         mode: 'sql',
         toolName: route.toolName,
+        sources: toolSource,
       });
 
       return jsonResponse({
         conversationId,
-        answer,
+        answer: cleanAnswer,
         toolName: route.toolName,
         mode: 'sql',
-        suggestions: route.suggestions,
+        suggestions: finalSuggestions,
+        sources: toolSource,
         hasMemory: false,
       });
     }

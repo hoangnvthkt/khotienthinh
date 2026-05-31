@@ -7,6 +7,7 @@ import {
   Database, Clock, Loader2, X, Code2, FileText, BookOpen, Menu, ArrowRight,
   ThumbsUp, ThumbsDown, Zap
 } from 'lucide-react';
+import { AVAILABLE_AI_MODELS, DEFAULT_AI_MODEL } from '../lib/aiConfig';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 
@@ -91,6 +92,9 @@ const MODE_CONFIG = {
 const AiAssistant: React.FC = () => {
   const { user } = useApp();
   const [aiMode, setAiMode] = useState<AiMode>('data');
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    return localStorage.getItem('selected_ai_model') || DEFAULT_AI_MODEL;
+  });
   const [conversations, setConversations] = useState<AiConversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AiMessage[]>([]);
@@ -205,6 +209,7 @@ const AiAssistant: React.FC = () => {
           userId: user.id,
           mode: aiMode,
           history: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+          model: selectedModel,
         }),
       });
 
@@ -428,6 +433,30 @@ const AiAssistant: React.FC = () => {
               </p>
             </div>
 
+            {/* Model Selector Dropdown */}
+            <div className="relative shrink-0 select-none hidden xs:block">
+              <select
+                value={selectedModel}
+                onChange={e => {
+                  setSelectedModel(e.target.value);
+                  localStorage.setItem('selected_ai_model', e.target.value);
+                }}
+                className="text-[10px] font-black border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-2 outline-none bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 transition cursor-pointer appearance-none pr-7"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 8px center',
+                  backgroundSize: '12px',
+                }}
+              >
+                {AVAILABLE_AI_MODELS.map(m => (
+                  <option key={m.id} value={m.id}>
+                    {m.icon} {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* ===== MODE TOGGLE SWITCH ===== */}
             <div className="relative flex items-center bg-slate-100 dark:bg-slate-800 rounded-2xl p-1 shrink-0">
               <div
@@ -484,7 +513,46 @@ const AiAssistant: React.FC = () => {
                 <ModeIcon size={36} className="text-white" />
               </div>
               <h2 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-white mb-2">{cfg.welcomeTitle}</h2>
-              <p className="text-sm text-slate-500 mb-8 max-w-md leading-relaxed">{cfg.welcomeDesc}</p>
+              <p className="text-sm text-slate-500 mb-5 max-w-md leading-relaxed">{cfg.welcomeDesc}</p>
+
+              {/* Premium Model Selector Cards */}
+              <div className="mb-8 w-full max-w-lg">
+                <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">
+                  Chọn mô hình AI (AI Model)
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {AVAILABLE_AI_MODELS.map(m => {
+                    const isSelected = selectedModel === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => {
+                          setSelectedModel(m.id);
+                          localStorage.setItem('selected_ai_model', m.id);
+                        }}
+                        className={`flex flex-col items-start text-left p-4 rounded-2xl border transition-all duration-300 relative group ${
+                          isSelected
+                            ? 'bg-gradient-to-br from-indigo-50/50 to-violet-50/50 dark:from-indigo-950/20 dark:to-violet-950/20 border-indigo-500/80 shadow-md ring-2 ring-indigo-500/10'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-md'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{m.icon}</span>
+                          <span className={`text-xs font-black ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-800 dark:text-slate-200'}`}>
+                            {m.name}
+                          </span>
+                          {isSelected && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping absolute top-3 right-3" />
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 leading-snug font-medium">
+                          {m.description}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full max-w-lg">
                 {cfg.suggestedQuestions.map((q, i) => (
                   <button key={i} onClick={() => sendMessage(q.text)}

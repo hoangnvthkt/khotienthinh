@@ -94,6 +94,13 @@ export const resolveNotificationPath = (notification: AppNotification): string |
     return notification.link || '/da';
   }
 
+  // ── Quality Checklist ─────────────────────────────────
+  if (sourceType === 'quality_checklist') {
+    const projectPath = buildProjectPath(notification, 'quality');
+    if (projectPath) return projectPath;
+    return notification.link || '/da';
+  }
+
   // ── Payment Certificate ───────────────────────────────
   if (sourceType === 'payment_certificate') {
     const projectPath = buildProjectPath(notification, 'payment');

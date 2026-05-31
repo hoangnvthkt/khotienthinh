@@ -9,6 +9,7 @@ export const PROJECT_TAB_PERMISSIONS = [
   { key: 'contract', label: 'Hợp đồng', icon: '📋', route: '/da/tabs/contract' },
   { key: 'gantt', label: 'Tiến độ', icon: '📐', route: '/da/tabs/gantt' },
   { key: 'dailylog', label: 'Nhật ký', icon: '📝', route: '/da/tabs/dailylog' },
+  { key: 'quality', label: 'Chất lượng', icon: '✅', route: '/da/tabs/quality' },
   { key: 'subcontract', label: 'Nhà thầu', icon: '🏗️', route: '/da/tabs/subcontract' },
   { key: 'material', label: 'Vật tư', icon: '📦', route: '/da/tabs/material' },
   { key: 'documents', label: 'Tài liệu', icon: '📎', route: '/da/tabs/documents' },

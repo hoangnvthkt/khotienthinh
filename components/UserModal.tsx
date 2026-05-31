@@ -16,6 +16,7 @@ const PROJECT_TAB_PERMISSION_ICONS: Record<ProjectOverviewTabKey, any> = {
   contract: FileSignature,
   gantt: GitBranch,
   dailylog: ClipboardCheck,
+  quality: ClipboardCheck,
   subcontract: Briefcase,
   material: Package,
   documents: FolderOpen,

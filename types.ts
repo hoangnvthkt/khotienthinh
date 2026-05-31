@@ -2074,6 +2074,189 @@ export interface Attachment {
   uploadedBy?: string;
 }
 
+// ==================== QUẢN LÝ CHẤT LƯỢNG (Quality Management) ====================
+
+export type QualityCheckResult = 'pass' | 'fail' | 'conditional';
+export type QualityConclusionResult = 'accepted' | 'conditional' | 'rejected';
+export type QualityChecklistStatus = 'draft' | 'submitted' | 'approved' | 'returned' | 'cancelled';
+export type InspectionResult = 'PASSED' | 'FAILED';
+
+// ---- Inspection Template (metadata-driven V2) ----
+
+export interface InspectionCategory {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface InspectionWorkType {
+  id: string;
+  categoryId: string;
+  code: string;
+  name: string;
+}
+
+export interface InspectionTemplate {
+  id: string;
+  workTypeId: string;
+  code: string;
+  name: string;
+  version: number;
+  standardReference?: string;
+  description?: string;
+  isActive: boolean;
+  inspectionPurpose?: string;
+  riskLevel: 'low' | 'medium' | 'high';
+  discipline: 'civil' | 'steel' | 'mep' | 'finishing' | string;
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  sections?: InspectionTemplateSection[];
+}
+
+export interface InspectionTemplateSection {
+  id: string;
+  templateId: string;
+  name: string;
+  sortOrder: number;
+  items?: InspectionTemplateItem[];
+}
+
+export type InspectionItemType = 'checkbox' | 'number' | 'text' | 'photo';
+
+export interface InspectionTemplateItem {
+  id: string;
+  sectionId: string;
+  itemName: string;
+  acceptanceCriteria?: string;
+  inspectionMethod?: string;
+  required: boolean;
+  dataType: InspectionItemType;
+  minValue?: number;
+  maxValue?: number;
+  unit?: string;
+  sortOrder: number;
+}
+
+// ---- Cloned checklist items (stored in JSONB, dynamically structured) ----
+
+export interface QualityChecklistClonedItem {
+  id: string;
+  itemName: string;
+  acceptanceCriteria?: string;
+  inspectionMethod?: string;
+  required: boolean;
+  dataType: InspectionItemType;
+  minValue?: number;
+  maxValue?: number;
+  unit?: string;
+  sortOrder: number;
+  actualValue?: string; // giá trị thực tế nhập
+  result?: 'pass' | 'fail'; // kết quả tự động / bằng tay
+  note?: string;
+  photoUrl?: string; // URL ảnh bằng chứng cho tiêu chí này
+  isCustom?: boolean; // tiêu chí phát sinh tại hiện trường
+}
+
+export interface QualityChecklistClonedSection {
+  sectionId: string;
+  sectionName: string;
+  sortOrder: number;
+  items: QualityChecklistClonedItem[];
+}
+
+export interface QualitySitePhoto {
+  url: string;
+  caption?: string;
+  category?: 'before' | 'during' | 'after' | 'defect';
+  takenAt?: string;
+}
+
+export interface QualityInspectionAttempt {
+  id: string;
+  checklistId: string;
+  attemptNumber: number;
+  inspectionDate: string;
+  inspectorName?: string;
+  itemsData: QualityChecklistClonedSection[]; // snapshot tại lần kiểm tra này
+  result: 'PASSED' | 'FAILED';
+  conclusion?: string;
+  signatureUrl?: string;
+  createdBy?: string;
+  createdAt?: string;
+}
+
+// ---- Main Quality Checklist (hồ sơ chất lượng) ----
+
+export interface QualityChecklist extends ProjectSubmissionFields {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId: string;
+  taskId?: string | null;
+  contractItemId?: string | null;
+  dailyLogId?: string | null;
+  templateId?: string | null;
+  workTypeId?: string | null;
+  code: string;
+  title: string;
+  
+  // Template clone info (snapshot)
+  templateCode?: string;
+  templateName?: string;
+  templateVersion?: number;
+  
+  // 1. Thông tin công việc
+  workDescription?: string;
+  workLocation?: string;
+  workDate?: string;
+  workSupervisor?: string;
+  
+  // 2 - 5. Dữ liệu động gom hết vào checklistData
+  checklistData: QualityChecklistClonedSection[];
+  
+  // 4. Hình ảnh hiện trường (cấu trúc cũ giữ lại để tương thích upload chung)
+  sitePhotos: QualitySitePhoto[];
+  
+  // 5. Tài liệu đính kèm
+  attachments: Attachment[];
+  
+  // 6. Kết luận nghiệm thu
+  conclusion?: string;
+  conclusionResult?: QualityConclusionResult;
+  conditions?: string;
+  inspectorName?: string;
+  inspectorSignUrl?: string;
+  approverName?: string;
+  approverSignUrl?: string;
+  
+  // Auto-calculated & Attempts
+  inspectionResult?: InspectionResult;
+  totalCriteria?: number;
+  passedCriteria?: number;
+  failedCriteria?: number;
+  currentAttempt: number;
+  
+  // Workflow
+  status: QualityChecklistStatus;
+  submittedBy?: string | null;
+  submittedAt?: string | null;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  returnedBy?: string | null;
+  returnedAt?: string | null;
+  returnReason?: string | null;
+  
+  // Cross-references
+  linkedAcceptanceId?: string | null;
+  linkedPaymentCertId?: string | null;
+  linkedMaterialRequestIds?: string[];
+  linkedPoIds?: string[];
+  
+  note?: string;
+  createdBy?: string;
+  createdAt: string;
+}
+
 // ==================== TÀI SẢN CỐ ĐỊNH (ASSETS) ====================
 
 export enum AssetStatus {
