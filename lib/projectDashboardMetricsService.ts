@@ -10,6 +10,7 @@ import {
   PaymentSchedule,
   ProjectDelayEvent,
   Project,
+  ProjectFinance,
   ProjectProgressCalculationMode,
   ProjectTask,
   ProjectTaskCompletionRequest,
@@ -57,6 +58,10 @@ export interface ProjectProgressMetric {
   leafTaskCount: number;
   completedLeafCount: number;
   totalWeight: number;
+  /** Tổng giá trị hợp đồng (chỉ khi mode = contract_value) */
+  contractTotalValue?: number;
+  /** Giá trị vật tư đã cấp: PO totalAmount (chỉ khi mode = contract_value) */
+  suppliedValue?: number;
 }
 
 export interface PartyDashboardMetric {
@@ -209,6 +214,7 @@ const PROGRESS_MODE_LABELS: Record<ProjectProgressCalculationMode, string> = {
   budget: 'Ngân sách công việc',
   duration: 'Thời gian thực hiện',
   task_count: 'Số lượng công việc',
+  contract_value: 'Giá trị hợp đồng (VT cấp phát)',
   manual: 'Thủ công',
 };
 
@@ -319,6 +325,8 @@ const buildProgressMetric = (
   tasks: ProjectTask[],
   taskLinks: TaskContractItem[],
   customerItems: ContractItem[],
+  purchaseOrders: PurchaseOrder[],
+  projectFinance: ProjectFinance | undefined,
 ): ProjectProgressMetric => {
   const gantt = calculateProjectProgress(tasks);
   const leafTasks = getLeafProjectTasks(tasks);
@@ -342,7 +350,24 @@ const buildProgressMetric = (
   }
 
   let percent = gantt.progressPercent;
-  if (mode === 'budget') {
+  let contractTotalValue: number | undefined;
+  let suppliedValue: number | undefined;
+
+  if (mode === 'contract_value') {
+    // Giá trị hợp đồng: ưu tiên sum(ContractItem.customer.leaf), fallback ProjectFinance.contractValue
+    const leafCustomerItems = getLeafItems(customerItems.filter(item => item.contractType === 'customer'));
+    const boqTotal = sum(leafCustomerItems, revisedItemValue);
+    contractTotalValue = boqTotal > 0 ? boqTotal : Number(projectFinance?.contractValue || 0);
+
+    // Giá trị vật tư đã cấp: PO totalAmount (active statuses)
+    const activePOs = purchaseOrders.filter(po => ACTIVE_PO_STATUSES.has(po.status));
+    suppliedValue = sum(activePOs, po => po.totalAmount);
+
+    percent = contractTotalValue > 0
+      ? Math.round((suppliedValue / contractTotalValue) * 100)
+      : 0;
+    percent = Math.max(0, Math.min(100, percent));
+  } else if (mode === 'budget') {
     percent = weightedAverage(task => budgetWeightByTask.get(task.id) || getTaskProgressWeight(task));
   } else if (mode === 'duration') {
     percent = weightedAverage(taskDuration);
@@ -362,6 +387,8 @@ const buildProgressMetric = (
     leafTaskCount: gantt.leafTaskCount,
     completedLeafCount: gantt.completedLeafCount,
     totalWeight: gantt.totalWeight,
+    contractTotalValue,
+    suppliedValue,
   };
 };
 
@@ -1026,7 +1053,16 @@ export const projectDashboardMetricsService = {
     const constructionCost = buildConstructionCostMetric(owner, subcontractor, supplier, transactions);
     const material = buildMaterialMetric(materialBudgets, purchaseOrders);
     const sevenDayForecast = buildSevenDayForecastMetric(tasks);
-    const progress = buildProgressMetric(project, tasks, taskLinks, customerItems);
+    const finance = await safeLoad('project_finance', warnings, async () => {
+      if (!isSupabaseConfigured) return undefined;
+      let query = supabase.from('project_finances').select('*').limit(1);
+      if (project?.id) query = query.eq('project_id', project.id);
+      else query = query.eq('constructionSiteId', constructionSite);
+      const { data, error } = await query.maybeSingle();
+      if (error) throw error;
+      return data ? fromDb(data) as ProjectFinance : undefined;
+    }, undefined as ProjectFinance | undefined);
+    const progress = buildProgressMetric(project, tasks, taskLinks, customerItems, purchaseOrders, finance);
     const executive = buildExecutiveMetric(
       tasks,
       logs,

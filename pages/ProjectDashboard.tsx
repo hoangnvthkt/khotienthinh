@@ -101,6 +101,7 @@ const PROGRESS_MODE_OPTIONS: { value: ProjectProgressCalculationMode; label: str
     { value: 'budget', label: 'Theo ngân sách công việc' },
     { value: 'duration', label: 'Theo thời gian thực hiện' },
     { value: 'task_count', label: 'Theo số lượng công việc hoàn thành' },
+    { value: 'contract_value', label: 'Theo giá trị hợp đồng (VT cấp phát)' },
     { value: 'manual', label: 'Nhập thủ công' },
 ];
 
@@ -304,6 +305,9 @@ const PROGRESS_IMPORT_ALIASES: Record<string, ProjectProgressCalculationMode> = 
     'theo thoi gian thuc hien': 'duration',
     task_count: 'task_count',
     'theo so luong cong viec hoan thanh': 'task_count',
+    contract_value: 'contract_value',
+    'theo gia tri hop dong': 'contract_value',
+    'theo gia tri hop dong (vt cap phat)': 'contract_value',
     manual: 'manual',
     'nhap thu cong': 'manual',
 };

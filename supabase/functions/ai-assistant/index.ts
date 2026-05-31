@@ -1,9 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.98.0';
 import {
+  AI_TOOL_DEFINITIONS,
   DATA_ASSISTANT_SYSTEM_PROMPT,
-  FALLBACK_DATABASE_CATALOG,
   KNOWLEDGE_ASSISTANT_SYSTEM_PROMPT,
-  SQL_PLANNER_PROMPT,
+  TOOL_ROUTER_PROMPT,
 } from '../_shared/aiDatabaseContext.ts';
 
 type AiMode = 'data' | 'knowledge';
@@ -33,8 +33,6 @@ const corsHeaders = {
 
 const GEMINI_FAST_MODEL = Deno.env.get('GEMINI_FAST_MODEL') || 'gemini-2.5-flash';
 const GEMINI_REASONING_MODEL = Deno.env.get('GEMINI_REASONING_MODEL') || 'gemini-2.5-pro';
-const MAX_ROWS_FOR_CONTEXT = 80;
-const MAX_CATALOG_CHARS = 18000;
 const MAX_RESULT_CHARS = 26000;
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
@@ -44,6 +42,8 @@ const geminiKey = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY
 const admin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
+
+// ═══ Utilities ═══════════════════════════════════════════════
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -65,37 +65,34 @@ function extractJsonObject(text: string): any {
   return JSON.parse(cleaned.slice(start, end + 1));
 }
 
-function validateReadonlySql(sql: string) {
-  const normalized = sql.trim().replace(/;\s*$/, '');
-  const lower = normalized.toLowerCase();
-  const banned =
-    /\b(insert|update|delete|drop|alter|truncate|grant|revoke|create|replace|merge|call|copy|do|execute|notify|listen|vacuum|analyze|set|reset|refresh)\b/i;
-  const bannedSchemas = /\b(auth|storage|vault|net|extensions|pg_catalog|information_schema)\s*\./i;
+// ═══ Gemini API ══════════════════════════════════════════════
 
-  if (!/^(select|with)\s/i.test(lower)) throw new Error('SQL must start with SELECT or WITH.');
-  if (normalized.includes(';')) throw new Error('SQL must contain exactly one statement.');
-  if (/(--|\/\*)/.test(normalized)) throw new Error('SQL comments are not allowed.');
-  if (banned.test(lower)) throw new Error('SQL contains a blocked keyword.');
-  if (bannedSchemas.test(lower)) throw new Error('SQL references a blocked schema.');
-
-  return normalized;
-}
-
-async function callGemini(prompt: string, temperature = 0.15, model = GEMINI_FAST_MODEL): Promise<string> {
+async function callGemini(
+  prompt: string,
+  temperature = 0.15,
+  model = GEMINI_FAST_MODEL,
+  responseMimeType?: string
+): Promise<string> {
   if (!geminiKey) throw new Error('Missing GEMINI_API_KEY.');
+
+  const body: any = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature,
+      maxOutputTokens: 4096,
+    },
+  };
+
+  if (responseMimeType) {
+    body.generationConfig.responseMimeType = responseMimeType;
+  }
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature,
-          maxOutputTokens: 4096,
-        },
-      }),
+      body: JSON.stringify(body),
     },
   );
 
@@ -104,22 +101,16 @@ async function callGemini(prompt: string, temperature = 0.15, model = GEMINI_FAS
   return data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join('') || '';
 }
 
-async function getDatabaseCatalog() {
-  const { data, error } = await admin.rpc('ai_database_catalog');
-  if (error || !data) return FALLBACK_DATABASE_CATALOG;
-  return data;
-}
+// ═══ Tool Router — Replaces planSql() ════════════════════════
 
-async function planSql(question: string, history: ChatMessage[]) {
-  const catalog = await getDatabaseCatalog();
+const ALLOWED_TOOL_NAMES = AI_TOOL_DEFINITIONS.map(t => t.name);
+
+async function routeToTool(question: string, history: ChatMessage[]) {
   const prompt = `
-${SQL_PLANNER_PROMPT}
+${TOOL_ROUTER_PROMPT}
 
-System rules:
-${DATA_ASSISTANT_SYSTEM_PROMPT}
-
-Schema catalog:
-${compactJson(catalog, MAX_CATALOG_CHARS)}
+Available tools:
+${JSON.stringify(AI_TOOL_DEFINITIONS, null, 2)}
 
 Recent conversation:
 ${history.map(m => `${m.role}: ${m.content}`).join('\n').slice(-6000)}
@@ -128,24 +119,53 @@ Question:
 ${question}
 `.trim();
 
-  const raw = await callGemini(prompt, 0.05, GEMINI_REASONING_MODEL);
+  const raw = await callGemini(prompt, 0.05, GEMINI_FAST_MODEL, 'application/json');
   const parsed = extractJsonObject(raw);
-  const sql = validateReadonlySql(String(parsed.sql || ''));
-  return { sql, reason: String(parsed.reason || '') };
-}
 
-async function executeSql(sql: string) {
-  const { data, error } = await admin.rpc('execute_ai_readonly_query', { p_query: sql });
-  if (error) throw new Error(error.message);
-  const rows = Array.isArray(data?.rows) ? data.rows.slice(0, MAX_ROWS_FOR_CONTEXT) : [];
   return {
-    rows,
-    rowCount: data?.rowCount ?? rows.length,
-    limited: Boolean(data?.limited),
+    action: String(parsed.action || 'clarification'),
+    toolName: parsed.tool_name ? String(parsed.tool_name) : null,
+    parameters: parsed.parameters && typeof parsed.parameters === 'object' ? parsed.parameters : {},
+    message: parsed.message ? String(parsed.message) : null,
+    suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions.map(String) : [
+      'Tổng tồn kho hiện tại?',
+      'Có bao nhiêu nhân viên?',
+      'Dashboard tổng hợp',
+    ],
+    reason: parsed.reason ? String(parsed.reason) : null,
+    raw,
   };
 }
 
-async function answerFromRows(question: string, sql: string, rowsPayload: unknown, history: ChatMessage[]) {
+// ═══ Tool Executor — Replaces executeSql() ═══════════════════
+
+async function callToolRpc(toolName: string, params: Record<string, any>) {
+  // Whitelist validation
+  if (!ALLOWED_TOOL_NAMES.includes(toolName)) {
+    throw new Error(`Tool "${toolName}" is not registered. Allowed: ${ALLOWED_TOOL_NAMES.join(', ')}`);
+  }
+
+  // Clean params: remove null/undefined values
+  const cleanParams: Record<string, any> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== null && value !== undefined && value !== '') {
+      cleanParams[key] = value;
+    }
+  }
+
+  const { data, error } = await admin.rpc(toolName, cleanParams);
+  if (error) throw new Error(`RPC ${toolName} failed: ${error.message}`);
+  return data;
+}
+
+// ═══ Answer Formatter — Replaces answerFromRows() ════════════
+
+async function formatToolResult(
+  question: string,
+  toolName: string,
+  result: unknown,
+  history: ChatMessage[],
+) {
   const prompt = `
 ${DATA_ASSISTANT_SYSTEM_PROMPT}
 
@@ -155,17 +175,17 @@ ${history.map(m => `${m.role}: ${m.content}`).join('\n').slice(-6000)}
 Question:
 ${question}
 
-SQL used:
-${sql}
+Tool called: ${toolName}
+Result JSON:
+${compactJson(result, MAX_RESULT_CHARS)}
 
-Query result JSON:
-${compactJson(rowsPayload, MAX_RESULT_CHARS)}
-
-Hãy trả lời bằng tiếng Việt, đúng trọng tâm. Nếu là danh sách dài, chỉ tóm tắt nhóm quan trọng và nói rõ có giới hạn kết quả.
+Hãy trả lời bằng tiếng Việt, đúng trọng tâm. Trình bày số liệu đẹp mắt bằng bảng/danh sách nếu phù hợp. Nêu nguồn dữ liệu ở cuối.
 `.trim();
 
   return callGemini(prompt, 0.2, GEMINI_FAST_MODEL);
 }
+
+// ═══ Knowledge Mode (unchanged) ═════════════════════════════
 
 function getQuestionTerms(question: string) {
   return question
@@ -203,9 +223,7 @@ async function searchKnowledge(question: string) {
 }
 
 async function classifyComplexity(question: string): Promise<boolean> {
-  const prompt = `Phân loại câu hỏi này có cần phân tích sâu, so sánh, tổng hợp nhiều thông tin, hay tìm hiểu nguyên nhân phức tạp không?
-Trả lời CHỈ một từ: COMPLEX hoặc SIMPLE.
-Câu hỏi: ${question}`;
+  const prompt = `Phân loại câu hỏi này có cần phân tích sâu, so sánh, tổng hợp nhiều thông tin, hay tìm hiểu nguyên nhân phức tạp không?\nTrả lời CHỈ một từ: COMPLEX hoặc SIMPLE.\nCâu hỏi: ${question}`;
   const res = await callGemini(prompt, 0, GEMINI_FAST_MODEL);
   return res.trim().toUpperCase().includes('COMPLEX');
 }
@@ -229,6 +247,8 @@ Hãy trả lời bằng tiếng Việt, đúng trọng tâm, có phần "Nguồn
   return callGemini(prompt, 0.2, isComplex ? GEMINI_REASONING_MODEL : GEMINI_FAST_MODEL);
 }
 
+// ═══ Conversation & Messages ════════════════════════════════
+
 async function ensureConversation(req: AssistantRequest, title: string) {
   if (req.conversationId) return req.conversationId;
 
@@ -250,6 +270,7 @@ async function saveMessage(args: {
   content: string;
   mode?: string;
   sqlQuery?: string;
+  toolName?: string;
   sources?: unknown;
 }) {
   const { error } = await admin.from('ai_messages').insert({
@@ -257,7 +278,7 @@ async function saveMessage(args: {
     role: args.role,
     content: args.content,
     mode: args.mode || null,
-    sql_query: args.sqlQuery || null,
+    sql_query: args.toolName ? `[TOOL] ${args.toolName}` : (args.sqlQuery || null),
     sources: args.sources || null,
     created_at: new Date().toISOString(),
   });
@@ -273,6 +294,8 @@ async function handleFeedback(req: AssistantRequest) {
   if (error) console.warn('feedback update failed:', error.message);
   return { ok: true };
 }
+
+// ═══ Main Handler ═══════════════════════════════════════════
 
 Deno.serve(async (request: Request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -294,6 +317,7 @@ Deno.serve(async (request: Request) => {
     const conversationId = await ensureConversation({ ...req, mode }, question);
     await saveMessage({ conversationId, role: 'user', content: question, mode });
 
+    // ── Knowledge Mode (unchanged) ──
     if (mode === 'knowledge') {
       const chunks = await searchKnowledge(question);
       const isComplex = await classifyComplexity(question);
@@ -309,26 +333,70 @@ Deno.serve(async (request: Request) => {
       return jsonResponse({ conversationId, answer, mode: 'rag', sources, hasMemory: chunks.length > 0 });
     }
 
-    const plan = await planSql(question, history);
-    const result = await executeSql(plan.sql);
-    const answer = await answerFromRows(question, plan.sql, result, history);
-    const suggestions = [
-      'Phân tích chi tiết theo tháng',
-      'Cho xem các bản ghi bất thường',
-      'So sánh với kỳ trước',
-    ];
+    // ── Data Mode — Agentic Tool-calling ──
+    let route: any = null;
+    try {
+      route = await routeToTool(question, history);
+    } catch (routeErr) {
+      console.error('ai-assistant routing failed:', routeErr);
+      return jsonResponse({ error: `Routing failed: ${(routeErr as Error).message}` }, 500);
+    }
 
-    await saveMessage({ conversationId, role: 'assistant', content: answer, mode: 'sql', sqlQuery: plan.sql });
+    // Handle rejection or clarification
+    if (route.action === 'rejection' || route.action === 'clarification') {
+      const msg = route.message || 'Em cần thêm thông tin để trả lời câu hỏi này.';
+      await saveMessage({ conversationId, role: 'assistant', content: msg, mode: 'sql' });
+      return jsonResponse({
+        conversationId,
+        answer: msg,
+        mode: 'sql',
+        suggestions: route.suggestions,
+        hasMemory: false,
+      });
+    }
+
+    // Handle tool_call
+    if (route.action === 'tool_call' && route.toolName) {
+      let toolResult: any = null;
+      try {
+        toolResult = await callToolRpc(route.toolName, route.parameters);
+      } catch (rpcErr) {
+        console.error(`ai-assistant RPC ${route.toolName} failed:`, rpcErr);
+        return jsonResponse({
+          error: `Tool "${route.toolName}" execution failed: ${(rpcErr as Error).message}`,
+          debug: { route },
+        }, 500);
+      }
+
+      const answer = await formatToolResult(question, route.toolName, toolResult, history);
+      await saveMessage({
+        conversationId,
+        role: 'assistant',
+        content: answer,
+        mode: 'sql',
+        toolName: route.toolName,
+      });
+
+      return jsonResponse({
+        conversationId,
+        answer,
+        toolName: route.toolName,
+        mode: 'sql',
+        suggestions: route.suggestions,
+        hasMemory: false,
+      });
+    }
+
+    // Fallback — no valid action
     return jsonResponse({
-      conversationId,
-      answer,
-      sqlQuery: plan.sql,
-      mode: 'sql',
-      suggestions,
-      hasMemory: false,
-    });
+      error: 'AI Router returned an unrecognized action.',
+      debug: { route },
+    }, 500);
+
   } catch (err) {
     console.error('ai-assistant error:', err);
-    return jsonResponse({ error: err instanceof Error ? err.message : 'AI assistant failed.' }, 500);
+    return jsonResponse({
+      error: err instanceof Error ? err.message : 'AI assistant failed.',
+    }, 500);
   }
 });

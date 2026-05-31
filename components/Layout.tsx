@@ -15,7 +15,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import { RefreshCw, Menu, AlertTriangle, ExternalLink, Bell, X, Moon, Sun, Package } from 'lucide-react';
 
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 phút
+const SESSION_TIMEOUT_MS = 12 * 60 * 60 * 1000; // 12 tiếng làm việc (tránh tự động logout trong ngày)
 const WARN_BEFORE_MS = 5 * 60 * 1000; // Cảnh báo 5 phút trước
 
 const Layout: React.FC = () => {

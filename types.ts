@@ -290,7 +290,7 @@ export interface MaterialRequestEvent {
 }
 
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed';
-export type ProjectProgressCalculationMode = 'gantt_weighted' | 'budget' | 'duration' | 'task_count' | 'manual';
+export type ProjectProgressCalculationMode = 'gantt_weighted' | 'budget' | 'duration' | 'task_count' | 'contract_value' | 'manual';
 
 export interface ProjectMasterCategory {
   id: string;
