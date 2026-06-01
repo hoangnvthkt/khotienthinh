@@ -31,6 +31,7 @@ export const PROJECT_MATERIAL_TAB_ROUTE_PREFIX = `${PROJECT_TAB_ROUTE_BY_KEY.mat
 export const PROJECT_MATERIAL_TAB_PERMISSIONS = [
   { key: 'summary', label: 'Tổng hợp', route: '/da/tabs/material/summary' },
   { key: 'boq', label: 'BOQ', route: '/da/tabs/material/boq' },
+  { key: 'planning', label: 'Kế hoạch', route: '/da/tabs/material/planning' },
   { key: 'request', label: 'Yêu cầu', route: '/da/tabs/material/request' },
   { key: 'po', label: 'Đơn hàng PO', route: '/da/tabs/material/po' },
   { key: 'waste', label: 'Hao hụt', route: '/da/tabs/material/waste' },

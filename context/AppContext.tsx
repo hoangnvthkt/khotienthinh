@@ -228,6 +228,7 @@ const mapInventoryItemFromDb = (i: any): InventoryItem => ({
   priceIn: i.price_in,
   priceOut: i.price_out,
   minStock: i.min_stock,
+  defaultLeadTimeDays: i.default_lead_time_days ?? 7,
   supplierId: i.supplier_id,
   imageUrl: i.image_url,
   stockByWarehouse: i.stock_by_warehouse || {},
@@ -452,7 +453,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
         const i = event.newRecord;
         const mapped = {
-          ...i, priceIn: i.price_in, priceOut: i.price_out, minStock: i.min_stock,
+          ...i, priceIn: i.price_in, priceOut: i.price_out, minStock: i.min_stock, defaultLeadTimeDays: i.default_lead_time_days ?? 7,
           supplierId: i.supplier_id, imageUrl: i.image_url, stockByWarehouse: i.stock_by_warehouse,
           purchaseUnit: i.purchase_unit ?? undefined
         };
@@ -949,6 +950,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: data.id, sku: data.sku, name: data.name, category: data.category, unit: data.unit,
           purchase_unit: data.purchaseUnit ?? null,
           price_in: data.priceIn, price_out: data.priceOut, min_stock: data.minStock,
+          default_lead_time_days: data.defaultLeadTimeDays ?? 7,
           supplier_id: data.supplierId, image_url: data.imageUrl, stock_by_warehouse: data.stockByWarehouse
         };
       } else if (table === 'transactions') {

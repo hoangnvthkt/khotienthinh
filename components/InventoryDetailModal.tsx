@@ -441,6 +441,21 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                 )}
               </div>
               <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                <div className="text-slate-400 mb-1 text-[10px] uppercase font-bold tracking-tight">Lead time kế hoạch</div>
+                {isEditing ? (
+                  <input
+                    type="number"
+                    min={0}
+                    max={365}
+                    className="w-full bg-white border border-slate-200 text-sm font-bold p-1 rounded outline-none"
+                    value={editData.defaultLeadTimeDays ?? 7}
+                    onChange={e => setEditData({ ...editData, defaultLeadTimeDays: Number(e.target.value) })}
+                  />
+                ) : (
+                  <div className="font-bold text-slate-800 text-sm">{Number(item.defaultLeadTimeDays ?? 7).toLocaleString()} ngày</div>
+                )}
+              </div>
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
                 <div className="text-slate-400 mb-1 text-[10px] uppercase font-bold tracking-tight">Vị trí</div>
                 {isEditing ? (
                   <input

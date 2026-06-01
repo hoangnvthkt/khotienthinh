@@ -33,6 +33,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
     priceIn: 0,
     priceOut: 0,
     minStock: 0,
+    defaultLeadTimeDays: 7,
     location: '',
     initialWarehouseId: '',
     initialStock: 0,
@@ -104,7 +105,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    const numberFields = ['priceIn', 'priceOut', 'minStock', 'initialStock'];
+    const numberFields = ['priceIn', 'priceOut', 'minStock', 'defaultLeadTimeDays', 'initialStock'];
 
     setFormData(prev => ({
       ...prev,
@@ -131,6 +132,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
       priceIn: formData.priceIn,
       priceOut: formData.priceOut,
       minStock: formData.minStock,
+      defaultLeadTimeDays: formData.defaultLeadTimeDays,
       location: formData.location || undefined,
       stockByWarehouse: {}
     };
@@ -168,7 +170,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
       onClose();
       setFormData({
         sku: '', name: '', category: '', unit: '', purchaseUnit: '', supplierId: '',
-        priceIn: 0, priceOut: 0, minStock: 0, location: '',
+        priceIn: 0, priceOut: 0, minStock: 0, defaultLeadTimeDays: 7, location: '',
         initialWarehouseId: '', initialStock: 0
       });
       setSupplierSearch('');
@@ -356,6 +358,15 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
                 type="number" name="minStock" value={formData.minStock} onChange={handleChange} min="0"
                 className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none"
               />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-sm font-medium text-slate-700">Lead time mặc định cho kế hoạch vật tư (ngày)</label>
+              <input
+                type="number" name="defaultLeadTimeDays" value={formData.defaultLeadTimeDays} onChange={handleChange} min="0" max="365"
+                className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-slate-700"
+              />
+              <p className="text-[10px] text-slate-400 font-medium">Dùng khi dự án chưa khai báo rule lead time riêng cho vật tư này.</p>
             </div>
 
             <div className="space-y-2 md:col-span-2">

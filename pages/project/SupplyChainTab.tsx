@@ -20,6 +20,7 @@ import {
     PurchaseOrderItem,
     PurchaseOrderRequestLineLink,
     PurchaseOrderSourceMode,
+    MaterialPlanningDraftPo,
     MaterialRequest,
     MaterialRequestFulfillmentSummary,
     RequestStatus,
@@ -52,6 +53,8 @@ interface SupplyChainTabProps {
     projectId?: string;
     canManageTab?: boolean;
     compact?: boolean;
+    initialDraftPo?: MaterialPlanningDraftPo | null;
+    initialDraftPoKey?: number;
 }
 
 const fmt = (n: number) => {
@@ -174,7 +177,7 @@ const getPoReceiptStats = (po: PurchaseOrder) => {
     };
 };
 
-const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, projectId, canManageTab = true, compact = false }) => {
+const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, projectId, canManageTab = true, compact = false, initialDraftPo = null, initialDraftPoKey = 0 }) => {
     const toast = useToast();
     const confirm = useConfirm();
     const { items: inventoryItems, warehouses, requests: materialRequests, loadModuleData, user, addTransaction, updateRequestStatus } = useApp();
@@ -290,6 +293,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const poSubmitLockRef = useRef(false);
     const poImportModeRef = useRef<ExcelImportMode>('create');
     const poBoqMetaScopeRef = useRef<string | null>(null);
+    const lastInitialDraftPoKeyRef = useRef<number>(0);
     const workBoqMap = useMemo(() => new Map(workBoqItems.map(item => [item.id, item])), [workBoqItems]);
     const materialBudgetMap = useMemo(() => new Map(materialBudgetItems.map(item => [item.id, item])), [materialBudgetItems]);
     const supplierById = useMemo(() => new Map(partners.map(partner => [partner.id, partner])), [partners]);
@@ -322,6 +326,29 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             throw error;
         }
     }, [constructionSiteId, effectiveId, materialBudgetItems, workBoqItems]);
+
+    useEffect(() => {
+        if (!initialDraftPo || !initialDraftPoKey || lastInitialDraftPoKeyRef.current === initialDraftPoKey) return;
+        lastInitialDraftPoKeyRef.current = initialDraftPoKey;
+        void loadPoBoqMetaData().catch(error => console.warn('Failed to load PO BOQ metadata for planning draft:', error));
+        const normalizedItems = initialDraftPo.items.length > 0
+            ? initialDraftPo.items.map(item => normalizePoItem(item, inventoryItems))
+            : [createEmptyPoItem()];
+        const firstVendorId = normalizedItems.find(item => item.vendorId)?.vendorId || '';
+        setEditingPo(null);
+        setShowPoForm(true);
+        setShowRequestPicker(false);
+        setSelectedRequestLineKeys([]);
+        setPVendorId(firstVendorId);
+        setPNum(initialDraftPo.poNumber || `PO-${String(pos.length + 1).padStart(3, '0')}`);
+        setPDate(new Date().toISOString().split('T')[0]);
+        setPExpDate(initialDraftPo.expectedDeliveryDate || '');
+        setPTargetWarehouseId(initialDraftPo.targetWarehouseId || '');
+        setPSourceMode(initialDraftPo.sourceMode || 'proactive_project');
+        setPItems(normalizedItems);
+        setPNote(initialDraftPo.note || '');
+    }, [initialDraftPo, initialDraftPoKey, inventoryItems, loadPoBoqMetaData, pos.length]);
+
     const openOrderedQtyByRequestLine = useMemo(() => {
         const map = new Map<string, number>();
         const poById = new Map(pos.map(po => [po.id, po]));

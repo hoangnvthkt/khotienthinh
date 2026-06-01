@@ -26,6 +26,7 @@ const PROJECT_TAB_PERMISSION_ICONS: Record<ProjectOverviewTabKey, any> = {
 const PROJECT_MATERIAL_TAB_PERMISSION_ICONS: Record<ProjectMaterialTabKey, any> = {
   summary: BarChart3,
   boq: FileSpreadsheet,
+  planning: Clock,
   request: Package,
   po: FileSignature,
   waste: History,

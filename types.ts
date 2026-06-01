@@ -497,7 +497,7 @@ export interface ProjectTask {
   startDate: string;
   endDate: string;
   duration: number;         // ngày
-  progress: number;         // 0-100
+  progress: number;         // >=0; weekly reports may exceed 100 for over-completion
   progressMode?: ProjectTaskProgressMode;
   assignee?: string;
   assigneeUserId?: string;   // User ID người phụ trách chuẩn từ project_staff
@@ -907,6 +907,15 @@ export interface DailyLog {
   weather: WeatherType;
   workerCount: number;
   description: string;
+  acceptanceDescription?: string;
+  workSafetyOk?: boolean;
+  envHygieneOk?: boolean;
+  trafficSafetyOk?: boolean;
+  supervisorConstructionEval?: string;
+  supervisorAcceptanceEval?: string;
+  supervisorSafetyOk?: boolean;
+  supervisorHygieneOk?: boolean;
+  supervisorTrafficOk?: boolean;
   issues?: string;
   photos?: { name: string; url: string }[];
   gpsLat?: number;
@@ -1353,6 +1362,130 @@ export interface MaterialBudgetItem {
   notes?: string;
 }
 
+export type MaterialDemandDistributionMethod = 'pre_start' | 'linear' | 'custom_curve';
+export type MaterialForecastWindow = '7d' | '30d' | '90d';
+export type MaterialPlanningRuleSource = 'item' | 'category' | 'default';
+
+export interface MaterialPlanningRule {
+  id?: string;
+  scopeKey: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  inventoryItemId?: string | null;
+  category?: string | null;
+  leadTimeDays: number;
+  distributionMethod: MaterialDemandDistributionMethod;
+  curveTemplateId?: string | null;
+  note?: string | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PlanningCurvePoint {
+  id?: string;
+  curveId: string;
+  sequence: number;
+  percentage: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PlanningCurveTemplate {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  points: PlanningCurvePoint[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface MaterialForecastDetail {
+  id: string;
+  materialBudgetItemId: string;
+  workBoqItemId?: string | null;
+  taskId?: string | null;
+  wbsCode?: string | null;
+  taskName: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  needDate?: string | null;
+  remainingDemandQty: number;
+  leadTimeDays: number;
+  distributionMethod: MaterialDemandDistributionMethod;
+  curveTemplateId?: string | null;
+  curveTemplateName?: string | null;
+  demandQty: Record<MaterialForecastWindow, number>;
+  demandValue: Record<MaterialForecastWindow, number>;
+  warnings: string[];
+}
+
+export interface MaterialForecastRow {
+  key: string;
+  inventoryItemId?: string | null;
+  sku?: string | null;
+  itemName: string;
+  category: string;
+  unit: string;
+  unitPrice: number;
+  planningUnitPrice: number;
+  planningUnitPriceSource: 'latest_confirmed_po' | 'latest_received' | 'material_master' | 'fallback';
+  siteAvailableQty: number;
+  incomingQty: Record<MaterialForecastWindow, number>;
+  demandQty: Record<MaterialForecastWindow, number>;
+  demandValue: Record<MaterialForecastWindow, number>;
+  shortageQty: Record<MaterialForecastWindow, number>;
+  shortageValue: Record<MaterialForecastWindow, number>;
+  forecastQty7d: number;
+  forecastQty30d: number;
+  forecastQty90d: number;
+  forecastValue7d: number;
+  forecastValue30d: number;
+  forecastValue90d: number;
+  shortageQty7d: number;
+  shortageQty30d: number;
+  shortageQty90d: number;
+  shortageValue7d: number;
+  shortageValue30d: number;
+  shortageValue90d: number;
+  leadTimeDays: number;
+  distributionMethod: MaterialDemandDistributionMethod;
+  curveTemplateId?: string | null;
+  curveTemplateName?: string | null;
+  ruleSource: MaterialPlanningRuleSource;
+  warnings: string[];
+  details: MaterialForecastDetail[];
+}
+
+export interface MaterialPlanningSummary {
+  rowCount: number;
+  demandQty: Record<MaterialForecastWindow, number>;
+  demandValue: Record<MaterialForecastWindow, number>;
+  shortageQty: Record<MaterialForecastWindow, number>;
+  shortageValue: Record<MaterialForecastWindow, number>;
+  shortageRowCount: number;
+  criticalShortageCount: number;
+  missingInventoryCount: number;
+  etaMissingPoCount: number;
+  invalidTaskCount: number;
+}
+
+export interface MaterialPlanningForecast {
+  rows: MaterialForecastRow[];
+  summary: MaterialPlanningSummary;
+}
+
+export interface MaterialPlanningDraftPo {
+  poNumber: string;
+  targetWarehouseId: string;
+  expectedDeliveryDate?: string;
+  sourceMode?: PurchaseOrderSourceMode;
+  items: PurchaseOrderItem[];
+  note?: string;
+}
+
 export interface ProjectMaterialRequest extends ProjectSubmissionFields {
   id: string;
   projectId?: string | null;
@@ -1540,6 +1673,7 @@ export interface InventoryItem {
   priceIn: number;
   priceOut: number;
   minStock: number;
+  defaultLeadTimeDays?: number;
   supplierId?: string; // Link to Supplier
   imageUrl?: string;
   location?: string; // Vị trí trong kho, ví dụ: Kệ A-3, Ô 2
