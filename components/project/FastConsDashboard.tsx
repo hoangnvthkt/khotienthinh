@@ -442,9 +442,14 @@ interface WeeklySnapshot {
   weekLabel: string;
   weekStart: string;
   progressPercent: number;
+  constructionProgressPercent?: number;
+  valueProgressPercent?: number;
   progressMode: string;
   suppliedValue?: number;
   contractTotalValue?: number;
+  purchasedValue?: number;
+  issuedValue?: number;
+  recognizedValue?: number;
   ganttPercent?: number;
   calculatedAt: string;
 }
@@ -506,6 +511,9 @@ const WeeklyProgressTrendPanel: React.FC<{
     return () => { cancelled = true; };
   }, [scopeKey]);
 
+  const constructionProgressPercent = currentMetrics.progress.constructionProgressPercent ?? currentMetrics.progress.percent ?? 0;
+  const valueProgressPercent = currentMetrics.progress.valueProgressPercent ?? (currentMetrics.progress.mode === 'contract_value' ? currentMetrics.progress.percent : 0);
+
   // Save current week snapshot whenever metrics change (from sync)
   useEffect(() => {
     if (!isSupabaseConfigured || !currentMetrics) return;
@@ -518,10 +526,15 @@ const WeeklyProgressTrendPanel: React.FC<{
       construction_site_id: constructionSiteId || null,
       week_label: weekLabel,
       week_start: weekStart,
-      progress_percent: currentMetrics.progress.percent,
+      progress_percent: constructionProgressPercent,
       progress_mode: currentMetrics.progress.mode,
+      construction_progress_percent: constructionProgressPercent,
+      value_progress_percent: valueProgressPercent,
       supplied_value: currentMetrics.progress.suppliedValue || null,
       contract_total_value: currentMetrics.progress.contractTotalValue || null,
+      purchased_value: currentMetrics.progress.purchasedValue || 0,
+      issued_value: currentMetrics.progress.issuedValue || 0,
+      recognized_value: currentMetrics.progress.recognizedValue || currentMetrics.progress.suppliedValue || 0,
       gantt_percent: currentMetrics.progress.ganttPercent || null,
       calculated_at: currentMetrics.calculatedAt,
       updated_at: new Date().toISOString(),
@@ -544,7 +557,7 @@ const WeeklyProgressTrendPanel: React.FC<{
             });
         }
       });
-  }, [currentMetrics.calculatedAt, scopeKey, constructionSiteId, projectId, currentMetrics]);
+  }, [constructionProgressPercent, currentMetrics, currentMetrics.calculatedAt, scopeKey, constructionSiteId, projectId, valueProgressPercent]);
 
   const displaySnapshots = snapshots.slice(-12);
   const maxPercent = Math.max(100, ...displaySnapshots.map(s => s.progressPercent));
@@ -563,11 +576,11 @@ const WeeklyProgressTrendPanel: React.FC<{
           <div>
             <h3 className="text-xs font-black text-slate-800">Trend tiến độ theo tuần</h3>
             <p className="text-[11px] font-semibold text-slate-400 mt-0.5">
-              {isContractValueMode ? 'Theo giá trị hợp đồng (VT cấp phát)' : `${currentMetrics.progress.modeLabel}`} · {displaySnapshots.length} tuần gần nhất
+              Tiến độ thi công tuần · {isContractValueMode ? 'Dự án đang chọn mode giá trị' : currentMetrics.progress.modeLabel} · {displaySnapshots.length} tuần gần nhất
             </p>
           </div>
         </div>
-        <span className="text-lg font-black text-slate-900">{currentMetrics.progress.percent}%</span>
+        <span className="text-lg font-black text-slate-900">{constructionProgressPercent}%</span>
       </div>
       <div className="p-4">
         <div className="flex items-end gap-1.5" style={{ height: 160 }}>
@@ -582,8 +595,8 @@ const WeeklyProgressTrendPanel: React.FC<{
                   <div className="bg-slate-900 text-white text-[10px] font-bold rounded-lg px-2.5 py-1.5 whitespace-nowrap shadow-lg">
                     <div>{snap.weekLabel}</div>
                     <div className="mt-0.5">{snap.progressPercent}%{delta !== 0 ? ` (${delta > 0 ? '+' : ''}${delta}%)` : ''}</div>
-                    {snap.suppliedValue != null && (
-                      <div className="mt-0.5 text-slate-300">VT: {fmtMoney(snap.suppliedValue)}</div>
+                    {snap.valueProgressPercent != null && (
+                      <div className="mt-0.5 text-slate-300">GT: {snap.valueProgressPercent}% · {fmtMoney(snap.recognizedValue || snap.suppliedValue || 0)}</div>
                     )}
                   </div>
                 </div>
@@ -719,6 +732,8 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
       ? 'orange'
       : 'blue';
   const progressVarianceText = `${scheduleHealth.progressVariance >= 0 ? '+' : ''}${scheduleHealth.progressVariance}%`;
+  const constructionProgressPercent = metrics.progress.constructionProgressPercent ?? metrics.progress.percent ?? 0;
+  const valueProgressPercent = metrics.progress.valueProgressPercent ?? (metrics.progress.mode === 'contract_value' ? metrics.progress.percent : 0);
 
   return (
     <section className="space-y-4">
@@ -750,15 +765,18 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
         </div>
         <div className="p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
           <SummaryCard
-            title={metrics.progress.mode === 'contract_value' ? 'Tiến độ (GT hợp đồng)' : 'Tiến độ thực tế'}
-            value={`${scheduleHealth.actualProgress}%`}
-            sub={
-              metrics.progress.mode === 'contract_value'
-                ? `VT cấp: ${fmtMoney(metrics.progress.suppliedValue || 0)} / HĐ: ${fmtMoney(metrics.progress.contractTotalValue || 0)}`
-                : `Kế hoạch ${scheduleHealth.plannedProgress}% · lệch ${progressVarianceText}`
-            }
+            title="Tiến độ thi công"
+            value={`${constructionProgressPercent}%`}
+            sub={`Kế hoạch ${scheduleHealth.plannedProgress}% · lệch ${progressVarianceText}`}
             icon={<Activity size={16} />}
             tone={progressTone}
+          />
+          <SummaryCard
+            title="Tiến độ theo giá trị"
+            value={`${valueProgressPercent}%`}
+            sub={`Ghi nhận ${fmtMoney(metrics.progress.recognizedValue || 0)} / HĐ ${fmtMoney(metrics.progress.contractTotalValue || 0)}`}
+            icon={<Package size={16} />}
+            tone={valueProgressPercent >= constructionProgressPercent ? 'emerald' : 'orange'}
           />
           <SummaryCard
             title="Forecast hoàn thành"

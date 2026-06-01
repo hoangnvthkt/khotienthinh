@@ -11,6 +11,7 @@ import {
   ProjectDelayEvent,
   Project,
   ProjectFinance,
+  ProjectOpeningBalance,
   ProjectProgressCalculationMode,
   ProjectTask,
   ProjectTaskCompletionRequest,
@@ -19,6 +20,7 @@ import {
   PurchaseOrder,
   QuantityAcceptance,
   TaskContractItem,
+  MaterialRequestFulfillmentBatch,
 } from '../types';
 import { advancePaymentService } from './advancePaymentService';
 import { contractItemService } from './contractItemService';
@@ -49,19 +51,31 @@ import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 import { quantityAcceptanceService } from './quantityAcceptanceService';
 import { buildTaskContractQuantityFactors, taskContractItemService } from './taskContractItemService';
 import { taskCompletionRequestService } from './projectTaskCompletionService';
+import {
+  calculateProjectValueProgress,
+  calculateWeeklyConstructionProgress,
+  getProjectScopeKey,
+  projectWeeklyProgressService,
+} from './projectWeeklyProgressService';
+import { projectOpeningBalanceService } from './projectOpeningBalanceService';
 
 export interface ProjectProgressMetric {
   mode: ProjectProgressCalculationMode;
   modeLabel: string;
   percent: number;
+  constructionProgressPercent: number;
+  valueProgressPercent: number;
   ganttPercent: number;
   leafTaskCount: number;
   completedLeafCount: number;
   totalWeight: number;
-  /** Tổng giá trị hợp đồng (chỉ khi mode = contract_value) */
+  /** Tổng giá trị hợp đồng */
   contractTotalValue?: number;
-  /** Giá trị vật tư đã cấp: PO totalAmount (chỉ khi mode = contract_value) */
+  /** Giá trị được ghi nhận theo PO + cấp kho không trùng PO */
   suppliedValue?: number;
+  purchasedValue?: number;
+  issuedValue?: number;
+  recognizedValue?: number;
 }
 
 export interface PartyDashboardMetric {
@@ -327,10 +341,25 @@ const buildProgressMetric = (
   customerItems: ContractItem[],
   purchaseOrders: PurchaseOrder[],
   projectFinance: ProjectFinance | undefined,
+  materialBudgets: MaterialBudgetItem[],
+  fulfillmentBatches: MaterialRequestFulfillmentBatch[],
+  openingBalance?: ProjectOpeningBalance | null,
 ): ProjectProgressMetric => {
   const gantt = calculateProjectProgress(tasks);
   const leafTasks = getLeafProjectTasks(tasks);
   const mode = project?.progressCalculationMode || 'gantt_weighted';
+  const weeklyConstructionProgress = calculateWeeklyConstructionProgress(tasks, taskLinks, customerItems);
+  const constructionProgressPercent = leafTasks.length > 0
+    ? weeklyConstructionProgress
+    : clampProgress(openingBalance?.constructionProgressPercent || projectFinance?.progressPercent || 0);
+  const valueMetric = calculateProjectValueProgress({
+    projectFinance,
+    customerItems,
+    purchaseOrders,
+    fulfillmentBatches,
+    materialBudgets,
+    openingBalance,
+  });
 
   const weightedAverage = (weightPicker: (task: ProjectTask) => number): number => {
     const totalWeight = sum(leafTasks, weightPicker);
@@ -349,24 +378,9 @@ const buildProgressMetric = (
     budgetWeightByTask.set(link.taskId, (budgetWeightByTask.get(link.taskId) || 0) + value);
   }
 
-  let percent = gantt.progressPercent;
-  let contractTotalValue: number | undefined;
-  let suppliedValue: number | undefined;
-
+  let percent = leafTasks.length > 0 ? gantt.progressPercent : constructionProgressPercent;
   if (mode === 'contract_value') {
-    // Giá trị hợp đồng: ưu tiên sum(ContractItem.customer.leaf), fallback ProjectFinance.contractValue
-    const leafCustomerItems = getLeafItems(customerItems.filter(item => item.contractType === 'customer'));
-    const boqTotal = sum(leafCustomerItems, revisedItemValue);
-    contractTotalValue = boqTotal > 0 ? boqTotal : Number(projectFinance?.contractValue || 0);
-
-    // Giá trị vật tư đã cấp: PO totalAmount (active statuses)
-    const activePOs = purchaseOrders.filter(po => ACTIVE_PO_STATUSES.has(po.status));
-    suppliedValue = sum(activePOs, po => po.totalAmount);
-
-    percent = contractTotalValue > 0
-      ? Math.round((suppliedValue / contractTotalValue) * 100)
-      : 0;
-    percent = Math.max(0, Math.min(100, percent));
+    percent = valueMetric.valueProgressPercent;
   } else if (mode === 'budget') {
     percent = weightedAverage(task => budgetWeightByTask.get(task.id) || getTaskProgressWeight(task));
   } else if (mode === 'duration') {
@@ -383,12 +397,17 @@ const buildProgressMetric = (
     mode,
     modeLabel: PROGRESS_MODE_LABELS[mode],
     percent,
+    constructionProgressPercent,
+    valueProgressPercent: valueMetric.valueProgressPercent,
     ganttPercent: gantt.progressPercent,
     leafTaskCount: gantt.leafTaskCount,
     completedLeafCount: gantt.completedLeafCount,
     totalWeight: gantt.totalWeight,
-    contractTotalValue,
-    suppliedValue,
+    contractTotalValue: valueMetric.contractTotalValue,
+    suppliedValue: valueMetric.recognizedValue,
+    purchasedValue: valueMetric.purchasedValue,
+    issuedValue: valueMetric.issuedValue,
+    recognizedValue: valueMetric.recognizedValue,
   };
 };
 
@@ -637,7 +656,8 @@ const buildScheduleHealthMetric = (
   const leafTasks = getLeafProjectTasks(tasks);
   const forecast = buildScheduleForecast(tasks, delayEvents);
   const plannedProgress = buildPlannedProgress(tasks, today);
-  const progressVariance = Math.round((progress.percent - plannedProgress) * 10) / 10;
+  const actualConstructionProgress = progress.constructionProgressPercent ?? progress.percent;
+  const progressVariance = Math.round((actualConstructionProgress - plannedProgress) * 10) / 10;
   const overdueTasks = leafTasks.filter(task => task.progress < 100 && !!task.endDate && task.endDate < today);
   const upcomingEnd = addDaysIso(today, 10);
   const upcomingDueTasks = leafTasks.filter(task => task.progress < 100 && !!task.endDate && task.endDate >= today && task.endDate <= upcomingEnd);
@@ -653,7 +673,7 @@ const buildScheduleHealthMetric = (
   return {
     status,
     plannedProgress,
-    actualProgress: progress.percent,
+    actualProgress: actualConstructionProgress,
     progressVariance,
     baselineEndDate: forecast.baseProjectEndDate || maxEndDate(tasks),
     forecastEndDate: forecast.forecastProjectEndDate || maxEndDate(tasks),
@@ -1018,12 +1038,14 @@ export const projectDashboardMetricsService = {
       advances,
       transactions,
       purchaseOrders,
+      fulfillmentBatches,
       materialBudgets,
       paymentSchedules,
       delayEvents,
       variations,
       reconciliationGroups,
       financialKPIs,
+      openingBalance,
     ] = await Promise.all([
       safeLoad('project_tasks', warnings, () => taskService.list(projectScopeId, constructionSite), [] as ProjectTask[]),
       safeLoad('daily_logs', warnings, () => dailyLogService.list(projectScopeId, constructionSite), [] as DailyLog[]),
@@ -1037,12 +1059,14 @@ export const projectDashboardMetricsService = {
       safeLoad('advance_payments', warnings, () => advancePaymentService.listBySite(constructionSite, project?.id || params.projectId), [] as AdvancePayment[]),
       safeLoad('project_transactions', warnings, () => listTransactions(projectScopeId, constructionSite), [] as ProjectTransaction[]),
       safeLoad('purchase_orders', warnings, () => poService.list(projectScopeId, constructionSite), [] as PurchaseOrder[]),
+      safeLoad('material_request_fulfillment_batches', warnings, () => projectWeeklyProgressService.listFulfillmentBatchesByScope(projectScopeId, constructionSite), [] as MaterialRequestFulfillmentBatch[]),
       safeLoad('material_budget_items', warnings, () => boqService.list(projectScopeId, constructionSite), [] as MaterialBudgetItem[]),
       safeLoad('payment_schedules', warnings, () => paymentService.list(projectScopeId, constructionSite), [] as PaymentSchedule[]),
       safeLoad('project_delay_events', warnings, () => delayEventService.list(projectScopeId, constructionSite), [] as ProjectDelayEvent[]),
       safeLoad('contract_variations', warnings, () => listContractVariations(projectScopeId, constructionSite), [] as ContractVariation[]),
       safeLoad('boq_reconciliation submitted', warnings, () => boqReconciliationService.listByProject(projectScopeId, constructionSite), [] as BoqReconciliationGroup[]),
       safeLoad('financial_kpis', warnings, () => projectFinancialService.getKPIs(constructionSite, [], project?.id || params.projectId), undefined as ProjectFinancialKPIs | undefined),
+      safeLoad('project_opening_balances', warnings, () => projectOpeningBalanceService.getLockedByScope(getProjectScopeKey(projectScopeId, constructionSite)), null as ProjectOpeningBalance | null),
     ]);
 
     const allContractItems = [...customerItems, ...subcontractorItems];
@@ -1062,7 +1086,7 @@ export const projectDashboardMetricsService = {
       if (error) throw error;
       return data ? fromDb(data) as ProjectFinance : undefined;
     }, undefined as ProjectFinance | undefined);
-    const progress = buildProgressMetric(project, tasks, taskLinks, customerItems, purchaseOrders, finance);
+    const progress = buildProgressMetric(project, tasks, taskLinks, customerItems, purchaseOrders, finance, materialBudgets, fulfillmentBatches, openingBalance);
     const executive = buildExecutiveMetric(
       tasks,
       logs,

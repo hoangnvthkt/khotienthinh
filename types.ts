@@ -481,7 +481,7 @@ export interface ProjectContract {
 
 // ==================== TIẾN ĐỘ (Gantt) ====================
 export type TaskDependencyType = 'FS' | 'SS' | 'FF' | 'SF';
-export type ProjectTaskProgressMode = 'manual' | 'derived_from_acceptance' | 'completion_request' | 'daily_log' | 'children_auto';
+export type ProjectTaskProgressMode = 'manual' | 'derived_from_acceptance' | 'completion_request' | 'daily_log' | 'children_auto' | 'weekly_report';
 export type ProjectTaskCompletionStatus = 'submitted' | 'verified' | 'approved' | 'returned' | 'cancelled';
 
 export type DelayCategory = 'material' | 'weather' | 'drawing' | 'labor' | 'other';
@@ -598,6 +598,79 @@ export interface ProjectWorkBoqItem {
   createdAt?: string;
   updatedAt?: string;
 }
+
+export interface ProjectWeeklyTaskProgress {
+  id?: string;
+  scopeKey: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  taskId: string;
+  weekStart: string;
+  progressPercent: number;
+  quantityDone: number;
+  note?: string | null;
+  attachments?: Attachment[];
+  updatedBy?: string | null;
+  updatedAt?: string;
+  createdAt?: string;
+}
+
+export interface ProjectValueProgressMetric {
+  contractTotalValue: number;
+  purchasedValue: number;
+  issuedValue: number;
+  recognizedValue: number;
+  valueProgressPercent: number;
+}
+
+export type ProjectOpeningBalanceStatus = 'draft' | 'locked' | 'void';
+
+export interface ProjectOpeningBalance {
+  id?: string;
+  scopeKey: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  asOfDate: string;
+  contractValue: number;
+  constructionProgressPercent: number;
+  purchasedValue: number;
+  issuedValue: number;
+  usedValue: number;
+  recognizedValue: number;
+  status: ProjectOpeningBalanceStatus;
+  note?: string | null;
+  stockTransactionIds?: string[];
+  materialProjectTransactionId?: string | null;
+  createdBy?: string | null;
+  lockedBy?: string | null;
+  lockedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ProjectOpeningBalanceLine {
+  id?: string;
+  openingBalanceId?: string;
+  inventoryItemId?: string | null;
+  sku: string;
+  itemName: string;
+  unit: string;
+  warehouseId: string;
+  purchasedQty: number;
+  issuedQty: number;
+  usedQty: number;
+  remainingQty: number;
+  unitPrice: number;
+  remainingValue: number;
+  note?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type ProjectOpeningBalanceImportRow = Omit<ProjectOpeningBalanceLine, 'id' | 'openingBalanceId' | 'createdAt' | 'updatedAt'> & {
+  rowNumber?: number;
+  errors?: string[];
+};
 
 export type BoqReconciliationStatus = 'draft' | 'submitted' | 'reviewed' | 'locked';
 

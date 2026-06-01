@@ -167,11 +167,7 @@ export const deriveProjectTaskProgress = (
         progress: clampProgress(nextProgress),
         progressMode: 'children_auto',
       };
-    } else if (
-      (next.progressMode === 'daily_log' || verifiedDailyQtyByTask.has(taskId)) &&
-      next.progressMode !== 'completion_request' &&
-      next.progressMode !== 'derived_from_acceptance'
-    ) {
+    } else if (next.progressMode === 'daily_log' || (!next.progressMode && verifiedDailyQtyByTask.has(taskId))) {
       const plannedQuantity = Number(next.provisionalQuantity || 0);
       const verifiedQuantity = verifiedDailyQtyByTask.get(taskId) || 0;
       const nextProgress = plannedQuantity > 0
@@ -183,7 +179,7 @@ export const deriveProjectTaskProgress = (
         progress: plannedQuantity > 0 ? clampProgress(nextProgress) : clampProgress(next.progress),
         progressMode: 'daily_log',
       };
-    } else if (next.progressMode === 'completion_request' || approvedQtyByTask.has(taskId)) {
+    } else if (next.progressMode === 'completion_request' || (!next.progressMode && approvedQtyByTask.has(taskId))) {
       const plannedQuantity = Number(next.provisionalQuantity || 0);
       const approvedQuantity = approvedQtyByTask.get(taskId) || 0;
       const nextProgress = plannedQuantity > 0
@@ -203,7 +199,7 @@ export const deriveProjectTaskProgress = (
         gateStatus: 'approved',
         actualEndDate: next.actualEndDate || todayIso,
       };
-    } else if (next.progressMode === 'children_auto' || next.progressMode === 'completion_request' || next.progressMode === 'daily_log') {
+    } else if (next.progressMode === 'children_auto' || next.progressMode === 'completion_request' || next.progressMode === 'daily_log' || next.progressMode === 'weekly_report') {
       next = {
         ...next,
         gateStatus: next.gateStatus === 'pending' || next.gateStatus === 'approved' ? 'none' : next.gateStatus,

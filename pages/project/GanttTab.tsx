@@ -13,8 +13,8 @@ import {
     Paperclip, ClipboardCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus, ProjectTaskProgressMode, ContractItem, ProjectStaff, ProjectTaskCompletionRequest, Attachment, ProjectDelayEvent, ProjectDelayEventStatus, ProjectScheduleRevision, ProjectScheduleRevisionTask } from '../../types';
-import { taskService, baselineService, dailyLogService } from '../../lib/projectService';
+import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus, ProjectTaskProgressMode, ContractItem, ProjectStaff, ProjectTaskCompletionRequest, Attachment, ProjectDelayEvent, ProjectDelayEventStatus, ProjectScheduleRevision, ProjectScheduleRevisionTask, PurchaseOrder, MaterialBudgetItem, MaterialRequestFulfillmentBatch, ProjectWeeklyTaskProgress, TaskContractItem, ProjectOpeningBalance } from '../../types';
+import { taskService, baselineService, dailyLogService, poService, boqService } from '../../lib/projectService';
 import { taskCompletionRequestService } from '../../lib/projectTaskCompletionService';
 import { buildScheduleForecast } from '../../lib/projectScheduleForecast';
 import { delayEventService, scheduleRevisionService } from '../../lib/projectScheduleForecastService';
@@ -32,6 +32,7 @@ import { useToast } from '../../context/ToastContext';
 import {
     applyProgressGateTransition,
     calculateProjectProgress,
+    clampProgress,
     collectDescendantTaskIds,
     deriveProjectTaskProgress,
     getGateBlockedTaskIds,
@@ -41,6 +42,15 @@ import {
     validateProjectTaskDraft,
     type ProjectTaskStatus,
 } from '../../lib/projectScheduleRules';
+import {
+    calculateProjectValueProgress,
+    calculateWeeklyConstructionProgress,
+    getISOWeekLabel,
+    getProjectScopeKey,
+    getWeekStart,
+    projectWeeklyProgressService,
+} from '../../lib/projectWeeklyProgressService';
+import { projectOpeningBalanceService } from '../../lib/projectOpeningBalanceService';
 
 interface GanttTabProps {
     constructionSiteId?: string;
@@ -137,6 +147,15 @@ const formatQuantity = (value?: number | null): string => {
     const n = Number(value || 0);
     if (!Number.isFinite(n)) return '0';
     return n.toLocaleString('vi-VN', { maximumFractionDigits: 3 });
+};
+
+const formatMoneyShort = (value?: number | null): string => {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n)) return '0 đ';
+    if (Math.abs(n) >= 1e9) return `${(n / 1e9).toFixed(2)} tỷ`;
+    if (Math.abs(n) >= 1e6) return `${(n / 1e6).toFixed(1)} tr`;
+    if (Math.abs(n) >= 1e3) return `${Math.round(n / 1e3)}k`;
+    return `${Math.round(n).toLocaleString('vi-VN')} đ`;
 };
 
 const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
@@ -279,7 +298,8 @@ const StatusBadge: React.FC<{ status: TaskStatus }> = ({ status }) => {
 
 /** Progress bar with inline edit */
 const ProgressCell: React.FC<{ value: number; onChange: (v: number) => void; disabled?: boolean; hint?: string }> = ({ value, onChange, disabled, hint }) => {
-    const color = value >= 100 ? '#10b981' : value > 0 ? '#3b82f6' : '#cbd5e1';
+    const safeValue = clampProgress(value);
+    const color = safeValue >= 100 ? '#10b981' : safeValue > 0 ? '#3b82f6' : '#cbd5e1';
     return (
         <div className="flex items-center gap-2 w-full" title={hint}>
             <div className={`flex-1 h-2 bg-slate-100 rounded-full overflow-hidden group relative ${disabled ? 'cursor-default opacity-80' : 'cursor-pointer'}`}
@@ -289,10 +309,10 @@ const ProgressCell: React.FC<{ value: number; onChange: (v: number) => void; dis
                     const pct = Math.round(((e.clientX - rect.left) / rect.width) * 100);
                     onChange(Math.max(0, Math.min(100, Math.round(pct / 5) * 5)));
                 }}>
-                <div className="h-full rounded-full transition-all duration-300" style={{ width: `${value}%`, backgroundColor: color }} />
+                <div className="h-full rounded-full transition-all duration-300" style={{ width: `${safeValue}%`, backgroundColor: color }} />
             </div>
-            <span className={`text-[11px] font-bold w-8 text-right ${value >= 100 ? 'text-emerald-600' : value > 0 ? 'text-blue-600' : 'text-slate-400'}`}>
-                {value}%
+            <span className={`text-[11px] font-bold w-8 text-right ${safeValue >= 100 ? 'text-emerald-600' : safeValue > 0 ? 'text-blue-600' : 'text-slate-400'}`}>
+                {safeValue}%
             </span>
         </div>
     );
@@ -313,6 +333,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
     const [contractItems, setContractItems] = useState<ContractItem[]>([]);
     const [taskContractLinks, setTaskContractLinks] = useState<Record<string, string[]>>({});
+    const [taskContractLinkRows, setTaskContractLinkRows] = useState<TaskContractItem[]>([]);
+    const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+    const [materialBudgets, setMaterialBudgets] = useState<MaterialBudgetItem[]>([]);
+    const [fulfillmentBatches, setFulfillmentBatches] = useState<MaterialRequestFulfillmentBatch[]>([]);
     const [projectStaff, setProjectStaff] = useState<ProjectStaff[]>([]);
     const [completionRequests, setCompletionRequests] = useState<ProjectTaskCompletionRequest[]>([]);
     const [projectPerms, setProjectPerms] = useState<Set<ProjectPermissionCode>>(new Set());
@@ -344,6 +368,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             setDailyLogs([]);
             setContractItems([]);
             setTaskContractLinks({});
+            setTaskContractLinkRows([]);
+            setPurchaseOrders([]);
+            setMaterialBudgets([]);
+            setFulfillmentBatches([]);
             setProjectStaff([]);
             setCompletionRequests([]);
             setLoading(false);
@@ -359,6 +387,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 logData,
                 contractItemData,
                 linkData,
+                poData,
+                materialBudgetData,
+                fulfillmentBatchData,
                 staffData,
                 completionData,
             ] = await Promise.all([
@@ -369,6 +400,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 dailyLogService.list(effectiveId, constructionSiteId || null),
                 contractItemService.listBySite(effectiveId, undefined, constructionSiteId || null),
                 taskContractItemService.listBySite(effectiveId, constructionSiteId || null),
+                poService.list(effectiveId, constructionSiteId || null),
+                boqService.list(effectiveId, constructionSiteId || null),
+                projectWeeklyProgressService.listFulfillmentBatchesByScope(effectiveId, constructionSiteId || null),
                 projectId
                     ? projectStaffService.listByProject(projectId, constructionSiteId)
                     : constructionSiteId
@@ -382,6 +416,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             setScheduleRevisions(scheduleRevisionData);
             setDailyLogs(logData);
             setContractItems(contractItemData);
+            setTaskContractLinkRows(linkData);
+            setPurchaseOrders(poData);
+            setMaterialBudgets(materialBudgetData);
+            setFulfillmentBatches(fulfillmentBatchData);
             setProjectStaff(staffData);
             setCompletionRequests(completionData);
             setTaskContractLinks(linkData.reduce<Record<string, string[]>>((acc, link) => {
@@ -490,7 +528,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     const [fStart, setFStart] = useState('');
     const [fEnd, setFEnd] = useState('');
     const [fProgress, setFProgress] = useState('0');
-    const [fProgressMode, setFProgressMode] = useState<ProjectTaskProgressMode>('daily_log');
+    const [fProgressMode, setFProgressMode] = useState<ProjectTaskProgressMode>('weekly_report');
     const [fAssignee, setFAssignee] = useState('');
     const [fAssigneeUserId, setFAssigneeUserId] = useState('');
     const [fParentId, setFParentId] = useState('');
@@ -519,6 +557,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     const [completionReturnRequest, setCompletionReturnRequest] = useState<ProjectTaskCompletionRequest | null>(null);
     const [completionReturnReason, setCompletionReturnReason] = useState('');
     const [submittingCompletion, setSubmittingCompletion] = useState(false);
+    const [selectedWeekStart, setSelectedWeekStart] = useState(getWeekStart());
+    const [weeklyDrafts, setWeeklyDrafts] = useState<Record<string, { progressPercent: string; quantityDone: string; note: string }>>({});
+    const [savingWeeklyProgress, setSavingWeeklyProgress] = useState(false);
 
     // Excel Import State
     const [showImportModal, setShowImportModal] = useState(false);
@@ -558,6 +599,57 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         return map;
     }, [tasks]);
 
+    const scopeKey = useMemo(() => getProjectScopeKey(projectId || null, constructionSiteId || null), [projectId, constructionSiteId]);
+    const currentProjectFinance = useMemo(() => {
+        return projectFinances.find(finance => projectId && finance.projectId === projectId)
+            || projectFinances.find(finance => constructionSiteId && finance.constructionSiteId === constructionSiteId);
+    }, [constructionSiteId, projectFinances, projectId]);
+    const [openingBalance, setOpeningBalance] = useState<ProjectOpeningBalance | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        if (!scopeKey || !isSupabaseConfigured) {
+            setOpeningBalance(null);
+            return;
+        }
+        projectOpeningBalanceService.getLockedByScope(scopeKey)
+            .then(balance => { if (!cancelled) setOpeningBalance(balance); })
+            .catch(() => { if (!cancelled) setOpeningBalance(null); });
+        return () => { cancelled = true; };
+    }, [scopeKey]);
+    const valueProgressMetric = useMemo(() => calculateProjectValueProgress({
+        projectFinance: currentProjectFinance,
+        customerItems: contractItems.filter(item => item.contractType === 'customer'),
+        purchaseOrders,
+        fulfillmentBatches,
+        materialBudgets,
+        openingBalance,
+    }), [contractItems, currentProjectFinance, fulfillmentBatches, materialBudgets, openingBalance, purchaseOrders]);
+    const weeklyConstructionProgress = useMemo(
+        () => calculateWeeklyConstructionProgress(tasks, taskContractLinkRows, contractItems),
+        [contractItems, taskContractLinkRows, tasks],
+    );
+    const weeklyLeafTasks = useMemo(
+        () => tasks.filter(task => !childCountByTaskId.has(task.id)).sort((a, b) => (a.order || 0) - (b.order || 0)),
+        [childCountByTaskId, tasks],
+    );
+    const draftWeeklyConstructionProgress = useMemo(() => {
+        if (weeklyLeafTasks.length === 0) return weeklyConstructionProgress;
+        const draftTasks = tasks.map(task => {
+            const draft = weeklyDrafts[task.id];
+            if (!draft) return task;
+            return {
+                ...task,
+                progress: parseProgress(draft.progressPercent),
+                progressMode: 'weekly_report' as ProjectTaskProgressMode,
+            };
+        });
+        return calculateWeeklyConstructionProgress(
+            deriveProjectTaskProgress(draftTasks, completionRequests, dailyLogs),
+            taskContractLinkRows,
+            contractItems,
+        );
+    }, [completionRequests, contractItems, dailyLogs, taskContractLinkRows, tasks, weeklyConstructionProgress, weeklyDrafts, weeklyLeafTasks.length]);
+
     const completionRequestsByTaskId = useMemo(() => {
         const map = new Map<string, ProjectTaskCompletionRequest[]>();
         for (const request of completionRequests) {
@@ -585,6 +677,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
     const getProgressHint = useCallback((task: ProjectTask, hasChildren: boolean) => {
         if (hasChildren) return 'Tự tính từ các hạng mục con';
+        if (task.progressMode === 'weekly_report') return 'Tự tính từ báo cáo tiến độ tuần';
         if (task.progressMode === 'daily_log') return (task.provisionalQuantity || 0) > 0 ? 'Tự tính từ nhật ký thi công đã xác nhận' : 'Chưa có KL tạm tính để tính từ nhật ký';
         if (task.progressMode === 'completion_request') return 'Tự tính từ phiếu hoàn thành đã duyệt';
         if (task.progressMode === 'derived_from_acceptance') return 'Tự tính từ nghiệm thu khối lượng';
@@ -804,18 +897,156 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
     const syncProjectFinanceProgress = useCallback((nextTasks: ProjectTask[]) => {
         const summary = calculateProjectProgress(nextTasks);
+        const constructionProgress = calculateWeeklyConstructionProgress(nextTasks, taskContractLinkRows, contractItems);
         if (summary.leafTaskCount === 0) return;
         if (!constructionSiteId) return;
 
         const finance = projectFinances.find(pf => pf.constructionSiteId === constructionSiteId);
-        if (!finance || finance.progressPercent === summary.progressPercent) return;
+        if (!finance || finance.progressPercent === constructionProgress) return;
 
         updateProjectFinance({
             ...finance,
-            progressPercent: summary.progressPercent,
+            progressPercent: constructionProgress,
             updatedAt: new Date().toISOString(),
         });
-    }, [constructionSiteId, projectFinances, updateProjectFinance]);
+    }, [constructionSiteId, contractItems, projectFinances, taskContractLinkRows, updateProjectFinance]);
+
+    useEffect(() => {
+        if (!scopeKey || weeklyLeafTasks.length === 0) {
+            setWeeklyDrafts({});
+            return;
+        }
+
+        let cancelled = false;
+        projectWeeklyProgressService.listLatestAtOrBefore(scopeKey, selectedWeekStart)
+            .then(rows => {
+                if (cancelled) return;
+                const latestByTask = new Map(rows.map(row => [row.taskId, row]));
+                const nextDrafts: Record<string, { progressPercent: string; quantityDone: string; note: string }> = {};
+                weeklyLeafTasks.forEach(task => {
+                    const row = latestByTask.get(task.id);
+                    const progressPercent = row?.progressPercent ?? task.progress ?? 0;
+                    const plannedQuantity = Number(task.provisionalQuantity || 0);
+                    nextDrafts[task.id] = {
+                        progressPercent: String(progressPercent),
+                        quantityDone: String(row?.quantityDone ?? (plannedQuantity > 0 ? (plannedQuantity * progressPercent / 100) : 0)),
+                        note: row?.note || '',
+                    };
+                });
+                setWeeklyDrafts(nextDrafts);
+            })
+            .catch(error => {
+                console.warn('Cannot load weekly progress', error);
+                if (!cancelled) setWeeklyDrafts({});
+            });
+
+        return () => { cancelled = true; };
+    }, [scopeKey, selectedWeekStart, weeklyLeafTasks]);
+
+    const updateWeeklyDraft = useCallback((taskId: string, patch: Partial<{ progressPercent: string; quantityDone: string; note: string }>) => {
+        setWeeklyDrafts(prev => ({
+            ...prev,
+            [taskId]: {
+                progressPercent: prev[taskId]?.progressPercent ?? '0',
+                quantityDone: prev[taskId]?.quantityDone ?? '0',
+                note: prev[taskId]?.note ?? '',
+                ...patch,
+            },
+        }));
+    }, []);
+
+    const handleSaveWeeklyProgress = useCallback(async () => {
+        if (!ensureProjectPermission('edit', 'chốt tiến độ tuần')) return;
+        if (!scopeKey || weeklyLeafTasks.length === 0) {
+            toast.warning('Chưa có hạng mục', 'Cần có hạng mục WBS lá trước khi chốt tiến độ tuần.');
+            return;
+        }
+
+        setSavingWeeklyProgress(true);
+        try {
+            const weeklyRows: ProjectWeeklyTaskProgress[] = weeklyLeafTasks.map(task => {
+                const currentProgress = parseProgress(task.progress);
+                const defaultQuantityDone = Number(task.provisionalQuantity || 0) > 0
+                    ? Number(task.provisionalQuantity || 0) * currentProgress / 100
+                    : 0;
+                const draft = weeklyDrafts[task.id] || { progressPercent: String(currentProgress), quantityDone: String(defaultQuantityDone), note: '' };
+                const progressPercent = parseProgress(draft.progressPercent);
+                return {
+                    scopeKey,
+                    projectId: projectId || null,
+                    constructionSiteId: constructionSiteId || null,
+                    taskId: task.id,
+                    weekStart: selectedWeekStart,
+                    progressPercent,
+                    quantityDone: draft.quantityDone === ''
+                        ? (Number(task.provisionalQuantity || 0) > 0 ? Number(task.provisionalQuantity || 0) * progressPercent / 100 : 0)
+                        : parseNonNegativeNumber(draft.quantityDone),
+                    note: draft.note?.trim() || null,
+                    attachments: [],
+                    updatedBy: user?.id || null,
+                };
+            });
+
+            await projectWeeklyProgressService.upsertMany(weeklyRows);
+            const progressByTask = new Map(weeklyRows.map(row => [row.taskId, row]));
+            const rawNextTasks = tasks.map(task => {
+                const row = progressByTask.get(task.id);
+                if (!row) return task;
+                return {
+                    ...task,
+                    progress: row.progressPercent,
+                    progressMode: 'weekly_report' as ProjectTaskProgressMode,
+                };
+            });
+            const nextTasks = deriveProjectTaskProgress(rawNextTasks, completionRequests, dailyLogs);
+            const changedTasks = nextTasks.filter(next => {
+                const prev = tasks.find(task => task.id === next.id);
+                return !!prev && (
+                    prev.progress !== next.progress ||
+                    prev.progressMode !== next.progressMode ||
+                    prev.gateStatus !== next.gateStatus ||
+                    prev.actualEndDate !== next.actualEndDate
+                );
+            });
+            if (changedTasks.length > 0) await taskService.upsertMany(changedTasks);
+            setTasks(nextTasks);
+            syncProjectFinanceProgress(nextTasks);
+            const constructionProgress = calculateWeeklyConstructionProgress(nextTasks, taskContractLinkRows, contractItems);
+            await projectWeeklyProgressService.upsertSnapshot({
+                scopeKey,
+                projectId: projectId || null,
+                constructionSiteId: constructionSiteId || null,
+                weekStart: selectedWeekStart,
+                constructionProgressPercent: constructionProgress,
+                valueMetric: valueProgressMetric,
+                progressMode: 'weekly_report',
+                ganttPercent: calculateProjectProgress(nextTasks).progressPercent,
+            });
+            toast.success('Đã chốt tiến độ tuần', `${getISOWeekLabel(selectedWeekStart)} · Tiến độ thi công ${constructionProgress}% · Theo giá trị ${valueProgressMetric.valueProgressPercent}%`);
+        } catch (error: any) {
+            console.error(error);
+            toast.error('Không thể chốt tiến độ tuần', error?.message || 'Vui lòng thử lại.');
+        } finally {
+            setSavingWeeklyProgress(false);
+        }
+    }, [
+        completionRequests,
+        constructionSiteId,
+        contractItems,
+        dailyLogs,
+        ensureProjectPermission,
+        projectId,
+        scopeKey,
+        selectedWeekStart,
+        syncProjectFinanceProgress,
+        taskContractLinkRows,
+        tasks,
+        toast,
+        user?.id,
+        valueProgressMetric,
+        weeklyDrafts,
+        weeklyLeafTasks,
+    ]);
 
     const persistDerivedProgress = useCallback(async (nextRequests: ProjectTaskCompletionRequest[]) => {
         const derived = deriveProjectTaskProgress(tasks, nextRequests, dailyLogs);
@@ -1049,7 +1280,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
     // ====== CRUD operations ======
     const resetForm = () => {
-        setEditing(null); setFName(''); setFStart(''); setFEnd(''); setFProgress('0'); setFProgressMode('daily_log');
+        setEditing(null); setFName(''); setFStart(''); setFEnd(''); setFProgress('0'); setFProgressMode('weekly_report');
         setFAssignee(''); setFAssigneeUserId(''); setFParentId(''); setFMilestone(false); setFNotes(''); setFColor('');
         setFDeps([]); setFLagTime('0'); setFResourceCount('1'); setFResourceType('worker'); setFCostPerDay('0');
         setFContractItemIds([]); setFWbsCode(''); setFFallbackUnit(''); setFActualStart(''); setFActualEnd('');
@@ -1073,7 +1304,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         if (!ensureProjectPermission('edit', 'sửa hạng mục tiến độ')) return;
         setEditing(t);
         setFName(t.name); setFStart(t.startDate); setFEnd(t.endDate);
-        const sourceMode = t.progressMode === 'completion_request' ? 'daily_log' : (t.progressMode || 'manual');
+        const sourceMode = t.progressMode === 'completion_request' ? 'weekly_report' : (t.progressMode || 'weekly_report');
         setFProgress(String(t.progress)); setFProgressMode(tasks.some(task => task.parentId === t.id) ? 'children_auto' : sourceMode); setFAssignee(t.assignee || ''); setFAssigneeUserId(t.assigneeUserId || '');
         setFParentId(t.parentId || ''); setFMilestone(t.isMilestone);
         setFNotes(t.notes || ''); setFColor(t.color || '');
@@ -1092,7 +1323,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         if (!ensureProjectPermission('edit', 'nhân bản hạng mục tiến độ')) return;
         setEditing(null);
         setFName(t.name + ' (Bản sao)'); setFStart(t.startDate); setFEnd(t.endDate);
-        setFProgress('0'); setFProgressMode('daily_log'); setFAssignee(t.assignee || ''); setFAssigneeUserId(t.assigneeUserId || '');
+        setFProgress('0'); setFProgressMode('weekly_report'); setFAssignee(t.assignee || ''); setFAssigneeUserId(t.assigneeUserId || '');
         setFParentId(t.parentId || ''); setFMilestone(t.isMilestone);
         setFNotes(t.notes || ''); setFColor(t.color || '');
         setFWbsCode(getNextWbsCode(tasks, t.parentId));
@@ -1189,6 +1420,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             if (derivedChanges.length > 0) await taskService.upsertMany(derivedChanges);
             const nextLinks = await taskContractItemService.listBySite(effectiveId, constructionSiteId || null);
             setTasks(nextTasks);
+            setTaskContractLinkRows(nextLinks);
             setTaskContractLinks(nextLinks.reduce<Record<string, string[]>>((acc, link) => {
                 if (!acc[link.taskId]) acc[link.taskId] = [];
                 acc[link.taskId].push(link.contractItemId);
@@ -1290,8 +1522,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             toast.warning('Tiến độ lấy từ nghiệm thu', 'Hạng mục này cần cập nhật qua nghiệm thu khối lượng thay vì chỉnh tay.');
             return;
         }
-        if (task.progressMode === 'completion_request' || task.progressMode === 'children_auto' || task.progressMode === 'daily_log') {
-            toast.warning('Tiến độ tự động', 'Hạng mục này cập nhật qua nhật ký thi công, phiếu hoàn thành hoặc công việc con.');
+        if (task.progressMode === 'completion_request' || task.progressMode === 'children_auto' || task.progressMode === 'daily_log' || task.progressMode === 'weekly_report') {
+            toast.warning('Tiến độ tự động', 'Hạng mục này cập nhật qua báo cáo tuần, nhật ký thi công, phiếu hoàn thành hoặc công việc con.');
             return;
         }
         if (gateBlockedIds.has(id) && progress > task.progress) {
@@ -1424,7 +1656,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                     endDate: end,
                     duration: daysBetween(start, end),
                     progress: parseProgress(row['Tiến độ (%)']),
-                    progressMode: 'daily_log',
+                    progressMode: 'weekly_report',
                     assignee: row['Người thực hiện'] ? String(row['Người thực hiện']) : undefined,
                     wbsCode: wbs,
                     fallbackUnit: row['Đơn vị'] ? String(row['Đơn vị']) : undefined,
@@ -1492,6 +1724,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 'Đơn vị': getTaskUnit(task, linkedIds, contractItems),
                 'Khối lượng tạm tính': task.provisionalQuantity || 0,
                 'Tiến độ (%)': task.progress,
+                'Tiến độ theo giá trị (%)': valueProgressMetric.valueProgressPercent,
+                'Giá trị đã ghi nhận': valueProgressMetric.recognizedValue,
+                'Tổng giá trị hợp đồng': valueProgressMetric.contractTotalValue,
                 'Trạng thái': getStatusLabel(status),
                 'Mã cha': task.parentId ? tasks.find(t => t.id === task.parentId)?.wbsCode || '' : '',
                 'Công việc cha': parentName
@@ -1501,7 +1736,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         const ws = XLSX.utils.json_to_sheet(rows);
         ws['!cols'] = [
             { wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
-            { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 18 }, { wch: 10 }, { wch: 15 }, { wch: 20 }
+            { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 18 }, { wch: 10 }, { wch: 20 },
+            { wch: 18 }, { wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 24 }
         ];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'TienDo');
@@ -1641,9 +1877,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         const pendingGate = progressSummary.pendingGateCount;
         const inProgress = tasks.filter(t => getStatus(t) === 'in_progress').length;
         const overdue = tasks.filter(t => getStatus(t) === 'overdue').length;
-        const avgProgress = progressSummary.progressPercent;
+        const avgProgress = weeklyConstructionProgress;
         return { total, completed, pendingGate, inProgress, overdue, avgProgress };
-    }, [progressSummary, tasks]);
+    }, [progressSummary.completedLeafCount, progressSummary.pendingGateCount, tasks, weeklyConstructionProgress]);
 
     // ====== GĐ1: Critical Path ======
     const criticalPathResult = useMemo<CriticalPathResult | null>(() => {
@@ -2052,7 +2288,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 <div>
                     <h3 className="text-base font-black text-slate-800 dark:text-white">📊 Tiến độ thi công</h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                        {stats.total} hạng mục • Tiến độ TB: {stats.avgProgress}%
+                        {stats.total} hạng mục • Tiến độ thi công: {weeklyConstructionProgress}% • Theo giá trị: {valueProgressMetric.valueProgressPercent}%
                         {criticalPathResult && criticalPathResult.criticalPath.length > 0 && (
                             <span className="ml-2 text-red-500 font-bold">
                                 • Đường găng: {criticalPathResult.criticalPath.length} task
@@ -2431,10 +2667,18 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             )}
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-3">
                 {[
                     { label: 'Tổng hạng mục', value: stats.total, color: 'text-slate-800', icon: '📋' },
-                    { label: 'Tiến độ TB', value: `${stats.avgProgress}%`, color: 'text-orange-600', icon: '📈', bar: stats.avgProgress },
+                    { label: 'Tiến độ thi công', value: `${stats.avgProgress}%`, color: 'text-orange-600', icon: '📈', bar: stats.avgProgress },
+                    {
+                        label: 'Tiến độ theo giá trị',
+                        value: `${valueProgressMetric.valueProgressPercent}%`,
+                        color: 'text-emerald-600',
+                        icon: '💰',
+                        bar: valueProgressMetric.valueProgressPercent,
+                        sub: `${formatMoneyShort(valueProgressMetric.recognizedValue)} / ${formatMoneyShort(valueProgressMetric.contractTotalValue)}`,
+                    },
                     { label: 'Hoàn thành', value: stats.completed, color: 'text-emerald-600', icon: '✅' },
                     { label: 'Chờ NT', value: stats.pendingGate, color: stats.pendingGate > 0 ? 'text-amber-600' : 'text-slate-400', icon: '🛡️' },
                     { label: 'Đang thực hiện', value: stats.inProgress, color: 'text-blue-600', icon: '🔄' },
@@ -2446,14 +2690,124 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             <span className="text-sm">{s.icon}</span>
                         </div>
                         <div className={`text-2xl font-black ${s.color}`}>{s.value}</div>
+                        {'sub' in s && s.sub && (
+                            <div className="mt-0.5 text-[9px] font-bold text-slate-400 truncate" title={s.sub}>{s.sub}</div>
+                        )}
                         {s.bar !== undefined && (
                             <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                <div className="h-full bg-gradient-to-r from-orange-400 to-amber-500 rounded-full transition-all" style={{ width: `${s.bar}%` }} />
+                                <div className="h-full bg-gradient-to-r from-orange-400 to-amber-500 rounded-full transition-all" style={{ width: `${clampProgress(s.bar)}%` }} />
                             </div>
                         )}
                     </div>
                 ))}
             </div>
+
+            {tasks.length > 0 && (
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <ClipboardCheck size={16} className="text-orange-500 shrink-0" />
+                            <div className="min-w-0">
+                                <h4 className="text-sm font-black text-slate-800 dark:text-white">Chốt tiến độ tuần</h4>
+                                <p className="text-[10px] font-bold text-slate-400 truncate">
+                                    {getISOWeekLabel(selectedWeekStart)} • {weeklyLeafTasks.length} hạng mục lá • Preview thi công {draftWeeklyConstructionProgress}%
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <input
+                                type="date"
+                                value={selectedWeekStart}
+                                onChange={e => {
+                                    if (e.target.value) setSelectedWeekStart(getWeekStart(e.target.value));
+                                }}
+                                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-xs font-bold bg-transparent focus:ring-2 focus:ring-orange-500 outline-none"
+                                title="Tuần chốt"
+                            />
+                            <button
+                                onClick={handleSaveWeeklyProgress}
+                                disabled={savingWeeklyProgress || weeklyLeafTasks.length === 0}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black text-white bg-orange-500 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                {savingWeeklyProgress ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                                Chốt tuần
+                            </button>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-0 border-b border-slate-100 dark:border-slate-700">
+                        {[
+                            { label: 'Thi công tuần', value: `${draftWeeklyConstructionProgress}%`, tone: 'text-orange-600' },
+                            { label: 'Theo giá trị', value: `${valueProgressMetric.valueProgressPercent}%`, tone: 'text-emerald-600' },
+                            { label: 'PO hợp lệ', value: formatMoneyShort(valueProgressMetric.purchasedValue), tone: 'text-blue-600' },
+                            { label: 'Kho đã cấp', value: formatMoneyShort(valueProgressMetric.issuedValue), tone: 'text-violet-600' },
+                        ].map(item => (
+                            <div key={item.label} className="px-4 py-3 border-r last:border-r-0 border-slate-100 dark:border-slate-700">
+                                <div className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{item.label}</div>
+                                <div className={`mt-1 text-lg font-black ${item.tone}`}>{item.value}</div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="overflow-x-auto max-h-[360px]">
+                        <table className="w-full min-w-[820px] text-xs">
+                            <thead className="sticky top-0 bg-slate-50 dark:bg-slate-700 z-10">
+                                <tr className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                                    <th className="px-3 py-2 text-left w-[90px]">WBS</th>
+                                    <th className="px-3 py-2 text-left">Hạng mục lá</th>
+                                    <th className="px-3 py-2 text-right w-[130px]">% hoàn thành</th>
+                                    <th className="px-3 py-2 text-right w-[150px]">KL hoàn thành</th>
+                                    <th className="px-3 py-2 text-left w-[260px]">Ghi chú</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
+                                {weeklyLeafTasks.map(task => {
+                                    const draft = weeklyDrafts[task.id] || { progressPercent: String(task.progress || 0), quantityDone: '0', note: '' };
+                                    const linkedIds = taskContractLinks[task.id] || [];
+                                    return (
+                                        <tr key={task.id} className="hover:bg-orange-50/30 dark:hover:bg-slate-700/30">
+                                            <td className="px-3 py-2 font-mono font-bold text-indigo-600">{task.wbsCode || '–'}</td>
+                                            <td className="px-3 py-2">
+                                                <div className="font-bold text-slate-700 dark:text-slate-200 truncate" title={task.name}>{task.name}</div>
+                                                <div className="text-[9px] font-bold text-slate-400">
+                                                    KH: {formatQuantity(task.provisionalQuantity)} {getTaskUnit(task, linkedIds, contractItems)}
+                                                </div>
+                                            </td>
+                                            <td className="px-3 py-2">
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    max={100}
+                                                    step={1}
+                                                    value={draft.progressPercent}
+                                                    onChange={e => updateWeeklyDraft(task.id, { progressPercent: e.target.value })}
+                                                    className="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-right font-black bg-transparent focus:ring-2 focus:ring-orange-500 outline-none"
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2">
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    step="0.001"
+                                                    value={draft.quantityDone}
+                                                    onChange={e => updateWeeklyDraft(task.id, { quantityDone: e.target.value })}
+                                                    className="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-right font-bold bg-transparent focus:ring-2 focus:ring-orange-500 outline-none"
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2">
+                                                <input
+                                                    value={draft.note}
+                                                    onChange={e => updateWeeklyDraft(task.id, { note: e.target.value })}
+                                                    placeholder="Ghi chú tuần"
+                                                    className="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-transparent focus:ring-2 focus:ring-orange-500 outline-none"
+                                                />
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
 
             {/* Toolbar */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
@@ -2551,7 +2905,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             <div
                                 style={{ width: viewMode === 'split' ? `${splitTableWidth}px` : undefined }}
                                 className={`${viewMode === 'split' ? 'shrink-0 lg:border-r border-b lg:border-b-0 border-slate-100 dark:border-slate-700' : 'flex-1'} overflow-auto`}>
-                                <table className={`${viewMode === 'table' ? 'w-full min-w-[760px] lg:min-w-[1280px] table-fixed' : 'w-full min-w-[760px] table-fixed'} text-xs`}>
+                                <table className={`${viewMode === 'table' ? 'w-full min-w-[900px] lg:min-w-[1420px] table-fixed' : 'w-full min-w-[900px] table-fixed'} text-xs`}>
                                     <thead>
                                         <tr className="bg-slate-50/80 dark:bg-slate-700/50 border-b border-slate-100 dark:border-slate-700" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
                                             {viewMode === 'table' && (
@@ -2616,6 +2970,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                     Tiến độ <SortIcon field="progress" />
                                                 </button>
                                             </th>
+                                            <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[132px]">
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Tiến độ<br />theo giá trị</span>
+                                            </th>
                                             {viewMode === 'table' && (
                                                 <th className="hidden xl:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[70px]">
                                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Đơn vị</span>
@@ -2641,7 +2998,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                             const unitLabel = getTaskUnit(task, linkedIds, contractItems);
                                             const unitTitle = getTaskUnitTitle(task, linkedIds, contractItems);
                                             const rowHasChildren = hasChildren || !!childCountByTaskId.get(task.id);
-                                            const progressReadOnly = rowHasChildren || task.progressMode === 'daily_log' || task.progressMode === 'completion_request' || task.progressMode === 'children_auto' || task.progressMode === 'derived_from_acceptance';
+                                            const progressReadOnly = rowHasChildren || task.progressMode === 'weekly_report' || task.progressMode === 'daily_log' || task.progressMode === 'completion_request' || task.progressMode === 'children_auto' || task.progressMode === 'derived_from_acceptance';
                                             return (
                                                 <tr key={task.id}
                                                     style={{ height: `${ROW_HEIGHT}px` }}
@@ -2750,6 +3107,23 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                         style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
                                                         <div className="flex items-center h-full">
                                                             <ProgressCell value={task.progress} onChange={v => updateProgress(task.id, v)} disabled={progressReadOnly} hint={getProgressHint(task, rowHasChildren)} />
+                                                        </div>
+                                                    </td>
+                                                    <td className={`px-2 ${viewMode === 'split' ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
+                                                        style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}
+                                                        title={`Giá trị ghi nhận: ${formatMoneyShort(valueProgressMetric.recognizedValue)} / ${formatMoneyShort(valueProgressMetric.contractTotalValue)}`}>
+                                                        <div className="flex flex-col justify-center h-full gap-1">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${clampProgress(valueProgressMetric.valueProgressPercent)}%` }} />
+                                                                </div>
+                                                                <span className="text-[11px] font-black text-emerald-600 w-8 text-right">{valueProgressMetric.valueProgressPercent}%</span>
+                                                            </div>
+                                                            {viewMode === 'table' && (
+                                                                <div className="text-[9px] font-bold text-slate-400 truncate">
+                                                                    {formatMoneyShort(valueProgressMetric.recognizedValue)}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </td>
                                                     {/* Unit (table mode only) */}
@@ -3529,6 +3903,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                 <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Nguồn tiến độ</label>
                                 <select value={fProgressMode} onChange={e => setFProgressMode(e.target.value as ProjectTaskProgressMode)}
                                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none">
+                                    <option value="weekly_report">Báo cáo tiến độ tuần</option>
                                     <option value="daily_log">Nhật ký thi công đã xác nhận</option>
                                     <option value="manual">Nhập tay theo kế hoạch thi công</option>
                                     <option value="derived_from_acceptance">Tự tính từ nghiệm thu khối lượng</option>
