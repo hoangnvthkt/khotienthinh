@@ -1587,6 +1587,13 @@ export interface PurchaseOrderItem {
   specification?: string;
   manualReason?: string;
   note?: string;
+
+  // Dynamic Technical Specs (stored in JSONB items, no DB migration needed)
+  specs?: Record<string, { value: number | string; unit?: string; label?: string }>;
+  pricingMode?: 'standard' | 'by_area' | 'by_length' | 'by_weight' | 'by_volume';
+  computedArea?: number;
+  computedWeight?: number;
+  computedLineTotal?: number;
 }
 
 export interface PurchaseOrderRequestLineLink {

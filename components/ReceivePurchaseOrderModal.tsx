@@ -8,6 +8,7 @@ import { materialRequestFulfillmentService } from '../lib/materialRequestFulfill
 import { materialRequestService } from '../lib/materialRequestService';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { usePermission } from '../hooks/usePermission';
+import { parseQuantityInput, sanitizeQuantityInput } from '../lib/quantityInput';
 
 interface ReceivePurchaseOrderModalProps {
   isOpen: boolean;
@@ -25,7 +26,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   const { warehouses, items, user, requests, addTransaction, updateRequestStatus } = useApp();
   const { canManage } = usePermission();
   const toast = useToast();
-  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -49,10 +50,10 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
 
   useEffect(() => {
     if (!po || !isOpen) return;
-    const defaults: Record<string, number> = {};
+    const defaults: Record<string, string> = {};
     po.items.forEach((item, index) => {
       const remainingQty = Math.max((Number(item.qty) || 0) - (Number(item.receivedQty) || 0), 0);
-      defaults[`${item.itemId}-${index}`] = remainingQty;
+      defaults[`${item.itemId}-${index}`] = String(remainingQty);
     });
     setQuantities(defaults);
     setNote(`Nhập hàng theo PO ${po.poNumber}`);
@@ -63,13 +64,23 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   const totalRemaining = lines.reduce((sum, line) => sum + line.remainingQty, 0);
   const hasReceivableLine = totalRemaining > 0;
   const hasInvalidQty = lines.some(line => {
-    const qty = Number(quantities[line.key]) || 0;
+    const qty = parseQuantityInput(quantities[line.key]);
     return qty < 0 || qty > line.remainingQty;
   });
   const receiptLines = lines
-    .map(line => ({ itemId: line.itemId, lineId: line.lineId, quantity: Number(quantities[line.key]) || 0, price: Number(line.unitPrice) || 0 }))
+    .map(line => ({ itemId: line.itemId, lineId: line.lineId, quantity: parseQuantityInput(quantities[line.key]) || 0, price: Number(line.unitPrice) || 0 }))
     .filter(line => line.quantity > 0);
   const unlinkedReceiptLines = receiptLines.filter(line => !items.some(item => item.id === line.itemId));
+
+  const updateReceiptQuantity = (lineKey: string, rawValue: string, maxQty: number) => {
+    setQuantities(prev => ({
+      ...prev,
+      [lineKey]: sanitizeQuantityInput(rawValue, {
+        max: maxQty,
+        previousValue: prev[lineKey] ?? String(maxQty),
+      }),
+    }));
+  };
 
   const handleConfirm = async () => {
     if (saving || !po.targetWarehouseId) return;
@@ -215,7 +226,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {lines.map(line => {
-                    const qty = Number(quantities[line.key]) || 0;
+                    const qty = parseQuantityInput(quantities[line.key]) || 0;
                     const invalid = qty < 0 || qty > line.remainingQty;
                     return (
                       <tr key={line.key} className={line.remainingQty <= 0 ? 'bg-slate-50/60 opacity-70' : ''}>
@@ -233,13 +244,11 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                         <td className="p-4 text-right font-black text-emerald-600">{line.remainingQty.toLocaleString()} {line.unit}</td>
                         <td className="p-4">
                           <input
-                            type="number"
-                            min={0}
-                            max={line.remainingQty}
-                            step={1}
+                            type="text"
+                            inputMode="decimal"
                             disabled={line.remainingQty <= 0 || saving}
-                            value={quantities[line.key] ?? 0}
-                            onChange={(event) => setQuantities(prev => ({ ...prev, [line.key]: Number(event.target.value) || 0 }))}
+                            value={quantities[line.key] ?? '0'}
+                            onChange={(event) => updateReceiptQuantity(line.key, event.target.value, line.remainingQty)}
                             className={`w-full px-3 py-2 rounded-xl border text-center font-black outline-none focus:ring-2 ${
                               invalid ? 'border-red-300 bg-red-50 text-red-600 focus:ring-red-200' : 'border-slate-200 focus:ring-emerald-200'
                             }`}
@@ -255,7 +264,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
             {/* Mobile Card List View */}
             <div className="block md:hidden divide-y divide-slate-100">
               {lines.map(line => {
-                const qty = Number(quantities[line.key]) || 0;
+                const qty = parseQuantityInput(quantities[line.key]) || 0;
                 const invalid = qty < 0 || qty > line.remainingQty;
                 return (
                   <div key={line.key} className={`p-4 space-y-3 ${line.remainingQty <= 0 ? 'bg-slate-50/60 opacity-70' : ''}`}>
@@ -288,13 +297,11 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                       <div className="text-xs font-black text-slate-500 uppercase tracking-wider">Thực nhận:</div>
                       <div className="w-32 shrink-0">
                         <input
-                          type="number"
-                          min={0}
-                          max={line.remainingQty}
-                          step={1}
+                          type="text"
+                          inputMode="decimal"
                           disabled={line.remainingQty <= 0 || saving}
-                          value={quantities[line.key] ?? 0}
-                          onChange={(event) => setQuantities(prev => ({ ...prev, [line.key]: Number(event.target.value) || 0 }))}
+                          value={quantities[line.key] ?? '0'}
+                          onChange={(event) => updateReceiptQuantity(line.key, event.target.value, line.remainingQty)}
                           className={`w-full px-3 py-2 rounded-xl border text-center font-black outline-none focus:ring-2 ${
                             invalid ? 'border-red-300 bg-red-50 text-red-600 focus:ring-red-200' : 'border-slate-200 focus:ring-emerald-200'
                           }`}

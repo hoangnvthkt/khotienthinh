@@ -1,6 +1,20 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import AiInsightPanel from '../../components/AiInsightPanel';
+import {
+    calculateLineTotal,
+    getComputedDimension,
+    formatSpecsSummary,
+    formatPricingFormula,
+    DEFAULT_SPEC_METADATA,
+    SPEC_KEY_ORDER,
+    SPEC_PRESETS,
+    calculateArea,
+    calculateVolume,
+    getSpecNumeric,
+    SpecValue,
+    PricingMode
+} from '../../lib/poSpecsUtils';
 import {
     Plus, Edit2, Trash2, X, Save, Truck, Star, Phone, Mail, MapPin,
     FileText, CheckCircle2, Clock, Ban, Send, Package, ChevronDown,
@@ -107,6 +121,11 @@ const createEmptyPoItem = (): PurchaseOrderItem => ({
     unitPrice: 0,
     neededDate: '',
     note: '',
+    specs: undefined,
+    pricingMode: undefined,
+    computedArea: undefined,
+    computedWeight: undefined,
+    computedLineTotal: undefined,
 });
 
 const normalizePoItem = (item: Partial<PurchaseOrderItem>, inventoryItems: InventoryItem[]): PurchaseOrderItem => {
@@ -153,6 +172,11 @@ const normalizePoItem = (item: Partial<PurchaseOrderItem>, inventoryItems: Inven
         specification: item.specification || '',
         manualReason: item.manualReason || '',
         note: item.note || '',
+        specs: item.specs || undefined,
+        pricingMode: item.pricingMode || undefined,
+        computedArea: item.computedArea != null ? Number(item.computedArea) : undefined,
+        computedWeight: item.computedWeight != null ? Number(item.computedWeight) : undefined,
+        computedLineTotal: item.computedLineTotal != null ? Number(item.computedLineTotal) : undefined,
     };
 };
 
@@ -290,6 +314,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [submittingPo, setSubmittingPo] = useState<PurchaseOrder | null>(null);
     const [printingPoId, setPrintingPoId] = useState<string | null>(null);
     const [savingPo, setSavingPo] = useState(false);
+    const [expandedSpecsIdx, setExpandedSpecsIdx] = useState<Set<number>>(new Set());
+    const toggleSpecsPanel = useCallback((idx: number) => setExpandedSpecsIdx(prev => {
+        const next = new Set(prev);
+        if (next.has(idx)) next.delete(idx);
+        else next.add(idx);
+        return next;
+    }), []);
     const poSubmitLockRef = useRef(false);
     const poImportModeRef = useRef<ExcelImportMode>('create');
     const poBoqMetaScopeRef = useRef<string | null>(null);
@@ -728,7 +759,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             );
             return;
         }
-        const totalAmount = validItems.reduce((s, i) => s + i.qty * i.unitPrice, 0);
+        const totalAmount = validItems.reduce((s, i) => s + calculateLineTotal(i), 0);
         const scopedProjectId = pSourceMode === 'proactive_stock' ? null : projectId || constructionSiteId || null;
         const scopedSiteId = pSourceMode === 'proactive_stock' ? null : constructionSiteId || null;
         const groups = validItems.reduce<Map<string, PurchaseOrderItem[]>>((map, item) => {
@@ -795,7 +826,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     vendorName: vendor.name,
                     poNumber: pNum,
                     items: groupItems,
-                    totalAmount: groupItems.reduce((s, i) => s + i.qty * i.unitPrice, 0),
+                    totalAmount: groupItems.reduce((s, i) => s + calculateLineTotal(i), 0),
                     orderDate: pDate,
                     expectedDeliveryDate: pExpDate || undefined,
                     targetWarehouseId: pTargetWarehouseId,
@@ -825,7 +856,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         procurementGroupId,
                         procurementGroupNo,
                         items: groupItems,
-                        totalAmount: groupItems.reduce((s, i) => s + i.qty * i.unitPrice, 0),
+                        totalAmount: groupItems.reduce((s, i) => s + calculateLineTotal(i), 0),
                         orderDate: pDate,
                         expectedDeliveryDate: pExpDate || undefined,
                         status: 'draft',
@@ -1345,18 +1376,82 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
     const buildPoPrintSection = (printablePo: PurchaseOrder, qrSvg: string, pageBreak = false) => {
         const targetWh = warehouses.find(w => w.id === printablePo.targetWarehouseId);
-        const rowsHtml = printablePo.items.map((item, index) => `
-            <tr>
-                <td>${index + 1}</td>
-                <td>${escapeHtml(item.sku)}</td>
-                <td>${escapeHtml(item.name)}</td>
-                <td>${escapeHtml(item.unit)}</td>
-                <td class="right">${Number(item.qty || 0).toLocaleString('vi-VN')}</td>
-                <td class="right">${Number(item.unitPrice || 0).toLocaleString('vi-VN')}</td>
-                <td>${escapeHtml(item.neededDate || printablePo.expectedDeliveryDate || '')}</td>
-                <td>${escapeHtml(item.note || '')}</td>
-            </tr>
-        `).join('');
+        
+        const uniqueSpecKeys = Array.from(
+            new Set(
+                printablePo.items.flatMap(item => 
+                    item.specs ? Object.keys(item.specs).filter(key => {
+                        const val = item.specs?.[key]?.value;
+                        return val !== undefined && val !== null && val !== '';
+                    }) : []
+                )
+            )
+        ).sort((a, b) => {
+            const idxA = SPEC_KEY_ORDER.indexOf(a);
+            const idxB = SPEC_KEY_ORDER.indexOf(b);
+            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+            if (idxA !== -1) return -1;
+            if (idxB !== -1) return 1;
+            return a.localeCompare(b);
+        });
+
+        const getHeaderLabel = (k: string) => {
+            const meta = DEFAULT_SPEC_METADATA[k];
+            if (meta) {
+                return meta.label + (meta.unit ? ` (${meta.unit})` : '');
+            }
+            for (const item of printablePo.items) {
+                const specVal = item.specs?.[k];
+                if (specVal?.label) {
+                    return specVal.label + (specVal.unit ? ` (${specVal.unit})` : '');
+                }
+            }
+            return k;
+        };
+
+        const headersHtml = `
+            <th>STT</th>
+            <th>Mã hàng hoá</th>
+            <th>Tên hàng hoá</th>
+            <th>ĐVT</th>
+            ${uniqueSpecKeys.map(k => `<th>${escapeHtml(getHeaderLabel(k))}</th>`).join('')}
+            <th>Khối lượng</th>
+            <th>Đơn giá</th>
+            <th>Thành tiền</th>
+            <th>Ngày cần</th>
+            <th>Ghi chú</th>
+        `;
+
+        const rowsHtml = printablePo.items.map((item, index) => {
+            const specCells = uniqueSpecKeys.map(k => {
+                const val = item.specs?.[k]?.value;
+                return `<td>${val !== undefined && val !== null && val !== '' ? escapeHtml(val) : '—'}</td>`;
+            }).join('');
+
+            const formulaHtml = item.pricingMode && item.pricingMode !== 'standard'
+                ? `<div style="font-size: 8px; color: #7c3aed; margin-top: 2px; font-weight: bold;">Tính giá: ${escapeHtml(formatPricingFormula(item))}</div>`
+                : '';
+
+            return `
+                <tr>
+                    <td>${index + 1}</td>
+                    <td>${escapeHtml(item.sku)}</td>
+                    <td>
+                        ${escapeHtml(item.name)}
+                        ${formulaHtml}
+                    </td>
+                    <td>${escapeHtml(item.unit)}</td>
+                    ${specCells}
+                    <td class="right">${Number(item.qty || 0).toLocaleString('vi-VN')}</td>
+                    <td class="right">${Number(item.unitPrice || 0).toLocaleString('vi-VN')}</td>
+                    <td class="right" style="font-weight: bold;">${Number(calculateLineTotal(item)).toLocaleString('vi-VN')} đ</td>
+                    <td>${escapeHtml(item.neededDate || printablePo.expectedDeliveryDate || '')}</td>
+                    <td>${escapeHtml(item.note || '')}</td>
+                </tr>
+            `;
+        }).join('');
+
+        const totalAmount = printablePo.items.reduce((sum, item) => sum + calculateLineTotal(item), 0);
 
         return `
             <section class="${pageBreak ? 'page-break' : ''}">
@@ -1378,17 +1473,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 <table>
                     <thead>
                         <tr>
-                            <th>STT</th>
-                            <th>Mã hàng hoá</th>
-                            <th>Tên hàng hoá</th>
-                            <th>ĐVT</th>
-                            <th>Khối lượng</th>
-                            <th>Đơn giá</th>
-                            <th>Ngày cần</th>
-                            <th>Ghi chú</th>
+                            ${headersHtml}
                         </tr>
                     </thead>
                     <tbody>${rowsHtml}</tbody>
+                    <tfoot>
+                        <tr style="font-weight: bold; background: #f8fafc;">
+                            <td colspan="${6 + uniqueSpecKeys.length}" class="right">TỔNG CỘNG:</td>
+                            <td class="right">${totalAmount.toLocaleString('vi-VN')} đ</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
                 </table>
                 ${printablePo.note ? `<div class="note"><strong>Ghi chú:</strong> ${escapeHtml(printablePo.note)}</div>` : ''}
             </section>
@@ -1494,7 +1589,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         return { partnerCount: partners.length, totalPo, totalValue, delivered, pending };
     }, [partners, pos]);
 
-    const poTotalCalc = useMemo(() => pItems.reduce((s, i) => s + i.qty * i.unitPrice, 0), [pItems]);
+    const poTotalCalc = useMemo(() => pItems.reduce((s, i) => s + calculateLineTotal(i), 0), [pItems]);
     const poHasRequestLines = useMemo(() => pItems.some(item => !!item.requestId), [pItems]);
     const procurementGroupCounts = useMemo(() => pos.reduce<Record<string, number>>((acc, po) => {
         if (po.procurementGroupId) acc[po.procurementGroupId] = (acc[po.procurementGroupId] || 0) + 1;
@@ -1729,111 +1824,161 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                             </div>
                                         </div>
                                         {/* Expanded items */}
-                                        {isExpanded && (
-                                            <div className="px-5 pb-4 bg-slate-50/30">
-                                                <table className="w-full text-[11px]">
-                                                    <thead>
-                                                        <tr className="text-[9px] font-bold text-slate-400 uppercase">
-                                                            <th className="text-left py-2 px-2">Vật tư</th>
-                                                            <th className="text-center py-2 px-2">ĐVT</th>
-                                                            <th className="text-right py-2 px-2">SL</th>
-                                                            <th className="text-right py-2 px-2">Đã nhận</th>
-                                                            <th className="text-right py-2 px-2">Đơn giá</th>
-                                                            <th className="text-right py-2 px-2">Thành tiền</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700/40">
-                                                        {po.items.map((item, i) => {
-                                                            const work = item.workBoqItemId ? workBoqMap.get(item.workBoqItemId) : undefined;
-                                                            return (
-                                                            <tr key={i}>
-                                                                <td className="py-1.5 px-2 font-bold text-slate-700">
-                                                                    {item.name}
-                                                                    {item.sku && <div className="text-[9px] font-mono text-slate-400">{item.sku}</div>}
-                                                                    <div className="flex flex-wrap gap-1 mt-1">
-                                                                        {item.requestCode && <span className="px-1.5 py-0.5 rounded border border-amber-100 bg-amber-50 text-[9px] text-amber-700">YC {item.requestCode}</span>}
-                                                                        {(item.workBoqItemName || work?.name) && <span className="px-1.5 py-0.5 rounded border border-blue-100 bg-blue-50 text-[9px] text-blue-700">{work?.wbsCode ? `${work.wbsCode} - ` : ''}{item.workBoqItemName || work?.name}</span>}
-                                                                        {item.materialBudgetItemName && <span className="px-1.5 py-0.5 rounded border border-emerald-100 bg-emerald-50 text-[9px] text-emerald-700">{item.materialBudgetItemName}</span>}
-                                                                        {Number(item.overBudgetQtySnapshot || 0) > 0 && <span className="px-1.5 py-0.5 rounded border border-orange-100 bg-orange-50 text-[9px] text-orange-700">Vượt {Number(item.overBudgetQtySnapshot || 0).toLocaleString('vi-VN')} {item.unit}</span>}
-                                                                    </div>
-                                                                    {(item.neededDate || item.note) && <div className="text-[9px] text-slate-400 font-medium mt-0.5">{item.neededDate || ''}{item.neededDate && item.note ? ' • ' : ''}{item.note || ''}</div>}
-                                                                    {item.overBudgetReason && <div className="text-[9px] text-orange-600 font-medium">Lý do: {item.overBudgetReason}</div>}
-                                                                </td>
-                                                                <td className="py-1.5 px-2 text-center text-slate-500">{item.unit}</td>
-                                                                <td className="py-1.5 px-2 text-right text-slate-600">{item.qty.toLocaleString()}</td>
-                                                                <td className="py-1.5 px-2 text-right text-emerald-600 font-bold">{(item.receivedQty || 0).toLocaleString()}</td>
-                                                                <td className="py-1.5 px-2 text-right text-slate-500">{fmt(item.unitPrice)}</td>
-                                                                <td className="py-1.5 px-2 text-right font-bold text-slate-700">{fmt(item.qty * item.unitPrice)} đ</td>
+                                        {isExpanded && (() => {
+                                            const uniqueSpecKeys = Array.from(
+                                                new Set(
+                                                    po.items.flatMap(item => 
+                                                        item.specs ? Object.keys(item.specs).filter(key => {
+                                                            const val = item.specs?.[key]?.value;
+                                                            return val !== undefined && val !== null && val !== '';
+                                                        }) : []
+                                                    )
+                                                )
+                                            ).sort((a, b) => {
+                                                const idxA = SPEC_KEY_ORDER.indexOf(a);
+                                                const idxB = SPEC_KEY_ORDER.indexOf(b);
+                                                if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                                                if (idxA !== -1) return -1;
+                                                if (idxB !== -1) return 1;
+                                                return a.localeCompare(b);
+                                            });
+
+                                            const getHeaderLabel = (k: string) => {
+                                                const meta = DEFAULT_SPEC_METADATA[k];
+                                                if (meta) {
+                                                    return meta.label + (meta.unit ? ` (${meta.unit})` : '');
+                                                }
+                                                for (const item of po.items) {
+                                                    const specVal = item.specs?.[k];
+                                                    if (specVal?.label) {
+                                                        return specVal.label + (specVal.unit ? ` (${specVal.unit})` : '');
+                                                    }
+                                                }
+                                                return k;
+                                            };
+
+                                            return (
+                                                <div className="px-5 pb-4 bg-slate-50/30">
+                                                    <table className="w-full text-[11px]">
+                                                        <thead>
+                                                            <tr className="text-[9px] font-bold text-slate-400 uppercase">
+                                                                <th className="text-left py-2 px-2">Vật tư</th>
+                                                                <th className="text-center py-2 px-2">ĐVT</th>
+                                                                {uniqueSpecKeys.map(k => (
+                                                                    <th key={k} className="text-center py-2 px-2">{getHeaderLabel(k)}</th>
+                                                                ))}
+                                                                <th className="text-right py-2 px-2">SL</th>
+                                                                <th className="text-right py-2 px-2">Đã nhận</th>
+                                                                <th className="text-right py-2 px-2">Đơn giá</th>
+                                                                <th className="text-right py-2 px-2">Thành tiền</th>
                                                             </tr>
-                                                        );})}
-                                                    </tbody>
-                                                    <tfoot>
-                                                        <tr className="font-black text-xs">
-                                                            <td colSpan={5} className="py-2 px-2 text-right text-slate-600">TỔNG:</td>
-                                                            <td className="py-2 px-2 text-right text-slate-800">{fmt(po.totalAmount)} đ</td>
-                                                        </tr>
-                                                    </tfoot>
-                                                </table>
-                                                {po.note && <div className="mt-2 px-2 text-[10px] text-slate-400 italic">Ghi chú: {po.note}</div>}
-                                                {(canManageTab || canRunRestrictedPoActions) && (
-                                                    <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
-                                                        <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Thao tác phiếu</div>
-                                                        <div className="flex flex-wrap gap-2">
-                                                            {canManageTab && po.status === 'draft' && (
-                                                                <button onClick={() => updatePoStatus(po.id, 'sent')} className="px-3 py-2 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-xs font-black hover:bg-amber-100 flex items-center gap-1.5">
-                                                                    <Send size={14} /> Gửi đơn
-                                                                </button>
-                                                            )}
-                                                            {canManageTab && po.status === 'sent' && (
-                                                                <button onClick={() => updatePoStatus(po.id, 'confirmed')} className="px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-black hover:bg-emerald-100 flex items-center gap-1.5">
-                                                                    <CheckCircle2 size={14} /> Duyệt PO
-                                                                </button>
-                                                            )}
-                                                            {canManageTab && (po.status === 'sent' || po.status === 'confirmed') && (
-                                                                <button onClick={() => updatePoStatus(po.id, 'draft')} className="px-3 py-2 rounded-lg bg-slate-50 text-slate-700 border border-slate-200 text-xs font-black hover:bg-slate-100 flex items-center gap-1.5">
-                                                                    <RefreshCcw size={14} /> Huỷ duyệt
-                                                                </button>
-                                                            )}
-                                                            {canManageTab && po.status === 'confirmed' && (
-                                                                <button onClick={() => updatePoStatus(po.id, 'in_transit')} className="px-3 py-2 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-black hover:bg-indigo-100 flex items-center gap-1.5">
-                                                                    <Truck size={14} /> Đánh dấu đang giao
-                                                                </button>
-                                                            )}
-                                                            {canRunRestrictedPoActions && po.status === 'in_transit' && (
-                                                                <button onClick={() => updatePoStatus(po.id, 'returned')} className="px-3 py-2 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-xs font-black hover:bg-rose-100 flex items-center gap-1.5">
-                                                                    <RefreshCcw size={14} /> Trả lại / hoàn hàng
-                                                                </button>
-                                                            )}
-                                                            {canManageTab && po.status === 'partial' && getPoReceiptStats(po).remainingQty > 0 && (
-                                                                <button onClick={() => updatePoStatus(po.id, 'delivered')} className="px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-black hover:bg-emerald-100 flex items-center gap-1.5">
-                                                                    <CheckCircle2 size={14} /> Xác nhận kết thúc đơn hàng
-                                                                </button>
-                                                            )}
-                                                            {canManageTab && po.status === 'delivered' && (
-                                                                <button onClick={() => updatePoStatus(po.id, 'closed')} className="px-3 py-2 rounded-lg bg-slate-50 text-slate-700 border border-slate-200 text-xs font-black hover:bg-slate-100 flex items-center gap-1.5">
-                                                                    <FileText size={14} /> Đóng PO
-                                                                </button>
-                                                            )}
-                                                            {canRunRestrictedPoActions && po.status === 'closed' && (
-                                                                <button onClick={() => updatePoStatus(po.id, 'returned')} className="px-3 py-2 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-xs font-black hover:bg-rose-100 flex items-center gap-1.5">
-                                                                    <RefreshCcw size={14} /> Hoàn trả PO đã đóng
-                                                                </button>
-                                                            )}
-                                                            {canRunRestrictedPoActions && !['cancelled', 'closed', 'delivered', 'returned'].includes(po.status) && (
-                                                                <button onClick={() => updatePoStatus(po.id, 'cancelled')} className="px-3 py-2 rounded-lg bg-red-50 text-red-700 border border-red-200 text-xs font-black hover:bg-red-100 flex items-center gap-1.5">
-                                                                    <Ban size={14} /> Huỷ PO
-                                                                </button>
-                                                            )}
-                                                            {['cancelled', 'returned'].includes(po.status) && (
-                                                                <span className="px-3 py-2 rounded-lg bg-slate-50 text-slate-400 border border-slate-200 text-xs font-bold">
-                                                                    Không còn thao tác trạng thái
-                                                                </span>
-                                                            )}
+                                                        </thead>
+                                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700/40">
+                                                            {po.items.map((item, i) => {
+                                                                const work = item.workBoqItemId ? workBoqMap.get(item.workBoqItemId) : undefined;
+                                                                return (
+                                                                <tr key={i}>
+                                                                    <td className="py-1.5 px-2 font-bold text-slate-700">
+                                                                        {item.name}
+                                                                        {item.sku && <div className="text-[9px] font-mono text-slate-400">{item.sku}</div>}
+                                                                        <div className="flex flex-wrap gap-1 mt-1">
+                                                                            {item.requestCode && <span className="px-1.5 py-0.5 rounded border border-amber-100 bg-amber-50 text-[9px] text-amber-700">YC {item.requestCode}</span>}
+                                                                            {(item.workBoqItemName || work?.name) && <span className="px-1.5 py-0.5 rounded border border-blue-100 bg-blue-50 text-[9px] text-blue-700">{work?.wbsCode ? `${work.wbsCode} - ` : ''}{item.workBoqItemName || work?.name}</span>}
+                                                                            {item.materialBudgetItemName && <span className="px-1.5 py-0.5 rounded border border-emerald-100 bg-emerald-50 text-[9px] text-emerald-700">{item.materialBudgetItemName}</span>}
+                                                                            {Number(item.overBudgetQtySnapshot || 0) > 0 && <span className="px-1.5 py-0.5 rounded border border-orange-100 bg-orange-50 text-[9px] text-orange-700">Vượt {Number(item.overBudgetQtySnapshot || 0).toLocaleString('vi-VN')} {item.unit}</span>}
+                                                                        </div>
+                                                                        {(item.neededDate || item.note) && <div className="text-[9px] text-slate-400 font-medium mt-0.5">{item.neededDate || ''}{item.neededDate && item.note ? ' • ' : ''}{item.note || ''}</div>}
+                                                                        {item.overBudgetReason && <div className="text-[9px] text-orange-600 font-medium">Lý do: {item.overBudgetReason}</div>}
+                                                                        {item.pricingMode && item.pricingMode !== 'standard' && (
+                                                                            <div className="text-[9px] text-violet-600 font-medium mt-0.5">
+                                                                                Tính giá: {formatPricingFormula(item)}
+                                                                            </div>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="py-1.5 px-2 text-center text-slate-500">{item.unit}</td>
+                                                                    {uniqueSpecKeys.map(k => {
+                                                                        const val = item.specs?.[k]?.value;
+                                                                        return (
+                                                                            <td key={k} className="py-1.5 px-2 text-center text-slate-600 font-medium">
+                                                                                {val !== undefined && val !== null && val !== '' ? val : '—'}
+                                                                            </td>
+                                                                        );
+                                                                    })}
+                                                                    <td className="py-1.5 px-2 text-right text-slate-600">{item.qty.toLocaleString()}</td>
+                                                                    <td className="py-1.5 px-2 text-right text-emerald-600 font-bold">{(item.receivedQty || 0).toLocaleString()}</td>
+                                                                    <td className="py-1.5 px-2 text-right text-slate-500">{fmt(item.unitPrice)}</td>
+                                                                    <td className="py-1.5 px-2 text-right font-bold text-slate-700">{fmt(calculateLineTotal(item))} đ</td>
+                                                                </tr>
+                                                            );})}
+                                                        </tbody>
+                                                        <tfoot>
+                                                            <tr className="font-black text-xs">
+                                                                <td colSpan={5 + uniqueSpecKeys.length} className="py-2 px-2 text-right text-slate-600">TỔNG:</td>
+                                                                <td className="py-2 px-2 text-right text-slate-800">{fmt(po.totalAmount)} đ</td>
+                                                            </tr>
+                                                        </tfoot>
+                                                    </table>
+                                                    {po.note && <div className="mt-2 px-2 text-[10px] text-slate-400 italic">Ghi chú: {po.note}</div>}
+                                                    {(canManageTab || canRunRestrictedPoActions) && (
+                                                        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+                                                            <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Thao tác phiếu</div>
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {canManageTab && po.status === 'draft' && (
+                                                                    <button onClick={() => updatePoStatus(po.id, 'sent')} className="px-3 py-2 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-xs font-black hover:bg-amber-100 flex items-center gap-1.5 bg-transparent border-0 cursor-pointer">
+                                                                        <Send size={14} /> Gửi đơn
+                                                                    </button>
+                                                                )}
+                                                                {canManageTab && po.status === 'sent' && (
+                                                                    <button onClick={() => updatePoStatus(po.id, 'confirmed')} className="px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-black hover:bg-emerald-100 flex items-center gap-1.5 bg-transparent border-0 cursor-pointer">
+                                                                        <CheckCircle2 size={14} /> Duyệt PO
+                                                                    </button>
+                                                                )}
+                                                                {canManageTab && (po.status === 'sent' || po.status === 'confirmed') && (
+                                                                    <button onClick={() => updatePoStatus(po.id, 'draft')} className="px-3 py-2 rounded-lg bg-slate-50 text-slate-700 border border-slate-200 text-xs font-black hover:bg-slate-100 flex items-center gap-1.5 bg-transparent border-0 cursor-pointer">
+                                                                        <RefreshCcw size={14} /> Huỷ duyệt
+                                                                    </button>
+                                                                )}
+                                                                {canManageTab && po.status === 'confirmed' && (
+                                                                    <button onClick={() => updatePoStatus(po.id, 'in_transit')} className="px-3 py-2 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-black hover:bg-indigo-100 flex items-center gap-1.5 bg-transparent border-0 cursor-pointer">
+                                                                        <Truck size={14} /> Đánh dấu đang giao
+                                                                    </button>
+                                                                )}
+                                                                {canRunRestrictedPoActions && po.status === 'in_transit' && (
+                                                                    <button onClick={() => updatePoStatus(po.id, 'returned')} className="px-3 py-2 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-xs font-black hover:bg-rose-100 flex items-center gap-1.5 bg-transparent border-0 cursor-pointer">
+                                                                        <RefreshCcw size={14} /> Trả lại / hoàn hàng
+                                                                    </button>
+                                                                )}
+                                                                {canManageTab && po.status === 'partial' && getPoReceiptStats(po).remainingQty > 0 && (
+                                                                    <button onClick={() => updatePoStatus(po.id, 'delivered')} className="px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-black hover:bg-emerald-100 flex items-center gap-1.5 bg-transparent border-0 cursor-pointer">
+                                                                        <CheckCircle2 size={14} /> Xác nhận kết thúc đơn hàng
+                                                                    </button>
+                                                                )}
+                                                                {canManageTab && po.status === 'delivered' && (
+                                                                    <button onClick={() => updatePoStatus(po.id, 'closed')} className="px-3 py-2 rounded-lg bg-slate-50 text-slate-700 border border-slate-200 text-xs font-black hover:bg-slate-100 flex items-center gap-1.5 bg-transparent border-0 cursor-pointer">
+                                                                        <FileText size={14} /> Đóng PO
+                                                                    </button>
+                                                                )}
+                                                                {canRunRestrictedPoActions && po.status === 'closed' && (
+                                                                    <button onClick={() => updatePoStatus(po.id, 'returned')} className="px-3 py-2 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-xs font-black hover:bg-rose-100 flex items-center gap-1.5 bg-transparent border-0 cursor-pointer">
+                                                                        <RefreshCcw size={14} /> Hoàn trả PO đã đóng
+                                                                    </button>
+                                                                )}
+                                                                {canRunRestrictedPoActions && !['cancelled', 'closed', 'delivered', 'returned'].includes(po.status) && (
+                                                                    <button onClick={() => updatePoStatus(po.id, 'cancelled')} className="px-3 py-2 rounded-lg bg-red-50 text-red-700 border border-red-200 text-xs font-black hover:bg-red-100 flex items-center gap-1.5 bg-transparent border-0 cursor-pointer">
+                                                                        <Ban size={14} /> Huỷ PO
+                                                                    </button>
+                                                                )}
+                                                                {['cancelled', 'returned'].includes(po.status) && (
+                                                                    <span className="px-3 py-2 rounded-lg bg-slate-50 text-slate-400 border border-slate-200 text-xs font-bold">
+                                                                        Không còn thao tác trạng thái
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                 );
                             })}
@@ -2155,29 +2300,219 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                 type="date"
                                                 value={item.neededDate || ''}
                                                 onChange={e => updatePoItem(i, { neededDate: e.target.value })}
-                                                className="col-span-6 md:col-span-2 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                                className="col-span-6 md:col-span-2 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-white"
                                             />
                                             <input
                                                 value={item.note || ''}
                                                 onChange={e => updatePoItem(i, { note: e.target.value })}
                                                 placeholder="Ghi chú"
-                                                className="col-span-5 md:col-span-9 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                                className="col-span-2 md:col-span-7 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-white"
                                             />
                                             <button
+                                                type="button"
+                                                onClick={() => toggleSpecsPanel(i)}
+                                                className={`col-span-3 md:col-span-2 h-9 rounded-lg text-xs font-bold border transition-colors flex items-center justify-center gap-1 ${
+                                                    (item.pricingMode && item.pricingMode !== 'standard') || (item.specs && Object.keys(item.specs).length > 0)
+                                                        ? 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'
+                                                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                                }`}
+                                            >
+                                                📐 QC {expandedSpecsIdx.has(i) ? '▲' : '▼'}
+                                            </button>
+                                            <button
                                                 onClick={() => setPItems(pItems.length > 1 ? pItems.filter((_, j) => j !== i) : [createEmptyPoItem()])}
-                                                className="col-span-1 h-9 rounded-lg text-red-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center"
+                                                className="col-span-1 h-9 rounded-lg text-red-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center bg-transparent border-0 cursor-pointer"
                                             >
                                                 <X size={14} />
                                             </button>
-                                            {(item.isManualItem || item.requestCode || item.materialBudgetItemName || item.workBoqItemName || rowWork?.name || overBudgetQty > 0) && (
+                                            {(item.isManualItem || item.requestCode || item.materialBudgetItemName || item.workBoqItemName || rowWork?.name || overBudgetQty > 0 || (item.specs && Object.keys(item.specs).length > 0)) && (
                                                 <div className="col-span-12 flex flex-wrap gap-1">
                                                     {item.isManualItem && <span className="px-1.5 py-0.5 rounded border border-rose-100 bg-rose-50 text-[9px] font-bold text-rose-700">Cần cấp mã vật tư trước</span>}
                                                     {item.requestCode && <span className="px-1.5 py-0.5 rounded border border-amber-100 bg-amber-50 text-[9px] font-bold text-amber-700">YC {item.requestCode}</span>}
                                                     {(item.workBoqItemName || rowWork?.name) && <span className="px-1.5 py-0.5 rounded border border-blue-100 bg-blue-50 text-[9px] font-bold text-blue-700">{rowWork?.wbsCode ? `${rowWork.wbsCode} - ` : ''}{item.workBoqItemName || rowWork?.name}</span>}
                                                     {item.materialBudgetItemName && <span className="px-1.5 py-0.5 rounded border border-emerald-100 bg-emerald-50 text-[9px] font-bold text-emerald-700">{item.materialBudgetItemName}</span>}
                                                     {overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded border border-orange-100 bg-orange-50 text-[9px] font-bold text-orange-700">Vượt {overBudgetQty.toLocaleString('vi-VN')} {previewLine.unit}</span>}
+                                                    {formatSpecsSummary(item).map((badge, bIdx) => (
+                                                        <span key={bIdx} className="px-1.5 py-0.5 rounded border border-violet-100 bg-violet-50 text-[9px] font-bold text-violet-700">
+                                                            {badge}
+                                                        </span>
+                                                    ))}
                                                 </div>
                                             )}
+
+                                            {/* Specs Form Panel */}
+                                            {expandedSpecsIdx.has(i) && (
+                                                <div className="col-span-12 mt-2 p-3 bg-white border border-slate-200 rounded-xl space-y-3">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase">Mẫu quy cách nhanh:</span>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {Object.entries(SPEC_PRESETS).map(([key, preset]) => {
+                                                                const isPresetActive = item.pricingMode === preset.pricingMode && item.specs && Object.keys(item.specs).every(k => preset.fields.some(f => f.key === k));
+                                                                return (
+                                                                    <button
+                                                                        key={key}
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            const nextSpecs: Record<string, SpecValue> = {};
+                                                                            preset.fields.forEach(f => {
+                                                                                nextSpecs[f.key] = { value: '', label: f.label, unit: f.unit };
+                                                                            });
+                                                                            updatePoItem(i, {
+                                                                                pricingMode: preset.pricingMode,
+                                                                                specs: nextSpecs,
+                                                                                computedArea: undefined,
+                                                                                computedWeight: undefined
+                                                                            });
+                                                                        }}
+                                                                        className={`px-2 py-1 rounded text-[10px] font-semibold border ${
+                                                                            isPresetActive
+                                                                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                                                        }`}
+                                                                    >
+                                                                        {preset.label}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-12 gap-2">
+                                                        <div className="col-span-12 md:col-span-6">
+                                                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Phương thức tính giá</label>
+                                                            <select
+                                                                value={item.pricingMode || 'standard'}
+                                                                onChange={e => {
+                                                                    const mode = e.target.value as PricingMode;
+                                                                    updatePoItem(i, {
+                                                                        pricingMode: mode,
+                                                                        computedArea: mode === 'by_area' ? calculateArea(item.specs) : undefined,
+                                                                        computedWeight: mode === 'by_weight' ? getSpecNumeric(item.specs, 'weight') : undefined,
+                                                                    });
+                                                                }}
+                                                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-700"
+                                                            >
+                                                                <option value="standard">Tiêu chuẩn (SL × Đơn giá)</option>
+                                                                <option value="by_area">Theo diện tích (Rộng × Cao × SL × Đơn giá/m²)</option>
+                                                                <option value="by_length">Theo chiều dài (Dài × SL × Đơn giá/m)</option>
+                                                                <option value="by_weight">Theo trọng lượng (Trọng lượng × SL × Đơn giá/kg)</option>
+                                                                <option value="by_volume">Theo thể tích (Rộng × Cao × Dài × SL × Đơn giá/m³)</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+
+                                                    {item.specs && Object.keys(item.specs).length > 0 && (
+                                                        <div className="grid grid-cols-12 gap-2 mt-2 pt-2 border-t border-slate-100">
+                                                            {Object.entries(item.specs).map(([key, specVal]) => {
+                                                                const isText = DEFAULT_SPEC_METADATA[key]?.unit === '';
+                                                                return (
+                                                                    <div key={key} className="col-span-6 md:col-span-3">
+                                                                        <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                                                                            {specVal.label || key} {specVal.unit ? `(${specVal.unit})` : ''}
+                                                                        </label>
+                                                                        <div className="relative flex items-center">
+                                                                            <input
+                                                                                type={isText ? 'text' : 'number'}
+                                                                                value={specVal.value ?? ''}
+                                                                                onChange={e => {
+                                                                                    const val = e.target.value;
+                                                                                    const nextSpecs = { ...(item.specs || {}) };
+                                                                                    nextSpecs[key] = {
+                                                                                        ...specVal,
+                                                                                        value: isText ? val : (Number(val) || 0)
+                                                                                    };
+                                                                                    const area = item.pricingMode === 'by_area' ? calculateArea(nextSpecs) : undefined;
+                                                                                    const weight = item.pricingMode === 'by_weight' ? getSpecNumeric(nextSpecs, 'weight') : undefined;
+                                                                                    updatePoItem(i, {
+                                                                                        specs: nextSpecs,
+                                                                                        computedArea: area,
+                                                                                        computedWeight: weight
+                                                                                    });
+                                                                                }}
+                                                                                placeholder="Nhập..."
+                                                                                className="w-full pl-2 pr-6 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-700"
+                                                                            />
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    const nextSpecs = { ...(item.specs || {}) };
+                                                                                    delete nextSpecs[key];
+                                                                                    updatePoItem(i, { specs: nextSpecs });
+                                                                                }}
+                                                                                className="absolute right-1 top-1 w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500 bg-transparent border-0 cursor-pointer"
+                                                                                title="Xoá thuộc tính này"
+                                                                            >
+                                                                                <X size={10} />
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+
+                                                    <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-slate-100">
+                                                        <span className="text-[9px] font-bold text-slate-400 uppercase">Thêm nhanh thuộc tính khác:</span>
+                                                        {Object.entries(DEFAULT_SPEC_METADATA)
+                                                            .filter(([k]) => !item.specs || !item.specs[k])
+                                                            .slice(0, 8)
+                                                            .map(([k, meta]) => (
+                                                                <button
+                                                                    key={k}
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        const nextSpecs = { ...(item.specs || {}) };
+                                                                        nextSpecs[k] = { value: '', label: meta.label, unit: meta.unit };
+                                                                        updatePoItem(i, { specs: nextSpecs });
+                                                                    }}
+                                                                    className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-[9px] text-slate-600 font-semibold border-0 cursor-pointer"
+                                                                >
+                                                                    + {meta.label}
+                                                                </button>
+                                                            ))}
+                                                    </div>
+
+                                                    <div className="mt-2.5 p-2 bg-slate-50 border border-slate-150 rounded-lg text-xs space-y-1">
+                                                        {item.pricingMode === 'by_area' && (
+                                                            <div className="text-slate-600">
+                                                                📐 Diện tích tính toán: <span className="font-bold text-slate-800">{calculateArea(item.specs)} m²</span>
+                                                                {item.specs?.width?.value && item.specs?.height?.value && (
+                                                                    <span className="text-[10px] text-slate-400 ml-1">
+                                                                        (tính từ {item.specs.width.value} × {item.specs.height.value} mm)
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {item.pricingMode === 'by_length' && (
+                                                            <div className="text-slate-600">
+                                                                📐 Chiều dài tính toán: <span className="font-bold text-slate-800">{(getSpecNumeric(item.specs, 'length') / 1000)} m</span>
+                                                                {item.specs?.length?.value && (
+                                                                    <span className="text-[10px] text-slate-400 ml-1">
+                                                                        (tính từ {item.specs.length.value} mm)
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {item.pricingMode === 'by_weight' && (
+                                                            <div className="text-slate-600">
+                                                                📐 Trọng lượng tính toán: <span className="font-bold text-slate-800">{getSpecNumeric(item.specs, 'weight')} kg</span>
+                                                            </div>
+                                                        )}
+                                                        {item.pricingMode === 'by_volume' && (
+                                                            <div className="text-slate-600">
+                                                                📐 Thể tích tính toán: <span className="font-bold text-slate-800">{calculateVolume(item.specs)} m³</span>
+                                                            </div>
+                                                        )}
+                                                        <div className="text-blue-700 font-bold flex flex-wrap items-center justify-between">
+                                                            <span>Công thức & Thành tiền tạm tính:</span>
+                                                            <span>
+                                                                {formatPricingFormula(item)} = <span className="text-sm font-black underline">{calculateLineTotal(item).toLocaleString('vi-VN')} đ</span>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
                                             {overBudgetQty > 0 && pSourceMode !== 'proactive_stock' && (
                                                 <input
                                                     value={item.overBudgetReason || ''}

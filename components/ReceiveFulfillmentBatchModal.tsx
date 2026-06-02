@@ -6,6 +6,7 @@ import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { getRequestLineId, materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
 import { canReceiveMaterialRequest, isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../lib/wmsPermissions';
+import { parseQuantityInput, sanitizeQuantityInput } from '../lib/quantityInput';
 
 interface ReceiveFulfillmentBatchModalProps {
   isOpen: boolean;
@@ -51,7 +52,7 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
   const canSubmit = canReceive && batch.status === 'issued';
   const hasInvalidQty = batch.lines.some(line => {
     const draft = receiveLines.find(item => item.lineId === line.id);
-    const qty = Number(draft?.qty || 0);
+    const qty = parseQuantityInput(draft?.qty || 0);
     return qty < 0 || qty > Number(line.issuedQty || 0);
   });
 
@@ -67,6 +68,16 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
 
   const updateReceiveLine = (lineId: string, patch: Partial<ReceiveLineDraft>) => {
     setReceiveLines(prev => prev.map(line => line.lineId === lineId ? { ...line, ...patch } : line));
+  };
+
+  const updateReceiveQuantity = (lineId: string, rawValue: string, maxQty: number) => {
+    setReceiveLines(prev => prev.map(line => line.lineId === lineId ? {
+      ...line,
+      qty: sanitizeQuantityInput(rawValue, {
+        max: maxQty,
+        previousValue: line.qty,
+      }),
+    } : line));
   };
 
   const handleConfirm = async () => {
@@ -85,7 +96,7 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
         allowOverCommit: user.role === Role.ADMIN,
         lines: receiveLines.map(line => ({
           lineId: line.lineId,
-          receivedQty: Number(line.qty || 0),
+          receivedQty: parseQuantityInput(line.qty) || 0,
           varianceReason: line.reason.trim() || undefined,
         })),
       });
@@ -104,7 +115,7 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
       toast.success(
         receiveLines.some(line => {
           const batchLine = batch.lines.find(item => item.id === line.lineId);
-          return Number(line.qty || 0) !== Number(batchLine?.issuedQty || 0);
+          return parseQuantityInput(line.qty) !== Number(batchLine?.issuedQty || 0);
         }) ? 'Đã xác nhận nhận lệch' : 'Đã xác nhận nhập kho nội bộ',
         nextStatus === RequestStatus.COMPLETED ? 'Phiếu đề xuất đã nhận đủ số lượng yêu cầu.' : 'Đã cập nhật tồn kho và lũy kế thực nhận cho phiếu.',
       );
@@ -155,7 +166,7 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
               <tbody className="divide-y divide-slate-100">
                 {batch.lines.map(line => {
                   const draft = receiveLines.find(item => item.lineId === line.id);
-                  const qty = Number(draft?.qty || 0);
+                  const qty = parseQuantityInput(draft?.qty || 0);
                   const invalid = qty < 0 || qty > Number(line.issuedQty || 0);
                   return (
                     <tr key={line.id}>
@@ -163,12 +174,11 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
                       <td className="p-4 text-right font-black text-indigo-600 whitespace-nowrap">{Number(line.issuedQty || 0).toLocaleString('vi-VN')} {line.unit || ''}</td>
                       <td className="p-4">
                         <input
-                          type="number"
-                          min={0}
-                          max={line.issuedQty}
+                          type="text"
+                          inputMode="decimal"
                           disabled={!canSubmit || saving}
                           value={draft?.qty || '0'}
-                          onChange={event => updateReceiveLine(line.id, { qty: event.target.value })}
+                          onChange={event => updateReceiveQuantity(line.id, event.target.value, Number(line.issuedQty || 0))}
                           className={`w-full px-3 py-2 rounded-xl border text-center font-black outline-none focus:ring-2 ${invalid ? 'border-red-300 bg-red-50 text-red-600 focus:ring-red-200' : 'border-slate-200 focus:ring-emerald-200'}`}
                         />
                       </td>

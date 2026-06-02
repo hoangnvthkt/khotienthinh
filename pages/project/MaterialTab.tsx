@@ -168,6 +168,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const boqImportRef = useRef<HTMLInputElement>(null);
     const loadedBoqScopeRef = useRef<string | null>(null);
     const [projectRequests, setProjectRequests] = useState<MaterialRequest[]>([]);
+    const [projectRequestsLoaded, setProjectRequestsLoaded] = useState(false);
     const [canSubmitProjectRequest, setCanSubmitProjectRequest] = useState(false);
     const [canApproveProjectRequest, setCanApproveProjectRequest] = useState(false);
     const [requestEventsByRequest, setRequestEventsByRequest] = useState<Record<string, MaterialRequestEvent[]>>({});
@@ -225,17 +226,23 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const loadProjectRequests = useCallback(async () => {
         if (!projectId) {
             setProjectRequests([]);
+            setProjectRequestsLoaded(true);
             return;
         }
         try {
-            setProjectRequests(await materialRequestService.listByProject(projectId));
+            const rows = await materialRequestService.listByProject(projectId);
+            setProjectRequests(rows);
         } catch (error: any) {
             console.error('Failed to load project material requests', error);
             toast.error('Không tải được phiếu vật tư dự án', error?.message || 'Vui lòng thử lại.');
+        } finally {
+            setProjectRequestsLoaded(true);
         }
     }, [projectId]);
 
     useEffect(() => {
+        setProjectRequests([]);
+        setProjectRequestsLoaded(false);
         void loadProjectRequests();
     }, [loadProjectRequests]);
 
@@ -245,6 +252,31 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         setRequestModalInitialAction(undefined);
         void loadProjectRequests();
     };
+
+    const handleRequestDeleted = useCallback((requestId: string) => {
+        setProjectRequests(prev => prev.filter(request => request.id !== requestId));
+        setSelectedRequest(prev => prev?.id === requestId ? undefined : prev);
+        setRequestEventsByRequest(prev => {
+            const next = { ...prev };
+            delete next[requestId];
+            return next;
+        });
+        setRequestFulfillmentSummaries(prev => {
+            const next = { ...prev };
+            delete next[requestId];
+            return next;
+        });
+        setRequestFulfillmentBatchCounts(prev => {
+            const next = { ...prev };
+            delete next[requestId];
+            return next;
+        });
+        setRequestFulfillmentBatches(prev => {
+            const next = { ...prev };
+            delete next[requestId];
+            return next;
+        });
+    }, []);
 
     const defaultSiteWarehouseId = useMemo(() => {
         if (siteWarehouseId) return siteWarehouseId;
@@ -270,13 +302,15 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     // Material Requests — project screens only show rows explicitly tied to this project.
     const requests = useMemo(() => {
         if (!projectId) return [];
+        const scopedProjectRequests = projectRequests.filter(request => request.requestOrigin === 'project' && request.projectId === projectId);
+        if (projectRequestsLoaded) return scopedProjectRequests;
         const byId = new Map<string, MaterialRequest>();
         allRequests
             .filter(request => request.requestOrigin === 'project' && request.projectId === projectId)
             .forEach(request => byId.set(request.id, request));
-        projectRequests.forEach(request => byId.set(request.id, request));
+        scopedProjectRequests.forEach(request => byId.set(request.id, request));
         return [...byId.values()];
-    }, [allRequests, projectId, projectRequests]);
+    }, [allRequests, projectId, projectRequests, projectRequestsLoaded]);
 
     const canCreateMaterialRequest = canManageRequest || canSubmitProjectRequest || user.role === Role.ADMIN;
 
@@ -2091,6 +2125,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     canProcessProjectWorkflow={selectedRequestLive ? canActOnProjectRequest(selectedRequestLive) : false}
                     onProjectWorkflowApprove={handleProjectWorkflowApproveFromModal}
                     onProjectWorkflowReturn={handleProjectWorkflowReturnFromModal}
+                    onDeleted={handleRequestDeleted}
                 />
             )}
 
