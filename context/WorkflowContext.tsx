@@ -192,10 +192,11 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const getWorkflowNodeRecipientIds = useCallback(async (
         node?: WorkflowNode,
-        stepAssignees?: Record<string, string>,
+        stepAssignees?: Record<string, string | string[]>,
     ): Promise<string[]> => {
         if (!node) return [];
         const assignedOverride = stepAssignees?.[node.id];
+        if (Array.isArray(assignedOverride)) return assignedOverride.filter(Boolean);
         if (assignedOverride) return [assignedOverride];
         if (node.config?.assigneeUserId) return [node.config.assigneeUserId];
         return getWorkflowRoleRecipients(node.config?.assigneeRole);

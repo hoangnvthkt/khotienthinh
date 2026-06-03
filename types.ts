@@ -231,7 +231,9 @@ export interface ProjectStaffPermission {
 
 export interface ProjectSubmissionTarget {
   userId: string;
+  userIds?: string[];
   name: string;
+  names?: string[];
   permissionCode?: string;
   note?: string;
 }
@@ -249,6 +251,9 @@ export interface ProjectSubmissionFields {
   workflowStepDueAt?: string | null;
   workflowStepSlaHours?: number | null;
   workflowStepActorUserId?: string | null;
+  workflowInstanceId?: string | null;
+  workflowSubjectId?: string | null;
+  workflowTemplateId?: string | null;
 }
 
 export type MaterialRequestWorkflowStep =
@@ -2018,6 +2023,57 @@ export enum WorkflowInstanceAction {
 
 export type CustomFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'file';
 
+export type ProjectWorkflowSubjectType = 'material_request';
+export type ProjectWorkflowSubjectStatus = 'RUNNING' | 'RETURNED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED';
+export type WorkflowStepAssignmentStatus = 'PENDING' | 'APPROVED' | 'RETURNED' | 'REJECTED' | 'SKIPPED';
+export type ProjectWorkflowAction = 'approve' | 'return' | 'reject' | 'resubmit' | 'reassign';
+export type WorkflowParticipantRole = 'ADMIN' | 'WATCHER' | 'CREATOR' | 'ASSIGNEE';
+export type WorkflowApprovalPolicy = 'ANY_ONE';
+export type WorkflowAssignmentTargetType = 'user' | 'department' | 'project_permission' | 'creator';
+export type ProjectWorkflowAssignmentMode =
+  | 'select_on_submit'
+  | 'select_on_transition'
+  | 'fixed_user'
+  | 'permission_pool'
+  | 'previous_assignee'
+  | 'creator';
+
+export interface WorkflowAssignmentTarget {
+  type: WorkflowAssignmentTargetType;
+  userId?: string;
+  orgUnitId?: string;
+  permissionCode?: string;
+}
+
+export interface ProjectWorkflowNodeConfig {
+  assigneeRole?: Role;
+  assigneeUserId?: string;
+  formFields?: { name: string; label: string; type: 'text' | 'number' | 'textarea'; required?: boolean }[];
+  slaHours?: number;
+  assignmentMode?: ProjectWorkflowAssignmentMode;
+  approvalPolicy?: WorkflowApprovalPolicy;
+  assignmentTargets?: WorkflowAssignmentTarget[];
+  stepWatcherTargets?: WorkflowAssignmentTarget[];
+  eligiblePermissionCodes?: string[];
+  eligibleRole?: Role | null;
+  returnPolicy?: 'to_creator' | 'previous_step';
+  allowReject?: boolean;
+  allowReassign?: boolean;
+}
+
+export interface WorkflowRuntimeNode {
+  id: string;
+  workflowInstanceId: string;
+  templateVersionId?: string | null;
+  templateNodeId?: string | null;
+  type: WorkflowNodeType;
+  label: string;
+  config: ProjectWorkflowNodeConfig;
+  positionX: number;
+  positionY: number;
+  createdAt?: string;
+}
+
 export interface WorkflowCustomField {
   id: string;
   name: string;        // key identifier (e.g., "bo_phan")
@@ -2046,14 +2102,108 @@ export interface WorkflowNode {
   templateId: string;
   type: WorkflowNodeType;
   label: string;
-  config: {
-    assigneeRole?: Role;       // Vai trò phụ trách duyệt bước này
-    assigneeUserId?: string;   // Cụ thể user nào duyệt (ưu tiên hơn role)
-    formFields?: { name: string; label: string; type: 'text' | 'number' | 'textarea'; required?: boolean }[];
-    slaHours?: number;         // Thời gian tối đa xử lý (giờ)
-  };
+  config: ProjectWorkflowNodeConfig;
   positionX: number;
   positionY: number;
+}
+
+export interface ProjectWorkflowSubject {
+  id: string;
+  workflowInstanceId?: string | null;
+  workflowSubjectId?: string | null;
+  workflowTemplateId?: string | null;
+  templateVersionId?: string | null;
+  subjectType: ProjectWorkflowSubjectType;
+  subjectId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  currentAssigneeUserId?: string | null;
+  currentAssigneeUserIds?: string[];
+  currentNodeId?: string | null;
+  currentInstanceNodeId?: string | null;
+  status: ProjectWorkflowSubjectStatus;
+  returnToNodeId?: string | null;
+  returnToAssigneeUserId?: string | null;
+  returnToAssigneeUserIds?: string[];
+  returnedByUserId?: string | null;
+  returnedAt?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  currentNode?: WorkflowNode | null;
+  workflowInstance?: WorkflowInstance | null;
+}
+
+export interface WorkflowStepAssignment {
+  id: string;
+  workflowSubjectId: string;
+  workflowInstanceId?: string | null;
+  nodeId?: string | null;
+  instanceNodeId?: string | null;
+  assigneeUserId?: string | null;
+  assignedBy?: string | null;
+  status: WorkflowStepAssignmentStatus;
+  assignedAt: string;
+  actedAt?: string | null;
+  actionComment?: string | null;
+  returnToNodeId?: string | null;
+  dueAt?: string | null;
+  slaHours?: number | null;
+  assignmentSource?: string | null;
+  assignmentGroupType?: string | null;
+  assignmentGroupId?: string | null;
+  metadata?: Record<string, any>;
+}
+
+export interface ProjectWorkflowActionContext {
+  action: ProjectWorkflowAction;
+  subject: ProjectWorkflowSubject;
+  nextNode?: WorkflowNode | null;
+  assigneeUserId?: string | null;
+  assigneeUserIds?: string[];
+  assigneeNames?: string[];
+  comment?: string;
+}
+
+export interface WorkflowParticipant {
+  id: string;
+  workflowSubjectId: string;
+  workflowInstanceId?: string | null;
+  userId: string;
+  role: WorkflowParticipantRole;
+  source?: string;
+  sourceRef?: string | null;
+  nodeId?: string | null;
+  instanceNodeId?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  isActive: boolean;
+}
+
+export interface ProjectWorkflowRollbackDependencyResult {
+  allowed: boolean;
+  activeCount: number;
+  dependencies: Array<{
+    type: string;
+    id?: string;
+    status: 'active' | 'reversed' | 'cancelled' | 'returned' | 'void' | string;
+    source?: string;
+    relationType?: string;
+  }>;
+}
+
+export interface ProjectWorkflowBinding {
+  id: string;
+  subjectType: ProjectWorkflowSubjectType;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  workflowTemplateId: string;
+  isDefault: boolean;
+  isActive: boolean;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  workflowTemplate?: WorkflowTemplate | null;
 }
 
 export interface WorkflowEdge {
@@ -2067,14 +2217,16 @@ export interface WorkflowEdge {
 export interface WorkflowInstance {
   id: string;
   templateId: string;
+  templateVersionId?: string | null;
   code: string;
   title: string;
   createdBy: string; // user id
   currentNodeId: string | null;
+  currentInstanceNodeId?: string | null;
   status: WorkflowInstanceStatus;
   formData: Record<string, any>;
   watchers: string[];  // user IDs — view + comment only
-  stepAssignees?: Record<string, string>; // node id -> assigned user id for this instance
+  stepAssignees?: Record<string, string | string[]>; // node id -> assigned user id(s)
   createdAt: string;
   updatedAt: string;
 }

@@ -47,7 +47,7 @@ const ProjectSubmissionDialog: React.FC<Props> = ({
   onConfirm,
 }) => {
   const [recipients, setRecipients] = useState<ProjectStaff[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState('');
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -62,7 +62,7 @@ const ProjectSubmissionDialog: React.FC<Props> = ({
       .then(rows => {
         if (!alive) return;
         setRecipients(rows);
-        setSelectedUserId(rows[0]?.userId || '');
+        setSelectedUserIds(rows[0]?.userId ? [rows[0].userId] : []);
       })
       .catch(err => {
         if (!alive) return;
@@ -74,22 +74,33 @@ const ProjectSubmissionDialog: React.FC<Props> = ({
     return () => { alive = false; };
   }, [projectId, constructionSiteId, recipientPermissionCodes.join('|')]);
 
-  const selectedRecipient = useMemo(
-    () => recipients.find(staff => staff.userId === selectedUserId),
-    [recipients, selectedUserId],
+  const selectedRecipients = useMemo(
+    () => selectedUserIds
+      .map(userId => recipients.find(staff => staff.userId === userId))
+      .filter(Boolean) as ProjectStaff[],
+    [recipients, selectedUserIds],
   );
 
+  const toggleRecipient = (userId: string) => {
+    setSelectedUserIds(prev => prev.includes(userId)
+      ? prev.filter(id => id !== userId)
+      : [...prev, userId]);
+  };
+
   const submit = async () => {
-    if (!selectedRecipient) {
-      setError('Cần chọn người nhận trước khi gửi.');
+    if (selectedRecipients.length === 0) {
+      setError('Cần chọn ít nhất một người nhận trước khi gửi.');
       return;
     }
+    const firstRecipient = selectedRecipients[0];
     setSubmitting(true);
     setError(null);
     try {
       await onConfirm({
-        userId: selectedRecipient.userId,
-        name: selectedRecipient.userName || selectedRecipient.userId,
+        userId: firstRecipient.userId,
+        userIds: selectedRecipients.map(staff => staff.userId),
+        name: firstRecipient.userName || firstRecipient.userId,
+        names: selectedRecipients.map(staff => staff.userName || staff.userId),
         permissionCode: recipientPermissionCodes[0],
         note: note.trim() || undefined,
       });
@@ -136,7 +147,7 @@ const ProjectSubmissionDialog: React.FC<Props> = ({
                 </div>
               </div>
               <span className="shrink-0 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">
-                {recipients.length} người
+                {selectedUserIds.length}/{recipients.length} người
               </span>
             </div>
 
@@ -150,11 +161,11 @@ const ProjectSubmissionDialog: React.FC<Props> = ({
               <div className="max-h-56 divide-y divide-slate-100 overflow-y-auto">
                 {loading && <div className="px-3 py-4 text-center text-xs font-bold text-slate-400">Đang tải người nhận...</div>}
                 {!loading && recipients.map(staff => {
-                  const checked = selectedUserId === staff.userId;
+                  const checked = selectedUserIds.includes(staff.userId);
                   return (
                     <button
                       key={staff.id}
-                      onClick={() => setSelectedUserId(staff.userId)}
+                      onClick={() => toggleRecipient(staff.userId)}
                       className={`grid w-full grid-cols-[2.5rem_1.4fr_1fr_1.4fr] items-center px-3 py-2 text-left text-xs transition-colors ${checked ? 'bg-amber-50' : 'hover:bg-slate-50'}`}
                     >
                       <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${checked ? 'border-amber-500 bg-amber-500 text-white' : 'border-slate-200 text-transparent'}`}>

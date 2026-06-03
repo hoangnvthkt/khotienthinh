@@ -9,7 +9,7 @@ import {
     FileSpreadsheet, GitBranch, ListTree, MinusCircle
 } from 'lucide-react';
 import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate } from '../../types';
+import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowSubject, WorkflowNodeType, WorkflowStepAssignment } from '../../types';
 import { boqService, taskService, workBoqService, WorkBoqSyncPreview, poService } from '../../lib/projectService';
 import { materialRequestFulfillmentService, getRequestLineId } from '../../lib/materialRequestFulfillmentService';
 import { useApp } from '../../context/AppContext';
@@ -26,6 +26,8 @@ import { PROJECT_MATERIAL_TAB_PERMISSIONS, type ProjectMaterialTabKey, type Proj
 import { materialRequestService } from '../../lib/materialRequestService';
 import { projectSubmissionService } from '../../lib/projectSubmissionService';
 import { projectStaffService } from '../../lib/projectStaffService';
+import { projectWorkflowService } from '../../lib/projectWorkflowService';
+import { useWorkflow } from '../../context/WorkflowContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../../lib/wmsPermissions';
 import { getMaterialPlanningScopeKey, materialPlanningCurveService, materialPlanningRuleService } from '../../lib/projectMaterialPlanningService';
@@ -114,7 +116,8 @@ const formatBoqWriteError = (error: any, fallback = 'Vui lòng thử lại.') =>
 };
 
 const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, siteWarehouseId, canManageTab = true, materialPermissions }) => {
-    const { items: inventoryItems, requests: allRequests, warehouses, users, user, transactions, hrmConstructionSites, loadModuleData } = useApp();
+    const { items: inventoryItems, requests: allRequests, warehouses, users, employees, orgUnits, user, transactions, hrmConstructionSites, loadModuleData, isModuleAdmin } = useApp();
+    const { templates: workflowTemplates, nodes: workflowNodes, edges: workflowEdges } = useWorkflow();
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';
@@ -173,6 +176,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [canApproveProjectRequest, setCanApproveProjectRequest] = useState(false);
     const [requestEventsByRequest, setRequestEventsByRequest] = useState<Record<string, MaterialRequestEvent[]>>({});
     const [requestFulfillmentBatches, setRequestFulfillmentBatches] = useState<Record<string, MaterialRequestFulfillmentBatch[]>>({});
+    const [requestWorkflowSubjects, setRequestWorkflowSubjects] = useState<Record<string, ProjectWorkflowSubject>>({});
+    const [requestWorkflowAssignments, setRequestWorkflowAssignments] = useState<Record<string, WorkflowStepAssignment[]>>({});
     const [submissionTransition, setSubmissionTransition] = useState<{
         request: MaterialRequest;
         toStep: MaterialRequestWorkflowStep;
@@ -181,6 +186,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         title: string;
         subtitle: string;
         recipientHint?: string;
+        recipientPermissionCodes?: string[];
+        dynamicWorkflow?: boolean;
+        nextNodeId?: string | null;
+        nextNodeLabel?: string | null;
+        workflowTemplateId?: string | null;
+        isCompletion?: boolean;
         source?: string;
     } | null>(null);
     const [terminalTransition, setTerminalTransition] = useState<{ request: MaterialRequest; fromStage: MaterialRequestKanbanStage } | null>(null);
@@ -226,12 +237,19 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const loadProjectRequests = useCallback(async () => {
         if (!projectId) {
             setProjectRequests([]);
+            setRequestWorkflowSubjects({});
+            setRequestWorkflowAssignments({});
             setProjectRequestsLoaded(true);
             return;
         }
         try {
             const rows = await materialRequestService.listByProject(projectId);
             setProjectRequests(rows);
+            const subjects = await projectWorkflowService.listSubjectsByMaterialRequestIds(rows.map(row => row.id));
+            setRequestWorkflowSubjects(subjects);
+            const subjectIds = Object.values(subjects).map(subject => subject.id).filter(Boolean);
+            const assignments = await projectWorkflowService.listAssignmentsBySubjectIds(subjectIds);
+            setRequestWorkflowAssignments(assignments);
         } catch (error: any) {
             console.error('Failed to load project material requests', error);
             toast.error('Không tải được phiếu vật tư dự án', error?.message || 'Vui lòng thử lại.');
@@ -254,6 +272,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const handleRequestDeleted = useCallback((requestId: string) => {
+        const deletedWorkflowSubjectId = requestWorkflowSubjects[requestId]?.id;
         setProjectRequests(prev => prev.filter(request => request.id !== requestId));
         setSelectedRequest(prev => prev?.id === requestId ? undefined : prev);
         setRequestEventsByRequest(prev => {
@@ -276,7 +295,19 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             delete next[requestId];
             return next;
         });
-    }, []);
+        setRequestWorkflowSubjects(prev => {
+            const next = { ...prev };
+            delete next[requestId];
+            return next;
+        });
+        if (deletedWorkflowSubjectId) {
+            setRequestWorkflowAssignments(prev => {
+                const next = { ...prev };
+                delete next[deletedWorkflowSubjectId];
+                return next;
+            });
+        }
+    }, [requestWorkflowSubjects]);
 
     const defaultSiteWarehouseId = useMemo(() => {
         if (siteWarehouseId) return siteWarehouseId;
@@ -339,6 +370,49 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         () => new Map(users.map(item => [item.id, item])),
         [users],
     );
+    const workflowNodeById = useMemo(
+        () => new Map(workflowNodes.map(node => [node.id, node])),
+        [workflowNodes],
+    );
+    const workflowEdgesBySource = useMemo(() => {
+        const map = new Map<string, typeof workflowEdges>();
+        workflowEdges.forEach(edge => {
+            map.set(edge.sourceNodeId, [...(map.get(edge.sourceNodeId) || []), edge]);
+        });
+        return map;
+    }, [workflowEdges]);
+    const getRequestWorkflowSubject = useCallback(
+        (request: MaterialRequest) => requestWorkflowSubjects[request.id],
+        [requestWorkflowSubjects],
+    );
+    const getWorkflowNextNode = useCallback((subject?: ProjectWorkflowSubject) => {
+        if (!subject?.currentNodeId) return null;
+        const nextEdge = (workflowEdgesBySource.get(subject.currentNodeId) || [])[0];
+        return nextEdge ? workflowNodeById.get(nextEdge.targetNodeId) || null : null;
+    }, [workflowEdgesBySource, workflowNodeById]);
+    const getWorkflowReturnTargetNode = useCallback((subject?: ProjectWorkflowSubject) => {
+        if (!subject) return null;
+        const targetNodeId = subject.returnToNodeId || subject.currentNodeId;
+        return targetNodeId ? workflowNodeById.get(targetNodeId) || subject.currentNode || null : subject.currentNode || null;
+    }, [workflowNodeById]);
+    const getWorkflowNodePermissionCodes = useCallback((nodeId?: string | null): string[] => {
+        if (!nodeId) return ['approve'];
+        const node = workflowNodeById.get(nodeId);
+        const codes = node?.config?.eligiblePermissionCodes?.filter(Boolean);
+        return codes && codes.length > 0 ? codes : ['approve'];
+    }, [workflowNodeById]);
+    const getWorkflowAssigneeUserIds = useCallback((request: MaterialRequest) => {
+        const subject = getRequestWorkflowSubject(request);
+        if (subject?.currentAssigneeUserIds?.length) return subject.currentAssigneeUserIds;
+        if (subject?.currentAssigneeUserId) return [subject.currentAssigneeUserId];
+        return request.submittedToUserId ? [request.submittedToUserId] : [];
+    }, [getRequestWorkflowSubject]);
+    const isWorkflowTemplateManager = useCallback((request: MaterialRequest) => {
+        const subject = getRequestWorkflowSubject(request);
+        const templateId = request.workflowTemplateId || subject?.workflowInstance?.templateId || null;
+        if (!templateId) return false;
+        return Boolean(workflowTemplates.find(template => template.id === templateId)?.managers?.includes(user.id));
+    }, [getRequestWorkflowSubject, user.id, workflowTemplates]);
 
     // Request Modal state
     const [isReqModalOpen, setReqModalOpen] = useState(false);
@@ -504,7 +578,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     const canActOnProjectRequest = (request: MaterialRequest) =>
         user.role === Role.ADMIN ||
-        (canApproveProjectRequest && request.submittedToUserId === user.id);
+        isModuleAdmin('WF') ||
+        isWorkflowTemplateManager(request) ||
+        (canApproveProjectRequest && getWorkflowAssigneeUserIds(request).includes(user.id));
 
     const hasOverBudgetLines = (request: MaterialRequest) =>
         (request.items || []).some(line => Number((line as any).overBudgetQtySnapshot || 0) > 0);
@@ -598,20 +674,170 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         }
     };
 
+    const performDynamicRequestTransition = async (params: {
+        request: MaterialRequest;
+        action: 'SUBMITTED' | 'APPROVED' | 'RETURNED' | 'REJECTED' | 'RESUBMITTED' | 'REASSIGNED';
+        target?: ProjectSubmissionTarget | null;
+        note?: string | null;
+        templateId?: string | null;
+        metadata?: Record<string, any>;
+    }) => {
+        setTransitioningRequestId(params.request.id);
+        try {
+            let subject: ProjectWorkflowSubject | null = null;
+            const targetUserIds = params.target?.userIds?.length
+                ? params.target.userIds
+                : params.target?.userId
+                    ? [params.target.userId]
+                    : [];
+            if (params.action === 'SUBMITTED') {
+                if (targetUserIds.length === 0) throw new Error('Chưa chọn người xử lý bước đầu.');
+                subject = await projectWorkflowService.startMaterialRequestWorkflowV2({
+                    requestId: params.request.id,
+                    templateId: params.templateId || params.request.workflowTemplateId,
+                    firstAssigneeUserIds: targetUserIds,
+                    comment: params.note || params.target.note,
+                });
+            } else if (params.action === 'RETURNED') {
+                subject = await projectWorkflowService.returnMaterialRequestWorkflow({
+                    requestId: params.request.id,
+                    comment: params.note || '',
+                });
+            } else if (params.action === 'REJECTED') {
+                subject = await projectWorkflowService.rejectMaterialRequestWorkflow({
+                    requestId: params.request.id,
+                    comment: params.note || '',
+                });
+            } else if (params.action === 'RESUBMITTED') {
+                subject = await projectWorkflowService.resubmitMaterialRequestWorkflowV2({
+                    requestId: params.request.id,
+                    assigneeUserIds: targetUserIds.length > 0 ? targetUserIds : null,
+                    comment: params.note || params.target?.note || '',
+                });
+            } else if (params.action === 'REASSIGNED') {
+                if (targetUserIds.length === 0) throw new Error('Chưa chọn người xử lý mới.');
+                subject = await projectWorkflowService.reassignMaterialRequestWorkflowV2({
+                    requestId: params.request.id,
+                    newAssigneeUserIds: targetUserIds,
+                    comment: params.note || params.target.note || '',
+                });
+            } else {
+                subject = await projectWorkflowService.advanceMaterialRequestWorkflowV2({
+                    requestId: params.request.id,
+                    nextAssigneeUserIds: targetUserIds,
+                    comment: params.note || params.target?.note || '',
+                });
+            }
+
+            if (subject) {
+                setRequestWorkflowSubjects(prev => ({ ...prev, [params.request.id]: subject! }));
+                const assignments = await projectWorkflowService.listAssignmentsBySubjectIds([subject.id]);
+                setRequestWorkflowAssignments(prev => ({ ...prev, ...assignments }));
+            }
+            const updated = await materialRequestService.getById(params.request.id);
+            if (updated) upsertProjectRequest(updated);
+            const events = await materialRequestService.listEventsByRequestIds([params.request.id]);
+            setRequestEventsByRequest(prev => ({ ...prev, ...events }));
+
+            if (targetUserIds.length > 0 && updated) {
+                targetUserIds.forEach(targetUserId => {
+                    const targetName = userById.get(targetUserId)?.name || targetUserId;
+                    void projectSubmissionService.notifyTarget({
+                        target: {
+                            userId: targetUserId,
+                            name: targetName,
+                            permissionCode: params.target?.permissionCode,
+                            note: params.target?.note,
+                        },
+                        actorId: user.id,
+                        category: 'material',
+                        title: 'Phiếu vật tư cần xử lý',
+                        message: `Phiếu ${updated.code} đang chờ bạn xử lý.`,
+                        sourceType: 'material_request',
+                        sourceId: updated.id,
+                        constructionSiteId: updated.constructionSiteId || undefined,
+                        link: `/da?projectId=${updated.projectId || ''}&siteId=${updated.constructionSiteId || ''}&tab=material&materialTab=request`,
+                        metadata: { requestId: updated.id, workflowSubjectId: subject?.id, assigneeUserIds: targetUserIds, ...params.metadata },
+                    });
+                });
+            }
+
+            await refreshMaterialRequestWorkflow();
+            toast.success('Đã cập nhật luồng vật tư', `Phiếu ${(updated || params.request).code} đã chuyển bước.`);
+        } catch (error: any) {
+            logApiError('materialTab.dynamicRequestTransition', error);
+            toast.error('Không thể chuyển bước', getApiErrorMessage(error, 'Không cập nhật được workflow động của phiếu vật tư.'));
+            throw error;
+        } finally {
+            setTransitioningRequestId(null);
+        }
+    };
+
     const handleMoveMaterialRequest = (request: MaterialRequest, toStage: MaterialRequestKanbanStage, fromStage: MaterialRequestKanbanStage) => {
         if (!canMoveMaterialRequest(request, toStage, fromStage)) {
             toast.warning('Không thể chuyển bước', 'Bạn không có quyền hoặc bước này không cho phép kéo thả.');
             return;
         }
-        if (toStage === 'site_manager_review') {
+        const dynamicSubject = getRequestWorkflowSubject(request);
+        if (dynamicSubject?.workflowInstanceId && dynamicSubject.status === 'RUNNING' && ['site_manager_review', 'material_department_review', 'batch_planning'].includes(toStage)) {
+            const nextNode = getWorkflowNextNode(dynamicSubject);
+            if (!nextNode) {
+                toast.warning('Không thể chuyển bước', 'Không tìm thấy bước kế tiếp trong mẫu workflow.');
+                return;
+            }
+            if (nextNode.type === WorkflowNodeType.END) {
+                void performDynamicRequestTransition({
+                    request,
+                    action: 'APPROVED',
+                    note: 'Duyệt qua Kanban workflow động',
+                    metadata: { source: 'kanban_drag_dynamic', nextNodeId: nextNode.id },
+                });
+                return;
+            }
             setSubmissionTransition({
                 request,
-                toStep: 'site_manager_review',
+                toStep: 'material_department_review',
                 status: RequestStatus.PENDING,
-                action: 'SUBMITTED',
-                title: 'Gửi quản lý công trường duyệt',
-                subtitle: 'Phiếu sẽ chuyển sang Chờ quản lý CT duyệt.',
+                action: 'APPROVED',
+                title: `Duyệt, chuyển bước "${nextNode.label}"`,
+                subtitle: `Phiếu sẽ chuyển sang bước ${nextNode.label}. Chọn người chịu trách nhiệm bước này.`,
+                recipientHint: `Chọn người xử lý bước "${nextNode.label}".`,
+                recipientPermissionCodes: getWorkflowNodePermissionCodes(nextNode.id),
+                dynamicWorkflow: true,
+                nextNodeId: nextNode.id,
+                nextNodeLabel: nextNode.label,
+                source: 'kanban_drag_dynamic',
             });
+            return;
+        }
+        if (toStage === 'site_manager_review') {
+            void projectWorkflowService
+                .resolveBinding('material_request', request.projectId || projectId || null, request.constructionSiteId || constructionSiteId || null)
+                .then(binding => {
+                    setSubmissionTransition({
+                        request,
+                        toStep: 'site_manager_review',
+                        status: RequestStatus.PENDING,
+                        action: 'SUBMITTED',
+                        title: 'Gửi quản lý công trường duyệt',
+                        subtitle: binding ? 'Phiếu sẽ bắt đầu workflow động theo mẫu đã cấu hình.' : 'Phiếu sẽ chuyển sang Chờ quản lý CT duyệt.',
+                        recipientHint: binding ? 'Chọn người xử lý bước đầu tiên của mẫu workflow.' : undefined,
+                        recipientPermissionCodes: ['approve'],
+                        dynamicWorkflow: Boolean(binding),
+                        workflowTemplateId: binding?.workflowTemplateId || null,
+                        source: binding ? 'kanban_submit_dynamic' : 'kanban_drag',
+                    });
+                })
+                .catch(() => {
+                    setSubmissionTransition({
+                        request,
+                        toStep: 'site_manager_review',
+                        status: RequestStatus.PENDING,
+                        action: 'SUBMITTED',
+                        title: 'Gửi quản lý công trường duyệt',
+                        subtitle: 'Phiếu sẽ chuyển sang Chờ quản lý CT duyệt.',
+                    });
+                });
             return;
         }
         if (toStage === 'material_department_review') {
@@ -667,6 +893,39 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             toast.warning('Không thể xử lý phiếu', 'Bạn không phải người đang được giao xử lý phiếu này.');
             return;
         }
+        const dynamicSubject = getRequestWorkflowSubject(request);
+        if (dynamicSubject?.workflowInstanceId && dynamicSubject.status === 'RUNNING') {
+            const nextNode = getWorkflowNextNode(dynamicSubject);
+            if (!nextNode) {
+                toast.warning('Không thể xử lý phiếu', 'Không tìm thấy bước kế tiếp trong mẫu workflow.');
+                return;
+            }
+            if (nextNode.type === WorkflowNodeType.END) {
+                void performDynamicRequestTransition({
+                    request,
+                    action: 'APPROVED',
+                    note: 'Hoàn tất phê duyệt workflow động',
+                    metadata: { source: 'request_modal', nextNodeId: nextNode.id },
+                }).then(closeWorkflowRequestModal);
+                return;
+            }
+            closeWorkflowRequestModal();
+            setSubmissionTransition({
+                request,
+                toStep: 'material_department_review',
+                status: RequestStatus.PENDING,
+                action: 'APPROVED',
+                title: `Duyệt, chuyển bước "${nextNode.label}"`,
+                subtitle: `Phiếu sẽ chuyển sang bước ${nextNode.label}. Chọn người chịu trách nhiệm bước này.`,
+                recipientHint: `Chọn người xử lý bước "${nextNode.label}".`,
+                recipientPermissionCodes: getWorkflowNodePermissionCodes(nextNode.id),
+                dynamicWorkflow: true,
+                nextNodeId: nextNode.id,
+                nextNodeLabel: nextNode.label,
+                source: 'request_modal_dynamic',
+            });
+            return;
+        }
         if (currentStep === 'site_manager_review') {
             closeWorkflowRequestModal();
             setSubmissionTransition({
@@ -712,8 +971,141 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         setTerminalNote('');
     };
 
+    const handleProjectWorkflowActionFromModal = async (context: ProjectWorkflowActionContext) => {
+        const request = requests.find(item => item.id === context.subject.subjectId) || selectedRequestLive;
+        if (!request) {
+            toast.warning('Không thể xử lý phiếu', 'Không tìm thấy phiếu vật tư tương ứng workflow.');
+            return;
+        }
+
+        if (context.action === 'approve' || context.action === 'return' || context.action === 'reject' || context.action === 'reassign') {
+            if (!canActOnProjectRequest(request)) {
+                toast.warning('Không thể xử lý phiếu', 'Bạn không phải người đang được giao xử lý phiếu này.');
+                return;
+            }
+        }
+
+        if (context.action === 'approve') {
+            const nextNode = context.nextNode || getWorkflowNextNode(context.subject);
+            if (!nextNode) {
+                toast.warning('Không thể xử lý phiếu', 'Không tìm thấy bước kế tiếp trong mẫu workflow.');
+                return;
+            }
+            if (nextNode.type === WorkflowNodeType.END && !canApproveOverBudgetRequest(request)) {
+                warnOverBudgetApprovalRequired();
+                return;
+            }
+            const target = nextNode.type === WorkflowNodeType.END
+                ? null
+                : {
+                    userId: context.assigneeUserIds?.[0] || context.assigneeUserId || '',
+                    userIds: context.assigneeUserIds || (context.assigneeUserId ? [context.assigneeUserId] : []),
+                    name: userById.get(context.assigneeUserIds?.[0] || context.assigneeUserId || '')?.name
+                        || context.assigneeUserIds?.[0]
+                        || context.assigneeUserId
+                        || '',
+                    names: (context.assigneeUserIds || []).map(id => userById.get(id)?.name || id),
+                    permissionCode: getWorkflowNodePermissionCodes(nextNode.id)[0] || 'approve',
+                    note: context.comment,
+                };
+            await performDynamicRequestTransition({
+                request,
+                action: 'APPROVED',
+                target,
+                note: context.comment,
+                metadata: { source: 'request_modal_panel', nextNodeId: nextNode.id },
+            });
+            closeWorkflowRequestModal();
+            return;
+        }
+
+        if (context.action === 'return') {
+            await performDynamicRequestTransition({
+                request,
+                action: 'RETURNED',
+                note: context.comment,
+                metadata: { source: 'request_modal_panel' },
+            });
+            closeWorkflowRequestModal();
+            return;
+        }
+
+        if (context.action === 'reject') {
+            await performDynamicRequestTransition({
+                request,
+                action: 'REJECTED',
+                note: context.comment,
+                metadata: { source: 'request_modal_panel' },
+            });
+            closeWorkflowRequestModal();
+            return;
+        }
+
+        if (context.action === 'resubmit') {
+            const targetNode = context.nextNode || getWorkflowReturnTargetNode(context.subject);
+            const assigneeUserIds = context.assigneeUserIds?.length
+                ? context.assigneeUserIds
+                : context.subject.returnToAssigneeUserIds?.length
+                    ? context.subject.returnToAssigneeUserIds
+                    : context.subject.returnToAssigneeUserId
+                        ? [context.subject.returnToAssigneeUserId]
+                        : [];
+            const target = {
+                userId: assigneeUserIds[0] || '',
+                userIds: assigneeUserIds,
+                name: userById.get(assigneeUserIds[0] || '')?.name
+                    || assigneeUserIds[0]
+                    || '',
+                names: assigneeUserIds.map(id => userById.get(id)?.name || id),
+                permissionCode: getWorkflowNodePermissionCodes(targetNode?.id)[0] || 'approve',
+                note: context.comment,
+            };
+            await performDynamicRequestTransition({
+                request,
+                action: 'RESUBMITTED',
+                target,
+                note: context.comment,
+                metadata: { source: 'request_modal_panel', nextNodeId: targetNode?.id },
+            });
+            closeWorkflowRequestModal();
+            return;
+        }
+
+        if (context.action === 'reassign') {
+            const assigneeUserIds = context.assigneeUserIds || (context.assigneeUserId ? [context.assigneeUserId] : []);
+            const target = {
+                userId: assigneeUserIds[0] || '',
+                userIds: assigneeUserIds,
+                name: userById.get(assigneeUserIds[0] || '')?.name || assigneeUserIds[0] || '',
+                names: assigneeUserIds.map(id => userById.get(id)?.name || id),
+                permissionCode: getWorkflowNodePermissionCodes(context.subject.currentNodeId)[0] || 'approve',
+                note: context.comment,
+            };
+            await performDynamicRequestTransition({
+                request,
+                action: 'REASSIGNED',
+                target,
+                note: context.comment,
+                metadata: { source: 'request_modal_panel', nodeId: context.subject.currentNodeId },
+            });
+            closeWorkflowRequestModal();
+        }
+    };
+
     const handleSubmitTransitionTarget = async (target: ProjectSubmissionTarget) => {
         if (!submissionTransition) return;
+        if (submissionTransition.dynamicWorkflow) {
+            await performDynamicRequestTransition({
+                request: submissionTransition.request,
+                action: submissionTransition.action === 'SUBMITTED' ? 'SUBMITTED' : 'APPROVED',
+                target,
+                note: target.note,
+                templateId: submissionTransition.workflowTemplateId,
+                metadata: { source: submissionTransition.source || 'dynamic_workflow', nextNodeId: submissionTransition.nextNodeId },
+            });
+            setSubmissionTransition(null);
+            return;
+        }
         await performRequestTransition({
             request: submissionTransition.request,
             toStep: submissionTransition.toStep,
@@ -735,6 +1127,18 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         }
         const request = terminalTransition.request;
         const isReturn = terminalAction === 'return';
+        const dynamicSubject = getRequestWorkflowSubject(request);
+        if (dynamicSubject?.workflowInstanceId && ['RUNNING', 'RETURNED'].includes(dynamicSubject.status)) {
+            await performDynamicRequestTransition({
+                request,
+                action: isReturn ? 'RETURNED' : 'REJECTED',
+                note,
+                metadata: { fromStage: terminalTransition.fromStage, source: 'dynamic_workflow_terminal' },
+            });
+            setTerminalTransition(null);
+            setTerminalNote('');
+            return;
+        }
         await performRequestTransition({
             request,
             toStep: isReturn ? 'returned_to_creator' : 'rejected',
@@ -1711,6 +2115,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             inventoryItemById={inventoryItemById}
                             workBoqItemById={workBoqItemById}
                             userById={userById}
+                            workflowSubjectsByRequestId={requestWorkflowSubjects}
                             canMoveRequest={canMoveMaterialRequest}
                             onMoveRequest={handleMoveMaterialRequest}
                             onOpenRequest={req => { setSelectedRequest(req); setRequestModalInitialAction(undefined); setReqModalOpen(true); }}
@@ -1826,12 +2231,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     documentSubtitle={submissionTransition.subtitle}
                     projectId={projectId || undefined}
                     constructionSiteId={constructionSiteId || null}
-                    recipientPermissionCodes={['approve']}
+                    recipientPermissionCodes={submissionTransition.recipientPermissionCodes?.length ? submissionTransition.recipientPermissionCodes as any : ['approve']}
                     recipientHint={submissionTransition.recipientHint || 'Chọn đích danh nhân sự dự án có quyền approve để xử lý bước tiếp theo.'}
                     details={[
                         { label: 'Kho nhận', value: warehouses.find(w => w.id === submissionTransition.request.siteWarehouseId)?.name || submissionTransition.request.siteWarehouseId },
                         { label: 'Số dòng vật tư', value: `${submissionTransition.request.items.length} dòng` },
-                        { label: 'SLA bước mới', value: submissionTransition.toStep === 'batch_planning' ? '48h' : '24h' },
+                        { label: submissionTransition.dynamicWorkflow ? 'Bước kế tiếp' : 'SLA bước mới', value: submissionTransition.dynamicWorkflow ? (submissionTransition.nextNodeLabel || 'Theo mẫu workflow') : (submissionTransition.toStep === 'batch_planning' ? '48h' : '24h') },
                         { label: 'Ghi chú phiếu', value: submissionTransition.request.note || '-' },
                     ]}
                     onCancel={() => setSubmissionTransition(null)}
@@ -2123,8 +2528,16 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     requestFulfillmentSummariesByRequestId={requestFulfillmentSummaries}
                     initialAction={requestModalInitialAction}
                     canProcessProjectWorkflow={selectedRequestLive ? canActOnProjectRequest(selectedRequestLive) : false}
-                    onProjectWorkflowApprove={handleProjectWorkflowApproveFromModal}
-                    onProjectWorkflowReturn={handleProjectWorkflowReturnFromModal}
+                    projectWorkflowSubject={selectedRequestLive ? requestWorkflowSubjects[selectedRequestLive.id] : undefined}
+                    projectWorkflowAssignments={
+                        selectedRequestLive && requestWorkflowSubjects[selectedRequestLive.id]
+                            ? requestWorkflowAssignments[requestWorkflowSubjects[selectedRequestLive.id].id] || []
+                            : []
+                    }
+                    projectWorkflowNodes={workflowNodes}
+                    projectWorkflowNextNode={selectedRequestLive ? getWorkflowNextNode(requestWorkflowSubjects[selectedRequestLive.id]) : null}
+                    projectWorkflowReturnTargetNode={selectedRequestLive ? getWorkflowReturnTargetNode(requestWorkflowSubjects[selectedRequestLive.id]) : null}
+                    onProjectWorkflowAction={handleProjectWorkflowActionFromModal}
                     onDeleted={handleRequestDeleted}
                 />
             )}

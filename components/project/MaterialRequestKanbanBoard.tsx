@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowRight, ChevronDown, ChevronUp, Clock, FileText, MessageSquare, Package, UserRound } from 'lucide-react';
+import { ArrowRight, ChevronDown, ChevronUp, Clock, FileText, GitBranch, MessageSquare, Package, UserRound } from 'lucide-react';
 import {
   InventoryItem,
   MaterialRequest,
@@ -7,6 +7,7 @@ import {
   MaterialRequestFulfillmentBatch,
   MaterialRequestFulfillmentSummary,
   MaterialRequestKanbanStage,
+  ProjectWorkflowSubject,
   ProjectWorkBoqItem,
   Transaction,
   User,
@@ -26,6 +27,7 @@ interface MaterialRequestKanbanBoardProps {
   inventoryItemById: Map<string, InventoryItem>;
   workBoqItemById: Map<string, ProjectWorkBoqItem>;
   userById: Map<string, User>;
+  workflowSubjectsByRequestId?: Record<string, ProjectWorkflowSubject>;
   canMoveRequest: (request: MaterialRequest, toStage: MaterialRequestKanbanStage, fromStage: MaterialRequestKanbanStage) => boolean;
   onMoveRequest: (request: MaterialRequest, toStage: MaterialRequestKanbanStage, fromStage: MaterialRequestKanbanStage) => void;
   onOpenRequest: (request: MaterialRequest) => void;
@@ -76,6 +78,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
   inventoryItemById,
   workBoqItemById,
   userById,
+  workflowSubjectsByRequestId = {},
   canMoveRequest,
   onMoveRequest,
   onOpenRequest,
@@ -156,7 +159,19 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                 {columnRequests.map((request, reqIndex) => {
                   const expanded = expandedIds.has(request.id);
                   const requester = userById.get(request.requesterId);
-                  const handler = request.submittedToUserId ? userById.get(request.submittedToUserId) : undefined;
+                  const workflowSubject = workflowSubjectsByRequestId[request.id];
+                  const handlerUserIds = workflowSubject?.currentAssigneeUserIds?.length
+                    ? workflowSubject.currentAssigneeUserIds
+                    : workflowSubject?.currentAssigneeUserId
+                      ? [workflowSubject.currentAssigneeUserId]
+                      : request.submittedToUserId
+                        ? [request.submittedToUserId]
+                        : [];
+                  const handlerNames = handlerUserIds.map(id => userById.get(id)?.name || id);
+                  const handlerLabel = handlerNames.length > 1
+                    ? `${handlerNames[0]} + ${handlerNames.length - 1} người`
+                    : handlerNames[0] || request.submittedToName || '';
+                  const workflowStepLabel = workflowSubject?.currentNode?.label || undefined;
                   const summary = fulfillmentSummaries[request.id];
                   const events = eventsByRequest[request.id] || [];
                   const slaState = getMaterialRequestSlaState(request);
@@ -204,9 +219,14 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                           <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black ${slaTone[slaState]}`}>
                             <Clock size={10} /> {formatSlaLabel(request)}
                           </span>
-                          {handler && (
+                          {handlerLabel && (
                             <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-[9px] font-black text-amber-700">
-                              <UserRound size={10} /> {handler.name}
+                              <UserRound size={10} /> {handlerLabel}
+                            </span>
+                          )}
+                          {workflowStepLabel && (
+                            <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[9px] font-black text-indigo-700">
+                              <GitBranch size={10} /> {workflowStepLabel}
                             </span>
                           )}
                         </div>
@@ -318,7 +338,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                                 <span className="font-bold text-slate-400">Người xử lý:</span>
                                 <div className="flex items-center gap-1 font-black text-slate-700">
                                   <UserRound size={12} className="text-amber-500" />
-                                  <span className="truncate">{handler?.name || request.submittedToName || 'Chưa phân công'}</span>
+                                  <span className="truncate">{handlerNames.length > 0 ? handlerNames.join(', ') : request.submittedToName || 'Chưa phân công'}</span>
                                 </div>
                               </div>
                               <div className="space-y-1">
@@ -342,6 +362,12 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                               <div className="rounded-lg bg-amber-50/50 border border-amber-100/50 p-2 text-[10px] text-slate-600">
                                 <div className="font-bold text-amber-800">Ghi chú:</div>
                                 <p className="mt-0.5 italic">{request.note || request.submissionNote}</p>
+                              </div>
+                            )}
+                            {workflowStepLabel && (
+                              <div className="rounded-lg bg-indigo-50/60 border border-indigo-100 p-2 text-[10px] text-indigo-700">
+                                <div className="font-bold">Bước workflow hiện tại:</div>
+                                <p className="mt-0.5 font-black">{workflowStepLabel}</p>
                               </div>
                             )}
 
