@@ -73,6 +73,7 @@ interface RequestModalProps {
     canProcessProjectWorkflow?: boolean;
     onProjectWorkflowApprove?: (request: MaterialRequest) => void | Promise<void>;
     onProjectWorkflowReturn?: (request: MaterialRequest) => void | Promise<void>;
+    onDeleted?: (requestId: string) => void;
 }
 
 type RequestLineDraft = {
@@ -164,6 +165,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     canProcessProjectWorkflow = false,
     onProjectWorkflowApprove,
     onProjectWorkflowReturn,
+    onDeleted,
 }) => {
     const { items, warehouses, user, users, requests, addRequest, updateRequestStatus, removeRequest, loadModuleData, addTransaction } = useApp();
     const { getStockSummary, getOnHandStock } = useReservedStock();
@@ -199,6 +201,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [receivingBatch, setReceivingBatch] = useState<MaterialRequestFulfillmentBatch | null>(null);
     const [selectedFulfillmentBatch, setSelectedFulfillmentBatch] = useState<MaterialRequestFulfillmentBatch | null>(null);
     const [receiveLines, setReceiveLines] = useState<ReceiveQtyDraft[]>([]);
+    const [returningReceivedBatch, setReturningReceivedBatch] = useState<MaterialRequestFulfillmentBatch | null>(null);
+    const [returnDestinationWarehouseId, setReturnDestinationWarehouseId] = useState('');
+    const [returnReceivedReason, setReturnReceivedReason] = useState('');
+    const [poSourceLabelsById, setPoSourceLabelsById] = useState<Record<string, string>>({});
 
     const [isItemSelectOpen, setItemSelectOpen] = useState(false);
     const [isScannerOpen, setScannerOpen] = useState(false);
@@ -360,6 +366,24 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const getWarehouseName = (warehouseId?: string | null) =>
         warehouses.find(w => w.id === warehouseId)?.name || warehouseId || '-';
 
+    const getBatchPoIds = (batch?: MaterialRequestFulfillmentBatch | null) =>
+        Array.from(new Set((batch?.lines || []).map(line => line.poId).filter(Boolean) as string[]));
+
+    const getFulfillmentPoSourceLabel = (batch: MaterialRequestFulfillmentBatch) => {
+        const labels = getBatchPoIds(batch).map(poId => poSourceLabelsById[poId]).filter(Boolean);
+        if (labels.length > 0) return Array.from(new Set(labels)).join(', ');
+        if (batch.note?.toLowerCase().includes('po')) return batch.note;
+        return 'Nhà cung cấp / PO';
+    };
+
+    const getFulfillmentSourceLabel = (batch?: MaterialRequestFulfillmentBatch | null) => {
+        if (!batch) return '-';
+        if (batch.sourceWarehouseId) return getWarehouseName(batch.sourceWarehouseId);
+        if (batch.sourceType === 'po_receipt') return getFulfillmentPoSourceLabel(batch);
+        if (batch.sourceType === 'mixed') return 'Nguồn kết hợp';
+        return 'Chưa xác định nguồn';
+    };
+
     const getAggregateStockSummary = (itemId: string, warehouseId?: string, excludeRequestId?: string) => {
         if (!getLineInventory(itemId)) {
             return { onHand: 0, softReserved: 0, hardReserved: 0, reserved: 0, available: 0, hasConflict: false, isCritical: false };
@@ -405,12 +429,35 @@ const RequestModal: React.FC<RequestModalProps> = ({
     };
 
     useEffect(() => {
+        if (!isOpen || fulfillmentBatches.length === 0) return;
+        const missingPoIds = Array.from(new Set(fulfillmentBatches.flatMap(batch => getBatchPoIds(batch))))
+            .filter(poId => !poSourceLabelsById[poId]);
+        if (missingPoIds.length === 0) return;
+
+        let cancelled = false;
+        materialRequestFulfillmentService.listPurchaseOrderSourceLabels(missingPoIds)
+            .then(labels => {
+                if (!cancelled && Object.keys(labels).length > 0) {
+                    setPoSourceLabelsById(prev => ({ ...prev, ...labels }));
+                }
+            })
+            .catch(err => logApiError('requestModal.poSourceLabels', err));
+
+        return () => {
+            cancelled = true;
+        };
+    }, [isOpen, fulfillmentBatches, poSourceLabelsById]);
+
+    useEffect(() => {
         if (isOpen) {
             initialActionHandledRef.current = false;
             setShowApprovalPanel(false);
             setIsSaving(false);
             setIsIssuePanelOpen(false);
             setReceivingBatch(null);
+            setReturningReceivedBatch(null);
+            setReturnDestinationWarehouseId('');
+            setReturnReceivedReason('');
             if (request) {
                 if (request.status === RequestStatus.PENDING && (canReviewProjectWorkflow || (!isProjectRequest && canApproveMaterialRequest(user, request)))) {
                     setStep('APPROVE');
@@ -798,6 +845,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         setIsSaving(true);
         try {
             await removeRequest(request.id);
+            onDeleted?.(request.id);
             toast.success('Đã xoá phiếu đề xuất', `Phiếu ${request.code} đã được xoá khỏi danh sách.`);
             onClose();
         } catch (err: any) {
@@ -1146,6 +1194,120 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
     };
 
+    const openReturnReceivedDialog = (batch: MaterialRequestFulfillmentBatch) => {
+        setSelectedFulfillmentBatch(null);
+        setReturningReceivedBatch(batch);
+        setReturnDestinationWarehouseId(batch.sourceWarehouseId || '');
+        setReturnReceivedReason(overrideReason.trim());
+    };
+
+    const executeReturnReceivedBatch = async (
+        batch: MaterialRequestFulfillmentBatch,
+        destinationWarehouseId: string,
+        reason?: string,
+    ) => {
+        if (!request || isSaving) return;
+        const isDirectConsumptionReturn = batch.fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION && !batch.targetWarehouseId;
+        const effectiveDestinationWarehouseId = isDirectConsumptionReturn ? (batch.sourceWarehouseId || destinationWarehouseId) : destinationWarehouseId;
+        if (!batch.targetWarehouseId && !isDirectConsumptionReturn) {
+            toast.warning('Không thể hoàn trả', 'Đợt cấp đã nhận thiếu kho công trường/kho nhận nên không xác định được nơi trừ tồn.');
+            return;
+        }
+        if (!effectiveDestinationWarehouseId) {
+            toast.warning(
+                isDirectConsumptionReturn ? 'Không thể hoàn trả' : 'Chưa chọn kho hoàn trả',
+                isDirectConsumptionReturn
+                    ? 'Đợt xuất thẳng sử dụng thiếu kho nguồn ban đầu nên không thể nhập hoàn lại.'
+                    : 'Vui lòng chọn kho nhận hoàn trả để hệ thống tạo phiếu đảo tồn.',
+            );
+            return;
+        }
+        if (!isDirectConsumptionReturn && effectiveDestinationWarehouseId === batch.targetWarehouseId) {
+            toast.warning('Kho hoàn trả không hợp lệ', 'Kho nhận hoàn trả phải khác kho công trường đang giữ hàng.');
+            return;
+        }
+
+        if (!isDirectConsumptionReturn) {
+            const shortage = batch.lines
+                .map(line => ({ ...line, summary: getStockSummary(line.itemId, batch.targetWarehouseId!) }))
+                .find(line => Number(line.receivedQty || 0) > line.summary.available);
+            if (shortage) {
+                const item = items.find(inv => inv.id === shortage.itemId);
+                const needQty = Number(shortage.receivedQty || 0);
+                const reasonText = needQty > shortage.summary.onHand
+                    ? `tồn thực còn ${shortage.summary.onHand.toLocaleString('vi-VN')}`
+                    : `tồn thực ${shortage.summary.onHand.toLocaleString('vi-VN')}, đang giữ ${shortage.summary.reserved.toLocaleString('vi-VN')}, khả dụng ${shortage.summary.available.toLocaleString('vi-VN')}`;
+                const blockers = formatReservationSourceList(shortage.summary.entries);
+                toast.error('Không đủ tồn để hoàn trả', `${item?.name || shortage.itemId}: cần hoàn ${needQty.toLocaleString('vi-VN')}; ${reasonText}.${blockers ? ` Vị trí giữ chỗ: ${blockers}.` : ''} Vui lòng xử lý phiếu pending/giữ chỗ tại kho nhận trước.`);
+                return;
+            }
+        }
+
+        const sourceLabel = getFulfillmentSourceLabel(batch);
+        const returnSubtitle = isDirectConsumptionReturn
+            ? `Hệ thống sẽ tạo phiếu nhập hoàn lại vào ${getWarehouseName(effectiveDestinationWarehouseId)} và loại đợt xuất thẳng này khỏi lũy kế thực nhận/sử dụng.`
+            : `Hệ thống sẽ tạo phiếu hoàn kho từ ${getWarehouseName(batch.targetWarehouseId)} về ${getWarehouseName(effectiveDestinationWarehouseId)} và loại đợt này khỏi lũy kế thực nhận. Nguồn gốc đợt cấp: ${sourceLabel}.`;
+        const ok = await confirm({
+            title: 'Admin hoàn trả đợt đã nhận',
+            targetName: batch.batchNo,
+            confirmText: 'Xác nhận hoàn trả',
+            subtitle: returnSubtitle,
+            intent: 'danger',
+            actionLabel: 'Hoàn trả và đảo tồn',
+            cancelLabel: 'Giữ nguyên',
+            countdownSeconds: 2,
+        });
+        if (!ok) return;
+
+        setIsSaving(true);
+        try {
+            const returnTransactionId = `tx-mr-return-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+            const returnTransaction: Transaction = {
+                id: returnTransactionId,
+                type: isDirectConsumptionReturn ? TransactionType.IMPORT : TransactionType.TRANSFER,
+                date: new Date().toISOString(),
+                items: batch.lines
+                    .filter(line => Number(line.receivedQty || 0) > 0)
+                    .map(line => ({
+                        itemId: line.itemId,
+                        quantity: Number(line.receivedQty || 0),
+                        materialRequestId: request.id,
+                        requestLineId: line.requestLineId,
+                    })),
+                sourceWarehouseId: isDirectConsumptionReturn ? undefined : batch.targetWarehouseId,
+                targetWarehouseId: effectiveDestinationWarehouseId,
+                requesterId: user.id,
+                approverId: user.id,
+                status: TransactionStatus.COMPLETED,
+                note: isDirectConsumptionReturn
+                    ? `Admin hoàn trả đợt xuất thẳng sử dụng ${batch.batchNo} của phiếu ${request.code}. Nhập hoàn lại kho nguồn: ${sourceLabel}`
+                    : `Admin hoàn trả đợt cấp ${batch.batchNo} của phiếu ${request.code}. Nguồn gốc: ${sourceLabel}`,
+                relatedRequestId: request.id,
+            };
+            await addTransaction(returnTransaction);
+            await materialRequestFulfillmentService.returnReceivedBatch({
+                batch,
+                actorUserId: user.id,
+                reason: reason?.trim() || overrideReason.trim() || 'Admin hoàn trả đợt cấp đã nhận',
+                returnTransactionId,
+            });
+            const freshBatches = await refreshFulfillmentBatches(request.id);
+            const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
+            await updateRequestStatus(request.id, nextStatus, 'Admin hoàn trả đợt cấp đã nhận và đảo tồn kho', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_RECEIVED');
+            await loadModuleData('wms', true);
+            toast.success('Đã hoàn trả đợt cấp', nextStatus === RequestStatus.APPROVED ? 'Phiếu đề xuất đã quay lại trạng thái chờ cấp hàng.' : 'Đã đảo tồn và cập nhật lại lũy kế.');
+            setReturningReceivedBatch(null);
+            setReturnDestinationWarehouseId('');
+            setReturnReceivedReason('');
+            onClose();
+        } catch (err: any) {
+            logApiError('requestModal.fulfillment.returnReceived', err);
+            toast.error('Không thể hoàn trả đợt đã nhận', getApiErrorMessage(err, 'Không hoàn trả được tồn kho cho đợt cấp.'));
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const handleReturnFulfillmentBatch = async (batch: MaterialRequestFulfillmentBatch) => {
         if (!request || isSaving) return;
         if (batch.status === 'received') {
@@ -1153,78 +1315,20 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 toast.warning('Chỉ Admin được hoàn trả', 'Đợt cấp đã nhận đã phát sinh tồn kho, chỉ Admin được hoàn trả để đảo tồn.');
                 return;
             }
-            if (!batch.sourceWarehouseId || !batch.targetWarehouseId) {
-                toast.warning('Không thể hoàn trả', 'Đợt cấp đã nhận thiếu kho nguồn hoặc kho nhận để tạo phiếu hoàn kho.');
+            const isDirectConsumptionReturn = batch.fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION && !batch.targetWarehouseId;
+            if (!batch.targetWarehouseId && !isDirectConsumptionReturn) {
+                toast.warning('Không thể hoàn trả', 'Đợt cấp đã nhận thiếu kho công trường/kho nhận nên không xác định được nơi trừ tồn.');
                 return;
             }
-            const shortage = batch.lines
-                .map(line => ({ ...line, summary: getStockSummary(line.itemId, batch.targetWarehouseId!) }))
-                .find(line => Number(line.receivedQty || 0) > line.summary.available);
-            if (shortage) {
-                const item = items.find(inv => inv.id === shortage.itemId);
-                const needQty = Number(shortage.receivedQty || 0);
-                const reason = needQty > shortage.summary.onHand
-                    ? `tồn thực còn ${shortage.summary.onHand.toLocaleString('vi-VN')}`
-                    : `tồn thực ${shortage.summary.onHand.toLocaleString('vi-VN')}, đang giữ ${shortage.summary.reserved.toLocaleString('vi-VN')}, khả dụng ${shortage.summary.available.toLocaleString('vi-VN')}`;
-                const blockers = formatReservationSourceList(shortage.summary.entries);
-                toast.error('Không đủ tồn để hoàn trả', `${item?.name || shortage.itemId}: cần hoàn ${needQty.toLocaleString('vi-VN')}; ${reason}.${blockers ? ` Vị trí giữ chỗ: ${blockers}.` : ''} Vui lòng xử lý phiếu pending/giữ chỗ tại kho nhận trước.`);
+            if (isDirectConsumptionReturn) {
+                await executeReturnReceivedBatch(batch, batch.sourceWarehouseId || '');
                 return;
             }
-
-            const ok = await confirm({
-                title: 'Admin hoàn trả đợt đã nhận',
-                targetName: batch.batchNo,
-                confirmText: 'Xác nhận hoàn trả',
-                subtitle: `Hệ thống sẽ tạo phiếu hoàn kho từ ${getWarehouseName(batch.targetWarehouseId)} về ${getWarehouseName(batch.sourceWarehouseId)} và loại đợt này khỏi lũy kế thực nhận.`,
-                intent: 'danger',
-                actionLabel: 'Hoàn trả và đảo tồn',
-                cancelLabel: 'Giữ nguyên',
-                countdownSeconds: 2,
-            });
-            if (!ok) return;
-
-            setIsSaving(true);
-            try {
-                const returnTransactionId = `tx-mr-return-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-                const returnTransaction: Transaction = {
-                    id: returnTransactionId,
-                    type: TransactionType.TRANSFER,
-                    date: new Date().toISOString(),
-                    items: batch.lines
-                        .filter(line => Number(line.receivedQty || 0) > 0)
-                        .map(line => ({
-                            itemId: line.itemId,
-                            quantity: Number(line.receivedQty || 0),
-                            materialRequestId: request.id,
-                            requestLineId: line.requestLineId,
-                        })),
-                    sourceWarehouseId: batch.targetWarehouseId,
-                    targetWarehouseId: batch.sourceWarehouseId,
-                    requesterId: user.id,
-                    approverId: user.id,
-                    status: TransactionStatus.COMPLETED,
-                    note: `Admin hoàn trả đợt cấp ${batch.batchNo} của phiếu ${request.code}`,
-                    relatedRequestId: request.id,
-                };
-                await addTransaction(returnTransaction);
-                await materialRequestFulfillmentService.returnReceivedBatch({
-                    batch,
-                    actorUserId: user.id,
-                    reason: overrideReason.trim() || 'Admin hoàn trả đợt cấp đã nhận',
-                    returnTransactionId,
-                });
-                const freshBatches = await refreshFulfillmentBatches(request.id);
-                const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
-                await updateRequestStatus(request.id, nextStatus, 'Admin hoàn trả đợt cấp đã nhận và đảo tồn kho', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_RECEIVED');
-                await loadModuleData('wms', true);
-                toast.success('Đã hoàn trả đợt cấp', nextStatus === RequestStatus.APPROVED ? 'Phiếu đề xuất đã quay lại trạng thái chờ cấp hàng.' : 'Đã trừ kho nhận, hoàn về kho nguồn và cập nhật lại lũy kế.');
-                onClose();
-            } catch (err: any) {
-                logApiError('requestModal.fulfillment.returnReceived', err);
-                toast.error('Không thể hoàn trả đợt đã nhận', getApiErrorMessage(err, 'Không hoàn trả được tồn kho cho đợt cấp.'));
-            } finally {
-                setIsSaving(false);
+            if (!batch.sourceWarehouseId) {
+                openReturnReceivedDialog(batch);
+                return;
             }
+            await executeReturnReceivedBatch(batch, batch.sourceWarehouseId);
             return;
         }
 
@@ -1340,7 +1444,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 Mã đợt cấp: <b>${printableBatch.batchNo}</b><br/>
                                 Phiếu đề xuất: <b>${request.code}</b><br/>
                                 Ngày xuất: ${new Date(printableBatch.batchDate).toLocaleString('vi-VN')}<br/>
-                                Kho xuất: ${getWarehouseName(printableBatch.sourceWarehouseId)}<br/>
+                                Kho xuất/Nguồn: ${getFulfillmentSourceLabel(printableBatch)}<br/>
                                 Kho nhận: ${printableBatch.targetWarehouseId ? getWarehouseName(printableBatch.targetWarehouseId) : 'Cấp thẳng sử dụng'}
                             </div>
                         </div>
@@ -2083,7 +2187,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                         <span className="text-[10px] font-bold text-slate-400">{new Date(batch.batchDate).toLocaleString('vi-VN')}</span>
                                                     </div>
                                                     <div className="mt-1 text-[10px] text-slate-400">
-                                                        Nguồn: {getWarehouseName(batch.sourceWarehouseId)} • Đích: {batch.targetWarehouseId ? getWarehouseName(batch.targetWarehouseId) : 'Cấp thẳng sử dụng'}
+                                                        Nguồn: {getFulfillmentSourceLabel(batch)} • Đích: {batch.targetWarehouseId ? getWarehouseName(batch.targetWarehouseId) : 'Cấp thẳng sử dụng'}
                                                     </div>
                                                     {batch.note && <div className="mt-1 text-xs text-slate-500">{batch.note}</div>}
                                                 </div>
@@ -2328,7 +2432,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 </div>
                                 <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
                                     <div className="text-[10px] uppercase font-black text-slate-400">Nguồn</div>
-                                    <div className="mt-1 font-black text-slate-700">{getWarehouseName(selectedFulfillmentBatch.sourceWarehouseId)}</div>
+                                    <div className="mt-1 font-black text-slate-700">{getFulfillmentSourceLabel(selectedFulfillmentBatch)}</div>
                                 </div>
                                 <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
                                     <div className="text-[10px] uppercase font-black text-slate-400">Đích</div>
@@ -2400,7 +2504,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     </button>
                                 </>
                             )}
-                            {isAdmin(user) && selectedFulfillmentBatch.status === 'received' && selectedFulfillmentBatch.sourceWarehouseId && selectedFulfillmentBatch.targetWarehouseId && (
+                            {isAdmin(user)
+                                && selectedFulfillmentBatch.status === 'received'
+                                && (selectedFulfillmentBatch.targetWarehouseId || selectedFulfillmentBatch.fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION) && (
                                 <button
                                     disabled={isSaving}
                                     onClick={() => handleReturnFulfillmentBatch(selectedFulfillmentBatch)}
@@ -2418,6 +2524,105 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     <AlertCircle size={16} /> Chốt lệch
                                 </button>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {returningReceivedBatch && request && (
+                <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+                    <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col">
+                        <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
+                            <div>
+                                <div className="text-[10px] font-black uppercase tracking-widest text-rose-500">Hoàn trả / đảo tồn</div>
+                                <h4 className="text-base font-black text-slate-800 mt-0.5">{returningReceivedBatch.batchNo}</h4>
+                                <p className="text-xs font-bold text-slate-400 mt-1">{request.code} • Nguồn gốc: {getFulfillmentSourceLabel(returningReceivedBatch)}</p>
+                            </div>
+                            <button
+                                onClick={() => setReturningReceivedBatch(null)}
+                                className="p-2 text-slate-400 hover:text-slate-600"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-5 overflow-y-auto space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                                    <div className="text-[10px] uppercase font-black text-slate-400">Trừ tồn tại kho</div>
+                                    <div className="mt-1 font-black text-slate-700">
+                                        {returningReceivedBatch.targetWarehouseId ? getWarehouseName(returningReceivedBatch.targetWarehouseId) : '-'}
+                                    </div>
+                                </div>
+                                <label className="rounded-xl border border-rose-100 bg-rose-50/40 p-3 block">
+                                    <div className="text-[10px] uppercase font-black text-rose-500">Kho nhận hoàn trả</div>
+                                    <select
+                                        value={returnDestinationWarehouseId}
+                                        onChange={event => setReturnDestinationWarehouseId(event.target.value)}
+                                        className="mt-2 w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-rose-200"
+                                    >
+                                        <option value="">Chọn kho nhận hoàn trả</option>
+                                        {warehouses
+                                            .filter(warehouse => warehouse.id !== returningReceivedBatch.targetWarehouseId)
+                                            .map(warehouse => (
+                                                <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                                            ))}
+                                    </select>
+                                </label>
+                            </div>
+                            <label className="block">
+                                <div className="text-[10px] uppercase font-black text-slate-400 mb-1">Lý do hoàn trả</div>
+                                <textarea
+                                    value={returnReceivedReason}
+                                    onChange={event => setReturnReceivedReason(event.target.value)}
+                                    placeholder="Ví dụ: trả NCC do nhập nhầm đơn, hàng sai quy cách..."
+                                    className="w-full min-h-[78px] rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-rose-200"
+                                />
+                            </label>
+                            <div className="overflow-x-auto rounded-xl border border-slate-200">
+                                <table className="w-full text-xs">
+                                    <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+                                        <tr>
+                                            <th className="p-3 text-left">Vật tư</th>
+                                            <th className="p-3 text-right">Số lượng hoàn</th>
+                                            <th className="p-3 text-left">ĐVT</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {returningReceivedBatch.lines
+                                            .filter(line => Number(line.receivedQty || 0) > 0)
+                                            .map(line => {
+                                                const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
+                                                return (
+                                                    <tr key={line.id}>
+                                                        <td className="p-3 font-bold text-slate-700">{requestLine ? getLineName(requestLine) : line.itemId}</td>
+                                                        <td className="p-3 text-right font-black text-rose-600">{Number(line.receivedQty || 0).toLocaleString('vi-VN')}</td>
+                                                        <td className="p-3 text-slate-500">{line.unit || (requestLine ? getLineUnit(requestLine) : '')}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {!returningReceivedBatch.sourceWarehouseId && (
+                                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
+                                    Đợt này nhập trực tiếp từ PO/NCC nên không có kho nguồn ban đầu. Hệ thống cần chọn kho nhận hoàn trả để tạo phiếu đảo tồn từ kho công trường.
+                                </div>
+                            )}
+                        </div>
+                        <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-3">
+                            <button
+                                onClick={() => setReturningReceivedBatch(null)}
+                                className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 font-bold"
+                            >
+                                Huỷ
+                            </button>
+                            <button
+                                disabled={isSaving || !returnDestinationWarehouseId}
+                                onClick={() => executeReturnReceivedBatch(returningReceivedBatch, returnDestinationWarehouseId, returnReceivedReason)}
+                                className="px-5 py-2 rounded-lg bg-rose-600 text-white font-black hover:bg-rose-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                                {isSaving ? <Loader2 size={16} className="animate-spin" /> : <XCircle size={16} />} Hoàn trả và đảo tồn
+                            </button>
                         </div>
                     </div>
                 </div>

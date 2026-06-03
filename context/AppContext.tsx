@@ -228,6 +228,7 @@ const mapInventoryItemFromDb = (i: any): InventoryItem => ({
   priceIn: i.price_in,
   priceOut: i.price_out,
   minStock: i.min_stock,
+  defaultLeadTimeDays: i.default_lead_time_days ?? 7,
   supplierId: i.supplier_id,
   imageUrl: i.image_url,
   stockByWarehouse: i.stock_by_warehouse || {},
@@ -452,7 +453,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (event.eventType === 'INSERT' || event.eventType === 'UPDATE') {
         const i = event.newRecord;
         const mapped = {
-          ...i, priceIn: i.price_in, priceOut: i.price_out, minStock: i.min_stock,
+          ...i, priceIn: i.price_in, priceOut: i.price_out, minStock: i.min_stock, defaultLeadTimeDays: i.default_lead_time_days ?? 7,
           supplierId: i.supplier_id, imageUrl: i.image_url, stockByWarehouse: i.stock_by_warehouse,
           purchaseUnit: i.purchase_unit ?? undefined
         };
@@ -949,6 +950,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: data.id, sku: data.sku, name: data.name, category: data.category, unit: data.unit,
           purchase_unit: data.purchaseUnit ?? null,
           price_in: data.priceIn, price_out: data.priceOut, min_stock: data.minStock,
+          default_lead_time_days: data.defaultLeadTimeDays ?? 7,
           supplier_id: data.supplierId, image_url: data.imageUrl, stock_by_warehouse: data.stockByWarehouse
         };
       } else if (table === 'transactions') {
@@ -1815,10 +1817,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const isOwner = req.requesterId === user.id;
     const deletableStatus = [RequestStatus.DRAFT, RequestStatus.PENDING, RequestStatus.REJECTED].includes(req.status);
     const canDelete =
-      deletableStatus &&
+      user.role === Role.ADMIN ||
       (
-        user.role === Role.ADMIN ||
-        (isOwner && (req.status === RequestStatus.DRAFT || req.status === RequestStatus.REJECTED))
+        deletableStatus &&
+        isOwner &&
+        (req.status === RequestStatus.DRAFT || req.status === RequestStatus.REJECTED)
       );
     if (!canDelete) {
       throw new Error('Bạn không có quyền xoá phiếu này hoặc phiếu không còn ở trạng thái được xoá.');
@@ -1830,9 +1833,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (isSupabaseConfigured) {
-      const [{ data: batchRows, error: batchError }, { count: poLinkCount, error: poLinkError }, { count: txCount, error: txError }] = await Promise.all([
+      const [{ data: batchRows, error: batchError }, { data: poLinkRows, error: poLinkError }, { count: txCount, error: txError }] = await Promise.all([
         supabase.from('material_request_fulfillment_batches').select('id,status,transaction_id').eq('material_request_id', id),
-        supabase.from('purchase_order_request_lines').select('id', { count: 'exact', head: true }).eq('material_request_id', id),
+        supabase.from('purchase_order_request_lines').select('id,purchase_order_id,purchase_order_line_id').eq('material_request_id', id),
         supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('related_request_id', id),
       ]);
       if (batchError && batchError.code !== '42P01') throw batchError;
@@ -1842,7 +1845,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const relatedBatches = batchError?.code === '42P01' ? [] : (batchRows || []);
       const activeBatches = relatedBatches.filter((batch: any) => !['returned', 'cancelled'].includes(String(batch.status || '').toLowerCase()));
       if (activeBatches.length > 0) throw new Error('Phiếu còn đợt cấp vật tư chưa huỷ/hoàn trả, không thể xoá cứng.');
-      if ((poLinkCount || 0) > 0) throw new Error('Phiếu đã được liên kết PO, không thể xoá cứng.');
+      const poLinks = poLinkError?.code === '42P01' ? [] : (poLinkRows || []);
+      if (poLinks.length > 0) {
+        if (user.role !== Role.ADMIN) {
+          throw new Error('Phiếu đã được liên kết PO, không thể xoá cứng.');
+        }
+        const linkedPoIds = Array.from(new Set(poLinks.map((link: any) => link.purchase_order_id).filter(Boolean)));
+        let linkedPoRows: any[] = [];
+        if (linkedPoIds.length > 0) {
+          const { data, error: linkedPoError } = await supabase
+            .from('purchase_orders')
+            .select('id,status,items')
+            .in('id', linkedPoIds);
+          if (linkedPoError && linkedPoError.code !== '42P01') throw linkedPoError;
+          linkedPoRows = data || [];
+        }
+
+        const editablePoStatuses = new Set(['draft', 'cancelled', 'returned']);
+        const lockedPo = linkedPoRows.find((po: any) => !editablePoStatuses.has(String(po.status || '').toLowerCase()));
+        if (lockedPo) {
+          throw new Error('Phiếu đã liên kết PO đã gửi/đang xử lý, cần huỷ/trả PO trước khi xoá cứng.');
+        }
+
+        const lineIdsByPoId = poLinks.reduce((map: Map<string, Set<string>>, link: any) => {
+          if (!link.purchase_order_id || !link.purchase_order_line_id) return map;
+          const lineIds = map.get(link.purchase_order_id) || new Set<string>();
+          lineIds.add(link.purchase_order_line_id);
+          map.set(link.purchase_order_id, lineIds);
+          return map;
+        }, new Map<string, Set<string>>());
+
+        for (const po of linkedPoRows) {
+          const linkedLineIds = lineIdsByPoId.get(po.id) || new Set<string>();
+          const nextItems = (po.items || []).filter((item: any) => {
+            const lineId = item.lineId || item.itemId;
+            return !linkedLineIds.has(lineId) && item.requestId !== id && item.requestCode !== req.code;
+          });
+          const nextTotal = nextItems.reduce((sum: number, item: any) => sum + Number(item.qty || 0) * Number(item.unitPrice || 0), 0);
+          const { error: updatePoError } = await supabase
+            .from('purchase_orders')
+            .update({ items: nextItems, total_amount: nextTotal })
+            .eq('id', po.id);
+          if (updatePoError) throw updatePoError;
+        }
+
+        const { error: deletePoLinksError } = await supabase
+          .from('purchase_order_request_lines')
+          .delete()
+          .eq('material_request_id', id);
+        if (deletePoLinksError) throw deletePoLinksError;
+      }
       if ((txCount || 0) > 0 && relatedBatches.length === 0) throw new Error('Phiếu đã phát sinh phiếu kho, không thể xoá cứng.');
 
       if ((txCount || 0) > 0) {
@@ -1853,8 +1905,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (detachTxError) throw detachTxError;
       }
 
-      const { error } = await supabase.from('requests').delete().eq('id', id);
+      const { data: deletedRows, error } = await supabase
+        .from('requests')
+        .delete()
+        .eq('id', id)
+        .select('id');
       if (error) throw error;
+      if (!deletedRows || deletedRows.length === 0) {
+        throw new Error('Không xoá được phiếu trên Supabase. Vui lòng kiểm tra quyền xoá hoặc trạng thái phiếu.');
+      }
     }
 
     setRequests(prev => prev.filter(item => item.id !== id));

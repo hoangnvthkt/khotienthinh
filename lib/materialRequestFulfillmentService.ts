@@ -38,6 +38,12 @@ const isMissingFulfillmentTable = (error: any): boolean =>
 
 const newId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
+const formatPoNumber = (poNumber?: string | null): string => {
+  const trimmed = String(poNumber || '').trim();
+  if (!trimmed) return 'PO';
+  return /^PO[\s-]/i.test(trimmed) ? trimmed : `PO ${trimmed}`;
+};
+
 export const getRequestLineId = (request: MaterialRequest, line: RequestItem, index = 0): string =>
   line.lineId || `${request.id}-${index}`;
 
@@ -242,6 +248,23 @@ const emptySummary = (request: MaterialRequest): MaterialRequestFulfillmentSumma
 };
 
 export const materialRequestFulfillmentService = {
+  async listPurchaseOrderSourceLabels(poIds: string[]): Promise<Record<string, string>> {
+    const uniqueIds = Array.from(new Set(poIds.filter(Boolean)));
+    if (uniqueIds.length === 0) return {};
+
+    const { data, error } = await supabase
+      .from('purchase_orders')
+      .select('id,po_number,vendor_name')
+      .in('id', uniqueIds);
+    if (error) throw error;
+
+    return (data || []).reduce<Record<string, string>>((map, row: any) => {
+      const poNo = formatPoNumber(row.po_number);
+      map[row.id] = row.vendor_name ? `${row.vendor_name} (${poNo})` : poNo;
+      return map;
+    }, {});
+  },
+
   async listByRequest(materialRequestId: string): Promise<MaterialRequestFulfillmentBatch[]> {
     const { data: batchRows, error: batchError } = await supabase
       .from(BATCH_TABLE)
@@ -576,6 +599,8 @@ export const materialRequestFulfillmentService = {
 
   async recordPoReceipt(input: RecordPoReceiptInput): Promise<string[]> {
     if (!input.po.id || !input.transactionId) return [];
+    const poSourceSuffix = input.po.vendorName ? ` - ${input.po.vendorName}` : '';
+    const poNumber = formatPoNumber(input.po.poNumber);
 
     const { data: existingRows, error: existingError } = await supabase
       .from(BATCH_TABLE)
@@ -635,7 +660,7 @@ export const materialRequestFulfillmentService = {
         status: 'received',
         transactionId: input.transactionId,
         reason: null,
-        note: `Thực nhận từ PO ${input.po.poNumber}`,
+        note: `Thực nhận từ ${poNumber}${poSourceSuffix}`,
         createdBy: input.actorUserId,
         issuedBy: input.actorUserId,
         issuedAt: now,
@@ -662,7 +687,7 @@ export const materialRequestFulfillmentService = {
           receivedQty,
           unit: link.unit || poItem?.unit || null,
           varianceReason: null,
-          note: `Nhập thực nhận PO ${input.po.poNumber}`,
+          note: `Nhập thực nhận ${poNumber}${poSourceSuffix}`,
         };
       }).filter(line => line.receivedQty > 0);
 
@@ -692,6 +717,8 @@ export const materialRequestFulfillmentService = {
     if (!input.po.targetWarehouseId) {
       throw new Error('PO chưa có kho nhận nên không thể tạo phiếu chờ nhập kho.');
     }
+    const poSourceSuffix = input.po.vendorName ? ` - ${input.po.vendorName}` : '';
+    const poNumber = formatPoNumber(input.po.poNumber);
 
     const { data: existingLineRows, error: existingLineError } = await supabase
       .from(LINE_TABLE)
@@ -769,7 +796,7 @@ export const materialRequestFulfillmentService = {
           receivedQty: 0,
           unit: link.unit || poItem?.unit || null,
           varianceReason: null,
-          note: `Chờ nhận hàng từ PO ${input.po.poNumber}`,
+          note: `Chờ nhận hàng từ ${poNumber}${poSourceSuffix}`,
         };
       }).filter(line => line.issuedQty > 0);
 
@@ -794,7 +821,7 @@ export const materialRequestFulfillmentService = {
         requesterId: input.actorUserId,
         approverId: input.actorUserId,
         status: TransactionStatus.PENDING,
-        note: `PO ${input.po.poNumber} đang giao${input.po.vendorName ? ` - ${input.po.vendorName}` : ''}`,
+        note: `${poNumber} đang giao${poSourceSuffix}`,
         relatedRequestId: materialRequestId,
       };
 
@@ -812,7 +839,7 @@ export const materialRequestFulfillmentService = {
         status: 'issued',
         transactionId,
         reason: null,
-        note: `PO ${input.po.poNumber} đang giao, chờ thủ kho kiểm tra SL/CL và xác nhận nhập.`,
+        note: `${poNumber}${poSourceSuffix} đang giao, chờ thủ kho kiểm tra SL/CL và xác nhận nhập.`,
         createdBy: input.actorUserId,
         issuedBy: input.actorUserId,
         issuedAt: now,

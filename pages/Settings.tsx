@@ -7,7 +7,7 @@ import {
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
   Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot, FolderKanban,
-  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw
+  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
@@ -22,6 +22,7 @@ import SignaturePad from '../components/SignaturePad';
 import SettingsChibiBot from './settings/SettingsChibiBot';
 import SettingsProjectMasterData from './settings/SettingsProjectMasterData';
 import SettingsWorkGroups from './settings/SettingsWorkGroups';
+import SettingsInspectionTemplates from './settings/SettingsInspectionTemplates';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -42,6 +43,7 @@ type MaterialCatalogForm = {
   category: string;
   unit: string;
   purchaseUnit: string;
+  defaultLeadTimeDays: number;
 };
 
 const emptyMaterialCatalogForm = (): MaterialCatalogForm => ({
@@ -50,6 +52,7 @@ const emptyMaterialCatalogForm = (): MaterialCatalogForm => ({
   category: '',
   unit: '',
   purchaseUnit: '',
+  defaultLeadTimeDays: 7,
 });
 
 const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
@@ -431,6 +434,7 @@ const Settings: React.FC = () => {
         priceIn: 0,
         priceOut: 0,
         minStock: 0,
+        defaultLeadTimeDays: 7,
         stockByWarehouse: {},
       }),
       fields: [
@@ -463,6 +467,13 @@ const Settings: React.FC = () => {
           clearable: true,
           normalize: value => findUnitName(value),
           validate: value => value === undefined || value ? undefined : 'Đơn vị phụ chưa tồn tại.',
+        },
+        {
+          key: 'defaultLeadTimeDays',
+          label: 'Lead time mặc định',
+          aliases: ['Lead time mặc định', 'Lead time', 'Default lead time', 'Số ngày lead time'],
+          normalize: value => value === undefined ? undefined : Math.max(0, Math.min(365, Number(value) || 0)),
+          validate: value => value === undefined || Number(value) >= 0 ? undefined : 'Lead time phải >= 0.',
         },
       ],
     }, rows);
@@ -497,6 +508,7 @@ const Settings: React.FC = () => {
           category,
           unit,
           purchaseUnit: purchaseUnit && purchaseUnit !== unit ? purchaseUnit : undefined,
+          defaultLeadTimeDays: Math.max(0, Math.min(365, Number(materialForm.defaultLeadTimeDays) || 0)),
         });
       } else {
         await addItem({
@@ -509,6 +521,7 @@ const Settings: React.FC = () => {
           priceIn: 0,
           priceOut: 0,
           minStock: 0,
+          defaultLeadTimeDays: Math.max(0, Math.min(365, Number(materialForm.defaultLeadTimeDays) || 0)),
           stockByWarehouse: {},
         });
       }
@@ -528,6 +541,7 @@ const Settings: React.FC = () => {
       category: item.category || '',
       unit: item.unit || '',
       purchaseUnit: item.purchaseUnit || '',
+      defaultLeadTimeDays: Number(item.defaultLeadTimeDays ?? 7),
     });
   };
 
@@ -558,11 +572,12 @@ const Settings: React.FC = () => {
           'Danh mục *': sampleCategory,
           'ĐVT Chính *': sampleUnit,
           'Đơn vị phụ (Đơn vị mua hàng)': samplePurchaseUnit,
+          'Lead time mặc định': 15,
         },
       ];
       const wb = XLSX.utils.book_new();
       const createSheet = XLSX.utils.json_to_sheet(createRows);
-      createSheet['!cols'] = [{ wch: 18 }, { wch: 32 }, { wch: 24 }, { wch: 16 }, { wch: 30 }];
+      createSheet['!cols'] = [{ wch: 18 }, { wch: 32 }, { wch: 24 }, { wch: 16 }, { wch: 30 }, { wch: 18 }];
       XLSX.utils.book_append_sheet(wb, createSheet, 'Nhap_moi');
 
       const updateRows = [
@@ -570,10 +585,11 @@ const Settings: React.FC = () => {
           'Mã SKU *': items[0]?.sku || 'STEEL-001',
           'ĐVT Chính': sampleUnit,
           'Đơn vị phụ (Đơn vị mua hàng)': samplePurchaseUnit,
+          'Lead time mặc định': 15,
         },
       ];
       const updateSheet = XLSX.utils.json_to_sheet(updateRows);
-      updateSheet['!cols'] = [{ wch: 18 }, { wch: 16 }, { wch: 30 }];
+      updateSheet['!cols'] = [{ wch: 18 }, { wch: 16 }, { wch: 30 }, { wch: 18 }];
       XLSX.utils.book_append_sheet(wb, updateSheet, 'Cap_nhat');
 
       const guideSheet = XLSX.utils.aoa_to_sheet([
@@ -582,6 +598,7 @@ const Settings: React.FC = () => {
         ['Cập nhật', 'Dùng sheet Cap_nhat hoặc file chỉ gồm Mã SKU và các cột muốn sửa. Cột không có trong file sẽ giữ nguyên.'],
         ['Ô trống', 'Trong chế độ Cập nhật, ô trống nghĩa là không đổi dữ liệu.'],
         ['Xoá giá trị', 'Dùng __CLEAR__ cho field cho phép xoá, ví dụ Đơn vị phụ.'],
+        ['Lead time mặc định', 'Số ngày chuẩn của vật tư, dùng trong Kế hoạch vật tư nếu dự án chưa khai báo rule riêng.'],
         ['Danh mục / Đơn vị', 'Phải nhập đúng giá trị có trong các sheet danh mục hợp lệ.'],
       ]);
       guideSheet['!cols'] = [{ wch: 24 }, { wch: 100 }];
@@ -658,6 +675,7 @@ const Settings: React.FC = () => {
         const normalizedRecord = {
           ...record,
           purchaseUnit: record.purchaseUnit && record.purchaseUnit !== record.unit ? record.purchaseUnit : undefined,
+          defaultLeadTimeDays: Math.max(0, Math.min(365, Number(record.defaultLeadTimeDays ?? 7) || 0)),
         };
         const existing = items.find(item => normalizeText(item.sku) === normalizeText(normalizedRecord.sku));
         if (materialImportPreview.mode === 'create') {
@@ -738,6 +756,7 @@ const Settings: React.FC = () => {
     { id: 'warehouses', label: 'Kho bãi', icon: Building, roles: [Role.ADMIN] },
     { id: 'master-data', label: 'Dữ liệu gốc', icon: Database, roles: [Role.ADMIN] },
     { id: 'project-master-data', label: 'Danh mục DA', icon: FolderKanban, roles: [Role.ADMIN] },
+    { id: 'inspection-templates', label: 'Mẫu nghiệm thu', icon: ClipboardCheck, roles: [Role.ADMIN] },
     { id: 'work-groups', label: 'Nhóm làm việc', icon: Users, roles: [Role.ADMIN] },
     { id: 'org-chart', label: 'Sơ đồ tổ chức', icon: GitBranch, roles: [Role.ADMIN] },
     { id: 'loss-norms', label: 'Định mức hao hụt', icon: TrendingDown, roles: [Role.ADMIN] },
@@ -752,7 +771,7 @@ const Settings: React.FC = () => {
     const keyword = materialQuery.trim().toLowerCase();
     const rows = [...items].sort((a, b) => a.sku.localeCompare(b.sku, 'vi'));
     if (!keyword) return rows;
-    return rows.filter(item => [item.sku, item.name, item.category, item.unit, item.purchaseUnit]
+    return rows.filter(item => [item.sku, item.name, item.category, item.unit, item.purchaseUnit, item.defaultLeadTimeDays]
       .some(value => String(value || '').toLowerCase().includes(keyword)));
   }, [items, materialQuery]);
 
@@ -986,7 +1005,7 @@ const Settings: React.FC = () => {
                           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                             <FileSpreadsheet size={14} /> {editingMaterialItem ? 'Cập nhật vật tư' : 'Thêm mới danh mục vật tư'}
                           </h3>
-                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
                             <div>
                               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Mã SKU *</label>
                               <input
@@ -1038,6 +1057,17 @@ const Settings: React.FC = () => {
                                 {units.map(unit => <option key={unit.id} value={unit.name}>{unit.name}</option>)}
                               </select>
                             </div>
+                            <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Lead time</label>
+                              <input
+                                type="number"
+                                min={0}
+                                max={365}
+                                value={materialForm.defaultLeadTimeDays}
+                                onChange={event => setMaterialForm(prev => ({ ...prev, defaultLeadTimeDays: Number(event.target.value) }))}
+                                className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20"
+                              />
+                            </div>
                           </div>
                           <div className="flex flex-col sm:flex-row gap-3 justify-end">
                             {editingMaterialItem && (
@@ -1071,13 +1101,14 @@ const Settings: React.FC = () => {
                                 <th className="px-4 py-3 text-left">Danh mục</th>
                                 <th className="px-4 py-3 text-left">ĐVT Chính</th>
                                 <th className="px-4 py-3 text-left">Đơn vị phụ</th>
+                                <th className="px-4 py-3 text-right">Lead time</th>
                                 <th className="px-4 py-3 text-right">Thao tác</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 bg-white">
                               {filteredMaterialItems.length === 0 ? (
                                 <tr>
-                                  <td colSpan={6} className="py-12 text-center text-slate-400 text-sm font-bold">
+                                  <td colSpan={7} className="py-12 text-center text-slate-400 text-sm font-bold">
                                     Chưa có vật tư phù hợp.
                                   </td>
                                 </tr>
@@ -1088,6 +1119,7 @@ const Settings: React.FC = () => {
                                   <td className="px-4 py-3 text-slate-500">{item.category || '-'}</td>
                                   <td className="px-4 py-3 text-slate-500 font-bold">{item.unit || '-'}</td>
                                   <td className="px-4 py-3 text-slate-500">{item.purchaseUnit || item.unit || '-'}</td>
+                                  <td className="px-4 py-3 text-right font-bold text-slate-600">{Number(item.defaultLeadTimeDays ?? 7).toLocaleString()} ngày</td>
                                   <td className="px-4 py-3">
                                     <div className="flex items-center justify-end gap-1">
                                       <button
@@ -1270,6 +1302,10 @@ const Settings: React.FC = () => {
 
           {activeTab === 'project-master-data' && (
             <SettingsProjectMasterData />
+          )}
+
+          {activeTab === 'inspection-templates' && (
+            <SettingsInspectionTemplates />
           )}
 
           {activeTab === 'work-groups' && (

@@ -21,6 +21,7 @@ import {
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { loadXlsx } from '../lib/loadXlsx';
 import ExcelImportReviewModal from '../components/ExcelImportReviewModal';
+import ProjectOpeningBalanceModal from '../components/project/ProjectOpeningBalanceModal';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, getExcelCell, parseExcelRows } from '../lib/excelImport';
 import { useModuleData } from '../hooks/useModuleData';
 import { useWorkflow } from '../context/WorkflowContext';
@@ -49,7 +50,7 @@ import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, FileText,
     Building2, HardHat, AlertCircle, ArrowUpRight, ArrowDownRight,
-    Upload, Download, Filter, Calendar, Tag, List, Paperclip, Eye, Image,
+    Upload, Download, Filter, Calendar, Tag, List, Paperclip, Eye, Image, FileSpreadsheet,
     Users, UserPlus, Loader2, RefreshCcw, Search, EyeOff, ArchiveRestore, Shield, Pin
 } from 'lucide-react';
 
@@ -66,6 +67,7 @@ const ReportTab = React.lazy(() => import('./project/ReportTab'));
 const DocumentsTab = React.lazy(() => import('./project/DocumentsTab'));
 const ProjectOrgTab = React.lazy(() => import('./project/ProjectOrgTab'));
 const ExecutiveTab = React.lazy(() => import('./project/ExecutiveTab'));
+const QualityTab = React.lazy(() => import('./project/QualityTab'));
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
     planning: { label: 'Lập kế hoạch', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
@@ -101,6 +103,7 @@ const PROGRESS_MODE_OPTIONS: { value: ProjectProgressCalculationMode; label: str
     { value: 'budget', label: 'Theo ngân sách công việc' },
     { value: 'duration', label: 'Theo thời gian thực hiện' },
     { value: 'task_count', label: 'Theo số lượng công việc hoàn thành' },
+    { value: 'contract_value', label: 'Theo giá trị hợp đồng (VT cấp phát)' },
     { value: 'manual', label: 'Nhập thủ công' },
 ];
 
@@ -304,6 +307,9 @@ const PROGRESS_IMPORT_ALIASES: Record<string, ProjectProgressCalculationMode> = 
     'theo thoi gian thuc hien': 'duration',
     task_count: 'task_count',
     'theo so luong cong viec hoan thanh': 'task_count',
+    contract_value: 'contract_value',
+    'theo gia tri hop dong': 'contract_value',
+    'theo gia tri hop dong (vt cap phat)': 'contract_value',
     manual: 'manual',
     'nhap thu cong': 'manual',
 };
@@ -346,6 +352,7 @@ const ProjectDashboard: React.FC = () => {
     const [activeView, setActiveView] = useState<'list' | 'overview'>('list');
     const [overviewTab, setOverviewTab] = useState<ProjectOverviewTabKey>('executive');
     const [showBudgetForm, setShowBudgetForm] = useState(false);
+    const [showOpeningBalanceForm, setShowOpeningBalanceForm] = useState(false);
     const [showTxForm, setShowTxForm] = useState(false);
     const [budgetData, setBudgetData] = useState<ProjectFinance | null>(null);
     const [txFilter, setTxFilter] = useState<ProjectCostCategory | 'all'>('all');
@@ -2798,10 +2805,16 @@ const ProjectDashboard: React.FC = () => {
                                 )}
                                 <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
                                 {canManageBudgetTab && (
-                                    <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
-                                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 dark:text-orange-400 dark:bg-orange-950/40 dark:border-orange-800/80 dark:hover:bg-orange-900/40 transition-all shrink-0">
-                                        <Edit2 size={14} /> Ngân sách
-                                    </button>
+                                    <>
+                                        <button onClick={() => setShowOpeningBalanceForm(true)}
+                                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-teal-600 bg-teal-50 border border-teal-200 hover:bg-teal-100 dark:text-teal-400 dark:bg-teal-950/40 dark:border-teal-800/80 dark:hover:bg-teal-900/40 transition-all shrink-0">
+                                            <FileSpreadsheet size={14} /> Nhập đầu kỳ
+                                        </button>
+                                        <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
+                                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 dark:text-orange-400 dark:bg-orange-950/40 dark:border-orange-800/80 dark:hover:bg-orange-900/40 transition-all shrink-0">
+                                            <Edit2 size={14} /> Ngân sách
+                                        </button>
+                                    </>
                                 )}
                             </>
                         )}
@@ -2888,6 +2901,8 @@ const ProjectDashboard: React.FC = () => {
                         <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('dailylog')} />
                     ) : overviewTab === 'subcontract' ? (
                         <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('subcontract')} />
+                    ) : overviewTab === 'quality' ? (
+                        <QualityTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('quality')} />
                     ) : overviewTab === 'material' ? (
                         <MaterialTab
                             constructionSiteId={effectiveSiteId || undefined}
@@ -3476,6 +3491,16 @@ const ProjectDashboard: React.FC = () => {
             {renderBudgetForm()}
             {renderTxForm()}
             {renderHideProjectModal()}
+            {showOpeningBalanceForm && selectedProject && effectiveSiteId && (
+                <ProjectOpeningBalanceModal
+                    open={showOpeningBalanceForm}
+                    project={selectedProject}
+                    constructionSiteId={effectiveSiteId}
+                    siteName={selectedSite?.name}
+                    finance={selectedFinance}
+                    onClose={() => setShowOpeningBalanceForm(false)}
+                />
+            )}
 
             {/* Lightbox Preview */}
             {previewUrl && (

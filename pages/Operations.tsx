@@ -23,6 +23,7 @@ import { useReservedStock } from '../hooks/useReservedStock';
 import { useModuleData } from '../hooks/useModuleData';
 import { canApproveWmsTransaction, canReceiveWmsTransaction, isFulfillmentBatchTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
+import { clampQuantity, parseQuantityInput } from '../lib/quantityInput';
 
 const Operations: React.FC = () => {
   const location = useLocation();
@@ -137,12 +138,28 @@ const Operations: React.FC = () => {
     return item?.stockByWarehouse[warehouseId] || 0;
   };
 
+  const getMaxIssueQuantity = (itemId: string): number | undefined => {
+    if (activeTab === TransactionType.IMPORT) return undefined;
+    return getStockSummary(itemId, selectedWarehouseId).available;
+  };
+
+  const normalizeTransactionQuantity = (itemId: string, rawValue: number | string): number => {
+    const parsed = typeof rawValue === 'number' ? rawValue : parseQuantityInput(rawValue);
+    return clampQuantity(parsed, getMaxIssueQuantity(itemId));
+  };
+
+  const getDefaultTransactionQuantity = (itemId: string): number => {
+    if (activeTab === TransactionType.IMPORT) return 1;
+    const maxQty = getMaxIssueQuantity(itemId) ?? 0;
+    return maxQty > 0 ? Math.min(1, maxQty) : 0;
+  };
+
   const handleSelectItem = (item: InventoryItem) => {
     const existing = txItems.find(i => i.itemId === item.id);
     if (existing) {
-      setTxItems(txItems.map(i => i.itemId === item.id ? { ...i, quantity: i.quantity + 1 } : i));
+      setTxItems(txItems.map(i => i.itemId === item.id ? { ...i, quantity: normalizeTransactionQuantity(item.id, i.quantity + 1) } : i));
     } else {
-      setTxItems([...txItems, { itemId: item.id, quantity: 1, price: item.priceIn || 0 }]);
+      setTxItems([...txItems, { itemId: item.id, quantity: getDefaultTransactionQuantity(item.id), price: item.priceIn || 0 }]);
     }
   };
 
@@ -205,6 +222,28 @@ const Operations: React.FC = () => {
 
   const handleSubmit = () => {
     if (txItems.length === 0) return setWarningState({ isOpen: true, title: 'Chưa có dữ liệu', message: 'Chọn ít nhất một vật tư.' });
+    const invalidQtyItem = txItems.find(ti => ti.quantity <= 0);
+    if (invalidQtyItem) {
+      const product = items.find(item => item.id === invalidQtyItem.itemId);
+      return setWarningState({
+        isOpen: true,
+        title: 'Số lượng không hợp lệ',
+        message: `${product?.name || 'Vật tư'} phải có số lượng lớn hơn 0.`,
+      });
+    }
+    if (activeTab !== TransactionType.IMPORT) {
+      const overAvailableItem = txItems.find(ti => ti.quantity > (getMaxIssueQuantity(ti.itemId) ?? 0));
+      if (overAvailableItem) {
+        const product = items.find(item => item.id === overAvailableItem.itemId);
+        const maxQty = getMaxIssueQuantity(overAvailableItem.itemId) ?? 0;
+        setTxItems(prev => prev.map(ti => ti.itemId === overAvailableItem.itemId ? { ...ti, quantity: maxQty } : ti));
+        return setWarningState({
+          isOpen: true,
+          title: 'Vượt tồn khả dụng',
+          message: `${product?.name || 'Vật tư'} chỉ còn tối đa ${maxQty} ${product?.unit || ''}. Hệ thống đã đưa số lượng về mức tối đa.`,
+        });
+      }
+    }
     if (activeTab === TransactionType.TRANSFER && (!targetWarehouseId || selectedWarehouseId === targetWarehouseId)) {
       return setWarningState({ isOpen: true, title: "Lỗi logic", message: "Vui lòng kiểm tra lại kho nguồn và kho nhận." });
     }
@@ -803,10 +842,10 @@ const Operations: React.FC = () => {
                                 <td className="p-4">
                                   <div className="flex items-center gap-2">
                                     <input
-                                      type="number"
-                                      min="1"
+                                      type="text"
+                                      inputMode="decimal"
                                       value={item.quantity}
-                                      onChange={(e) => setTxItems(txItems.map(ti => ti.itemId === item.itemId ? { ...ti, quantity: parseInt(e.target.value) || 1 } : ti))}
+                                      onChange={(e) => setTxItems(txItems.map(ti => ti.itemId === item.itemId ? { ...ti, quantity: normalizeTransactionQuantity(item.itemId, e.target.value) } : ti))}
                                       className={`w-full border-2 rounded-lg px-2 py-1.5 text-center font-black text-accent outline-none focus:border-accent ${isOverOnHand ? 'border-red-300 bg-red-50' : isOverAvailable ? 'border-amber-300 bg-amber-50' : 'border-slate-100'}`}
                                     />
                                     <span className="text-[10px] font-black text-slate-400 uppercase">{product?.unit}</span>
@@ -834,8 +873,10 @@ const Operations: React.FC = () => {
                     <div className="md:hidden divide-y divide-slate-100">
                       {txItems.map((item, idx) => {
                         const product = items.find(i => i.id === item.itemId);
-                        const currentStock = getStockInWarehouse(item.itemId, selectedWarehouseId);
-                        const isOverStock = activeTab !== TransactionType.IMPORT && item.quantity > currentStock;
+                        const stockSummary = getStockSummary(item.itemId, selectedWarehouseId);
+                        const currentStock = stockSummary.onHand;
+                        const availableStock = stockSummary.available;
+                        const isOverStock = activeTab !== TransactionType.IMPORT && item.quantity > availableStock;
                         return (
                           <div key={idx} className="p-4 space-y-3">
                             <div className="flex justify-between items-start">
@@ -846,6 +887,7 @@ const Operations: React.FC = () => {
                                   <div className={`text-[10px] font-bold mt-1 flex items-center gap-1 ${isOverStock ? 'text-orange-500' : 'text-slate-400'}`}>
                                     {isOverStock && <AlertTriangle size={9} />}
                                     Tồn kho: {currentStock} {product?.unit}
+                                    {stockSummary.reserved > 0 && `, khả dụng: ${availableStock}`}
                                     {isOverStock && ' (Vượt tồn)'}
                                   </div>
                                 )}
@@ -855,9 +897,9 @@ const Operations: React.FC = () => {
                             <div className="flex justify-between items-center">
                               <span className="text-[10px] text-slate-400 font-bold uppercase">Số lượng:</span>
                               <div className="flex items-center gap-3 bg-slate-50 p-1 rounded-lg border border-slate-100">
-                                <button onClick={() => setTxItems(txItems.map(ti => ti.itemId === item.itemId ? { ...ti, quantity: Math.max(1, ti.quantity - 1) } : ti))} className="p-1.5 bg-white rounded border border-slate-200 text-slate-400"><Minus size={14} /></button>
-                                <span className="w-8 text-center font-black text-sm">{item.quantity}</span>
-                                <button onClick={() => setTxItems(txItems.map(ti => ti.itemId === item.itemId ? { ...ti, quantity: ti.quantity + 1 } : ti))} className="p-1.5 bg-white rounded border border-slate-200 text-slate-400"><Plus size={14} /></button>
+                                <button onClick={() => setTxItems(txItems.map(ti => ti.itemId === item.itemId ? { ...ti, quantity: normalizeTransactionQuantity(item.itemId, ti.quantity - 1) } : ti))} className="p-1.5 bg-white rounded border border-slate-200 text-slate-400"><Minus size={14} /></button>
+                                <span className="w-12 text-center font-black text-sm">{item.quantity}</span>
+                                <button onClick={() => setTxItems(txItems.map(ti => ti.itemId === item.itemId ? { ...ti, quantity: normalizeTransactionQuantity(item.itemId, ti.quantity + 1) } : ti))} className="p-1.5 bg-white rounded border border-slate-200 text-slate-400"><Plus size={14} /></button>
                               </div>
                             </div>
                           </div>

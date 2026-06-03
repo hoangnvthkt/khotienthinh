@@ -7,6 +7,7 @@ import { canApproveWmsTransaction, canReceiveWmsTransaction, isFulfillmentBatchT
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
+import { parseQuantityInput, sanitizeQuantityInput } from '../lib/quantityInput';
 
 interface TransactionDetailModalProps {
   isOpen: boolean;
@@ -57,10 +58,20 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
     }));
   };
 
+  const updateQuantityValue = (index: number, rawValue: string) => {
+    const maxQty = Number(transaction.items[index]?.quantity || 0);
+    updateQuantityDraft(index, {
+      quantity: sanitizeQuantityInput(rawValue, {
+        max: maxQty,
+        previousValue: quantityDrafts[index]?.quantity ?? String(maxQty),
+      }),
+    });
+  };
+
   const buildQuantityLines = () => {
     return transaction.items.map((ti, index) => {
       const draft = quantityDrafts[index] || { quantity: String(ti.quantity ?? 0), reason: '' };
-      const quantity = Number(draft.quantity);
+      const quantity = parseQuantityInput(draft.quantity);
       const originalQty = Number(ti.quantity || 0);
       const reason = draft.reason.trim();
 
@@ -242,7 +253,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                 {transaction.items.map((ti, idx) => {
                   const item = items.find(i => i.id === ti.itemId) || transaction.pendingItems?.find(i => i.id === ti.itemId);
                   const draft = quantityDrafts[idx] || { quantity: String(ti.quantity ?? 0), reason: '' };
-                  const draftQty = Number(draft.quantity);
+                  const draftQty = parseQuantityInput(draft.quantity);
                   const hasVariance = Number.isFinite(draftQty) && draftQty !== Number(ti.quantity || 0);
                   return (
                     <tr key={`${ti.fulfillmentBatchId || ''}-${ti.requestLineId || ti.itemId}-${idx}`}>
@@ -258,12 +269,10 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                           <div className="flex flex-col items-end gap-2">
                             <div className="flex items-center justify-end gap-2">
                               <input
-                                type="number"
-                                min="0"
-                                max={ti.quantity}
-                                step="0.001"
+                                type="text"
+                                inputMode="decimal"
                                 value={draft.quantity}
-                                onChange={(event) => updateQuantityDraft(idx, { quantity: event.target.value })}
+                                onChange={(event) => updateQuantityValue(idx, event.target.value)}
                                 className="w-28 rounded-lg border border-slate-200 bg-white px-3 py-2 text-right text-sm font-black text-slate-800 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/10"
                               />
                               <span className="w-8 text-left text-[10px] font-bold text-slate-400">{item?.unit}</span>

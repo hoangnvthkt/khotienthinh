@@ -14,6 +14,7 @@ import {
   Package,
   RefreshCw,
   ShieldCheck,
+  TrendingUp,
   Truck,
 } from 'lucide-react';
 import {
@@ -24,6 +25,8 @@ import {
   SupplierDashboardMetric,
   projectDashboardMetricsService,
 } from '../../lib/projectDashboardMetricsService';
+import { isSupabaseConfigured, supabase } from '../../lib/supabase';
+import { fromDb } from '../../lib/dbMapping';
 
 interface FastConsDashboardProps {
   constructionSiteId: string;
@@ -433,6 +436,200 @@ const ReconciliationTable = ({
   );
 };
 
+interface WeeklySnapshot {
+  id?: string;
+  scopeKey: string;
+  weekLabel: string;
+  weekStart: string;
+  progressPercent: number;
+  constructionProgressPercent?: number;
+  valueProgressPercent?: number;
+  progressMode: string;
+  suppliedValue?: number;
+  contractTotalValue?: number;
+  purchasedValue?: number;
+  issuedValue?: number;
+  recognizedValue?: number;
+  ganttPercent?: number;
+  calculatedAt: string;
+}
+
+const getISOWeekLabel = (date: Date): string => {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `W${String(weekNo).padStart(2, '0')}/${d.getUTCFullYear()}`;
+};
+
+const getWeekStart = (date: Date): string => {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  return d.toISOString().slice(0, 10);
+};
+
+const WeeklyProgressTrendPanel: React.FC<{
+  constructionSiteId: string;
+  projectId?: string;
+  currentMetrics: ProjectDashboardMetrics;
+}> = ({ constructionSiteId, projectId, currentMetrics }) => {
+  const [snapshots, setSnapshots] = useState<WeeklySnapshot[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const scopeKey = projectId && constructionSiteId
+    ? `${projectId}_${constructionSiteId}`
+    : projectId || constructionSiteId;
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        if (!isSupabaseConfigured) {
+          setSnapshots([]);
+          return;
+        }
+        const { data, error } = await supabase
+          .from('weekly_progress_snapshots')
+          .select('*')
+          .eq('scope_key', scopeKey)
+          .order('week_start', { ascending: true })
+          .limit(24);
+        if (error) throw error;
+        if (!cancelled) {
+          setSnapshots((data || []).map(row => fromDb(row) as WeeklySnapshot));
+        }
+      } catch {
+        if (!cancelled) setSnapshots([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [scopeKey]);
+
+  const constructionProgressPercent = currentMetrics.progress.constructionProgressPercent ?? currentMetrics.progress.percent ?? 0;
+  const valueProgressPercent = currentMetrics.progress.valueProgressPercent ?? (currentMetrics.progress.mode === 'contract_value' ? currentMetrics.progress.percent : 0);
+
+  // Save current week snapshot whenever metrics change (from sync)
+  useEffect(() => {
+    if (!isSupabaseConfigured || !currentMetrics) return;
+    const now = new Date();
+    const weekLabel = getISOWeekLabel(now);
+    const weekStart = getWeekStart(now);
+    const snapshot: Record<string, unknown> = {
+      scope_key: scopeKey,
+      project_id: projectId || null,
+      construction_site_id: constructionSiteId || null,
+      week_label: weekLabel,
+      week_start: weekStart,
+      progress_percent: constructionProgressPercent,
+      progress_mode: currentMetrics.progress.mode,
+      construction_progress_percent: constructionProgressPercent,
+      value_progress_percent: valueProgressPercent,
+      supplied_value: currentMetrics.progress.suppliedValue || null,
+      contract_total_value: currentMetrics.progress.contractTotalValue || null,
+      purchased_value: currentMetrics.progress.purchasedValue || 0,
+      issued_value: currentMetrics.progress.issuedValue || 0,
+      recognized_value: currentMetrics.progress.recognizedValue || currentMetrics.progress.suppliedValue || 0,
+      gantt_percent: currentMetrics.progress.ganttPercent || null,
+      calculated_at: currentMetrics.calculatedAt,
+      updated_at: new Date().toISOString(),
+    };
+    supabase
+      .from('weekly_progress_snapshots')
+      .upsert(snapshot, { onConflict: 'scope_key,week_start' })
+      .then(({ error }) => {
+        if (error) console.warn('Failed to save weekly snapshot:', error);
+        else {
+          // Refresh snapshots after upsert
+          supabase
+            .from('weekly_progress_snapshots')
+            .select('*')
+            .eq('scope_key', scopeKey)
+            .order('week_start', { ascending: true })
+            .limit(24)
+            .then(({ data }) => {
+              if (data) setSnapshots(data.map(row => fromDb(row) as WeeklySnapshot));
+            });
+        }
+      });
+  }, [constructionProgressPercent, currentMetrics, currentMetrics.calculatedAt, scopeKey, constructionSiteId, projectId, valueProgressPercent]);
+
+  const displaySnapshots = snapshots.slice(-12);
+  const maxPercent = Math.max(100, ...displaySnapshots.map(s => s.progressPercent));
+  const isContractValueMode = currentMetrics.progress.mode === 'contract_value';
+
+  if (loading) return null;
+  if (displaySnapshots.length < 2) return null;
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center">
+            <TrendingUp size={15} />
+          </div>
+          <div>
+            <h3 className="text-xs font-black text-slate-800">Trend tiến độ theo tuần</h3>
+            <p className="text-[11px] font-semibold text-slate-400 mt-0.5">
+              Tiến độ thi công tuần · {isContractValueMode ? 'Dự án đang chọn mode giá trị' : currentMetrics.progress.modeLabel} · {displaySnapshots.length} tuần gần nhất
+            </p>
+          </div>
+        </div>
+        <span className="text-lg font-black text-slate-900">{constructionProgressPercent}%</span>
+      </div>
+      <div className="p-4">
+        <div className="flex items-end gap-1.5" style={{ height: 160 }}>
+          {displaySnapshots.map((snap, idx) => {
+            const barHeight = maxPercent > 0 ? (snap.progressPercent / maxPercent) * 100 : 0;
+            const isLast = idx === displaySnapshots.length - 1;
+            const delta = idx > 0 ? snap.progressPercent - displaySnapshots[idx - 1].progressPercent : 0;
+            return (
+              <div key={snap.weekStart} className="flex-1 flex flex-col items-center justify-end h-full gap-1 group relative">
+                {/* Tooltip */}
+                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-10">
+                  <div className="bg-slate-900 text-white text-[10px] font-bold rounded-lg px-2.5 py-1.5 whitespace-nowrap shadow-lg">
+                    <div>{snap.weekLabel}</div>
+                    <div className="mt-0.5">{snap.progressPercent}%{delta !== 0 ? ` (${delta > 0 ? '+' : ''}${delta}%)` : ''}</div>
+                    {snap.valueProgressPercent != null && (
+                      <div className="mt-0.5 text-slate-300">GT: {snap.valueProgressPercent}% · {fmtMoney(snap.recognizedValue || snap.suppliedValue || 0)}</div>
+                    )}
+                  </div>
+                </div>
+                {/* Bar */}
+                <div
+                  className={`w-full rounded-t-md transition-all duration-300 ${isLast ? 'bg-indigo-500' : 'bg-slate-200 group-hover:bg-indigo-300'}`}
+                  style={{ height: `${Math.max(2, barHeight)}%`, minHeight: 2 }}
+                />
+                {/* Label */}
+                <span className={`text-[9px] font-bold ${isLast ? 'text-indigo-700' : 'text-slate-400'} leading-tight text-center`}>
+                  {snap.weekLabel.split('/')[0]}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        {/* Legend */}
+        <div className="flex items-center justify-between mt-3 px-1">
+          <span className="text-[10px] font-semibold text-slate-400">
+            {displaySnapshots[0]?.weekLabel} → {displaySnapshots[displaySnapshots.length - 1]?.weekLabel}
+          </span>
+          {displaySnapshots.length >= 2 && (
+            <span className={`text-[10px] font-black ${(displaySnapshots[displaySnapshots.length - 1].progressPercent - displaySnapshots[0].progressPercent) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+              {(displaySnapshots[displaySnapshots.length - 1].progressPercent - displaySnapshots[0].progressPercent) >= 0 ? '+' : ''}
+              {displaySnapshots[displaySnapshots.length - 1].progressPercent - displaySnapshots[0].progressPercent}% trong kỳ
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteId, projectId }) => {
   const [metrics, setMetrics] = useState<ProjectDashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -535,6 +732,8 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
       ? 'orange'
       : 'blue';
   const progressVarianceText = `${scheduleHealth.progressVariance >= 0 ? '+' : ''}${scheduleHealth.progressVariance}%`;
+  const constructionProgressPercent = metrics.progress.constructionProgressPercent ?? metrics.progress.percent ?? 0;
+  const valueProgressPercent = metrics.progress.valueProgressPercent ?? (metrics.progress.mode === 'contract_value' ? metrics.progress.percent : 0);
 
   return (
     <section className="space-y-4">
@@ -566,11 +765,18 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
         </div>
         <div className="p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
           <SummaryCard
-            title="Tiến độ thực tế"
-            value={`${scheduleHealth.actualProgress}%`}
+            title="Tiến độ thi công"
+            value={`${constructionProgressPercent}%`}
             sub={`Kế hoạch ${scheduleHealth.plannedProgress}% · lệch ${progressVarianceText}`}
             icon={<Activity size={16} />}
             tone={progressTone}
+          />
+          <SummaryCard
+            title="Tiến độ theo giá trị"
+            value={`${valueProgressPercent}%`}
+            sub={`Ghi nhận ${fmtMoney(metrics.progress.recognizedValue || 0)} / HĐ ${fmtMoney(metrics.progress.contractTotalValue || 0)}`}
+            icon={<Package size={16} />}
+            tone={valueProgressPercent >= constructionProgressPercent ? 'emerald' : 'orange'}
           />
           <SummaryCard
             title="Forecast hoàn thành"
@@ -615,6 +821,8 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
         <PriorityAlertsPanel metrics={metrics} />
         <ApprovalQueuePanel metrics={metrics} />
       </div>
+
+      <WeeklyProgressTrendPanel constructionSiteId={constructionSiteId} projectId={projectId} currentMetrics={metrics} />
 
       <PaymentRiskPanel metrics={metrics} />
 

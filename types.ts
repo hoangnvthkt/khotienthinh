@@ -290,7 +290,7 @@ export interface MaterialRequestEvent {
 }
 
 export type ProjectStatus = 'planning' | 'active' | 'paused' | 'completed';
-export type ProjectProgressCalculationMode = 'gantt_weighted' | 'budget' | 'duration' | 'task_count' | 'manual';
+export type ProjectProgressCalculationMode = 'gantt_weighted' | 'budget' | 'duration' | 'task_count' | 'contract_value' | 'manual';
 
 export interface ProjectMasterCategory {
   id: string;
@@ -481,7 +481,7 @@ export interface ProjectContract {
 
 // ==================== TIẾN ĐỘ (Gantt) ====================
 export type TaskDependencyType = 'FS' | 'SS' | 'FF' | 'SF';
-export type ProjectTaskProgressMode = 'manual' | 'derived_from_acceptance' | 'completion_request' | 'daily_log' | 'children_auto';
+export type ProjectTaskProgressMode = 'manual' | 'derived_from_acceptance' | 'completion_request' | 'daily_log' | 'children_auto' | 'weekly_report';
 export type ProjectTaskCompletionStatus = 'submitted' | 'verified' | 'approved' | 'returned' | 'cancelled';
 
 export type DelayCategory = 'material' | 'weather' | 'drawing' | 'labor' | 'other';
@@ -497,7 +497,7 @@ export interface ProjectTask {
   startDate: string;
   endDate: string;
   duration: number;         // ngày
-  progress: number;         // 0-100
+  progress: number;         // >=0; weekly reports may exceed 100 for over-completion
   progressMode?: ProjectTaskProgressMode;
   assignee?: string;
   assigneeUserId?: string;   // User ID người phụ trách chuẩn từ project_staff
@@ -598,6 +598,79 @@ export interface ProjectWorkBoqItem {
   createdAt?: string;
   updatedAt?: string;
 }
+
+export interface ProjectWeeklyTaskProgress {
+  id?: string;
+  scopeKey: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  taskId: string;
+  weekStart: string;
+  progressPercent: number;
+  quantityDone: number;
+  note?: string | null;
+  attachments?: Attachment[];
+  updatedBy?: string | null;
+  updatedAt?: string;
+  createdAt?: string;
+}
+
+export interface ProjectValueProgressMetric {
+  contractTotalValue: number;
+  purchasedValue: number;
+  issuedValue: number;
+  recognizedValue: number;
+  valueProgressPercent: number;
+}
+
+export type ProjectOpeningBalanceStatus = 'draft' | 'locked' | 'void';
+
+export interface ProjectOpeningBalance {
+  id?: string;
+  scopeKey: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  asOfDate: string;
+  contractValue: number;
+  constructionProgressPercent: number;
+  purchasedValue: number;
+  issuedValue: number;
+  usedValue: number;
+  recognizedValue: number;
+  status: ProjectOpeningBalanceStatus;
+  note?: string | null;
+  stockTransactionIds?: string[];
+  materialProjectTransactionId?: string | null;
+  createdBy?: string | null;
+  lockedBy?: string | null;
+  lockedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ProjectOpeningBalanceLine {
+  id?: string;
+  openingBalanceId?: string;
+  inventoryItemId?: string | null;
+  sku: string;
+  itemName: string;
+  unit: string;
+  warehouseId: string;
+  purchasedQty: number;
+  issuedQty: number;
+  usedQty: number;
+  remainingQty: number;
+  unitPrice: number;
+  remainingValue: number;
+  note?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type ProjectOpeningBalanceImportRow = Omit<ProjectOpeningBalanceLine, 'id' | 'openingBalanceId' | 'createdAt' | 'updatedAt'> & {
+  rowNumber?: number;
+  errors?: string[];
+};
 
 export type BoqReconciliationStatus = 'draft' | 'submitted' | 'reviewed' | 'locked';
 
@@ -834,6 +907,15 @@ export interface DailyLog {
   weather: WeatherType;
   workerCount: number;
   description: string;
+  acceptanceDescription?: string;
+  workSafetyOk?: boolean;
+  envHygieneOk?: boolean;
+  trafficSafetyOk?: boolean;
+  supervisorConstructionEval?: string;
+  supervisorAcceptanceEval?: string;
+  supervisorSafetyOk?: boolean;
+  supervisorHygieneOk?: boolean;
+  supervisorTrafficOk?: boolean;
   issues?: string;
   photos?: { name: string; url: string }[];
   gpsLat?: number;
@@ -1280,6 +1362,130 @@ export interface MaterialBudgetItem {
   notes?: string;
 }
 
+export type MaterialDemandDistributionMethod = 'pre_start' | 'linear' | 'custom_curve';
+export type MaterialForecastWindow = '7d' | '30d' | '90d';
+export type MaterialPlanningRuleSource = 'item' | 'category' | 'default';
+
+export interface MaterialPlanningRule {
+  id?: string;
+  scopeKey: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  inventoryItemId?: string | null;
+  category?: string | null;
+  leadTimeDays: number;
+  distributionMethod: MaterialDemandDistributionMethod;
+  curveTemplateId?: string | null;
+  note?: string | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PlanningCurvePoint {
+  id?: string;
+  curveId: string;
+  sequence: number;
+  percentage: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PlanningCurveTemplate {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  points: PlanningCurvePoint[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface MaterialForecastDetail {
+  id: string;
+  materialBudgetItemId: string;
+  workBoqItemId?: string | null;
+  taskId?: string | null;
+  wbsCode?: string | null;
+  taskName: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  needDate?: string | null;
+  remainingDemandQty: number;
+  leadTimeDays: number;
+  distributionMethod: MaterialDemandDistributionMethod;
+  curveTemplateId?: string | null;
+  curveTemplateName?: string | null;
+  demandQty: Record<MaterialForecastWindow, number>;
+  demandValue: Record<MaterialForecastWindow, number>;
+  warnings: string[];
+}
+
+export interface MaterialForecastRow {
+  key: string;
+  inventoryItemId?: string | null;
+  sku?: string | null;
+  itemName: string;
+  category: string;
+  unit: string;
+  unitPrice: number;
+  planningUnitPrice: number;
+  planningUnitPriceSource: 'latest_confirmed_po' | 'latest_received' | 'material_master' | 'fallback';
+  siteAvailableQty: number;
+  incomingQty: Record<MaterialForecastWindow, number>;
+  demandQty: Record<MaterialForecastWindow, number>;
+  demandValue: Record<MaterialForecastWindow, number>;
+  shortageQty: Record<MaterialForecastWindow, number>;
+  shortageValue: Record<MaterialForecastWindow, number>;
+  forecastQty7d: number;
+  forecastQty30d: number;
+  forecastQty90d: number;
+  forecastValue7d: number;
+  forecastValue30d: number;
+  forecastValue90d: number;
+  shortageQty7d: number;
+  shortageQty30d: number;
+  shortageQty90d: number;
+  shortageValue7d: number;
+  shortageValue30d: number;
+  shortageValue90d: number;
+  leadTimeDays: number;
+  distributionMethod: MaterialDemandDistributionMethod;
+  curveTemplateId?: string | null;
+  curveTemplateName?: string | null;
+  ruleSource: MaterialPlanningRuleSource;
+  warnings: string[];
+  details: MaterialForecastDetail[];
+}
+
+export interface MaterialPlanningSummary {
+  rowCount: number;
+  demandQty: Record<MaterialForecastWindow, number>;
+  demandValue: Record<MaterialForecastWindow, number>;
+  shortageQty: Record<MaterialForecastWindow, number>;
+  shortageValue: Record<MaterialForecastWindow, number>;
+  shortageRowCount: number;
+  criticalShortageCount: number;
+  missingInventoryCount: number;
+  etaMissingPoCount: number;
+  invalidTaskCount: number;
+}
+
+export interface MaterialPlanningForecast {
+  rows: MaterialForecastRow[];
+  summary: MaterialPlanningSummary;
+}
+
+export interface MaterialPlanningDraftPo {
+  poNumber: string;
+  targetWarehouseId: string;
+  expectedDeliveryDate?: string;
+  sourceMode?: PurchaseOrderSourceMode;
+  items: PurchaseOrderItem[];
+  note?: string;
+}
+
 export interface ProjectMaterialRequest extends ProjectSubmissionFields {
   id: string;
   projectId?: string | null;
@@ -1381,6 +1587,13 @@ export interface PurchaseOrderItem {
   specification?: string;
   manualReason?: string;
   note?: string;
+
+  // Dynamic Technical Specs (stored in JSONB items, no DB migration needed)
+  specs?: Record<string, { value: number | string; unit?: string; label?: string }>;
+  pricingMode?: 'standard' | 'by_area' | 'by_length' | 'by_weight' | 'by_volume';
+  computedArea?: number;
+  computedWeight?: number;
+  computedLineTotal?: number;
 }
 
 export interface PurchaseOrderRequestLineLink {
@@ -1467,6 +1680,7 @@ export interface InventoryItem {
   priceIn: number;
   priceOut: number;
   minStock: number;
+  defaultLeadTimeDays?: number;
   supplierId?: string; // Link to Supplier
   imageUrl?: string;
   location?: string; // Vị trí trong kho, ví dụ: Kệ A-3, Ô 2
@@ -2072,6 +2286,189 @@ export interface Attachment {
   category?: string;     // invoice | contract | manual | other
   uploadedAt?: string;
   uploadedBy?: string;
+}
+
+// ==================== QUẢN LÝ CHẤT LƯỢNG (Quality Management) ====================
+
+export type QualityCheckResult = 'pass' | 'fail' | 'conditional';
+export type QualityConclusionResult = 'accepted' | 'conditional' | 'rejected';
+export type QualityChecklistStatus = 'draft' | 'submitted' | 'approved' | 'returned' | 'cancelled';
+export type InspectionResult = 'PASSED' | 'FAILED';
+
+// ---- Inspection Template (metadata-driven V2) ----
+
+export interface InspectionCategory {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface InspectionWorkType {
+  id: string;
+  categoryId: string;
+  code: string;
+  name: string;
+}
+
+export interface InspectionTemplate {
+  id: string;
+  workTypeId: string;
+  code: string;
+  name: string;
+  version: number;
+  standardReference?: string;
+  description?: string;
+  isActive: boolean;
+  inspectionPurpose?: string;
+  riskLevel: 'low' | 'medium' | 'high';
+  discipline: 'civil' | 'steel' | 'mep' | 'finishing' | string;
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  sections?: InspectionTemplateSection[];
+}
+
+export interface InspectionTemplateSection {
+  id: string;
+  templateId: string;
+  name: string;
+  sortOrder: number;
+  items?: InspectionTemplateItem[];
+}
+
+export type InspectionItemType = 'checkbox' | 'number' | 'text' | 'photo';
+
+export interface InspectionTemplateItem {
+  id: string;
+  sectionId: string;
+  itemName: string;
+  acceptanceCriteria?: string;
+  inspectionMethod?: string;
+  required: boolean;
+  dataType: InspectionItemType;
+  minValue?: number;
+  maxValue?: number;
+  unit?: string;
+  sortOrder: number;
+}
+
+// ---- Cloned checklist items (stored in JSONB, dynamically structured) ----
+
+export interface QualityChecklistClonedItem {
+  id: string;
+  itemName: string;
+  acceptanceCriteria?: string;
+  inspectionMethod?: string;
+  required: boolean;
+  dataType: InspectionItemType;
+  minValue?: number;
+  maxValue?: number;
+  unit?: string;
+  sortOrder: number;
+  actualValue?: string; // giá trị thực tế nhập
+  result?: 'pass' | 'fail'; // kết quả tự động / bằng tay
+  note?: string;
+  photoUrl?: string; // URL ảnh bằng chứng cho tiêu chí này
+  isCustom?: boolean; // tiêu chí phát sinh tại hiện trường
+}
+
+export interface QualityChecklistClonedSection {
+  sectionId: string;
+  sectionName: string;
+  sortOrder: number;
+  items: QualityChecklistClonedItem[];
+}
+
+export interface QualitySitePhoto {
+  url: string;
+  caption?: string;
+  category?: 'before' | 'during' | 'after' | 'defect';
+  takenAt?: string;
+}
+
+export interface QualityInspectionAttempt {
+  id: string;
+  checklistId: string;
+  attemptNumber: number;
+  inspectionDate: string;
+  inspectorName?: string;
+  itemsData: QualityChecklistClonedSection[]; // snapshot tại lần kiểm tra này
+  result: 'PASSED' | 'FAILED';
+  conclusion?: string;
+  signatureUrl?: string;
+  createdBy?: string;
+  createdAt?: string;
+}
+
+// ---- Main Quality Checklist (hồ sơ chất lượng) ----
+
+export interface QualityChecklist extends ProjectSubmissionFields {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId: string;
+  taskId?: string | null;
+  contractItemId?: string | null;
+  dailyLogId?: string | null;
+  templateId?: string | null;
+  workTypeId?: string | null;
+  code: string;
+  title: string;
+  
+  // Template clone info (snapshot)
+  templateCode?: string;
+  templateName?: string;
+  templateVersion?: number;
+  
+  // 1. Thông tin công việc
+  workDescription?: string;
+  workLocation?: string;
+  workDate?: string;
+  workSupervisor?: string;
+  
+  // 2 - 5. Dữ liệu động gom hết vào checklistData
+  checklistData: QualityChecklistClonedSection[];
+  
+  // 4. Hình ảnh hiện trường (cấu trúc cũ giữ lại để tương thích upload chung)
+  sitePhotos: QualitySitePhoto[];
+  
+  // 5. Tài liệu đính kèm
+  attachments: Attachment[];
+  
+  // 6. Kết luận nghiệm thu
+  conclusion?: string;
+  conclusionResult?: QualityConclusionResult;
+  conditions?: string;
+  inspectorName?: string;
+  inspectorSignUrl?: string;
+  approverName?: string;
+  approverSignUrl?: string;
+  
+  // Auto-calculated & Attempts
+  inspectionResult?: InspectionResult;
+  totalCriteria?: number;
+  passedCriteria?: number;
+  failedCriteria?: number;
+  currentAttempt: number;
+  
+  // Workflow
+  status: QualityChecklistStatus;
+  submittedBy?: string | null;
+  submittedAt?: string | null;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  returnedBy?: string | null;
+  returnedAt?: string | null;
+  returnReason?: string | null;
+  
+  // Cross-references
+  linkedAcceptanceId?: string | null;
+  linkedPaymentCertId?: string | null;
+  linkedMaterialRequestIds?: string[];
+  linkedPoIds?: string[];
+  
+  note?: string;
+  createdBy?: string;
+  createdAt: string;
 }
 
 // ==================== TÀI SẢN CỐ ĐỊNH (ASSETS) ====================

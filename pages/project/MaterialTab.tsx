@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import AiInsightPanel from '../../components/AiInsightPanel';
 import SupplyChainTab from './SupplyChainTab';
+import MaterialPlanningPanel from '../../components/project/MaterialPlanningPanel';
 import {
     Plus, Edit2, Trash2, X, Save, Package, AlertTriangle, TrendingUp,
     CheckCircle2, Clock, ChevronDown, ChevronUp,
@@ -8,8 +9,8 @@ import {
     FileSpreadsheet, GitBranch, ListTree, MinusCircle
 } from 'lucide-react';
 import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role } from '../../types';
-import { boqService, taskService, workBoqService, WorkBoqSyncPreview } from '../../lib/projectService';
+import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate } from '../../types';
+import { boqService, taskService, workBoqService, WorkBoqSyncPreview, poService } from '../../lib/projectService';
 import { materialRequestFulfillmentService, getRequestLineId } from '../../lib/materialRequestFulfillmentService';
 import { useApp } from '../../context/AppContext';
 import RequestModal from '../../components/RequestModal';
@@ -27,6 +28,7 @@ import { projectSubmissionService } from '../../lib/projectSubmissionService';
 import { projectStaffService } from '../../lib/projectStaffService';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../../lib/wmsPermissions';
+import { getMaterialPlanningScopeKey, materialPlanningCurveService, materialPlanningRuleService } from '../../lib/projectMaterialPlanningService';
 
 interface MaterialTabProps {
     constructionSiteId?: string;
@@ -47,6 +49,11 @@ type WorkBoqImportPreview = {
     materialRows: Array<{ rowNumber: number; item: MaterialBudgetItem; status: 'create' | 'update' | 'unchanged' | 'error'; errors: string[] }>;
 };
 
+const WORK_BOQ_SHEET_NAME = 'Dau_muc';
+const MATERIAL_BOQ_SHEET_NAME = 'Vat_tu';
+const WORK_BOQ_HEADERS = ['Mã WBS', 'Mã cha', 'Tên đầu mục', 'ĐVT', 'KL dự toán', 'Đơn giá', 'Ghi chú'];
+const MATERIAL_BOQ_HEADERS = ['WBS đầu mục', 'Mã vật tư/SKU', 'Tên vật tư', 'Nhóm', 'ĐVT', 'KL dự toán', 'Đơn giá', 'Ngưỡng hao hụt (%)', 'Ghi chú'];
+
 const importNumber = (value: unknown) => {
     const raw = String(value ?? '').trim().replace(/\s/g, '');
     if (!raw) return 0;
@@ -59,6 +66,17 @@ const importNumber = (value: unknown) => {
 
 const normalizeKey = (value?: string | null) => String(value || '').trim().toLowerCase();
 const isValidWbsCode = (value: string) => /^\d+(\.\d+)*$/.test(value.trim());
+const rowHasAnyValue = (row: Record<string, unknown>) =>
+    Object.values(row).some(value => String(value ?? '').trim() !== '');
+const pickImportValue = (row: Record<string, unknown>, keys: string[]) => {
+    for (const key of keys) {
+        const value = row[key];
+        if (String(value ?? '').trim() !== '') return value;
+    }
+    return '';
+};
+const importText = (row: Record<string, unknown>, keys: string[]) =>
+    String(pickImportValue(row, keys) ?? '').trim();
 const normalizeLookupText = (value?: string | null) =>
     String(value || '')
         .normalize('NFD')
@@ -100,6 +118,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';
+    const planningScopeKey = useMemo(
+        () => getMaterialPlanningScopeKey(projectId || null, constructionSiteId || null),
+        [constructionSiteId, projectId],
+    );
     const [activeSubTab, setActiveSubTab] = useState<ProjectMaterialTabKey>('summary');
     const materialAccess = useMemo<ProjectMaterialTabPermissionMap>(() => {
         const hasScopedPermissions = Boolean(materialPermissions);
@@ -114,6 +136,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         }, {} as ProjectMaterialTabPermissionMap);
     }, [canManageTab, materialPermissions]);
     const canManageBoq = materialAccess.boq.canManage;
+    const canManagePlanning = materialAccess.planning.canManage;
     const canManageRequest = materialAccess.request.canManage;
     const canManagePo = materialAccess.po.canManage;
     const visibleMaterialTabs = useMemo(
@@ -131,6 +154,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [boqItems, setBoqItems] = useState<MaterialBudgetItem[]>([]);
     const [workBoqItems, setWorkBoqItems] = useState<ProjectWorkBoqItem[]>([]);
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
+    const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+    const [planningRules, setPlanningRules] = useState<MaterialPlanningRule[]>([]);
+    const [planningCurveTemplates, setPlanningCurveTemplates] = useState<PlanningCurveTemplate[]>([]);
+    const [planningLoading, setPlanningLoading] = useState(false);
+    const [planningDraftPo, setPlanningDraftPo] = useState<MaterialPlanningDraftPo | null>(null);
+    const [planningDraftPoKey, setPlanningDraftPoKey] = useState(0);
     const [contractItems, setContractItems] = useState<ContractItem[]>([]);
     const [taskContractLinks, setTaskContractLinks] = useState<Record<string, string[]>>({});
     const [syncingBoq, setSyncingBoq] = useState(false);
@@ -139,6 +168,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const boqImportRef = useRef<HTMLInputElement>(null);
     const loadedBoqScopeRef = useRef<string | null>(null);
     const [projectRequests, setProjectRequests] = useState<MaterialRequest[]>([]);
+    const [projectRequestsLoaded, setProjectRequestsLoaded] = useState(false);
     const [canSubmitProjectRequest, setCanSubmitProjectRequest] = useState(false);
     const [canApproveProjectRequest, setCanApproveProjectRequest] = useState(false);
     const [requestEventsByRequest, setRequestEventsByRequest] = useState<Record<string, MaterialRequestEvent[]>>({});
@@ -196,17 +226,23 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const loadProjectRequests = useCallback(async () => {
         if (!projectId) {
             setProjectRequests([]);
+            setProjectRequestsLoaded(true);
             return;
         }
         try {
-            setProjectRequests(await materialRequestService.listByProject(projectId));
+            const rows = await materialRequestService.listByProject(projectId);
+            setProjectRequests(rows);
         } catch (error: any) {
             console.error('Failed to load project material requests', error);
             toast.error('Không tải được phiếu vật tư dự án', error?.message || 'Vui lòng thử lại.');
+        } finally {
+            setProjectRequestsLoaded(true);
         }
     }, [projectId]);
 
     useEffect(() => {
+        setProjectRequests([]);
+        setProjectRequestsLoaded(false);
         void loadProjectRequests();
     }, [loadProjectRequests]);
 
@@ -216,6 +252,31 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         setRequestModalInitialAction(undefined);
         void loadProjectRequests();
     };
+
+    const handleRequestDeleted = useCallback((requestId: string) => {
+        setProjectRequests(prev => prev.filter(request => request.id !== requestId));
+        setSelectedRequest(prev => prev?.id === requestId ? undefined : prev);
+        setRequestEventsByRequest(prev => {
+            const next = { ...prev };
+            delete next[requestId];
+            return next;
+        });
+        setRequestFulfillmentSummaries(prev => {
+            const next = { ...prev };
+            delete next[requestId];
+            return next;
+        });
+        setRequestFulfillmentBatchCounts(prev => {
+            const next = { ...prev };
+            delete next[requestId];
+            return next;
+        });
+        setRequestFulfillmentBatches(prev => {
+            const next = { ...prev };
+            delete next[requestId];
+            return next;
+        });
+    }, []);
 
     const defaultSiteWarehouseId = useMemo(() => {
         if (siteWarehouseId) return siteWarehouseId;
@@ -241,13 +302,15 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     // Material Requests — project screens only show rows explicitly tied to this project.
     const requests = useMemo(() => {
         if (!projectId) return [];
+        const scopedProjectRequests = projectRequests.filter(request => request.requestOrigin === 'project' && request.projectId === projectId);
+        if (projectRequestsLoaded) return scopedProjectRequests;
         const byId = new Map<string, MaterialRequest>();
         allRequests
             .filter(request => request.requestOrigin === 'project' && request.projectId === projectId)
             .forEach(request => byId.set(request.id, request));
-        projectRequests.forEach(request => byId.set(request.id, request));
+        scopedProjectRequests.forEach(request => byId.set(request.id, request));
         return [...byId.values()];
-    }, [allRequests, projectId, projectRequests]);
+    }, [allRequests, projectId, projectRequests, projectRequestsLoaded]);
 
     const canCreateMaterialRequest = canManageRequest || canSubmitProjectRequest || user.role === Role.ADMIN;
 
@@ -258,6 +321,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     const inventoryItemById = useMemo(
         () => new Map(inventoryItems.map(item => [item.id, item])),
+        [inventoryItems],
+    );
+    const inventoryItemBySku = useMemo(
+        () => new Map(inventoryItems.filter(item => item.sku).map(item => [normalizeKey(item.sku), item])),
         [inventoryItems],
     );
     const workBoqItemById = useMemo(
@@ -294,16 +361,18 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     const loadBoqData = React.useCallback(async () => {
         if (!effectiveId) return;
-        const [boq, workItems, taskRows, contractRows, linkRows] = await Promise.all([
+        const [boq, workItems, taskRows, contractRows, linkRows, poRows] = await Promise.all([
             boqService.list(effectiveId, constructionSiteId || null),
             workBoqService.list(effectiveId, constructionSiteId || null),
             taskService.list(effectiveId, constructionSiteId || null),
             contractItemService.listBySite(effectiveId, 'customer', constructionSiteId || null),
             taskContractItemService.listBySite(effectiveId, constructionSiteId || null),
+            poService.list(effectiveId, constructionSiteId || null).catch(() => [] as PurchaseOrder[]),
         ]);
         setBoqItems(boq);
         setWorkBoqItems(workItems);
         setTasks(taskRows);
+        setPurchaseOrders(poRows);
         setContractItems(contractRows);
         setTaskContractLinks(linkRows.reduce<Record<string, string[]>>((acc, link: TaskContractItem) => {
             if (!acc[link.taskId]) acc[link.taskId] = [];
@@ -312,9 +381,33 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         }, {}));
     }, [constructionSiteId, effectiveId]);
 
+    const loadPlanningData = useCallback(async () => {
+        if (!effectiveId) {
+            setPlanningRules([]);
+            setPlanningCurveTemplates([]);
+            setPurchaseOrders([]);
+            return;
+        }
+        setPlanningLoading(true);
+        try {
+            const [rules, curves] = await Promise.all([
+                planningScopeKey ? materialPlanningRuleService.listByScope(planningScopeKey) : Promise.resolve([]),
+                materialPlanningCurveService.listTemplates(),
+                loadBoqData(),
+            ]);
+            setPlanningRules(rules);
+            setPlanningCurveTemplates(curves);
+        } catch (error: any) {
+            console.error('Failed to load material planning data', error);
+            toast.error('Không tải được kế hoạch vật tư', error?.message || 'Vui lòng thử lại.');
+        } finally {
+            setPlanningLoading(false);
+        }
+    }, [effectiveId, loadBoqData, planningScopeKey, toast]);
+
     useEffect(() => {
         if (!materialAccess[activeSubTab].canView) return;
-        if (activeSubTab === 'po') return;
+        if (activeSubTab === 'po' || activeSubTab === 'planning') return;
         const boqScopeKey = `${effectiveId || ''}:${constructionSiteId || ''}`;
         if (loadedBoqScopeRef.current === boqScopeKey) return;
         loadedBoqScopeRef.current = boqScopeKey;
@@ -323,6 +416,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             console.error(err);
         });
     }, [activeSubTab, constructionSiteId, effectiveId, loadBoqData, materialAccess]);
+
+    useEffect(() => {
+        if (!materialAccess.planning.canView || activeSubTab !== 'planning') return;
+        void loadPlanningData();
+    }, [activeSubTab, loadPlanningData, materialAccess.planning.canView]);
 
     useEffect(() => {
         let cancelled = false;
@@ -877,9 +975,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         }
     };
 
-    const handleExportWorkBoq = async () => {
-        const XLSX = await loadXlsx();
-        const workRows = workBoqTree.map(({ item }) => ({
+    const buildWorkBoqExcelRows = () => workBoqTree.map(({ item }) => ({
             'Mã WBS': item.wbsCode || '',
             'Mã cha': item.parentId ? workBoqItems.find(parent => parent.id === item.parentId)?.wbsCode || '' : '',
             'Tên đầu mục': item.name,
@@ -888,25 +984,67 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             'Đơn giá': item.unitPrice || 0,
             'Ghi chú': item.notes || '',
         }));
-        const materialRows = computedBoqItems.map(item => {
+
+    const buildMaterialBoqExcelRows = (includeActualColumns = true) => computedBoqItems.map(item => {
             const workItem = item.workBoqItemId ? workBoqItems.find(work => work.id === item.workBoqItemId) : undefined;
-            return {
+            const row: Record<string, string | number> = {
                 'WBS đầu mục': workItem?.wbsCode || '',
-                'Mã vật tư': item.materialCode || '',
+                'Mã vật tư/SKU': item.materialCode || '',
                 'Tên vật tư': item.itemName,
                 'Nhóm': item.category,
                 'ĐVT': item.unit,
                 'KL dự toán': item.budgetQty,
                 'Đơn giá': item.budgetUnitPrice,
-                'KL thực tế công trường': item.actualQty || 0,
-                'Giá trị thực tế công trường': item.actualTotal || 0,
-                'Chênh KL thực tế - dự toán': item.wasteQty || 0,
-                'Ngưỡng hao hụt': item.wasteThreshold,
+                'Ngưỡng hao hụt (%)': item.wasteThreshold,
                 'Ghi chú': item.notes || '',
             };
+            if (includeActualColumns) {
+                row['KL thực tế công trường'] = item.actualQty || 0;
+                row['Giá trị thực tế công trường'] = item.actualTotal || 0;
+                row['Chênh KL thực tế - dự toán'] = item.wasteQty || 0;
+            }
+            return row;
         });
+
+    const buildWorkBoqWorkbook = (XLSX: any, workRows: Record<string, string | number>[], materialRows: Record<string, string | number>[], includeActualColumns = true) => {
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(workRows.length ? workRows : [{
+        const helpRows = [
+            { 'Nội dung': 'Sheet Dau_muc', 'Ghi chú': 'Mỗi dòng là một đầu mục/WBS. Mã WBS là khóa để cập nhật nếu import lại.' },
+            { 'Nội dung': 'Sheet Vat_tu', 'Ghi chú': 'Nhập vật tư theo WBS đầu mục. Mã vật tư/SKU sẽ tự liên kết với danh mục kho nếu đã có.' },
+            { 'Nội dung': 'Cột bắt buộc đầu mục', 'Ghi chú': 'Mã WBS, Tên đầu mục.' },
+            { 'Nội dung': 'Cột bắt buộc vật tư', 'Ghi chú': 'WBS đầu mục, Tên vật tư, ĐVT, KL dự toán. Có thể chỉ nhập SKU nếu SKU đã tồn tại trong kho.' },
+            { 'Nội dung': 'Import', 'Ghi chú': 'Hệ thống hiện preview trước: dòng hợp lệ được ghi, dòng lỗi sẽ báo lý do để sửa file.' },
+        ];
+        const helpSheet = XLSX.utils.json_to_sheet(helpRows);
+        helpSheet['!cols'] = [{ wch: 26 }, { wch: 92 }];
+        XLSX.utils.book_append_sheet(wb, helpSheet, 'Huong_dan');
+
+        const makeSheet = (headers: string[], rows: Record<string, string | number>[]) => {
+            const sheet = XLSX.utils.aoa_to_sheet([headers]);
+            if (rows.length > 0) {
+                XLSX.utils.sheet_add_json(sheet, rows, { header: headers, skipHeader: true, origin: 'A2' });
+            }
+            return sheet;
+        };
+
+        const workSheet = makeSheet(WORK_BOQ_HEADERS, workRows);
+        workSheet['!cols'] = [12, 12, 38, 10, 14, 14, 36].map(wch => ({ wch }));
+        XLSX.utils.book_append_sheet(wb, workSheet, WORK_BOQ_SHEET_NAME);
+
+        const materialHeaders = includeActualColumns
+            ? [...MATERIAL_BOQ_HEADERS, 'KL thực tế công trường', 'Giá trị thực tế công trường', 'Chênh KL thực tế - dự toán']
+            : MATERIAL_BOQ_HEADERS;
+        const materialSheet = makeSheet(materialHeaders, materialRows);
+        materialSheet['!cols'] = [14, 18, 34, 20, 10, 14, 14, 16, 36, 18, 24, 24].map(wch => ({ wch }));
+        XLSX.utils.book_append_sheet(wb, materialSheet, MATERIAL_BOQ_SHEET_NAME);
+        return wb;
+    };
+
+    const handleDownloadWorkBoqTemplate = async () => {
+        const XLSX = await loadXlsx();
+        const currentWorkRows = buildWorkBoqExcelRows();
+        const sampleWbs = currentWorkRows[0]?.['Mã WBS'] || '1.1';
+        const workRows = currentWorkRows.length > 0 ? currentWorkRows : [{
             'Mã WBS': '1.1',
             'Mã cha': '1',
             'Tên đầu mục': 'Đào đất móng',
@@ -914,21 +1052,25 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             'KL dự toán': 0,
             'Đơn giá': 0,
             'Ghi chú': '',
-        }]), 'Dau_muc');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(materialRows.length ? materialRows : [{
-            'WBS đầu mục': '1.1',
-            'Mã vật tư': 'VT001',
-            'Tên vật tư': 'Xi măng',
+        }];
+        const materialRows = currentWorkRows.length > 0 ? [] : [{
+            'WBS đầu mục': sampleWbs,
+            'Mã vật tư/SKU': 'VT001',
+            'Tên vật tư': 'Xi măng PCB40',
             'Nhóm': 'Vật liệu xây dựng',
             'ĐVT': 'bao',
             'KL dự toán': 0,
             'Đơn giá': 0,
-            'KL thực tế công trường': 0,
-            'Giá trị thực tế công trường': 0,
-            'Chênh KL thực tế - dự toán': 0,
-            'Ngưỡng hao hụt': 5,
+            'Ngưỡng hao hụt (%)': 5,
             'Ghi chú': '',
-        }]), 'Vat_tu');
+        }];
+        const wb = buildWorkBoqWorkbook(XLSX, workRows, materialRows, false);
+        XLSX.writeFile(wb, `Mau_import_BOQ_vat_tu_${new Date().toISOString().split('T')[0]}.xlsx`);
+    };
+
+    const handleExportWorkBoq = async () => {
+        const XLSX = await loadXlsx();
+        const wb = buildWorkBoqWorkbook(XLSX, buildWorkBoqExcelRows(), buildMaterialBoqExcelRows(true), true);
         XLSX.writeFile(wb, `BOQ_trien_khai_${new Date().toISOString().split('T')[0]}.xlsx`);
     };
 
@@ -943,16 +1085,30 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         try {
             const XLSX = await loadXlsx();
             const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-            const workSheet = wb.Sheets['Dau_muc'] || wb.Sheets[wb.SheetNames[0]];
-            const materialSheet = wb.Sheets['Vat_tu'];
-            const rawWorkRows = workSheet ? XLSX.utils.sheet_to_json<Record<string, unknown>>(workSheet, { defval: '', raw: false }) : [];
-            const rawMaterialRows = materialSheet ? XLSX.utils.sheet_to_json<Record<string, unknown>>(materialSheet, { defval: '', raw: false }) : [];
+            const firstSheetName = wb.SheetNames[0];
+            const firstSheet = firstSheetName ? wb.Sheets[firstSheetName] : undefined;
+            const firstRows = firstSheet
+                ? XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: '', raw: false }).filter(rowHasAnyValue)
+                : [];
+            const firstLooksMaterial = firstRows.some(row =>
+                importText(row, ['WBS đầu mục', 'Mã WBS đầu mục', 'Mã vật tư/SKU', 'Mã vật tư', 'SKU', 'Tên vật tư']) !== ''
+            );
+            const namedWorkSheet = wb.Sheets[WORK_BOQ_SHEET_NAME] || wb.Sheets['BOQ_trien_khai'];
+            const namedMaterialSheet = wb.Sheets[MATERIAL_BOQ_SHEET_NAME] || wb.Sheets['Vat tư'] || wb.Sheets['Vat tu'];
+            const workSheet = namedWorkSheet || (!firstLooksMaterial ? firstSheet : undefined);
+            const materialSheet = namedMaterialSheet || (firstLooksMaterial ? firstSheet : undefined);
+            const rawWorkRows = workSheet
+                ? XLSX.utils.sheet_to_json<Record<string, unknown>>(workSheet, { defval: '', raw: false }).filter(rowHasAnyValue)
+                : [];
+            const rawMaterialRows = materialSheet
+                ? XLSX.utils.sheet_to_json<Record<string, unknown>>(materialSheet, { defval: '', raw: false }).filter(rowHasAnyValue)
+                : [];
             const existingWorkByWbs = new Map(workBoqItems.filter(item => item.wbsCode).map(item => [normalizeKey(item.wbsCode), item]));
             const seenWorkWbs = new Set<string>();
 
             const workRows: WorkBoqImportPreview['workRows'] = rawWorkRows.map((row, index) => {
-                const wbs = String(row['Mã WBS'] || '').trim();
-                const name = String(row['Tên đầu mục'] || '').trim();
+                const wbs = importText(row, ['Mã WBS', 'WBS']);
+                const name = importText(row, ['Tên đầu mục', 'Tên công việc', 'Đầu mục']);
                 const wbsKey = normalizeKey(wbs);
                 const errors: string[] = [];
                 if (!wbs) errors.push('Thiếu Mã WBS.');
@@ -961,6 +1117,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 if (!name) errors.push('Thiếu Tên đầu mục.');
                 if (wbs) seenWorkWbs.add(wbsKey);
                 const existing = existingWorkByWbs.get(normalizeKey(wbs));
+                const plannedQty = importNumber(pickImportValue(row, ['KL dự toán', 'Khối lượng dự toán', 'Khối lượng']));
+                const unitPrice = importNumber(pickImportValue(row, ['Đơn giá', 'Đơn giá dự toán']));
                 const item: ProjectWorkBoqItem = {
                     id: existing?.id || crypto.randomUUID(),
                     projectId: effectiveId,
@@ -969,13 +1127,13 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     parentId: null,
                     wbsCode: wbs,
                     name,
-                    unit: String(row['ĐVT'] || existing?.unit || '').trim(),
-                    plannedQty: importNumber(row['KL dự toán']),
-                    unitPrice: importNumber(row['Đơn giá']),
-                    totalAmount: importNumber(row['KL dự toán']) * importNumber(row['Đơn giá']),
+                    unit: importText(row, ['ĐVT', 'Đơn vị']) || existing?.unit || '',
+                    plannedQty,
+                    unitPrice,
+                    totalAmount: plannedQty * unitPrice,
                     sortOrder: existing?.sortOrder ?? index,
                     syncStatus: existing?.sourceTaskId ? existing.syncStatus : 'manual',
-                    notes: String(row['Ghi chú'] || existing?.notes || '').trim() || null,
+                    notes: importText(row, ['Ghi chú', 'Notes']) || existing?.notes || null,
                 };
                 return {
                     rowNumber: index + 2,
@@ -988,7 +1146,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             workRows.forEach(previewRow => {
                 const item = previewRow.item;
                 const source = rawWorkRows[previewRow.rowNumber - 2];
-                const parentWbs = String(source?.['Mã cha'] || '').trim();
+                const parentWbs = source ? importText(source, ['Mã cha', 'Mã WBS cha', 'WBS cha']) : '';
                 if (parentWbs) {
                     const importedParentRow = workRows.find(row => normalizeKey(row.item.wbsCode) === normalizeKey(parentWbs));
                     const parent = importedParentRow?.item || existingWorkByWbs.get(normalizeKey(parentWbs));
@@ -1017,43 +1175,56 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 .map(row => [normalizeKey(row.item.wbsCode), row.item])
             );
             const workByWbs = new Map([...existingWorkByWbs, ...validImportedWorkByWbs]);
-            const existingMaterials = new Map(
-                computedBoqItems.map(item => [
-                    `${item.workBoqItemId || ''}|${normalizeKey(item.materialCode || `${item.itemName}|${item.unit}`)}`,
-                    item,
-                ])
-            );
+            const existingMaterials = new Map<string, MaterialBudgetItem>();
+            computedBoqItems.forEach(item => {
+                const workKey = item.workBoqItemId || '';
+                const inventory = item.inventoryItemId ? inventoryItemById.get(item.inventoryItemId) : undefined;
+                [
+                    item.materialCode,
+                    inventory?.sku,
+                    `${item.itemName}|${item.unit}`,
+                ].filter(Boolean).forEach(key => {
+                    existingMaterials.set(`${workKey}|${normalizeKey(key as string)}`, item);
+                });
+            });
             const materialRows = rawMaterialRows.map((row, index) => {
-                const workWbs = String(row['WBS đầu mục'] || '').trim();
+                const workWbs = importText(row, ['WBS đầu mục', 'Mã WBS đầu mục', 'Mã WBS']);
                 const workItem = workByWbs.get(normalizeKey(workWbs));
-                const materialCode = String(row['Mã vật tư'] || '').trim();
-                const itemName = String(row['Tên vật tư'] || '').trim();
-                const unit = String(row['ĐVT'] || '').trim();
+                const materialCode = importText(row, ['Mã vật tư/SKU', 'Mã vật tư', 'SKU']);
+                const matchedInventory = materialCode ? inventoryItemBySku.get(normalizeKey(materialCode)) : undefined;
+                const itemName = importText(row, ['Tên vật tư', 'Tên hàng hóa', 'Tên hàng hoá']) || matchedInventory?.name || '';
+                const unit = importText(row, ['ĐVT', 'Đơn vị']) || matchedInventory?.unit || '';
                 const errors: string[] = [];
                 if (!workItem) errors.push(`Không tìm thấy đầu mục WBS "${workWbs}".`);
                 if (!itemName) errors.push('Thiếu Tên vật tư.');
                 if (!unit) errors.push('Thiếu ĐVT.');
-                const matchKey = `${workItem?.id || ''}|${normalizeKey(materialCode || `${itemName}|${unit}`)}`;
-                const existing = existingMaterials.get(matchKey);
-                const budgetQty = importNumber(row['KL dự toán']);
-                const budgetUnitPrice = importNumber(row['Đơn giá']);
+                const matchKeys = [
+                    materialCode,
+                    matchedInventory?.sku,
+                    `${itemName}|${unit}`,
+                ].filter(Boolean).map(key => `${workItem?.id || ''}|${normalizeKey(key as string)}`);
+                const existing = matchKeys.map(key => existingMaterials.get(key)).find(Boolean);
+                const budgetQty = importNumber(pickImportValue(row, ['KL dự toán', 'Khối lượng dự toán', 'Khối lượng']));
+                const importedUnitPrice = importNumber(pickImportValue(row, ['Đơn giá', 'Đơn giá dự toán']));
+                const budgetUnitPrice = importedUnitPrice || existing?.budgetUnitPrice || matchedInventory?.priceIn || 0;
+                const wasteThreshold = importNumber(pickImportValue(row, ['Ngưỡng hao hụt (%)', 'Ngưỡng hao hụt', 'Định mức hao hụt'])) || existing?.wasteThreshold || 5;
                 const item: MaterialBudgetItem = {
                     id: existing?.id || crypto.randomUUID(),
                     projectId: effectiveId,
                     constructionSiteId: constructionSiteId || null,
                     workBoqItemId: workItem?.id || null,
-                    materialCode: materialCode || existing?.materialCode,
-                    category: String(row['Nhóm'] || existing?.category || 'Vật liệu xây dựng').trim(),
+                    materialCode: materialCode || existing?.materialCode || matchedInventory?.sku,
+                    category: importText(row, ['Nhóm', 'Nhóm vật tư', 'Category']) || existing?.category || matchedInventory?.category || 'Vật liệu xây dựng',
                     itemName,
                     unit,
                     budgetQty,
                     budgetUnitPrice,
                     budgetTotal: budgetQty * budgetUnitPrice,
                     actualQty: existing?.actualQty || 0,
-                    wasteThreshold: importNumber(row['Ngưỡng hao hụt']) || existing?.wasteThreshold || 5,
+                    wasteThreshold,
                     sortOrder: existing?.sortOrder ?? index,
-                    notes: String(row['Ghi chú'] || existing?.notes || '').trim() || undefined,
-                    inventoryItemId: existing?.inventoryItemId,
+                    notes: importText(row, ['Ghi chú', 'Notes']) || existing?.notes || undefined,
+                    inventoryItemId: existing?.inventoryItemId || matchedInventory?.id,
                 };
                 return {
                     rowNumber: index + 2,
@@ -1117,9 +1288,32 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             isOver: (b.wastePercent || 0) > b.wasteThreshold,
         }));
     }, [computedBoqItems]);
+
+    const handlePlanningRuleSaved = useCallback((rule: MaterialPlanningRule) => {
+        setPlanningRules(prev => {
+            const sameTarget = (item: MaterialPlanningRule) =>
+                item.id === rule.id ||
+                (rule.inventoryItemId && item.inventoryItemId === rule.inventoryItemId && item.scopeKey === rule.scopeKey) ||
+                (!rule.inventoryItemId && !item.inventoryItemId && item.scopeKey === rule.scopeKey && normalizeKey(item.category) === normalizeKey(rule.category));
+            const exists = prev.some(sameTarget);
+            return exists ? prev.map(item => sameTarget(item) ? rule : item) : [...prev, rule];
+        });
+    }, []);
+
+    const handleCreatePlanningDraftPo = useCallback((draft: MaterialPlanningDraftPo) => {
+        if (!materialAccess.po.canView || !canManagePo) {
+            toast.warning('Không có quyền tạo PO', 'Bạn cần quyền quản trị Đơn hàng PO để tạo PO từ kế hoạch vật tư.');
+            return;
+        }
+        setPlanningDraftPo(draft);
+        setPlanningDraftPoKey(prev => prev + 1);
+        setActiveSubTab('po');
+    }, [canManagePo, materialAccess.po.canView, toast]);
+
     const materialTabLabels: Record<ProjectMaterialTabKey, string> = {
         summary: '🔗 Tổng hợp',
         boq: '📋 BOQ',
+        planning: '🧭 Kế hoạch',
         request: '📦 Yêu cầu',
         po: '🛒 Đơn hàng (PO)',
         waste: '📊 Hao hụt',
@@ -1128,6 +1322,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const materialTabCounts: Record<ProjectMaterialTabKey, number> = {
         summary: computedBoqItems.length,
         boq: workBoqItems.length + computedBoqItems.length,
+        planning: 0,
         request: requests.length,
         po: 0,
         waste: stats.overWaste,
@@ -1281,15 +1476,19 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                         <RefreshCcw size={12} className={syncingBoq ? 'animate-spin' : ''} /> Đồng bộ với tiến độ
                                     </button>
                                 )}
+                                <button onClick={handleDownloadWorkBoqTemplate}
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100">
+                                    <FileSpreadsheet size={12} /> File mẫu
+                                </button>
                                 <button onClick={handleExportWorkBoq}
                                     className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100">
-                                    <Download size={12} /> Export
+                                    <Download size={12} /> Xuất Excel
                                 </button>
                                 {canManageBoq && (
                                     <>
                                         <button onClick={() => boqImportRef.current?.click()} disabled={importingBoq}
                                             className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 hover:bg-amber-100 disabled:opacity-50">
-                                            <Upload size={12} /> Import
+                                            <Upload size={12} /> Nhập Excel
                                         </button>
                                         <button onClick={() => { resetBoqForm(); setShowBoqForm(true); }}
                                             className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100">
@@ -1448,6 +1647,29 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 </div>
             )}
 
+            {materialAccess.planning.canView && activeSubTab === 'planning' && (
+                <MaterialPlanningPanel
+                    projectId={projectId || null}
+                    constructionSiteId={constructionSiteId || null}
+                    scopeKey={planningScopeKey}
+                    siteWarehouseId={defaultSiteWarehouseId}
+                    canManage={canManagePlanning}
+                    userId={user.id}
+                    tasks={tasks}
+                    workBoqItems={workBoqItems}
+                    materialBudgetItems={computedBoqItems}
+                    inventoryItems={inventoryItems}
+                    purchaseOrders={purchaseOrders}
+                    transactions={transactions}
+                    rules={planningRules}
+                    curveTemplates={planningCurveTemplates}
+                    loading={planningLoading}
+                    onRefresh={loadPlanningData}
+                    onRuleSaved={handlePlanningRuleSaved}
+                    onCreateDraftPo={handleCreatePlanningDraftPo}
+                />
+            )}
+
             {/* Material Request Tab — using MaterialRequest from Inventory module */}
             {materialAccess.request.canView && activeSubTab === 'request' && (
                 <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
@@ -1502,6 +1724,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     constructionSiteId={constructionSiteId}
                     projectId={projectId}
                     canManageTab={canManagePo}
+                    initialDraftPo={planningDraftPo}
+                    initialDraftPoKey={planningDraftPoKey}
                     compact
                 />
             )}
@@ -1901,6 +2125,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     canProcessProjectWorkflow={selectedRequestLive ? canActOnProjectRequest(selectedRequestLive) : false}
                     onProjectWorkflowApprove={handleProjectWorkflowApproveFromModal}
                     onProjectWorkflowReturn={handleProjectWorkflowReturnFromModal}
+                    onDeleted={handleRequestDeleted}
                 />
             )}
 
@@ -1944,18 +2169,25 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                 <h4 className="text-xs font-black text-slate-500 uppercase mb-2">Vật tư</h4>
                                 <table className="w-full text-xs">
                                     <thead className="bg-slate-50 text-slate-400 uppercase text-[9px] font-black">
-                                        <tr><th className="px-3 py-2 text-left">Dòng</th><th className="px-3 py-2 text-left">Mã</th><th className="px-3 py-2 text-left">Tên vật tư</th><th className="px-3 py-2 text-right">KL</th><th className="px-3 py-2 text-left">Trạng thái</th></tr>
+                                        <tr><th className="px-3 py-2 text-left">Dòng</th><th className="px-3 py-2 text-left">WBS</th><th className="px-3 py-2 text-left">Mã/SKU</th><th className="px-3 py-2 text-left">Tên vật tư</th><th className="px-3 py-2 text-left">ĐVT</th><th className="px-3 py-2 text-right">KL</th><th className="px-3 py-2 text-right">Đơn giá</th><th className="px-3 py-2 text-left">Trạng thái</th></tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
-                                        {importPreview.materialRows.map(row => (
-                                            <tr key={`mat-${row.rowNumber}`} className={row.status === 'error' ? 'bg-red-50/60' : ''}>
-                                                <td className="px-3 py-2 font-mono text-slate-400">{row.rowNumber}</td>
-                                                <td className="px-3 py-2 font-mono text-slate-500">{row.item.materialCode || '-'}</td>
-                                                <td className="px-3 py-2 font-bold text-slate-700">{row.item.itemName || '-'}</td>
-                                                <td className="px-3 py-2 text-right font-bold">{row.item.budgetQty.toLocaleString()}</td>
-                                                <td className="px-3 py-2">{row.errors.length ? row.errors.join(' | ') : row.status === 'create' ? 'Thêm mới' : 'Cập nhật'}</td>
-                                            </tr>
-                                        ))}
+                                        {importPreview.materialRows.map(row => {
+                                            const previewWork = workBoqItems.find(item => item.id === row.item.workBoqItemId)
+                                                || importPreview.workRows.find(workRow => workRow.item.id === row.item.workBoqItemId)?.item;
+                                            return (
+                                                <tr key={`mat-${row.rowNumber}`} className={row.status === 'error' ? 'bg-red-50/60' : ''}>
+                                                    <td className="px-3 py-2 font-mono text-slate-400">{row.rowNumber}</td>
+                                                    <td className="px-3 py-2 font-mono text-indigo-500">{previewWork?.wbsCode || '-'}</td>
+                                                    <td className="px-3 py-2 font-mono text-slate-500">{row.item.materialCode || '-'}</td>
+                                                    <td className="px-3 py-2 font-bold text-slate-700">{row.item.itemName || '-'}</td>
+                                                    <td className="px-3 py-2 text-slate-500">{row.item.unit || '-'}</td>
+                                                    <td className="px-3 py-2 text-right font-bold">{row.item.budgetQty.toLocaleString()}</td>
+                                                    <td className="px-3 py-2 text-right font-bold">{fmt(row.item.budgetUnitPrice)}</td>
+                                                    <td className="px-3 py-2">{row.errors.length ? row.errors.join(' | ') : row.status === 'create' ? 'Thêm mới' : 'Cập nhật'}</td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>

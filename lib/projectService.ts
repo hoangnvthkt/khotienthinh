@@ -27,6 +27,101 @@ const mapKeys = (obj: any, fn: (k: string) => string): any => {
 const toDb = (obj: any) => mapKeys(obj, toSnake);
 const fromDb = (obj: any) => mapKeys(obj, toCamel);
 
+const FULFILLMENT_BATCH_TABLE = 'material_request_fulfillment_batches';
+const FULFILLMENT_LINE_TABLE = 'material_request_fulfillment_lines';
+
+const extractReturnTransactionIds = (note?: string | null): string[] => {
+    if (!note) return [];
+    const matches = note.match(/tx-[a-z0-9-]+/gi) || [];
+    return Array.from(new Set(matches));
+};
+
+const getPoReceiptCleanupState = async (po: PurchaseOrder) => {
+    const { data: lineRows, error: lineError } = await supabase
+        .from(FULFILLMENT_LINE_TABLE)
+        .select('batch_id,item_id,received_qty')
+        .eq('po_id', po.id);
+    if (lineError) {
+        if (lineError.code === '42P01') {
+            return { hasActiveBatches: false, hasReceivedBatchQty: false, hasMissingReturnTransaction: false, hasUnfinishedTransactions: false, hasInsufficientReturnQty: false };
+        }
+        throw lineError;
+    }
+
+    const batchIds = Array.from(new Set((lineRows || []).map(row => row.batch_id).filter(Boolean)));
+    const hasReceivedBatchQty = (lineRows || []).some(row => Number(row.received_qty || 0) > 0);
+    const receivedQtyByItemId = (lineRows || []).reduce((map: Map<string, number>, row: any) => {
+        const qty = Number(row.received_qty || 0);
+        if (qty <= 0 || !row.item_id) return map;
+        map.set(row.item_id, (map.get(row.item_id) || 0) + qty);
+        return map;
+    }, new Map<string, number>());
+    if (batchIds.length === 0) {
+        return { hasActiveBatches: false, hasReceivedBatchQty, hasMissingReturnTransaction: false, hasUnfinishedTransactions: false, hasInsufficientReturnQty: false };
+    }
+
+    const { data: batchRows, error: batchError } = await supabase
+        .from(FULFILLMENT_BATCH_TABLE)
+        .select('id,status,note,transaction_id')
+        .in('id', batchIds);
+    if (batchError) throw batchError;
+
+    const finalBatchStatuses = new Set(['returned', 'cancelled']);
+    const batches = batchRows || [];
+    const hasActiveBatches = batches.some(batch => !finalBatchStatuses.has(String(batch.status || '').toLowerCase()));
+    const returnTransactionIds = Array.from(new Set(batches.flatMap(batch => extractReturnTransactionIds(batch.note))));
+    const receiptTransactionIds = Array.from(new Set([
+        ...(po.receivedTransactionIds || []),
+        ...batches.map(batch => batch.transaction_id).filter(Boolean),
+    ]));
+    const transactionIds = Array.from(new Set([...receiptTransactionIds, ...returnTransactionIds]));
+    let hasUnfinishedTransactions = false;
+    let completedReturnTransactionIds = new Set<string>();
+    const returnedQtyByItemId = new Map<string, number>();
+
+    if (transactionIds.length > 0) {
+        const { data: txRows, error: txError } = await supabase
+            .from('transactions')
+            .select('id,status,items')
+            .in('id', transactionIds);
+        if (txError) throw txError;
+        completedReturnTransactionIds = new Set(
+            (txRows || [])
+                .filter(tx => returnTransactionIds.includes(tx.id) && String(tx.status || '').toUpperCase() === 'COMPLETED')
+                .map(tx => tx.id),
+        );
+        (txRows || [])
+            .filter(tx => completedReturnTransactionIds.has(tx.id))
+            .forEach(tx => {
+                (tx.items || []).forEach((item: any) => {
+                    if (!item.itemId) return;
+                    returnedQtyByItemId.set(item.itemId, (returnedQtyByItemId.get(item.itemId) || 0) + Number(item.quantity || 0));
+                });
+            });
+        hasUnfinishedTransactions = (txRows || []).some(tx => {
+            const status = String(tx.status || '').toUpperCase();
+            return status !== 'COMPLETED' && status !== 'CANCELLED';
+        });
+    }
+
+    const hasReturnedBatch = batches.some(batch => String(batch.status || '').toLowerCase() === 'returned');
+    const hasMissingReturnTransaction =
+        hasReceivedBatchQty &&
+        hasReturnedBatch &&
+        (completedReturnTransactionIds.size === 0 || returnTransactionIds.some(txId => !completedReturnTransactionIds.has(txId)));
+    const hasInsufficientReturnQty = Array.from(receivedQtyByItemId.entries())
+        .some(([itemId, receivedQty]) => (returnedQtyByItemId.get(itemId) || 0) + 1e-9 < receivedQty);
+
+    return {
+        hasActiveBatches,
+        hasReceivedBatchQty,
+        hasMissingReturnTransaction,
+        hasUnfinishedTransactions,
+        hasInsufficientReturnQty,
+        hasCompletedReturnTransaction: completedReturnTransactionIds.size > 0,
+    };
+};
+
 const taskFromDb = (row: any): ProjectTask => ({
     ...fromDb(row),
     order: row.sort_order ?? row.order ?? 0,
@@ -617,25 +712,52 @@ export const poService = {
     async remove(id: string): Promise<void> {
         const { data: current, error: readError } = await supabase
             .from('purchase_orders')
-            .select('status, ever_submitted, received_transaction_ids')
+            .select('*')
             .eq('id', id)
             .single();
         if (readError) throw readError;
-        const receivedTransactionIds = Array.isArray(current.received_transaction_ids)
-            ? current.received_transaction_ids
-            : [];
-        const canHardDelete =
-            (current.status === 'draft' && !current.ever_submitted) ||
-            current.status === 'returned' ||
-            (current.status === 'cancelled' && receivedTransactionIds.length === 0);
-        if (!canHardDelete) {
-            throw new Error('Chỉ xoá PO nháp chưa gửi duyệt, PO hoàn hàng, hoặc PO đã huỷ chưa phát sinh nhập kho.');
+        const po = fromDb(current) as PurchaseOrder & { everSubmitted?: boolean };
+        const cleanupState = await getPoReceiptCleanupState(po);
+        const receivedTransactionIds = po.receivedTransactionIds || [];
+        const receivedQty = (po.items || []).reduce((sum, item) => sum + Number(item.receivedQty || 0), 0);
+        const noReceipt = receivedQty <= 0 && receivedTransactionIds.length === 0 && !cleanupState.hasReceivedBatchQty;
+        const status = String(po.status || '').toLowerCase();
+        const stockReturned = !cleanupState.hasActiveBatches
+            && !cleanupState.hasUnfinishedTransactions
+            && !cleanupState.hasMissingReturnTransaction;
+        if (cleanupState.hasActiveBatches) {
+            throw new Error('PO còn đợt nhận/cấp từ đề xuất chưa hoàn trả, không thể xoá. Vui lòng hoàn kho đủ trước.');
         }
-        const { error } = await supabase
+        if (cleanupState.hasUnfinishedTransactions) {
+            throw new Error('PO còn phiếu kho chưa hoàn tất hoặc chưa huỷ, không thể xoá.');
+        }
+        if (cleanupState.hasMissingReturnTransaction) {
+            throw new Error('PO đã phát sinh nhập kho nhưng chưa có phiếu hoàn kho completed đầy đủ, không thể xoá.');
+        }
+        if (cleanupState.hasInsufficientReturnQty) {
+            throw new Error('PO đã phát sinh nhập kho nhưng số lượng hoàn kho chưa đủ, không thể xoá.');
+        }
+        const canHardDelete =
+            (status === 'draft' && !po.everSubmitted && noReceipt) ||
+            ((status === 'returned' || status === 'cancelled') && (noReceipt || (cleanupState.hasReceivedBatchQty && stockReturned))) ||
+            (['partial', 'delivered', 'closed'].includes(status) && cleanupState.hasReceivedBatchQty && stockReturned);
+        if (!canHardDelete) {
+            throw new Error('Chỉ xoá PO nháp chưa gửi duyệt, hoặc PO đã hoàn kho đủ/không còn giao dịch kho dang dở.');
+        }
+        const { error: linkError } = await supabase
+            .from('purchase_order_request_lines')
+            .delete()
+            .eq('purchase_order_id', id);
+        if (linkError && linkError.code !== '42P01') throw linkError;
+        const { data: deletedRows, error } = await supabase
             .from('purchase_orders')
             .delete()
-            .eq('id', id);
+            .eq('id', id)
+            .select('id');
         if (error) throw error;
+        if (!deletedRows || deletedRows.length === 0) {
+            throw new Error('Không xoá được PO trên Supabase. Vui lòng kiểm tra quyền xoá hoặc trạng thái PO.');
+        }
     },
 };
 

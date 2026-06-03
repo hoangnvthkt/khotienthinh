@@ -275,11 +275,33 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
 
                 <div className="p-6 overflow-y-auto flex-1 space-y-5">
                     <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-4">
-                        <div className="rounded-2xl border border-slate-100 p-4">
-                            <div className="text-[10px] font-black text-slate-400 uppercase mb-2">Nội dung công việc</div>
-                            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{log.description || 'Không có nội dung.'}</p>
+                        <div className="rounded-2xl border border-slate-100 p-4 space-y-4">
+                            <div>
+                                <div className="text-[10px] font-black text-slate-400 uppercase mb-1">Nội dung công việc thi công</div>
+                                <p className="text-sm text-slate-750 leading-relaxed whitespace-pre-wrap">{log.description || 'Không có nội dung.'}</p>
+                            </div>
+                            {log.acceptanceDescription && (
+                                <div className="border-t border-slate-100 pt-3">
+                                    <div className="text-[10px] font-black text-slate-400 uppercase mb-1">Nội dung công việc nghiệm thu</div>
+                                    <p className="text-sm text-slate-750 leading-relaxed whitespace-pre-wrap">{log.acceptanceDescription}</p>
+                                </div>
+                            )}
+                            <div className="border-t border-slate-100 pt-3">
+                                <div className="text-[10px] font-black text-slate-400 uppercase mb-2">Đảm bảo an toàn & vệ sinh</div>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <div className={`p-2.5 rounded-xl border text-center text-xs font-bold ${log.workSafetyOk !== false ? 'bg-emerald-50/50 border-emerald-200 text-emerald-700' : 'bg-red-50/50 border-red-200 text-red-700'}`}>
+                                        An toàn lao động: {log.workSafetyOk !== false ? 'Đạt' : 'Không đạt'}
+                                    </div>
+                                    <div className={`p-2.5 rounded-xl border text-center text-xs font-bold ${log.envHygieneOk !== false ? 'bg-emerald-50/50 border-emerald-200 text-emerald-700' : 'bg-red-50/50 border-red-200 text-red-700'}`}>
+                                        Vệ sinh môi trường: {log.envHygieneOk !== false ? 'Đạt' : 'Không đạt'}
+                                    </div>
+                                    <div className={`p-2.5 rounded-xl border text-center text-xs font-bold ${log.trafficSafetyOk !== false ? 'bg-emerald-50/50 border-emerald-200 text-emerald-700' : 'bg-red-50/50 border-red-200 text-red-700'}`}>
+                                        An toàn giao thông: {log.trafficSafetyOk !== false ? 'Đạt' : 'Không đạt'}
+                                    </div>
+                                </div>
+                            </div>
                             {log.issues && (
-                                <div className="mt-4 rounded-xl border border-red-100 bg-red-50 p-3">
+                                <div className="rounded-xl border border-red-100 bg-red-50 p-3">
                                     <div className="text-[10px] font-black text-red-500 uppercase mb-1 flex items-center gap-1"><AlertTriangle size={11} /> Vấn đề / Sự cố</div>
                                     <p className="text-sm text-red-600 whitespace-pre-wrap">{log.issues}</p>
                                 </div>
@@ -316,6 +338,36 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                     <div className="text-sm font-black text-purple-700">{formatNumber(machineShifts)} ca</div>
                                 </div>
                             </div>
+
+                            {/* Supervisor Eval */}
+                            {(log.supervisorConstructionEval || log.supervisorAcceptanceEval || log.supervisorSafetyOk !== undefined) && (
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-4 space-y-3">
+                                    <div className="text-[10px] font-black text-slate-500 uppercase">Đánh giá của Giám sát</div>
+                                    {log.supervisorConstructionEval && (
+                                        <div>
+                                            <div className="text-[9px] font-bold text-slate-400 uppercase">Nhận xét thi công</div>
+                                            <div className="text-xs text-slate-600 whitespace-pre-wrap">{log.supervisorConstructionEval}</div>
+                                        </div>
+                                    )}
+                                    {log.supervisorAcceptanceEval && (
+                                        <div>
+                                            <div className="text-[9px] font-bold text-slate-400 uppercase">Nhận xét nghiệm thu</div>
+                                            <div className="text-xs text-slate-600 whitespace-pre-wrap">{log.supervisorAcceptanceEval}</div>
+                                        </div>
+                                    )}
+                                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200/60">
+                                        <div className={`text-[10px] text-center font-bold p-1 rounded ${log.supervisorSafetyOk !== false ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-55'}`}>
+                                            ATLĐ: {log.supervisorSafetyOk !== false ? 'Đạt' : 'K.Đạt'}
+                                        </div>
+                                        <div className={`text-[10px] text-center font-bold p-1 rounded ${log.supervisorHygieneOk !== false ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-55'}`}>
+                                            VSMT: {log.supervisorHygieneOk !== false ? 'Đạt' : 'K.Đạt'}
+                                        </div>
+                                        <div className={`text-[10px] text-center font-bold p-1 rounded ${log.supervisorTrafficOk !== false ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-55'}`}>
+                                            ATGT: {log.supervisorTrafficOk !== false ? 'Đạt' : 'K.Đạt'}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -662,6 +714,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [fDate, setFDate] = useState(new Date().toISOString().split('T')[0]);
     const [fWeather, setFWeather] = useState<WeatherType>('sunny');
     const [fDesc, setFDesc] = useState('');
+    const [fAcceptanceDesc, setFAcceptanceDesc] = useState('');
+    const [fWorkSafetyOk, setFWorkSafetyOk] = useState(true);
+    const [fEnvHygieneOk, setFEnvHygieneOk] = useState(true);
+    const [fTrafficSafetyOk, setFTrafficSafetyOk] = useState(true);
+    const [fSupervisorConstructionEval, setFSupervisorConstructionEval] = useState('');
+    const [fSupervisorAcceptanceEval, setFSupervisorAcceptanceEval] = useState('');
+    const [fSupervisorSafetyOk, setFSupervisorSafetyOk] = useState(true);
+    const [fSupervisorHygieneOk, setFSupervisorHygieneOk] = useState(true);
+    const [fSupervisorTrafficOk, setFSupervisorTrafficOk] = useState(true);
     const [fIssues, setFIssues] = useState('');
 
     const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
@@ -721,6 +782,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setEditing(null);
         setFDate(new Date().toISOString().split('T')[0]);
         setFWeather('sunny'); setFDesc(''); setFIssues('');
+        setFAcceptanceDesc('');
+        setFWorkSafetyOk(true); setFEnvHygieneOk(true); setFTrafficSafetyOk(true);
+        setFSupervisorConstructionEval(''); setFSupervisorAcceptanceEval('');
+        setFSupervisorSafetyOk(true); setFSupervisorHygieneOk(true); setFSupervisorTrafficOk(true);
         setGpsCoords(null);
         setFPhotos([]);
         setPhotoRequired(true);
@@ -737,6 +802,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setEditing(l);
         setFDate(l.date); setFWeather(l.weather);
         setFDesc(l.description); setFIssues(l.issues || '');
+        setFAcceptanceDesc(l.acceptanceDescription || '');
+        setFWorkSafetyOk(l.workSafetyOk ?? true);
+        setFEnvHygieneOk(l.envHygieneOk ?? true);
+        setFTrafficSafetyOk(l.trafficSafetyOk ?? true);
+        setFSupervisorConstructionEval(l.supervisorConstructionEval || '');
+        setFSupervisorAcceptanceEval(l.supervisorAcceptanceEval || '');
+        setFSupervisorSafetyOk(l.supervisorSafetyOk ?? true);
+        setFSupervisorHygieneOk(l.supervisorHygieneOk ?? true);
+        setFSupervisorTrafficOk(l.supervisorTrafficOk ?? true);
         setGpsCoords(l.gpsLat && l.gpsLng ? { lat: l.gpsLat, lng: l.gpsLng, accuracy: l.gpsAccuracy || 0 } : null);
         setFPhotos(l.photos || []);
         setPhotoRequired(l.photoRequired ?? true);
@@ -921,6 +995,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             const baseItem = {
                 date: fDate, weather: fWeather, workerCount,
                 description: fDesc, issues: fIssues || undefined,
+                acceptanceDescription: fAcceptanceDesc || undefined,
+                workSafetyOk: fWorkSafetyOk,
+                envHygieneOk: fEnvHygieneOk,
+                trafficSafetyOk: fTrafficSafetyOk,
+                supervisorConstructionEval: fSupervisorConstructionEval || undefined,
+                supervisorAcceptanceEval: fSupervisorAcceptanceEval || undefined,
+                supervisorSafetyOk: fSupervisorSafetyOk,
+                supervisorHygieneOk: fSupervisorHygieneOk,
+                supervisorTrafficOk: fSupervisorTrafficOk,
                 gpsLat: gpsCoords?.lat, gpsLng: gpsCoords?.lng, gpsAccuracy: gpsCoords?.accuracy,
                 photos: fPhotos, photoRequired, delayTasks: fDelayTasks,
                 volumes: fVolumes, materials: fMaterials, laborDetails: fLabor, machines: fMachines,
@@ -1972,14 +2055,131 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 </div>
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-1">Nội dung công việc</label>
+                                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-1">Nội dung công việc thi công</label>
                                 <VoiceTextarea
                                     value={fDesc}
                                     onChange={setFDesc}
                                     rows={3}
-                                    placeholder="Mô tả công việc đã thực hiện trong ngày... (nhấn 🎤 để voice input)"
+                                    placeholder="Mô tả công việc thi công đã thực hiện trong ngày... (nhấn 🎤 để voice input)"
                                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-sm focus:ring-2 focus:ring-teal-500 outline-none resize-none transition-all"
                                 />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-1">Nội dung công việc nghiệm thu</label>
+                                <VoiceTextarea
+                                    value={fAcceptanceDesc}
+                                    onChange={setFAcceptanceDesc}
+                                    rows={3}
+                                    placeholder="Mô tả công việc nghiệm thu đã thực hiện trong ngày... (nhấn 🎤 để voice input)"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-sm focus:ring-2 focus:ring-teal-500 outline-none resize-none transition-all"
+                                />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-100 dark:border-slate-700/60 pt-4">
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-2">Đảm bảo An toàn lao động</label>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setFWorkSafetyOk(true)}
+                                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${fWorkSafetyOk ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-750'}`}>
+                                            Đạt
+                                        </button>
+                                        <button onClick={() => setFWorkSafetyOk(false)}
+                                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${!fWorkSafetyOk ? 'bg-red-50 dark:bg-red-950/20 border-red-300 dark:border-red-800 text-red-700 dark:text-red-400' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-750'}`}>
+                                            Không đạt
+                                        </button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-2">Vệ sinh môi trường</label>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setFEnvHygieneOk(true)}
+                                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${fEnvHygieneOk ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-750'}`}>
+                                            Đạt
+                                        </button>
+                                        <button onClick={() => setFEnvHygieneOk(false)}
+                                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${!fEnvHygieneOk ? 'bg-red-50 dark:bg-red-950/20 border-red-300 dark:border-red-800 text-red-700 dark:text-red-400' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-750'}`}>
+                                            Không đạt
+                                        </button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-2">An toàn giao thông</label>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setFTrafficSafetyOk(true)}
+                                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${fTrafficSafetyOk ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-750'}`}>
+                                            Đạt
+                                        </button>
+                                        <button onClick={() => setFTrafficSafetyOk(false)}
+                                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${!fTrafficSafetyOk ? 'bg-red-50 dark:bg-red-950/20 border-red-300 dark:border-red-800 text-red-700 dark:text-red-400' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-750'}`}>
+                                            Không đạt
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="border-t border-slate-100 dark:border-slate-700/60 pt-4 space-y-4">
+                                <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block">Đánh giá của Giám sát</label>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block mb-1">Nhận xét Công tác thi công</label>
+                                        <VoiceTextarea
+                                            value={fSupervisorConstructionEval}
+                                            onChange={setFSupervisorConstructionEval}
+                                            rows={2}
+                                            placeholder="Đánh giá công tác thi công..."
+                                            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-150 text-xs focus:ring-1 focus:ring-teal-500 outline-none resize-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block mb-1">Nhận xét Công tác nghiệm thu</label>
+                                        <VoiceTextarea
+                                            value={fSupervisorAcceptanceEval}
+                                            onChange={setFSupervisorAcceptanceEval}
+                                            rows={2}
+                                            placeholder="Đánh giá công tác nghiệm thu..."
+                                            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-150 text-xs focus:ring-1 focus:ring-teal-500 outline-none resize-none"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block mb-2">Giám sát đánh giá ATLĐ</label>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setFSupervisorSafetyOk(true)}
+                                                className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${fSupervisorSafetyOk ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 text-emerald-700' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500'}`}>
+                                                Đạt
+                                            </button>
+                                            <button onClick={() => setFSupervisorSafetyOk(false)}
+                                                className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${!fSupervisorSafetyOk ? 'bg-red-50 dark:bg-red-950/20 border-red-300 dark:border-red-800 text-red-700' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500'}`}>
+                                                Không đạt
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block mb-2">Giám sát đánh giá VSMT</label>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setFSupervisorHygieneOk(true)}
+                                                className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${fSupervisorHygieneOk ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 text-emerald-700' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500'}`}>
+                                                Đạt
+                                            </button>
+                                            <button onClick={() => setFSupervisorHygieneOk(false)}
+                                                className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${!fSupervisorHygieneOk ? 'bg-red-50 dark:bg-red-950/20 border-red-300 dark:border-red-800 text-red-700' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500'}`}>
+                                                Không đạt
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block mb-2">Giám sát đánh giá ATGT</label>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setFSupervisorTrafficOk(true)}
+                                                className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${fSupervisorTrafficOk ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 text-emerald-700' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500'}`}>
+                                                Đạt
+                                            </button>
+                                            <button onClick={() => setFSupervisorTrafficOk(false)}
+                                                className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${!fSupervisorTrafficOk ? 'bg-red-50 dark:bg-red-950/20 border-red-300 dark:border-red-800 text-red-700' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500'}`}>
+                                                Không đạt
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             <div>
                                 <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-1 flex items-center gap-1"><AlertTriangle size={10} className="text-red-400" /> Vấn đề / Sự cố</label>
