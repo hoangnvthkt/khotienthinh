@@ -234,6 +234,31 @@ const mapInventoryItemFromDb = (i: any): InventoryItem => ({
   stockByWarehouse: i.stock_by_warehouse || {},
 });
 
+const INVENTORY_FETCH_PAGE_SIZE = 1000;
+
+const fetchAllInventoryItemRows = async (): Promise<any[] | null> => {
+  const rows: any[] = [];
+  let from = 0;
+
+  try {
+    while (true) {
+      const { data, error } = await supabase
+        .from('items')
+        .select('*')
+        .order('id', { ascending: true })
+        .range(from, from + INVENTORY_FETCH_PAGE_SIZE - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) return rows;
+
+      rows.push(...data);
+      from += data.length;
+    }
+  } catch (error) {
+    console.warn('Error fetching all items:', error);
+    return null;
+  }
+};
+
 const mapTransactionFromDb = (t: any): Transaction => ({
   ...t,
   sourceWarehouseId: t.source_warehouse_id,
@@ -674,7 +699,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const loadWmsCoreData = async () => {
         const [itemsData, whData, reqData] = await Promise.all([
-          fetchTableHelper('items'),
+          fetchAllInventoryItemRows(),
           fetchTableHelper('warehouses'),
           fetchTableHelper('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
         ]);
@@ -687,7 +712,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await loadWmsCoreData();
       } else if (module === 'wms') {
         const [itemsData, whData, supData, txData, reqData, actData, catData, unitData, lossNormsData, auditSessionsData] = await Promise.all([
-          fetchTableHelper('items'),
+          fetchAllInventoryItemRows(),
           fetchTableHelper('warehouses'),
           fetchTableHelper('suppliers'),
           fetchTableHelper('transactions', supabase.from('transactions').select('*').order('date', { ascending: false })),
@@ -939,7 +964,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   // Helper to sync a single table to Supabase
-  const syncToSupabase = async (table: string, data: any): Promise<boolean> => {
+  const syncToSupabase = async (table: string, data: any, throwOnError = false): Promise<boolean> => {
     try {
       if (!isSupabaseConfigured) return true;
 
@@ -951,7 +976,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           purchase_unit: data.purchaseUnit ?? null,
           price_in: data.priceIn, price_out: data.priceOut, min_stock: data.minStock,
           default_lead_time_days: data.defaultLeadTimeDays ?? 7,
-          supplier_id: data.supplierId, image_url: data.imageUrl, stock_by_warehouse: data.stockByWarehouse
+          supplier_id: data.supplierId, image_url: data.imageUrl, stock_by_warehouse: data.stockByWarehouse,
+          location: data.location ?? null
         };
       } else if (table === 'transactions') {
         payload = {
@@ -1090,6 +1116,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return true;
     } catch (error) {
       console.error(`Error syncing ${table} to Supabase:`, error);
+      if (throwOnError) throw error;
       return false;
     }
   };
@@ -1230,7 +1257,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addItem = async (item: InventoryItem) => {
-    const syncOk = await syncToSupabase('items', item);
+    const syncOk = await syncToSupabase('items', item, true);
     if (!syncOk) {
       throw new Error('Không thể lưu vật tư lên Supabase.');
     }
@@ -1296,11 +1323,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshInventoryItemsFromSupabase = async () => {
     if (!isSupabaseConfigured) return;
-    const { data: itemsData, error: itemsError } = await supabase.from('items').select('*');
-    if (itemsError) {
-      logApiError('refreshInventoryItemsFromSupabase', itemsError);
-      return;
-    }
+    const itemsData = await fetchAllInventoryItemRows();
     if (itemsData) setItems(itemsData.map(mapInventoryItemFromDb));
   };
 
