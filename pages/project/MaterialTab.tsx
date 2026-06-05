@@ -696,6 +696,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [bUnit, setBUnit] = useState('');
     const [bPrice, setBPrice] = useState('');
     const [bThreshold, setBThreshold] = useState('0,5');
+    const [bBudgetQtyInput, setBBudgetQtyInput] = useState('');
+    const [bBudgetQtyManuallyEdited, setBBudgetQtyManuallyEdited] = useState(false);
     const [bNotes, setBNotes] = useState('');
     const [bInventoryItemId, setBInventoryItemId] = useState('');
     const [bMaterialCode, setBMaterialCode] = useState('');
@@ -704,9 +706,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const selectedWorkPlannedQty = Number(selectedWorkBoqItem?.plannedQty || 0);
     const thresholdValue = importNumber(bThreshold);
     const hasValidThreshold = Number.isFinite(thresholdValue) && thresholdValue > 0;
-    const bBudgetQty = selectedWorkBoqItem && hasValidThreshold
+    const autoBudgetQty = selectedWorkBoqItem && hasValidThreshold
         ? calculateMaterialBudgetQty(selectedWorkPlannedQty, thresholdValue)
         : 0;
+    const bBudgetQty = importNumber(bBudgetQtyInput);
     const canSaveBoqItem = Boolean(
         bName
         && bUnit
@@ -716,6 +719,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         && hasValidThreshold
         && bBudgetQty > 0
     );
+
+    useEffect(() => {
+        if (!showBoqForm || bBudgetQtyManuallyEdited) return;
+        setBBudgetQtyInput(autoBudgetQty > 0 ? formatQuantity(autoBudgetQty) : '');
+    }, [autoBudgetQty, bBudgetQtyManuallyEdited, showBoqForm]);
 
     const ensureCanManage = (allowed: boolean, scopeLabel: string, action: string) => {
         if (allowed) return true;
@@ -1394,8 +1402,23 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const resetBoqForm = () => {
         setEditingBoq(null); setShowBoqForm(false);
         setBCat('Vật liệu xây dựng'); setBName(''); setBUnit('');
-        setBPrice(''); setBThreshold('0,5'); setBNotes('');
+        setBPrice(''); setBThreshold('0,5'); setBBudgetQtyInput(''); setBBudgetQtyManuallyEdited(false); setBNotes('');
         setBInventoryItemId(''); setBMaterialCode(''); setBWorkBoqItemId(''); setAcQuery('');
+    };
+
+    const handleWorkBoqItemChange = (value: string) => {
+        setBWorkBoqItemId(value);
+        setBBudgetQtyManuallyEdited(false);
+    };
+
+    const handleBudgetQtyChange = (value: string) => {
+        setBBudgetQtyInput(value);
+        setBBudgetQtyManuallyEdited(true);
+    };
+
+    const resetBudgetQtyToFormula = () => {
+        setBBudgetQtyInput(autoBudgetQty > 0 ? formatQuantity(autoBudgetQty) : '');
+        setBBudgetQtyManuallyEdited(false);
     };
 
     const openEditBoq = (item: MaterialBudgetItem) => {
@@ -1404,6 +1427,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         setBCat(item.category); setBName(item.itemName); setBUnit(item.unit);
         setBPrice(String(item.budgetUnitPrice));
         setBThreshold(formatQuantity(item.wasteThreshold));
+        setBBudgetQtyInput(formatQuantity(item.budgetQty));
+        setBBudgetQtyManuallyEdited(true);
         setBNotes(item.notes || '');
         setBInventoryItemId(item.inventoryItemId || '');
         setBMaterialCode(item.materialCode || '');
@@ -1416,9 +1441,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const computedBoqItems = useMemo(() => {
         return boqItems.map(b => {
             const linkedWorkItem = b.workBoqItemId ? workBoqItemById.get(b.workBoqItemId) : undefined;
-            const derivedBudgetQty = linkedWorkItem && Number(linkedWorkItem.plannedQty || 0) > 0 && Number(b.wasteThreshold || 0) > 0
+            const formulaBudgetQty = linkedWorkItem && Number(linkedWorkItem.plannedQty || 0) > 0 && Number(b.wasteThreshold || 0) > 0
                 ? calculateMaterialBudgetQty(Number(linkedWorkItem.plannedQty || 0), Number(b.wasteThreshold || 0))
-                : Number(b.budgetQty || 0);
+                : 0;
+            const derivedBudgetQty = Number(b.budgetQty || 0) > 0 ? Number(b.budgetQty || 0) : formulaBudgetQty;
             const budgetUnitPrice = Number(b.budgetUnitPrice || 0);
             const budgetTotal = derivedBudgetQty * budgetUnitPrice;
             let totalReceived = 0;
@@ -1568,7 +1594,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             toast.warning('Ngưỡng hao hụt chưa hợp lệ', 'Ngưỡng hao hụt phải là số lớn hơn 0.');
             return;
         }
-        if (!bName || !bUnit || bPrice === '' || bBudgetQty <= 0) return;
+        if (bBudgetQty <= 0) {
+            toast.warning('KL dự toán vật tư chưa hợp lệ', 'KL dự toán vật tư phải là số lớn hơn 0.');
+            return;
+        }
+        if (!bName || !bUnit || bPrice === '') return;
         const budgetQty = bBudgetQty;
         const budgetUnitPrice = Number(bPrice);
 
@@ -1651,7 +1681,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             { 'Nội dung': 'Sheet Vat_tu', 'Ghi chú': 'Nhập vật tư theo WBS đầu mục. Mã vật tư/SKU sẽ tự liên kết với danh mục kho nếu đã có.' },
             { 'Nội dung': 'Cột bắt buộc đầu mục', 'Ghi chú': 'Mã WBS, Tên đầu mục.' },
             { 'Nội dung': 'Cột bắt buộc vật tư', 'Ghi chú': 'WBS đầu mục, Tên vật tư, ĐVT, Ngưỡng hao hụt. Có thể chỉ nhập SKU nếu SKU đã tồn tại trong kho.' },
-            { 'Nội dung': 'KL dự toán vật tư', 'Ghi chú': 'Hệ thống tự tính bằng KL dự toán đầu mục × Ngưỡng hao hụt. Ví dụ 8,914 × 0,5 = 4,457. Giá trị KL dự toán nhập tay trong sheet Vat_tu sẽ không được sử dụng.' },
+            { 'Nội dung': 'KL dự toán vật tư', 'Ghi chú': 'Nếu để trống, hệ thống tự tính bằng KL dự toán đầu mục × Ngưỡng hao hụt. Ví dụ 8,914 × 0,5 = 4,457. Có thể nhập tay để ghi đè kết quả tự tính.' },
             { 'Nội dung': 'Import', 'Ghi chú': 'Hệ thống hiện preview trước: dòng hợp lệ được ghi, dòng lỗi sẽ báo lý do để sửa file.' },
         ];
         const helpSheet = XLSX.utils.json_to_sheet(helpRows);
@@ -1835,6 +1865,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 const unit = importText(row, ['ĐVT', 'Đơn vị']) || matchedInventory?.unit || '';
                 const thresholdRaw = pickImportValue(row, ['Ngưỡng hao hụt (%)', 'Ngưỡng hao hụt', 'Định mức hao hụt']);
                 const wasteThreshold = importNumber(thresholdRaw);
+                const budgetQtyRaw = pickImportValue(row, ['KL dự toán', 'Khối lượng dự toán', 'Khối lượng']);
+                const importedBudgetQty = importNumber(budgetQtyRaw);
                 const errors: string[] = [];
                 if (!workItem) errors.push(`Không tìm thấy đầu mục WBS "${workWbs}".`);
                 else if (Number(workItem.plannedQty || 0) <= 0) errors.push(`Đầu mục WBS "${workWbs}" chưa có KL dự toán lớn hơn 0.`);
@@ -1842,13 +1874,15 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 if (!unit) errors.push('Thiếu ĐVT.');
                 if (String(thresholdRaw ?? '').trim() === '') errors.push('Thiếu Ngưỡng hao hụt.');
                 else if (wasteThreshold <= 0) errors.push('Ngưỡng hao hụt phải lớn hơn 0.');
+                if (String(budgetQtyRaw ?? '').trim() !== '' && importedBudgetQty <= 0) errors.push('KL dự toán vật tư phải lớn hơn 0.');
                 const matchKeys = [
                     materialCode,
                     matchedInventory?.sku,
                     `${itemName}|${unit}`,
                 ].filter(Boolean).map(key => `${workItem?.id || ''}|${normalizeKey(key as string)}`);
                 const existing = matchKeys.map(key => existingMaterials.get(key)).find(Boolean);
-                const budgetQty = workItem ? calculateMaterialBudgetQty(Number(workItem.plannedQty || 0), wasteThreshold) : 0;
+                const formulaBudgetQty = workItem ? calculateMaterialBudgetQty(Number(workItem.plannedQty || 0), wasteThreshold) : 0;
+                const budgetQty = importedBudgetQty > 0 ? importedBudgetQty : formulaBudgetQty;
                 const importedUnitPrice = importNumber(pickImportValue(row, ['Đơn giá', 'Đơn giá dự toán']));
                 const budgetUnitPrice = importedUnitPrice || existing?.budgetUnitPrice || matchedInventory?.priceIn || 0;
                 const item: MaterialBudgetItem = {
@@ -2572,7 +2606,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         <div className="p-6 space-y-4">
                             <div>
                                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Đầu mục BOQ triển khai *</label>
-                                <select value={bWorkBoqItemId} onChange={e => setBWorkBoqItemId(e.target.value)}
+                                <select value={bWorkBoqItemId} onChange={e => handleWorkBoqItemChange(e.target.value)}
                                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
                                     <option value="">Chọn đầu mục để tính KL vật tư...</option>
                                     {workBoqTree.map(({ item, level }) => (
@@ -2644,9 +2678,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                         className="w-full px-3 py-2.5 rounded-xl border border-indigo-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none bg-white" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-indigo-500 uppercase block mb-1">KL Dự toán vật tư</label>
-                                    <input type="text" value={selectedWorkBoqItem && hasValidThreshold ? formatQuantity(bBudgetQty) : ''} placeholder="Tự động"
-                                        className="w-full px-3 py-2.5 rounded-xl border border-indigo-200 text-sm font-black outline-none bg-indigo-50 text-indigo-700" readOnly />
+                                    <label className="text-[10px] font-bold text-indigo-500 uppercase block mb-1">KL Dự toán vật tư *</label>
+                                    <input type="text" inputMode="decimal" value={bBudgetQtyInput} onChange={e => handleBudgetQtyChange(e.target.value)} placeholder="Tự động hoặc nhập tay"
+                                        className="w-full px-3 py-2.5 rounded-xl border border-indigo-200 text-sm font-black outline-none bg-white text-indigo-700 focus:ring-2 focus:ring-indigo-500" />
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-3">
@@ -2666,8 +2700,17 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                 <div className="font-bold text-indigo-500">KL vật tư = KL dự toán đầu mục × Ngưỡng hao hụt</div>
                                 {selectedWorkBoqItem ? (
                                     <div className="mt-1 text-indigo-700">
-                                        <span className="font-black">{formatQuantity(selectedWorkPlannedQty)} × {hasValidThreshold ? formatQuantity(thresholdValue) : '—'} = {formatQuantity(bBudgetQty)} {bUnit || ''}</span>
-                                        {bPrice !== '' && <span className="ml-2 text-indigo-400">• Giá trị: {fmt(bBudgetQty * Number(bPrice))} đ</span>}
+                                        <span className="font-black">{formatQuantity(selectedWorkPlannedQty)} × {hasValidThreshold ? formatQuantity(thresholdValue) : '—'} = {formatQuantity(autoBudgetQty)} {bUnit || ''}</span>
+                                        {bBudgetQtyManuallyEdited && bBudgetQty > 0 && Math.abs(bBudgetQty - autoBudgetQty) > 0.000001 && (
+                                            <span className="ml-2 font-bold text-amber-600">• KL đang nhập: {formatQuantity(bBudgetQty)} {bUnit || ''}</span>
+                                        )}
+                                        {bPrice !== '' && bBudgetQty > 0 && <span className="ml-2 text-indigo-400">• Giá trị: {fmt(bBudgetQty * Number(bPrice))} đ</span>}
+                                        {hasValidThreshold && autoBudgetQty > 0 && (
+                                            <button type="button" onClick={resetBudgetQtyToFormula}
+                                                className="ml-2 rounded-lg border border-indigo-200 bg-white px-2 py-0.5 text-[10px] font-black text-indigo-600 hover:bg-indigo-100">
+                                                Dùng công thức
+                                            </button>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="mt-1 font-bold text-amber-600">Chọn đầu mục BOQ để hệ thống tự tính KL dự toán vật tư.</div>
