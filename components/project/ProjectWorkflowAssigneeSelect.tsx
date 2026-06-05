@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Building2, CheckCircle2, Loader2, UserRound } from 'lucide-react';
+import { AlertTriangle, Building2, CheckCircle2, Loader2, UserRound, Search, X } from 'lucide-react';
 import { Employee, OrgUnit, ProjectStaff, ProjectWorkflowSubject, User, WorkflowNode } from '../../types';
 import { projectWorkflowService } from '../../lib/projectWorkflowService';
 
@@ -34,11 +34,23 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
   const [selectedDepartmentIds, setSelectedDepartmentIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const userById = useMemo(() => new Map(users.map(user => [user.id, user])), [users]);
   const selectedUserIds = useMemo(
     () => Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [],
     [value],
   );
+
+  const filteredCandidates = useMemo(() => {
+    return candidates.filter(staff => {
+      const userName = staff.userName || userById.get(staff.userId)?.name || staff.userId || '';
+      const positionName = staff.positionName || '';
+      const text = `${userName} ${positionName}`.toLowerCase();
+      return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(
+        searchTerm.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      );
+    });
+  }, [candidates, searchTerm, userById]);
 
   const fixedUserId = node?.config?.assigneeUserId || null;
   const creatorModeUserId = node?.config?.assignmentMode === 'creator' ? creatorUserId || null : null;
@@ -191,12 +203,33 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
       )}
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="flex items-center justify-between bg-slate-50 px-3 py-2 text-[10px] font-black uppercase text-slate-400">
+        <div className="flex items-center justify-between bg-slate-50 px-3 py-2 text-[10px] font-black uppercase text-slate-400 border-b border-slate-100">
           <span>Danh sách ứng viên</span>
           {loading && <Loader2 size={13} className="animate-spin text-slate-300" />}
         </div>
-        <div className="max-h-52 divide-y divide-slate-100 overflow-y-auto">
-          {candidates.map(staff => {
+        {!loading && candidates.length > 0 && (
+          <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2 bg-slate-50/30">
+            <Search size={13} className="text-slate-400 shrink-0" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Tìm kiếm ứng viên..."
+              className="w-full bg-transparent border-none outline-none text-xs text-slate-700 placeholder-slate-400 font-medium"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="text-slate-400 hover:text-slate-600 transition p-0.5 rounded"
+              >
+                <X size={11} />
+              </button>
+            )}
+          </div>
+        )}
+        <div className="max-h-52 divide-y divide-slate-100 overflow-y-auto custom-scrollbar">
+          {filteredCandidates.map(staff => {
             const checked = selectedUserIds.includes(staff.userId);
             return (
               <button

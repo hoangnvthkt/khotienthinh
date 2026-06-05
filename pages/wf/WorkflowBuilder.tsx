@@ -8,7 +8,8 @@ import { projectWorkflowService } from '../../lib/projectWorkflowService';
 import {
     ArrowLeft, Save, Plus, Trash2, GripVertical, ChevronUp, ChevronDown,
     UserCheck, Settings2, X, Layers, FileText, ToggleLeft, ToggleRight,
-    Zap, Play, Flag, Clock, Type, AlignLeft, Hash, Calendar, List, Paperclip, Printer, Upload, Download, Eye
+    Zap, Play, Flag, Clock, Type, AlignLeft, Hash, Calendar, List, Paperclip, Printer, Upload, Download, Eye,
+    Search, Check
 } from 'lucide-react';
 
 const FIELD_TYPE_CONFIG: Record<CustomFieldType, { label: string; icon: any; color: string }> = {
@@ -18,6 +19,130 @@ const FIELD_TYPE_CONFIG: Record<CustomFieldType, { label: string; icon: any; col
     date: { label: 'Ngày tháng', icon: Calendar, color: 'bg-amber-500' },
     select: { label: 'Danh sách chọn', icon: List, color: 'bg-violet-500' },
     file: { label: 'Tệp đính kèm', icon: Paperclip, color: 'bg-rose-500' },
+};
+
+interface SearchableCheckboxSelectProps {
+    options: { id: string; label: string; sublabel?: string }[];
+    selectedValues: string[];
+    onChange: (values: string[]) => void;
+    placeholder?: string;
+    maxHeightClass?: string;
+}
+
+const SearchableCheckboxSelect: React.FC<SearchableCheckboxSelectProps> = ({
+    options,
+    selectedValues,
+    onChange,
+    placeholder = 'Tìm kiếm...',
+    maxHeightClass = 'h-36',
+}) => {
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const filteredOptions = options.filter(opt => {
+        const text = `${opt.label} ${opt.sublabel || ''}`.toLowerCase();
+        return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(
+            searchTerm.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        );
+    });
+
+    const handleToggle = (id: string) => {
+        if (selectedValues.includes(id)) {
+            onChange(selectedValues.filter(val => val !== id));
+        } else {
+            onChange([...selectedValues, id]);
+        }
+    };
+
+    const handleSelectAll = () => {
+        const filteredIds = filteredOptions.map(opt => opt.id);
+        const allFilteredSelected = filteredIds.every(id => selectedValues.includes(id));
+        if (allFilteredSelected) {
+            onChange(selectedValues.filter(id => !filteredIds.includes(id)));
+        } else {
+            onChange(Array.from(new Set([...selectedValues, ...filteredIds])));
+        }
+    };
+
+    const isAllFilteredSelected = filteredOptions.length > 0 && filteredOptions.every(opt => selectedValues.includes(opt.id));
+
+    return (
+        <div className="flex flex-col border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-white/80 dark:bg-slate-800/50 focus-within:ring-2 focus-within:ring-indigo-200 transition">
+            {/* Search Bar */}
+            <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-700/50 px-3 py-2 bg-slate-50/50 dark:bg-slate-800/30">
+                <Search size={14} className="text-slate-400 shrink-0" />
+                <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    placeholder={placeholder}
+                    className="w-full bg-transparent border-none outline-none text-xs text-slate-700 dark:text-slate-300 placeholder-slate-400 font-medium"
+                />
+                {searchTerm && (
+                    <button
+                        type="button"
+                        onClick={() => setSearchTerm('')}
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition p-0.5 rounded"
+                    >
+                        <X size={12} />
+                    </button>
+                )}
+            </div>
+
+            {/* Quick Actions */}
+            {filteredOptions.length > 0 && (
+                <div className="flex justify-between items-center px-3 py-1 bg-slate-50/20 dark:bg-slate-800/10 border-b border-slate-100 dark:border-slate-700/30 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                    <span>Kết quả: {filteredOptions.length}</span>
+                    <button
+                        type="button"
+                        onClick={handleSelectAll}
+                        className="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 transition"
+                    >
+                        {isAllFilteredSelected ? 'Bỏ chọn hết' : 'Chọn tất cả'}
+                    </button>
+                </div>
+            )}
+
+            {/* Options List */}
+            <div className={`overflow-y-auto divide-y divide-slate-100/50 dark:divide-slate-700/30 ${maxHeightClass} custom-scrollbar`}>
+                {filteredOptions.length > 0 ? (
+                    filteredOptions.map(opt => {
+                        const isSelected = selectedValues.includes(opt.id);
+                        return (
+                            <div
+                                key={opt.id}
+                                onClick={() => handleToggle(opt.id)}
+                                className={`flex items-center gap-2.5 px-3 py-2 cursor-pointer transition text-xs select-none ${
+                                    isSelected 
+                                        ? 'bg-indigo-50/40 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-300 font-bold' 
+                                        : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/30 text-slate-600 dark:text-slate-300 font-medium'
+                                }`}
+                            >
+                                <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-all ${
+                                    isSelected 
+                                        ? 'border-indigo-500 bg-indigo-500 text-white shadow-sm shadow-indigo-500/20' 
+                                        : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-transparent'
+                                }`}>
+                                    <Check size={11} className="stroke-[3]" />
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                    <span className="truncate">{opt.label}</span>
+                                    {opt.sublabel && (
+                                        <span className={`text-[10px] truncate ${isSelected ? 'text-indigo-400 dark:text-indigo-500' : 'text-slate-400'}`}>
+                                            {opt.sublabel}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })
+                ) : (
+                    <div className="px-3 py-4 text-center text-xs text-slate-400 font-semibold">
+                        Không tìm thấy kết quả phù hợp
+                    </div>
+                )}
+            </div>
+        </div>
+    );
 };
 
 const WorkflowBuilder: React.FC = () => {
@@ -436,14 +561,13 @@ const WorkflowBuilder: React.FC = () => {
                         </div>
                         <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-black text-indigo-600">{template.managers?.length || 0} người</span>
                     </div>
-                    <select
-                        multiple
-                        value={template.managers || []}
-                        onChange={event => void updateTemplateUserList('managers', selectedOptions(event))}
-                        className="h-28 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-slate-800/50"
-                    >
-                        {users.map(item => <option key={item.id} value={item.id}>{item.name} ({item.role})</option>)}
-                    </select>
+                    <SearchableCheckboxSelect
+                        options={users.map(item => ({ id: item.id, label: item.name, sublabel: item.role }))}
+                        selectedValues={template.managers || []}
+                        onChange={values => void updateTemplateUserList('managers', values)}
+                        placeholder="Tìm kiếm quản trị..."
+                        maxHeightClass="h-32"
+                    />
                 </div>
                 <div className="glass-card rounded-xl p-4">
                     <div className="mb-2 flex items-center justify-between gap-3">
@@ -453,14 +577,13 @@ const WorkflowBuilder: React.FC = () => {
                         </div>
                         <span className="rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-black text-slate-500">{template.defaultWatchers?.length || 0} người</span>
                     </div>
-                    <select
-                        multiple
-                        value={template.defaultWatchers || []}
-                        onChange={event => void updateTemplateUserList('defaultWatchers', selectedOptions(event))}
-                        className="h-28 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-slate-800/50"
-                    >
-                        {users.map(item => <option key={item.id} value={item.id}>{item.name} ({item.role})</option>)}
-                    </select>
+                    <SearchableCheckboxSelect
+                        options={users.map(item => ({ id: item.id, label: item.name, sublabel: item.role }))}
+                        selectedValues={template.defaultWatchers || []}
+                        onChange={values => void updateTemplateUserList('defaultWatchers', values)}
+                        placeholder="Tìm kiếm người theo dõi..."
+                        maxHeightClass="h-32"
+                    />
                 </div>
             </div>
 
@@ -705,67 +828,63 @@ const WorkflowBuilder: React.FC = () => {
                                                 </div>
                                                 <div>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Pool người mặc định</label>
-                                                    <select
-                                                        multiple
-                                                        value={getTargetUserIds(step.config.assignmentTargets)}
-                                                        onChange={e => updateStepTargets(
+                                                    <SearchableCheckboxSelect
+                                                        options={users.map(item => ({ id: item.id, label: item.name, sublabel: item.role }))}
+                                                        selectedValues={getTargetUserIds(step.config.assignmentTargets)}
+                                                        onChange={values => updateStepTargets(
                                                             step.id,
                                                             'assignmentTargets',
-                                                            selectedOptions(e),
+                                                            values,
                                                             getTargetDepartmentIds(step.config.assignmentTargets),
                                                         )}
-                                                        className="h-28 w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-accent"
-                                                    >
-                                                        {users.map(item => <option key={item.id} value={item.id}>{item.name} ({item.role})</option>)}
-                                                    </select>
+                                                        placeholder="Tìm kiếm người..."
+                                                        maxHeightClass="h-28"
+                                                    />
                                                 </div>
                                                 <div>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Pool phòng ban mặc định</label>
-                                                    <select
-                                                        multiple
-                                                        value={getTargetDepartmentIds(step.config.assignmentTargets)}
-                                                        onChange={e => updateStepTargets(
+                                                    <SearchableCheckboxSelect
+                                                        options={orgUnits.filter(unit => unit.type === 'department').map(unit => ({ id: unit.id, label: unit.name }))}
+                                                        selectedValues={getTargetDepartmentIds(step.config.assignmentTargets)}
+                                                        onChange={values => updateStepTargets(
                                                             step.id,
                                                             'assignmentTargets',
                                                             getTargetUserIds(step.config.assignmentTargets),
-                                                            selectedOptions(e),
+                                                            values,
                                                         )}
-                                                        className="h-28 w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-accent"
-                                                    >
-                                                        {orgUnits.filter(unit => unit.type === 'department').map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
-                                                    </select>
+                                                        placeholder="Tìm kiếm phòng ban..."
+                                                        maxHeightClass="h-28"
+                                                    />
                                                 </div>
                                                 <div>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Theo dõi bước - người</label>
-                                                    <select
-                                                        multiple
-                                                        value={getTargetUserIds(step.config.stepWatcherTargets)}
-                                                        onChange={e => updateStepTargets(
+                                                    <SearchableCheckboxSelect
+                                                        options={users.map(item => ({ id: item.id, label: item.name, sublabel: item.role }))}
+                                                        selectedValues={getTargetUserIds(step.config.stepWatcherTargets)}
+                                                        onChange={values => updateStepTargets(
                                                             step.id,
                                                             'stepWatcherTargets',
-                                                            selectedOptions(e),
+                                                            values,
                                                             getTargetDepartmentIds(step.config.stepWatcherTargets),
                                                         )}
-                                                        className="h-24 w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-accent"
-                                                    >
-                                                        {users.map(item => <option key={item.id} value={item.id}>{item.name} ({item.role})</option>)}
-                                                    </select>
+                                                        placeholder="Tìm kiếm người..."
+                                                        maxHeightClass="h-24"
+                                                    />
                                                 </div>
                                                 <div>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Theo dõi bước - phòng ban</label>
-                                                    <select
-                                                        multiple
-                                                        value={getTargetDepartmentIds(step.config.stepWatcherTargets)}
-                                                        onChange={e => updateStepTargets(
+                                                    <SearchableCheckboxSelect
+                                                        options={orgUnits.filter(unit => unit.type === 'department').map(unit => ({ id: unit.id, label: unit.name }))}
+                                                        selectedValues={getTargetDepartmentIds(step.config.stepWatcherTargets)}
+                                                        onChange={values => updateStepTargets(
                                                             step.id,
                                                             'stepWatcherTargets',
                                                             getTargetUserIds(step.config.stepWatcherTargets),
-                                                            selectedOptions(e),
+                                                            values,
                                                         )}
-                                                        className="h-24 w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-accent"
-                                                    >
-                                                        {orgUnits.filter(unit => unit.type === 'department').map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
-                                                    </select>
+                                                        placeholder="Tìm kiếm phòng ban..."
+                                                        maxHeightClass="h-24"
+                                                    />
                                                 </div>
                                                 <div className="flex items-center gap-2 pt-5">
                                                     <button
