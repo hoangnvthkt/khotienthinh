@@ -162,6 +162,7 @@ const TOOL_SOURCES: Record<string, { title: string; fileName: string }> = {
   ai_tool_purchase_order_summary: { title: 'Đơn mua hàng (PO)', fileName: 'Hệ thống Quản lý Kho (WMS)' },
   ai_tool_project_finance: { title: 'Tài chính dự án', fileName: 'Hệ thống Quản lý Tài chính' },
   ai_tool_employee_summary: { title: 'Hồ sơ nhân sự', fileName: 'Hệ thống Quản lý Nhân sự (HRM)' },
+  ai_tool_employee_search: { title: 'Tìm kiếm nhân sự', fileName: 'Hệ thống Quản lý Nhân sự (HRM)' },
   ai_tool_attendance_report: { title: 'Báo cáo chấm công', fileName: 'Hệ thống Quản lý Nhân sự (HRM)' },
   ai_tool_executive_dashboard: { title: 'Dashboard tổng hợp', fileName: 'Hệ thống Quản lý Vioo ERP' },
 };

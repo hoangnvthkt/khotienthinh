@@ -86,6 +86,13 @@ export const AI_TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'ai_tool_employee_search',
+    description: 'Tìm kiếm hồ sơ nhân viên chi tiết theo tên hoặc mã nhân viên. Trả về thông tin: mã NV, họ tên, chức danh, sđt, email, ngày sinh, trạng thái, phòng ban, vị trí, công trường. Dùng khi hỏi "thông tin nhân sự của X", "tìm nhân viên Y", "số điện thoại của Z", "Hà Hải Hồng".',
+    parameters: {
+      p_keyword: { type: 'string', required: true, description: 'Từ khóa tìm kiếm (họ tên hoặc mã nhân viên).' },
+    },
+  },
+  {
     name: 'ai_tool_attendance_report',
     description: 'Báo cáo chấm công theo ngày: tổng check-in/out, đi muộn, vắng, đúng giờ. Dùng khi hỏi "chấm công hôm nay", "ai vắng", "báo cáo chấm công".',
     parameters: {

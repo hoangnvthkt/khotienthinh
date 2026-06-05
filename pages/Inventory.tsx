@@ -3,17 +3,18 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { Search, Filter, Plus, QrCode, Upload, FileSpreadsheet, Trash2, MoreHorizontal, ShieldAlert, AlertTriangle, Loader2 } from 'lucide-react';
+import { Search, Filter, Plus, QrCode, Upload, FileSpreadsheet, Trash2, MoreHorizontal, ShieldAlert, AlertTriangle, Loader2, Download, RefreshCcw } from 'lucide-react';
 import ScannerModal from '../components/ScannerModal';
 import AddInventoryModal from '../components/AddInventoryModal';
 import InventoryDetailModal from '../components/InventoryDetailModal';
 import DeleteInventoryModal from '../components/DeleteInventoryModal';
 import ReceivePurchaseOrderModal from '../components/ReceivePurchaseOrderModal';
 import ReceiveFulfillmentBatchModal from '../components/ReceiveFulfillmentBatchModal';
+import ExcelImportReviewModal from '../components/ExcelImportReviewModal';
 import Pagination from '../components/Pagination';
 import { usePagination } from '../hooks/usePagination';
 import { loadXlsx } from '../lib/loadXlsx';
-import { InventoryItem, Role, Transaction, TransactionType, TransactionStatus, PurchaseOrder, MaterialRequest, MaterialRequestFulfillmentBatch } from '../types';
+import { InventoryItem, Transaction, TransactionType, TransactionStatus, PurchaseOrder, MaterialRequest, MaterialRequestFulfillmentBatch } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import { useModuleData } from '../hooks/useModuleData';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
@@ -21,16 +22,57 @@ import { poService } from '../lib/projectService';
 import { extractPoToken, PO_QR_PARAM } from '../lib/poQr';
 import { extractFulfillmentBatchToken, FULFILLMENT_BATCH_QR_PARAM } from '../lib/fulfillmentBatchQr';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
+import {
+  ExcelImportMode,
+  ExcelImportPreview,
+  applyImportChanges,
+  buildImportPreview,
+  getExcelCell,
+  parseExcelRows,
+} from '../lib/excelImport';
+
+type InventoryExcelRecord = InventoryItem & {
+  initialWarehouseId?: string;
+  initialStock?: number;
+};
+
+const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
+
+const parseExcelNumber = (value: unknown): number => {
+  const raw = String(value ?? '').trim().replace(/\s/g, '');
+  if (!raw) return 0;
+  const lastComma = raw.lastIndexOf(',');
+  const lastDot = raw.lastIndexOf('.');
+  const normalized = lastComma > lastDot
+    ? raw.replace(/\./g, '').replace(',', '.')
+    : raw.replace(/,/g, '');
+  return Number(normalized);
+};
+
+const formatNumber = (value: unknown) => Number(value || 0).toLocaleString('vi-VN');
+
+const validateNonNegativeNumber = (
+  value: unknown,
+  label: string,
+  options: { integer?: boolean; max?: number } = {},
+): string | undefined => {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return `${label} phải là số không âm.`;
+  if (options.integer && !Number.isInteger(number)) return `${label} phải là số nguyên.`;
+  if (options.max !== undefined && number > options.max) return `${label} không được vượt quá ${options.max}.`;
+  return undefined;
+};
+
+const warehouseAliases = ['Kho nhận hàng', 'Kho', 'Tên kho'];
 
 const Inventory: React.FC = () => {
   const location = useLocation();
-  const { items, warehouses, requests, addItems, addItem, removeItem, addTransaction, user, transactions, categories, units } = useApp();
+  const { items, warehouses, requests, addItem, updateItem, removeItem, addTransaction, user, categories, units } = useApp();
   useModuleData('wms');
   const toast = useToast();
   const [searchTerm, setSearchTerm] = useState('');
 
   const hasAssignedWh = !!user.assignedWarehouseId;
-  const isAdmin = user.role === Role.ADMIN;
   const { canManage } = usePermission();
   const canCRUD = canManage('/inventory');
 
@@ -54,11 +96,15 @@ const Inventory: React.FC = () => {
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importMode, setImportMode] = useState<ExcelImportMode>('create');
+  const [importPreview, setImportPreview] = useState<ExcelImportPreview<InventoryExcelRecord> | null>(null);
   const [deletingItem, setDeletingItem] = useState(false);
   const [receivingPo, setReceivingPo] = useState<PurchaseOrder | null>(null);
   const [receivingFulfillmentBatch, setReceivingFulfillmentBatch] = useState<MaterialRequestFulfillmentBatch | null>(null);
   const [receivingFulfillmentRequest, setReceivingFulfillmentRequest] = useState<MaterialRequest | null>(null);
   const [loadingQr, setLoadingQr] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const importModeRef = useRef<ExcelImportMode>('create');
   const lastLoadedQrTokenRef = useRef<string | null>(null);
 
   // Logic lọc vật tư theo yêu cầu bảo mật mới
@@ -132,8 +178,12 @@ const Inventory: React.FC = () => {
           toast.error('Không tìm thấy PO', 'Mã QR không phải phiếu nhập NCC hợp lệ.');
           return;
         }
-        if (po.status === 'cancelled') {
-          toast.warning('PO đã huỷ', 'Không thể nhập kho từ phiếu đã huỷ.');
+        if (['cancelled', 'returned', 'closed', 'delivered'].includes(po.status)) {
+          toast.warning('PO không còn chờ nhận', 'Không thể nhận thêm từ PO đã huỷ, hoàn hàng, đóng hoặc giao đủ.');
+          return;
+        }
+        if (!['in_transit', 'partial'].includes(po.status)) {
+          toast.warning('PO chưa ở trạng thái Đang giao', 'Vui lòng chuyển PO sang Đang giao để hệ thống tạo phiếu chờ Duyệt SL/CL trước khi quét QR.');
           return;
         }
         setReceivingPo(po);
@@ -175,162 +225,378 @@ const Inventory: React.FC = () => {
     }
   };
 
-  const handleDownloadTemplate = async () => {
-    const XLSX = await loadXlsx();
-    const headers = [['Mã SKU', 'Tên vật tư', 'Danh mục', 'Đơn vị tính', 'Giá nhập', 'Giá xuất', 'Tồn tối thiểu', 'Kho nhận hàng', 'Số lượng nhập']];
-    const ws = XLSX.utils.aoa_to_sheet(headers);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Template");
-    const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const downloadWorkbook = (XLSX: any, workbook: any, fileName: string) => {
+    const wbOut = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'Vioo_Template.xlsx';
+    link.download = fileName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
+  const handleDownloadTemplate = async () => {
+    try {
+      const XLSX = await loadXlsx();
+      const sampleCategory = categories[0]?.name || 'Vật liệu xây dựng';
+      const sampleUnit = units[0]?.name || 'Cái';
+      const samplePurchaseUnit = units.find(unit => unit.name !== sampleUnit)?.name || '';
+      const sampleWarehouse = warehouses.find(warehouse => warehouse.id === user.assignedWarehouseId) || warehouses[0];
+      const workbook = XLSX.utils.book_new();
+
+      const createSheet = XLSX.utils.json_to_sheet([{
+        'Mã SKU *': 'STEEL-001',
+        'Tên vật tư *': 'Thép cuộn phi 6',
+        'Danh mục *': sampleCategory,
+        'ĐVT Chính *': sampleUnit,
+        'Đơn vị phụ (Đơn vị mua hàng)': samplePurchaseUnit,
+        'Giá nhập': 15000,
+        'Giá xuất': 16500,
+        'Tồn tối thiểu': 10,
+        'Lead time mặc định': 7,
+        'Vị trí': 'Kệ A-01',
+        'Kho nhận hàng': sampleWarehouse?.name || '',
+        'Số lượng ban đầu': 100,
+      }]);
+      createSheet['!cols'] = [
+        { wch: 18 }, { wch: 32 }, { wch: 24 }, { wch: 18 }, { wch: 30 }, { wch: 16 },
+        { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 24 }, { wch: 28 }, { wch: 20 },
+      ];
+      XLSX.utils.book_append_sheet(workbook, createSheet, 'Nhap_moi');
+
+      const updateSheet = XLSX.utils.json_to_sheet([{
+        'Mã SKU *': items[0]?.sku || 'STEEL-001',
+        'Tên vật tư': '',
+        'Danh mục': '',
+        'ĐVT Chính': '',
+        'Đơn vị phụ (Đơn vị mua hàng)': '',
+        'Giá nhập': '',
+        'Giá xuất': '',
+        'Tồn tối thiểu': '',
+        'Lead time mặc định': 15,
+        'Vị trí': '',
+      }]);
+      updateSheet['!cols'] = [
+        { wch: 18 }, { wch: 32 }, { wch: 24 }, { wch: 18 }, { wch: 30 },
+        { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 24 },
+      ];
+      XLSX.utils.book_append_sheet(workbook, updateSheet, 'Cap_nhat');
+
+      const guideSheet = XLSX.utils.aoa_to_sheet([
+        ['Chức năng', 'Cách dùng'],
+        ['Nhập mới', 'Dùng sheet Nhap_moi. Mã SKU đã tồn tại hoặc bị trùng trong file sẽ được báo lỗi trước khi ghi.'],
+        ['Cập nhật', 'Dùng sheet Cap_nhat. Mã SKU phải tồn tại; ô trống nghĩa là giữ nguyên giá trị hiện tại.'],
+        ['Đối chiếu', 'Sau khi chọn file, hệ thống hiển thị từng lỗi và từng thay đổi cũ → mới để người dùng kiểm tra.'],
+        ['Xoá giá trị', 'Dùng __CLEAR__ cho Đơn vị phụ hoặc Vị trí khi cập nhật.'],
+        ['Tồn ban đầu', 'Kho nhận hàng là bắt buộc nếu Số lượng ban đầu > 0. Tồn ban đầu sẽ tạo phiếu nhập kho chờ duyệt.'],
+        ['Danh mục / Đơn vị / Kho', 'Phải nhập đúng giá trị có trong các sheet danh mục hợp lệ.'],
+      ]);
+      guideSheet['!cols'] = [{ wch: 24 }, { wch: 110 }];
+      XLSX.utils.book_append_sheet(workbook, guideSheet, 'Huong_dan');
+
+      const categorySheet = XLSX.utils.json_to_sheet(categories.map(category => ({ 'Danh mục hợp lệ': category.name })));
+      categorySheet['!cols'] = [{ wch: 30 }];
+      XLSX.utils.book_append_sheet(workbook, categorySheet, 'Danh_muc');
+
+      const unitSheet = XLSX.utils.json_to_sheet(units.map(unit => ({ 'Đơn vị hợp lệ': unit.name })));
+      unitSheet['!cols'] = [{ wch: 24 }];
+      XLSX.utils.book_append_sheet(workbook, unitSheet, 'Don_vi');
+
+      const warehouseSheet = XLSX.utils.json_to_sheet(warehouses.map(warehouse => ({
+        'Kho hợp lệ': warehouse.name,
+        'Loại kho': warehouse.type,
+      })));
+      warehouseSheet['!cols'] = [{ wch: 32 }, { wch: 18 }];
+      XLSX.utils.book_append_sheet(workbook, warehouseSheet, 'Kho');
+
+      downloadWorkbook(XLSX, workbook, 'Mau_Nhap_Cap_nhat_Vat_tu.xlsx');
+      toast.success('Đã tạo file mẫu', 'File gồm sheet nhập mới, cập nhật và danh mục đối chiếu.');
+    } catch (error) {
+      logApiError('inventory.downloadTemplate', error);
+      toast.error('Không thể tạo file mẫu', getApiErrorMessage(error, 'Không thể xuất file Excel mẫu.'));
+    }
+  };
+
+  const handleExportExcel = async () => {
+    if (filteredItems.length === 0) {
+      toast.warning('Không có dữ liệu xuất', 'Danh sách vật tư đang hiển thị không có dữ liệu.');
+      return;
+    }
+
+    try {
+      const XLSX = await loadXlsx();
+      const rows = [...filteredItems]
+        .sort((a, b) => a.sku.localeCompare(b.sku, 'vi'))
+        .map(item => ({
+          'Mã SKU': item.sku,
+          'Tên vật tư': item.name,
+          'Danh mục': item.category,
+          'ĐVT Chính': item.unit,
+          'Đơn vị phụ': item.purchaseUnit || '',
+          'Giá nhập': item.priceIn || 0,
+          'Giá xuất': item.priceOut || 0,
+          'Tồn tối thiểu': item.minStock || 0,
+          'Lead time mặc định': item.defaultLeadTimeDays ?? 7,
+          'Vị trí': item.location || '',
+          'Tồn tổng': Object.values(item.stockByWarehouse || {}).reduce((sum, quantity) => sum + Number(quantity || 0), 0),
+          ...Object.fromEntries(warehouses.map(warehouse => [
+            `Tồn - ${warehouse.name}`,
+            Number(item.stockByWarehouse?.[warehouse.id] || 0),
+          ])),
+        }));
+      const sheet = XLSX.utils.json_to_sheet(rows);
+      sheet['!cols'] = [
+        { wch: 18 }, { wch: 32 }, { wch: 24 }, { wch: 18 }, { wch: 20 },
+        { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 24 }, { wch: 18 },
+        ...warehouses.map(() => ({ wch: 24 })),
+      ];
+      if (sheet['!ref']) sheet['!autofilter'] = { ref: sheet['!ref'] };
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, sheet, 'Danh_sach_vat_tu');
+      downloadWorkbook(XLSX, workbook, `Danh_sach_vat_tu_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success('Đã xuất Excel', `Đã xuất ${rows.length} vật tư đang hiển thị.`);
+    } catch (error) {
+      logApiError('inventory.exportExcel', error);
+      toast.error('Không thể xuất Excel', getApiErrorMessage(error, 'Không thể xuất danh sách vật tư.'));
+    }
+  };
+
+  const findCategoryName = (value: string) =>
+    categories.find(category => normalizeText(category.name) === normalizeText(value))?.name || '';
+
+  const findUnitName = (value: string) =>
+    units.find(unit => normalizeText(unit.name) === normalizeText(value))?.name || '';
+
+  const findWarehouseId = (value: string) =>
+    warehouses.find(warehouse => normalizeText(warehouse.name) === normalizeText(value))?.id || '';
+
+  const buildInventoryImportPreview = (mode: ExcelImportMode, rows: Record<string, unknown>[]) =>
+    buildImportPreview<InventoryExcelRecord>({
+      mode,
+      keyLabel: 'Mã SKU',
+      keyAliases: ['Mã SKU *', 'Mã SKU', 'SKU'],
+      existingRecords: items,
+      getRecordKey: item => item.sku,
+      createBaseRecord: (sku, _row, rowNumber) => ({
+        id: `it-${Date.now()}-${rowNumber}-${Math.random().toString(36).substring(2, 7)}`,
+        sku,
+        name: '',
+        category: '',
+        unit: '',
+        priceIn: 0,
+        priceOut: 0,
+        minStock: 0,
+        defaultLeadTimeDays: 7,
+        stockByWarehouse: {},
+        initialStock: 0,
+      }),
+      fields: [
+        { key: 'name', label: 'Tên vật tư', aliases: ['Tên vật tư *', 'Tên vật tư', 'Tên'], requiredOnCreate: true },
+        {
+          key: 'category',
+          label: 'Danh mục',
+          aliases: ['Danh mục *', 'Danh mục'],
+          requiredOnCreate: true,
+          normalize: value => findCategoryName(value),
+          validate: (value, row) => {
+            const raw = getExcelCell(row, ['Danh mục *', 'Danh mục']);
+            return raw && !value ? `Danh mục "${raw}" không tồn tại.` : undefined;
+          },
+        },
+        {
+          key: 'unit',
+          label: 'ĐVT Chính',
+          aliases: ['ĐVT Chính *', 'ĐVT Chính', 'Đơn vị chính', 'Đơn vị tính'],
+          requiredOnCreate: true,
+          normalize: value => findUnitName(value),
+          validate: (value, row) => {
+            const raw = getExcelCell(row, ['ĐVT Chính *', 'ĐVT Chính', 'Đơn vị chính', 'Đơn vị tính']);
+            return raw && !value ? `ĐVT Chính "${raw}" không tồn tại.` : undefined;
+          },
+        },
+        {
+          key: 'purchaseUnit',
+          label: 'Đơn vị phụ',
+          aliases: ['Đơn vị phụ (Đơn vị mua hàng)', 'Đơn vị phụ', 'Đơn vị mua hàng'],
+          clearable: true,
+          normalize: value => findUnitName(value),
+          validate: (value, row) => {
+            const raw = getExcelCell(row, ['Đơn vị phụ (Đơn vị mua hàng)', 'Đơn vị phụ', 'Đơn vị mua hàng']);
+            return raw && value !== undefined && !value ? `Đơn vị phụ "${raw}" không tồn tại.` : undefined;
+          },
+        },
+        {
+          key: 'priceIn',
+          label: 'Giá nhập',
+          aliases: ['Giá nhập', 'Giá mua'],
+          normalize: parseExcelNumber,
+          validate: value => validateNonNegativeNumber(value, 'Giá nhập'),
+          format: formatNumber,
+        },
+        {
+          key: 'priceOut',
+          label: 'Giá xuất',
+          aliases: ['Giá xuất', 'Giá bán'],
+          normalize: parseExcelNumber,
+          validate: value => validateNonNegativeNumber(value, 'Giá xuất'),
+          format: formatNumber,
+        },
+        {
+          key: 'minStock',
+          label: 'Tồn tối thiểu',
+          aliases: ['Tồn tối thiểu', 'Mức tồn tối thiểu'],
+          normalize: parseExcelNumber,
+          validate: value => validateNonNegativeNumber(value, 'Tồn tối thiểu', { integer: true }),
+          format: formatNumber,
+        },
+        {
+          key: 'defaultLeadTimeDays',
+          label: 'Lead time mặc định',
+          aliases: ['Lead time mặc định', 'Lead time', 'Số ngày lead time'],
+          normalize: parseExcelNumber,
+          validate: value => validateNonNegativeNumber(value, 'Lead time mặc định', { integer: true, max: 365 }),
+          format: formatNumber,
+        },
+        {
+          key: 'location',
+          label: 'Vị trí',
+          aliases: ['Vị trí', 'Vị trí trong kho'],
+          clearable: true,
+        },
+        ...(mode === 'create' ? [
+          {
+            key: 'initialWarehouseId' as const,
+            label: 'Kho nhận hàng',
+            aliases: warehouseAliases,
+            normalize: findWarehouseId,
+            validate: (value: unknown, row: Record<string, unknown>) => {
+              const raw = getExcelCell(row, warehouseAliases);
+              if (raw && !value) return `Kho "${raw}" không tồn tại.`;
+              if (value && user.assignedWarehouseId && value !== user.assignedWarehouseId) {
+                const assignedName = warehouses.find(warehouse => warehouse.id === user.assignedWarehouseId)?.name || user.assignedWarehouseId;
+                return `Bạn chỉ được nhập vào kho được phân công: "${assignedName}".`;
+              }
+              return undefined;
+            },
+            format: (value: unknown) => warehouses.find(warehouse => warehouse.id === value)?.name || '-',
+          },
+          {
+            key: 'initialStock' as const,
+            label: 'Số lượng ban đầu',
+            aliases: ['Số lượng ban đầu', 'Số lượng nhập', 'Tồn ban đầu'],
+            normalize: parseExcelNumber,
+            validate: (value: unknown, row: Record<string, unknown>) => {
+              const numberError = validateNonNegativeNumber(value, 'Số lượng ban đầu');
+              if (numberError) return numberError;
+              if (Number(value) > 0 && !getExcelCell(row, warehouseAliases)) {
+                return 'Thiếu Kho nhận hàng khi Số lượng ban đầu > 0.';
+              }
+              return undefined;
+            },
+            format: formatNumber,
+          },
+        ] : []),
+      ],
+    }, rows);
+
+  const openInventoryImport = (mode: ExcelImportMode) => {
+    importModeRef.current = mode;
+    setImportMode(mode);
+    importInputRef.current?.click();
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
 
     setImporting(true);
     try {
-      const XLSX = await loadXlsx();
-      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
-      const rows = data.slice(1) as any[];
+      const rows = await parseExcelRows(file, importModeRef.current === 'create' ? 'Nhap_moi' : 'Cap_nhat');
+      if (rows.length === 0) {
+        toast.warning('File Excel trống', 'Không có dòng vật tư nào để đối chiếu.');
+        return;
+      }
+      const preview = buildInventoryImportPreview(importModeRef.current, rows);
+      if (preview.totalRows === 0) {
+        toast.warning('File Excel trống', 'Không có dòng vật tư hợp lệ để đối chiếu.');
+        return;
+      }
+      setImportPreview(preview);
+    } catch (error) {
+      logApiError('inventory.import.read', error);
+      toast.error('Không thể đọc file Excel', getApiErrorMessage(error, 'File Excel không hợp lệ. Vui lòng dùng file mẫu.'));
+    } finally {
+      setImporting(false);
+    }
+  };
 
-      const newItemsToCreate: InventoryItem[] = [];
-      const stockRequestsByWh: Record<string, { itemId: string, quantity: number, price: number }[]> = {};
-      const errors: string[] = [];
+  const handleConfirmInventoryImport = async ({ validOnly }: { validOnly: boolean }) => {
+    if (!importPreview) return;
+    const records = applyImportChanges(importPreview);
+    if (records.length === 0) {
+      toast.warning('Không có dữ liệu cần ghi', 'File không có dòng thêm mới hoặc cập nhật hợp lệ.');
+      return;
+    }
 
-      rows.forEach((row, index) => {
-        const rowNum = index + 2; // +1 for 0-index, +1 for header row
-        const sku = (row[0] || '').toString().trim();
-        const name = (row[1] || '').toString().trim();
-        const categoryName = (row[2] || '').toString().trim();
-        const unitName = (row[3] || '').toString().trim();
-        const whName = (row[7] || '').toString().trim();
-        const initialQty = Number(row[8]) || 0;
+    setImporting(true);
+    try {
+      let created = 0;
+      let updated = 0;
+      const stockRequestsByWarehouse: Record<string, { itemId: string; quantity: number; price: number }[]> = {};
 
-        if (!sku) return;
+      for (const record of records) {
+        const { initialWarehouseId, initialStock, ...itemData } = record;
+        const normalizedItem: InventoryItem = {
+          ...itemData,
+          purchaseUnit: itemData.purchaseUnit && itemData.purchaseUnit !== itemData.unit ? itemData.purchaseUnit : undefined,
+          defaultLeadTimeDays: Math.max(0, Math.min(365, Number(itemData.defaultLeadTimeDays ?? 7))),
+          location: itemData.location || undefined,
+          stockByWarehouse: itemData.stockByWarehouse || {},
+        };
 
-        // 1. Kiểm tra tồn tại của Danh mục
-        const categoryExists = categories.find(c => c.name.toLowerCase() === categoryName.toLowerCase());
-        if (!categoryExists) {
-          errors.push(`Dòng ${rowNum}: Danh mục "${categoryName}" không tồn tại trong hệ thống.`);
-          return;
-        }
-
-        // 2. Kiểm tra tồn tại của Đơn vị tính
-        const unitExists = units.find(u => u.name.toLowerCase() === unitName.toLowerCase());
-        if (!unitExists) {
-          errors.push(`Dòng ${rowNum}: Đơn vị tính "${unitName}" không tồn tại trong hệ thống.`);
-          return;
-        }
-
-        // 3. Kiểm tra tồn tại của Kho
-        let warehouseId = '';
-        if (whName) {
-          const warehouse = warehouses.find(w => w.name.toLowerCase() === whName.toLowerCase());
-          if (!warehouse) {
-            errors.push(`Dòng ${rowNum}: Kho "${whName}" không tồn tại trong hệ thống.`);
-            return;
+        if (importPreview.mode === 'create') {
+          await addItem(normalizedItem);
+          created += 1;
+          if (initialWarehouseId && Number(initialStock || 0) > 0) {
+            if (!stockRequestsByWarehouse[initialWarehouseId]) stockRequestsByWarehouse[initialWarehouseId] = [];
+            stockRequestsByWarehouse[initialWarehouseId].push({
+              itemId: normalizedItem.id,
+              quantity: Number(initialStock),
+              price: normalizedItem.priceIn || 0,
+            });
           }
-          warehouseId = warehouse.id;
-        } else if (initialQty > 0) {
-          errors.push(`Dòng ${rowNum}: Có số lượng nhập (${initialQty}) nhưng chưa chỉ định tên kho.`);
-          return;
-        }
-
-        // Nếu qua được các bước trên thì mới xử lý tiếp
-        // Kiểm tra trong danh mục chính
-        const existingItem = items.find(i => i.sku === sku);
-
-        // Kiểm tra trong các phiếu đang chờ duyệt (để tránh tạo trùng SKU nếu import nhiều lần)
-        const pendingItemInTxs = transactions
-          .filter(t => t.status === TransactionStatus.PENDING && t.pendingItems)
-          .flatMap(t => t.pendingItems || [])
-          .find(pi => pi.sku === sku);
-
-        let itemId: string;
-
-        if (existingItem) {
-          itemId = existingItem.id;
-        } else if (pendingItemInTxs) {
-          itemId = pendingItemInTxs.id;
         } else {
-          // Kiểm tra xem đã có trong danh sách chuẩn bị tạo của chính file này chưa
-          const alreadyInNew = newItemsToCreate.find(ni => ni.sku === sku);
-          if (alreadyInNew) {
-            itemId = alreadyInNew.id;
-          } else {
-            itemId = `it-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-            const newItem: InventoryItem = {
-              id: itemId,
-              sku: sku,
-              name: row[1] || '',
-              category: row[2] || '',
-              unit: row[3] || '',
-              priceIn: Number(row[4]) || 0,
-              priceOut: Number(row[5]) || 0,
-              minStock: Number(row[6]) || 0,
-              stockByWarehouse: {}
-            };
-            newItemsToCreate.push(newItem);
-          }
+          await updateItem(normalizedItem);
+          updated += 1;
         }
-
-        if (warehouseId && initialQty > 0) {
-          if (!stockRequestsByWh[warehouseId]) stockRequestsByWh[warehouseId] = [];
-          stockRequestsByWh[warehouseId].push({ itemId, quantity: initialQty, price: Number(row[4]) || 0 });
-        }
-      });
-
-      if (errors.length > 0) {
-        toast.error(
-          `Có ${errors.length} lỗi dữ liệu`,
-          errors.slice(0, 3).join(' | ') + (errors.length > 3 ? ` (+${errors.length - 3} lỗi khác)` : '')
-        );
-        if (newItemsToCreate.length === 0 && Object.keys(stockRequestsByWh).length === 0) return;
       }
 
-      // Không gọi addItems ngay lập tức nữa
-
-      // Tạo các phiếu nhập kho cho từng kho
-      for (const [whId, itemsInWh] of Object.entries(stockRequestsByWh)) {
-        // Lọc ra những metadata của các item mới có trong phiếu này
-        const pendingItemsForThisTx = newItemsToCreate.filter(ni =>
-          itemsInWh.some(ti => ti.itemId === ni.id)
-        );
-
-        // Mọi tài khoản (kể cả Admin) khi nhập Excel đều phải qua bước duyệt phiếu
-        const status = TransactionStatus.PENDING;
-
-        const tx: Transaction = {
+      for (const [warehouseId, transactionItems] of Object.entries(stockRequestsByWarehouse)) {
+        const transaction: Transaction = {
           id: `tx-bulk-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
           type: TransactionType.IMPORT,
           date: new Date().toISOString(),
-          items: itemsInWh,
-          targetWarehouseId: whId,
+          items: transactionItems,
+          targetWarehouseId: warehouseId,
           requesterId: user.id,
-          status: status,
-          note: `Nhập kho hàng loạt từ file Excel (${itemsInWh.length} mặt hàng)`,
-          pendingItems: pendingItemsForThisTx
+          status: TransactionStatus.PENDING,
+          note: `Nhập tồn ban đầu từ Excel (${transactionItems.length} vật tư)`,
         };
-        await addTransaction(tx);
+        await addTransaction(transaction);
       }
 
-      toast.success('Import thành công', `Đã gửi ${Object.keys(stockRequestsByWh).length} yêu cầu nhập kho chờ Admin phê duyệt.`);
-    } catch (err: any) {
-      logApiError('inventory.import', err);
-      toast.error('Import thất bại', getApiErrorMessage(err, 'Không thể import danh sách vật tư.'));
+      setImportPreview(null);
+      toast.success(
+        importPreview.mode === 'create' ? 'Đã nhập mới vật tư' : 'Đã cập nhật vật tư',
+        `Thêm mới ${created}, cập nhật ${updated}, tạo ${Object.keys(stockRequestsByWarehouse).length} phiếu nhập chờ duyệt${validOnly ? ' từ các dòng hợp lệ' : ''}.`,
+      );
+    } catch (error) {
+      logApiError('inventory.import.apply', error);
+      toast.error('Không thể ghi dữ liệu Excel', getApiErrorMessage(error, 'Không thể lưu vật tư hoặc phiếu nhập kho lên Supabase.'));
     } finally {
       setImporting(false);
     }
@@ -345,6 +611,23 @@ const Inventory: React.FC = () => {
         title="Quét QR phiếu nhập kho"
         description="Quét mã QR trên phiếu NCC hoặc phiếu xuất kho nội bộ để xác nhận thực nhận."
         manualPlaceholder="Nhập token PO hoặc phiếu xuất..."
+      />
+      {importPreview && (
+        <ExcelImportReviewModal
+          title={importPreview.mode === 'create' ? 'Đối chiếu nhập mới vật tư' : 'Đối chiếu cập nhật vật tư'}
+          preview={importPreview}
+          loading={importing}
+          onClose={() => setImportPreview(null)}
+          onConfirm={handleConfirmInventoryImport}
+        />
+      )}
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        className="hidden"
+        onChange={handleFileUpload}
+        disabled={importing}
       />
       <AddInventoryModal isOpen={isAddModalOpen} onClose={() => setAddModalOpen(false)} onAdd={handleAddItem} />
       <InventoryDetailModal isOpen={!!selectedItem} onClose={() => setSelectedItem(null)} item={selectedItem} />
@@ -382,15 +665,41 @@ const Inventory: React.FC = () => {
 
         <div className="flex flex-wrap gap-2 w-full xl:w-auto">
           {canCRUD && (
-            <div className="flex gap-2 w-full sm:w-auto">
-              <button onClick={handleDownloadTemplate} className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition text-[10px] font-black uppercase tracking-widest">
-                <FileSpreadsheet className="w-4 h-4 mr-2 text-green-600" /> Mẫu
+            <div className="flex flex-wrap gap-2 w-full xl:w-auto">
+              <button
+                onClick={handleDownloadTemplate}
+                disabled={importing}
+                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60"
+              >
+                <FileSpreadsheet className="w-4 h-4 mr-2 text-green-600" /> Tải mẫu
               </button>
-              <label className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition text-[10px] font-black uppercase tracking-widest ${importing ? 'opacity-60 pointer-events-none cursor-wait' : 'cursor-pointer'}`}>
-                {importing ? <Loader2 className="w-4 h-4 mr-2 text-slate-500 animate-spin" /> : <Upload className="w-4 h-4 mr-2 text-slate-500" />}
-                {importing ? 'Đang import...' : 'Import'}
-                <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleFileUpload} disabled={importing} />
-              </label>
+              <button
+                onClick={handleExportExcel}
+                disabled={importing}
+                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl hover:bg-emerald-100 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60"
+              >
+                <Download className="w-4 h-4 mr-2" /> Xuất Excel
+              </button>
+              <button
+                onClick={() => openInventoryImport('create')}
+                disabled={importing}
+                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl hover:bg-blue-100 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60 disabled:cursor-wait"
+              >
+                {importing && importMode === 'create'
+                  ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  : <Upload className="w-4 h-4 mr-2" />}
+                Nhập mới
+              </button>
+              <button
+                onClick={() => openInventoryImport('update')}
+                disabled={importing}
+                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl hover:bg-amber-100 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60 disabled:cursor-wait"
+              >
+                {importing && importMode === 'update'
+                  ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  : <RefreshCcw className="w-4 h-4 mr-2" />}
+                Cập nhật
+              </button>
             </div>
           )}
           <div className="flex gap-2 w-full sm:w-auto">

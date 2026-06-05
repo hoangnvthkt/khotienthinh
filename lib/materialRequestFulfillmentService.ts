@@ -191,6 +191,16 @@ export interface EnsurePoDeliveryBatchesInput {
   actorUserId: string;
 }
 
+export interface PreparePoReceiptForQualityReviewInput {
+  po: PurchaseOrder;
+  receiptLines: RecordPoReceiptLineInput[];
+}
+
+export interface PreparePoReceiptForQualityReviewResult {
+  transactionIds: string[];
+  materialRequestIds: string[];
+}
+
 export interface UpdateTransactionReceiptQuantityLineInput {
   index: number;
   quantity: number;
@@ -712,6 +722,155 @@ export const materialRequestFulfillmentService = {
     return Array.from(new Set(affectedRequestIds));
   },
 
+  async preparePoReceiptForQualityReview(
+    input: PreparePoReceiptForQualityReviewInput,
+  ): Promise<PreparePoReceiptForQualityReviewResult> {
+    if (!input.po.id) throw new Error('Không xác định được PO cần nhận hàng.');
+    if (!input.po.targetWarehouseId) throw new Error('PO chưa có kho nhận.');
+
+    const { data: linkRows, error: linkError } = await supabase
+      .from('purchase_order_request_lines')
+      .select('purchase_order_line_id,material_request_id')
+      .eq('purchase_order_id', input.po.id);
+    if (linkError) throw linkError;
+    if ((linkRows || []).length === 0) {
+      throw new Error('PO chưa liên kết đề xuất vật tư nên chưa có phiếu chờ duyệt SL/CL. Vui lòng tạo đợt giao trước khi quét nhận.');
+    }
+
+    const { data: lineRows, error: lineError } = await supabase
+      .from(LINE_TABLE)
+      .select('*')
+      .eq('po_id', input.po.id);
+    if (lineError) throw lineError;
+
+    const batchIds = Array.from(new Set((lineRows || []).map(line => line.batch_id).filter(Boolean)));
+    if (batchIds.length === 0) {
+      throw new Error('PO chưa có đợt giao đang chờ nhận. Vui lòng chuyển PO sang trạng thái Đang giao trước.');
+    }
+
+    const { data: batchRows, error: batchError } = await supabase
+      .from(BATCH_TABLE)
+      .select('*')
+      .in('id', batchIds)
+      .order('batch_date', { ascending: true });
+    if (batchError) throw batchError;
+
+    const activeBatches = (batchRows || []).filter(batch =>
+      batch.status === 'issued'
+      && batch.source_type === 'po_receipt'
+      && !!batch.transaction_id
+    );
+    if (activeBatches.length === 0) {
+      throw new Error('PO không còn đợt giao đang chờ duyệt SL/CL.');
+    }
+
+    const wrongWarehouseBatch = activeBatches.find(batch =>
+      batch.target_warehouse_id
+      && batch.target_warehouse_id !== input.po.targetWarehouseId
+    );
+    if (wrongWarehouseBatch) {
+      throw new Error('Kho nhận của PO không khớp kho nhận trên đợt giao đang mở.');
+    }
+
+    const transactionIds = Array.from(new Set(activeBatches.map(batch => batch.transaction_id).filter(Boolean)));
+    const { data: transactionRows, error: transactionError } = await supabase
+      .from('transactions')
+      .select('*')
+      .in('id', transactionIds);
+    if (transactionError) throw transactionError;
+
+    const transactions = (transactionRows || []).map(row => fromDb(row) as Transaction);
+    const pendingTransactions = transactions.filter(tx => tx.status === TransactionStatus.PENDING);
+    if (pendingTransactions.length === 0) {
+      if (transactions.some(tx => tx.status === TransactionStatus.APPROVED)) {
+        throw new Error('Phiếu nhận hàng đã được duyệt SL/CL. Vui lòng vào Quản lý phiếu đơn hàng để xác nhận nhận lần cuối.');
+      }
+      throw new Error('Không tìm thấy phiếu nhập kho đang chờ duyệt SL/CL cho PO này.');
+    }
+
+    const pendingTransactionIds = new Set(pendingTransactions.map(tx => tx.id));
+    const pendingBatches = activeBatches.filter(batch => pendingTransactionIds.has(batch.transaction_id));
+    const pendingBatchIds = new Set(pendingBatches.map(batch => batch.id));
+    const pendingLines = (lineRows || []).filter(line => pendingBatchIds.has(line.batch_id));
+
+    const poLineIdsByItemId = new Map<string, string[]>();
+    (input.po.items || []).forEach(item => {
+      const lineId = item.lineId || item.itemId;
+      poLineIdsByItemId.set(item.itemId, [...(poLineIdsByItemId.get(item.itemId) || []), lineId]);
+    });
+    const resolveReceiptKey = (line: RecordPoReceiptLineInput): string => {
+      if (line.lineId) return line.lineId;
+      const lineIds = poLineIdsByItemId.get(line.itemId) || [];
+      return lineIds.length === 1 ? lineIds[0] : line.itemId;
+    };
+
+    const receiptByPoLine = new Map<string, number>();
+    input.receiptLines.forEach(line => {
+      const quantity = Number(line.quantity || 0);
+      if (quantity <= 0) return;
+      const key = resolveReceiptKey(line);
+      receiptByPoLine.set(key, (receiptByPoLine.get(key) || 0) + quantity);
+    });
+    if (receiptByPoLine.size === 0) throw new Error('Chưa có số lượng thực nhận hợp lệ.');
+
+    const batchOrder = new Map(pendingBatches.map((batch, index) => [batch.id, index]));
+    const sortedLines = [...pendingLines].sort((left, right) =>
+      (batchOrder.get(left.batch_id) || 0) - (batchOrder.get(right.batch_id) || 0)
+    );
+    const allocationByFulfillmentLineId = new Map<string, number>();
+    const unallocatedByPoLine = new Map(receiptByPoLine);
+
+    sortedLines.forEach(line => {
+      const poLineId = line.po_line_id || line.item_id;
+      const remaining = unallocatedByPoLine.get(poLineId) || 0;
+      const allocated = Math.min(remaining, Number(line.issued_qty || 0));
+      allocationByFulfillmentLineId.set(line.id, allocated);
+      unallocatedByPoLine.set(poLineId, Math.max(remaining - allocated, 0));
+    });
+
+    const unallocated = Array.from(unallocatedByPoLine.entries()).find(([, quantity]) => quantity > 1e-9);
+    if (unallocated) {
+      throw new Error('Số lượng thực nhận vượt số lượng của đợt giao đang mở. Vui lòng kiểm tra lại đợt giao hoặc tạo đợt bổ sung.');
+    }
+
+    for (const transaction of pendingTransactions) {
+      const transactionBatch = pendingBatches.find(batch => batch.transaction_id === transaction.id);
+      if (!transactionBatch) continue;
+      const batchLines = pendingLines.filter(line => line.batch_id === transactionBatch.id);
+
+      const nextItems = transaction.items.map(item => {
+        const fulfillmentLine = batchLines.find(line =>
+          line.request_line_id === item.requestLineId
+          || (!item.requestLineId && line.item_id === item.itemId)
+        );
+        if (!fulfillmentLine) return item;
+
+        const quantity = allocationByFulfillmentLineId.get(fulfillmentLine.id) || 0;
+        if (quantity <= 0) {
+          throw new Error('Mỗi dòng trong đợt giao phải có số lượng thực nhận lớn hơn 0. Nếu NCC chưa giao dòng này, hãy tách thành đợt giao khác.');
+        }
+        return {
+          ...item,
+          quantity,
+          varianceReason: quantity === Number(fulfillmentLine.issued_qty || 0)
+            ? item.varianceReason
+            : 'Thủ kho công trường ghi nhận thực nhận từ QR lệch số lượng đợt giao.',
+        };
+      });
+
+      const { error } = await supabase.rpc('update_transaction_items_for_receipt', {
+        p_transaction_id: transaction.id,
+        p_items: nextItems,
+      });
+      if (error) throw error;
+    }
+
+    return {
+      transactionIds: pendingTransactions.map(tx => tx.id),
+      materialRequestIds: Array.from(new Set(pendingBatches.map(batch => batch.material_request_id).filter(Boolean))),
+    };
+  },
+
   async ensurePoDeliveryBatches(input: EnsurePoDeliveryBatchesInput): Promise<string[]> {
     if (!input.po.id) return [];
     if (!input.po.targetWarehouseId) {
@@ -736,7 +895,7 @@ export const materialRequestFulfillmentService = {
         .select('id,status,material_request_id')
         .in('id', existingBatchIds);
       if (existingBatchError) throw existingBatchError;
-      const activeBatches = (existingBatches || []).filter(batch => !['cancelled', 'returned'].includes(batch.status));
+      const activeBatches = (existingBatches || []).filter(batch => batch.status === 'issued');
       if (activeBatches.length > 0) {
         return Array.from(new Set(activeBatches.map(batch => batch.material_request_id).filter(Boolean)));
       }

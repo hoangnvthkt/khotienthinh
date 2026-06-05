@@ -15,6 +15,8 @@ const normalize = (row: any): ProjectTransaction => ({
 
 const txPayload = (tx: ProjectTransaction) => ({
   id: tx.id,
+  projectFinanceId: tx.projectFinanceId || '',
+  constructionSiteId: tx.constructionSiteId || '',
   project_id: tx.projectId || null,
   project_finance_id: tx.projectFinanceId || null,
   construction_site_id: tx.constructionSiteId || null,
@@ -24,10 +26,11 @@ const txPayload = (tx: ProjectTransaction) => ({
   description: tx.description,
   date: tx.date,
   source: tx.source,
+  sourceRef: tx.sourceRef || null,
   source_ref: tx.sourceRef || null,
   attachments: tx.attachments || [],
-  created_by: tx.createdBy || null,
-  created_at: tx.createdAt,
+  createdBy: tx.createdBy || null,
+  createdAt: tx.createdAt,
 });
 
 export const projectTransactionService = {

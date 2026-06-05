@@ -11,7 +11,6 @@ import {
   ProjectDelayEvent,
   Project,
   ProjectFinance,
-  ProjectOpeningBalance,
   ProjectProgressCalculationMode,
   ProjectTask,
   ProjectTaskCompletionRequest,
@@ -54,10 +53,8 @@ import { taskCompletionRequestService } from './projectTaskCompletionService';
 import {
   calculateProjectValueProgress,
   calculateWeeklyConstructionProgress,
-  getProjectScopeKey,
   projectWeeklyProgressService,
 } from './projectWeeklyProgressService';
-import { projectOpeningBalanceService } from './projectOpeningBalanceService';
 
 export interface ProjectProgressMetric {
   mode: ProjectProgressCalculationMode;
@@ -343,7 +340,6 @@ const buildProgressMetric = (
   projectFinance: ProjectFinance | undefined,
   materialBudgets: MaterialBudgetItem[],
   fulfillmentBatches: MaterialRequestFulfillmentBatch[],
-  openingBalance?: ProjectOpeningBalance | null,
 ): ProjectProgressMetric => {
   const gantt = calculateProjectProgress(tasks);
   const leafTasks = getLeafProjectTasks(tasks);
@@ -351,14 +347,13 @@ const buildProgressMetric = (
   const weeklyConstructionProgress = calculateWeeklyConstructionProgress(tasks, taskLinks, customerItems);
   const constructionProgressPercent = leafTasks.length > 0
     ? weeklyConstructionProgress
-    : clampProgress(openingBalance?.constructionProgressPercent || projectFinance?.progressPercent || 0);
+    : clampProgress(projectFinance?.progressPercent || 0);
   const valueMetric = calculateProjectValueProgress({
     projectFinance,
     customerItems,
     purchaseOrders,
     fulfillmentBatches,
     materialBudgets,
-    openingBalance,
   });
 
   const weightedAverage = (weightPicker: (task: ProjectTask) => number): number => {
@@ -1045,7 +1040,6 @@ export const projectDashboardMetricsService = {
       variations,
       reconciliationGroups,
       financialKPIs,
-      openingBalance,
     ] = await Promise.all([
       safeLoad('project_tasks', warnings, () => taskService.list(projectScopeId, constructionSite), [] as ProjectTask[]),
       safeLoad('daily_logs', warnings, () => dailyLogService.list(projectScopeId, constructionSite), [] as DailyLog[]),
@@ -1066,7 +1060,6 @@ export const projectDashboardMetricsService = {
       safeLoad('contract_variations', warnings, () => listContractVariations(projectScopeId, constructionSite), [] as ContractVariation[]),
       safeLoad('boq_reconciliation submitted', warnings, () => boqReconciliationService.listByProject(projectScopeId, constructionSite), [] as BoqReconciliationGroup[]),
       safeLoad('financial_kpis', warnings, () => projectFinancialService.getKPIs(constructionSite, [], project?.id || params.projectId), undefined as ProjectFinancialKPIs | undefined),
-      safeLoad('project_opening_balances', warnings, () => projectOpeningBalanceService.getLockedByScope(getProjectScopeKey(projectScopeId, constructionSite)), null as ProjectOpeningBalance | null),
     ]);
 
     const allContractItems = [...customerItems, ...subcontractorItems];
@@ -1086,7 +1079,7 @@ export const projectDashboardMetricsService = {
       if (error) throw error;
       return data ? fromDb(data) as ProjectFinance : undefined;
     }, undefined as ProjectFinance | undefined);
-    const progress = buildProgressMetric(project, tasks, taskLinks, customerItems, purchaseOrders, finance, materialBudgets, fulfillmentBatches, openingBalance);
+    const progress = buildProgressMetric(project, tasks, taskLinks, customerItems, purchaseOrders, finance, materialBudgets, fulfillmentBatches);
     const executive = buildExecutiveMetric(
       tasks,
       logs,

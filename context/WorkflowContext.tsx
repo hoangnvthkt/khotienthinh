@@ -192,10 +192,11 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const getWorkflowNodeRecipientIds = useCallback(async (
         node?: WorkflowNode,
-        stepAssignees?: Record<string, string>,
+        stepAssignees?: Record<string, string | string[]>,
     ): Promise<string[]> => {
         if (!node) return [];
         const assignedOverride = stepAssignees?.[node.id];
+        if (Array.isArray(assignedOverride)) return assignedOverride.filter(Boolean);
         if (assignedOverride) return [assignedOverride];
         if (node.config?.assigneeUserId) return [node.config.assigneeUserId];
         return getWorkflowRoleRecipients(node.config?.assigneeRole);
@@ -259,12 +260,13 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             default_watchers: template.defaultWatchers || [],
             updated_at: new Date().toISOString(),
         }).eq('id', template.id);
-        if (error) console.error('[WF] updateTemplate ERROR:', error);
+        if (error) throw error;
         setTemplates(prev => prev.map(t => t.id === template.id ? template : t));
     };
 
     const deleteTemplate = async (id: string) => {
-        await supabase.from('workflow_templates').delete().eq('id', id);
+        const { error } = await supabase.from('workflow_templates').delete().eq('id', id);
+        if (error) throw error;
         setTemplates(prev => prev.filter(t => t.id !== id));
         setNodes(prev => prev.filter(n => n.templateId !== id));
         setEdges(prev => prev.filter(e => e.templateId !== id));
@@ -290,7 +292,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 position_y: n.positionY,
             }));
             const { error: upsertNodeErr } = await supabase.from('workflow_nodes').upsert(nodeRows, { onConflict: 'id' });
-            if (upsertNodeErr) console.error('Error upserting nodes:', upsertNodeErr);
+            if (upsertNodeErr) throw upsertNodeErr;
         }
 
         // Delete nodes that were removed (but only ones not in the new set)
@@ -299,12 +301,12 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const removedNodeIds = existingNodes.filter(n => !newNodeIds.has(n.id)).map(n => n.id);
         if (removedNodeIds.length > 0) {
             const { error: delNodeErr } = await supabase.from('workflow_nodes').delete().in('id', removedNodeIds);
-            if (delNodeErr) console.error('Error deleting removed nodes:', delNodeErr);
+            if (delNodeErr) throw delNodeErr;
         }
 
         // Replace edges (edges have no FK references from other tables)
         const { error: delEdgeErr } = await supabase.from('workflow_edges').delete().eq('template_id', templateId);
-        if (delEdgeErr) console.error('Error deleting edges:', delEdgeErr);
+        if (delEdgeErr) throw delEdgeErr;
 
         if (newEdges.length > 0) {
             const edgeRows = newEdges.map(e => ({
@@ -315,7 +317,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 label: e.label,
             }));
             const { error: insEdgeErr } = await supabase.from('workflow_edges').insert(edgeRows);
-            if (insEdgeErr) console.error('Error inserting edges:', insEdgeErr);
+            if (insEdgeErr) throw insEdgeErr;
         }
 
         // Refresh local state

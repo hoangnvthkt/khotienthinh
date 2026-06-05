@@ -231,7 +231,9 @@ export interface ProjectStaffPermission {
 
 export interface ProjectSubmissionTarget {
   userId: string;
+  userIds?: string[];
   name: string;
+  names?: string[];
   permissionCode?: string;
   note?: string;
 }
@@ -249,6 +251,9 @@ export interface ProjectSubmissionFields {
   workflowStepDueAt?: string | null;
   workflowStepSlaHours?: number | null;
   workflowStepActorUserId?: string | null;
+  workflowInstanceId?: string | null;
+  workflowSubjectId?: string | null;
+  workflowTemplateId?: string | null;
 }
 
 export type MaterialRequestWorkflowStep =
@@ -271,6 +276,11 @@ export type MaterialRequestKanbanStage =
   | 'site_receipt'
   | 'completed'
   | 'closed';
+
+export type MaterialRequestKanbanLaneId =
+  | MaterialRequestKanbanStage
+  | 'legacy_review'
+  | `workflow:${string}`;
 
 export interface MaterialRequestEvent {
   id: string;
@@ -623,7 +633,7 @@ export interface ProjectValueProgressMetric {
   valueProgressPercent: number;
 }
 
-export type ProjectOpeningBalanceStatus = 'draft' | 'locked' | 'void';
+export type ProjectOpeningBalanceStatus = string;
 
 export interface ProjectOpeningBalance {
   id?: string;
@@ -1343,7 +1353,7 @@ export interface MaterialBudgetItem {
   category: string;             // Nhóm: Xi măng, Thép, Cát...
   itemName: string;             // Tên vật tư cụ thể
   unit: string;                 // Đơn vị: kg, m3, tấn, bao...
-  budgetQty: number;            // Khối lượng dự toán (BOQ)
+  budgetQty: number;            // KL vật tư tự tính = KL dự toán đầu mục * wasteThreshold
   budgetUnitPrice: number;      // Đơn giá dự toán
   budgetTotal?: number;         // Auto: budgetQty * budgetUnitPrice
   actualQty: number;            // Khối lượng thực tế công trường đã nhận thành công
@@ -1351,7 +1361,7 @@ export interface MaterialBudgetItem {
   wasteQty?: number;            // Auto: actualQty - budgetQty
   wastePercent?: number;        // Auto: (actualQty - budgetQty)/budgetQty * 100
   wasteValue?: number;          // Giá trị hao hụt (VNĐ) = wasteQty * unitPrice
-  wasteThreshold: number;       // Ngưỡng cảnh báo hao hụt (%) — mặc định 5
+  wasteThreshold: number;       // Ngưỡng hao hụt/hệ số tiêu hao nhân viên khai báo — mặc định 0,5
   cumulativeRequested?: number; // LK yêu cầu cấp
   cumulativeImported?: number;  // LK nhập kho (từ PO)
   cumulativeExported?: number;  // LK xuất kho (= actualQty)
@@ -1561,6 +1571,7 @@ export interface PurchaseOrderItem {
   qty: number;
   unitPrice: number;
   receivedQty?: number;
+  returnedQty?: number;
   neededDate?: string;
   workBoqItemId?: string | null;
   workBoqItemName?: string | null;
@@ -1594,6 +1605,42 @@ export interface PurchaseOrderItem {
   computedArea?: number;
   computedWeight?: number;
   computedLineTotal?: number;
+}
+
+export type PurchaseOrderSupplierReturnStatus = 'pending' | 'completed' | 'cancelled';
+
+export interface PurchaseOrderSupplierReturnLine {
+  id: string;
+  supplierReturnId: string;
+  purchaseOrderLineId: string;
+  itemId: string;
+  receivedQtySnapshot: number;
+  previouslyReturnedQtySnapshot: number;
+  returnQty: number;
+  unit?: string | null;
+  unitPrice: number;
+  createdAt: string;
+}
+
+export interface PurchaseOrderSupplierReturn {
+  id: string;
+  returnNo: string;
+  purchaseOrderId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  vendorId?: string | null;
+  sourceWarehouseId: string;
+  status: PurchaseOrderSupplierReturnStatus;
+  transactionId: string;
+  reason: string;
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+  completedBy?: string | null;
+  completedAt?: string | null;
+  cancelledAt?: string | null;
+  updatedAt: string;
+  lines: PurchaseOrderSupplierReturnLine[];
 }
 
 export interface PurchaseOrderRequestLineLink {
@@ -2018,6 +2065,70 @@ export enum WorkflowInstanceAction {
 
 export type CustomFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'file';
 
+export type ProjectWorkflowSubjectType = 'material_request';
+export type ProjectWorkflowSubjectStatus = 'RUNNING' | 'RETURNED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED';
+export type WorkflowStepAssignmentStatus = 'PENDING' | 'APPROVED' | 'RETURNED' | 'REJECTED' | 'SKIPPED';
+export type ProjectWorkflowAction = 'approve' | 'return' | 'reject' | 'resubmit' | 'reassign' | 'rollback';
+export type WorkflowParticipantRole = 'ADMIN' | 'WATCHER' | 'CREATOR' | 'ASSIGNEE';
+export type WorkflowApprovalPolicy = 'ANY_ONE';
+export type ProjectWorkflowBindingScope = 'global' | 'project' | 'site';
+export type WorkflowAssignmentTargetType = 'user' | 'department' | 'project_permission' | 'creator';
+export type ProjectWorkflowAssignmentMode =
+  | 'select_on_submit'
+  | 'select_on_transition'
+  | 'fixed_user'
+  | 'permission_pool'
+  | 'previous_assignee'
+  | 'creator';
+
+export interface WorkflowAssignmentTarget {
+  type: WorkflowAssignmentTargetType;
+  userId?: string;
+  orgUnitId?: string;
+  permissionCode?: string;
+}
+
+export interface ProjectWorkflowNodeConfig {
+  assigneeRole?: Role;
+  assigneeUserId?: string;
+  formFields?: { name: string; label: string; type: 'text' | 'number' | 'textarea'; required?: boolean }[];
+  slaHours?: number;
+  assignmentMode?: ProjectWorkflowAssignmentMode;
+  approvalPolicy?: WorkflowApprovalPolicy;
+  assignmentTargets?: WorkflowAssignmentTarget[];
+  stepWatcherTargets?: WorkflowAssignmentTarget[];
+  eligiblePermissionCodes?: string[];
+  eligibleRole?: Role | null;
+  returnPolicy?: 'to_creator' | 'previous_step';
+  allowReject?: boolean;
+  allowReassign?: boolean;
+}
+
+export interface WorkflowRuntimeNode {
+  id: string;
+  workflowInstanceId: string;
+  templateVersionId?: string | null;
+  templateNodeId?: string | null;
+  type: WorkflowNodeType;
+  label: string;
+  config: ProjectWorkflowNodeConfig;
+  positionX: number;
+  positionY: number;
+  createdAt?: string;
+}
+
+export interface WorkflowRuntimeEdge {
+  id: string;
+  workflowInstanceId: string;
+  templateVersionId?: string | null;
+  templateEdgeId?: string | null;
+  sourceInstanceNodeId: string;
+  targetInstanceNodeId: string;
+  label?: string | null;
+  sortOrder: number;
+  createdAt?: string;
+}
+
 export interface WorkflowCustomField {
   id: string;
   name: string;        // key identifier (e.g., "bo_phan")
@@ -2046,14 +2157,137 @@ export interface WorkflowNode {
   templateId: string;
   type: WorkflowNodeType;
   label: string;
-  config: {
-    assigneeRole?: Role;       // Vai trò phụ trách duyệt bước này
-    assigneeUserId?: string;   // Cụ thể user nào duyệt (ưu tiên hơn role)
-    formFields?: { name: string; label: string; type: 'text' | 'number' | 'textarea'; required?: boolean }[];
-    slaHours?: number;         // Thời gian tối đa xử lý (giờ)
-  };
+  config: ProjectWorkflowNodeConfig;
   positionX: number;
   positionY: number;
+}
+
+export interface ProjectWorkflowSubject {
+  id: string;
+  workflowInstanceId?: string | null;
+  workflowSubjectId?: string | null;
+  workflowTemplateId?: string | null;
+  templateVersionId?: string | null;
+  subjectType: ProjectWorkflowSubjectType;
+  subjectId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  currentAssigneeUserId?: string | null;
+  currentAssigneeUserIds?: string[];
+  currentNodeId?: string | null;
+  currentInstanceNodeId?: string | null;
+  status: ProjectWorkflowSubjectStatus;
+  returnToNodeId?: string | null;
+  returnToInstanceNodeId?: string | null;
+  lastActionInstanceNodeId?: string | null;
+  returnToAssigneeUserId?: string | null;
+  returnToAssigneeUserIds?: string[];
+  returnedByUserId?: string | null;
+  returnedAt?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  currentNode?: WorkflowNode | null;
+  currentRuntimeNode?: WorkflowRuntimeNode | null;
+  workflowInstance?: WorkflowInstance | null;
+  participants?: WorkflowParticipant[];
+}
+
+export interface WorkflowStepAssignment {
+  id: string;
+  workflowSubjectId: string;
+  workflowInstanceId?: string | null;
+  nodeId?: string | null;
+  instanceNodeId?: string | null;
+  assigneeUserId?: string | null;
+  assignedBy?: string | null;
+  status: WorkflowStepAssignmentStatus;
+  assignedAt: string;
+  actedAt?: string | null;
+  actionComment?: string | null;
+  returnToNodeId?: string | null;
+  dueAt?: string | null;
+  slaHours?: number | null;
+  assignmentSource?: string | null;
+  assignmentGroupType?: string | null;
+  assignmentGroupId?: string | null;
+  assignmentRoundId?: string | null;
+  metadata?: Record<string, any>;
+}
+
+export interface ProjectWorkflowActionContext {
+  action: ProjectWorkflowAction;
+  subject: ProjectWorkflowSubject;
+  nextNode?: WorkflowNode | null;
+  assigneeUserId?: string | null;
+  assigneeUserIds?: string[];
+  assigneeNames?: string[];
+  comment?: string;
+}
+
+export interface WorkflowParticipant {
+  id: string;
+  workflowSubjectId: string;
+  workflowInstanceId?: string | null;
+  userId: string;
+  role: WorkflowParticipantRole;
+  source?: string;
+  sourceRef?: string | null;
+  nodeId?: string | null;
+  instanceNodeId?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  isActive: boolean;
+}
+
+export interface ProjectWorkflowRollbackDependencyResult {
+  allowed: boolean;
+  activeCount: number;
+  dependencies: Array<{
+    type: string;
+    id?: string;
+    status: 'active' | 'reversed' | 'cancelled' | 'returned' | 'void' | string;
+    source?: string;
+    relationType?: string;
+  }>;
+}
+
+export interface ProjectWorkflowBinding {
+  id: string;
+  subjectType: ProjectWorkflowSubjectType;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  workflowTemplateId: string;
+  isDefault: boolean;
+  isActive: boolean;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  workflowTemplate?: WorkflowTemplate | null;
+}
+
+export interface ProjectWorkflowConfiguration {
+  subjectType: ProjectWorkflowSubjectType;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  binding?: ProjectWorkflowBinding | null;
+  scope?: ProjectWorkflowBindingScope | null;
+  valid: boolean;
+  errors: string[];
+  canManage: boolean;
+  validation?: {
+    valid: boolean;
+    errors: string[];
+    startCount?: number;
+    endCount?: number;
+    taskCount?: number;
+  };
+}
+
+export interface ProjectWorkflowRuntimeContext {
+  subject: ProjectWorkflowSubject;
+  nodes: WorkflowRuntimeNode[];
+  edges: WorkflowRuntimeEdge[];
 }
 
 export interface WorkflowEdge {
@@ -2067,14 +2301,16 @@ export interface WorkflowEdge {
 export interface WorkflowInstance {
   id: string;
   templateId: string;
+  templateVersionId?: string | null;
   code: string;
   title: string;
   createdBy: string; // user id
   currentNodeId: string | null;
+  currentInstanceNodeId?: string | null;
   status: WorkflowInstanceStatus;
   formData: Record<string, any>;
   watchers: string[];  // user IDs — view + comment only
-  stepAssignees?: Record<string, string>; // node id -> assigned user id for this instance
+  stepAssignees?: Record<string, string | string[]>; // node id -> assigned user id(s)
   createdAt: string;
   updatedAt: string;
 }

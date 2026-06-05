@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
-import { WorkflowNode, WorkflowEdge, WorkflowNodeType, WorkflowCustomField, CustomFieldType, WorkflowPrintTemplate, Role } from '../../types';
+import { WorkflowAssignmentTarget, WorkflowNode, WorkflowEdge, WorkflowNodeType, WorkflowCustomField, CustomFieldType, WorkflowPrintTemplate, Role } from '../../types';
+import { projectWorkflowService } from '../../lib/projectWorkflowService';
 import {
     ArrowLeft, Save, Plus, Trash2, GripVertical, ChevronUp, ChevronDown,
     UserCheck, Settings2, X, Layers, FileText, ToggleLeft, ToggleRight,
@@ -22,8 +23,8 @@ const FIELD_TYPE_CONFIG: Record<CustomFieldType, { label: string; icon: any; col
 const WorkflowBuilder: React.FC = () => {
     const { id: templateId } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { templates, getTemplateNodes, getTemplateEdges, saveNodesAndEdges, updateTemplate, uploadPrintTemplate, deletePrintTemplate, getPrintTemplates } = useWorkflow();
-    const { users } = useApp();
+    const { templates, getTemplateNodes, getTemplateEdges, updateTemplate, uploadPrintTemplate, deletePrintTemplate, getPrintTemplates, refreshData } = useWorkflow();
+    const { users, orgUnits, user, isModuleAdmin } = useApp();
 
     const template = templates.find(t => t.id === templateId);
 
@@ -49,6 +50,8 @@ const WorkflowBuilder: React.FC = () => {
     const [newFieldRequired, setNewFieldRequired] = useState(false);
     const [newFieldOptions, setNewFieldOptions] = useState('');
     const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+    const [isMaterialRequestDefault, setIsMaterialRequestDefault] = useState(false);
+    const [bindingSaving, setBindingSaving] = useState(false);
 
     useEffect(() => {
         if (templateId) {
@@ -64,7 +67,48 @@ const WorkflowBuilder: React.FC = () => {
         }
     }, [template]);
 
+    useEffect(() => {
+        let alive = true;
+        if (!templateId) return;
+        projectWorkflowService.resolveBinding('material_request', null, null)
+            .then(binding => {
+                if (alive) setIsMaterialRequestDefault(binding?.workflowTemplateId === templateId);
+            })
+            .catch(() => {
+                if (alive) setIsMaterialRequestDefault(false);
+            });
+        return () => { alive = false; };
+    }, [templateId]);
+
     const generateId = () => crypto.randomUUID();
+
+    const toggleMaterialRequestDefaultBinding = async () => {
+        if (!templateId) return;
+        setBindingSaving(true);
+        try {
+            if (!isMaterialRequestDefault) {
+                await projectWorkflowService.setBinding({
+                    subjectType: 'material_request',
+                    workflowTemplateId: templateId,
+                    projectId: null,
+                    constructionSiteId: null,
+                });
+                setIsMaterialRequestDefault(true);
+            } else {
+                await projectWorkflowService.removeBinding({
+                    subjectType: 'material_request',
+                    projectId: null,
+                    constructionSiteId: null,
+                });
+                setIsMaterialRequestDefault(false);
+            }
+        } catch (error) {
+            console.error('Cannot update material request workflow binding:', error);
+            throw error;
+        } finally {
+            setBindingSaving(false);
+        }
+    };
 
     // ========== STEPS (NODES) MANAGEMENT ==========
 
@@ -106,9 +150,36 @@ const WorkflowBuilder: React.FC = () => {
     const updateStepConfig = (nodeId: string, key: string, value: any) => {
         setLocalNodes(prev => prev.map(n => {
             if (n.id !== nodeId) return n;
-            return { ...n, config: { ...n.config, [key]: value || undefined } };
+            return { ...n, config: { ...n.config, [key]: value === '' ? undefined : value } };
         }));
         setHasChanges(true);
+    };
+
+    const selectedOptions = (event: React.ChangeEvent<HTMLSelectElement>) =>
+        Array.from(event.target.selectedOptions).map(option => option.value).filter(Boolean);
+
+    const getTargetUserIds = (targets?: WorkflowAssignmentTarget[]) =>
+        (targets || []).filter(target => target.type === 'user' && target.userId).map(target => target.userId!);
+
+    const getTargetDepartmentIds = (targets?: WorkflowAssignmentTarget[]) =>
+        (targets || []).filter(target => target.type === 'department' && target.orgUnitId).map(target => target.orgUnitId!);
+
+    const updateStepTargets = (
+        nodeId: string,
+        key: 'assignmentTargets' | 'stepWatcherTargets',
+        userIds: string[],
+        departmentIds: string[],
+    ) => {
+        const targets: WorkflowAssignmentTarget[] = [
+            ...userIds.map(userId => ({ type: 'user' as const, userId })),
+            ...departmentIds.map(orgUnitId => ({ type: 'department' as const, orgUnitId })),
+        ];
+        updateStepConfig(nodeId, key, targets);
+    };
+
+    const updateTemplateUserList = async (key: 'managers' | 'defaultWatchers', userIds: string[]) => {
+        if (!template) return;
+        await updateTemplate({ ...template, [key]: userIds });
     };
 
     const updateStepType = (nodeId: string, type: WorkflowNodeType) => {
@@ -268,44 +339,39 @@ const WorkflowBuilder: React.FC = () => {
     const handleSave = async () => {
         if (!templateId || !template) return;
         setIsSaving(true);
-
-        // Ensure START and END nodes exist
-        let nodesToSave = [...localNodes];
-        let edgesToSave = [...localEdges];
-        const orderedSteps = getOrderedSteps();
-
-        let startNode = nodesToSave.find(n => n.type === WorkflowNodeType.START);
-        if (!startNode) {
-            startNode = { id: generateId(), templateId, type: WorkflowNodeType.START, label: 'Bắt đầu', config: {}, positionX: 0, positionY: 0 };
-            nodesToSave.push(startNode);
-        }
-
-        let endNode = nodesToSave.find(n => n.type === WorkflowNodeType.END);
-        if (!endNode) {
-            endNode = { id: generateId(), templateId, type: WorkflowNodeType.END, label: 'Kết thúc', config: {}, positionX: 0, positionY: 9999 };
-            nodesToSave.push(endNode);
-        }
-
-        // Auto-generate sequential edges: START -> step1 -> step2 -> ... -> END
-        edgesToSave = [];
-        const allInOrder = [startNode, ...orderedSteps, endNode];
-        for (let i = 0; i < allInOrder.length - 1; i++) {
-            edgesToSave.push({
+        try {
+            let nodesToSave = [...localNodes];
+            let startNode = nodesToSave.find(n => n.type === WorkflowNodeType.START);
+            if (!startNode) {
+                startNode = { id: generateId(), templateId, type: WorkflowNodeType.START, label: 'Bắt đầu', config: {}, positionX: 0, positionY: 0 };
+                nodesToSave.push(startNode);
+            }
+            let endNode = nodesToSave.find(n => n.type === WorkflowNodeType.END);
+            if (!endNode) {
+                endNode = { id: generateId(), templateId, type: WorkflowNodeType.END, label: 'Kết thúc', config: {}, positionX: 0, positionY: 9999 };
+                nodesToSave.push(endNode);
+            }
+            const orderedSteps = getOrderedSteps();
+            const allInOrder = [startNode, ...orderedSteps, endNode];
+            const edgesToSave: WorkflowEdge[] = allInOrder.slice(0, -1).map((node, index) => ({
                 id: generateId(),
                 templateId,
-                sourceNodeId: allInOrder[i].id,
-                targetNodeId: allInOrder[i + 1].id,
+                sourceNodeId: node.id,
+                targetNodeId: allInOrder[index + 1].id,
                 label: '',
+            }));
+            await projectWorkflowService.saveTemplateStructure({
+                template: { ...template, customFields },
+                nodes: nodesToSave,
+                edges: edgesToSave,
             });
+            setLocalNodes(nodesToSave);
+            setLocalEdges(edgesToSave);
+            await refreshData();
+            setHasChanges(false);
+        } finally {
+            setIsSaving(false);
         }
-
-        await saveNodesAndEdges(templateId, nodesToSave, edgesToSave);
-
-        // Save custom fields
-        await updateTemplate({ ...template, customFields });
-
-        setHasChanges(false);
-        setIsSaving(false);
     };
 
     if (!template) {
@@ -330,10 +396,22 @@ const WorkflowBuilder: React.FC = () => {
                     </button>
                     <div>
                         <h1 className="font-bold text-lg text-slate-800 dark:text-white">{template.name}</h1>
-                        <p className="text-xs text-slate-400">{template.description || 'Chưa có mô tả'}</p>
+                        <p className="text-xs text-slate-400">{template.description || 'Chưa có mô tả'} • Thay đổi chỉ áp dụng cho instance tạo mới</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
+                    {(user.role === Role.ADMIN || isModuleAdmin('WF')) && <button
+                        onClick={toggleMaterialRequestDefaultBinding}
+                        disabled={bindingSaving}
+                        className={`flex items-center px-4 py-2.5 rounded-xl text-xs font-black border transition disabled:opacity-50 ${
+                            isMaterialRequestDefault
+                                ? 'border-purple-200 bg-purple-50 text-purple-700'
+                                : 'border-slate-200 bg-white/70 text-slate-500 hover:bg-slate-50'
+                        }`}
+                    >
+                        <Zap size={14} className="mr-1.5" />
+                        {bindingSaving ? 'Đang lưu...' : isMaterialRequestDefault ? 'Mặc định phiếu vật tư' : 'Gán cho phiếu vật tư'}
+                    </button>}
                     {hasChanges && (
                         <span className="text-[10px] font-bold text-amber-500 bg-amber-50 dark:bg-amber-900/30 px-3 py-1.5 rounded-lg animate-pulse">
                             • Chưa lưu
@@ -346,6 +424,43 @@ const WorkflowBuilder: React.FC = () => {
                     >
                         <Save size={15} className="mr-2" /> {isSaving ? 'Đang lưu...' : 'Lưu'}
                     </button>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <div className="glass-card rounded-xl p-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                        <div>
+                            <div className="text-[10px] font-black uppercase text-slate-400">Quản trị quy trình</div>
+                            <p className="text-[11px] font-medium text-slate-500">Có quyền cấu hình/gán lại workflow, trừ xoá template.</p>
+                        </div>
+                        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-black text-indigo-600">{template.managers?.length || 0} người</span>
+                    </div>
+                    <select
+                        multiple
+                        value={template.managers || []}
+                        onChange={event => void updateTemplateUserList('managers', selectedOptions(event))}
+                        className="h-28 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-slate-800/50"
+                    >
+                        {users.map(item => <option key={item.id} value={item.id}>{item.name} ({item.role})</option>)}
+                    </select>
+                </div>
+                <div className="glass-card rounded-xl p-4">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                        <div>
+                            <div className="text-[10px] font-black uppercase text-slate-400">Người theo dõi mặc định</div>
+                            <p className="text-[11px] font-medium text-slate-500">Chỉ xem workflow, không có quyền duyệt hoặc chỉnh sửa.</p>
+                        </div>
+                        <span className="rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-black text-slate-500">{template.defaultWatchers?.length || 0} người</span>
+                    </div>
+                    <select
+                        multiple
+                        value={template.defaultWatchers || []}
+                        onChange={event => void updateTemplateUserList('defaultWatchers', selectedOptions(event))}
+                        className="h-28 w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-slate-800/50"
+                    >
+                        {users.map(item => <option key={item.id} value={item.id}>{item.name} ({item.role})</option>)}
+                    </select>
                 </div>
             </div>
 
@@ -542,6 +657,131 @@ const WorkflowBuilder: React.FC = () => {
                                                         placeholder="VD: 24"
                                                         className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
                                                     />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Cách gán người</label>
+                                                    <select
+                                                        value={step.config.assignmentMode || 'select_on_transition'}
+                                                        onChange={e => updateStepConfig(step.id, 'assignmentMode', e.target.value)}
+                                                        className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
+                                                    >
+                                                        <option value="select_on_submit">Chọn khi gửi</option>
+                                                        <option value="select_on_transition">Chọn khi chuyển bước</option>
+                                                        <option value="fixed_user">Người cố định</option>
+                                                        <option value="permission_pool">Theo nhóm quyền</option>
+                                                        <option value="previous_assignee">Người đã xử lý trước</option>
+                                                        <option value="creator">Người tạo phiếu</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Rule duyệt</label>
+                                                    <select
+                                                        value={step.config.approvalPolicy || 'ANY_ONE'}
+                                                        onChange={e => updateStepConfig(step.id, 'approvalPolicy', e.target.value)}
+                                                        className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
+                                                    >
+                                                        <option value="ANY_ONE">Một người duyệt là qua</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Quyền được chọn</label>
+                                                    <input
+                                                        type="text"
+                                                        value={(step.config.eligiblePermissionCodes || []).join(', ')}
+                                                        onChange={e => updateStepConfig(step.id, 'eligiblePermissionCodes', e.target.value.split(',').map(code => code.trim()).filter(Boolean))}
+                                                        placeholder="VD: approve, verify"
+                                                        className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Khi trả lại</label>
+                                                    <select
+                                                        value={step.config.returnPolicy || 'to_creator'}
+                                                        onChange={e => updateStepConfig(step.id, 'returnPolicy', e.target.value)}
+                                                        className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
+                                                    >
+                                                        <option value="to_creator">Về người tạo</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Pool người mặc định</label>
+                                                    <select
+                                                        multiple
+                                                        value={getTargetUserIds(step.config.assignmentTargets)}
+                                                        onChange={e => updateStepTargets(
+                                                            step.id,
+                                                            'assignmentTargets',
+                                                            selectedOptions(e),
+                                                            getTargetDepartmentIds(step.config.assignmentTargets),
+                                                        )}
+                                                        className="h-28 w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-accent"
+                                                    >
+                                                        {users.map(item => <option key={item.id} value={item.id}>{item.name} ({item.role})</option>)}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Pool phòng ban mặc định</label>
+                                                    <select
+                                                        multiple
+                                                        value={getTargetDepartmentIds(step.config.assignmentTargets)}
+                                                        onChange={e => updateStepTargets(
+                                                            step.id,
+                                                            'assignmentTargets',
+                                                            getTargetUserIds(step.config.assignmentTargets),
+                                                            selectedOptions(e),
+                                                        )}
+                                                        className="h-28 w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-accent"
+                                                    >
+                                                        {orgUnits.filter(unit => unit.type === 'department').map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Theo dõi bước - người</label>
+                                                    <select
+                                                        multiple
+                                                        value={getTargetUserIds(step.config.stepWatcherTargets)}
+                                                        onChange={e => updateStepTargets(
+                                                            step.id,
+                                                            'stepWatcherTargets',
+                                                            selectedOptions(e),
+                                                            getTargetDepartmentIds(step.config.stepWatcherTargets),
+                                                        )}
+                                                        className="h-24 w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-accent"
+                                                    >
+                                                        {users.map(item => <option key={item.id} value={item.id}>{item.name} ({item.role})</option>)}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Theo dõi bước - phòng ban</label>
+                                                    <select
+                                                        multiple
+                                                        value={getTargetDepartmentIds(step.config.stepWatcherTargets)}
+                                                        onChange={e => updateStepTargets(
+                                                            step.id,
+                                                            'stepWatcherTargets',
+                                                            getTargetUserIds(step.config.stepWatcherTargets),
+                                                            selectedOptions(e),
+                                                        )}
+                                                        className="h-24 w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-accent"
+                                                    >
+                                                        {orgUnits.filter(unit => unit.type === 'department').map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="flex items-center gap-2 pt-5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => updateStepConfig(step.id, 'allowReject', step.config.allowReject === false)}
+                                                        className={`rounded-xl border px-3 py-2 text-xs font-black ${step.config.allowReject !== false ? 'border-red-200 bg-red-50 text-red-700' : 'border-slate-200 bg-white text-slate-400'}`}
+                                                    >
+                                                        Từ chối
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => updateStepConfig(step.id, 'allowReassign', step.config.allowReassign === false)}
+                                                        className={`rounded-xl border px-3 py-2 text-xs font-black ${step.config.allowReassign !== false ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-400'}`}
+                                                    >
+                                                        Đổi người xử lý
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>

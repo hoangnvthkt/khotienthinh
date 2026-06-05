@@ -130,6 +130,8 @@ const transactionToDb = (tx: Transaction): Record<string, unknown> => ({
 
 const projectTransactionToDb = (tx: ProjectTransaction): Record<string, unknown> => ({
   id: tx.id,
+  projectFinanceId: tx.projectFinanceId || '',
+  constructionSiteId: tx.constructionSiteId || '',
   project_id: tx.projectId || null,
   project_finance_id: tx.projectFinanceId || null,
   construction_site_id: tx.constructionSiteId || null,
@@ -139,14 +141,16 @@ const projectTransactionToDb = (tx: ProjectTransaction): Record<string, unknown>
   description: tx.description,
   date: tx.date,
   source: tx.source,
+  sourceRef: tx.sourceRef || null,
   source_ref: tx.sourceRef || null,
   attachments: tx.attachments || [],
-  created_by: tx.createdBy || null,
-  created_at: tx.createdAt,
+  createdBy: tx.createdBy || null,
+  createdAt: tx.createdAt,
 });
 
 const projectFinanceToDb = (finance: ProjectFinance): Record<string, unknown> => ({
   id: finance.id,
+  constructionSiteId: finance.constructionSiteId,
   project_id: finance.projectId || null,
   construction_site_id: finance.constructionSiteId,
   contractValue: Number(finance.contractValue || 0),

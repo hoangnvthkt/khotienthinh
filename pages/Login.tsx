@@ -180,8 +180,6 @@ const Login: React.FC = () => {
           <p>© 2026 Vioo. Phần mềm quản lý doanh nghiệp</p>
           <p>Liên hệ: 0969666840</p>
           <p>Email: [admin@tienthinhjsc.vn]</p>
-          <p>Zalo: 0969666840</p>
-          <p>Website: https://tienthinhjsc.vn</p>
           <p>Copyright by hoangnvthkt</p>
         </div>
       </div>

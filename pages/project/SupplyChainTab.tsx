@@ -19,7 +19,7 @@ import {
     Plus, Edit2, Trash2, X, Save, Truck, Star, Phone, Mail, MapPin,
     FileText, CheckCircle2, Clock, Ban, Send, Package, ChevronDown,
     ChevronUp, Users, DollarSign, ShoppingCart, AlertTriangle, FileSpreadsheet,
-    Upload, Printer, QrCode, Loader2, RefreshCcw
+    Upload, Printer, QrCode, Loader2, RefreshCcw, PackageX
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -33,6 +33,7 @@ import {
     PurchaseOrder,
     PurchaseOrderItem,
     PurchaseOrderRequestLineLink,
+    PurchaseOrderSupplierReturn,
     PurchaseOrderSourceMode,
     MaterialPlanningDraftPo,
     MaterialRequest,
@@ -61,6 +62,8 @@ import { useReservedStock } from '../../hooks/useReservedStock';
 import { formatReservationSourceList } from '../../lib/inventoryStockGuard';
 import { materialRequestService } from '../../lib/materialRequestService';
 import { isAdmin, isGlobalWarehouseKeeper } from '../../lib/wmsPermissions';
+import { purchaseOrderSupplierReturnService } from '../../lib/purchaseOrderSupplierReturnService';
+import PurchaseOrderSupplierReturnDialog from '../../components/project/PurchaseOrderSupplierReturnDialog';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -220,6 +223,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [requestFulfillmentSummaries, setRequestFulfillmentSummaries] = useState<Record<string, MaterialRequestFulfillmentSummary>>({});
     const [requestFulfillmentBatchCounts, setRequestFulfillmentBatchCounts] = useState<Record<string, number>>({});
     const [projectMaterialRequests, setProjectMaterialRequests] = useState<MaterialRequest[]>([]);
+    const [supplierReturnsByPo, setSupplierReturnsByPo] = useState<Record<string, PurchaseOrderSupplierReturn[]>>({});
     const canRunRestrictedPoActions = isAdmin(user) || isGlobalWarehouseKeeper(user);
 
     const ensureCanManage = (action: string) => {
@@ -269,8 +273,20 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             const scopedStockRows = stockPoRows.filter(po => !po.projectId && !po.constructionSiteId);
             const byId = new Map<string, PurchaseOrder>();
             [...poRows, ...scopedStockRows].forEach(po => byId.set(po.id, po));
-            setPos([...byId.values()]);
+            const allPos = [...byId.values()];
+            setPos(allPos);
             setPoRequestLinks(linkRows);
+
+            const supplierReturnRows = await purchaseOrderSupplierReturnService
+                .listByPurchaseOrderIds(allPos.map(po => po.id))
+                .catch(error => {
+                    console.error('Failed to load supplier returns', error);
+                    return [] as PurchaseOrderSupplierReturn[];
+                });
+            setSupplierReturnsByPo(supplierReturnRows.reduce<Record<string, PurchaseOrderSupplierReturn[]>>((acc, item) => {
+                acc[item.purchaseOrderId] = [...(acc[item.purchaseOrderId] || []), item];
+                return acc;
+            }, {}));
         } catch (error) {
             console.error(error);
         }
@@ -287,6 +303,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
     const [showRequestPicker, setShowRequestPicker] = useState(false);
     const [selectedRequestLineKeys, setSelectedRequestLineKeys] = useState<string[]>([]);
+    const [supplierReturnPo, setSupplierReturnPo] = useState<PurchaseOrder | null>(null);
 
     // Vendor Form
     const [vName, setVName] = useState('');
@@ -1812,6 +1829,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 const isExpanded = expandedPoId === po.id;
                                 const targetWh = warehouses.find(w => w.id === po.targetWarehouseId);
                                 const groupSize = po.procurementGroupId ? (procurementGroupCounts[po.procurementGroupId] || 0) : 0;
+                                const supplierReturns = supplierReturnsByPo[po.id] || [];
+                                const totalReceivedQty = po.items.reduce((sum, item) => sum + Number(item.receivedQty || 0), 0);
+                                const completedReturnQty = Math.max(
+                                    po.items.reduce((sum, item) => sum + Number(item.returnedQty || 0), 0),
+                                    supplierReturns
+                                        .filter(item => item.status === 'completed')
+                                        .reduce((sum, item) => sum + item.lines.reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0),
+                                );
+                                const pendingReturnQty = supplierReturns
+                                    .filter(item => item.status === 'pending')
+                                    .reduce((sum, item) => sum + item.lines.reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0);
+                                const supplierReturnableQty = Math.max(0, totalReceivedQty - completedReturnQty - pendingReturnQty);
                                 return (
                                     <div key={po.id}>
                                         <div className="px-5 py-4 hover:bg-slate-50/30 group cursor-pointer"
@@ -2038,6 +2067,56 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                             </div>
                                                         )}
 
+                                                        {supplierReturns.length > 0 && (
+                                                            <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
+                                                                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                                                    <div>
+                                                                        <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-500">Lịch sử trả hàng NCC</h4>
+                                                                        <p className="mt-0.5 text-[10px] font-bold text-slate-400">
+                                                                            Đã nhận {totalReceivedQty.toLocaleString('vi-VN')} · Đã trả {completedReturnQty.toLocaleString('vi-VN')} · Đang chờ duyệt {pendingReturnQty.toLocaleString('vi-VN')}
+                                                                        </p>
+                                                                    </div>
+                                                                    <span className="text-xs font-black text-rose-600">Còn có thể trả: {supplierReturnableQty.toLocaleString('vi-VN')}</span>
+                                                                </div>
+                                                                <div className="overflow-x-auto">
+                                                                    <table className="w-full min-w-[760px] text-left text-xs">
+                                                                        <thead className="border-b border-slate-100 text-[9px] font-black uppercase text-slate-400 dark:border-slate-800">
+                                                                            <tr>
+                                                                                <th className="px-2 py-2">Phiếu trả NCC</th>
+                                                                                <th className="px-2 py-2">Kho xuất</th>
+                                                                                <th className="px-2 py-2 text-right">Số lượng</th>
+                                                                                <th className="px-2 py-2">Trạng thái</th>
+                                                                                <th className="px-2 py-2">Phiếu WMS</th>
+                                                                                <th className="px-2 py-2">Lý do</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                                                            {supplierReturns.map(item => {
+                                                                                const quantity = item.lines.reduce((sum, line) => sum + Number(line.returnQty || 0), 0);
+                                                                                const warehouse = warehouses.find(row => row.id === item.sourceWarehouseId);
+                                                                                const statusLabel = item.status === 'completed' ? 'Đã trả NCC' : item.status === 'cancelled' ? 'Đã huỷ' : 'Chờ WMS duyệt';
+                                                                                const statusClass = item.status === 'completed'
+                                                                                    ? 'bg-emerald-50 text-emerald-700'
+                                                                                    : item.status === 'cancelled'
+                                                                                        ? 'bg-slate-100 text-slate-500'
+                                                                                        : 'bg-amber-50 text-amber-700';
+                                                                                return (
+                                                                                    <tr key={item.id}>
+                                                                                        <td className="px-2 py-2 font-black text-rose-700">{item.returnNo}</td>
+                                                                                        <td className="px-2 py-2 font-bold text-slate-600">{warehouse?.name || item.sourceWarehouseId}</td>
+                                                                                        <td className="px-2 py-2 text-right font-black text-slate-700">{quantity.toLocaleString('vi-VN')}</td>
+                                                                                        <td className="px-2 py-2"><span className={`rounded px-2 py-1 text-[9px] font-black ${statusClass}`}>{statusLabel}</span></td>
+                                                                                        <td className="px-2 py-2 font-mono text-[10px] text-slate-500">{item.transactionId}</td>
+                                                                                        <td className="max-w-xs px-2 py-2 text-slate-500">{item.reason}</td>
+                                                                                    </tr>
+                                                                                );
+                                                                            })}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            </div>
+                                                        )}
+
                                                         {/* Bottom Section: Command Bar for Leaders */}
                                                         {(canManageTab || canRunRestrictedPoActions) && (
                                                             <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -2078,6 +2157,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                     {canManageTab && po.status === 'delivered' && (
                                                                         <button onClick={() => updatePoStatus(po.id, 'closed')} className="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 border-0 cursor-pointer transition-all">
                                                                             <FileText size={13} /> Đóng PO
+                                                                        </button>
+                                                                    )}
+                                                                    {canRunRestrictedPoActions && ['partial', 'delivered', 'closed'].includes(po.status) && supplierReturnableQty > 0 && (
+                                                                        <button onClick={() => setSupplierReturnPo(po)} className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 border-0 cursor-pointer transition-all">
+                                                                            <PackageX size={13} /> Trả hàng NCC ({supplierReturnableQty.toLocaleString('vi-VN')})
                                                                         </button>
                                                                     )}
                                                                     {canRunRestrictedPoActions && po.status === 'closed' && (
@@ -2691,6 +2775,19 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     onConfirm={target => updatePoStatus(submittingPo.id, 'sent', target)}
                 />
             )}
+            <PurchaseOrderSupplierReturnDialog
+                purchaseOrder={supplierReturnPo}
+                warehouses={warehouses}
+                inventoryItems={inventoryItems}
+                existingReturns={supplierReturnPo ? supplierReturnsByPo[supplierReturnPo.id] || [] : []}
+                onClose={() => setSupplierReturnPo(null)}
+                onCreated={async () => {
+                    await Promise.all([
+                        loadSupplyData(),
+                        loadModuleData('wms-core', true),
+                    ]);
+                }}
+            />
         </div>
     );
 };

@@ -12,7 +12,7 @@ import {
 const WorkflowTemplates: React.FC = () => {
     const navigate = useNavigate();
     const { templates, createTemplate, updateTemplate, deleteTemplate, instances, getTemplateNodes } = useWorkflow();
-    const { user, users } = useApp();
+    const { user, users, isModuleAdmin } = useApp();
     const [searchTerm, setSearchTerm] = useState('');
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [newName, setNewName] = useState('');
@@ -60,7 +60,11 @@ const WorkflowTemplates: React.FC = () => {
     );
     };
 
-    if (user.role !== Role.ADMIN && !templates.some(t => t.managers?.includes(user.id))) {
+    const isAdmin = user.role === Role.ADMIN;
+    const isWorkflowModuleAdmin = isModuleAdmin('WF');
+    const canViewAllTemplates = isAdmin || isWorkflowModuleAdmin;
+
+    if (!canViewAllTemplates && !templates.some(t => t.managers?.includes(user.id))) {
         return (
             <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400">
                 <ShieldAlert size={48} className="mb-4 opacity-20" />
@@ -70,9 +74,9 @@ const WorkflowTemplates: React.FC = () => {
         );
     }
 
-    const isAdmin = user.role === Role.ADMIN;
-    // Manager can see templates they manage
-    const visibleTemplates = isAdmin ? templates : templates.filter(t => t.managers?.includes(user.id));
+    // Assigned managers only see templates they manage. WF module admins can
+    // manage every template but only System Admin can create or delete one.
+    const visibleTemplates = canViewAllTemplates ? templates : templates.filter(t => t.managers?.includes(user.id));
 
     const filtered = visibleTemplates.filter(t =>
         t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -127,12 +131,14 @@ const WorkflowTemplates: React.FC = () => {
                     </h1>
                     <p className="text-sm text-slate-500 dark:text-slate-400">Thiết kế và quản lý các mẫu quy trình duyệt phiếu cho công ty.</p>
                 </div>
-                <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="flex items-center px-4 py-2.5 bg-accent text-white rounded-xl hover:bg-emerald-600 transition font-bold shadow-lg shadow-emerald-500/20"
-                >
-                    <Plus size={18} className="mr-2" /> Tạo quy trình mới
-                </button>
+                {isAdmin && (
+                    <button
+                        onClick={() => setShowCreateModal(true)}
+                        className="flex items-center px-4 py-2.5 bg-accent text-white rounded-xl hover:bg-emerald-600 transition font-bold shadow-lg shadow-emerald-500/20"
+                    >
+                        <Plus size={18} className="mr-2" /> Tạo quy trình mới
+                    </button>
+                )}
             </div>
 
             {/* Search */}

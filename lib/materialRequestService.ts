@@ -161,6 +161,9 @@ export const mapMaterialRequestFromDb = (row: any): MaterialRequest => ({
   workflowStepDueAt: row.workflow_step_due_at ?? row.workflowStepDueAt ?? undefined,
   workflowStepSlaHours: row.workflow_step_sla_hours ?? row.workflowStepSlaHours ?? undefined,
   workflowStepActorUserId: row.workflow_step_actor_user_id ?? row.workflowStepActorUserId ?? undefined,
+  workflowInstanceId: row.workflow_instance_id ?? row.workflowInstanceId ?? null,
+  workflowSubjectId: row.workflow_subject_id ?? row.workflowSubjectId ?? null,
+  workflowTemplateId: row.workflow_template_id ?? row.workflowTemplateId ?? null,
 });
 
 export const materialRequestService = {

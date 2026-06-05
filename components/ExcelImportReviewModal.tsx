@@ -182,7 +182,7 @@ const ExcelImportReviewModal = <TRecord extends Record<string, any>>({
                 className="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCcw size={15} />}
-                Cập nhật dòng hợp lệ
+                {preview.mode === 'create' ? 'Nhập dòng hợp lệ' : 'Cập nhật dòng hợp lệ'}
               </button>
             )}
             <button
@@ -191,7 +191,7 @@ const ExcelImportReviewModal = <TRecord extends Record<string, any>>({
               className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {loading ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-              Xác nhận ghi đè
+              {preview.mode === 'create' ? 'Xác nhận nhập mới' : 'Xác nhận cập nhật'}
             </button>
           </div>
         </div>

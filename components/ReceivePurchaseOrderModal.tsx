@@ -1,11 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, PackageCheck, Loader2, AlertTriangle, Building2 } from 'lucide-react';
-import { PurchaseOrder, RequestStatus, Transaction, TransactionStatus, TransactionType, Role } from '../types';
+import { PurchaseOrder, Role } from '../types';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { poService } from '../lib/projectService';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
-import { materialRequestService } from '../lib/materialRequestService';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { usePermission } from '../hooks/usePermission';
 import { parseQuantityInput, sanitizeQuantityInput } from '../lib/quantityInput';
@@ -23,11 +21,10 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   onClose,
   onReceived,
 }) => {
-  const { warehouses, items, user, requests, addTransaction, updateRequestStatus } = useApp();
+  const { warehouses, items, user, loadModuleData } = useApp();
   const { canManage } = usePermission();
   const toast = useToast();
   const [quantities, setQuantities] = useState<Record<string, string>>({});
-  const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
 
   const targetWarehouse = warehouses.find(warehouse => warehouse.id === po?.targetWarehouseId);
@@ -56,7 +53,6 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
       defaults[`${item.itemId}-${index}`] = String(remainingQty);
     });
     setQuantities(defaults);
-    setNote(`Nhập hàng theo PO ${po.poNumber}`);
   }, [po, isOpen]);
 
   if (!isOpen || !po) return null;
@@ -65,7 +61,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   const hasReceivableLine = totalRemaining > 0;
   const hasInvalidQty = lines.some(line => {
     const qty = parseQuantityInput(quantities[line.key]);
-    return qty < 0 || qty > line.remainingQty;
+    return line.remainingQty > 0 && (qty <= 0 || qty > line.remainingQty);
   });
   const receiptLines = lines
     .map(line => ({ itemId: line.itemId, lineId: line.lineId, quantity: parseQuantityInput(quantities[line.key]) || 0, price: Number(line.unitPrice) || 0 }))
@@ -93,7 +89,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
       return;
     }
     if (hasInvalidQty || receiptLines.length === 0) {
-      toast.warning('Kiểm tra số lượng', 'Số lượng thực nhận phải lớn hơn 0 và không vượt phần còn lại.');
+      toast.warning('Kiểm tra số lượng', 'Mỗi dòng đang giao phải có số lượng thực nhận lớn hơn 0 và không vượt phần còn lại.');
       return;
     }
     if (unlinkedReceiptLines.length > 0) {
@@ -101,65 +97,22 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
       return;
     }
 
-    const txId = `tx-po-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const transaction: Transaction = {
-      id: txId,
-      type: TransactionType.IMPORT,
-      date: new Date().toISOString(),
-      items: receiptLines,
-      targetWarehouseId: po.targetWarehouseId,
-      requesterId: user.id,
-      approverId: user.id,
-      status: TransactionStatus.COMPLETED,
-      note: note.trim() || `Nhập hàng theo PO ${po.poNumber}`,
-    };
-
     setSaving(true);
-    let updatedPo: PurchaseOrder | null = null;
     try {
-      updatedPo = await poService.receivePo(po.id, receiptLines, txId);
-      try {
-        await addTransaction(transaction);
-      } catch (transactionError) {
-        await poService.upsert(po);
-        throw transactionError;
-      }
-
-      try {
-        const affectedRequestIds = await materialRequestFulfillmentService.recordPoReceipt({
-          po: updatedPo,
-          transactionId: txId,
-          actorUserId: user.id,
-          receiptLines,
-        });
-        for (const requestId of affectedRequestIds) {
-          const request = requests.find(item => item.id === requestId) || await materialRequestService.getById(requestId);
-          if (!request) continue;
-          const batches = await materialRequestFulfillmentService.listByRequest(requestId);
-          const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, batches);
-          if (nextStatus !== request.status) {
-            await updateRequestStatus(
-              request.id,
-              nextStatus as RequestStatus,
-              `Đồng bộ thực nhận từ PO ${updatedPo.poNumber}`,
-              undefined,
-              request.sourceWarehouseId,
-              request.overrideReason,
-              'FULFILLMENT_RECEIVED',
-            );
-          }
-        }
-      } catch (syncError) {
-        logApiError('receivePurchaseOrder.syncMaterialRequestFulfillment', syncError);
-        toast.warning('PO đã nhập kho', 'Chưa đồng bộ được lũy kế thực nhận về phiếu yêu cầu. Vui lòng mở lại phiếu để kiểm tra.');
-      }
-
-      toast.success('Đã nhập kho theo PO', `${po.poNumber} đã được cập nhật tồn kho.`);
-      onReceived?.(updatedPo);
+      const result = await materialRequestFulfillmentService.preparePoReceiptForQualityReview({
+        po,
+        receiptLines,
+      });
+      await loadModuleData('wms', true);
+      toast.success(
+        'Đã ghi nhận thực nhận',
+        `${po.poNumber} đã cập nhật ${result.transactionIds.length} phiếu chờ Duyệt SL/CL. PO và tồn kho chưa được kết thúc.`,
+      );
+      onReceived?.(po);
       onClose();
     } catch (error: any) {
       logApiError('receivePurchaseOrder.confirm', error);
-      toast.error('Không thể nhập kho theo PO', getApiErrorMessage(error, 'Không thể hoàn tất nhập kho theo phiếu NCC.'));
+      toast.error('Không thể ghi nhận thực nhận', getApiErrorMessage(error, 'Không thể cập nhật phiếu chờ duyệt SL/CL.'));
     } finally {
       setSaving(false);
     }
@@ -179,6 +132,11 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
         </div>
 
         <div className="p-6 overflow-y-auto space-y-5">
+          <div className="p-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-sm font-bold flex items-start gap-2">
+            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+            Xác nhận QR chỉ ghi nhận số lượng thực nhận. Phiếu vẫn phải qua Duyệt SL/CL và xác nhận nhận lần cuối trước khi cộng tồn, kết thúc đợt cấp và PO.
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
               <div className="text-[10px] font-black uppercase text-slate-400 mb-1">Nhà cung cấp</div>
@@ -314,15 +272,6 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
             </div>
           </div>
 
-          <div>
-            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Ghi chú nhập kho</label>
-            <textarea
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              rows={2}
-              className="w-full p-3 rounded-xl border border-slate-200 text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-200 resize-none"
-            />
-          </div>
         </div>
 
         <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row justify-end gap-3">
@@ -335,7 +284,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
             className="px-6 py-2.5 rounded-xl text-sm font-black text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {saving ? <Loader2 size={16} className="animate-spin" /> : <PackageCheck size={16} />}
-            {saving ? 'Đang nhập kho...' : 'Xác nhận nhập kho'}
+            {saving ? 'Đang ghi nhận...' : 'Ghi nhận thực nhận'}
           </button>
         </div>
       </div>

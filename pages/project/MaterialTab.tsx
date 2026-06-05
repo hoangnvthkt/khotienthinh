@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import AiInsightPanel from '../../components/AiInsightPanel';
 import SupplyChainTab from './SupplyChainTab';
 import MaterialPlanningPanel from '../../components/project/MaterialPlanningPanel';
@@ -9,13 +10,16 @@ import {
     FileSpreadsheet, GitBranch, ListTree, MinusCircle
 } from 'lucide-react';
 import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate } from '../../types';
+import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment } from '../../types';
 import { boqService, taskService, workBoqService, WorkBoqSyncPreview, poService } from '../../lib/projectService';
 import { materialRequestFulfillmentService, getRequestLineId } from '../../lib/materialRequestFulfillmentService';
 import { useApp } from '../../context/AppContext';
 import RequestModal from '../../components/RequestModal';
 import MaterialRequestKanbanBoard from '../../components/project/MaterialRequestKanbanBoard';
 import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
+import ProjectWorkflowActionDialog from '../../components/project/ProjectWorkflowActionDialog';
+import ProjectWorkflowBindingPanel from '../../components/project/ProjectWorkflowBindingPanel';
+import ProjectWorkflowStartDialog from '../../components/project/ProjectWorkflowStartDialog';
 import BoqReconciliationPanel from '../../components/project/BoqReconciliationPanel';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -26,6 +30,8 @@ import { PROJECT_MATERIAL_TAB_PERMISSIONS, type ProjectMaterialTabKey, type Proj
 import { materialRequestService } from '../../lib/materialRequestService';
 import { projectSubmissionService } from '../../lib/projectSubmissionService';
 import { projectStaffService } from '../../lib/projectStaffService';
+import { projectWorkflowService } from '../../lib/projectWorkflowService';
+import { useWorkflow } from '../../context/WorkflowContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../../lib/wmsPermissions';
 import { getMaterialPlanningScopeKey, materialPlanningCurveService, materialPlanningRuleService } from '../../lib/projectMaterialPlanningService';
@@ -39,8 +45,8 @@ interface MaterialTabProps {
 }
 
 const fmt = (n: number) => {
-    if (n >= 1e9) return (n / 1e9).toFixed(1) + ' tỷ';
-    if (n >= 1e6) return (n / 1e6).toFixed(0) + ' tr';
+    if (n >= 1e9) return (n / 1e9).toLocaleString('vi-VN', { maximumFractionDigits: 1 }) + ' tỷ';
+    if (n >= 1e6) return (n / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 0 }) + ' tr';
     return n.toLocaleString('vi-VN');
 };
 
@@ -52,7 +58,21 @@ type WorkBoqImportPreview = {
 const WORK_BOQ_SHEET_NAME = 'Dau_muc';
 const MATERIAL_BOQ_SHEET_NAME = 'Vat_tu';
 const WORK_BOQ_HEADERS = ['Mã WBS', 'Mã cha', 'Tên đầu mục', 'ĐVT', 'KL dự toán', 'Đơn giá', 'Ghi chú'];
-const MATERIAL_BOQ_HEADERS = ['WBS đầu mục', 'Mã vật tư/SKU', 'Tên vật tư', 'Nhóm', 'ĐVT', 'KL dự toán', 'Đơn giá', 'Ngưỡng hao hụt (%)', 'Ghi chú'];
+const MATERIAL_BOQ_HEADERS = ['WBS đầu mục', 'Mã vật tư/SKU', 'Tên vật tư', 'Nhóm', 'ĐVT', 'KL dự toán', 'Ngưỡng hao hụt', 'Đơn giá', 'Ghi chú'];
+const MATERIAL_BUDGET_QTY_PRECISION = 6;
+
+const calculateMaterialBudgetQty = (workPlannedQty: number, wasteThreshold: number) => {
+    const value = Number(workPlannedQty) * Number(wasteThreshold);
+    if (!Number.isFinite(value) || value < 0) return 0;
+    const multiplier = 10 ** MATERIAL_BUDGET_QTY_PRECISION;
+    return Math.round((value + Number.EPSILON) * multiplier) / multiplier;
+};
+
+const formatQuantity = (value: number) =>
+    Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: MATERIAL_BUDGET_QTY_PRECISION });
+
+const formatPercent = (value: number) =>
+    Number(value || 0).toLocaleString('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 const importNumber = (value: unknown) => {
     const raw = String(value ?? '').trim().replace(/\s/g, '');
@@ -114,7 +134,9 @@ const formatBoqWriteError = (error: any, fallback = 'Vui lòng thử lại.') =>
 };
 
 const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, siteWarehouseId, canManageTab = true, materialPermissions }) => {
-    const { items: inventoryItems, requests: allRequests, warehouses, users, user, transactions, hrmConstructionSites, loadModuleData } = useApp();
+    const location = useLocation();
+    const { items: inventoryItems, requests: allRequests, warehouses, users, employees, orgUnits, user, transactions, hrmConstructionSites, loadModuleData, isModuleAdmin } = useApp();
+    const { templates: workflowTemplates, nodes: workflowNodes, edges: workflowEdges } = useWorkflow();
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';
@@ -150,6 +172,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         }
     }, [activeSubTab, materialAccess, visibleMaterialTabs]);
 
+    useEffect(() => {
+        const materialTab = new URLSearchParams(location.search).get('materialTab') as ProjectMaterialTabKey | null;
+        if (!materialTab || !PROJECT_MATERIAL_TAB_PERMISSIONS.some(tab => tab.key === materialTab)) return;
+        if (materialAccess[materialTab].canView) setActiveSubTab(materialTab);
+    }, [location.search, materialAccess]);
+
     // BOQ Data
     const [boqItems, setBoqItems] = useState<MaterialBudgetItem[]>([]);
     const [workBoqItems, setWorkBoqItems] = useState<ProjectWorkBoqItem[]>([]);
@@ -173,6 +201,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [canApproveProjectRequest, setCanApproveProjectRequest] = useState(false);
     const [requestEventsByRequest, setRequestEventsByRequest] = useState<Record<string, MaterialRequestEvent[]>>({});
     const [requestFulfillmentBatches, setRequestFulfillmentBatches] = useState<Record<string, MaterialRequestFulfillmentBatch[]>>({});
+    const [requestWorkflowSubjects, setRequestWorkflowSubjects] = useState<Record<string, ProjectWorkflowSubject>>({});
+    const [requestWorkflowAssignments, setRequestWorkflowAssignments] = useState<Record<string, WorkflowStepAssignment[]>>({});
+    const [requestWorkflowRuntimeContexts, setRequestWorkflowRuntimeContexts] = useState<Record<string, ProjectWorkflowRuntimeContext>>({});
+    const [workflowConfiguration, setWorkflowConfiguration] = useState<ProjectWorkflowConfiguration | null>(null);
+    const [startWorkflowRequest, setStartWorkflowRequest] = useState<MaterialRequest | null>(null);
+    const [workflowActionTransition, setWorkflowActionTransition] = useState<{ request: MaterialRequest; subject: ProjectWorkflowSubject; nextNode: WorkflowNode } | null>(null);
     const [submissionTransition, setSubmissionTransition] = useState<{
         request: MaterialRequest;
         toStep: MaterialRequestWorkflowStep;
@@ -181,12 +215,19 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         title: string;
         subtitle: string;
         recipientHint?: string;
+        recipientPermissionCodes?: string[];
+        dynamicWorkflow?: boolean;
+        nextNodeId?: string | null;
+        nextNodeLabel?: string | null;
+        workflowTemplateId?: string | null;
+        isCompletion?: boolean;
         source?: string;
     } | null>(null);
-    const [terminalTransition, setTerminalTransition] = useState<{ request: MaterialRequest; fromStage: MaterialRequestKanbanStage } | null>(null);
+    const [terminalTransition, setTerminalTransition] = useState<{ request: MaterialRequest; fromStage: MaterialRequestKanbanLaneId } | null>(null);
     const [terminalAction, setTerminalAction] = useState<'return' | 'reject'>('return');
     const [terminalNote, setTerminalNote] = useState('');
     const [transitioningRequestId, setTransitioningRequestId] = useState<string | null>(null);
+    const openedDeepLinkRequestRef = useRef<string | null>(null);
 
     useEffect(() => {
         loadModuleData('wms-core');
@@ -226,12 +267,24 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const loadProjectRequests = useCallback(async () => {
         if (!projectId) {
             setProjectRequests([]);
+            setRequestWorkflowSubjects({});
+            setRequestWorkflowAssignments({});
+            setRequestWorkflowRuntimeContexts({});
             setProjectRequestsLoaded(true);
             return;
         }
         try {
             const rows = await materialRequestService.listByProject(projectId);
             setProjectRequests(rows);
+            const subjects = await projectWorkflowService.listSubjectsByMaterialRequestIds(rows.map(row => row.id));
+            setRequestWorkflowSubjects(subjects);
+            const subjectIds = Object.values(subjects).map(subject => subject.id).filter(Boolean);
+            const [assignments, runtimeContexts] = await Promise.all([
+                projectWorkflowService.listAssignmentsBySubjectIds(subjectIds),
+                projectWorkflowService.listRuntimeContextsBySubjects(Object.values(subjects)),
+            ]);
+            setRequestWorkflowAssignments(assignments);
+            setRequestWorkflowRuntimeContexts(runtimeContexts);
         } catch (error: any) {
             console.error('Failed to load project material requests', error);
             toast.error('Không tải được phiếu vật tư dự án', error?.message || 'Vui lòng thử lại.');
@@ -254,6 +307,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const handleRequestDeleted = useCallback((requestId: string) => {
+        const deletedWorkflowSubjectId = requestWorkflowSubjects[requestId]?.id;
         setProjectRequests(prev => prev.filter(request => request.id !== requestId));
         setSelectedRequest(prev => prev?.id === requestId ? undefined : prev);
         setRequestEventsByRequest(prev => {
@@ -276,7 +330,19 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             delete next[requestId];
             return next;
         });
-    }, []);
+        setRequestWorkflowSubjects(prev => {
+            const next = { ...prev };
+            delete next[requestId];
+            return next;
+        });
+        if (deletedWorkflowSubjectId) {
+            setRequestWorkflowAssignments(prev => {
+                const next = { ...prev };
+                delete next[deletedWorkflowSubjectId];
+                return next;
+            });
+        }
+    }, [requestWorkflowSubjects]);
 
     const defaultSiteWarehouseId = useMemo(() => {
         if (siteWarehouseId) return siteWarehouseId;
@@ -339,6 +405,85 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         () => new Map(users.map(item => [item.id, item])),
         [users],
     );
+    const workflowNodeById = useMemo(
+        () => new Map(workflowNodes.map(node => [node.id, node])),
+        [workflowNodes],
+    );
+    const requestWorkflowRuntimeNodes = useMemo(
+        () => Object.values(requestWorkflowRuntimeContexts).flatMap(context => context.nodes),
+        [requestWorkflowRuntimeContexts],
+    );
+    const workflowEdgesBySource = useMemo(() => {
+        const map = new Map<string, typeof workflowEdges>();
+        workflowEdges.forEach(edge => {
+            map.set(edge.sourceNodeId, [...(map.get(edge.sourceNodeId) || []), edge]);
+        });
+        return map;
+    }, [workflowEdges]);
+    const runtimeNodeToWorkflowNode = useCallback((node?: ProjectWorkflowRuntimeContext['nodes'][number] | null): WorkflowNode | null => node ? ({
+        id: node.templateNodeId || node.id,
+        templateId: node.templateNodeId || node.templateVersionId || '',
+        type: node.type,
+        label: node.label,
+        config: node.config,
+        positionX: node.positionX,
+        positionY: node.positionY,
+    }) : null, []);
+    const getRequestWorkflowSubject = useCallback(
+        (request: MaterialRequest) => requestWorkflowSubjects[request.id],
+        [requestWorkflowSubjects],
+    );
+    const getWorkflowNextNode = useCallback((subject?: ProjectWorkflowSubject) => {
+        if (!subject) return null;
+        const runtime = requestWorkflowRuntimeContexts[subject.id];
+        if (runtime && subject.currentInstanceNodeId) {
+            const nextEdge = runtime.edges
+                .filter(edge => edge.sourceInstanceNodeId === subject.currentInstanceNodeId)
+                .sort((a, b) => a.sortOrder - b.sortOrder)[0];
+            return runtimeNodeToWorkflowNode(runtime.nodes.find(node => node.id === nextEdge?.targetInstanceNodeId));
+        }
+        if (!subject.currentNodeId) return null;
+        const nextEdge = (workflowEdgesBySource.get(subject.currentNodeId) || [])[0];
+        return nextEdge ? workflowNodeById.get(nextEdge.targetNodeId) || null : null;
+    }, [requestWorkflowRuntimeContexts, runtimeNodeToWorkflowNode, workflowEdgesBySource, workflowNodeById]);
+    const getWorkflowReturnTargetNode = useCallback((subject?: ProjectWorkflowSubject) => {
+        if (!subject) return null;
+        const runtime = requestWorkflowRuntimeContexts[subject.id];
+        const runtimeTargetId = subject.returnToInstanceNodeId || subject.currentInstanceNodeId;
+        if (runtime && runtimeTargetId) {
+            return runtimeNodeToWorkflowNode(runtime.nodes.find(node => node.id === runtimeTargetId));
+        }
+        const targetNodeId = subject.returnToNodeId || subject.currentNodeId;
+        return targetNodeId ? workflowNodeById.get(targetNodeId) || subject.currentNode || null : subject.currentNode || null;
+    }, [requestWorkflowRuntimeContexts, runtimeNodeToWorkflowNode, workflowNodeById]);
+    const getWorkflowNodePermissionCodes = useCallback((nodeId?: string | null): string[] => {
+        if (!nodeId) return ['approve'];
+        const runtimeNode = Object.values(requestWorkflowRuntimeContexts)
+            .flatMap(context => context.nodes)
+            .find(node => node.id === nodeId || node.templateNodeId === nodeId);
+        const node = runtimeNode ? runtimeNodeToWorkflowNode(runtimeNode) : workflowNodeById.get(nodeId);
+        const codes = node?.config?.eligiblePermissionCodes?.filter(Boolean);
+        return codes && codes.length > 0 ? codes : ['approve'];
+    }, [requestWorkflowRuntimeContexts, runtimeNodeToWorkflowNode, workflowNodeById]);
+    const getWorkflowAssigneeUserIds = useCallback((request: MaterialRequest) => {
+        const subject = getRequestWorkflowSubject(request);
+        if (subject?.currentAssigneeUserIds?.length) return subject.currentAssigneeUserIds;
+        if (subject?.currentAssigneeUserId) return [subject.currentAssigneeUserId];
+        return request.submittedToUserId ? [request.submittedToUserId] : [];
+    }, [getRequestWorkflowSubject]);
+    const isWorkflowTemplateManager = useCallback((request: MaterialRequest) => {
+        const subject = getRequestWorkflowSubject(request);
+        if (subject?.workflowInstanceId) {
+            return Boolean(subject.participants?.some(participant =>
+                participant.isActive
+                && participant.userId === user.id
+                && participant.role === 'ADMIN'
+            ));
+        }
+        const templateId = request.workflowTemplateId || subject?.workflowInstance?.templateId || null;
+        if (!templateId) return false;
+        return Boolean(workflowTemplates.find(template => template.id === templateId)?.managers?.includes(user.id));
+    }, [getRequestWorkflowSubject, user.id, workflowTemplates]);
 
     // Request Modal state
     const [isReqModalOpen, setReqModalOpen] = useState(false);
@@ -350,6 +495,17 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         () => selectedRequest ? requests.find(request => request.id === selectedRequest.id) || selectedRequest : undefined,
         [requests, selectedRequest],
     );
+
+    useEffect(() => {
+        const requestId = new URLSearchParams(location.search).get('requestId');
+        if (!requestId || !projectRequestsLoaded || openedDeepLinkRequestRef.current === requestId) return;
+        const target = requests.find(request => request.id === requestId);
+        if (!target) return;
+        openedDeepLinkRequestRef.current = requestId;
+        setActiveSubTab('request');
+        setSelectedRequest(target);
+        setReqModalOpen(true);
+    }, [location.search, projectRequestsLoaded, requests]);
 
     const requestFulfillmentLineSummaries = useMemo(() => {
         const map: Record<string, Map<string, MaterialRequestFulfillmentSummary['lineSummaries'][number]>> = {};
@@ -481,13 +637,28 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [bCat, setBCat] = useState('Vật liệu xây dựng');
     const [bName, setBName] = useState('');
     const [bUnit, setBUnit] = useState('');
-    const [bBudgetQty, setBBudgetQty] = useState('');
     const [bPrice, setBPrice] = useState('');
-    const [bThreshold, setBThreshold] = useState('5');
+    const [bThreshold, setBThreshold] = useState('0,5');
     const [bNotes, setBNotes] = useState('');
     const [bInventoryItemId, setBInventoryItemId] = useState('');
     const [bMaterialCode, setBMaterialCode] = useState('');
     const [bWorkBoqItemId, setBWorkBoqItemId] = useState('');
+    const selectedWorkBoqItem = bWorkBoqItemId ? workBoqItemById.get(bWorkBoqItemId) : undefined;
+    const selectedWorkPlannedQty = Number(selectedWorkBoqItem?.plannedQty || 0);
+    const thresholdValue = importNumber(bThreshold);
+    const hasValidThreshold = Number.isFinite(thresholdValue) && thresholdValue > 0;
+    const bBudgetQty = selectedWorkBoqItem && hasValidThreshold
+        ? calculateMaterialBudgetQty(selectedWorkPlannedQty, thresholdValue)
+        : 0;
+    const canSaveBoqItem = Boolean(
+        bName
+        && bUnit
+        && bPrice !== ''
+        && selectedWorkBoqItem
+        && selectedWorkPlannedQty > 0
+        && hasValidThreshold
+        && bBudgetQty > 0
+    );
 
     const ensureCanManage = (allowed: boolean, scopeLabel: string, action: string) => {
         if (allowed) return true;
@@ -502,9 +673,23 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         ]);
     };
 
-    const canActOnProjectRequest = (request: MaterialRequest) =>
+    const canManageProjectWorkflow = (request: MaterialRequest) =>
         user.role === Role.ADMIN ||
-        (canApproveProjectRequest && request.submittedToUserId === user.id);
+        isModuleAdmin('WF') ||
+        isWorkflowTemplateManager(request);
+
+    const canActOnProjectRequest = (request: MaterialRequest) => {
+        const dynamicSubject = getRequestWorkflowSubject(request);
+        if (dynamicSubject?.workflowInstanceId) {
+            return dynamicSubject.status === 'RUNNING'
+                && getWorkflowAssigneeUserIds(request).includes(user.id);
+        }
+        return canManageProjectWorkflow(request)
+            || (canApproveProjectRequest && getWorkflowAssigneeUserIds(request).includes(user.id));
+    };
+
+    const canReassignProjectWorkflow = (request: MaterialRequest) =>
+        canActOnProjectRequest(request) || canManageProjectWorkflow(request);
 
     const hasOverBudgetLines = (request: MaterialRequest) =>
         (request.items || []).some(line => Number((line as any).overBudgetQtySnapshot || 0) > 0);
@@ -516,7 +701,19 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         toast.warning('Cần duyệt vượt BOQ', 'Phiếu có vật tư vượt KL dự toán. Chỉ admin hoặc thủ kho tổng được duyệt qua bước tạo đợt cấp.');
     };
 
-    const canMoveMaterialRequest = (request: MaterialRequest, toStage: MaterialRequestKanbanStage, fromStage: MaterialRequestKanbanStage) => {
+    const canMoveMaterialRequest = (request: MaterialRequest, toStage: MaterialRequestKanbanLaneId, fromStage: MaterialRequestKanbanLaneId) => {
+        const dynamicSubject = getRequestWorkflowSubject(request);
+        if (toStage.startsWith('workflow:')) {
+            if (fromStage === 'draft') {
+                return Boolean(workflowConfiguration?.valid)
+                    && canCreateMaterialRequest
+                    && (request.requesterId === user.id || user.role === Role.ADMIN);
+            }
+            return dynamicSubject?.status === 'RUNNING' && canActOnProjectRequest(request);
+        }
+        if (toStage === 'batch_planning' && dynamicSubject?.status === 'RUNNING') {
+            return getWorkflowNextNode(dynamicSubject)?.type === WorkflowNodeType.END && canActOnProjectRequest(request);
+        }
         if (toStage === 'closed') {
             return ['site_manager_review', 'material_department_review'].includes(fromStage) && canActOnProjectRequest(request);
         }
@@ -535,7 +732,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     user.role === Role.ADMIN
                     || isGlobalWarehouseKeeper(user)
                     || isWarehouseKeeperFor(user, request.sourceWarehouseId)
-                    || canActOnProjectRequest(request)
+                    || canManageProjectWorkflow(request)
                 );
         }
         return false;
@@ -583,7 +780,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     sourceType: 'material_request',
                     sourceId: updated.id,
                     constructionSiteId: updated.constructionSiteId || undefined,
-                    link: `/da?projectId=${updated.projectId || ''}&siteId=${updated.constructionSiteId || ''}&tab=material&materialTab=request`,
+                    link: `/da?projectId=${updated.projectId || ''}&siteId=${updated.constructionSiteId || ''}&tab=material&materialTab=request&requestId=${updated.id}`,
                     metadata: { requestId: updated.id, workflowStep: updated.workflowStep },
                 });
             }
@@ -598,20 +795,174 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         }
     };
 
-    const handleMoveMaterialRequest = (request: MaterialRequest, toStage: MaterialRequestKanbanStage, fromStage: MaterialRequestKanbanStage) => {
+    const performDynamicRequestTransition = async (params: {
+        request: MaterialRequest;
+        action: 'SUBMITTED' | 'APPROVED' | 'RETURNED' | 'REJECTED' | 'RESUBMITTED' | 'REASSIGNED' | 'ROLLED_BACK';
+        target?: ProjectSubmissionTarget | null;
+        note?: string | null;
+        templateId?: string | null;
+        metadata?: Record<string, any>;
+    }) => {
+        setTransitioningRequestId(params.request.id);
+        try {
+            let subject: ProjectWorkflowSubject | null = null;
+            const targetUserIds = params.target?.userIds?.length
+                ? params.target.userIds
+                : params.target?.userId
+                    ? [params.target.userId]
+                    : [];
+            if (params.action === 'SUBMITTED') {
+                if (targetUserIds.length === 0) throw new Error('Chưa chọn người xử lý bước đầu.');
+                subject = await projectWorkflowService.startMaterialRequestWorkflowV2({
+                    requestId: params.request.id,
+                    templateId: params.templateId || params.request.workflowTemplateId,
+                    firstAssigneeUserIds: targetUserIds,
+                    comment: params.note || params.target.note,
+                });
+            } else if (params.action === 'RETURNED') {
+                subject = await projectWorkflowService.returnMaterialRequestWorkflow({
+                    requestId: params.request.id,
+                    comment: params.note || '',
+                });
+            } else if (params.action === 'REJECTED') {
+                subject = await projectWorkflowService.rejectMaterialRequestWorkflow({
+                    requestId: params.request.id,
+                    comment: params.note || '',
+                });
+            } else if (params.action === 'RESUBMITTED') {
+                subject = await projectWorkflowService.resubmitMaterialRequestWorkflowV2({
+                    requestId: params.request.id,
+                    assigneeUserIds: targetUserIds.length > 0 ? targetUserIds : null,
+                    comment: params.note || params.target?.note || '',
+                });
+            } else if (params.action === 'REASSIGNED') {
+                if (targetUserIds.length === 0) throw new Error('Chưa chọn người xử lý mới.');
+                subject = await projectWorkflowService.reassignMaterialRequestWorkflowV2({
+                    requestId: params.request.id,
+                    newAssigneeUserIds: targetUserIds,
+                    comment: params.note || params.target.note || '',
+                });
+            } else if (params.action === 'ROLLED_BACK') {
+                subject = await projectWorkflowService.rollbackCompletedMaterialRequestWorkflow({
+                    requestId: params.request.id,
+                    comment: params.note || '',
+                });
+            } else {
+                subject = await projectWorkflowService.advanceMaterialRequestWorkflowV2({
+                    requestId: params.request.id,
+                    nextAssigneeUserIds: targetUserIds,
+                    comment: params.note || params.target?.note || '',
+                });
+            }
+
+            if (subject) {
+                setRequestWorkflowSubjects(prev => ({ ...prev, [params.request.id]: subject! }));
+                const assignments = await projectWorkflowService.listAssignmentsBySubjectIds([subject.id]);
+                setRequestWorkflowAssignments(prev => ({ ...prev, ...assignments }));
+                const runtimeContexts = await projectWorkflowService.listRuntimeContextsBySubjects([subject]);
+                setRequestWorkflowRuntimeContexts(prev => ({ ...prev, ...runtimeContexts }));
+            }
+            const updated = await materialRequestService.getById(params.request.id);
+            if (updated) upsertProjectRequest(updated);
+            const events = await materialRequestService.listEventsByRequestIds([params.request.id]);
+            setRequestEventsByRequest(prev => ({ ...prev, ...events }));
+
+            if (targetUserIds.length > 0 && updated) {
+                targetUserIds.forEach(targetUserId => {
+                    const targetName = userById.get(targetUserId)?.name || targetUserId;
+                    void projectSubmissionService.notifyTarget({
+                        target: {
+                            userId: targetUserId,
+                            name: targetName,
+                            permissionCode: params.target?.permissionCode,
+                            note: params.target?.note,
+                        },
+                        actorId: user.id,
+                        category: 'material',
+                        title: 'Phiếu vật tư cần xử lý',
+                        message: `Phiếu ${updated.code} đang chờ bạn xử lý.`,
+                        sourceType: 'material_request',
+                        sourceId: updated.id,
+                        constructionSiteId: updated.constructionSiteId || undefined,
+                        link: `/da?projectId=${updated.projectId || ''}&siteId=${updated.constructionSiteId || ''}&tab=material&materialTab=request&requestId=${updated.id}`,
+                        metadata: { requestId: updated.id, workflowSubjectId: subject?.id, assigneeUserIds: targetUserIds, ...params.metadata },
+                    });
+                });
+            }
+
+            await refreshMaterialRequestWorkflow();
+            toast.success('Đã cập nhật luồng vật tư', `Phiếu ${(updated || params.request).code} đã chuyển bước.`);
+        } catch (error: any) {
+            logApiError('materialTab.dynamicRequestTransition', error);
+            toast.error('Không thể chuyển bước', getApiErrorMessage(error, 'Không cập nhật được workflow động của phiếu vật tư.'));
+            throw error;
+        } finally {
+            setTransitioningRequestId(null);
+        }
+    };
+
+    const handleMoveMaterialRequest = (request: MaterialRequest, toStage: MaterialRequestKanbanLaneId, fromStage: MaterialRequestKanbanLaneId) => {
         if (!canMoveMaterialRequest(request, toStage, fromStage)) {
             toast.warning('Không thể chuyển bước', 'Bạn không có quyền hoặc bước này không cho phép kéo thả.');
             return;
         }
-        if (toStage === 'site_manager_review') {
+        const dynamicSubject = getRequestWorkflowSubject(request);
+        if (fromStage === 'draft' && toStage.startsWith('workflow:')) {
+            if (!workflowConfiguration?.valid) {
+                toast.warning('Chưa cấu hình workflow', workflowConfiguration?.errors?.[0] || 'Cần cấu hình workflow đề xuất vật tư trước khi gửi.');
+                return;
+            }
+            setStartWorkflowRequest(request);
+            return;
+        }
+        if (dynamicSubject?.workflowInstanceId && dynamicSubject.status === 'RUNNING' && toStage.startsWith('workflow:')) {
+            const nextNode = getWorkflowNextNode(dynamicSubject);
+            if (!nextNode || toStage !== `workflow:${nextNode.id}`) {
+                toast.warning('Không thể chuyển bước', 'Chỉ được chuyển sang đúng bước workflow kế tiếp.');
+                return;
+            }
+            setWorkflowActionTransition({ request, subject: dynamicSubject, nextNode });
+            return;
+        }
+        if (dynamicSubject?.workflowInstanceId && dynamicSubject.status === 'RUNNING' && ['site_manager_review', 'material_department_review', 'batch_planning'].includes(toStage)) {
+            const nextNode = getWorkflowNextNode(dynamicSubject);
+            if (!nextNode) {
+                toast.warning('Không thể chuyển bước', 'Không tìm thấy bước kế tiếp trong mẫu workflow.');
+                return;
+            }
+            if (nextNode.type === WorkflowNodeType.END) {
+                setWorkflowActionTransition({ request, subject: dynamicSubject, nextNode });
+                return;
+            }
             setSubmissionTransition({
                 request,
-                toStep: 'site_manager_review',
+                toStep: 'material_department_review',
                 status: RequestStatus.PENDING,
-                action: 'SUBMITTED',
-                title: 'Gửi quản lý công trường duyệt',
-                subtitle: 'Phiếu sẽ chuyển sang Chờ quản lý CT duyệt.',
+                action: 'APPROVED',
+                title: `Duyệt, chuyển bước "${nextNode.label}"`,
+                subtitle: `Phiếu sẽ chuyển sang bước ${nextNode.label}. Chọn người chịu trách nhiệm bước này.`,
+                recipientHint: `Chọn người xử lý bước "${nextNode.label}".`,
+                recipientPermissionCodes: getWorkflowNodePermissionCodes(nextNode.id),
+                dynamicWorkflow: true,
+                nextNodeId: nextNode.id,
+                nextNodeLabel: nextNode.label,
+                source: 'kanban_drag_dynamic',
             });
+            return;
+        }
+        if (toStage === 'site_manager_review') {
+            if (request.everSubmitted && !dynamicSubject) {
+                setSubmissionTransition({
+                    request,
+                    toStep: 'site_manager_review',
+                    status: RequestStatus.PENDING,
+                    action: 'SUBMITTED',
+                    title: 'Gửi quản lý công trường duyệt',
+                    subtitle: 'Phiếu legacy tiếp tục sử dụng luồng duyệt cũ.',
+                });
+            } else {
+                toast.warning('Cần workflow động', 'Phiếu mới phải gửi vào bước workflow đã cấu hình.');
+            }
             return;
         }
         if (toStage === 'material_department_review') {
@@ -667,6 +1018,39 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             toast.warning('Không thể xử lý phiếu', 'Bạn không phải người đang được giao xử lý phiếu này.');
             return;
         }
+        const dynamicSubject = getRequestWorkflowSubject(request);
+        if (dynamicSubject?.workflowInstanceId && dynamicSubject.status === 'RUNNING') {
+            const nextNode = getWorkflowNextNode(dynamicSubject);
+            if (!nextNode) {
+                toast.warning('Không thể xử lý phiếu', 'Không tìm thấy bước kế tiếp trong mẫu workflow.');
+                return;
+            }
+            if (nextNode.type === WorkflowNodeType.END) {
+                void performDynamicRequestTransition({
+                    request,
+                    action: 'APPROVED',
+                    note: 'Hoàn tất phê duyệt workflow động',
+                    metadata: { source: 'request_modal', nextNodeId: nextNode.id },
+                }).then(closeWorkflowRequestModal);
+                return;
+            }
+            closeWorkflowRequestModal();
+            setSubmissionTransition({
+                request,
+                toStep: 'material_department_review',
+                status: RequestStatus.PENDING,
+                action: 'APPROVED',
+                title: `Duyệt, chuyển bước "${nextNode.label}"`,
+                subtitle: `Phiếu sẽ chuyển sang bước ${nextNode.label}. Chọn người chịu trách nhiệm bước này.`,
+                recipientHint: `Chọn người xử lý bước "${nextNode.label}".`,
+                recipientPermissionCodes: getWorkflowNodePermissionCodes(nextNode.id),
+                dynamicWorkflow: true,
+                nextNodeId: nextNode.id,
+                nextNodeLabel: nextNode.label,
+                source: 'request_modal_dynamic',
+            });
+            return;
+        }
         if (currentStep === 'site_manager_review') {
             closeWorkflowRequestModal();
             setSubmissionTransition({
@@ -712,8 +1096,160 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         setTerminalNote('');
     };
 
+    const handleProjectWorkflowActionFromModal = async (context: ProjectWorkflowActionContext) => {
+        const request = requests.find(item => item.id === context.subject.subjectId) || selectedRequestLive;
+        if (!request) {
+            toast.warning('Không thể xử lý phiếu', 'Không tìm thấy phiếu vật tư tương ứng workflow.');
+            return;
+        }
+
+        if (context.action === 'approve' || context.action === 'return' || context.action === 'reject') {
+            if (!canActOnProjectRequest(request)) {
+                toast.warning('Không thể xử lý phiếu', 'Bạn không phải người đang được giao xử lý phiếu này.');
+                return;
+            }
+        }
+        if (context.action === 'reassign' && !canReassignProjectWorkflow(request)) {
+            toast.warning('Không thể đổi người xử lý', 'Bạn không phải người đang xử lý hoặc quản trị workflow này.');
+            return;
+        }
+        if (context.action === 'rollback' && !canManageProjectWorkflow(request)) {
+            toast.warning('Không thể rollback', 'Chỉ quản trị workflow được rollback phiếu đã hoàn thành.');
+            return;
+        }
+
+        if (context.action === 'approve') {
+            const nextNode = context.nextNode || getWorkflowNextNode(context.subject);
+            if (!nextNode) {
+                toast.warning('Không thể xử lý phiếu', 'Không tìm thấy bước kế tiếp trong mẫu workflow.');
+                return;
+            }
+            if (nextNode.type === WorkflowNodeType.END && !canApproveOverBudgetRequest(request)) {
+                warnOverBudgetApprovalRequired();
+                return;
+            }
+            const targetUserIds = context.assigneeUserIds || (context.assigneeUserId ? [context.assigneeUserId] : []);
+            const target = targetUserIds.length > 0
+                ? {
+                    userId: targetUserIds[0],
+                    userIds: targetUserIds,
+                    name: userById.get(targetUserIds[0])?.name || targetUserIds[0],
+                    names: targetUserIds.map(id => userById.get(id)?.name || id),
+                    permissionCode: nextNode.type === WorkflowNodeType.END
+                        ? 'approve'
+                        : getWorkflowNodePermissionCodes(nextNode.id)[0] || 'approve',
+                    note: context.comment,
+                }
+                : null;
+            await performDynamicRequestTransition({
+                request,
+                action: 'APPROVED',
+                target,
+                note: context.comment,
+                metadata: { source: 'request_modal_panel', nextNodeId: nextNode.id },
+            });
+            closeWorkflowRequestModal();
+            return;
+        }
+
+        if (context.action === 'return') {
+            await performDynamicRequestTransition({
+                request,
+                action: 'RETURNED',
+                note: context.comment,
+                metadata: { source: 'request_modal_panel' },
+            });
+            closeWorkflowRequestModal();
+            return;
+        }
+
+        if (context.action === 'reject') {
+            await performDynamicRequestTransition({
+                request,
+                action: 'REJECTED',
+                note: context.comment,
+                metadata: { source: 'request_modal_panel' },
+            });
+            closeWorkflowRequestModal();
+            return;
+        }
+
+        if (context.action === 'resubmit') {
+            const targetNode = context.nextNode || getWorkflowReturnTargetNode(context.subject);
+            const assigneeUserIds = context.assigneeUserIds?.length
+                ? context.assigneeUserIds
+                : context.subject.returnToAssigneeUserIds?.length
+                    ? context.subject.returnToAssigneeUserIds
+                    : context.subject.returnToAssigneeUserId
+                        ? [context.subject.returnToAssigneeUserId]
+                        : [];
+            const target = {
+                userId: assigneeUserIds[0] || '',
+                userIds: assigneeUserIds,
+                name: userById.get(assigneeUserIds[0] || '')?.name
+                    || assigneeUserIds[0]
+                    || '',
+                names: assigneeUserIds.map(id => userById.get(id)?.name || id),
+                permissionCode: getWorkflowNodePermissionCodes(targetNode?.id)[0] || 'approve',
+                note: context.comment,
+            };
+            await performDynamicRequestTransition({
+                request,
+                action: 'RESUBMITTED',
+                target,
+                note: context.comment,
+                metadata: { source: 'request_modal_panel', nextNodeId: targetNode?.id },
+            });
+            closeWorkflowRequestModal();
+            return;
+        }
+
+        if (context.action === 'rollback') {
+            await performDynamicRequestTransition({
+                request,
+                action: 'ROLLED_BACK',
+                note: context.comment,
+                metadata: { source: 'request_modal_panel' },
+            });
+            closeWorkflowRequestModal();
+            return;
+        }
+
+        if (context.action === 'reassign') {
+            const assigneeUserIds = context.assigneeUserIds || (context.assigneeUserId ? [context.assigneeUserId] : []);
+            const target = {
+                userId: assigneeUserIds[0] || '',
+                userIds: assigneeUserIds,
+                name: userById.get(assigneeUserIds[0] || '')?.name || assigneeUserIds[0] || '',
+                names: assigneeUserIds.map(id => userById.get(id)?.name || id),
+                permissionCode: getWorkflowNodePermissionCodes(context.subject.currentNodeId)[0] || 'approve',
+                note: context.comment,
+            };
+            await performDynamicRequestTransition({
+                request,
+                action: 'REASSIGNED',
+                target,
+                note: context.comment,
+                metadata: { source: 'request_modal_panel', nodeId: context.subject.currentNodeId },
+            });
+            closeWorkflowRequestModal();
+        }
+    };
+
     const handleSubmitTransitionTarget = async (target: ProjectSubmissionTarget) => {
         if (!submissionTransition) return;
+        if (submissionTransition.dynamicWorkflow) {
+            await performDynamicRequestTransition({
+                request: submissionTransition.request,
+                action: submissionTransition.action === 'SUBMITTED' ? 'SUBMITTED' : 'APPROVED',
+                target,
+                note: target.note,
+                templateId: submissionTransition.workflowTemplateId,
+                metadata: { source: submissionTransition.source || 'dynamic_workflow', nextNodeId: submissionTransition.nextNodeId },
+            });
+            setSubmissionTransition(null);
+            return;
+        }
         await performRequestTransition({
             request: submissionTransition.request,
             toStep: submissionTransition.toStep,
@@ -735,6 +1271,18 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         }
         const request = terminalTransition.request;
         const isReturn = terminalAction === 'return';
+        const dynamicSubject = getRequestWorkflowSubject(request);
+        if (dynamicSubject?.workflowInstanceId && ['RUNNING', 'RETURNED'].includes(dynamicSubject.status)) {
+            await performDynamicRequestTransition({
+                request,
+                action: isReturn ? 'RETURNED' : 'REJECTED',
+                note,
+                metadata: { fromStage: terminalTransition.fromStage, source: 'dynamic_workflow_terminal' },
+            });
+            setTerminalTransition(null);
+            setTerminalNote('');
+            return;
+        }
         await performRequestTransition({
             request,
             toStep: isReturn ? 'returned_to_creator' : 'rejected',
@@ -775,8 +1323,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     const resetBoqForm = () => {
         setEditingBoq(null); setShowBoqForm(false);
-        setBCat('Vật liệu xây dựng'); setBName(''); setBUnit(''); setBBudgetQty('');
-        setBPrice(''); setBThreshold('5'); setBNotes('');
+        setBCat('Vật liệu xây dựng'); setBName(''); setBUnit('');
+        setBPrice(''); setBThreshold('0,5'); setBNotes('');
         setBInventoryItemId(''); setBMaterialCode(''); setBWorkBoqItemId(''); setAcQuery('');
     };
 
@@ -784,8 +1332,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         if (!ensureCanManage(canManageBoq, 'Vật tư: BOQ', 'sửa BOQ vật tư')) return;
         setEditingBoq(item);
         setBCat(item.category); setBName(item.itemName); setBUnit(item.unit);
-        setBBudgetQty(String(item.budgetQty)); setBPrice(String(item.budgetUnitPrice));
-        setBThreshold(String(item.wasteThreshold));
+        setBPrice(String(item.budgetUnitPrice));
+        setBThreshold(formatQuantity(item.wasteThreshold));
         setBNotes(item.notes || '');
         setBInventoryItemId(item.inventoryItemId || '');
         setBMaterialCode(item.materialCode || '');
@@ -797,6 +1345,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     // Compute actualQty from successful site receipts; legacy completed requests fall back to approvedQty.
     const computedBoqItems = useMemo(() => {
         return boqItems.map(b => {
+            const linkedWorkItem = b.workBoqItemId ? workBoqItemById.get(b.workBoqItemId) : undefined;
+            const derivedBudgetQty = linkedWorkItem && Number(linkedWorkItem.plannedQty || 0) > 0 && Number(b.wasteThreshold || 0) > 0
+                ? calculateMaterialBudgetQty(Number(linkedWorkItem.plannedQty || 0), Number(b.wasteThreshold || 0))
+                : Number(b.budgetQty || 0);
+            const budgetUnitPrice = Number(b.budgetUnitPrice || 0);
+            const budgetTotal = derivedBudgetQty * budgetUnitPrice;
             let totalReceived = 0;
             let totalRequested = 0;
             requests.filter(r => r.status !== RequestStatus.REJECTED).forEach(r => {
@@ -820,24 +1374,26 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 });
             });
             const actualQty = totalReceived;
-            const wasteQty = actualQty - b.budgetQty;
-            const wastePercent = b.budgetQty > 0 ? Math.round((wasteQty / b.budgetQty) * 1000) / 10 : 0;
-            const budgetOverPercent = b.budgetQty > 0 ? Math.round(((totalRequested - b.budgetQty) / b.budgetQty) * 1000) / 10 : 0;
+            const wasteQty = actualQty - derivedBudgetQty;
+            const wastePercent = derivedBudgetQty > 0 ? Math.round((wasteQty / derivedBudgetQty) * 1000) / 10 : 0;
+            const budgetOverPercent = derivedBudgetQty > 0 ? Math.round(((totalRequested - derivedBudgetQty) / derivedBudgetQty) * 1000) / 10 : 0;
             return {
                 ...b,
+                budgetQty: derivedBudgetQty,
+                budgetTotal,
                 actualQty,
-                actualTotal: actualQty * b.budgetUnitPrice,
+                actualTotal: actualQty * budgetUnitPrice,
                 wasteQty,
                 wastePercent,
-                wasteValue: wasteQty * b.budgetUnitPrice,
+                wasteValue: wasteQty * budgetUnitPrice,
                 cumulativeRequested: totalRequested,
                 cumulativeExported: actualQty,
                 budgetOverPercent: Math.max(0, budgetOverPercent),
                 stockBalance: (b.cumulativeImported || 0) - actualQty,
-                autoAlert: budgetOverPercent > 0 ? 'Vượt ngân sách' : wastePercent > b.wasteThreshold ? 'Vượt định mức hao hụt' : undefined,
+                autoAlert: budgetOverPercent > 0 ? 'Vượt ngân sách' : wasteQty > 0 ? 'Vượt định mức hao hụt' : undefined,
             };
         });
-    }, [boqItems, requestFulfillmentBatchCounts, requestFulfillmentLineSummaries, requests]);
+    }, [boqItems, requestFulfillmentBatchCounts, requestFulfillmentLineSummaries, requests, workBoqItemById]);
 
     const boqItemsByWork = useMemo(() => {
         const map = new Map<string, MaterialBudgetItem[]>();
@@ -930,8 +1486,20 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     const handleSaveBoq = async () => {
         if (!ensureCanManage(canManageBoq, 'Vật tư: BOQ', 'lưu BOQ vật tư')) return;
-        if (!bName || !bUnit || !bBudgetQty || !bPrice) return;
-        const budgetQty = Number(bBudgetQty);
+        if (!bWorkBoqItemId || !selectedWorkBoqItem) {
+            toast.warning('Chưa chọn đầu mục BOQ', 'Vật tư cần gắn với đầu mục BOQ triển khai để tự tính KL dự toán.');
+            return;
+        }
+        if (selectedWorkPlannedQty <= 0) {
+            toast.warning('Đầu mục chưa có KL dự toán', 'Vui lòng cập nhật KL dự toán của đầu mục trước khi thêm vật tư.');
+            return;
+        }
+        if (!hasValidThreshold) {
+            toast.warning('Ngưỡng hao hụt chưa hợp lệ', 'Ngưỡng hao hụt phải là số lớn hơn 0.');
+            return;
+        }
+        if (!bName || !bUnit || bPrice === '' || bBudgetQty <= 0) return;
+        const budgetQty = bBudgetQty;
         const budgetUnitPrice = Number(bPrice);
 
         const item: MaterialBudgetItem = {
@@ -945,7 +1513,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             budgetQty, budgetUnitPrice,
             budgetTotal: budgetQty * budgetUnitPrice,
             actualQty: 0,
-            wasteThreshold: Number(bThreshold),
+            wasteThreshold: thresholdValue,
             sortOrder: editingBoq?.sortOrder ?? boqItems.filter(b => (b.workBoqItemId || '') === (bWorkBoqItemId || '')).length,
             notes: bNotes || undefined,
         };
@@ -994,8 +1562,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 'Nhóm': item.category,
                 'ĐVT': item.unit,
                 'KL dự toán': item.budgetQty,
+                'Ngưỡng hao hụt': item.wasteThreshold,
                 'Đơn giá': item.budgetUnitPrice,
-                'Ngưỡng hao hụt (%)': item.wasteThreshold,
                 'Ghi chú': item.notes || '',
             };
             if (includeActualColumns) {
@@ -1012,7 +1580,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             { 'Nội dung': 'Sheet Dau_muc', 'Ghi chú': 'Mỗi dòng là một đầu mục/WBS. Mã WBS là khóa để cập nhật nếu import lại.' },
             { 'Nội dung': 'Sheet Vat_tu', 'Ghi chú': 'Nhập vật tư theo WBS đầu mục. Mã vật tư/SKU sẽ tự liên kết với danh mục kho nếu đã có.' },
             { 'Nội dung': 'Cột bắt buộc đầu mục', 'Ghi chú': 'Mã WBS, Tên đầu mục.' },
-            { 'Nội dung': 'Cột bắt buộc vật tư', 'Ghi chú': 'WBS đầu mục, Tên vật tư, ĐVT, KL dự toán. Có thể chỉ nhập SKU nếu SKU đã tồn tại trong kho.' },
+            { 'Nội dung': 'Cột bắt buộc vật tư', 'Ghi chú': 'WBS đầu mục, Tên vật tư, ĐVT, Ngưỡng hao hụt. Có thể chỉ nhập SKU nếu SKU đã tồn tại trong kho.' },
+            { 'Nội dung': 'KL dự toán vật tư', 'Ghi chú': 'Hệ thống tự tính bằng KL dự toán đầu mục × Ngưỡng hao hụt. Ví dụ 8,914 × 0,5 = 4,457. Giá trị KL dự toán nhập tay trong sheet Vat_tu sẽ không được sử dụng.' },
             { 'Nội dung': 'Import', 'Ghi chú': 'Hệ thống hiện preview trước: dòng hợp lệ được ghi, dòng lỗi sẽ báo lý do để sửa file.' },
         ];
         const helpSheet = XLSX.utils.json_to_sheet(helpRows);
@@ -1035,7 +1604,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             ? [...MATERIAL_BOQ_HEADERS, 'KL thực tế công trường', 'Giá trị thực tế công trường', 'Chênh KL thực tế - dự toán']
             : MATERIAL_BOQ_HEADERS;
         const materialSheet = makeSheet(materialHeaders, materialRows);
-        materialSheet['!cols'] = [14, 18, 34, 20, 10, 14, 14, 16, 36, 18, 24, 24].map(wch => ({ wch }));
+        materialSheet['!cols'] = [14, 18, 34, 20, 10, 14, 16, 14, 36, 18, 24, 24].map(wch => ({ wch }));
         XLSX.utils.book_append_sheet(wb, materialSheet, MATERIAL_BOQ_SHEET_NAME);
         return wb;
     };
@@ -1049,7 +1618,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             'Mã cha': '1',
             'Tên đầu mục': 'Đào đất móng',
             'ĐVT': 'm3',
-            'KL dự toán': 0,
+            'KL dự toán': 100,
             'Đơn giá': 0,
             'Ghi chú': '',
         }];
@@ -1059,9 +1628,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             'Tên vật tư': 'Xi măng PCB40',
             'Nhóm': 'Vật liệu xây dựng',
             'ĐVT': 'bao',
-            'KL dự toán': 0,
+            'KL dự toán': 50,
+            'Ngưỡng hao hụt': '0,5',
             'Đơn giá': 0,
-            'Ngưỡng hao hụt (%)': 5,
             'Ghi chú': '',
         }];
         const wb = buildWorkBoqWorkbook(XLSX, workRows, materialRows, false);
@@ -1194,20 +1763,24 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 const matchedInventory = materialCode ? inventoryItemBySku.get(normalizeKey(materialCode)) : undefined;
                 const itemName = importText(row, ['Tên vật tư', 'Tên hàng hóa', 'Tên hàng hoá']) || matchedInventory?.name || '';
                 const unit = importText(row, ['ĐVT', 'Đơn vị']) || matchedInventory?.unit || '';
+                const thresholdRaw = pickImportValue(row, ['Ngưỡng hao hụt (%)', 'Ngưỡng hao hụt', 'Định mức hao hụt']);
+                const wasteThreshold = importNumber(thresholdRaw);
                 const errors: string[] = [];
                 if (!workItem) errors.push(`Không tìm thấy đầu mục WBS "${workWbs}".`);
+                else if (Number(workItem.plannedQty || 0) <= 0) errors.push(`Đầu mục WBS "${workWbs}" chưa có KL dự toán lớn hơn 0.`);
                 if (!itemName) errors.push('Thiếu Tên vật tư.');
                 if (!unit) errors.push('Thiếu ĐVT.');
+                if (String(thresholdRaw ?? '').trim() === '') errors.push('Thiếu Ngưỡng hao hụt.');
+                else if (wasteThreshold <= 0) errors.push('Ngưỡng hao hụt phải lớn hơn 0.');
                 const matchKeys = [
                     materialCode,
                     matchedInventory?.sku,
                     `${itemName}|${unit}`,
                 ].filter(Boolean).map(key => `${workItem?.id || ''}|${normalizeKey(key as string)}`);
                 const existing = matchKeys.map(key => existingMaterials.get(key)).find(Boolean);
-                const budgetQty = importNumber(pickImportValue(row, ['KL dự toán', 'Khối lượng dự toán', 'Khối lượng']));
+                const budgetQty = workItem ? calculateMaterialBudgetQty(Number(workItem.plannedQty || 0), wasteThreshold) : 0;
                 const importedUnitPrice = importNumber(pickImportValue(row, ['Đơn giá', 'Đơn giá dự toán']));
                 const budgetUnitPrice = importedUnitPrice || existing?.budgetUnitPrice || matchedInventory?.priceIn || 0;
-                const wasteThreshold = importNumber(pickImportValue(row, ['Ngưỡng hao hụt (%)', 'Ngưỡng hao hụt', 'Định mức hao hụt'])) || existing?.wasteThreshold || 5;
                 const item: MaterialBudgetItem = {
                     id: existing?.id || crypto.randomUUID(),
                     projectId: effectiveId,
@@ -1269,7 +1842,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const stats = useMemo(() => {
         const totalBudget = computedBoqItems.reduce((s, b) => s + (b.budgetTotal || 0), 0);
         const totalActual = computedBoqItems.reduce((s, b) => s + (b.actualTotal || 0), 0);
-        const overWaste = computedBoqItems.filter(b => (b.wastePercent || 0) > b.wasteThreshold);
+        const overWaste = computedBoqItems.filter(b => (b.wasteQty || 0) > 0);
         const overBudget = computedBoqItems.filter(b => (b.budgetOverPercent || 0) > 0);
         const totalWasteValue = computedBoqItems.reduce((s, b) => s + Math.abs(b.wasteValue || 0), 0);
         const totalRequested = computedBoqItems.reduce((s, b) => s + (b.cumulativeRequested || 0) * (b.budgetUnitPrice || 0), 0);
@@ -1285,7 +1858,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             'Thực tế': b.actualQty,
             waste: b.wastePercent || 0,
             threshold: b.wasteThreshold,
-            isOver: (b.wastePercent || 0) > b.wasteThreshold,
+            isOver: (b.wasteQty || 0) > 0,
         }));
     }, [computedBoqItems]);
 
@@ -1403,7 +1976,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                     <th className="p-2.5 text-right">LK Xuất</th>
                                     <th className="p-2.5 text-right">Tồn kho</th>
                                     <th className="p-2.5 text-right">HH (%)</th>
-                                    <th className="p-2.5 text-right">Định mức</th>
+                                    <th className="p-2.5 text-right">Ngưỡng</th>
                                     <th className="p-2.5 text-right text-red-500">GT Hao hụt</th>
                                     <th className="p-2.5">Cảnh báo</th>
                                 </tr>
@@ -1411,23 +1984,23 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40 text-xs">
                                 {computedBoqItems.map(b => {
                                     const overBudget = (b.budgetOverPercent || 0) > 0;
-                                    const overWaste = (b.wastePercent || 0) > b.wasteThreshold;
+                                    const overWaste = (b.wasteQty || 0) > 0;
                                     const negStock = (b.stockBalance || 0) < 0;
                                     return (
                                         <tr key={b.id} className={`hover:bg-slate-50 ${overWaste ? 'bg-red-50/40' : overBudget ? 'bg-amber-50/40' : ''}`}>
                                             <td className="p-2.5 font-mono text-[10px] text-indigo-500 font-bold sticky left-0 bg-white dark:bg-slate-900 z-10">{b.materialCode || '—'}</td>
                                             <td className="p-2.5 font-bold text-slate-800 max-w-[140px] truncate">{b.itemName}</td>
                                             <td className="p-2.5 text-slate-400">{b.unit}</td>
-                                            <td className="p-2.5 text-right font-bold">{b.budgetQty.toLocaleString()}</td>
-                                            <td className="p-2.5 text-right font-bold">{(b.cumulativeRequested || 0).toLocaleString()}</td>
+                                            <td className="p-2.5 text-right font-bold">{formatQuantity(b.budgetQty)}</td>
+                                            <td className="p-2.5 text-right font-bold">{formatQuantity(b.cumulativeRequested || 0)}</td>
                                             <td className={`p-2.5 text-right font-black ${overBudget ? 'text-red-600' : 'text-emerald-600'}`}>
-                                                {(b.budgetOverPercent || 0) > 0 ? '+' : ''}{(b.budgetOverPercent || 0).toFixed(1)}%
+                                                {(b.budgetOverPercent || 0) > 0 ? '+' : ''}{formatPercent(b.budgetOverPercent || 0)}%
                                             </td>
-                                            <td className="p-2.5 text-right">{(b.cumulativeImported || 0).toLocaleString()}</td>
-                                            <td className="p-2.5 text-right">{(b.cumulativeExported || 0).toLocaleString()}</td>
-                                            <td className={`p-2.5 text-right font-bold ${negStock ? 'text-red-600' : 'text-emerald-600'}`}>{(b.stockBalance || 0).toLocaleString()}</td>
-                                            <td className={`p-2.5 text-right font-bold ${overWaste ? 'text-red-600' : 'text-slate-600'}`}>{(b.wastePercent || 0).toFixed(1)}%</td>
-                                            <td className="p-2.5 text-right text-slate-400">{b.wasteThreshold}%</td>
+                                            <td className="p-2.5 text-right">{formatQuantity(b.cumulativeImported || 0)}</td>
+                                            <td className="p-2.5 text-right">{formatQuantity(b.cumulativeExported || 0)}</td>
+                                            <td className={`p-2.5 text-right font-bold ${negStock ? 'text-red-600' : 'text-emerald-600'}`}>{formatQuantity(b.stockBalance || 0)}</td>
+                                            <td className={`p-2.5 text-right font-bold ${overWaste ? 'text-red-600' : 'text-slate-600'}`}>{formatPercent(b.wastePercent || 0)}%</td>
+                                            <td className="p-2.5 text-right text-slate-400">{formatQuantity(b.wasteThreshold)}</td>
                                             <td className={`p-2.5 text-right font-bold ${(b.wasteValue || 0) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmt(Math.abs(b.wasteValue || 0))}</td>
                                             <td className="p-2.5">
                                                 {b.autoAlert ? (
@@ -1467,7 +2040,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         <div className="p-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                             <div>
                                 <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><ListTree size={16} className="text-indigo-500" /> BOQ khối lượng triển khai theo tiến độ</h3>
-                                <p className="text-[10px] text-slate-400 mt-1">Đầu mục lấy từ tiến độ, vật tư dự toán nằm dưới từng đầu mục.</p>
+                                <p className="text-[10px] text-slate-400 mt-1">KL dự toán vật tư tự tính bằng KL dự toán đầu mục × Ngưỡng hao hụt.</p>
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 {canManageBoq && (
@@ -1507,12 +2080,13 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
-                                <table className="w-full text-xs min-w-[1500px]">
+                                <table className="w-full text-xs min-w-[1620px]">
                                     <thead className="bg-slate-50/80">
                                         <tr className="text-[10px] font-bold text-slate-400 uppercase">
                                             <th className="text-left px-4 py-3">Đầu mục / Vật tư</th>
                                             <th className="text-center px-4 py-3">ĐVT</th>
                                             <th className="text-right px-4 py-3">KL Dự toán</th>
+                                            <th className="text-right px-4 py-3">Ngưỡng hao hụt</th>
                                             <th className="text-right px-4 py-3">Đơn giá</th>
                                             <th className="text-right px-4 py-3">GT Triển khai</th>
                                             <th className="text-right px-4 py-3">KL Thực tế CT</th>
@@ -1542,13 +2116,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                             </div>
                                                         </td>
                                                         <td className="px-4 py-2.5 text-center text-slate-500">{item.unit || '—'}</td>
-                                                        <td className="px-4 py-2.5 text-right font-bold text-slate-700">{Number(item.plannedQty || 0).toLocaleString()}</td>
+                                                        <td className="px-4 py-2.5 text-right font-bold text-slate-700">{formatQuantity(Number(item.plannedQty || 0))}</td>
+                                                        <td className="px-4 py-2.5 text-right text-slate-300">—</td>
                                                         <td className="px-4 py-2.5 text-right text-slate-500">{fmt(Number(item.unitPrice || 0))}</td>
                                                         <td className="px-4 py-2.5 text-right font-black text-indigo-700">{fmt(comparison.plannedValue)}</td>
                                                         <td className="px-4 py-2.5 text-right text-slate-300">—</td>
                                                         <td className="px-4 py-2.5 text-right text-slate-300">—</td>
                                                         <td className="px-4 py-2.5 text-right text-slate-300">—</td>
-                                                        <td className="px-4 py-2.5 text-right text-slate-500">{comparison.hasLink ? comparison.contractQty.toLocaleString() : '—'}</td>
+                                                        <td className="px-4 py-2.5 text-right text-slate-500">{comparison.hasLink ? formatQuantity(comparison.contractQty) : '—'}</td>
                                                         <td className="px-4 py-2.5 text-right text-slate-500">{comparison.hasLink ? fmt(comparison.contractValue) : '—'}</td>
                                                         <td className={`px-4 py-2.5 text-right font-black ${comparison.hasLink ? comparison.valueDiff > 0 ? 'text-red-500' : comparison.valueDiff < 0 ? 'text-emerald-600' : 'text-slate-500' : 'text-slate-300'}`}>
                                                             {comparison.hasLink ? `${comparison.valueDiff > 0 ? '+' : ''}${fmt(comparison.valueDiff)}` : 'Chưa đối chiếu'}
@@ -1568,7 +2143,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                         </td>
                                                     </tr>
                                                     {childMaterials.map(mat => {
-                                                        const isOver = (mat.wastePercent || 0) > mat.wasteThreshold;
+                                                        const isOver = (mat.wasteQty || 0) > 0;
                                                         return (
                                                             <tr key={mat.id} className="hover:bg-slate-50/70 group">
                                                                 <td className="px-4 py-2.5">
@@ -1579,18 +2154,19 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                                     </div>
                                                                 </td>
                                                                 <td className="px-4 py-2.5 text-center text-slate-500">{mat.unit}</td>
-                                                                <td className="px-4 py-2.5 text-right font-bold text-slate-700">{mat.budgetQty.toLocaleString()}</td>
+                                                                <td className="px-4 py-2.5 text-right font-bold text-slate-700">{formatQuantity(mat.budgetQty)}</td>
+                                                                <td className="px-4 py-2.5 text-right font-black text-indigo-600">{formatQuantity(mat.wasteThreshold)}</td>
                                                                 <td className="px-4 py-2.5 text-right text-slate-500">{fmt(mat.budgetUnitPrice)}</td>
                                                                 <td className="px-4 py-2.5 text-right font-bold text-slate-700">{fmt(mat.budgetTotal || 0)}</td>
-                                                                <td className="px-4 py-2.5 text-right font-black text-cyan-700">{(mat.actualQty || 0).toLocaleString()}</td>
+                                                                <td className="px-4 py-2.5 text-right font-black text-cyan-700">{formatQuantity(mat.actualQty || 0)}</td>
                                                                 <td className="px-4 py-2.5 text-right font-bold text-cyan-700">{fmt(mat.actualTotal || 0)}</td>
                                                                 <td className={`px-4 py-2.5 text-right font-black ${(mat.wasteQty || 0) > 0 ? 'text-red-500' : (mat.wasteQty || 0) < 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
-                                                                    {(mat.wasteQty || 0) > 0 ? '+' : ''}{(mat.wasteQty || 0).toLocaleString()}
+                                                                    {(mat.wasteQty || 0) > 0 ? '+' : ''}{formatQuantity(mat.wasteQty || 0)}
                                                                 </td>
                                                                 <td className="px-4 py-2.5 text-right text-slate-300">—</td>
                                                                 <td className="px-4 py-2.5 text-right text-slate-300">—</td>
                                                                 <td className={`px-4 py-2.5 text-right font-black ${isOver ? 'text-red-500' : (mat.wastePercent || 0) > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>
-                                                                    {(mat.wastePercent || 0) > 0 ? '+' : ''}{mat.wastePercent || 0}%
+                                                                    {(mat.wastePercent || 0) > 0 ? '+' : ''}{formatPercent(mat.wastePercent || 0)}%
                                                                 </td>
                                                                 <td className="px-4 py-2.5 text-center">
                                                                     {isOver ? <AlertTriangle size={12} className="inline text-red-500" /> : <CheckCircle2 size={12} className="inline text-emerald-500" />}
@@ -1613,13 +2189,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                             <tr key={mat.id} className="hover:bg-slate-50/70 group">
                                                 <td className="px-4 py-2.5 font-bold text-slate-700">{mat.itemName}<span className="ml-2 text-[9px] text-amber-500">Chưa gắn đầu mục</span></td>
                                                 <td className="px-4 py-2.5 text-center text-slate-500">{mat.unit}</td>
-                                                <td className="px-4 py-2.5 text-right font-bold text-slate-700">{mat.budgetQty.toLocaleString()}</td>
+                                                <td className="px-4 py-2.5 text-right font-bold text-slate-700">{formatQuantity(mat.budgetQty)}</td>
+                                                <td className="px-4 py-2.5 text-right font-black text-indigo-600">{formatQuantity(mat.wasteThreshold)}</td>
                                                 <td className="px-4 py-2.5 text-right text-slate-500">{fmt(mat.budgetUnitPrice)}</td>
                                                 <td className="px-4 py-2.5 text-right font-bold text-slate-700">{fmt(mat.budgetTotal || 0)}</td>
-                                                <td className="px-4 py-2.5 text-right font-black text-cyan-700">{(mat.actualQty || 0).toLocaleString()}</td>
+                                                <td className="px-4 py-2.5 text-right font-black text-cyan-700">{formatQuantity(mat.actualQty || 0)}</td>
                                                 <td className="px-4 py-2.5 text-right font-bold text-cyan-700">{fmt(mat.actualTotal || 0)}</td>
                                                 <td className={`px-4 py-2.5 text-right font-black ${(mat.wasteQty || 0) > 0 ? 'text-red-500' : (mat.wasteQty || 0) < 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
-                                                    {(mat.wasteQty || 0) > 0 ? '+' : ''}{(mat.wasteQty || 0).toLocaleString()}
+                                                    {(mat.wasteQty || 0) > 0 ? '+' : ''}{formatQuantity(mat.wasteQty || 0)}
                                                 </td>
                                                 <td colSpan={4}></td>
                                                 <td className="px-4 py-2.5">
@@ -1632,7 +2209,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                     </tbody>
                                     <tfoot className="bg-slate-50/80 font-bold">
                                         <tr className="text-xs">
-                                            <td colSpan={4} className="px-4 py-3 text-slate-600">TỔNG CỘNG VẬT TƯ</td>
+                                            <td colSpan={5} className="px-4 py-3 text-slate-600">TỔNG CỘNG VẬT TƯ</td>
                                             <td className="px-4 py-3 text-right text-slate-700">{fmt(stats.totalBudget)} đ</td>
                                             <td className="px-4 py-3 text-right text-slate-300">—</td>
                                             <td className="px-4 py-3 text-right text-cyan-700">{fmt(stats.totalActual)} đ</td>
@@ -1685,6 +2262,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             </button>
                         )}
                     </div>
+                    <ProjectWorkflowBindingPanel
+                        projectId={projectId || null}
+                        constructionSiteId={constructionSiteId || null}
+                        templates={workflowTemplates}
+                        onConfigurationChange={setWorkflowConfiguration}
+                    />
                     {!canCreateMaterialRequest && (
                         <div className="border-b border-amber-100 bg-amber-50 px-5 py-2 text-[11px] font-bold text-amber-700">
                             Tài khoản chỉ đang có quyền xem. Muốn tạo/gửi đề xuất cần quyền submit trong Tổ chức dự án.
@@ -1711,6 +2294,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             inventoryItemById={inventoryItemById}
                             workBoqItemById={workBoqItemById}
                             userById={userById}
+                            workflowSubjectsByRequestId={requestWorkflowSubjects}
+                            workflowNodes={workflowConfiguration?.binding
+                                ? workflowNodes.filter(node => node.templateId === workflowConfiguration.binding?.workflowTemplateId)
+                                : []}
+                            workflowRuntimeNodes={requestWorkflowRuntimeNodes}
                             canMoveRequest={canMoveMaterialRequest}
                             onMoveRequest={handleMoveMaterialRequest}
                             onOpenRequest={req => { setSelectedRequest(req); setRequestModalInitialAction(undefined); setReqModalOpen(true); }}
@@ -1781,21 +2369,21 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                         </thead>
                                         <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                             {sortedWasteBoqItems.map(item => {
-                                                const isOver = (item.wastePercent || 0) > item.wasteThreshold;
+                                                const isOver = (item.wasteQty || 0) > 0;
                                                 const isNeg = (item.wastePercent || 0) <= 0;
                                                 return (
                                                     <tr key={item.id} className={`${isOver ? 'bg-red-50/30' : ''}`}>
                                                         <td className="px-4 py-2.5 font-bold text-slate-700">{item.itemName}</td>
                                                         <td className="px-4 py-2.5 text-center text-slate-500">{item.unit}</td>
-                                                        <td className="px-4 py-2.5 text-right text-slate-600">{item.budgetQty.toLocaleString()}</td>
-                                                        <td className="px-4 py-2.5 text-right font-bold text-slate-700">{item.actualQty.toLocaleString()}</td>
+                                                        <td className="px-4 py-2.5 text-right text-slate-600">{formatQuantity(item.budgetQty)}</td>
+                                                        <td className="px-4 py-2.5 text-right font-bold text-slate-700">{formatQuantity(item.actualQty)}</td>
                                                         <td className={`px-4 py-2.5 text-right font-bold ${isNeg ? 'text-emerald-600' : 'text-red-500'}`}>
-                                                            {(item.wasteQty || 0) > 0 ? '+' : ''}{(item.wasteQty || 0).toLocaleString()}
+                                                            {(item.wasteQty || 0) > 0 ? '+' : ''}{formatQuantity(item.wasteQty || 0)}
                                                         </td>
                                                         <td className={`px-4 py-2.5 text-right font-black ${isOver ? 'text-red-500' : isNeg ? 'text-emerald-600' : 'text-amber-500'}`}>
-                                                            {(item.wastePercent || 0) > 0 ? '+' : ''}{item.wastePercent || 0}%
+                                                            {(item.wastePercent || 0) > 0 ? '+' : ''}{formatPercent(item.wastePercent || 0)}%
                                                         </td>
-                                                        <td className="px-4 py-2.5 text-right text-slate-400">{item.wasteThreshold}%</td>
+                                                        <td className="px-4 py-2.5 text-right text-slate-400">{formatQuantity(item.wasteThreshold)}</td>
                                                         <td className="px-4 py-2.5 text-center">
                                                             {isOver ? (
                                                                 <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[9px] font-bold bg-red-50 border border-red-200 text-red-600"><AlertTriangle size={9} /> Vượt</span>
@@ -1826,12 +2414,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     documentSubtitle={submissionTransition.subtitle}
                     projectId={projectId || undefined}
                     constructionSiteId={constructionSiteId || null}
-                    recipientPermissionCodes={['approve']}
+                    recipientPermissionCodes={submissionTransition.recipientPermissionCodes?.length ? submissionTransition.recipientPermissionCodes as any : ['approve']}
                     recipientHint={submissionTransition.recipientHint || 'Chọn đích danh nhân sự dự án có quyền approve để xử lý bước tiếp theo.'}
                     details={[
                         { label: 'Kho nhận', value: warehouses.find(w => w.id === submissionTransition.request.siteWarehouseId)?.name || submissionTransition.request.siteWarehouseId },
                         { label: 'Số dòng vật tư', value: `${submissionTransition.request.items.length} dòng` },
-                        { label: 'SLA bước mới', value: submissionTransition.toStep === 'batch_planning' ? '48h' : '24h' },
+                        { label: submissionTransition.dynamicWorkflow ? 'Bước kế tiếp' : 'SLA bước mới', value: submissionTransition.dynamicWorkflow ? (submissionTransition.nextNodeLabel || 'Theo mẫu workflow') : (submissionTransition.toStep === 'batch_planning' ? '48h' : '24h') },
                         { label: 'Ghi chú phiếu', value: submissionTransition.request.note || '-' },
                     ]}
                     onCancel={() => setSubmissionTransition(null)}
@@ -1902,12 +2490,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         </div>
                         <div className="p-6 space-y-4">
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Đầu mục BOQ triển khai</label>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Đầu mục BOQ triển khai *</label>
                                 <select value={bWorkBoqItemId} onChange={e => setBWorkBoqItemId(e.target.value)}
                                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
-                                    <option value="">Chưa gắn đầu mục</option>
+                                    <option value="">Chọn đầu mục để tính KL vật tư...</option>
                                     {workBoqTree.map(({ item, level }) => (
-                                        <option key={item.id} value={item.id}>{`${'— '.repeat(level)}${item.wbsCode || ''} ${item.name}`}</option>
+                                        <option key={item.id} value={item.id}>{`${'— '.repeat(level)}${item.wbsCode || ''} ${item.name} (KL: ${formatQuantity(Number(item.plannedQty || 0))})`}</option>
                                     ))}
                                 </select>
                             </div>
@@ -1970,21 +2558,21 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                         className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" readOnly={!!bInventoryItemId} />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">KL Dự toán *</label>
-                                    <input type="number" value={bBudgetQty} onChange={e => setBBudgetQty(e.target.value)} placeholder="0"
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ngưỡng hao hụt *</label>
+                                    <input type="text" inputMode="decimal" value={bThreshold} onChange={e => setBThreshold(e.target.value)} placeholder="0,5"
                                         className="w-full px-3 py-2.5 rounded-xl border border-indigo-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none bg-white" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Đơn giá (VNĐ)</label>
-                                    <input type="number" value={bPrice} onChange={e => setBPrice(e.target.value)} placeholder="0"
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" readOnly={!!bInventoryItemId} />
+                                    <label className="text-[10px] font-bold text-indigo-500 uppercase block mb-1">KL Dự toán vật tư</label>
+                                    <input type="text" value={selectedWorkBoqItem && hasValidThreshold ? formatQuantity(bBudgetQty) : ''} placeholder="Tự động"
+                                        className="w-full px-3 py-2.5 rounded-xl border border-indigo-200 text-sm font-black outline-none bg-indigo-50 text-indigo-700" readOnly />
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ngưỡng hao hụt (%)</label>
-                                    <input type="number" value={bThreshold} onChange={e => setBThreshold(e.target.value)} placeholder="5"
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Đơn giá (VNĐ)</label>
+                                    <input type="number" value={bPrice} onChange={e => setBPrice(e.target.value)} placeholder="0"
+                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none" readOnly={!!bInventoryItemId} />
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1 text-blue-400">KL Thực xuất (tự động)</label>
@@ -1993,12 +2581,20 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                     </div>
                                 </div>
                             </div>
-                            {bBudgetQty && bPrice && (
-                                <div className="px-3 py-2.5 rounded-xl bg-indigo-50 border border-indigo-100 text-xs">
-                                    <span className="text-indigo-400">Dự toán:</span>
-                                    <span className="font-black text-indigo-700 ml-1">{fmt(Number(bBudgetQty) * Number(bPrice))} đ</span>
+                            <div className="px-3 py-2.5 rounded-xl bg-indigo-50 border border-indigo-100 text-xs">
+                                <div className="font-bold text-indigo-500">KL vật tư = KL dự toán đầu mục × Ngưỡng hao hụt</div>
+                                {selectedWorkBoqItem ? (
+                                    <div className="mt-1 text-indigo-700">
+                                        <span className="font-black">{formatQuantity(selectedWorkPlannedQty)} × {hasValidThreshold ? formatQuantity(thresholdValue) : '—'} = {formatQuantity(bBudgetQty)} {bUnit || ''}</span>
+                                        {bPrice !== '' && <span className="ml-2 text-indigo-400">• Giá trị: {fmt(bBudgetQty * Number(bPrice))} đ</span>}
+                                    </div>
+                                ) : (
+                                    <div className="mt-1 font-bold text-amber-600">Chọn đầu mục BOQ để hệ thống tự tính KL dự toán vật tư.</div>
+                                )}
+                                {selectedWorkBoqItem && selectedWorkPlannedQty <= 0 && (
+                                    <div className="mt-1 font-bold text-red-500">Đầu mục đang có KL dự toán bằng 0, chưa thể thêm vật tư.</div>
+                                )}
                                 </div>
-                            )}
                             <div>
                                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Ghi chú</label>
                                 <textarea value={bNotes} onChange={e => setBNotes(e.target.value)} rows={2} placeholder="Ghi chú..."
@@ -2007,7 +2603,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         </div>
                         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
                             <button onClick={resetBoqForm} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Huỷ</button>
-                            <button onClick={handleSaveBoq} disabled={!bName || !bUnit || !bBudgetQty || !bPrice}
+                            <button onClick={handleSaveBoq} disabled={!canSaveBoqItem}
                                 className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-indigo-500 to-purple-500 shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50">
                                 <Save size={16} /> {editingBoq ? 'Lưu' : 'Thêm'}
                             </button>
@@ -2030,7 +2626,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                         const catMap: Record<string, number> = {};
                                         computedBoqItems.forEach(b => { catMap[b.category] = (catMap[b.category] || 0) + (b.budgetTotal || 0); });
                                         return Object.entries(catMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-                                    })()} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                                    })()} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }) => `${name} ${formatQuantity(percent * 100)}%`}>
                                         {['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316', '#64748b'].map((c, i) => <Cell key={i} fill={c} />)}
                                     </Pie>
                                     <Tooltip formatter={(v: number) => fmt(v) + ' đ'} />
@@ -2049,7 +2645,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                     <CartesianGrid strokeDasharray="3 3" />
                                     <XAxis type="number" tickFormatter={v => v + 'tr'} />
                                     <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 10 }} />
-                                    <Tooltip formatter={(v: number) => v.toFixed(0) + ' triệu'} />
+                                    <Tooltip formatter={(v: number) => `${Number(v || 0).toLocaleString('vi-VN', { maximumFractionDigits: 0 })} triệu`} />
                                     <Legend />
                                     <Bar dataKey="Dự toán" fill="#6366f1" radius={[0, 4, 4, 0]} />
                                     <Bar dataKey="Thực tế" fill="#ec4899" radius={[0, 4, 4, 0]} />
@@ -2071,9 +2667,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                     {computedBoqItems.filter(b => (b.budgetOverPercent || 0) > 0).sort((a, b) => (b.budgetOverPercent || 0) - (a.budgetOverPercent || 0)).map(b => (
                                         <tr key={b.id} className="hover:bg-red-50/50">
                                             <td className="p-2.5 font-bold text-slate-800">{b.itemName}</td>
-                                            <td className="p-2.5 text-right">{b.budgetQty.toLocaleString()}</td>
-                                            <td className="p-2.5 text-right font-bold">{(b.cumulativeRequested || 0).toLocaleString()}</td>
-                                            <td className="p-2.5 text-right font-black text-red-600">+{(b.budgetOverPercent || 0).toFixed(1)}%</td>
+                                            <td className="p-2.5 text-right">{formatQuantity(b.budgetQty)}</td>
+                                            <td className="p-2.5 text-right font-bold">{formatQuantity(b.cumulativeRequested || 0)}</td>
+                                            <td className="p-2.5 text-right font-black text-red-600">+{formatPercent(b.budgetOverPercent || 0)}%</td>
                                         </tr>
                                     ))}
                                     {computedBoqItems.filter(b => (b.budgetOverPercent || 0) > 0).length === 0 && (
@@ -2087,18 +2683,18 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             <div className="p-4 border-b border-slate-100"><h4 className="text-sm font-black text-slate-800">⚠️ Vật tư VƯỢT hao hụt</h4></div>
                             <table className="w-full text-xs">
                                 <thead><tr className="bg-slate-50 text-[9px] font-black text-slate-500 uppercase">
-                                    <th className="p-2.5 text-left">Vật tư</th><th className="p-2.5 text-right">HH%</th><th className="p-2.5 text-right">Định mức</th><th className="p-2.5 text-right">GT Hao hụt</th>
+                                    <th className="p-2.5 text-left">Vật tư</th><th className="p-2.5 text-right">HH%</th><th className="p-2.5 text-right">Ngưỡng</th><th className="p-2.5 text-right">GT Hao hụt</th>
                                 </tr></thead>
                                 <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
-                                    {computedBoqItems.filter(b => (b.wastePercent || 0) > b.wasteThreshold).sort((a, b) => (b.wastePercent || 0) - (a.wastePercent || 0)).map(b => (
+                                    {computedBoqItems.filter(b => (b.wasteQty || 0) > 0).sort((a, b) => (b.wastePercent || 0) - (a.wastePercent || 0)).map(b => (
                                         <tr key={b.id} className="hover:bg-amber-50/50">
                                             <td className="p-2.5 font-bold text-slate-800">{b.itemName}</td>
-                                            <td className="p-2.5 text-right font-black text-red-600">{(b.wastePercent || 0).toFixed(1)}%</td>
-                                            <td className="p-2.5 text-right text-slate-400">{b.wasteThreshold}%</td>
+                                            <td className="p-2.5 text-right font-black text-red-600">{formatPercent(b.wastePercent || 0)}%</td>
+                                            <td className="p-2.5 text-right text-slate-400">{formatQuantity(b.wasteThreshold)}</td>
                                             <td className="p-2.5 text-right font-bold text-red-600">{fmt(Math.abs(b.wasteValue || 0))} đ</td>
                                         </tr>
                                     ))}
-                                    {computedBoqItems.filter(b => (b.wastePercent || 0) > b.wasteThreshold).length === 0 && (
+                                    {computedBoqItems.filter(b => (b.wasteQty || 0) > 0).length === 0 && (
                                         <tr><td colSpan={4} className="p-6 text-center text-slate-300 text-[10px] font-bold uppercase">Tất cả trong định mức</td></tr>
                                     )}
                                 </tbody>
@@ -2123,9 +2719,93 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     requestFulfillmentSummariesByRequestId={requestFulfillmentSummaries}
                     initialAction={requestModalInitialAction}
                     canProcessProjectWorkflow={selectedRequestLive ? canActOnProjectRequest(selectedRequestLive) : false}
-                    onProjectWorkflowApprove={handleProjectWorkflowApproveFromModal}
-                    onProjectWorkflowReturn={handleProjectWorkflowReturnFromModal}
+                    canManageProjectWorkflow={selectedRequestLive ? canManageProjectWorkflow(selectedRequestLive) : false}
+                    projectWorkflowSubject={selectedRequestLive ? requestWorkflowSubjects[selectedRequestLive.id] : undefined}
+                    projectWorkflowAssignments={
+                        selectedRequestLive && requestWorkflowSubjects[selectedRequestLive.id]
+                            ? requestWorkflowAssignments[requestWorkflowSubjects[selectedRequestLive.id].id] || []
+                            : []
+                    }
+                    projectWorkflowNodes={
+                        selectedRequestLive && requestWorkflowSubjects[selectedRequestLive.id]
+                            ? requestWorkflowRuntimeContexts[requestWorkflowSubjects[selectedRequestLive.id].id]?.nodes
+                                .map(node => runtimeNodeToWorkflowNode(node))
+                                .filter(Boolean) as WorkflowNode[] || workflowNodes
+                            : workflowNodes
+                    }
+                    projectWorkflowNextNode={selectedRequestLive ? getWorkflowNextNode(requestWorkflowSubjects[selectedRequestLive.id]) : null}
+                    projectWorkflowReturnTargetNode={selectedRequestLive ? getWorkflowReturnTargetNode(requestWorkflowSubjects[selectedRequestLive.id]) : null}
+                    onProjectWorkflowAction={handleProjectWorkflowActionFromModal}
                     onDeleted={handleRequestDeleted}
+                />
+            )}
+
+            {startWorkflowRequest && (
+                <ProjectWorkflowStartDialog
+                    requestId={startWorkflowRequest.id}
+                    requestCode={startWorkflowRequest.code}
+                    requesterUserId={startWorkflowRequest.requesterId}
+                    projectId={startWorkflowRequest.projectId || projectId || null}
+                    constructionSiteId={startWorkflowRequest.constructionSiteId || constructionSiteId || null}
+                    users={users}
+                    employees={employees}
+                    orgUnits={orgUnits}
+                    onCancel={() => setStartWorkflowRequest(null)}
+                    onConfirm={async input => {
+                        await performDynamicRequestTransition({
+                            request: startWorkflowRequest,
+                            action: 'SUBMITTED',
+                            templateId: input.templateId,
+                            target: {
+                                userId: input.assigneeUserIds[0],
+                                userIds: input.assigneeUserIds,
+                                name: userById.get(input.assigneeUserIds[0])?.name || input.assigneeUserIds[0],
+                                names: input.assigneeUserIds.map(id => userById.get(id)?.name || id),
+                                note: input.comment,
+                            },
+                            note: input.comment,
+                            metadata: { source: 'kanban_start_dynamic' },
+                        });
+                        setStartWorkflowRequest(null);
+                    }}
+                />
+            )}
+
+            {workflowActionTransition && (
+                <ProjectWorkflowActionDialog
+                    action="approve"
+                    subject={workflowActionTransition.subject}
+                    users={users}
+                    employees={employees}
+                    orgUnits={orgUnits}
+                    currentNode={workflowActionTransition.subject.currentNode}
+                    nextNode={workflowActionTransition.nextNode}
+                    requesterUserId={workflowActionTransition.request.requesterId}
+                    documentName={workflowActionTransition.request.code}
+                    completionHandoff={{
+                        required: true,
+                        eligiblePermissionCodes: ['approve'],
+                        assigneeLabel: 'Người phụ trách tạo đợt cấp / đặt mua',
+                        helperText: 'Workflow phê duyệt sẽ hoàn thành. Phiếu vật tư chuyển sang Chờ tạo đợt cấp và giao cho người được chọn để cấp hàng hoặc đặt mua.',
+                    }}
+                    onCancel={() => setWorkflowActionTransition(null)}
+                    onConfirm={async context => {
+                        const assigneeUserIds = context.assigneeUserIds || [];
+                        await performDynamicRequestTransition({
+                            request: workflowActionTransition.request,
+                            action: 'APPROVED',
+                            target: assigneeUserIds.length > 0 ? {
+                                userId: assigneeUserIds[0],
+                                userIds: assigneeUserIds,
+                                name: userById.get(assigneeUserIds[0])?.name || assigneeUserIds[0],
+                                names: assigneeUserIds.map(id => userById.get(id)?.name || id),
+                                note: context.comment,
+                            } : null,
+                            note: context.comment,
+                            metadata: { source: 'kanban_dynamic_step', nextNodeId: workflowActionTransition.nextNode.id },
+                        });
+                        setWorkflowActionTransition(null);
+                    }}
                 />
             )}
 
@@ -2169,7 +2849,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                 <h4 className="text-xs font-black text-slate-500 uppercase mb-2">Vật tư</h4>
                                 <table className="w-full text-xs">
                                     <thead className="bg-slate-50 text-slate-400 uppercase text-[9px] font-black">
-                                        <tr><th className="px-3 py-2 text-left">Dòng</th><th className="px-3 py-2 text-left">WBS</th><th className="px-3 py-2 text-left">Mã/SKU</th><th className="px-3 py-2 text-left">Tên vật tư</th><th className="px-3 py-2 text-left">ĐVT</th><th className="px-3 py-2 text-right">KL</th><th className="px-3 py-2 text-right">Đơn giá</th><th className="px-3 py-2 text-left">Trạng thái</th></tr>
+                                        <tr><th className="px-3 py-2 text-left">Dòng</th><th className="px-3 py-2 text-left">WBS</th><th className="px-3 py-2 text-left">Mã/SKU</th><th className="px-3 py-2 text-left">Tên vật tư</th><th className="px-3 py-2 text-left">ĐVT</th><th className="px-3 py-2 text-right">KL tự tính</th><th className="px-3 py-2 text-right">Ngưỡng</th><th className="px-3 py-2 text-right">Đơn giá</th><th className="px-3 py-2 text-left">Trạng thái</th></tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                         {importPreview.materialRows.map(row => {
@@ -2182,7 +2862,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                     <td className="px-3 py-2 font-mono text-slate-500">{row.item.materialCode || '-'}</td>
                                                     <td className="px-3 py-2 font-bold text-slate-700">{row.item.itemName || '-'}</td>
                                                     <td className="px-3 py-2 text-slate-500">{row.item.unit || '-'}</td>
-                                                    <td className="px-3 py-2 text-right font-bold">{row.item.budgetQty.toLocaleString()}</td>
+                                                    <td className="px-3 py-2 text-right font-bold">{formatQuantity(row.item.budgetQty)}</td>
+                                                    <td className="px-3 py-2 text-right font-bold text-indigo-600">{formatQuantity(row.item.wasteThreshold)}</td>
                                                     <td className="px-3 py-2 text-right font-bold">{fmt(row.item.budgetUnitPrice)}</td>
                                                     <td className="px-3 py-2">{row.errors.length ? row.errors.join(' | ') : row.status === 'create' ? 'Thêm mới' : 'Cập nhật'}</td>
                                                 </tr>
