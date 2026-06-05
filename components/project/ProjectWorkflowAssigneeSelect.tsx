@@ -11,6 +11,8 @@ interface Props {
   orgUnits?: OrgUnit[];
   value?: string[] | string | null;
   creatorUserId?: string | null;
+  label?: string;
+  selectionMode?: 'single' | 'multiple';
   disabled?: boolean;
   onChange: (userIds: string[]) => void;
 }
@@ -23,6 +25,8 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
   orgUnits = [],
   value,
   creatorUserId,
+  label = 'Người xử lý',
+  selectionMode = 'multiple',
   disabled = false,
   onChange,
 }) => {
@@ -39,13 +43,33 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
   const fixedUserId = node?.config?.assigneeUserId || null;
   const creatorModeUserId = node?.config?.assignmentMode === 'creator' ? creatorUserId || null : null;
   const lockedUserId = fixedUserId || creatorModeUserId;
-  const departments = useMemo(
-    () => orgUnits.filter(unit => unit.type === 'department'),
-    [orgUnits],
-  );
   const activeEmployees = useMemo(
     () => employees.filter(employee => employee.status === 'Đang làm việc' && employee.userId),
     [employees],
+  );
+  const configuredDepartmentIds = useMemo(
+    () => new Set(
+      (node?.config?.assignmentTargets || [])
+        .filter(target => target.type === 'department' && target.orgUnitId)
+        .map(target => target.orgUnitId!),
+    ),
+    [node?.config?.assignmentTargets],
+  );
+  const candidateUserIds = useMemo(
+    () => new Set(candidates.map(candidate => candidate.userId)),
+    [candidates],
+  );
+  const departments = useMemo(
+    () => orgUnits
+      .filter(unit => unit.type === 'department')
+      .filter(unit =>
+        configuredDepartmentIds.has(unit.id)
+        || activeEmployees.some(employee =>
+          candidateUserIds.has(employee.userId!)
+          && (employee.departmentId === unit.id || employee.orgUnitId === unit.id)
+        )
+      ),
+    [activeEmployees, candidateUserIds, configuredDepartmentIds, orgUnits],
   );
 
   const setDistinctSelection = (ids: string[]) => {
@@ -68,8 +92,6 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
         const role = node?.config?.assigneeRole || null;
         const filtered = role ? rows.filter(staff => userById.get(staff.userId)?.role === role) : rows;
         setCandidates(filtered);
-        const firstUserId = filtered[0]?.userId;
-        if (selectedUserIds.length === 0 && firstUserId) onChange([firstUserId]);
       })
       .catch(err => {
         if (!alive) return;
@@ -102,7 +124,9 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
     if (disabled || loading) return;
     const next = selectedUserIds.includes(userId)
       ? selectedUserIds.filter(id => id !== userId)
-      : [...selectedUserIds, userId];
+      : selectionMode === 'single'
+        ? [userId]
+        : [...selectedUserIds, userId];
     setDistinctSelection(next);
   };
 
@@ -117,7 +141,7 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
     const departmentUserIds = activeEmployees
       .filter(employee => employee.departmentId === departmentId || employee.orgUnitId === departmentId)
       .map(employee => employee.userId!)
-      .filter(userId => candidates.some(staff => staff.userId === userId) || candidates.length === 0);
+      .filter(userId => configuredDepartmentIds.has(departmentId) || candidateUserIds.has(userId));
 
     const nextUserIds = exists
       ? selectedUserIds.filter(id => !departmentUserIds.includes(id))
@@ -129,7 +153,7 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
     const lockedUser = userById.get(lockedUserId);
     return (
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-        <div className="mb-1 text-[10px] font-black uppercase text-slate-400">Người xử lý</div>
+        <div className="mb-1 text-[10px] font-black uppercase text-slate-400">{label}</div>
         <div className="flex items-center gap-2 font-black text-slate-700">
           <UserRound size={14} className="text-slate-400" />
           {lockedUser?.name || lockedUserId}
@@ -141,13 +165,13 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <label className="block text-[10px] font-black uppercase text-slate-400">Người xử lý</label>
+        <label className="block text-[10px] font-black uppercase text-slate-400">{label}</label>
         <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-black text-indigo-600">
           {selectedUserIds.length} người
         </span>
       </div>
 
-      {departments.length > 0 && (
+      {selectionMode === 'multiple' && departments.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1.5">
           {departments.map(department => {
             const checked = selectedDepartmentIds.includes(department.id);

@@ -5,16 +5,22 @@ import {
   OrgUnit,
   ProjectStaff,
   ProjectWorkflowBinding,
+  ProjectWorkflowConfiguration,
   ProjectWorkflowAction,
   ProjectWorkflowRollbackDependencyResult,
+  ProjectWorkflowRuntimeContext,
   ProjectWorkflowSubject,
   ProjectWorkflowSubjectType,
   WorkflowAssignmentTarget,
+  WorkflowParticipant,
   WorkflowStepAssignment,
   WorkflowInstance,
   WorkflowNode,
   WorkflowNodeType,
+  WorkflowRuntimeEdge,
+  WorkflowRuntimeNode,
   WorkflowTemplate,
+  WorkflowEdge,
 } from '../types';
 import { projectStaffService } from './projectStaffService';
 
@@ -25,12 +31,7 @@ const ASSIGNMENT_TABLE = 'workflow_step_assignments';
 const WORKFLOW_INSTANCE_SELECT = 'id,template_id,template_version_id,current_instance_node_id,code,title,created_by,current_node_id,status,watchers,step_assignees,created_at,updated_at';
 
 const isMissingProjectWorkflowError = (error: any): boolean => {
-  const msg = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ');
-  return error?.code === '42P01'
-    || error?.code === '42883'
-    || msg.includes(SUBJECT_TABLE)
-    || msg.includes(BINDING_TABLE)
-    || msg.includes(ASSIGNMENT_TABLE);
+  return ['42P01', '42883', 'PGRST202', 'PGRST205'].includes(error?.code);
 };
 
 const mapWorkflowTemplate = (row: any): WorkflowTemplate | null => {
@@ -62,6 +63,34 @@ const mapWorkflowNode = (row: any): WorkflowNode | null => {
   };
 };
 
+const mapWorkflowRuntimeNode = (row: any): WorkflowRuntimeNode | null => {
+  if (!row) return null;
+  return {
+    id: row.id,
+    workflowInstanceId: row.workflow_instance_id ?? row.workflowInstanceId,
+    templateVersionId: row.template_version_id ?? row.templateVersionId ?? null,
+    templateNodeId: row.template_node_id ?? row.templateNodeId ?? null,
+    type: row.type as WorkflowNodeType,
+    label: row.label,
+    config: row.config || {},
+    positionX: row.position_x ?? row.positionX ?? 0,
+    positionY: row.position_y ?? row.positionY ?? 0,
+    createdAt: row.created_at ?? row.createdAt,
+  };
+};
+
+const mapWorkflowRuntimeEdge = (row: any): WorkflowRuntimeEdge => ({
+  id: row.id,
+  workflowInstanceId: row.workflow_instance_id ?? row.workflowInstanceId,
+  templateVersionId: row.template_version_id ?? row.templateVersionId ?? null,
+  templateEdgeId: row.template_edge_id ?? row.templateEdgeId ?? null,
+  sourceInstanceNodeId: row.source_instance_node_id ?? row.sourceInstanceNodeId,
+  targetInstanceNodeId: row.target_instance_node_id ?? row.targetInstanceNodeId,
+  label: row.label ?? null,
+  sortOrder: row.sort_order ?? row.sortOrder ?? 0,
+  createdAt: row.created_at ?? row.createdAt,
+});
+
 const mapWorkflowInstance = (row: any): WorkflowInstance | null => {
   if (!row) return null;
   return {
@@ -82,13 +111,30 @@ const mapWorkflowInstance = (row: any): WorkflowInstance | null => {
   };
 };
 
-const mapSubject = (row: any): ProjectWorkflowSubject => ({
-  ...(fromDb(row) as ProjectWorkflowSubject),
-  currentNode: mapWorkflowNode(row.current_node || row.currentNode),
-  workflowInstance: mapWorkflowInstance(row.workflow_instance || row.workflowInstance),
-  currentAssigneeUserIds: row.current_assignee_user_ids || row.currentAssigneeUserIds || [],
-  returnToAssigneeUserIds: row.return_to_assignee_user_ids || row.returnToAssigneeUserIds || [],
-});
+const runtimeNodeToWorkflowNode = (node: WorkflowRuntimeNode | null): WorkflowNode | null => node ? ({
+  id: node.templateNodeId || node.id,
+  templateId: node.templateNodeId || node.templateVersionId || '',
+  type: node.type,
+  label: node.label,
+  config: node.config,
+  positionX: node.positionX,
+  positionY: node.positionY,
+}) : null;
+
+const mapSubject = (row: any): ProjectWorkflowSubject => {
+  const currentRuntimeNode = mapWorkflowRuntimeNode(row.current_instance_node || row.currentRuntimeNode);
+  return {
+    ...(fromDb(row) as ProjectWorkflowSubject),
+    currentNode: runtimeNodeToWorkflowNode(currentRuntimeNode) || mapWorkflowNode(row.current_node || row.currentNode),
+    workflowInstance: mapWorkflowInstance(row.workflow_instance || row.workflowInstance),
+    currentAssigneeUserIds: row.current_assignee_user_ids || row.currentAssigneeUserIds || [],
+    returnToAssigneeUserIds: row.return_to_assignee_user_ids || row.returnToAssigneeUserIds || [],
+    returnToInstanceNodeId: row.return_to_instance_node_id ?? row.returnToInstanceNodeId ?? null,
+    lastActionInstanceNodeId: row.last_action_instance_node_id ?? row.lastActionInstanceNodeId ?? null,
+    currentRuntimeNode,
+    participants: (row.participants || []).map(mapParticipant),
+  };
+};
 
 const mapBinding = (row: any): ProjectWorkflowBinding => ({
   ...(fromDb(row) as ProjectWorkflowBinding),
@@ -96,11 +142,14 @@ const mapBinding = (row: any): ProjectWorkflowBinding => ({
 });
 
 const mapAssignment = (row: any): WorkflowStepAssignment => fromDb(row) as WorkflowStepAssignment;
+const mapParticipant = (row: any): WorkflowParticipant => fromDb(row) as WorkflowParticipant;
 
 const subjectSelect = `
   *,
-  current_node:workflow_nodes(*),
-  workflow_instance:workflow_instances(${WORKFLOW_INSTANCE_SELECT})
+  current_node:workflow_nodes!workflow_subjects_current_node_id_fkey(*),
+  current_instance_node:workflow_instance_nodes!workflow_subjects_current_instance_node_id_fkey(*),
+  workflow_instance:workflow_instances(${WORKFLOW_INSTANCE_SELECT}),
+  participants:workflow_participants(*)
 `;
 
 const bindingSelect = `
@@ -109,6 +158,62 @@ const bindingSelect = `
 `;
 
 export const projectWorkflowService = {
+  async getConfiguration(
+    subjectType: ProjectWorkflowSubjectType,
+    projectId?: string | null,
+    constructionSiteId?: string | null,
+  ): Promise<ProjectWorkflowConfiguration> {
+    const { data, error } = await supabase.rpc('get_project_workflow_configuration', {
+      p_subject_type: subjectType,
+      p_project_id: projectId || null,
+      p_construction_site_id: constructionSiteId || null,
+    });
+    if (error) throw error;
+    const bindingRow = data?.binding;
+    return {
+      subjectType,
+      projectId: data?.projectId ?? projectId ?? null,
+      constructionSiteId: data?.constructionSiteId ?? constructionSiteId ?? null,
+      binding: bindingRow ? mapBinding(bindingRow) : null,
+      scope: data?.scope || null,
+      valid: Boolean(data?.valid),
+      errors: Array.isArray(data?.errors) ? data.errors : [],
+      canManage: Boolean(data?.canManage),
+      validation: data?.validation || undefined,
+    };
+  },
+
+  async setBinding(input: {
+    subjectType: ProjectWorkflowSubjectType;
+    workflowTemplateId: string;
+    projectId?: string | null;
+    constructionSiteId?: string | null;
+  }): Promise<ProjectWorkflowBinding> {
+    const { data, error } = await supabase.rpc('set_project_workflow_binding', {
+      p_subject_type: input.subjectType,
+      p_workflow_template_id: input.workflowTemplateId,
+      p_project_id: input.projectId || null,
+      p_construction_site_id: input.constructionSiteId || null,
+    });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    return mapBinding(row);
+  },
+
+  async removeBinding(input: {
+    subjectType: ProjectWorkflowSubjectType;
+    projectId?: string | null;
+    constructionSiteId?: string | null;
+  }): Promise<number> {
+    const { data, error } = await supabase.rpc('remove_project_workflow_binding', {
+      p_subject_type: input.subjectType,
+      p_project_id: input.projectId || null,
+      p_construction_site_id: input.constructionSiteId || null,
+    });
+    if (error) throw error;
+    return Number(data || 0);
+  },
+
   async resolveBinding(
     subjectType: ProjectWorkflowSubjectType,
     projectId?: string | null,
@@ -160,22 +265,94 @@ export const projectWorkflowService = {
     subjectType: ProjectWorkflowSubjectType;
     workflowTemplateId: string;
   }): Promise<ProjectWorkflowBinding> {
-    const payload = toDb({
+    if (binding.isActive === false) {
+      await this.removeBinding({
+        subjectType: binding.subjectType,
+        projectId: binding.projectId || null,
+        constructionSiteId: binding.constructionSiteId || null,
+      });
+      return mapBinding({ ...toDb(binding), id: binding.id || '', is_active: false });
+    }
+    return this.setBinding({
       subjectType: binding.subjectType,
+      workflowTemplateId: binding.workflowTemplateId,
       projectId: binding.projectId || null,
       constructionSiteId: binding.constructionSiteId || null,
-      workflowTemplateId: binding.workflowTemplateId,
-      isDefault: binding.isDefault ?? true,
-      isActive: binding.isActive ?? true,
-      createdBy: binding.createdBy || null,
     });
-    const { data, error } = await supabase
-      .from(BINDING_TABLE)
-      .upsert(binding.id ? { ...payload, id: binding.id } : payload, { onConflict: 'id' })
-      .select(bindingSelect)
-      .single();
+  },
+
+  async getTemplateStartContext(templateId: string): Promise<{ firstNode: WorkflowNode | null; nodes: WorkflowNode[]; edges: WorkflowEdge[] }> {
+    const [{ data: nodeRows, error: nodeError }, { data: edgeRows, error: edgeError }] = await Promise.all([
+      supabase.from('workflow_nodes').select('*').eq('template_id', templateId),
+      supabase.from('workflow_edges').select('*').eq('template_id', templateId),
+    ]);
+    if (nodeError) throw nodeError;
+    if (edgeError) throw edgeError;
+    const nodes = (nodeRows || []).map(mapWorkflowNode).filter(Boolean) as WorkflowNode[];
+    const edges = (edgeRows || []).map((row: any): WorkflowEdge => ({
+      id: row.id,
+      templateId: row.template_id,
+      sourceNodeId: row.source_node_id,
+      targetNodeId: row.target_node_id,
+      label: row.label || '',
+    }));
+    const start = nodes.find(node => node.type === WorkflowNodeType.START);
+    const firstId = start ? edges.find(edge => edge.sourceNodeId === start.id)?.targetNodeId : null;
+    return { firstNode: firstId ? nodes.find(node => node.id === firstId) || null : null, nodes, edges };
+  },
+
+  async listRuntimeContextsBySubjects(subjects: ProjectWorkflowSubject[]): Promise<Record<string, ProjectWorkflowRuntimeContext>> {
+    const instanceIds = Array.from(new Set(subjects.map(subject => subject.workflowInstanceId).filter(Boolean) as string[]));
+    if (instanceIds.length === 0) return {};
+    const [{ data: nodeRows, error: nodeError }, { data: edgeRows, error: edgeError }] = await Promise.all([
+      supabase.from('workflow_instance_nodes').select('*').in('workflow_instance_id', instanceIds),
+      supabase.from('workflow_instance_edges').select('*').in('workflow_instance_id', instanceIds),
+    ]);
+    if (nodeError) throw nodeError;
+    if (edgeError) throw edgeError;
+    const nodes = (nodeRows || []).map(mapWorkflowRuntimeNode).filter(Boolean) as WorkflowRuntimeNode[];
+    const edges = (edgeRows || []).map(mapWorkflowRuntimeEdge);
+    return subjects.reduce<Record<string, ProjectWorkflowRuntimeContext>>((acc, subject) => {
+      acc[subject.id] = {
+        subject,
+        nodes: nodes.filter(node => node.workflowInstanceId === subject.workflowInstanceId),
+        edges: edges.filter(edge => edge.workflowInstanceId === subject.workflowInstanceId),
+      };
+      return acc;
+    }, {});
+  },
+
+  async saveTemplateStructure(input: {
+    template: WorkflowTemplate;
+    nodes: WorkflowNode[];
+    edges: WorkflowEdge[];
+  }): Promise<void> {
+    const { error } = await supabase.rpc('save_workflow_template_structure', {
+      p_template_id: input.template.id,
+      p_template: {
+        name: input.template.name,
+        description: input.template.description || '',
+        is_active: input.template.isActive,
+        custom_fields: input.template.customFields || [],
+        managers: input.template.managers || [],
+        default_watchers: input.template.defaultWatchers || [],
+      },
+      p_nodes: input.nodes.map(node => ({
+        id: node.id,
+        type: node.type,
+        label: node.label,
+        config: node.config || {},
+        position_x: node.positionX,
+        position_y: node.positionY,
+      })),
+      p_edges: input.edges.map(edge => ({
+        id: edge.id,
+        source_node_id: edge.sourceNodeId,
+        target_node_id: edge.targetNodeId,
+        label: edge.label || '',
+      })),
+    });
     if (error) throw error;
-    return mapBinding(data);
   },
 
   async listSubjectsByMaterialRequestIds(requestIds: string[]): Promise<Record<string, ProjectWorkflowSubject>> {
@@ -289,6 +466,20 @@ export const projectWorkflowService = {
     });
     if (error) throw error;
     return (data || { allowed: true, activeCount: 0, dependencies: [] }) as ProjectWorkflowRollbackDependencyResult;
+  },
+
+  async rollbackCompletedMaterialRequestWorkflow(input: {
+    requestId: string;
+    comment: string;
+  }): Promise<ProjectWorkflowSubject> {
+    const { data, error } = await supabase.rpc('rollback_completed_project_workflow', {
+      p_subject_type: 'material_request',
+      p_subject_id: input.requestId,
+      p_comment: input.comment,
+    });
+    if (error) throw error;
+    const subject = Array.isArray(data) ? data[0] : data;
+    return this.getSubjectByMaterialRequestId(subject?.subject_id || input.requestId) as Promise<ProjectWorkflowSubject>;
   },
 
   async startMaterialRequestWorkflowV2(input: {
@@ -437,6 +628,12 @@ export const projectWorkflowService = {
       return this.resubmitMaterialRequestWorkflowV2({
         requestId: input.requestId,
         assigneeUserIds: input.assigneeUserIds || (input.assigneeUserId ? [input.assigneeUserId] : null),
+        comment: input.comment || '',
+      });
+    }
+    if (input.action === 'rollback') {
+      return this.rollbackCompletedMaterialRequestWorkflow({
+        requestId: input.requestId,
         comment: input.comment || '',
       });
     }

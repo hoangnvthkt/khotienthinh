@@ -66,7 +66,11 @@ const ProjectWorkflowTimeline: React.FC<Props> = ({ assignments, nodes, users })
       <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Timeline xử lý</div>
       <div className="space-y-2">
         {sortedAssignments.map(assignment => {
-          const node = assignment.nodeId ? nodeById.get(assignment.nodeId) : null;
+          const node = assignment.nodeId
+            ? nodeById.get(assignment.nodeId) || (assignment.instanceNodeId ? nodeById.get(assignment.instanceNodeId) : null)
+            : assignment.instanceNodeId
+              ? nodeById.get(assignment.instanceNodeId)
+              : null;
           const assignee = assignment.assigneeUserId ? userById.get(assignment.assigneeUserId) : null;
           const assignedBy = assignment.assignedBy ? userById.get(assignment.assignedBy) : null;
           const metadata = assignment.metadata || {};

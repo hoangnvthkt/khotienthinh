@@ -207,9 +207,9 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
         actorUserId: user.id,
       });
 
-      if (finance) updateProjectFinance(result.projectFinance);
-      else addProjectFinance(result.projectFinance);
-      if (result.materialProjectTransaction) addProjectTransaction(result.materialProjectTransaction);
+      if (finance) await updateProjectFinance(result.projectFinance);
+      else await addProjectFinance(result.projectFinance);
+      if (result.materialProjectTransaction) await addProjectTransaction(result.materialProjectTransaction);
       await Promise.all([
         loadModuleData('wms', true),
         loadModuleData('da', true),

@@ -29,6 +29,7 @@ import ItemSelectionModal from './ItemSelectionModal';
 import ScannerModal from './ScannerModal';
 import ProjectSubmissionDialog from './project/ProjectSubmissionDialog';
 import ProjectWorkflowPanel from './project/ProjectWorkflowPanel';
+import ProjectWorkflowStartDialog from './project/ProjectWorkflowStartDialog';
 import { useReservedStock } from '../hooks/useReservedStock';
 import { canApproveMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, isAdmin, isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../lib/wmsPermissions';
 import { useToast } from '../context/ToastContext';
@@ -77,6 +78,7 @@ interface RequestModalProps {
     requestFulfillmentSummariesByRequestId?: Record<string, MaterialRequestFulfillmentSummary>;
     initialAction?: 'createFulfillmentBatch';
     canProcessProjectWorkflow?: boolean;
+    canManageProjectWorkflow?: boolean;
     projectWorkflowSubject?: ProjectWorkflowSubject;
     projectWorkflowAssignments?: WorkflowStepAssignment[];
     projectWorkflowNodes?: WorkflowNode[];
@@ -173,6 +175,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     requestFulfillmentSummariesByRequestId = {},
     initialAction,
     canProcessProjectWorkflow = false,
+    canManageProjectWorkflow = false,
     projectWorkflowSubject,
     projectWorkflowAssignments = [],
     projectWorkflowNodes = [],
@@ -239,7 +242,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
         && isProjectRequest
         && request.status === RequestStatus.APPROVED
         && (request.workflowStep === 'batch_planning' || !request.workflowStep)
-        && canProcessProjectWorkflow;
+        && (
+            request.submittedToUserId === user.id
+            || canProcessProjectWorkflow
+            || canManageProjectWorkflow
+        );
     const workBoqMap = useMemo(() => new Map(workBoqItems.map(item => [item.id, item])), [workBoqItems]);
     const materialBudgetMap = useMemo(() => new Map(materialBudgetItems.map(item => [item.id, item])), [materialBudgetItems]);
     const budgetOptions = useMemo(
@@ -669,9 +676,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
         });
         if (!ok) return;
 
-        const dynamicBinding = isProjectRequest
-            ? await projectWorkflowService.resolveBinding('material_request', effectiveProjectId || null, effectiveConstructionSiteId || null)
+        const dynamicConfiguration = isProjectRequest
+            ? await projectWorkflowService.getConfiguration('material_request', effectiveProjectId || null, effectiveConstructionSiteId || null)
             : null;
+        if (isProjectRequest && (!dynamicConfiguration?.valid || !dynamicConfiguration.binding)) {
+            throw new Error(dynamicConfiguration?.errors?.[0] || 'Dự án chưa cấu hình workflow đề xuất vật tư hợp lệ.');
+        }
+        const dynamicBinding = dynamicConfiguration?.binding || null;
         const now = new Date().toISOString();
         const requestToSave: MaterialRequest = {
             ...draftRequest,
@@ -684,13 +695,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     submissionNote: null,
                 }
                 : projectSubmissionService.targetToUpdate(submissionTarget)),
-            ...projectSubmissionService.actionMeta(user.id, true),
+            ...projectSubmissionService.actionMeta(user.id, !dynamicBinding),
             ...(isProjectRequest
                 ? getMaterialRequestWorkflowPatch(dynamicBinding ? 'draft' : 'site_manager_review', user.id)
                 : {}),
             logs: [
                 ...(draftRequest.logs || []),
-                { action: 'SUBMITTED', userId: user.id, timestamp: now, note: submissionTarget.note || undefined },
+                { action: dynamicBinding ? 'DRAFT_SAVED' : 'SUBMITTED', userId: user.id, timestamp: now, note: submissionTarget.note || undefined },
             ],
         };
 
@@ -702,10 +713,15 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 return;
             }
             if (dynamicBinding) {
-                await projectWorkflowService.startMaterialRequestWorkflow({
+                const targetUserIds = submissionTarget.userIds?.length
+                    ? submissionTarget.userIds
+                    : submissionTarget.userId
+                        ? [submissionTarget.userId]
+                        : [];
+                await projectWorkflowService.startMaterialRequestWorkflowV2({
                     requestId: requestToSave.id,
                     templateId: dynamicBinding.workflowTemplateId,
-                    firstAssigneeUserId: submissionTarget.userId,
+                    firstAssigneeUserIds: targetUserIds,
                     comment: submissionTarget.note,
                 });
             }
@@ -1726,7 +1742,16 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             nextNode={projectWorkflowNextNode}
                             returnTargetNode={projectWorkflowReturnTargetNode}
                             canAct={canReviewProjectWorkflow}
-                            canResubmit={isDynamicReturnedDraft}
+                            canReassign={canReviewProjectWorkflow || canManageProjectWorkflow}
+                            canResubmit={isDynamicReturnedDraft && request.requesterId === user.id}
+                            canRollback={canManageProjectWorkflow}
+                            completionHandoff={{
+                                required: true,
+                                eligiblePermissionCodes: ['approve'],
+                                actionLabel: 'Duyệt và bàn giao cấp hàng',
+                                assigneeLabel: 'Người phụ trách tạo đợt cấp / đặt mua',
+                                helperText: 'Workflow phê duyệt sẽ hoàn thành. Phiếu vật tư chuyển sang Chờ tạo đợt cấp và giao cho người được chọn để cấp hàng hoặc đặt mua.',
+                            }}
                             disabled={isSaving}
                             onAction={handleProjectWorkflowPanelAction}
                         />
@@ -2785,7 +2810,27 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 }}
             />
 
-            {submittingProjectRequest && (
+            {submittingProjectRequest && isProjectRequest && (
+                <ProjectWorkflowStartDialog
+                    requestId={submittingProjectRequest.id}
+                    requestCode={submittingProjectRequest.code}
+                    requesterUserId={submittingProjectRequest.requesterId}
+                    projectId={effectiveProjectId}
+                    constructionSiteId={effectiveConstructionSiteId}
+                    users={users}
+                    employees={employees}
+                    orgUnits={orgUnits}
+                    onCancel={() => setSubmittingProjectRequest(null)}
+                    onConfirm={input => submitRequestForApproval(submittingProjectRequest, {
+                        userId: input.assigneeUserIds[0],
+                        userIds: input.assigneeUserIds,
+                        name: input.assigneeUserIds.map(id => users.find(item => item.id === id)?.name || id).join(', '),
+                        note: input.comment,
+                    })}
+                />
+            )}
+
+            {submittingProjectRequest && !isProjectRequest && (
                 <ProjectSubmissionDialog
                     title="Gửi đề xuất vật tư"
                     actionLabel="Gửi đề xuất"

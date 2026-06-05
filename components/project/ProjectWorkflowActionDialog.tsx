@@ -1,16 +1,18 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, RotateCcw, Send, UserRound, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, RotateCcw, Send, Undo2, UserRound, X, XCircle } from 'lucide-react';
 import {
   Employee,
   OrgUnit,
   ProjectWorkflowAction,
   ProjectWorkflowActionContext,
   ProjectWorkflowSubject,
+  ProjectWorkflowRollbackDependencyResult,
   User,
   WorkflowNode,
   WorkflowNodeType,
 } from '../../types';
 import ProjectWorkflowAssigneeSelect from './ProjectWorkflowAssigneeSelect';
+import { projectWorkflowService } from '../../lib/projectWorkflowService';
 
 interface Props {
   action: ProjectWorkflowAction;
@@ -23,6 +25,12 @@ interface Props {
   returnTargetNode?: WorkflowNode | null;
   requesterUserId?: string | null;
   documentName: string;
+  completionHandoff?: {
+    required: boolean;
+    eligiblePermissionCodes: string[];
+    assigneeLabel?: string;
+    helperText?: string;
+  };
   onCancel: () => void;
   onConfirm: (context: ProjectWorkflowActionContext) => Promise<void> | void;
 }
@@ -33,6 +41,7 @@ const actionTitle: Record<ProjectWorkflowAction, string> = {
   reject: 'Từ chối phiếu',
   resubmit: 'Gửi lại phiếu',
   reassign: 'Đổi người xử lý',
+  rollback: 'Rollback về bước duyệt cuối',
 };
 
 const actionIcon: Record<ProjectWorkflowAction, React.ReactNode> = {
@@ -41,9 +50,10 @@ const actionIcon: Record<ProjectWorkflowAction, React.ReactNode> = {
   reject: <XCircle size={18} />,
   resubmit: <Send size={18} />,
   reassign: <UserRound size={18} />,
+  rollback: <Undo2 size={18} />,
 };
 
-const requiresComment = (action: ProjectWorkflowAction) => action === 'return' || action === 'reject';
+const requiresComment = (action: ProjectWorkflowAction) => action === 'return' || action === 'reject' || action === 'rollback';
 
 const ProjectWorkflowActionDialog: React.FC<Props> = ({
   action,
@@ -56,6 +66,7 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
   returnTargetNode,
   requesterUserId,
   documentName,
+  completionHandoff,
   onCancel,
   onConfirm,
 }) => {
@@ -71,6 +82,7 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rollbackDependencies, setRollbackDependencies] = useState<ProjectWorkflowRollbackDependencyResult | null>(null);
 
   const targetNode = useMemo(() => {
     if (action === 'approve') return nextNode || null;
@@ -79,18 +91,42 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
     return null;
   }, [action, currentNode, nextNode, returnTargetNode]);
 
+  const isCompletionHandoff = action === 'approve'
+    && targetNode?.type === WorkflowNodeType.END
+    && completionHandoff?.required;
+  const assigneeNode = useMemo(() => {
+    if (!targetNode || !isCompletionHandoff) return targetNode;
+    return {
+      ...targetNode,
+      config: {
+        ...targetNode.config,
+        assignmentTargets: [],
+        eligiblePermissionCodes: completionHandoff?.eligiblePermissionCodes || [],
+      },
+    };
+  }, [completionHandoff?.eligiblePermissionCodes, isCompletionHandoff, targetNode]);
   const needsAssignee = (action === 'approve' && !!targetNode && targetNode.type !== WorkflowNodeType.END)
+    || isCompletionHandoff
     || action === 'resubmit'
     || action === 'reassign';
 
   const helperText = (() => {
+    if (isCompletionHandoff) return completionHandoff?.helperText || 'Phiếu sẽ hoàn tất phần phê duyệt và bàn giao sang bước nghiệp vụ tiếp theo.';
     if (action === 'approve' && targetNode?.type === WorkflowNodeType.END) return 'Phiếu sẽ hoàn tất phần phê duyệt và chuyển sang bước nghiệp vụ tiếp theo.';
     if (action === 'approve') return `Phiếu sẽ chuyển sang bước "${targetNode?.label || 'kế tiếp'}".`;
     if (action === 'return') return 'Phiếu quay về Nháp để người tạo bổ sung, sau đó gửi lại đúng bước đã trả.';
     if (action === 'reject') return 'Phiếu sẽ kết thúc ở trạng thái từ chối.';
     if (action === 'resubmit') return `Phiếu sẽ gửi lại vào bước "${targetNode?.label || 'đã trả lại'}".`;
+    if (action === 'rollback') return 'Phiếu hoàn thành sẽ quay lại bước duyệt cuối khi toàn bộ chứng từ downstream đã được reverse.';
     return 'Người xử lý hiện tại sẽ được thay bằng người mới trong cùng bước.';
   })();
+
+  React.useEffect(() => {
+    if (action !== 'rollback') return;
+    projectWorkflowService.getRollbackDependencies(subject.subjectId)
+      .then(setRollbackDependencies)
+      .catch(err => setError(err?.message || 'Không kiểm tra được chứng từ downstream.'));
+  }, [action, subject.subjectId]);
 
   const submit = async () => {
     const trimmed = comment.trim();
@@ -100,6 +136,14 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
     }
     if (needsAssignee && assigneeUserIds.length === 0) {
       setError('Vui lòng chọn ít nhất một người xử lý.');
+      return;
+    }
+    if (isCompletionHandoff && assigneeUserIds.length !== 1) {
+      setError('Vui lòng chọn đúng một người phụ trách tạo đợt cấp hoặc đặt mua.');
+      return;
+    }
+    if (action === 'rollback' && rollbackDependencies && !rollbackDependencies.allowed) {
+      setError('Rollback đang bị khóa vì còn chứng từ downstream chưa reverse.');
       return;
     }
     setSubmitting(true);
@@ -130,7 +174,9 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
             <div className="flex items-center gap-2 text-[10px] font-black uppercase text-indigo-600">
               {actionIcon[action]} Workflow đề xuất
             </div>
-            <h3 className="mt-1 text-base font-black text-slate-800">{actionTitle[action]}</h3>
+            <h3 className="mt-1 text-base font-black text-slate-800">
+              {isCompletionHandoff ? 'Duyệt và bàn giao xử lý' : actionTitle[action]}
+            </h3>
             <p className="mt-1 text-xs font-bold text-slate-400">{documentName}</p>
           </div>
           <button onClick={onCancel} disabled={submitting} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 disabled:opacity-50">
@@ -143,15 +189,25 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
             {helperText}
           </div>
 
-          {needsAssignee && targetNode && (
+          {action === 'rollback' && rollbackDependencies && (
+            <div className={`rounded-xl border px-3 py-2 text-xs font-bold ${rollbackDependencies.allowed ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-red-100 bg-red-50 text-red-700'}`}>
+              {rollbackDependencies.allowed
+                ? 'Dependency đã sạch. Phiếu có thể quay về bước duyệt cuối.'
+                : `Còn ${rollbackDependencies.activeCount} dependency đang hoạt động. Cần reverse/cancel/return đầy đủ trước khi rollback.`}
+            </div>
+          )}
+
+          {needsAssignee && assigneeNode && (
             <ProjectWorkflowAssigneeSelect
               subject={subject}
-              node={targetNode}
+              node={assigneeNode}
               users={users}
               employees={employees}
               orgUnits={orgUnits}
               value={assigneeUserIds}
               creatorUserId={requesterUserId}
+              label={isCompletionHandoff ? completionHandoff?.assigneeLabel : undefined}
+              selectionMode={isCompletionHandoff ? 'single' : 'multiple'}
               disabled={submitting}
               onChange={setAssigneeUserIds}
             />
@@ -185,7 +241,7 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
           </button>
           <button
             onClick={submit}
-            disabled={submitting}
+            disabled={submitting || (action === 'rollback' && rollbackDependencies?.allowed === false)}
             className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-700 disabled:opacity-50"
           >
             {actionIcon[action]} {submitting ? 'Đang xử lý...' : 'Xác nhận'}

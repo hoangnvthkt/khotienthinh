@@ -175,15 +175,15 @@ interface AppContextType {
   addAuditSession: (session: AuditSession) => Promise<void>;
   // Project Finances (DA)
   projectFinances: ProjectFinance[];
-  addProjectFinance: (pf: ProjectFinance) => void;
-  updateProjectFinance: (pf: ProjectFinance) => void;
-  removeProjectFinance: (id: string) => void;
+  addProjectFinance: (pf: ProjectFinance) => Promise<void>;
+  updateProjectFinance: (pf: ProjectFinance) => Promise<void>;
+  removeProjectFinance: (id: string) => Promise<void>;
   // Project Transactions
   projectTransactions: ProjectTransaction[];
-  addProjectTransaction: (tx: ProjectTransaction) => void;
-  addProjectTransactions: (txs: ProjectTransaction[]) => void;
-  updateProjectTransaction: (tx: ProjectTransaction) => void;
-  removeProjectTransaction: (id: string) => void;
+  addProjectTransaction: (tx: ProjectTransaction) => Promise<void>;
+  addProjectTransactions: (txs: ProjectTransaction[]) => Promise<void>;
+  updateProjectTransaction: (tx: ProjectTransaction) => Promise<void>;
+  removeProjectTransaction: (id: string) => Promise<void>;
   // Assets (TS)
   assets: Asset[];
   assetCategories: AssetCategory[];
@@ -684,12 +684,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     createdAt: row.createdAt ?? row.created_at,
   });
 
-  const projectTransactionPayload = (tx: ProjectTransaction) => ({
-    ...tx,
-    project_id: tx.projectId || null,
-    project_finance_id: tx.projectFinanceId || null,
-    construction_site_id: tx.constructionSiteId || null,
+  const normalizeProjectFinance = (row: any): ProjectFinance => ({
+    ...row,
+    projectId: row.projectId ?? row.project_id ?? null,
+    constructionSiteId: row.constructionSiteId ?? row.construction_site_id,
   });
+
+  const projectFinancePayload = (finance: ProjectFinance) => {
+    const { projectId, ...legacyPayload } = finance;
+    return {
+      ...legacyPayload,
+      project_id: projectId || null,
+      construction_site_id: finance.constructionSiteId || null,
+    };
+  };
+
+  const projectTransactionPayload = (tx: ProjectTransaction) => {
+    const { projectId, ...legacyPayload } = tx;
+    return {
+      ...legacyPayload,
+      project_id: tx.projectId || null,
+      project_finance_id: tx.projectFinanceId || null,
+      construction_site_id: tx.constructionSiteId || null,
+      source_ref: tx.sourceRef || null,
+    };
+  };
 
   const loadModuleData = useCallback(async (module: AppModule, force = false) => {
     if (!isSupabaseConfigured) return;
@@ -945,7 +964,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTableHelper('project_transactions', supabase.from('project_transactions').select('*').order('date', { ascending: false })),
         ]);
         if (constructionSitesData) setHrmConstructionSites(constructionSitesData);
-        if (projectFinancesData) setProjectFinances(projectFinancesData);
+        if (projectFinancesData) setProjectFinances(projectFinancesData.map(normalizeProjectFinance));
         if (projectTxData) setProjectTransactions(projectTxData.map(normalizeProjectTransaction));
       } else if (module === 'ex') {
         const [budgetCatData, budgetEntData, expRecData] = await Promise.all([
@@ -2494,66 +2513,127 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // ==================== PROJECT FINANCES CRUD ====================
-  const addProjectFinance = (pf: ProjectFinance) => {
-    setProjectFinances(prev => [pf, ...prev]);
+  const addProjectFinance = async (pf: ProjectFinance) => {
     if (isSupabaseConfigured) {
-      supabase.from('project_finances').upsert(pf)
-        .then(({ error }) => { if (error) console.error('Error saving project_finance:', error); });
+      const { data, error } = await supabase
+        .from('project_finances')
+        .upsert(projectFinancePayload(pf))
+        .select('id')
+        .maybeSingle();
+      if (error) {
+        logApiError('addProjectFinance', error);
+        throw error;
+      }
+      if (!data) throw new Error('Supabase không xác nhận đã lưu ngân sách dự án.');
     }
+    setProjectFinances(prev => [pf, ...prev.filter(item => item.id !== pf.id)]);
     auditService.log({ tableName: 'project_finances', recordId: pf.id, action: 'INSERT', newData: pf as any, userId: user.id, userName: user.name || user.username });
   };
 
-  const updateProjectFinance = (pf: ProjectFinance) => {
+  const updateProjectFinance = async (pf: ProjectFinance) => {
     const oldPf = projectFinances.find(p => p.id === pf.id);
-    setProjectFinances(prev => prev.map(p => p.id === pf.id ? pf : p));
     if (isSupabaseConfigured) {
-      supabase.from('project_finances').upsert(pf)
-        .then(({ error }) => { if (error) console.error('Error updating project_finance:', error); });
+      const { data, error } = await supabase
+        .from('project_finances')
+        .upsert(projectFinancePayload(pf))
+        .select('id')
+        .maybeSingle();
+      if (error) {
+        logApiError('updateProjectFinance', error);
+        throw error;
+      }
+      if (!data) throw new Error('Supabase không xác nhận đã cập nhật ngân sách dự án.');
     }
+    setProjectFinances(prev => prev.map(p => p.id === pf.id ? pf : p));
     auditService.log({ tableName: 'project_finances', recordId: pf.id, action: 'UPDATE', oldData: oldPf as any, newData: pf as any, userId: user.id, userName: user.name || user.username });
   };
 
-  const removeProjectFinance = (id: string) => {
+  const removeProjectFinance = async (id: string) => {
     const oldPf = projectFinances.find(p => p.id === id);
-    setProjectFinances(prev => prev.filter(p => p.id !== id));
     if (isSupabaseConfigured) {
-      supabase.from('project_finances').delete().eq('id', id)
-        .then(({ error }) => { if (error) console.error('Error deleting project_finance:', error); });
+      const { data, error } = await supabase
+        .from('project_finances')
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+      if (error) {
+        logApiError('removeProjectFinance', error);
+        throw error;
+      }
+      if (!data) throw new Error('Supabase không xác nhận đã xoá ngân sách dự án.');
     }
+    setProjectFinances(prev => prev.filter(p => p.id !== id));
     if (oldPf) auditService.log({ tableName: 'project_finances', recordId: id, action: 'DELETE', oldData: oldPf as any, userId: user.id, userName: user.name || user.username });
   };
 
   // ==================== PROJECT TRANSACTIONS CRUD ====================
-  const addProjectTransaction = (tx: ProjectTransaction) => {
-    setProjectTransactions(prev => [tx, ...prev]);
+  const addProjectTransaction = async (tx: ProjectTransaction) => {
     if (isSupabaseConfigured) {
-      supabase.from('project_transactions').upsert(projectTransactionPayload(tx))
-        .then(({ error }) => { if (error) console.error('Error saving project_tx:', error); });
+      const { data, error } = await supabase
+        .from('project_transactions')
+        .upsert(projectTransactionPayload(tx))
+        .select('id')
+        .maybeSingle();
+      if (error) {
+        logApiError('addProjectTransaction', error);
+        throw error;
+      }
+      if (!data) throw new Error('Supabase không xác nhận đã lưu giao dịch dự án.');
     }
+    setProjectTransactions(prev => [tx, ...prev.filter(item => item.id !== tx.id)]);
   };
 
-  const addProjectTransactions = (txs: ProjectTransaction[]) => {
-    setProjectTransactions(prev => [...txs, ...prev]);
+  const addProjectTransactions = async (txs: ProjectTransaction[]) => {
+    if (txs.length === 0) return;
     if (isSupabaseConfigured) {
-      supabase.from('project_transactions').upsert(txs.map(projectTransactionPayload))
-        .then(({ error }) => { if (error) console.error('Error saving project_txs:', error); });
+      const { data, error } = await supabase
+        .from('project_transactions')
+        .upsert(txs.map(projectTransactionPayload))
+        .select('id');
+      if (error) {
+        logApiError('addProjectTransactions', error);
+        throw error;
+      }
+      if (!data || data.length !== txs.length) {
+        throw new Error(`Supabase chỉ xác nhận đã lưu ${data?.length || 0}/${txs.length} giao dịch dự án.`);
+      }
     }
+    const nextIds = new Set(txs.map(tx => tx.id));
+    setProjectTransactions(prev => [...txs, ...prev.filter(item => !nextIds.has(item.id))]);
   };
 
-  const updateProjectTransaction = (tx: ProjectTransaction) => {
+  const updateProjectTransaction = async (tx: ProjectTransaction) => {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('project_transactions')
+        .upsert(projectTransactionPayload(tx))
+        .select('id')
+        .maybeSingle();
+      if (error) {
+        logApiError('updateProjectTransaction', error);
+        throw error;
+      }
+      if (!data) throw new Error('Supabase không xác nhận đã cập nhật giao dịch dự án.');
+    }
     setProjectTransactions(prev => prev.map(t => t.id === tx.id ? tx : t));
-    if (isSupabaseConfigured) {
-      supabase.from('project_transactions').upsert(projectTransactionPayload(tx))
-        .then(({ error }) => { if (error) console.error('Error updating project_tx:', error); });
-    }
   };
 
-  const removeProjectTransaction = (id: string) => {
-    setProjectTransactions(prev => prev.filter(t => t.id !== id));
+  const removeProjectTransaction = async (id: string) => {
     if (isSupabaseConfigured) {
-      supabase.from('project_transactions').delete().eq('id', id)
-        .then(({ error }) => { if (error) console.error('Error deleting project_tx:', error); });
+      const { data, error } = await supabase
+        .from('project_transactions')
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+      if (error) {
+        logApiError('removeProjectTransaction', error);
+        throw error;
+      }
+      if (!data) throw new Error('Supabase không xác nhận đã xoá giao dịch dự án.');
     }
+    setProjectTransactions(prev => prev.filter(t => t.id !== id));
   };
 
   // ==================== ASSET MANAGEMENT CRUD ====================

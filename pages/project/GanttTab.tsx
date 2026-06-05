@@ -13,7 +13,7 @@ import {
     Paperclip, ClipboardCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus, ProjectTaskProgressMode, ContractItem, ProjectStaff, ProjectTaskCompletionRequest, Attachment, ProjectDelayEvent, ProjectDelayEventStatus, ProjectScheduleRevision, ProjectScheduleRevisionTask, PurchaseOrder, MaterialBudgetItem, MaterialRequestFulfillmentBatch, ProjectWeeklyTaskProgress, TaskContractItem, ProjectOpeningBalance } from '../../types';
+import { ProjectTask, ProjectBaseline, TaskDependencyType, ResourceType, DailyLog, GateStatus, ProjectTaskProgressMode, ContractItem, ProjectStaff, ProjectTaskCompletionRequest, Attachment, ProjectDelayEvent, ProjectDelayEventStatus, ProjectScheduleRevision, ProjectScheduleRevisionTask, PurchaseOrder, MaterialBudgetItem, MaterialRequestFulfillmentBatch, ProjectWeeklyTaskProgress, TaskContractItem } from '../../types';
 import { taskService, baselineService, dailyLogService, poService, boqService } from '../../lib/projectService';
 import { taskCompletionRequestService } from '../../lib/projectTaskCompletionService';
 import { buildScheduleForecast } from '../../lib/projectScheduleForecast';
@@ -51,7 +51,6 @@ import {
     getWeekStart,
     projectWeeklyProgressService,
 } from '../../lib/projectWeeklyProgressService';
-import { projectOpeningBalanceService } from '../../lib/projectOpeningBalanceService';
 
 interface GanttTabProps {
     constructionSiteId?: string;
@@ -672,26 +671,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         return projectFinances.find(finance => projectId && finance.projectId === projectId)
             || projectFinances.find(finance => constructionSiteId && finance.constructionSiteId === constructionSiteId);
     }, [constructionSiteId, projectFinances, projectId]);
-    const [openingBalance, setOpeningBalance] = useState<ProjectOpeningBalance | null>(null);
-    useEffect(() => {
-        let cancelled = false;
-        if (!scopeKey || !isSupabaseConfigured) {
-            setOpeningBalance(null);
-            return;
-        }
-        projectOpeningBalanceService.getLockedByScope(scopeKey)
-            .then(balance => { if (!cancelled) setOpeningBalance(balance); })
-            .catch(() => { if (!cancelled) setOpeningBalance(null); });
-        return () => { cancelled = true; };
-    }, [scopeKey]);
     const valueProgressMetric = useMemo(() => calculateProjectValueProgress({
         projectFinance: currentProjectFinance,
         customerItems: contractItems.filter(item => item.contractType === 'customer'),
         purchaseOrders,
         fulfillmentBatches,
         materialBudgets,
-        openingBalance,
-    }), [contractItems, currentProjectFinance, fulfillmentBatches, materialBudgets, openingBalance, purchaseOrders]);
+    }), [contractItems, currentProjectFinance, fulfillmentBatches, materialBudgets, purchaseOrders]);
     const weeklyConstructionProgress = useMemo(
         () => calculateWeeklyConstructionProgress(tasks, taskContractLinkRows, contractItems),
         [contractItems, taskContractLinkRows, tasks],
@@ -972,11 +958,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
         const finance = projectFinances.find(pf => pf.constructionSiteId === constructionSiteId);
         if (!finance || finance.progressPercent === constructionProgress) return;
 
-        updateProjectFinance({
+        void updateProjectFinance({
             ...finance,
             progressPercent: constructionProgress,
             updatedAt: new Date().toISOString(),
-        });
+        }).catch(error => console.warn('Failed to sync project finance progress', error));
     }, [constructionSiteId, contractItems, projectFinances, taskContractLinkRows, updateProjectFinance]);
 
     useEffect(() => {

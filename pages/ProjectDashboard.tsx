@@ -21,7 +21,6 @@ import {
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { loadXlsx } from '../lib/loadXlsx';
 import ExcelImportReviewModal from '../components/ExcelImportReviewModal';
-import ProjectOpeningBalanceModal from '../components/project/ProjectOpeningBalanceModal';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, getExcelCell, parseExcelRows } from '../lib/excelImport';
 import { useModuleData } from '../hooks/useModuleData';
 import { useWorkflow } from '../context/WorkflowContext';
@@ -50,7 +49,7 @@ import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, FileText,
     Building2, HardHat, AlertCircle, ArrowUpRight, ArrowDownRight,
-    Upload, Download, Filter, Calendar, Tag, List, Paperclip, Eye, Image, FileSpreadsheet,
+    Upload, Download, Filter, Calendar, Tag, List, Paperclip, Eye, Image,
     Users, UserPlus, Loader2, RefreshCcw, Search, EyeOff, ArchiveRestore, Shield, Pin
 } from 'lucide-react';
 
@@ -352,7 +351,6 @@ const ProjectDashboard: React.FC = () => {
     const [activeView, setActiveView] = useState<'list' | 'overview'>('list');
     const [overviewTab, setOverviewTab] = useState<ProjectOverviewTabKey>('executive');
     const [showBudgetForm, setShowBudgetForm] = useState(false);
-    const [showOpeningBalanceForm, setShowOpeningBalanceForm] = useState(false);
     const [showTxForm, setShowTxForm] = useState(false);
     const [budgetData, setBudgetData] = useState<ProjectFinance | null>(null);
     const [txFilter, setTxFilter] = useState<ProjectCostCategory | 'all'>('all');
@@ -1642,7 +1640,7 @@ const ProjectDashboard: React.FC = () => {
         setShowBudgetForm(true);
     };
 
-    const saveBudget = () => {
+    const saveBudget = async () => {
         if (!requireProjectTabManage('budget', 'lưu ngân sách')) return;
         if (!budgetData) return;
         const derivedProgress = taskProgressBySite[budgetData.constructionSiteId]?.progressPercent;
@@ -1652,11 +1650,17 @@ const ProjectDashboard: React.FC = () => {
             updatedAt: new Date().toISOString(),
         };
         const existing = projectFinances.find(pf => pf.id === nextBudgetData.id);
-        if (existing) updateProjectFinance(nextBudgetData);
-        else addProjectFinance(nextBudgetData);
-        setShowBudgetForm(false);
-        setSelectedSiteId(nextBudgetData.constructionSiteId);
-        setActiveView('overview');
+        try {
+            if (existing) await updateProjectFinance(nextBudgetData);
+            else await addProjectFinance(nextBudgetData);
+            setShowBudgetForm(false);
+            setSelectedSiteId(nextBudgetData.constructionSiteId);
+            setActiveView('overview');
+            toast.success('Đã lưu ngân sách', 'Supabase đã xác nhận dữ liệu ngân sách dự án.');
+        } catch (error) {
+            logApiError('ProjectDashboard.saveBudget', error);
+            toast.error('Không thể lưu ngân sách', getApiErrorMessage(error, 'Không thể lưu ngân sách dự án.'));
+        }
     };
 
     const fileToBase64 = (file: File): Promise<string> => {
@@ -1752,7 +1756,7 @@ const ProjectDashboard: React.FC = () => {
             let financeId = selectedFinance?.id;
             if (!financeId) {
                 const newFin = emptyFinance(effectiveSiteId);
-                addProjectFinance(newFin);
+                await addProjectFinance(newFin);
                 financeId = newFin.id;
             }
             const newAttachments = await uploadFiles(txFiles);
@@ -1768,7 +1772,7 @@ const ProjectDashboard: React.FC = () => {
                     date: txDate,
                     attachments: allAttachments,
                 };
-                updateProjectTransaction(updated);
+                await updateProjectTransaction(updated);
                 toast.success('Đã cập nhật giao dịch', txDesc || 'Giao dịch dự án đã được cập nhật.');
             } else {
                 const tx: ProjectTransaction = {
@@ -1786,7 +1790,7 @@ const ProjectDashboard: React.FC = () => {
                     createdBy: user.id,
                     createdAt: new Date().toISOString(),
                 };
-                addProjectTransaction(tx);
+                await addProjectTransaction(tx);
                 toast.success('Đã thêm giao dịch', txDesc || 'Giao dịch dự án đã được tạo.');
             }
             resetTxForm();
@@ -1798,7 +1802,7 @@ const ProjectDashboard: React.FC = () => {
         }
     };
 
-    const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!requireProjectTabManage('cashflow', 'import giao dịch dòng tiền')) {
             e.target.value = '';
             return;
@@ -1813,7 +1817,14 @@ const ProjectDashboard: React.FC = () => {
         let financeId = selectedFinance?.id;
         if (!financeId) {
             const newFin = emptyFinance(effectiveSiteId);
-            addProjectFinance(newFin);
+            try {
+                await addProjectFinance(newFin);
+            } catch (error) {
+                logApiError('ProjectDashboard.transactionImport.createFinance', error);
+                toast.error('Không thể tạo ngân sách dự án', getApiErrorMessage(error, 'Không thể chuẩn bị dữ liệu để import giao dịch.'));
+                e.target.value = '';
+                return;
+            }
             financeId = newFin.id;
         }
 
@@ -1986,7 +1997,7 @@ const ProjectDashboard: React.FC = () => {
                 console.log(`[DA Import] Mode: ${importMode}`);
 
                 if (txs.length > 0) {
-                    addProjectTransactions(txs);
+                    await addProjectTransactions(txs);
                     toast.success(`Import thành công ${txs.length} giao dịch`, importMode);
                 } else {
                     const sampleKeys = rows.length > 0 ? Object.keys(rows[0]).join(', ') : 'N/A';
@@ -2001,11 +2012,16 @@ const ProjectDashboard: React.FC = () => {
         e.target.value = '';
     };
 
-    const handleDeleteTx = (id: string) => {
+    const handleDeleteTx = async (id: string) => {
         if (!requireProjectTabManage('cashflow', 'xoá giao dịch dòng tiền')) return;
-        removeProjectTransaction(id);
-        setDeleteTxConfirmId(null);
-        toast.success('Đã xoá giao dịch', 'Giao dịch dự án đã được xoá.');
+        try {
+            await removeProjectTransaction(id);
+            setDeleteTxConfirmId(null);
+            toast.success('Đã xoá giao dịch', 'Giao dịch dự án đã được xoá.');
+        } catch (error) {
+            logApiError('ProjectDashboard.deleteTransaction', error);
+            toast.error('Không thể xoá giao dịch', getApiErrorMessage(error, 'Không thể xoá giao dịch dự án.'));
+        }
     };
 
     // ========== PROJECT FORM MODAL ==========
@@ -2805,16 +2821,10 @@ const ProjectDashboard: React.FC = () => {
                                 )}
                                 <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
                                 {canManageBudgetTab && (
-                                    <>
-                                        <button onClick={() => setShowOpeningBalanceForm(true)}
-                                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-teal-600 bg-teal-50 border border-teal-200 hover:bg-teal-100 dark:text-teal-400 dark:bg-teal-950/40 dark:border-teal-800/80 dark:hover:bg-teal-900/40 transition-all shrink-0">
-                                            <FileSpreadsheet size={14} /> Nhập đầu kỳ
-                                        </button>
-                                        <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
-                                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 dark:text-orange-400 dark:bg-orange-950/40 dark:border-orange-800/80 dark:hover:bg-orange-900/40 transition-all shrink-0">
-                                            <Edit2 size={14} /> Ngân sách
-                                        </button>
-                                    </>
+                                    <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
+                                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 dark:text-orange-400 dark:bg-orange-950/40 dark:border-orange-800/80 dark:hover:bg-orange-900/40 transition-all shrink-0">
+                                        <Edit2 size={14} /> Ngân sách
+                                    </button>
                                 )}
                             </>
                         )}
@@ -3491,16 +3501,6 @@ const ProjectDashboard: React.FC = () => {
             {renderBudgetForm()}
             {renderTxForm()}
             {renderHideProjectModal()}
-            {showOpeningBalanceForm && selectedProject && effectiveSiteId && (
-                <ProjectOpeningBalanceModal
-                    open={showOpeningBalanceForm}
-                    project={selectedProject}
-                    constructionSiteId={effectiveSiteId}
-                    siteName={selectedSite?.name}
-                    finance={selectedFinance}
-                    onClose={() => setShowOpeningBalanceForm(false)}
-                />
-            )}
 
             {/* Lightbox Preview */}
             {previewUrl && (

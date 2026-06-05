@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock, GitBranch, RotateCcw, Send, UserRound, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, GitBranch, RotateCcw, Send, Undo2, UserRound, XCircle } from 'lucide-react';
 import {
   Employee,
   OrgUnit,
@@ -28,7 +28,16 @@ interface Props {
   nextNode?: WorkflowNode | null;
   returnTargetNode?: WorkflowNode | null;
   canAct?: boolean;
+  canReassign?: boolean;
   canResubmit?: boolean;
+  canRollback?: boolean;
+  completionHandoff?: {
+    required: boolean;
+    eligiblePermissionCodes: string[];
+    actionLabel?: string;
+    assigneeLabel?: string;
+    helperText?: string;
+  };
   disabled?: boolean;
   onAction: (context: ProjectWorkflowActionContext) => Promise<void> | void;
 }
@@ -75,7 +84,10 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
   nextNode,
   returnTargetNode,
   canAct = false,
+  canReassign = false,
   canResubmit = false,
+  canRollback = false,
+  completionHandoff,
   disabled = false,
   onAction,
 }) => {
@@ -105,10 +117,14 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
   const shouldShowApprove = canShowRunningActions;
   const shouldShowReturn = canShowRunningActions;
   const shouldShowReject = canShowRunningActions && allowReject;
-  const shouldShowReassign = canShowRunningActions && allowReassign;
+  const shouldShowReassign = subject.status === 'RUNNING'
+    && canReassign
+    && currentNode?.type !== WorkflowNodeType.END
+    && allowReassign;
   const shouldShowResubmit = subject.status === 'RETURNED' && canResubmit;
+  const shouldShowRollback = subject.status === 'COMPLETED' && canRollback;
   const targetLabel = nextNode?.type === WorkflowNodeType.END
-    ? 'Hoàn tất phê duyệt'
+    ? completionHandoff?.actionLabel || 'Hoàn tất phê duyệt'
     : nextNode?.label
       ? `Chuyển ${nextNode.label}`
       : 'Duyệt bước';
@@ -157,7 +173,7 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
         </div>
       </div>
 
-      {(canShowRunningActions || shouldShowResubmit) && (
+      {(canShowRunningActions || shouldShowReassign || shouldShowResubmit || shouldShowRollback) && (
         <div className="flex flex-wrap gap-2">
           {shouldShowReturn && (
             <button
@@ -204,13 +220,22 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
               <Send size={14} /> Gửi lại
             </button>
           )}
+          {shouldShowRollback && (
+            <button
+              disabled={disabled}
+              onClick={() => setActiveAction('rollback')}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-black text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+            >
+              <Undo2 size={14} /> Rollback bước duyệt cuối
+            </button>
+          )}
         </div>
       )}
 
       {!canShowRunningActions && subject.status === 'RUNNING' && (
         <div className="flex items-start gap-2 rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs font-bold text-slate-500">
           <AlertTriangle size={14} className="mt-0.5 shrink-0 text-slate-300" />
-          Chỉ người đang được gán bước hoặc quản trị viên workflow mới có quyền duyệt, trả lại, từ chối hoặc đổi người.
+          Chỉ người đang được gán bước mới có quyền duyệt, trả lại hoặc từ chối. Quản trị workflow chỉ được đổi người xử lý.
         </div>
       )}
 
@@ -228,6 +253,7 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
           returnTargetNode={returnTargetNode}
           requesterUserId={requesterUserId}
           documentName={documentName}
+          completionHandoff={completionHandoff}
           onCancel={() => setActiveAction(null)}
           onConfirm={handleConfirm}
         />

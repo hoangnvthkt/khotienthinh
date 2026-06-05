@@ -23,8 +23,8 @@ const FIELD_TYPE_CONFIG: Record<CustomFieldType, { label: string; icon: any; col
 const WorkflowBuilder: React.FC = () => {
     const { id: templateId } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { templates, getTemplateNodes, getTemplateEdges, saveNodesAndEdges, updateTemplate, uploadPrintTemplate, deletePrintTemplate, getPrintTemplates } = useWorkflow();
-    const { users, orgUnits } = useApp();
+    const { templates, getTemplateNodes, getTemplateEdges, updateTemplate, uploadPrintTemplate, deletePrintTemplate, getPrintTemplates, refreshData } = useWorkflow();
+    const { users, orgUnits, user, isModuleAdmin } = useApp();
 
     const template = templates.find(t => t.id === templateId);
 
@@ -86,44 +86,25 @@ const WorkflowBuilder: React.FC = () => {
         if (!templateId) return;
         setBindingSaving(true);
         try {
-            const bindings = await projectWorkflowService.listBindings('material_request');
             if (!isMaterialRequestDefault) {
-                const activeGlobalBindings = bindings.filter(binding =>
-                    !binding.projectId &&
-                    !binding.constructionSiteId &&
-                    binding.isDefault &&
-                    binding.isActive
-                );
-                for (const binding of activeGlobalBindings) {
-                    if (binding.workflowTemplateId !== templateId) {
-                        await projectWorkflowService.upsertBinding({ ...binding, isActive: false });
-                    }
-                }
-                await projectWorkflowService.upsertBinding({
+                await projectWorkflowService.setBinding({
                     subjectType: 'material_request',
                     workflowTemplateId: templateId,
                     projectId: null,
                     constructionSiteId: null,
-                    isDefault: true,
-                    isActive: true,
                 });
                 setIsMaterialRequestDefault(true);
             } else {
-                const current = bindings.find(binding =>
-                    binding.workflowTemplateId === templateId &&
-                    !binding.projectId &&
-                    !binding.constructionSiteId &&
-                    binding.isDefault &&
-                    binding.isActive
-                );
-                if (current) {
-                    await projectWorkflowService.upsertBinding({
-                        ...current,
-                        isActive: false,
-                    });
-                }
+                await projectWorkflowService.removeBinding({
+                    subjectType: 'material_request',
+                    projectId: null,
+                    constructionSiteId: null,
+                });
                 setIsMaterialRequestDefault(false);
             }
+        } catch (error) {
+            console.error('Cannot update material request workflow binding:', error);
+            throw error;
         } finally {
             setBindingSaving(false);
         }
@@ -358,44 +339,39 @@ const WorkflowBuilder: React.FC = () => {
     const handleSave = async () => {
         if (!templateId || !template) return;
         setIsSaving(true);
-
-        // Ensure START and END nodes exist
-        let nodesToSave = [...localNodes];
-        let edgesToSave = [...localEdges];
-        const orderedSteps = getOrderedSteps();
-
-        let startNode = nodesToSave.find(n => n.type === WorkflowNodeType.START);
-        if (!startNode) {
-            startNode = { id: generateId(), templateId, type: WorkflowNodeType.START, label: 'Bắt đầu', config: {}, positionX: 0, positionY: 0 };
-            nodesToSave.push(startNode);
-        }
-
-        let endNode = nodesToSave.find(n => n.type === WorkflowNodeType.END);
-        if (!endNode) {
-            endNode = { id: generateId(), templateId, type: WorkflowNodeType.END, label: 'Kết thúc', config: {}, positionX: 0, positionY: 9999 };
-            nodesToSave.push(endNode);
-        }
-
-        // Auto-generate sequential edges: START -> step1 -> step2 -> ... -> END
-        edgesToSave = [];
-        const allInOrder = [startNode, ...orderedSteps, endNode];
-        for (let i = 0; i < allInOrder.length - 1; i++) {
-            edgesToSave.push({
+        try {
+            let nodesToSave = [...localNodes];
+            let startNode = nodesToSave.find(n => n.type === WorkflowNodeType.START);
+            if (!startNode) {
+                startNode = { id: generateId(), templateId, type: WorkflowNodeType.START, label: 'Bắt đầu', config: {}, positionX: 0, positionY: 0 };
+                nodesToSave.push(startNode);
+            }
+            let endNode = nodesToSave.find(n => n.type === WorkflowNodeType.END);
+            if (!endNode) {
+                endNode = { id: generateId(), templateId, type: WorkflowNodeType.END, label: 'Kết thúc', config: {}, positionX: 0, positionY: 9999 };
+                nodesToSave.push(endNode);
+            }
+            const orderedSteps = getOrderedSteps();
+            const allInOrder = [startNode, ...orderedSteps, endNode];
+            const edgesToSave: WorkflowEdge[] = allInOrder.slice(0, -1).map((node, index) => ({
                 id: generateId(),
                 templateId,
-                sourceNodeId: allInOrder[i].id,
-                targetNodeId: allInOrder[i + 1].id,
+                sourceNodeId: node.id,
+                targetNodeId: allInOrder[index + 1].id,
                 label: '',
+            }));
+            await projectWorkflowService.saveTemplateStructure({
+                template: { ...template, customFields },
+                nodes: nodesToSave,
+                edges: edgesToSave,
             });
+            setLocalNodes(nodesToSave);
+            setLocalEdges(edgesToSave);
+            await refreshData();
+            setHasChanges(false);
+        } finally {
+            setIsSaving(false);
         }
-
-        await saveNodesAndEdges(templateId, nodesToSave, edgesToSave);
-
-        // Save custom fields
-        await updateTemplate({ ...template, customFields });
-
-        setHasChanges(false);
-        setIsSaving(false);
     };
 
     if (!template) {
@@ -420,11 +396,11 @@ const WorkflowBuilder: React.FC = () => {
                     </button>
                     <div>
                         <h1 className="font-bold text-lg text-slate-800 dark:text-white">{template.name}</h1>
-                        <p className="text-xs text-slate-400">{template.description || 'Chưa có mô tả'}</p>
+                        <p className="text-xs text-slate-400">{template.description || 'Chưa có mô tả'} • Thay đổi chỉ áp dụng cho instance tạo mới</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button
+                    {(user.role === Role.ADMIN || isModuleAdmin('WF')) && <button
                         onClick={toggleMaterialRequestDefaultBinding}
                         disabled={bindingSaving}
                         className={`flex items-center px-4 py-2.5 rounded-xl text-xs font-black border transition disabled:opacity-50 ${
@@ -435,7 +411,7 @@ const WorkflowBuilder: React.FC = () => {
                     >
                         <Zap size={14} className="mr-1.5" />
                         {bindingSaving ? 'Đang lưu...' : isMaterialRequestDefault ? 'Mặc định phiếu vật tư' : 'Gán cho phiếu vật tư'}
-                    </button>
+                    </button>}
                     {hasChanges && (
                         <span className="text-[10px] font-bold text-amber-500 bg-amber-50 dark:bg-amber-900/30 px-3 py-1.5 rounded-lg animate-pulse">
                             • Chưa lưu
@@ -725,7 +701,6 @@ const WorkflowBuilder: React.FC = () => {
                                                         className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
                                                     >
                                                         <option value="to_creator">Về người tạo</option>
-                                                        <option value="previous_step">Về bước trước</option>
                                                     </select>
                                                 </div>
                                                 <div>
