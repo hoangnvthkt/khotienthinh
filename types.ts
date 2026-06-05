@@ -2290,6 +2290,153 @@ export interface ProjectWorkflowRuntimeContext {
   edges: WorkflowRuntimeEdge[];
 }
 
+export interface ProjectWorkflowCommentAttachment {
+  id: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  storagePath: string;
+  kind: 'image' | 'file';
+  uploadedAt?: string;
+}
+
+export interface ProjectWorkflowComment {
+  id: string;
+  workflowSubjectId: string;
+  workflowInstanceId?: string | null;
+  subjectType: ProjectWorkflowSubjectType;
+  subjectId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  authorUserId: string;
+  body: string;
+  attachments?: ProjectWorkflowCommentAttachment[];
+  metadata?: Record<string, any>;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type ProjectWorkflowBoardFilter = 'all' | 'mine' | 'overdue' | 'returned' | 'watching';
+export type WorkflowTemplateLifecycleStatus = 'draft' | 'published' | 'deactivated';
+
+export interface MaterialRequestWorkflowBoardCard {
+  id: string;
+  code?: string;
+  status?: RequestStatus | string;
+  workflowStep?: MaterialRequestWorkflowStep | string | null;
+  workflowStepStartedAt?: string | null;
+  workflowStepDueAt?: string | null;
+  workflowStepSlaHours?: number | null;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  requesterId?: string | null;
+  requesterName?: string | null;
+  submittedToUserId?: string | null;
+  submittedToName?: string | null;
+  createdDate?: string | null;
+  expectedDate?: string | null;
+  subject?: Partial<ProjectWorkflowSubject> & {
+    currentNodeLabel?: string | null;
+    currentNodeType?: string | null;
+  } | null;
+  currentRuntimeNode?: Partial<WorkflowRuntimeNode> | null;
+  currentAssignees?: Array<{ id: string; name?: string | null }>;
+  slaState?: 'none' | 'normal' | 'urgent' | 'overdue';
+  fulfillmentSummary?: {
+    batchCount: number;
+    activeBatchCount: number;
+    committedQty: number;
+    issuedQty: number;
+    receivedQty: number;
+  };
+  eventPreview?: Array<{
+    id: string;
+    action: string;
+    actorUserId?: string | null;
+    targetUserId?: string | null;
+    note?: string | null;
+    createdAt?: string | null;
+  }>;
+  downstream?: {
+    activeCount: number;
+    totalCount: number;
+  };
+}
+
+export interface ProjectWorkflowTimelineEntry {
+  kind: 'assignment' | 'event';
+  id: string;
+  workflowSubjectId?: string;
+  workflowInstanceId?: string | null;
+  nodeId?: string | null;
+  instanceNodeId?: string | null;
+  assignmentRoundId?: string | null;
+  nodeLabel?: string | null;
+  nodeType?: string | null;
+  assigneeUserId?: string | null;
+  assigneeName?: string | null;
+  assignedBy?: string | null;
+  assignedByName?: string | null;
+  status?: WorkflowStepAssignmentStatus | string;
+  assignedAt?: string | null;
+  actedAt?: string | null;
+  actionComment?: string | null;
+  action?: string;
+  actorUserId?: string | null;
+  actorName?: string | null;
+  targetUserId?: string | null;
+  targetName?: string | null;
+  note?: string | null;
+  dueAt?: string | null;
+  slaHours?: number | null;
+  metadata?: Record<string, any>;
+  createdAt?: string | null;
+}
+
+export interface ProjectWorkflowActionContextResult {
+  subjectType: ProjectWorkflowSubjectType;
+  subjectId: string;
+  workflowSubjectId: string;
+  status: ProjectWorkflowSubjectStatus;
+  currentNode?: Partial<WorkflowRuntimeNode | WorkflowNode> | null;
+  nextNode?: Partial<WorkflowRuntimeNode | WorkflowNode> | null;
+  returnTargetNode?: Partial<WorkflowRuntimeNode | WorkflowNode> | null;
+  pendingAssigneeUserIds: string[];
+  isPendingAssignee: boolean;
+  isWorkflowAdmin: boolean;
+  isWatcher: boolean;
+  isCreator: boolean;
+  canApprove: boolean;
+  canReturn: boolean;
+  canReject: boolean;
+  canResubmit: boolean;
+  canReassign: boolean;
+  canRollback: boolean;
+  rollbackDependencies?: ProjectWorkflowRollbackDependencyResult | null;
+}
+
+export interface WorkflowDelegationRule {
+  id: string;
+  delegatorUserId: string;
+  delegateUserId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  startsAt: string;
+  endsAt: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface WorkflowAnalyticsSummary {
+  totalRunning: number;
+  overdueCount: number;
+  returnedCount: number;
+  watcherCount: number;
+  byStep: Array<{ stepId: string; label: string; count: number; overdueCount: number }>;
+  workloadByUser: Array<{ userId: string; name?: string; pendingCount: number; overdueCount: number }>;
+}
+
 export interface WorkflowEdge {
   id: string;
   templateId: string;

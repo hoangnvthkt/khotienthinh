@@ -17,6 +17,7 @@ import {
     WorkGroupWithMembers,
     ProjectDeleteImpact,
     Role,
+    CustomerContract,
 } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { loadXlsx } from '../lib/loadXlsx';
@@ -32,6 +33,7 @@ import { projectMasterService } from '../lib/projectMasterService';
 import { projectMasterDataService } from '../lib/projectMasterDataService';
 import { projectPermissionTypeService, projectStaffService } from '../lib/projectStaffService';
 import { workGroupService } from '../lib/workGroupService';
+import { customerContractService } from '../lib/hdService';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import {
     PROJECT_TAB_PERMISSIONS,
@@ -121,6 +123,14 @@ const fmtSignedTxAmount = (tx: ProjectTransaction) => {
 };
 const txAmountClass = (tx: ProjectTransaction) =>
     signedTxAmount(tx) < 0 ? 'text-red-500' : 'text-emerald-600';
+const matchesProjectScope = (
+    item: { projectId?: string | null; constructionSiteId?: string | null },
+    projectId?: string | null,
+    constructionSiteId?: string | null
+) => Boolean(
+    (projectId && item.projectId === projectId) ||
+    (constructionSiteId && item.constructionSiteId === constructionSiteId)
+);
 
 const emptyFinance = (siteId: string): ProjectFinance => ({
     id: crypto.randomUUID(),
@@ -396,6 +406,7 @@ const ProjectDashboard: React.FC = () => {
     const [projectGroups, setProjectGroups] = useState<ProjectGroup[]>([]);
     const [projectTypes, setProjectTypes] = useState<ProjectTypeMaster[]>([]);
     const [projectSectors, setProjectSectors] = useState<ProjectSector[]>([]);
+    const [customerContracts, setCustomerContracts] = useState<CustomerContract[]>([]);
     const [projectMasterDataLoading, setProjectMasterDataLoading] = useState(false);
     const [workGroups, setWorkGroups] = useState<WorkGroupWithMembers[]>([]);
     const [workGroupsLoading, setWorkGroupsLoading] = useState(false);
@@ -519,6 +530,25 @@ const ProjectDashboard: React.FC = () => {
         loadProjectMasterData();
     }, []);
 
+    const loadCustomerContracts = useCallback(async () => {
+        try {
+            setCustomerContracts(await customerContractService.list());
+        } catch (err) {
+            logApiError('ProjectDashboard.loadCustomerContracts', err);
+            setCustomerContracts([]);
+        }
+    }, []);
+
+    useEffect(() => {
+        loadCustomerContracts();
+    }, [loadCustomerContracts]);
+
+    useEffect(() => {
+        if (activeView !== 'overview') return;
+        if (!['budget', 'cashflow', 'contract', 'report'].includes(overviewTab)) return;
+        loadCustomerContracts();
+    }, [activeView, loadCustomerContracts, overviewTab]);
+
     const loadWorkGroups = useCallback(async () => {
         setWorkGroupsLoading(true);
         try {
@@ -599,16 +629,33 @@ const ProjectDashboard: React.FC = () => {
     const selectedSite = effectiveSiteId ? hrmConstructionSites.find(s => s.id === effectiveSiteId) || null : null;
     const selectedFinance = useMemo(() =>
         selectedProject
-            ? projectFinances.find(pf => pf.projectId === selectedProject.id) || null
+            ? projectFinances.find(pf => pf.projectId === selectedProject.id) ||
+                (effectiveSiteId ? projectFinances.find(pf => pf.constructionSiteId === effectiveSiteId) || null : null)
             : effectiveSiteId ? projectFinances.find(pf => pf.constructionSiteId === effectiveSiteId) || null : null,
         [effectiveSiteId, projectFinances, selectedProject]
     );
 
+    const getCustomerContractValue = useCallback((projectId?: string | null, constructionSiteId?: string | null) =>
+        customerContracts
+            .filter(contract => contract.status !== 'cancelled' && matchesProjectScope(contract, projectId, constructionSiteId))
+            .reduce((sum, contract) => sum + Number(contract.value || 0), 0),
+        [customerContracts]
+    );
+
+    const getEffectiveContractValue = useCallback((
+        finance?: ProjectFinance | null,
+        projectId?: string | null,
+        constructionSiteId?: string | null
+    ) => {
+        const customerContractValue = getCustomerContractValue(projectId, constructionSiteId);
+        if (customerContractValue > 0) return customerContractValue;
+        const financeValue = Number(finance?.contractValue || 0);
+        return financeValue > 0 ? financeValue : 0;
+    }, [getCustomerContractValue]);
+
     // === AUTO-AGGREGATE from transactions ===
     const getAggregated = (projectId?: string | null, siteId?: string | null) => {
-        const txs = projectTransactions.filter(t =>
-            projectId ? t.projectId === projectId : !!siteId && t.constructionSiteId === siteId
-        );
+        const txs = projectTransactions.filter(t => matchesProjectScope(t, projectId, siteId));
         const sumExpense = (cat: ProjectCostCategory) => txs.filter(t => t.type === 'expense' && t.category === cat).reduce((s, t) => s + t.amount, 0);
         return {
             actualMaterials: sumExpense('materials'),
@@ -635,14 +682,12 @@ const ProjectDashboard: React.FC = () => {
     const getProjectFinance = (project: Project) => {
         const site = getProjectSite(project);
         return projectFinances.find(finance => finance.projectId === project.id) ||
-            (!project.id && site ? projectFinances.find(finance => finance.constructionSiteId === site.id) || null : null);
+            (site ? projectFinances.find(finance => finance.constructionSiteId === site.id) || null : null);
     };
 
     const getProjectAggregated = (project: Project) => {
         const site = getProjectSite(project);
-        const txs = projectTransactions.filter(tx =>
-            project.id ? tx.projectId === project.id : !!site && tx.constructionSiteId === site.id
-        );
+        const txs = projectTransactions.filter(tx => matchesProjectScope(tx, project.id, site?.id));
         return {
             totalExpense: txs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0),
             totalRevenue: txs.filter(t => t.type === 'revenue_received').reduce((s, t) => s + t.amount, 0),
@@ -655,7 +700,7 @@ const ProjectDashboard: React.FC = () => {
         const site = getProjectSite(project);
         const agg = getProjectAggregated(project);
         const progress = finance ? getDisplayProgress(finance) : (project.progressCalculationMode === 'manual' ? Number(project.manualProgressPercent || 0) : 0);
-        const contractValue = finance?.contractValue || 0;
+        const contractValue = getEffectiveContractValue(finance, project.id, site?.id || project.constructionSiteId);
         return {
             site,
             finance,
@@ -753,7 +798,7 @@ const ProjectDashboard: React.FC = () => {
         });
 
         return rows;
-    }, [projectRows, projectFilters, projectSort, projectSortAsc, projectFinances, projectTransactions, hrmConstructionSites, isAdmin, taskProgressBySite]);
+    }, [projectRows, projectFilters, projectSort, projectSortAsc, projectFinances, projectTransactions, hrmConstructionSites, isAdmin, taskProgressBySite, getEffectiveContractValue]);
 
     const selectedAgg = selectedProject || effectiveSiteId ? getAggregated(selectedProject?.id, effectiveSiteId) : null;
     const siteTxs = useMemo(() => {
@@ -2772,7 +2817,7 @@ const ProjectDashboard: React.FC = () => {
         const totalBudget = financeForRender
             ? financeForRender.budgetMaterials + financeForRender.budgetLabor + financeForRender.budgetSubcontract + financeForRender.budgetMachinery + financeForRender.budgetOverhead
             : 0;
-        const contractValue = financeForRender?.contractValue || 0;
+        const contractValue = getEffectiveContractValue(financeForRender, selectedProject.id, effectiveSiteId);
         const estimatedMargin = contractValue - aggForRender.totalExpense;
         const estimatedMarginPct = contractValue > 0 ? (estimatedMargin / contractValue * 100) : 0;
         const budgetUsed = totalBudget > 0 ? (aggForRender.totalExpense / totalBudget * 100) : 0;
@@ -2899,7 +2944,7 @@ const ProjectDashboard: React.FC = () => {
                             <CashFlowTab
                                 constructionSiteId={effectiveSiteId!}
                                 projectId={selectedProject.id}
-                                transactions={projectTransactions.filter(t => t.projectId === selectedProject.id)}
+                                transactions={projectTransactions.filter(t => matchesProjectScope(t, selectedProject.id, effectiveSiteId))}
                                 contractValue={contractValue}
                             />
                         ) : renderSiteRequired('Dòng tiền')

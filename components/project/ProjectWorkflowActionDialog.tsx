@@ -13,6 +13,7 @@ import {
 } from '../../types';
 import ProjectWorkflowAssigneeSelect from './ProjectWorkflowAssigneeSelect';
 import { projectWorkflowService } from '../../lib/projectWorkflowService';
+import ProjectWorkflowDependencyList from './ProjectWorkflowDependencyList';
 
 interface Props {
   action: ProjectWorkflowAction;
@@ -121,8 +122,19 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
     return 'Người xử lý hiện tại sẽ được thay bằng người mới trong cùng bước.';
   })();
 
+  const resultText = (() => {
+    if (isCompletionHandoff) return 'Sau khi xác nhận, workflow phê duyệt hoàn tất và phiếu chuyển sang bước lập đợt cấp hoặc đặt mua.';
+    if (action === 'approve' && targetNode?.type === WorkflowNodeType.END) return 'Sau khi xác nhận, workflow hoàn thành và phiếu sang luồng nghiệp vụ tiếp theo.';
+    if (action === 'approve') return `Sau khi xác nhận, phiếu chuyển tới "${targetNode?.label || 'bước kế tiếp'}" và giao cho người được chọn.`;
+    if (action === 'return') return 'Sau khi xác nhận, phiếu quay về người tạo để sửa. Khi gửi lại, phiếu trở về đúng bước đã trả.';
+    if (action === 'reject') return 'Sau khi xác nhận, phiếu bị từ chối và không còn người xử lý pending.';
+    if (action === 'resubmit') return `Sau khi xác nhận, phiếu quay lại "${targetNode?.label || 'bước đã trả'}" với pool xử lý được chọn.`;
+    if (action === 'rollback') return 'Sau khi xác nhận, phiếu hoàn thành quay về bước duyệt cuối nếu dependency downstream đã sạch.';
+    return `Sau khi xác nhận, pool xử lý của bước "${targetNode?.label || currentNode?.label || 'hiện tại'}" được thay bằng người được chọn.`;
+  })();
+
   React.useEffect(() => {
-    if (action !== 'rollback') return;
+    if (action !== 'rollback' && action !== 'reject') return;
     projectWorkflowService.getRollbackDependencies(subject.subjectId)
       .then(setRollbackDependencies)
       .catch(err => setError(err?.message || 'Không kiểm tra được chứng từ downstream.'));
@@ -185,16 +197,19 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
         </div>
 
         <div className="space-y-4 p-5">
-          <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
-            {helperText}
+          <div className="space-y-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
+            <div>{helperText}</div>
+            <div className="rounded-lg bg-white px-2 py-1.5">
+              <div className="text-[10px] font-black uppercase text-slate-400">Kết quả sau khi xác nhận</div>
+              <div className="mt-0.5 text-slate-700">{resultText}</div>
+            </div>
           </div>
 
-          {action === 'rollback' && rollbackDependencies && (
-            <div className={`rounded-xl border px-3 py-2 text-xs font-bold ${rollbackDependencies.allowed ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-red-100 bg-red-50 text-red-700'}`}>
-              {rollbackDependencies.allowed
-                ? 'Dependency đã sạch. Phiếu có thể quay về bước duyệt cuối.'
-                : `Còn ${rollbackDependencies.activeCount} dependency đang hoạt động. Cần reverse/cancel/return đầy đủ trước khi rollback.`}
-            </div>
+          {(action === 'rollback' || action === 'reject') && rollbackDependencies && (
+            <ProjectWorkflowDependencyList
+              dependencies={rollbackDependencies}
+              title={action === 'rollback' ? 'Kiểm tra rollback' : 'Kiểm tra chứng từ liên quan'}
+            />
           )}
 
           {needsAssignee && assigneeNode && (

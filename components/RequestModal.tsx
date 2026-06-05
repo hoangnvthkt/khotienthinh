@@ -29,6 +29,7 @@ import ItemSelectionModal from './ItemSelectionModal';
 import ScannerModal from './ScannerModal';
 import ProjectSubmissionDialog from './project/ProjectSubmissionDialog';
 import ProjectWorkflowPanel from './project/ProjectWorkflowPanel';
+import ProjectWorkflowCommentsPanel from './project/ProjectWorkflowCommentsPanel';
 import ProjectWorkflowStartDialog from './project/ProjectWorkflowStartDialog';
 import { useReservedStock } from '../hooks/useReservedStock';
 import { canApproveMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, isAdmin, isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../lib/wmsPermissions';
@@ -1651,7 +1652,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
-            <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-full lg:max-w-5xl shadow-2xl flex flex-col max-h-[95vh] sm:max-h-[95vh] overflow-hidden relative">
+            <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-full sm:w-[96vw] xl:max-w-[1480px] 2xl:max-w-[1680px] shadow-2xl flex flex-col max-h-[95vh] sm:max-h-[95vh] overflow-hidden relative">
 
                 {/* Decision Overlay */}
                 {showApprovalPanel && (
@@ -1754,6 +1755,15 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             }}
                             disabled={isSaving}
                             onAction={handleProjectWorkflowPanelAction}
+                        />
+                    )}
+                    {projectWorkflowSubject && request && (
+                        <ProjectWorkflowCommentsPanel
+                            subject={projectWorkflowSubject}
+                            users={users}
+                            currentUserId={user.id}
+                            documentName={request.code}
+                            disabled={isSaving}
                         />
                     )}
 

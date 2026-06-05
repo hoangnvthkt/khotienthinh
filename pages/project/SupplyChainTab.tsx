@@ -111,6 +111,12 @@ const ACTIVE_REQUEST_BUDGET_STATUSES = new Set<RequestStatus | string>([
 
 const ACTIVE_PO_BUDGET_STATUSES = new Set<POStatus>(['draft', 'sent', 'confirmed', 'in_transit', 'partial', 'delivered']);
 const OPEN_PO_ORDER_STATUSES = new Set<POStatus>(['draft', 'sent', 'confirmed', 'in_transit']);
+type PurchaseOrderPrintTemplateKey = 'purchase_order' | 'approval_request';
+
+const PO_PRINT_TEMPLATE_LABELS: Record<PurchaseOrderPrintTemplateKey, string> = {
+    purchase_order: 'Đơn đặt hàng',
+    approval_request: 'Đề nghị duyệt đơn hàng',
+};
 
 const createEmptyPoItem = (): PurchaseOrderItem => ({
     lineId: crypto.randomUUID(),
@@ -207,7 +213,7 @@ const getPoReceiptStats = (po: PurchaseOrder) => {
 const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, projectId, canManageTab = true, compact = false, initialDraftPo = null, initialDraftPoKey = 0 }) => {
     const toast = useToast();
     const confirm = useConfirm();
-    const { items: inventoryItems, warehouses, requests: materialRequests, loadModuleData, user, addTransaction, updateRequestStatus } = useApp();
+    const { items: inventoryItems, warehouses, requests: materialRequests, constructionSites, loadModuleData, user, addTransaction, updateRequestStatus } = useApp();
     const { getStockSummary } = useReservedStock();
     const effectiveId = projectId || constructionSiteId || '';
     const [subTab] = useState<'vendor' | 'po'>('po');
@@ -330,6 +336,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [poImportPreview, setPoImportPreview] = useState<ExcelImportPreview<PurchaseOrderItem> | null>(null);
     const [submittingPo, setSubmittingPo] = useState<PurchaseOrder | null>(null);
     const [printingPoId, setPrintingPoId] = useState<string | null>(null);
+    const [poPrintMenuId, setPoPrintMenuId] = useState<string | null>(null);
     const [savingPo, setSavingPo] = useState(false);
     const [expandedSpecsIdx, setExpandedSpecsIdx] = useState<Set<number>>(new Set());
     const toggleSpecsPanel = useCallback((idx: number) => setExpandedSpecsIdx(prev => {
@@ -1391,6 +1398,121 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
 
+    const formatPoPrintDate = (value?: string | null) => {
+        const date = value ? new Date(value) : new Date();
+        const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+        return `Thái Bình, ngày ${safeDate.getDate()} Tháng ${safeDate.getMonth() + 1} Năm ${safeDate.getFullYear()}`;
+    };
+
+    const getUserPositionLabel = () => {
+        if (user.role === 'ADMIN') return 'Quản trị hệ thống';
+        if (user.role === 'WAREHOUSE_KEEPER') return 'Thủ kho / Phòng vật tư';
+        return 'Nhân viên';
+    };
+
+    const buildPoApprovalSubject = (po: PurchaseOrder) => {
+        const itemNames = Array.from(new Set(po.items.map(item => item.workBoqItemName || item.materialBudgetItemName || item.name).filter(Boolean)));
+        const itemLabel = itemNames.length === 1
+            ? itemNames[0]
+            : itemNames.length > 1
+                ? `${itemNames[0]} và ${itemNames.length - 1} vật tư khác`
+                : po.poNumber;
+        const siteId = po.constructionSiteId || constructionSiteId || '';
+        const projectLabel = constructionSites.find(site => site.id === siteId)?.name || po.projectId || siteId;
+        const vendorLabel = po.vendorName ? ` --> ${po.vendorName}` : '';
+        return `${itemLabel}${projectLabel ? ` ${projectLabel}` : ''}${vendorLabel}`.toUpperCase();
+    };
+
+    const buildPoApprovalRequestSection = (po: PurchaseOrder, pageBreak = false) => {
+        const totalAmount = po.items.reduce((sum, item) => sum + calculateLineTotal(item), 0);
+        const rowsHtml = po.items.map((item, index) => `
+            <tr>
+                <td class="approval-center">${index + 1}</td>
+                <td>${escapeHtml(item.sku || item.itemId)}</td>
+                <td>
+                    <strong>${escapeHtml(item.name)}</strong>
+                    ${item.workBoqItemName ? `<div class="approval-muted">${escapeHtml(item.workBoqItemName)}</div>` : ''}
+                    ${item.note ? `<div class="approval-muted">${escapeHtml(item.note)}</div>` : ''}
+                </td>
+                <td class="approval-center">${escapeHtml(item.unit)}</td>
+                <td class="approval-right">${Number(item.qty || 0).toLocaleString('vi-VN')}</td>
+                <td class="approval-right">${Number(item.unitPrice || 0).toLocaleString('vi-VN')}</td>
+                <td class="approval-right">${Number(calculateLineTotal(item)).toLocaleString('vi-VN')}</td>
+            </tr>
+        `).join('');
+
+        return `
+            <section class="approval-sheet ${pageBreak ? 'page-break' : ''}">
+                <table class="approval-header-table">
+                    <tbody>
+                        <tr>
+                            <td colspan="12" class="approval-title">ĐỀ NGHỊ DUYỆT ĐƠN HÀNG</td>
+                        </tr>
+                        <tr>
+                            <td colspan="12" class="approval-date"><em>${escapeHtml(formatPoPrintDate(po.orderDate))}</em></td>
+                        </tr>
+                        <tr>
+                            <td class="approval-label-cell" colspan="2"><em>Kính gửi:</em></td>
+                            <td colspan="10" class="approval-value-cell"><strong>Ban giám đốc Cty CP PTĐT & Xây lắp Tiến Thịnh</strong></td>
+                        </tr>
+                        <tr>
+                            <td class="approval-label-cell" colspan="2"><em>Tên tôi là:</em></td>
+                            <td colspan="10" class="approval-value-cell"><strong>${escapeHtml(user.name || '')}</strong></td>
+                        </tr>
+                        <tr>
+                            <td class="approval-label-cell" colspan="2"><em>Chức vụ:</em></td>
+                            <td colspan="10" class="approval-value-cell"><strong>${escapeHtml(getUserPositionLabel())}</strong></td>
+                        </tr>
+                        <tr>
+                            <td colspan="12" class="approval-intro"><em>Đề nghị BGD duyệt đơn hàng:</em></td>
+                        </tr>
+                        <tr>
+                            <td colspan="12" class="approval-subject">${escapeHtml(buildPoApprovalSubject(po))}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="approval-meta-grid">
+                    <div><span>Số PO</span><strong>${escapeHtml(po.poNumber)}</strong></div>
+                    <div><span>Nhà cung cấp</span><strong>${escapeHtml(po.vendorName || '-')}</strong></div>
+                    <div><span>Nhóm mua hàng</span><strong>${escapeHtml(po.procurementGroupNo || '-')}</strong></div>
+                    <div><span>Ngày cần giao</span><strong>${escapeHtml(po.expectedDeliveryDate || '-')}</strong></div>
+                    <div><span>Tổng giá trị</span><strong>${totalAmount.toLocaleString('vi-VN')} đ</strong></div>
+                    <div><span>Kho nhận</span><strong>${escapeHtml(warehouses.find(w => w.id === po.targetWarehouseId)?.name || '-')}</strong></div>
+                </div>
+
+                <table class="approval-lines">
+                    <thead>
+                        <tr>
+                            <th style="width:42px;">STT</th>
+                            <th style="width:96px;">Mã</th>
+                            <th>Hàng hóa / nội dung</th>
+                            <th style="width:60px;">ĐVT</th>
+                            <th style="width:90px;">KL</th>
+                            <th style="width:110px;">Đơn giá</th>
+                            <th style="width:130px;">Thành tiền</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rowsHtml}</tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="6" class="approval-right"><strong>TỔNG CỘNG</strong></td>
+                            <td class="approval-right"><strong>${totalAmount.toLocaleString('vi-VN')} đ</strong></td>
+                        </tr>
+                    </tfoot>
+                </table>
+
+                ${po.note ? `<div class="approval-note"><strong>Ghi chú:</strong> ${escapeHtml(po.note)}</div>` : ''}
+
+                <div class="approval-signatures">
+                    <div><strong>Người đề nghị</strong><span>${escapeHtml(user.name || '')}</span></div>
+                    <div><strong>Phòng/Bộ phận kiểm tra</strong><span></span></div>
+                    <div><strong>Ban giám đốc duyệt</strong><span></span></div>
+                </div>
+            </section>
+        `;
+    };
+
     const buildPoPrintSection = (printablePo: PurchaseOrder, qrSvg: string, pageBreak = false) => {
         const targetWh = warehouses.find(w => w.id === printablePo.targetWarehouseId);
 
@@ -1576,6 +1698,31 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 }
                 
                 .note { margin-top: 24px; font-size: 12px; color: #334155; background: #fdfbf7; border: 1px solid #fef3c7; padding: 12px; border-radius: 8px; }
+                .approval-sheet { font-family: "Times New Roman", Times, serif; color: #000; font-size: 14px; line-height: 1.25; }
+                .approval-header-table { width: 100%; border-collapse: collapse; margin: 0; table-layout: fixed; }
+                .approval-header-table td { border: 1px solid #cfcfcf; padding: 5px 6px; }
+                .approval-title { text-align: center; font-size: 20px; font-weight: 800; letter-spacing: .02em; }
+                .approval-date { text-align: right; font-size: 14px; padding-right: 36px !important; }
+                .approval-label-cell { width: 120px; white-space: nowrap; }
+                .approval-value-cell { border-bottom: 1px dotted #333 !important; }
+                .approval-intro { border-bottom: 0 !important; font-size: 14px; }
+                .approval-subject { text-align: center; font-size: 16px; font-weight: 800; text-transform: uppercase; }
+                .approval-meta-grid { margin-top: 14px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+                .approval-meta-grid div { border: 1px solid #d7d7d7; padding: 8px 10px; min-height: 42px; }
+                .approval-meta-grid span { display: block; color: #666; text-transform: uppercase; font-size: 9px; font-weight: 700; letter-spacing: .04em; margin-bottom: 3px; }
+                .approval-meta-grid strong { font-size: 12px; color: #111; }
+                .approval-lines { width: 100%; border-collapse: collapse; margin-top: 14px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 11.5px; }
+                .approval-lines th, .approval-lines td { border: 1px solid #cfcfcf; padding: 7px 8px; vertical-align: top; }
+                .approval-lines th { background: #f3f4f6; color: #111; text-align: center; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+                .approval-lines tfoot td { background: #fafafa; }
+                .approval-center { text-align: center; }
+                .approval-right { text-align: right; }
+                .approval-muted { margin-top: 2px; color: #666; font-size: 10px; }
+                .approval-note { margin-top: 12px; border: 1px solid #d7d7d7; padding: 8px 10px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 12px; }
+                .approval-signatures { margin-top: 34px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; text-align: center; font-family: "Times New Roman", Times, serif; }
+                .approval-signatures div { min-height: 82px; }
+                .approval-signatures strong { display: block; margin-bottom: 54px; }
+                .approval-signatures span { font-weight: 700; }
                 .page-break { page-break-before: always; break-before: page; }
                 @media print { 
                     body { margin: 15mm; } 
@@ -1588,16 +1735,22 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         </html>
     `;
 
-    const handlePrintPo = async (po: PurchaseOrder) => {
+    const handlePrintPo = async (po: PurchaseOrder, template: PurchaseOrderPrintTemplateKey = 'purchase_order') => {
         setPrintingPoId(po.id);
+        setPoPrintMenuId(null);
         try {
-            const printablePo = await poService.ensureQrToken(po);
-            if (!po.qrToken) {
-                setPos(prev => prev.map(item => item.id === po.id ? printablePo : item));
+            let html = '';
+            if (template === 'approval_request') {
+                html = buildPoPrintHtml(`Đề nghị duyệt đơn hàng ${po.poNumber}`, buildPoApprovalRequestSection(po));
+            } else {
+                const printablePo = await poService.ensureQrToken(po);
+                if (!po.qrToken) {
+                    setPos(prev => prev.map(item => item.id === po.id ? printablePo : item));
+                }
+                const receiveUrl = buildPoReceiveUrl(printablePo.qrToken!);
+                const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={132} level="H" includeMargin />);
+                html = buildPoPrintHtml(printablePo.poNumber, buildPoPrintSection(printablePo, qrSvg));
             }
-            const receiveUrl = buildPoReceiveUrl(printablePo.qrToken!);
-            const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={132} level="H" includeMargin />);
-            const html = buildPoPrintHtml(printablePo.poNumber, buildPoPrintSection(printablePo, qrSvg));
 
             const printWindow = window.open('', '_blank', 'width=980,height=720');
             if (!printWindow) {
@@ -1610,31 +1763,38 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setTimeout(() => printWindow.print(), 300);
         } catch (e: any) {
             logApiError('supplyChain.printPo', e);
-            toast.error('Không thể in PO', getApiErrorMessage(e, 'Không thể tạo phiếu PO có QR.'));
+            toast.error('Không thể in PO', getApiErrorMessage(e, `Không thể tạo mẫu in "${PO_PRINT_TEMPLATE_LABELS[template]}".`));
         } finally {
             setPrintingPoId(null);
         }
     };
 
-    const handlePrintPoGroup = async (groupId: string) => {
+    const handlePrintPoGroup = async (groupId: string, template: PurchaseOrderPrintTemplateKey = 'purchase_order') => {
         const groupOrders = pos
             .filter(po => po.procurementGroupId === groupId)
             .sort((a, b) => a.poNumber.localeCompare(b.poNumber));
         if (groupOrders.length === 0) return;
         setPrintingPoId(groupId);
+        setPoPrintMenuId(null);
         try {
-            const printableOrders: PurchaseOrder[] = [];
-            for (const po of groupOrders) {
-                const printablePo = await poService.ensureQrToken(po);
-                printableOrders.push(printablePo);
+            let html = '';
+            if (template === 'approval_request') {
+                const sections = groupOrders.map((po, index) => buildPoApprovalRequestSection(po, index > 0)).join('');
+                html = buildPoPrintHtml(`Đề nghị duyệt nhóm ${groupOrders[0].procurementGroupNo || 'PO'}`, sections);
+            } else {
+                const printableOrders: PurchaseOrder[] = [];
+                for (const po of groupOrders) {
+                    const printablePo = await poService.ensureQrToken(po);
+                    printableOrders.push(printablePo);
+                }
+                setPos(prev => prev.map(po => printableOrders.find(item => item.id === po.id) || po));
+                const sections = printableOrders.map((po, index) => {
+                    const receiveUrl = buildPoReceiveUrl(po.qrToken!);
+                    const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={132} level="H" includeMargin />);
+                    return buildPoPrintSection(po, qrSvg, index > 0);
+                }).join('');
+                html = buildPoPrintHtml(printableOrders[0].procurementGroupNo || 'Nhóm PO', sections);
             }
-            setPos(prev => prev.map(po => printableOrders.find(item => item.id === po.id) || po));
-            const sections = printableOrders.map((po, index) => {
-                const receiveUrl = buildPoReceiveUrl(po.qrToken!);
-                const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={132} level="H" includeMargin />);
-                return buildPoPrintSection(po, qrSvg, index > 0);
-            }).join('');
-            const html = buildPoPrintHtml(printableOrders[0].procurementGroupNo || 'Nhóm PO', sections);
             const printWindow = window.open('', '_blank', 'width=980,height=720');
             if (!printWindow) {
                 toast.error('Không thể mở cửa sổ in', 'Trình duyệt đang chặn popup in/PDF.');
@@ -1646,7 +1806,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             setTimeout(() => printWindow.print(), 300);
         } catch (e: any) {
             logApiError('supplyChain.printPoGroup', e);
-            toast.error('Không thể in nhóm PO', getApiErrorMessage(e, 'Không thể tạo bộ phiếu PO có QR.'));
+            toast.error('Không thể in nhóm PO', getApiErrorMessage(e, `Không thể tạo bộ mẫu "${PO_PRINT_TEMPLATE_LABELS[template]}".`));
         } finally {
             setPrintingPoId(null);
         }
@@ -1708,7 +1868,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
             {/* Vendor Tab */}
             {subTab === 'vendor' && (
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-visible">
                     <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><Users size={16} className="text-cyan-500" /> Danh sách NCC</h3>
                         {canManageTab && (
@@ -1829,6 +1989,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 const isExpanded = expandedPoId === po.id;
                                 const targetWh = warehouses.find(w => w.id === po.targetWarehouseId);
                                 const groupSize = po.procurementGroupId ? (procurementGroupCounts[po.procurementGroupId] || 0) : 0;
+                                const groupPrintMenuKey = po.procurementGroupId ? `group:${po.procurementGroupId}` : '';
+                                const isPrintMenuOpen = poPrintMenuId === po.id || (!!groupPrintMenuKey && poPrintMenuId === groupPrintMenuKey);
                                 const supplierReturns = supplierReturnsByPo[po.id] || [];
                                 const totalReceivedQty = po.items.reduce((sum, item) => sum + Number(item.receivedQty || 0), 0);
                                 const completedReturnQty = Math.max(
@@ -1842,7 +2004,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     .reduce((sum, item) => sum + item.lines.reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0);
                                 const supplierReturnableQty = Math.max(0, totalReceivedQty - completedReturnQty - pendingReturnQty);
                                 return (
-                                    <div key={po.id}>
+                                    <div key={po.id} className={isPrintMenuOpen ? 'relative z-50' : 'relative z-0'}>
                                         <div className="px-5 py-4 hover:bg-slate-50/30 group cursor-pointer"
                                             onClick={() => setExpandedPoId(isExpanded ? null : po.id)}>
                                             <div className="flex items-center justify-between gap-3">
@@ -1883,17 +2045,57 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         )}
                                                     </div>
                                                     <div className="flex gap-1">
-                                                        <button onClick={e => { e.stopPropagation(); handlePrintPo(po); }} title="In/PDF có QR"
-                                                            disabled={printingPoId === po.id}
-                                                            className="w-7 h-7 rounded-lg flex items-center justify-center text-blue-400 hover:text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 disabled:opacity-50">
-                                                            {printingPoId === po.id ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
-                                                        </button>
-                                                        {po.procurementGroupId && groupSize > 1 && (
-                                                            <button onClick={e => { e.stopPropagation(); handlePrintPoGroup(po.procurementGroupId!); }} title="In tất cả PO trong nhóm"
-                                                                disabled={printingPoId === po.procurementGroupId}
-                                                                className="h-7 rounded-lg px-2 text-[9px] font-black text-violet-500 hover:bg-violet-50 hover:text-violet-700 border border-transparent hover:border-violet-200 disabled:opacity-50">
-                                                                {printingPoId === po.procurementGroupId ? <Loader2 size={12} className="animate-spin" /> : 'In nhóm'}
+                                                        <div className="relative">
+                                                            <button onClick={e => { e.stopPropagation(); setPoPrintMenuId(prev => prev === po.id ? null : po.id); }} title="Chọn mẫu in/PDF"
+                                                                disabled={printingPoId === po.id}
+                                                                className="w-7 h-7 rounded-lg flex items-center justify-center text-blue-400 hover:text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 disabled:opacity-50">
+                                                                {printingPoId === po.id ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
                                                             </button>
+                                                            {poPrintMenuId === po.id && (
+                                                                <div onClick={event => event.stopPropagation()} className="absolute right-0 top-8 z-[100] w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handlePrintPo(po, 'purchase_order')}
+                                                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-black text-slate-600 hover:bg-blue-50 hover:text-blue-700"
+                                                                    >
+                                                                        <Printer size={13} /> Đơn đặt hàng
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handlePrintPo(po, 'approval_request')}
+                                                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-black text-slate-600 hover:bg-rose-50 hover:text-rose-700"
+                                                                    >
+                                                                        <FileText size={13} /> Đề nghị duyệt đơn hàng
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        {po.procurementGroupId && groupSize > 1 && (
+                                                            <div className="relative">
+                                                                <button onClick={e => { e.stopPropagation(); setPoPrintMenuId(prev => prev === `group:${po.procurementGroupId}` ? null : `group:${po.procurementGroupId}`); }} title="Chọn mẫu in tất cả PO trong nhóm"
+                                                                    disabled={printingPoId === po.procurementGroupId}
+                                                                    className="h-7 rounded-lg px-2 text-[9px] font-black text-violet-500 hover:bg-violet-50 hover:text-violet-700 border border-transparent hover:border-violet-200 disabled:opacity-50">
+                                                                    {printingPoId === po.procurementGroupId ? <Loader2 size={12} className="animate-spin" /> : 'In nhóm'}
+                                                                </button>
+                                                                {poPrintMenuId === `group:${po.procurementGroupId}` && (
+                                                                    <div onClick={event => event.stopPropagation()} className="absolute right-0 top-8 z-[100] w-60 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handlePrintPoGroup(po.procurementGroupId!, 'purchase_order')}
+                                                                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-black text-slate-600 hover:bg-violet-50 hover:text-violet-700"
+                                                                        >
+                                                                            <Printer size={13} /> Nhóm - Đơn đặt hàng
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handlePrintPoGroup(po.procurementGroupId!, 'approval_request')}
+                                                                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-black text-slate-600 hover:bg-rose-50 hover:text-rose-700"
+                                                                        >
+                                                                            <FileText size={13} /> Nhóm - Đề nghị duyệt
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         )}
                                                     </div>
                                                     {canManageTab && (

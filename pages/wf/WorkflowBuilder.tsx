@@ -160,6 +160,7 @@ const WorkflowBuilder: React.FC = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
     const [editingStepId, setEditingStepId] = useState<string | null>(null);
+    const [stepConfigTabs, setStepConfigTabs] = useState<Record<string, 'info' | 'assignee' | 'watchers' | 'actions'>>({});
 
     // Drag and drop state for steps
     const [dragStepId, setDragStepId] = useState<string | null>(null);
@@ -647,6 +648,7 @@ const WorkflowBuilder: React.FC = () => {
                         const stepColor = step.type === WorkflowNodeType.APPROVAL
                             ? 'border-amber-400 bg-amber-50/50 dark:bg-amber-900/10'
                             : 'border-blue-400 bg-blue-50/50 dark:bg-blue-900/10';
+                        const activeStepConfigTab = stepConfigTabs[step.id] || 'info';
 
                         return (
                             <React.Fragment key={step.id}>
@@ -724,8 +726,28 @@ const WorkflowBuilder: React.FC = () => {
                                     {/* Step Config Panel */}
                                     {isEditing && (
                                         <div className="px-4 pb-4 pt-2 border-t border-slate-100 dark:border-slate-700/50 space-y-4 animate-fade-in-down">
+                                            <div className="flex flex-wrap gap-1.5 rounded-xl border border-slate-100 bg-white/70 p-1 dark:border-slate-700 dark:bg-slate-800/40">
+                                                {([
+                                                    ['info', 'Thông tin'],
+                                                    ['assignee', 'Người xử lý'],
+                                                    ['watchers', 'Theo dõi/SLA'],
+                                                    ['actions', 'Quyền hành động'],
+                                                ] as Array<[typeof activeStepConfigTab, string]>).map(([tab, label]) => (
+                                                    <button
+                                                        key={tab}
+                                                        type="button"
+                                                        onClick={(event) => {
+                                                            event.stopPropagation();
+                                                            setStepConfigTabs(prev => ({ ...prev, [step.id]: tab }));
+                                                        }}
+                                                        className={`rounded-lg px-3 py-1.5 text-[10px] font-black transition ${activeStepConfigTab === tab ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                                                    >
+                                                        {label}
+                                                    </button>
+                                                ))}
+                                            </div>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div>
+                                                <div className={activeStepConfigTab === 'info' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Tên bước</label>
                                                     <input
                                                         type="text"
@@ -734,7 +756,7 @@ const WorkflowBuilder: React.FC = () => {
                                                         className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
                                                     />
                                                 </div>
-                                                <div>
+                                                <div className={activeStepConfigTab === 'info' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Loại bước</label>
                                                     <select
                                                         value={step.type}
@@ -745,7 +767,7 @@ const WorkflowBuilder: React.FC = () => {
                                                         <option value={WorkflowNodeType.ACTION}>Hành động</option>
                                                     </select>
                                                 </div>
-                                                <div>
+                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Phân công theo vai trò</label>
                                                     <select
                                                         value={step.config.assigneeRole || ''}
@@ -758,7 +780,7 @@ const WorkflowBuilder: React.FC = () => {
                                                         <option value={Role.EMPLOYEE}>Nhân viên</option>
                                                     </select>
                                                 </div>
-                                                <div>
+                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Hoặc chỉ định cụ thể</label>
                                                     <select
                                                         value={step.config.assigneeUserId || ''}
@@ -771,7 +793,7 @@ const WorkflowBuilder: React.FC = () => {
                                                         ))}
                                                     </select>
                                                 </div>
-                                                <div>
+                                                <div className={activeStepConfigTab === 'watchers' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">SLA (giờ)</label>
                                                     <input
                                                         type="number"
@@ -781,7 +803,7 @@ const WorkflowBuilder: React.FC = () => {
                                                         className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
                                                     />
                                                 </div>
-                                                <div>
+                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Cách gán người</label>
                                                     <select
                                                         value={step.config.assignmentMode || 'select_on_transition'}
@@ -796,7 +818,7 @@ const WorkflowBuilder: React.FC = () => {
                                                         <option value="creator">Người tạo phiếu</option>
                                                     </select>
                                                 </div>
-                                                <div>
+                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Rule duyệt</label>
                                                     <select
                                                         value={step.config.approvalPolicy || 'ANY_ONE'}
@@ -806,7 +828,7 @@ const WorkflowBuilder: React.FC = () => {
                                                         <option value="ANY_ONE">Một người duyệt là qua</option>
                                                     </select>
                                                 </div>
-                                                <div>
+                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Quyền được chọn</label>
                                                     <input
                                                         type="text"
@@ -816,7 +838,7 @@ const WorkflowBuilder: React.FC = () => {
                                                         className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
                                                     />
                                                 </div>
-                                                <div>
+                                                <div className={activeStepConfigTab === 'actions' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Khi trả lại</label>
                                                     <select
                                                         value={step.config.returnPolicy || 'to_creator'}
@@ -826,7 +848,7 @@ const WorkflowBuilder: React.FC = () => {
                                                         <option value="to_creator">Về người tạo</option>
                                                     </select>
                                                 </div>
-                                                <div>
+                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Pool người mặc định</label>
                                                     <SearchableCheckboxSelect
                                                         options={users.map(item => ({ id: item.id, label: item.name, sublabel: item.role }))}
@@ -841,7 +863,7 @@ const WorkflowBuilder: React.FC = () => {
                                                         maxHeightClass="h-28"
                                                     />
                                                 </div>
-                                                <div>
+                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Pool phòng ban mặc định</label>
                                                     <SearchableCheckboxSelect
                                                         options={orgUnits.filter(unit => unit.type === 'department').map(unit => ({ id: unit.id, label: unit.name }))}
@@ -856,7 +878,7 @@ const WorkflowBuilder: React.FC = () => {
                                                         maxHeightClass="h-28"
                                                     />
                                                 </div>
-                                                <div>
+                                                <div className={activeStepConfigTab === 'watchers' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Theo dõi bước - người</label>
                                                     <SearchableCheckboxSelect
                                                         options={users.map(item => ({ id: item.id, label: item.name, sublabel: item.role }))}
@@ -871,7 +893,7 @@ const WorkflowBuilder: React.FC = () => {
                                                         maxHeightClass="h-24"
                                                     />
                                                 </div>
-                                                <div>
+                                                <div className={activeStepConfigTab === 'watchers' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Theo dõi bước - phòng ban</label>
                                                     <SearchableCheckboxSelect
                                                         options={orgUnits.filter(unit => unit.type === 'department').map(unit => ({ id: unit.id, label: unit.name }))}
@@ -886,7 +908,7 @@ const WorkflowBuilder: React.FC = () => {
                                                         maxHeightClass="h-24"
                                                     />
                                                 </div>
-                                                <div className="flex items-center gap-2 pt-5">
+                                                <div className={`items-center gap-2 pt-5 ${activeStepConfigTab === 'actions' ? 'flex' : 'hidden'}`}>
                                                     <button
                                                         type="button"
                                                         onClick={() => updateStepConfig(step.id, 'allowReject', step.config.allowReject === false)}

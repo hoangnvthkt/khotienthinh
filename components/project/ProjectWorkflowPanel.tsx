@@ -13,7 +13,6 @@ import {
   WorkflowStepAssignment,
 } from '../../types';
 import ProjectWorkflowActionDialog from './ProjectWorkflowActionDialog';
-import ProjectWorkflowTimeline from './ProjectWorkflowTimeline';
 
 interface Props {
   subject?: ProjectWorkflowSubject | null;
@@ -113,6 +112,9 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
   const nodeConfig = currentNode?.config || {};
   const allowReject = nodeConfig.allowReject !== false;
   const allowReassign = nodeConfig.allowReassign !== false;
+  const currentParticipantRole = subject.participants?.find(participant =>
+    participant.isActive && participant.userId === currentUserId
+  )?.role;
   const canShowRunningActions = subject.status === 'RUNNING' && canAct && currentNode?.type !== WorkflowNodeType.END;
   const shouldShowApprove = canShowRunningActions;
   const shouldShowReturn = canShowRunningActions;
@@ -128,6 +130,17 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
     : nextNode?.label
       ? `Chuyển ${nextNode.label}`
       : 'Duyệt bước';
+  const permissionLabel = currentUserId && assigneeIds.includes(currentUserId)
+    ? 'Bạn là người đang được giao xử lý bước này.'
+    : currentParticipantRole === 'ADMIN'
+      ? 'Bạn là quản trị workflow, có thể đổi người nhưng không duyệt thay.'
+      : currentParticipantRole === 'WATCHER'
+        ? 'Bạn là người theo dõi, chỉ có quyền xem.'
+        : subject.createdBy === currentUserId
+          ? subject.status === 'RETURNED'
+            ? 'Bạn là người tạo, có thể sửa và gửi lại phiếu.'
+            : 'Bạn là người tạo phiếu.'
+          : 'Bạn đang có quyền xem phiếu theo quyền dự án hoặc workflow.';
 
   const handleConfirm = async (context: ProjectWorkflowActionContext) => {
     await onAction(context);
@@ -152,11 +165,20 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
         <div className="rounded-xl border border-white bg-white/80 px-3 py-2">
           <div className="text-[10px] font-black uppercase text-slate-400">Bước hiện tại</div>
           <div className="mt-1 text-xs font-black text-slate-800">{currentNode?.label || '-'}</div>
           {nodeConfig.slaHours ? <div className="mt-1 text-[10px] font-bold text-indigo-500">SLA {nodeConfig.slaHours} giờ</div> : null}
+        </div>
+        <div className="rounded-xl border border-white bg-white/80 px-3 py-2">
+          <div className="text-[10px] font-black uppercase text-slate-400">Bước kế tiếp</div>
+          <div className="mt-1 text-xs font-black text-slate-800">
+            {nextNode?.type === WorkflowNodeType.END ? 'Hoàn tất phê duyệt' : nextNode?.label || '-'}
+          </div>
+          {completionHandoff?.required && nextNode?.type === WorkflowNodeType.END && (
+            <div className="mt-1 text-[10px] font-bold text-indigo-500">Bàn giao nghiệp vụ</div>
+          )}
         </div>
         <div className="rounded-xl border border-white bg-white/80 px-3 py-2">
           <div className="text-[10px] font-black uppercase text-slate-400">Pool đang xử lý</div>
@@ -171,6 +193,10 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
           <div className="mt-1 text-xs font-black text-slate-800">{returnedBy?.name || '-'}</div>
           <div className="mt-1 text-[10px] font-bold text-slate-400">{formatDateTime(subject.returnedAt)}</div>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-white bg-white/80 px-3 py-2 text-xs font-bold text-slate-500">
+        {permissionLabel}
       </div>
 
       {(canShowRunningActions || shouldShowReassign || shouldShowResubmit || shouldShowRollback) && (
@@ -238,8 +264,6 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
           Chỉ người đang được gán bước mới có quyền duyệt, trả lại hoặc từ chối. Quản trị workflow chỉ được đổi người xử lý.
         </div>
       )}
-
-      <ProjectWorkflowTimeline assignments={assignments} nodes={nodes} users={users} />
 
       {activeAction && (
         <ProjectWorkflowActionDialog
