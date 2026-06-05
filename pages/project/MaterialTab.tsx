@@ -161,6 +161,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const canManagePlanning = materialAccess.planning.canManage;
     const canManageRequest = materialAccess.request.canManage;
     const canManagePo = materialAccess.po.canManage;
+    const [boqPbacLoaded, setBoqPbacLoaded] = useState(false);
+    const [canEditProjectBoq, setCanEditProjectBoq] = useState(false);
+    const [canDeleteProjectBoq, setCanDeleteProjectBoq] = useState(false);
+    const canEditBoq = canManageBoq || canEditProjectBoq;
+    const canDeleteBoq = canManageBoq || canDeleteProjectBoq;
     const visibleMaterialTabs = useMemo(
         () => PROJECT_MATERIAL_TAB_PERMISSIONS.filter(tab => materialAccess[tab.key].canView),
         [materialAccess],
@@ -232,6 +237,58 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     useEffect(() => {
         loadModuleData('wms-core');
     }, [loadModuleData]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadBoqPermissions = async () => {
+            setBoqPbacLoaded(false);
+            if (user.role === Role.ADMIN || canManageBoq) {
+                if (!cancelled) {
+                    setCanEditProjectBoq(true);
+                    setCanDeleteProjectBoq(true);
+                    setBoqPbacLoaded(true);
+                }
+                return;
+            }
+            if (!user.id || (!projectId && !constructionSiteId)) {
+                if (!cancelled) {
+                    setCanEditProjectBoq(false);
+                    setCanDeleteProjectBoq(false);
+                    setBoqPbacLoaded(true);
+                }
+                return;
+            }
+
+            try {
+                const [editPerm, deletePerm] = await Promise.all([
+                    projectId
+                        ? projectStaffService.checkProjectPermission(user.id, projectId, 'edit', constructionSiteId || undefined)
+                        : constructionSiteId
+                            ? projectStaffService.checkPermission(user.id, constructionSiteId, 'edit')
+                            : Promise.resolve({ allowed: false }),
+                    projectId
+                        ? projectStaffService.checkProjectPermission(user.id, projectId, 'delete', constructionSiteId || undefined)
+                        : constructionSiteId
+                            ? projectStaffService.checkPermission(user.id, constructionSiteId, 'delete')
+                            : Promise.resolve({ allowed: false }),
+                ]);
+                if (!cancelled) {
+                    setCanEditProjectBoq(editPerm.allowed);
+                    setCanDeleteProjectBoq(deletePerm.allowed);
+                }
+            } catch (error) {
+                console.warn('Failed to check project BOQ permissions', error);
+                if (!cancelled) {
+                    setCanEditProjectBoq(false);
+                    setCanDeleteProjectBoq(false);
+                }
+            } finally {
+                if (!cancelled) setBoqPbacLoaded(true);
+            }
+        };
+        void loadBoqPermissions();
+        return () => { cancelled = true; };
+    }, [canManageBoq, constructionSiteId, projectId, user.id, user.role]);
 
     useEffect(() => {
         let cancelled = false;
@@ -663,6 +720,19 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const ensureCanManage = (allowed: boolean, scopeLabel: string, action: string) => {
         if (allowed) return true;
         toast.warning('Không có quyền quản trị', `Bạn cần quyền quản trị "${scopeLabel}" để ${action}.`);
+        return false;
+    };
+
+    const ensureBoqPermission = (allowed: boolean, permissionCode: 'edit' | 'delete', action: string) => {
+        if (allowed) return true;
+        if (!boqPbacLoaded && !canManageBoq) {
+            toast.info('Đang tải quyền', 'Vui lòng thử lại sau vài giây.');
+            return false;
+        }
+        toast.warning(
+            'Không có quyền BOQ',
+            `Bạn cần quyền dự án "${permissionCode}" hoặc quyền quản trị "Vật tư: BOQ" để ${action}.`,
+        );
         return false;
     };
 
@@ -1329,7 +1399,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const openEditBoq = (item: MaterialBudgetItem) => {
-        if (!ensureCanManage(canManageBoq, 'Vật tư: BOQ', 'sửa BOQ vật tư')) return;
+        if (!ensureBoqPermission(canEditBoq, 'edit', 'sửa BOQ vật tư')) return;
         setEditingBoq(item);
         setBCat(item.category); setBName(item.itemName); setBUnit(item.unit);
         setBPrice(String(item.budgetUnitPrice));
@@ -1456,7 +1526,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     );
 
     const handleSyncWithSchedule = async () => {
-        if (!ensureCanManage(canManageBoq, 'Vật tư: BOQ', 'đồng bộ BOQ vật tư')) return;
+        if (!ensureBoqPermission(canEditBoq, 'edit', 'đồng bộ BOQ vật tư')) return;
         if (tasks.length === 0) {
             toast.warning('Chưa có tiến độ', 'Cần tạo hoặc import tiến độ trước khi đồng bộ BOQ.');
             return;
@@ -1485,7 +1555,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const handleSaveBoq = async () => {
-        if (!ensureCanManage(canManageBoq, 'Vật tư: BOQ', 'lưu BOQ vật tư')) return;
+        if (!ensureBoqPermission(canEditBoq, 'edit', 'lưu BOQ vật tư')) return;
         if (!bWorkBoqItemId || !selectedWorkBoqItem) {
             toast.warning('Chưa chọn đầu mục BOQ', 'Vật tư cần gắn với đầu mục BOQ triển khai để tự tính KL dự toán.');
             return;
@@ -1530,7 +1600,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const handleDeleteBoq = async (id: string, name: string) => {
-        if (!ensureCanManage(canManageBoq, 'Vật tư: BOQ', 'xoá BOQ vật tư')) return;
+        if (!ensureBoqPermission(canDeleteBoq, 'delete', 'xoá BOQ vật tư')) return;
         const ok = await confirm({ targetName: name, title: 'Xoá mục BOQ' });
         if (!ok) return;
         try {
@@ -1644,7 +1714,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const handleImportWorkBoq = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        if (!ensureCanManage(canManageBoq, 'Vật tư: BOQ', 'import BOQ vật tư')) {
+        if (!ensureBoqPermission(canEditBoq, 'edit', 'import BOQ vật tư')) {
             event.target.value = '';
             return;
         }
@@ -1816,7 +1886,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const confirmImportWorkBoq = async () => {
-        if (!ensureCanManage(canManageBoq, 'Vật tư: BOQ', 'áp dụng import BOQ vật tư')) return;
+        if (!ensureBoqPermission(canEditBoq, 'edit', 'áp dụng import BOQ vật tư')) return;
         if (!importPreview) return;
         const validWorkRows = importPreview.workRows.filter(row => row.status !== 'error');
         const validMaterialRows = importPreview.materialRows.filter(row => row.status !== 'error');
@@ -2043,7 +2113,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                 <p className="text-[10px] text-slate-400 mt-1">KL dự toán vật tư tự tính bằng KL dự toán đầu mục × Ngưỡng hao hụt.</p>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                {canManageBoq && (
+                                {canEditBoq && (
                                     <button onClick={handleSyncWithSchedule} disabled={syncingBoq}
                                         className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 disabled:opacity-50">
                                         <RefreshCcw size={12} className={syncingBoq ? 'animate-spin' : ''} /> Đồng bộ với tiến độ
@@ -2057,7 +2127,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                     className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100">
                                     <Download size={12} /> Xuất Excel
                                 </button>
-                                {canManageBoq && (
+                                {canEditBoq && (
                                     <>
                                         <button onClick={() => boqImportRef.current?.click()} disabled={importingBoq}
                                             className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 hover:bg-amber-100 disabled:opacity-50">
@@ -2134,7 +2204,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                             </span>
                                                         </td>
                                                         <td className="px-4 py-2.5 text-center">
-                                                            {canManageBoq && (
+                                                            {canEditBoq && (
                                                                 <button onClick={() => { resetBoqForm(); setBWorkBoqItemId(item.id); setShowBoqForm(true); }}
                                                                     className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold text-indigo-600 hover:bg-indigo-100">
                                                                     <Plus size={10} /> Vật tư
@@ -2172,10 +2242,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                                     {isOver ? <AlertTriangle size={12} className="inline text-red-500" /> : <CheckCircle2 size={12} className="inline text-emerald-500" />}
                                                                 </td>
                                                                 <td className="px-4 py-2.5">
-                                                                    {canManageBoq && (
+                                                                    {(canEditBoq || canDeleteBoq) && (
                                                                         <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
-                                                                            <button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
-                                                                            <button onClick={() => handleDeleteBoq(mat.id, mat.itemName)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
+                                                                            {canEditBoq && (
+                                                                                <button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
+                                                                            )}
+                                                                            {canDeleteBoq && (
+                                                                                <button onClick={() => handleDeleteBoq(mat.id, mat.itemName)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
+                                                                            )}
                                                                         </div>
                                                                     )}
                                                                 </td>
@@ -2200,8 +2274,15 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                 </td>
                                                 <td colSpan={4}></td>
                                                 <td className="px-4 py-2.5">
-                                                    {canManageBoq && (
-                                                        <button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
+                                                    {(canEditBoq || canDeleteBoq) && (
+                                                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
+                                                            {canEditBoq && (
+                                                                <button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
+                                                            )}
+                                                            {canDeleteBoq && (
+                                                                <button onClick={() => handleDeleteBoq(mat.id, mat.itemName)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
+                                                            )}
+                                                        </div>
                                                     )}
                                                 </td>
                                             </tr>
@@ -2875,7 +2956,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         </div>
                         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
                             <button onClick={() => setImportPreview(null)} disabled={importingBoq} className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600">Huỷ</button>
-                            <button onClick={confirmImportWorkBoq} disabled={!canManageBoq || importingBoq || [...importPreview.workRows, ...importPreview.materialRows].every(row => row.status === 'error')}
+                            <button onClick={confirmImportWorkBoq} disabled={!canEditBoq || importingBoq || [...importPreview.workRows, ...importPreview.materialRows].every(row => row.status === 'error')}
                                 className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 disabled:opacity-50 flex items-center gap-2">
                                 <FileSpreadsheet size={15} /> Ghi dữ liệu hợp lệ
                             </button>
