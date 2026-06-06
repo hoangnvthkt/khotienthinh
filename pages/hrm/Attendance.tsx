@@ -731,7 +731,7 @@ const Attendance: React.FC = () => {
               </button>
             </>
           )}
-          <button onClick={exportCSV} className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-black hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-1.5">
+          <button onClick={exportCSV} className="px-3 py-2 bg-card border border-border text-foreground rounded-xl text-xs font-black hover:bg-muted transition flex items-center gap-1.5">
             <Download size={14} /> Xuất CSV
           </button>
           <button onClick={() => { resetProposalForm(); setPTargetEmployeeId(currentEmployee?.id || ''); setShowProposalForm(true); }} className="px-3 py-2 bg-violet-500 text-white rounded-xl text-xs font-black hover:bg-violet-600 transition flex items-center gap-1.5">
@@ -767,11 +767,11 @@ const Attendance: React.FC = () => {
       {/* Tab Switcher */}
       <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-2xl p-1">
         <button onClick={() => setActiveTab('timesheet')}
-          className={`px-4 py-2 rounded-xl text-xs font-black transition ${activeTab === 'timesheet' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          className={`px-4 py-2 rounded-xl text-xs font-black transition ${activeTab === 'timesheet' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
           <Calendar size={14} className="inline mr-1.5" />Bảng Công
         </button>
         <button onClick={() => setActiveTab('proposals')}
-          className={`px-4 py-2 rounded-xl text-xs font-black transition relative ${activeTab === 'proposals' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          className={`px-4 py-2 rounded-xl text-xs font-black transition relative ${activeTab === 'proposals' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
           <Plus size={14} className="inline mr-1.5" />Đề Xuất CC
           {pendingCount > 0 && (
             <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">{pendingCount}</span>
@@ -810,15 +810,15 @@ const Attendance: React.FC = () => {
         <div className="flex items-center gap-2 flex-wrap">
           {hrmConstructionSites.length > 0 && (
             <select value={filterSite} onChange={e => setFilterSite(e.target.value)}
-              className="px-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none">
-              <option value="">Tất cả công trường</option>
-              {hrmConstructionSites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              className="px-3 py-2 text-xs font-bold border border-border rounded-xl bg-card text-foreground outline-none">
+              <option value="" className="bg-card text-foreground">Tất cả công trường</option>
+              {hrmConstructionSites.map(s => <option key={s.id} value={s.id} className="bg-card text-foreground">{s.name}</option>)}
             </select>
           )}
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input type="text" placeholder="Tìm NV..." value={searchText} onChange={e => setSearchText(e.target.value)}
-              className="pl-8 pr-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none w-36" />
+              className="pl-8 pr-3 py-2 text-xs font-bold border border-border rounded-xl bg-card text-foreground outline-none w-36" />
           </div>
         </div>
       </div>
@@ -833,16 +833,16 @@ const Attendance: React.FC = () => {
             <span className={`w-5 h-5 rounded text-[9px] font-black flex items-center justify-center ${ATTENDANCE_STATUS_COLORS[s]}`}>
               {STATUS_SHORT[s]}
             </span>
-            <span className="text-[10px] font-bold text-slate-500">{ATTENDANCE_STATUS_LABELS[s]}</span>
+            <span className="text-[10px] font-bold text-muted-foreground">{ATTENDANCE_STATUS_LABELS[s]}</span>
           </div>
         ))}
-        <span className="mx-2 text-slate-300">|</span>
-        <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm ring-2 ring-emerald-400"></span><span className="text-[9px] font-bold text-slate-400">Đúng giờ</span></div>
-        <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm ring-2 ring-amber-400"></span><span className="text-[9px] font-bold text-slate-400">Muộn</span></div>
-        <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm ring-2 ring-orange-400"></span><span className="text-[9px] font-bold text-slate-400">½ ngày</span></div>
-        <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm ring-2 ring-red-400"></span><span className="text-[9px] font-bold text-slate-400">Vắng</span></div>
-        <span className="text-[10px] text-slate-400 font-bold ml-2">• Click ô để xem chi tiết</span>
-        {isAdmin && <span className="text-[10px] text-red-400 font-bold ml-1">• Chuột phải để xóa</span>}
+        <span className="mx-2 text-border">|</span>
+        <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm ring-2 ring-emerald-400"></span><span className="text-[9px] font-bold text-muted-foreground">Đúng giờ</span></div>
+        <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm ring-2 ring-amber-400"></span><span className="text-[9px] font-bold text-muted-foreground">Muộn</span></div>
+        <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm ring-2 ring-orange-400"></span><span className="text-[9px] font-bold text-muted-foreground">½ ngày</span></div>
+        <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm ring-2 ring-red-400"></span><span className="text-[9px] font-bold text-muted-foreground">Vắng</span></div>
+        <span className="text-[10px] text-muted-foreground font-bold ml-2">• Click ô để xem chi tiết</span>
+        {isAdmin && <span className="text-[10px] text-destructive font-bold ml-1">• Chuột phải để xóa</span>}
       </div>
       )}
 
@@ -853,19 +853,19 @@ const Attendance: React.FC = () => {
           <table className="w-full border-collapse" style={{ display: 'table' }}>
             <thead>
               <tr>
-                <th className="sticky left-0 z-20 bg-slate-50 dark:bg-slate-800 px-2 py-2 text-left border-b border-r border-slate-200 dark:border-slate-700 min-w-[140px]">
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Nhân viên</span>
+                <th className="sticky left-0 z-20 bg-muted px-2 py-2 text-left border-b border-r border-border min-w-[140px]">
+                  <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Nhân viên</span>
                 </th>
                 {dayHeaders.map(d => (
                   <th key={d.dayNum}
                     className={`px-0.5 py-1.5 text-center border-b border-slate-200 dark:border-slate-700 min-w-[28px] ${
-                      d.isWeekend ? 'bg-rose-50/70 dark:bg-rose-950/20' : 'bg-slate-50 dark:bg-slate-800'
+                      d.isWeekend ? 'bg-rose-500/10' : 'bg-muted'
                     }`}>
-                    <div className="text-[8px] font-bold text-slate-400">{d.dayOfWeek}</div>
-                    <div className={`text-[10px] font-black ${d.isWeekend ? 'text-rose-500' : 'text-slate-700 dark:text-slate-300'}`}>{d.dayNum}</div>
+                    <div className="text-[8px] font-bold text-muted-foreground">{d.dayOfWeek}</div>
+                    <div className={`text-[10px] font-black ${d.isWeekend ? 'text-rose-500' : 'text-foreground'}`}>{d.dayNum}</div>
                   </th>
                 ))}
-                <th className="sticky right-0 z-20 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-2 text-center border-b border-l border-slate-200 dark:border-slate-700 min-w-[50px]">
+                <th className="sticky right-0 z-20 bg-emerald-500/10 px-2 py-2 text-center border-b border-l border-border min-w-[50px]">
                   <span className="text-[9px] font-black text-emerald-600 uppercase">Công</span>
                 </th>
               </tr>
@@ -883,15 +883,15 @@ const Attendance: React.FC = () => {
                 filteredEmployees.map((emp, idx) => {
                   const stats = getStats(emp.id);
                   return (
-                    <tr key={emp.id} className={`${idx % 2 === 0 ? '' : 'bg-slate-50/50 dark:bg-slate-800/30'} hover:bg-blue-50/50 dark:hover:bg-blue-950/10 transition-colors`}>
-                      <td className="sticky left-0 z-10 bg-inherit px-2 py-1.5 border-b border-r border-slate-100 dark:border-slate-800">
+                    <tr key={emp.id} className={`${idx % 2 === 0 ? '' : 'bg-muted/30'} hover:bg-teal-500/5 transition-colors`}>
+                      <td className="sticky left-0 z-10 bg-inherit px-2 py-1.5 border-b border-r border-border">
                         <div className="flex items-center gap-2 min-w-[130px]">
                           <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-teal-400 to-cyan-500 flex items-center justify-center text-white text-[9px] font-black shrink-0">
                             {emp.fullName.charAt(0)}
                           </div>
                           <div className="min-w-0">
-                            <div className="text-[11px] font-black text-slate-800 dark:text-white truncate">{emp.fullName}</div>
-                            <div className="text-[9px] font-mono text-slate-400">{emp.employeeCode}</div>
+                            <div className="text-[11px] font-black text-foreground truncate">{emp.fullName}</div>
+                            <div className="text-[9px] font-mono text-muted-foreground">{emp.employeeCode}</div>
                           </div>
                         </div>
                       </td>
@@ -904,8 +904,8 @@ const Attendance: React.FC = () => {
                           <td key={d.dayNum}
                             onClick={() => handleOpenDetail(emp.id, d.dayNum)}
                             onContextMenu={(e) => handleCellDelete(e, emp.id, d.dayNum)}
-                            className={`px-0 py-0.5 text-center border-b border-slate-100 dark:border-slate-800 cursor-pointer transition-all hover:scale-110 hover:z-10 ${
-                              d.isWeekend ? 'bg-rose-50/30 dark:bg-rose-950/10' : ''
+                            className={`px-0 py-0.5 text-center border-b border-border cursor-pointer transition-all hover:scale-110 hover:z-10 ${
+                              d.isWeekend ? 'bg-rose-500/5' : ''
                             }`}>
                             {rec ? (
                             <div className="relative inline-flex">
@@ -923,7 +923,7 @@ const Attendance: React.FC = () => {
                                 let isLate = false, isEarly = false;
                                 if (rec.checkIn) { const ciM = toM(rec.checkIn); if (ciM > stdS + shift.graceLateMins) isLate = true; }
                                 if (rec.checkOut) { const coM = toM(rec.checkOut); if (coM < stdE - shift.graceEarlyMins) isEarly = true; }
-                                if (isLate || isEarly) return <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-orange-500 border border-white dark:border-slate-900"></span>;
+                                if (isLate || isEarly) return <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-orange-500 border border-background"></span>;
                                 return null;
                               })()}
                             </div>
@@ -936,7 +936,7 @@ const Attendance: React.FC = () => {
                           </td>
                         );
                       })}
-                      <td className="sticky right-0 z-10 bg-emerald-50/80 dark:bg-emerald-950/20 px-2 py-1.5 text-center border-b border-l border-slate-100 dark:border-slate-800">
+                      <td className="sticky right-0 z-10 bg-emerald-500/10 px-2 py-1.5 text-center border-b border-l border-border">
                         <span className="text-sm font-black text-emerald-600">{stats.workDays}</span>
                         {stats.overtime > 0 && (
                           <div className="text-[8px] text-amber-500 font-bold">+{stats.overtime}h</div>
@@ -961,34 +961,34 @@ const Attendance: React.FC = () => {
       {/* Import Preview Modal */}
       {showImportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-4xl max-h-[90vh] flex flex-col">
-            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <div className="bg-card rounded-3xl shadow-2xl border border-border w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="p-6 border-b border-border flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+                <h3 className="text-lg font-black text-foreground flex items-center gap-2">
                   <Upload size={20} className="text-blue-500" /> Xem trước dữ liệu chấm công
                 </h3>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {importRows.length} dòng • <span className="text-emerald-600 font-bold">{importRows.length - Object.keys(importErrors).length} hợp lệ</span>
                   {Object.keys(importErrors).length > 0 && <> • <span className="text-red-500 font-bold">{Object.keys(importErrors).length} lỗi</span></>}
                 </p>
               </div>
-              <button onClick={() => { setShowImportModal(false); setImportRows([]); setImportErrors({}); }} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+              <button onClick={() => { setShowImportModal(false); setImportRows([]); setImportErrors({}); }} className="p-2 rounded-xl hover:bg-muted transition">
                 <XCircle size={20} className="text-slate-400" />
               </button>
             </div>
             <div className="flex-1 overflow-auto p-4">
               <table className="w-full text-xs" style={{ display: 'table' }}>
                 <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-800">
-                    <th className="px-3 py-2 text-left font-black text-slate-500 uppercase text-[10px]">#</th>
-                    <th className="px-3 py-2 text-left font-black text-slate-500 uppercase text-[10px]">Mã NV</th>
-                    <th className="px-3 py-2 text-left font-black text-slate-500 uppercase text-[10px]">Họ tên</th>
-                    <th className="px-3 py-2 text-center font-black text-slate-500 uppercase text-[10px]">Ngày</th>
-                    <th className="px-3 py-2 text-center font-black text-slate-500 uppercase text-[10px]">Giờ vào</th>
-                    <th className="px-3 py-2 text-center font-black text-slate-500 uppercase text-[10px]">Giờ ra</th>
-                    <th className="px-3 py-2 text-center font-black text-slate-500 uppercase text-[10px]">Trạng thái</th>
-                    <th className="px-3 py-2 text-center font-black text-slate-500 uppercase text-[10px]">OT</th>
-                    <th className="px-3 py-2 text-center font-black text-slate-500 uppercase text-[10px]">KQ</th>
+                  <tr className="bg-muted">
+                    <th className="px-3 py-2 text-left font-black text-muted-foreground uppercase text-[10px]">#</th>
+                    <th className="px-3 py-2 text-left font-black text-muted-foreground uppercase text-[10px]">Mã NV</th>
+                    <th className="px-3 py-2 text-left font-black text-muted-foreground uppercase text-[10px]">Họ tên</th>
+                    <th className="px-3 py-2 text-center font-black text-muted-foreground uppercase text-[10px]">Ngày</th>
+                    <th className="px-3 py-2 text-center font-black text-muted-foreground uppercase text-[10px]">Giờ vào</th>
+                    <th className="px-3 py-2 text-center font-black text-muted-foreground uppercase text-[10px]">Giờ ra</th>
+                    <th className="px-3 py-2 text-center font-black text-muted-foreground uppercase text-[10px]">Trạng thái</th>
+                    <th className="px-3 py-2 text-center font-black text-muted-foreground uppercase text-[10px]">OT</th>
+                    <th className="px-3 py-2 text-center font-black text-muted-foreground uppercase text-[10px]">KQ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -996,10 +996,10 @@ const Attendance: React.FC = () => {
                     const err = importErrors[idx];
                     const emp = row._empId ? employees.find(e => e.id === row._empId) : null;
                     return (
-                      <tr key={idx} className={`border-b border-slate-100 dark:border-slate-800 ${err ? 'bg-red-50 dark:bg-red-950/20' : ''}`}>
+                      <tr key={idx} className={`border-b border-border ${err ? 'bg-destructive/10' : ''}`}>
                         <td className="px-3 py-2 text-slate-400 font-mono">{idx + 1}</td>
-                        <td className="px-3 py-2 font-bold text-slate-700 dark:text-slate-300">{row._code || String(Object.values(row)[0])}</td>
-                        <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{emp?.fullName || '-'}</td>
+                        <td className="px-3 py-2 font-bold text-foreground">{row._code || String(Object.values(row)[0])}</td>
+                        <td className="px-3 py-2 text-slate-600 dark:text-muted-foreground">{emp?.fullName || '-'}</td>
                         <td className="px-3 py-2 text-center font-mono">{row._date ? new Date(row._date).toLocaleDateString('vi-VN') : '-'}</td>
                         <td className="px-3 py-2 text-center font-mono text-blue-600">{row._checkIn || '-'}</td>
                         <td className="px-3 py-2 text-center font-mono text-orange-600">{row._checkOut || '-'}</td>
@@ -1027,8 +1027,8 @@ const Attendance: React.FC = () => {
                 </tbody>
               </table>
             </div>
-            <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
-              <div className="text-xs text-slate-500">
+            <div className="p-6 border-t border-border flex justify-between items-center">
+              <div className="text-xs text-muted-foreground">
                 {recordMap.size > 0 && (
                   <span className="text-amber-500 font-bold flex items-center gap-1">
                     <AlertTriangle size={12} /> Dữ liệu trùng ngày sẽ được ghi đè
@@ -1036,7 +1036,7 @@ const Attendance: React.FC = () => {
                 )}
               </div>
               <div className="flex gap-2">
-                <button onClick={() => { setShowImportModal(false); setImportRows([]); setImportErrors({}); }} className="px-4 py-2.5 text-xs font-black text-slate-500 hover:text-slate-700 transition">Huỷ</button>
+                <button onClick={() => { setShowImportModal(false); setImportRows([]); setImportErrors({}); }} className="px-4 py-2.5 text-xs font-black text-muted-foreground hover:text-foreground transition">Huỷ</button>
                 <button onClick={handleBulkImport} disabled={importing || importRows.length === Object.keys(importErrors).length}
                   className="px-4 py-2.5 bg-blue-500 text-white rounded-xl text-xs font-black hover:bg-blue-600 transition disabled:opacity-50 flex items-center gap-1.5">
                   {importing ? <><Loader2 size={14} className="animate-spin" /> Đang nhập...</> : <><Upload size={14} /> Nhập {importRows.length - Object.keys(importErrors).length} bản ghi</>}
@@ -1050,9 +1050,9 @@ const Attendance: React.FC = () => {
       {/* Holiday Management Modal */}
       {showHolidayModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
-              <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+          <div className="bg-card rounded-3xl shadow-2xl border border-border w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-border flex justify-between items-center">
+              <h3 className="text-lg font-black text-foreground flex items-center gap-2">
                 <Star size={20} className="text-amber-500" /> Quản lý Ngày lễ — {currentYear}
               </h3>
               <button onClick={() => setShowHolidayModal(false)} className="p-1 rounded-lg hover:bg-slate-100">
@@ -1063,9 +1063,9 @@ const Attendance: React.FC = () => {
               {/* Add holiday form */}
               <div className="flex gap-2">
                 <input type="text" value={holidayName} onChange={e => setHolidayName(e.target.value)}
-                  placeholder="Tên ngày lễ..." className="flex-1 px-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                  placeholder="Tên ngày lễ..." className="flex-1 px-3 py-2 text-xs font-bold border border-border rounded-xl bg-card text-foreground outline-none" />
                 <input type="date" value={holidayDate} onChange={e => setHolidayDate(e.target.value)}
-                  className="px-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                  className="px-3 py-2 text-xs font-bold border border-border rounded-xl bg-card text-foreground outline-none" />
                 <button onClick={() => {
                   if (!holidayName || !holidayDate) return;
                   addHrmItem('hrm_holidays', { id: crypto.randomUUID(), name: holidayName, date: holidayDate, year: parseInt(holidayDate.split('-')[0]), createdAt: new Date().toISOString() });
@@ -1086,7 +1086,7 @@ const Attendance: React.FC = () => {
                     { name: 'Nghỉ bù Quốc khánh', date: `${currentYear}-09-03` },
                   ];
                   defaults.forEach(d => addHrmItem('hrm_holidays', { id: crypto.randomUUID(), ...d, year: currentYear, createdAt: new Date().toISOString() }));
-                }} className="w-full px-3 py-2.5 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 rounded-xl text-xs font-bold hover:bg-amber-100 transition border border-amber-200 dark:border-amber-800">
+                }} className="w-full px-3 py-2.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold hover:bg-amber-500/20 transition border border-amber-500/20">
                   🇻🇳 Thêm ngày lễ mặc định Việt Nam ({currentYear})
                 </button>
               )}
@@ -1094,9 +1094,9 @@ const Attendance: React.FC = () => {
               {/* Holiday list */}
               <div className="space-y-1">
                 {holidays.filter(h => h.year === currentYear).sort((a, b) => a.date.localeCompare(b.date)).map(h => (
-                  <div key={h.id} className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 group">
+                  <div key={h.id} className="flex items-center justify-between px-3 py-2 rounded-xl bg-muted group">
                     <div>
-                      <span className="text-xs font-black text-slate-800 dark:text-white">{h.name}</span>
+                      <span className="text-xs font-black text-foreground">{h.name}</span>
                       <span className="text-[10px] text-slate-400 ml-2">{new Date(h.date).toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' })}</span>
                     </div>
                     {canCRUD && (
@@ -1153,7 +1153,7 @@ const Attendance: React.FC = () => {
                 <p className="text-xs text-slate-400 mt-1">Bấm nút "Đề xuất CC" để tạo đề xuất mới</p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              <div className="divide-y divide-border">
                 {[...filteredProposals].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(p => {
                   const proposer = employees.find(e => e.id === p.proposerEmployeeId);
                   const target = employees.find(e => e.id === p.targetEmployeeId);
@@ -1165,7 +1165,7 @@ const Attendance: React.FC = () => {
                   const isSelf = p.proposerEmployeeId === p.targetEmployeeId;
 
                   return (
-                    <div key={p.id} className="p-4 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition">
+                    <div key={p.id} className="p-4 hover:bg-muted/50 transition">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -1179,19 +1179,19 @@ const Attendance: React.FC = () => {
                               {new Date(p.date).toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
                             </span>
                           </div>
-                          <div className="text-xs font-black text-slate-700 dark:text-slate-300">
+                          <div className="text-xs font-black text-foreground">
                             {isSelf ? (
                               <>{target?.fullName || 'N/A'} <span className="text-slate-400 font-bold">(tự đề xuất)</span></>
                             ) : (
                               <>{proposer?.fullName || 'N/A'} <span className="text-slate-400">→</span> {target?.fullName || 'N/A'}</>
                             )}
                           </div>
-                          <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-500">
+                          <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
                             {p.checkIn && <span className="text-emerald-600 font-bold">Vào: {p.checkIn}</span>}
                             {p.checkOut && <span className="text-orange-600 font-bold">Ra: {p.checkOut}</span>}
                             {loc && <span>📍 {loc}</span>}
                           </div>
-                          <p className="text-[11px] text-slate-500 mt-1 italic">💬 {p.reason}</p>
+                          <p className="text-[11px] text-muted-foreground mt-1 italic">💬 {p.reason}</p>
                           {p.proposalStatus === 'rejected' && p.rejectionReason && (
                             <p className="text-[10px] text-red-500 mt-1 font-bold">❌ Lý do từ chối: {p.rejectionReason}</p>
                           )}
@@ -1228,20 +1228,20 @@ const Attendance: React.FC = () => {
       {/* ==================== REJECT REASON MODAL ==================== */}
       {rejectId && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md mx-4">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-red-500 to-rose-500 rounded-t-3xl flex items-center justify-between">
+          <div className="bg-card rounded-3xl shadow-2xl border border-border w-full max-w-md mx-4">
+            <div className="px-6 py-4 border-b border-border bg-gradient-to-r from-red-500 to-rose-500 rounded-t-3xl flex items-center justify-between">
               <span className="font-bold text-lg text-white flex items-center gap-2"><XCircle size={18} /> Từ chối đề xuất</span>
               <button onClick={() => setRejectId(null)} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><XCircle size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Lý do từ chối</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1 block">Lý do từ chối</label>
                 <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3}
                   placeholder="Nhập lý do từ chối..."
-                  className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-red-300" />
+                  className="w-full px-4 py-2.5 text-sm border border-border rounded-xl bg-card text-foreground outline-none focus:ring-2 focus:ring-red-300" />
               </div>
               <div className="flex justify-end gap-2">
-                <button onClick={() => setRejectId(null)} className="px-4 py-2.5 text-xs font-black text-slate-500 hover:text-slate-700 transition">Huỷ</button>
+                <button onClick={() => setRejectId(null)} className="px-4 py-2.5 text-xs font-black text-muted-foreground hover:text-foreground transition">Huỷ</button>
                 <button onClick={() => handleReject(rejectId)} className="px-4 py-2.5 bg-red-500 text-white rounded-xl text-xs font-black hover:bg-red-600 transition">Xác nhận từ chối</button>
               </div>
             </div>
@@ -1252,55 +1252,55 @@ const Attendance: React.FC = () => {
       {/* ==================== PROPOSAL FORM MODAL ==================== */}
       {showProposalForm && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-violet-500 to-purple-500 rounded-t-3xl flex items-center justify-between">
+          <div className="bg-card rounded-3xl shadow-2xl border border-border w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-border bg-gradient-to-r from-violet-500 to-purple-500 rounded-t-3xl flex items-center justify-between">
               <span className="font-bold text-lg text-white flex items-center gap-2"><Plus size={18} /> Đề xuất chấm công</span>
               <button onClick={resetProposalForm} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center"><XCircle size={18} /></button>
             </div>
             <div className="p-6 space-y-4">
               {/* Target employee */}
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Chấm công cho *</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1 block">Chấm công cho *</label>
                 <select value={pTargetEmployeeId} onChange={e => setPTargetEmployeeId(e.target.value)}
-                  className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300">
-                  <option value="">— Chọn nhân viên —</option>
+                  className="w-full px-4 py-2.5 text-sm border border-border rounded-xl bg-card text-foreground outline-none focus:ring-2 focus:ring-violet-300">
+                  <option value="" className="bg-card text-foreground">— Chọn nhân viên —</option>
                   {activeEmployees.map(e => (
-                    <option key={e.id} value={e.id}>{e.fullName} ({e.employeeCode}){e.id === currentEmployee?.id ? ' ← Tôi' : ''}</option>
+                    <option key={e.id} value={e.id} className="bg-card text-foreground">{e.fullName} ({e.employeeCode}){e.id === currentEmployee?.id ? ' ← Tôi' : ''}</option>
                   ))}
                 </select>
               </div>
               {/* Date */}
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Ngày cần bù công *</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1 block">Ngày cần bù công *</label>
                 <input type="date" value={pDate} onChange={e => setPDate(e.target.value)}
-                  className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300" />
+                  className="w-full px-4 py-2.5 text-sm border border-border rounded-xl bg-card text-foreground outline-none focus:ring-2 focus:ring-violet-300" />
               </div>
               {/* Time */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Giờ vào</label>
+                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1 block">Giờ vào</label>
                   <input type="time" value={pCheckIn} onChange={e => setPCheckIn(e.target.value)}
-                    className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300" />
+                    className="w-full px-4 py-2.5 text-sm border border-border rounded-xl bg-card text-foreground outline-none focus:ring-2 focus:ring-violet-300" />
                 </div>
                 <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Giờ ra</label>
+                  <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1 block">Giờ ra</label>
                   <input type="time" value={pCheckOut} onChange={e => setPCheckOut(e.target.value)}
-                    className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300" />
+                    className="w-full px-4 py-2.5 text-sm border border-border rounded-xl bg-card text-foreground outline-none focus:ring-2 focus:ring-violet-300" />
                 </div>
               </div>
               {/* Status */}
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Trạng thái</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1 block">Trạng thái</label>
                 <select value={pStatus} onChange={e => setPStatus(e.target.value as AttendanceStatus)}
-                  className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300">
-                  <option value="present">Đi làm (✓)</option>
-                  <option value="half_day">Nửa ngày (½)</option>
-                  <option value="business_trip">Công tác (CT)</option>
+                  className="w-full px-4 py-2.5 text-sm border border-border rounded-xl bg-card text-foreground outline-none focus:ring-2 focus:ring-violet-300">
+                  <option value="present" className="bg-card text-foreground">Đi làm (✓)</option>
+                  <option value="half_day" className="bg-card text-foreground">Nửa ngày (½)</option>
+                  <option value="business_trip" className="bg-card text-foreground">Công tác (CT)</option>
                 </select>
               </div>
               {/* Location */}
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Địa điểm</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1 block">Địa điểm</label>
                 <select value={pLocationId ? `${pLocationType}:${pLocationId}` : ''}
                   onChange={e => {
                     if (!e.target.value) { setPLocationId(''); return; }
@@ -1308,23 +1308,23 @@ const Attendance: React.FC = () => {
                     setPLocationType(type as 'construction_site' | 'office');
                     setPLocationId(id);
                   }}
-                  className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300">
-                  <option value="">— Không chọn —</option>
+                  className="w-full px-4 py-2.5 text-sm border border-border rounded-xl bg-card text-foreground outline-none focus:ring-2 focus:ring-violet-300">
+                  <option value="" className="bg-card text-foreground">— Không chọn —</option>
                   {locationOptions.map(l => (
-                    <option key={l.id} value={`${l.type}:${l.id}`}>{l.name}</option>
+                    <option key={l.id} value={`${l.type}:${l.id}`} className="bg-card text-foreground">{l.name}</option>
                   ))}
                 </select>
               </div>
               {/* Reason */}
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 block">Lý do đề xuất *</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1 block">Lý do đề xuất *</label>
                 <textarea value={pReason} onChange={e => setPReason(e.target.value)} rows={3}
                   placeholder="VD: Quên chấm công, hỏng máy chấm công, sự cố khẩn cấp..."
-                  className="w-full px-4 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300" />
+                  className="w-full px-4 py-2.5 text-sm border border-border rounded-xl bg-card text-foreground outline-none focus:ring-2 focus:ring-violet-300" />
               </div>
               {/* Actions */}
               <div className="flex justify-end gap-2 pt-2">
-                <button onClick={resetProposalForm} className="px-4 py-2.5 text-xs font-black text-slate-500 hover:text-slate-700 transition">Huỷ</button>
+                <button onClick={resetProposalForm} className="px-4 py-2.5 text-xs font-black text-muted-foreground hover:text-foreground transition">Huỷ</button>
                 <button onClick={handleCreateProposal}
                   disabled={!pTargetEmployeeId || !pDate || !pReason}
                   className="px-4 py-2.5 bg-violet-500 text-white rounded-xl text-xs font-black hover:bg-violet-600 transition disabled:opacity-50 flex items-center gap-1.5">
@@ -1363,7 +1363,7 @@ const Attendance: React.FC = () => {
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => { setDetailCell(null); setEditMode(false); setShowSaveConfirm(false); }}>
-            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="bg-card rounded-3xl shadow-2xl border border-border w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
               {/* Header — purple gradient giống mockup */}
               <div className="bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-5 text-white text-center relative">
                 <button onClick={() => { setDetailCell(null); setEditMode(false); setShowSaveConfirm(false); }} className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-white/20 transition">
@@ -1384,7 +1384,7 @@ const Attendance: React.FC = () => {
               <div className="p-6 space-y-4">
                 {/* Date + Status indicator */}
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-black text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                  <h4 className="text-sm font-black text-foreground flex items-center gap-2">
                     <Calendar size={15} className="text-violet-500" />
                     Dữ liệu chấm công — {dayInfo?.dayOfWeek} {formattedDate}
                   </h4>
@@ -1409,13 +1409,13 @@ const Attendance: React.FC = () => {
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] font-bold text-slate-400 uppercase w-12">Vào:</span>
                             <input type="time" value={editCheckIn} onChange={e => setEditCheckIn(e.target.value)}
-                              className="px-2 py-1 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300 w-28" />
+                              className="px-2 py-1 text-sm font-bold border border-border rounded-lg bg-card text-foreground outline-none focus:ring-2 focus:ring-violet-300 w-28" />
                           </div>
                         ) : (
                           <>
-                            <p className="text-base font-black text-slate-800 dark:text-white">{rec.checkIn || '—'}</p>
+                            <p className="text-base font-black text-foreground">{rec.checkIn || '—'}</p>
                             {locationDisplay && (
-                              <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                              <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
                                 <MapPin size={10} className="shrink-0" />
                                 {rec.locationType === 'construction_site' ? '🏗️' : '🏢'} {locationDisplay}
                               </p>
@@ -1438,11 +1438,11 @@ const Attendance: React.FC = () => {
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] font-bold text-slate-400 uppercase w-12">Ra:</span>
                             <input type="time" value={editCheckOut} onChange={e => setEditCheckOut(e.target.value)}
-                              className="px-2 py-1 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300 w-28" />
+                              className="px-2 py-1 text-sm font-bold border border-border rounded-lg bg-card text-foreground outline-none focus:ring-2 focus:ring-violet-300 w-28" />
                           </div>
                         ) : (
                           <>
-                            <p className="text-base font-black text-slate-800 dark:text-white">{rec.checkOut || '—'}</p>
+                            <p className="text-base font-black text-foreground">{rec.checkOut || '—'}</p>
                             {rec.checkOutLat != null && rec.checkOutLng != null && (
                               <a href={`https://maps.google.com/?q=${rec.checkOutLat},${rec.checkOutLng}`} target="_blank" rel="noopener noreferrer" className="text-[10px] text-violet-500 hover:underline mt-0.5 inline-block">
                                 📍 Vị trí ra ({rec.checkOutLat?.toFixed(4)}, {rec.checkOutLng?.toFixed(4)})
@@ -1470,13 +1470,13 @@ const Attendance: React.FC = () => {
                         <span className="text-[10px] font-bold text-slate-400 uppercase">Ghi chú:</span>
                         <textarea value={editNote} onChange={e => setEditNote(e.target.value)}
                           rows={2}
-                          className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-violet-300 resize-none"
+                          className="w-full mt-1 px-3 py-2 text-sm border border-border rounded-xl bg-card text-foreground outline-none focus:ring-2 focus:ring-violet-300 resize-none"
                           placeholder="Ghi chú..." />
                       </div>
                     ) : rec.note ? (
-                      <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3">
+                      <div className="bg-muted rounded-xl p-3">
                         <span className="text-[10px] font-bold text-slate-400 uppercase">Ghi chú</span>
-                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{rec.note}</p>
+                        <p className="text-xs text-foreground mt-1">{rec.note}</p>
                       </div>
                     ) : null}
 
@@ -1498,11 +1498,11 @@ const Attendance: React.FC = () => {
               </div>
 
               {/* Footer — Admin actions */}
-              <div className="border-t border-slate-100 dark:border-slate-800 px-6 py-4 flex items-center justify-between gap-2">
+              <div className="border-t border-border px-6 py-4 flex items-center justify-between gap-2">
                 {/* Left: cycle status */}
                 <button
                   onClick={() => handleCellClick(detailCell.employeeId, detailCell.day)}
-                  className="px-3 py-2 text-xs font-black text-slate-500 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-500/10 rounded-xl transition flex items-center gap-1.5"
+                  className="px-3 py-2 text-xs font-black text-muted-foreground hover:text-violet-600 hover:bg-violet-500/10 rounded-xl transition flex items-center gap-1.5"
                 >
                   <CheckCircle2 size={14} /> Chuyển trạng thái
                 </button>
@@ -1512,7 +1512,7 @@ const Attendance: React.FC = () => {
                   <div className="flex items-center gap-2">
                     {editMode ? (
                       <>
-                        <button onClick={() => setEditMode(false)} className="px-3 py-2 text-xs font-black text-slate-400 hover:text-slate-600 transition">Huỷ</button>
+                        <button onClick={() => setEditMode(false)} className="px-3 py-2 text-xs font-black text-muted-foreground hover:text-foreground transition">Huỷ</button>
                         <button onClick={() => setShowSaveConfirm(true)}
                           className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black hover:bg-emerald-600 transition flex items-center gap-1.5">
                           <Save size={13} /> Xác nhận sửa
@@ -1532,20 +1532,20 @@ const Attendance: React.FC = () => {
             {/* Confirm Dialog */}
             {showSaveConfirm && (
               <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={e => e.stopPropagation()}>
-                <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-6 max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
+                <div className="bg-card rounded-2xl shadow-2xl border border-border p-6 max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
                   <div className="text-center">
                     <div className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-500/20 flex items-center justify-center mx-auto mb-3">
                       <AlertTriangle size={24} className="text-amber-500" />
                     </div>
-                    <h4 className="text-base font-black text-slate-800 dark:text-white">Xác nhận sửa chấm công</h4>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                    <h4 className="text-base font-black text-foreground">Xác nhận sửa chấm công</h4>
+                    <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
                       Bạn có chắc muốn sửa giờ chấm công của <strong>{emp?.fullName}</strong> ngày <strong>{formattedDate}</strong>?
                     </p>
-                    {editCheckIn && <p className="text-xs text-slate-500 mt-1">Giờ vào: <strong>{editCheckIn}</strong></p>}
-                    {editCheckOut && <p className="text-xs text-slate-500">Giờ ra: <strong>{editCheckOut}</strong></p>}
+                    {editCheckIn && <p className="text-xs text-muted-foreground mt-1">Giờ vào: <strong>{editCheckIn}</strong></p>}
+                    {editCheckOut && <p className="text-xs text-muted-foreground">Giờ ra: <strong>{editCheckOut}</strong></p>}
                   </div>
                   <div className="flex items-center gap-2 mt-5">
-                    <button onClick={() => setShowSaveConfirm(false)} className="flex-1 px-4 py-2.5 text-xs font-black text-slate-500 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition">Huỷ</button>
+                    <button onClick={() => setShowSaveConfirm(false)} className="flex-1 px-4 py-2.5 text-xs font-black text-muted-foreground border border-border rounded-xl hover:bg-muted transition">Huỷ</button>
                     <button onClick={handleSaveEdit} className="flex-1 px-4 py-2.5 bg-emerald-500 text-white rounded-xl text-xs font-black hover:bg-emerald-600 transition flex items-center justify-center gap-1.5">
                       <CheckCircle size={14} /> Xác nhận
                     </button>

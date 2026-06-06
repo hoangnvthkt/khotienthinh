@@ -1727,7 +1727,7 @@ export interface InventoryItem {
   category: string;
   unit: string;          // Đơn vị tồn kho & xuất kho (VD: Cây, Cái, Tấm)
   purchaseUnit?: string; // Đơn vị mua hàng (VD: KG, Tấn) - khác với unit nếu có
-  purchaseConversionFactor?: number; // 1 đơn vị mua = bao nhiêu đơn vị tồn kho
+  purchaseConversionFactor?: number; // 1 đơn vị mua = bao nhiêu đơn vị tồn kho; chiều ngược lại = số lượng tồn kho / hệ số
   priceIn: number;
   priceOut: number;
   minStock: number;

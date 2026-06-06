@@ -428,17 +428,30 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                 <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
                   <div className="text-amber-600 mb-1 text-[10px] uppercase font-bold tracking-tight">Hệ số quy đổi</div>
                   {isEditing ? (
-                    <input
-                      type="number"
-                      min={0.000001}
-                      step="any"
-                      className="w-full bg-white border border-amber-200 text-sm font-bold p-1 rounded outline-none focus:ring-2 focus:ring-amber-400"
-                      value={editData.purchaseConversionFactor ?? 1}
-                      onChange={e => setEditData({ ...editData, purchaseConversionFactor: Number(e.target.value) })}
-                    />
+                    <div className="space-y-1">
+                      <input
+                        type="number"
+                        min={0.000001}
+                        step="any"
+                        className="w-full bg-white border border-amber-200 text-sm font-bold p-1 rounded outline-none focus:ring-2 focus:ring-amber-400"
+                        value={editData.purchaseConversionFactor ?? 1}
+                        onChange={e => setEditData({ ...editData, purchaseConversionFactor: Number(e.target.value) })}
+                      />
+                      <div className="text-[10px] font-bold text-amber-700">
+                        1 {editData.purchaseUnit} = {Number(editData.purchaseConversionFactor || 1).toLocaleString('vi-VN')} {editData.unit}
+                        <br />
+                        <span className="text-amber-500">
+                          1 {editData.unit} = {(1 / Number(editData.purchaseConversionFactor || 1)).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {editData.purchaseUnit}
+                        </span>
+                      </div>
+                    </div>
                   ) : (
                     <div className="font-bold text-amber-800 text-sm">
                       1 {item.purchaseUnit} = {Number(item.purchaseConversionFactor || 1).toLocaleString('vi-VN')} {item.unit}
+                      <br />
+                      <span className="text-xs text-amber-600">
+                        1 {item.unit} = {(1 / Number(item.purchaseConversionFactor || 1)).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {item.purchaseUnit}
+                      </span>
                     </div>
                   )}
                 </div>

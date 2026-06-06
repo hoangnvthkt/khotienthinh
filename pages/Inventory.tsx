@@ -670,9 +670,9 @@ const Inventory: React.FC = () => {
 
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
         <div>
-          <h1 className="text-2xl font-black text-slate-800 tracking-tight">Kho & Vật tư</h1>
+          <h1 className="text-2xl font-black text-foreground tracking-tight">Kho & Vật tư</h1>
           {hasAssignedWh && (
-            <div className="flex items-center gap-2 mt-1 text-accent font-black uppercase text-[10px] tracking-widest bg-blue-50 px-2 py-1 rounded-lg border border-blue-100">
+            <div className="flex items-center gap-2 mt-1 text-accent font-black uppercase text-[10px] tracking-widest bg-blue-500/10 px-2 py-1 rounded-lg border border-blue-500/20 text-blue-450">
               <ShieldAlert size={12} />
               Kho quản lý: {warehouses.find(w => w.id === user.assignedWarehouseId)?.name}
             </div>
@@ -685,21 +685,21 @@ const Inventory: React.FC = () => {
               <button
                 onClick={handleDownloadTemplate}
                 disabled={importing}
-                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60"
+                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-card border border-border text-foreground rounded-xl hover:bg-muted transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60"
               >
                 <FileSpreadsheet className="w-4 h-4 mr-2 text-green-600" /> Tải mẫu
               </button>
               <button
                 onClick={handleExportExcel}
                 disabled={importing}
-                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl hover:bg-emerald-100 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60"
+                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl hover:bg-emerald-500/20 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60"
               >
                 <Download className="w-4 h-4 mr-2" /> Xuất Excel
               </button>
               <button
                 onClick={() => openInventoryImport('create')}
                 disabled={importing}
-                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl hover:bg-blue-100 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60 disabled:cursor-wait"
+                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-blue-500/10 border border-blue-500/20 text-blue-450 rounded-xl hover:bg-blue-500/20 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60 disabled:cursor-wait"
               >
                 {importing && importMode === 'create'
                   ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -709,7 +709,7 @@ const Inventory: React.FC = () => {
               <button
                 onClick={() => openInventoryImport('update')}
                 disabled={importing}
-                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl hover:bg-amber-100 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60 disabled:cursor-wait"
+                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-xl hover:bg-amber-500/20 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60 disabled:cursor-wait"
               >
                 {importing && importMode === 'update'
                   ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -737,21 +737,21 @@ const Inventory: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row gap-4">
+      <div className="bg-card p-4 rounded-2xl shadow-sm border border-border flex flex-col md:flex-row gap-4">
         <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-5 h-5" />
           <input
             type="text" placeholder="Tìm theo tên, mã SKU..."
-            className="w-full pl-10 pr-4 py-3 text-sm border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-accent font-medium bg-slate-50/50"
+            className="w-full pl-10 pr-4 py-3 text-sm border border-border rounded-xl outline-none focus:ring-2 focus:ring-accent font-medium bg-muted/30 text-foreground"
             value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="w-full md:w-64 relative">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
             <select
               disabled={hasAssignedWh} // Khóa nếu có kho phân công
-              className="w-full pl-9 pr-8 py-3 text-sm border border-slate-200 rounded-xl appearance-none bg-slate-50/50 outline-none focus:ring-2 focus:ring-accent disabled:opacity-70 font-black uppercase tracking-tighter"
+              className="w-full pl-9 pr-8 py-3 text-sm border border-border rounded-xl appearance-none bg-muted/30 outline-none focus:ring-2 focus:ring-accent disabled:opacity-70 font-black uppercase tracking-tighter text-foreground"
               value={filterWarehouse} onChange={(e) => setFilterWarehouse(e.target.value)}
             >
               {!hasAssignedWh && <option value="all">Tất cả kho hệ thống</option>}
@@ -760,20 +760,20 @@ const Inventory: React.FC = () => {
           </div>
           <button
             onClick={() => setShowLowStockOnly(!showLowStockOnly)}
-            className={`flex items-center justify-center px-4 py-3 rounded-xl border transition-all text-[10px] font-black uppercase tracking-widest ${showLowStockOnly ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-slate-200 text-slate-400'}`}
+            className={`flex items-center justify-center px-4 py-3 rounded-xl border transition-all text-[10px] font-black uppercase tracking-widest ${showLowStockOnly ? 'bg-destructive/10 border-destructive/20 text-destructive' : 'bg-card border-border text-muted-foreground'}`}
           >
-            <AlertTriangle className={`w-4 h-4 mr-2 ${showLowStockOnly ? 'text-red-600' : 'text-slate-400'}`} />
+            <AlertTriangle className={`w-4 h-4 mr-2 ${showLowStockOnly ? 'text-red-600' : 'text-muted-foreground'}`} />
             Cảnh báo tồn
           </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+      <div className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden">
         {/* Desktop Table View */}
         <div className="hidden md:block overflow-x-auto scrollbar-hide">
           <table className="w-full text-left border-collapse min-w-[700px]">
             <thead>
-              <tr className="bg-slate-50/50 border-b border-slate-100 text-slate-500 text-[10px] uppercase font-black tracking-widest">
+              <tr className="bg-muted/50 border-b border-border text-muted-foreground text-[10px] uppercase font-black tracking-widest">
                 <th className="p-4">Mã SKU</th>
                 <th className="p-4">Tên vật tư</th>
                 <th className="p-4">Danh mục</th>
@@ -782,26 +782,26 @@ const Inventory: React.FC = () => {
                 <th className="p-4"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-sm">
+            <tbody className="divide-y divide-border text-sm">
               {paginatedItems.map(item => {
                 const stock = getDisplayStock(item);
                 const isLow = stock <= item.minStock;
                 return (
-                  <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
-                    <td className="p-4 font-mono text-slate-400 font-bold text-xs">{item.sku}</td>
-                    <td className="p-4 font-black text-slate-800 cursor-pointer hover:text-accent" onClick={() => setSelectedItem(item)}>
+                  <tr key={item.id} className="hover:bg-muted/30 transition-colors group">
+                    <td className="p-4 font-mono text-muted-foreground font-bold text-xs">{item.sku}</td>
+                    <td className="p-4 font-black text-foreground cursor-pointer hover:text-accent" onClick={() => setSelectedItem(item)}>
                       <div className="truncate max-w-[200px]">{item.name}</div>
                     </td>
-                    <td className="p-4 text-slate-500 font-medium">{item.category}</td>
+                    <td className="p-4 text-muted-foreground font-medium">{item.category}</td>
                     <td className="p-4 text-right">
-                      <span className={`font-black ${isLow ? 'text-red-600' : 'text-slate-800'}`}>{stock.toLocaleString()}</span>
-                      <span className="text-[10px] text-slate-400 ml-1 uppercase font-bold">{item.unit}</span>
+                      <span className={`font-black ${isLow ? 'text-red-600' : 'text-foreground'}`}>{stock.toLocaleString()}</span>
+                      <span className="text-[10px] text-muted-foreground ml-1 uppercase font-bold">{item.unit}</span>
                     </td>
                     <td className="p-4 text-center">
                       {isLow ? (
-                        <span className="bg-red-50 text-red-600 px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase border border-red-100">Sắp hết</span>
+                        <span className="bg-destructive/10 text-destructive px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase border border-destructive/20">Sắp hết</span>
                       ) : (
-                        <span className="bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase border border-emerald-100">An toàn</span>
+                        <span className="bg-emerald-500/10 text-emerald-450 px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase border border-emerald-500/20">An toàn</span>
                       )}
                     </td>
                     <td className="p-4 text-right">
@@ -809,12 +809,12 @@ const Inventory: React.FC = () => {
                         {canCRUD && (
                           <button
                             onClick={(e) => { e.stopPropagation(); setItemToDelete(item); }}
-                            className="p-2 text-slate-300 hover:text-red-600 transition-colors"
+                            className="p-2 text-muted-foreground/30 hover:text-red-600 transition-colors"
                           >
                             <Trash2 size={16} />
                           </button>
                         )}
-                        <button onClick={() => setSelectedItem(item)} className="text-slate-300 hover:text-accent p-2">
+                        <button onClick={() => setSelectedItem(item)} className="text-muted-foreground/30 hover:text-accent p-2">
                           <MoreHorizontal size={18} />
                         </button>
                       </div>
@@ -828,28 +828,28 @@ const Inventory: React.FC = () => {
         </div>
 
         {/* Mobile Card View */}
-        <div className="md:hidden divide-y divide-slate-100">
+        <div className="md:hidden divide-y divide-border">
           {paginatedItems.map(item => {
             const stock = getDisplayStock(item);
             const isLow = stock <= item.minStock;
             return (
-              <div key={item.id} className="p-4 space-y-3 active:bg-slate-50 transition-colors" onClick={() => setSelectedItem(item)}>
+              <div key={item.id} className="p-4 space-y-3 active:bg-muted transition-colors" onClick={() => setSelectedItem(item)}>
                 <div className="flex justify-between items-start">
                   <div className="min-w-0 flex-1">
-                    <div className="text-[10px] font-mono text-slate-400 font-bold uppercase mb-0.5">{item.sku}</div>
-                    <h4 className="font-black text-slate-800 text-sm truncate pr-4">{item.name}</h4>
+                    <div className="text-[10px] font-mono text-muted-foreground font-bold uppercase mb-0.5">{item.sku}</div>
+                    <h4 className="font-black text-foreground text-sm truncate pr-4">{item.name}</h4>
                   </div>
                   {isLow ? (
-                    <span className="bg-red-50 text-red-600 px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase border border-red-100 shrink-0">Sắp hết</span>
+                    <span className="bg-destructive/10 text-destructive px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase border border-destructive/20 shrink-0">Sắp hết</span>
                   ) : (
-                    <span className="bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase border border-emerald-100 shrink-0">An toàn</span>
+                    <span className="bg-emerald-500/10 text-emerald-450 px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase border border-emerald-500/20 shrink-0">An toàn</span>
                   )}
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500 font-medium">{item.category}</span>
+                  <span className="text-xs text-muted-foreground font-medium">{item.category}</span>
                   <div className="text-right">
-                    <span className={`font-black text-sm ${isLow ? 'text-red-600' : 'text-slate-800'}`}>{stock.toLocaleString()}</span>
-                    <span className="text-[10px] text-slate-400 ml-1 uppercase font-bold">{item.unit}</span>
+                    <span className={`font-black text-sm ${isLow ? 'text-red-600' : 'text-foreground'}`}>{stock.toLocaleString()}</span>
+                    <span className="text-[10px] text-muted-foreground ml-1 uppercase font-bold">{item.unit}</span>
                   </div>
                 </div>
               </div>
@@ -858,7 +858,7 @@ const Inventory: React.FC = () => {
         </div>
 
         {filteredItems.length === 0 && (
-          <div className="p-20 text-center text-slate-300 font-black uppercase tracking-widest italic text-sm">Không có dữ liệu vật tư phù hợp.</div>
+          <div className="p-20 text-center text-muted-foreground/30 font-black uppercase tracking-widest italic text-sm">Không có dữ liệu vật tư phù hợp.</div>
         )}
       </div>
     </div>

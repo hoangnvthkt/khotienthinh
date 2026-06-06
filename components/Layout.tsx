@@ -94,24 +94,24 @@ const Layout: React.FC = () => {
 
   if (connectionError) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-slate-50 p-6">
-        <div className="bg-white rounded-3xl shadow-2xl border border-red-100 p-8 max-w-lg w-full text-center space-y-6">
-          <div className="w-20 h-20 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto border-4 border-red-100">
+      <div className="h-screen w-screen flex items-center justify-center bg-background p-6">
+        <div className="bg-card text-card-foreground rounded-3xl shadow-2xl border border-destructive/20 p-8 max-w-lg w-full text-center space-y-6">
+          <div className="w-20 h-20 bg-red-500/10 dark:bg-red-950/40 text-red-650 dark:text-red-400 rounded-full flex items-center justify-center mx-auto border-4 border-red-100 dark:border-red-900/30">
             <AlertTriangle size={40} />
           </div>
           <div className="space-y-2">
-            <h2 className="text-2xl font-black text-slate-800">Lỗi kết nối hệ thống</h2>
-            <p className="text-slate-500 text-sm leading-relaxed">{connectionError}</p>
+            <h2 className="text-2xl font-black text-foreground">Lỗi kết nối hệ thống</h2>
+            <p className="text-muted-foreground text-sm leading-relaxed">{connectionError}</p>
           </div>
-          <div className="bg-slate-50 p-4 rounded-2xl text-left border border-slate-100">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Cách khắc phục:</p>
-            <ul className="text-xs text-slate-600 space-y-2 font-medium">
+          <div className="bg-muted/40 p-4 rounded-2xl text-left border border-border">
+            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-2">Cách khắc phục:</p>
+            <ul className="text-xs text-foreground space-y-2 font-medium">
               <li className="flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-red-455 mt-1.5 shrink-0"></span>
                 Kiểm tra và dán API Key thực tế vào file <code>lib/supabase.ts</code>.
               </li>
               <li className="flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-red-455 mt-1.5 shrink-0"></span>
                 Đảm bảo Supabase Project đã được cấu hình đúng URL và Anon Key.
               </li>
             </ul>
@@ -126,7 +126,7 @@ const Layout: React.FC = () => {
             </a>
             <button
               onClick={() => window.location.reload()}
-              className="w-full py-3 bg-white border border-slate-200 text-slate-600 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-50 transition"
+              className="w-full py-3 bg-card border border-border text-foreground rounded-xl font-black uppercase text-xs tracking-widest hover:bg-muted transition"
             >
               Thử tải lại trang
             </button>
@@ -142,12 +142,12 @@ const Layout: React.FC = () => {
       {/* Session Warning Modal */}
       {sessionWarning && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-amber-200 p-8 max-w-sm w-full mx-4 text-center">
-            <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4">
+          <div className="bg-card text-card-foreground rounded-3xl shadow-2xl border border-border p-8 max-w-sm w-full mx-4 text-center">
+            <div className="w-16 h-16 bg-amber-500/10 dark:bg-amber-955/20 rounded-full flex items-center justify-center mx-auto mb-4">
               <AlertTriangle className="text-amber-500" size={32} />
             </div>
-            <h2 className="text-xl font-black text-slate-800 dark:text-white mb-2">Phiên sắp hết hạn</h2>
-            <p className="text-slate-500 dark:text-slate-400 text-sm mb-4">
+            <h2 className="text-xl font-black text-foreground mb-2">Phiên sắp hết hạn</h2>
+            <p className="text-muted-foreground text-sm mb-4">
               Hệ thống sẽ tự đăng xuất sau{' '}
               <span className="font-black text-amber-600 text-lg">
                 {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, '0')}
@@ -162,7 +162,7 @@ const Layout: React.FC = () => {
               </button>
               <button
                 onClick={() => { logout(); navigate('/login'); }}
-                className="flex-1 py-3 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition"
+                className="flex-1 py-3 bg-muted text-foreground rounded-xl font-black text-xs uppercase tracking-widest hover:bg-muted/80 transition"
               >
                 Đăng xuất
               </button>

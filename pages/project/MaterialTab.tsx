@@ -7,7 +7,7 @@ import {
     Plus, Edit2, Trash2, X, Save, Package, AlertTriangle, TrendingUp,
     CheckCircle2, Clock, ChevronDown, ChevronUp,
     BarChart3, Search, RefreshCcw, Download, Upload,
-    FileSpreadsheet, GitBranch, ListTree, MinusCircle
+    FileSpreadsheet, GitBranch, ListTree
 } from 'lucide-react';
 import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowBoardFilter, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment } from '../../types';
@@ -15,6 +15,7 @@ import { boqService, taskService, workBoqService, WorkBoqSyncPreview, poService 
 import { materialRequestFulfillmentService, getRequestLineId } from '../../lib/materialRequestFulfillmentService';
 import { useApp } from '../../context/AppContext';
 import RequestModal from '../../components/RequestModal';
+import type { MaterialRequestInitialDraft } from '../../components/RequestModal';
 import MaterialRequestKanbanBoard from '../../components/project/MaterialRequestKanbanBoard';
 import ProjectWorkflowAnalyticsPanel from '../../components/project/ProjectWorkflowAnalyticsPanel';
 import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
@@ -114,6 +115,14 @@ const summarizeSync = (preview: WorkBoqSyncPreview) =>
     `Thêm mới ${preview.created}, cập nhật ${preview.updated}, bỏ qua ${preview.skipped}, đánh dấu orphan ${preview.orphaned}.`;
 
 const BOQ_WRITE_PERMISSION_MESSAGE = 'Bạn không có quyền chỉnh sửa, vui lòng liên hệ admin.';
+const MATERIAL_REQUEST_BUDGET_HOLDING_STATUSES = new Set<RequestStatus | string>([
+    RequestStatus.DRAFT,
+    RequestStatus.PENDING,
+    RequestStatus.APPROVED,
+    RequestStatus.IN_TRANSIT,
+    RequestStatus.LEGACY_PENDING,
+    RequestStatus.LEGACY_APPROVED,
+]);
 
 const formatBoqWriteError = (error: any, fallback = 'Vui lòng thử lại.') => {
     const errorText = [
@@ -239,39 +248,49 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [transitioningRequestId, setTransitioningRequestId] = useState<string | null>(null);
     const openedDeepLinkRequestRef = useRef<string | null>(null);
 
-    // BOQ Resize Column Width
-    const [boqNameColWidth, setBoqNameColWidth] = useState(380);
-    const boqResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+    const [expandedWorkBoqMaterialIds, setExpandedWorkBoqMaterialIds] = useState<Set<string>>(() => new Set());
 
-    const handleBoqResizeStart = useCallback((e: React.MouseEvent) => {
-        e.preventDefault();
-        boqResizeRef.current = {
-            startX: e.clientX,
-            startWidth: boqNameColWidth,
+    const workBoqDescendantIdsByParent = useMemo(() => {
+        const childrenByParent = new Map<string, ProjectWorkBoqItem[]>();
+        workBoqItems.forEach(item => {
+            if (!item.parentId) return;
+            if (!childrenByParent.has(item.parentId)) childrenByParent.set(item.parentId, []);
+            childrenByParent.get(item.parentId)!.push(item);
+        });
+
+        const descendantIdsByParent = new Map<string, string[]>();
+        const collectDescendantIds = (itemId: string, visited = new Set<string>()): string[] => {
+            if (visited.has(itemId)) return [];
+            visited.add(itemId);
+            const children = childrenByParent.get(itemId) || [];
+            return children.flatMap(child => [child.id, ...collectDescendantIds(child.id, visited)]);
         };
-        document.addEventListener('mousemove', handleBoqResizeMove);
-        document.addEventListener('mouseup', handleBoqResizeEnd);
-    }, [boqNameColWidth]);
 
-    const handleBoqResizeMove = useCallback((e: MouseEvent) => {
-        if (!boqResizeRef.current) return;
-        const deltaX = e.clientX - boqResizeRef.current.startX;
-        const newWidth = Math.max(200, Math.min(850, boqResizeRef.current.startWidth + deltaX));
-        setBoqNameColWidth(newWidth);
-    }, []);
+        workBoqItems.forEach(item => {
+            descendantIdsByParent.set(item.id, collectDescendantIds(item.id));
+        });
+        return descendantIdsByParent;
+    }, [workBoqItems]);
 
-    const handleBoqResizeEnd = useCallback(() => {
-        boqResizeRef.current = null;
-        document.removeEventListener('mousemove', handleBoqResizeMove);
-        document.removeEventListener('mouseup', handleBoqResizeEnd);
-    }, []);
+    const toggleWorkBoqMaterials = useCallback((workBoqItemId: string, checked: boolean) => {
+        setExpandedWorkBoqMaterialIds(prev => {
+            const next = new Set(prev);
+            const affectedIds = [workBoqItemId, ...(workBoqDescendantIdsByParent.get(workBoqItemId) || [])];
+            affectedIds.forEach(id => {
+                if (checked) next.add(id);
+                else next.delete(id);
+            });
+            return next;
+        });
+    }, [workBoqDescendantIdsByParent]);
 
     useEffect(() => {
-        return () => {
-            document.removeEventListener('mousemove', handleBoqResizeMove);
-            document.removeEventListener('mouseup', handleBoqResizeEnd);
-        };
-    }, [handleBoqResizeMove, handleBoqResizeEnd]);
+        const existingWorkBoqIds = new Set(workBoqItems.map(item => item.id));
+        setExpandedWorkBoqMaterialIds(prev => {
+            const next = new Set([...prev].filter(id => existingWorkBoqIds.has(id)));
+            return next.size === prev.size ? prev : next;
+        });
+    }, [workBoqItems]);
 
     useEffect(() => {
         loadModuleData('wms-core');
@@ -403,6 +422,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         setReqModalOpen(false);
         setSelectedRequest(undefined);
         setRequestModalInitialAction(undefined);
+        setRequestModalInitialDraft(null);
         void loadProjectRequests();
     };
 
@@ -589,6 +609,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [isReqModalOpen, setReqModalOpen] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<MaterialRequest | undefined>(undefined);
     const [requestModalInitialAction, setRequestModalInitialAction] = useState<'createFulfillmentBatch' | undefined>(undefined);
+    const [requestModalInitialDraft, setRequestModalInitialDraft] = useState<MaterialRequestInitialDraft | null>(null);
+    const [selectedBoqRequestLineIds, setSelectedBoqRequestLineIds] = useState<Set<string>>(() => new Set());
     const [requestFulfillmentSummaries, setRequestFulfillmentSummaries] = useState<Record<string, MaterialRequestFulfillmentSummary>>({});
     const [requestFulfillmentBatchCounts, setRequestFulfillmentBatchCounts] = useState<Record<string, number>>({});
     const selectedRequestLive = useMemo(
@@ -618,6 +640,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         openedDeepLinkRequestRef.current = requestId;
         setActiveSubTab('request');
         setSelectedRequest(target);
+        setRequestModalInitialDraft(null);
         setReqModalOpen(true);
     }, [location.search, projectRequestsLoaded, requests]);
 
@@ -1167,6 +1190,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         if (toStage === 'site_quality_check') {
             setSelectedRequest(request);
             setRequestModalInitialAction('createFulfillmentBatch');
+            setRequestModalInitialDraft(null);
             setReqModalOpen(true);
             return;
         }
@@ -1620,6 +1644,181 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         () => computedBoqItems.filter(item => !item.workBoqItemId),
         [computedBoqItems]
     );
+
+    const findBoqInventoryItem = useCallback((item: MaterialBudgetItem) => {
+        if (item.inventoryItemId && inventoryItemById.has(item.inventoryItemId)) return inventoryItemById.get(item.inventoryItemId);
+        if (item.materialCode) {
+            const bySku = inventoryItemBySku.get(normalizeKey(item.materialCode));
+            if (bySku) return bySku;
+        }
+        return inventoryItems.find(inventory => normalizeKey(inventory.name) === normalizeKey(item.itemName));
+    }, [inventoryItemById, inventoryItemBySku, inventoryItems]);
+
+    const getBoqMaterialRequestStats = useCallback((material: MaterialBudgetItem) => {
+        let reservedQty = 0;
+        let requestedQty = 0;
+        let receivedQty = 0;
+        requests.forEach(request => {
+            const isCompleted = request.status === RequestStatus.COMPLETED;
+            const isHolding = MATERIAL_REQUEST_BUDGET_HOLDING_STATUSES.has(request.status);
+            if (!isCompleted && !isHolding) return;
+            const summaryByLine = requestFulfillmentLineSummaries[request.id];
+            (request.items || []).forEach((line: any, index: number) => {
+                const sameBudgetLine = line.materialBudgetItemId && line.materialBudgetItemId === material.id;
+                const legacySameItem = !!material.inventoryItemId && !line.materialBudgetItemId && line.itemId === material.inventoryItemId;
+                if (!sameBudgetLine && !legacySameItem) return;
+                requestedQty += Number(line.requestQty || 0);
+                const requestLineId = getRequestLineId(request, line, index);
+                const lineSummary = summaryByLine?.get(requestLineId);
+                const completedQty = Number(lineSummary?.receivedQty ?? line.receivedQty ?? line.issuedQty ?? line.approvedQty ?? line.requestQty ?? 0);
+                if (isCompleted) {
+                    reservedQty += completedQty;
+                    receivedQty += completedQty;
+                } else {
+                    reservedQty += Number(line.requestQty || 0);
+                    receivedQty += Number(lineSummary?.receivedQty || 0);
+                }
+            });
+        });
+        const budgetQty = Number(material.budgetQty || 0);
+        const availableQty = budgetQty - reservedQty;
+        return {
+            budgetQty,
+            reservedQty,
+            requestedQty,
+            receivedQty,
+            availableQty,
+            requestableQty: Math.max(0, availableQty),
+            inventoryItem: findBoqInventoryItem(material),
+        };
+    }, [findBoqInventoryItem, requestFulfillmentLineSummaries, requests]);
+
+    const getWorkSupplyStatus = useCallback((materials: MaterialBudgetItem[]) => {
+        if (materials.length === 0) return { label: 'Chưa kê khai', className: 'bg-slate-100 text-slate-500 border-slate-200' };
+        const statsList = materials.map(getBoqMaterialRequestStats);
+        const hasOver = materials.some(material => (material.budgetOverPercent || 0) > 0) || statsList.some(stats => stats.availableQty < 0);
+        if (hasOver) return { label: 'Vượt', className: 'bg-red-50 text-red-600 border-red-200' };
+        const allReceivedEnough = materials.every((material, index) => Number(material.budgetQty || 0) > 0 && statsList[index].receivedQty >= Number(material.budgetQty || 0));
+        if (allReceivedEnough) return { label: 'Đủ', className: 'bg-emerald-50 text-emerald-600 border-emerald-200' };
+        const hasSupplyActivity = statsList.some(stats => stats.requestedQty > 0 || stats.receivedQty > 0);
+        if (hasSupplyActivity) return { label: 'Đang cung ứng', className: 'bg-amber-50 text-amber-600 border-amber-200' };
+        return { label: 'Chưa yêu cầu', className: 'bg-blue-50 text-blue-600 border-blue-200' };
+    }, [getBoqMaterialRequestStats]);
+
+    const toggleBoqRequestLineSelection = useCallback((materialBudgetItemId: string, checked: boolean) => {
+        setSelectedBoqRequestLineIds(prev => {
+            const next = new Set(prev);
+            if (checked) next.add(materialBudgetItemId);
+            else next.delete(materialBudgetItemId);
+            return next;
+        });
+    }, []);
+
+    useEffect(() => {
+        const existingMaterialIds = new Set(computedBoqItems.map(item => item.id));
+        setSelectedBoqRequestLineIds(prev => {
+            const next = new Set([...prev].filter(id => existingMaterialIds.has(id)));
+            return next.size === prev.size ? prev : next;
+        });
+    }, [computedBoqItems]);
+
+    const selectedBoqRequestMaterials = useMemo(
+        () => computedBoqItems.filter(item => selectedBoqRequestLineIds.has(item.id)),
+        [computedBoqItems, selectedBoqRequestLineIds],
+    );
+
+    const selectedBoqRequestSummary = useMemo(() => {
+        const relatedWorkIds = new Set(selectedBoqRequestMaterials.map(item => item.workBoqItemId).filter(Boolean) as string[]);
+        let requestableLineCount = 0;
+        let missingInventoryCount = 0;
+        let unavailableLineCount = 0;
+        selectedBoqRequestMaterials.forEach(material => {
+            const stats = getBoqMaterialRequestStats(material);
+            if (!stats.inventoryItem) missingInventoryCount += 1;
+            else if (stats.requestableQty <= 0) unavailableLineCount += 1;
+            else requestableLineCount += 1;
+        });
+        return {
+            selectedLineCount: selectedBoqRequestMaterials.length,
+            workCount: relatedWorkIds.size,
+            requestableLineCount,
+            skippedLineCount: missingInventoryCount + unavailableLineCount,
+            missingInventoryCount,
+            unavailableLineCount,
+        };
+    }, [getBoqMaterialRequestStats, selectedBoqRequestMaterials]);
+
+    const openBoqMaterialRequestDraft = useCallback((
+        materials: MaterialBudgetItem[],
+        options: { workBoqItemId?: string | null; note: string; fallbackWorkItem?: ProjectWorkBoqItem | null },
+    ) => {
+        if (!canCreateMaterialRequest) {
+            toast.warning('Không có quyền tạo yêu cầu', 'Tài khoản chưa có quyền tạo/gửi đề xuất vật tư trong dự án.');
+            return false;
+        }
+        const draftLines = materials
+            .map((material): MaterialRequestInitialDraft['lines'][number] | null => {
+                const stats = getBoqMaterialRequestStats(material);
+                if (!stats.inventoryItem || stats.requestableQty <= 0) return null;
+                const work = material.workBoqItemId ? workBoqItemById.get(material.workBoqItemId) : options.fallbackWorkItem;
+                const workLabel = work ? `${work.wbsCode || ''} ${work.name}`.trim() : 'BOQ';
+                return {
+                    materialBudgetItemId: material.id,
+                    qty: stats.requestableQty,
+                    note: `Từ BOQ ${workLabel}`.trim(),
+                };
+            })
+            .filter((line): line is MaterialRequestInitialDraft['lines'][number] => Boolean(line));
+        const skippedCount = materials.length - draftLines.length;
+        if (draftLines.length === 0) {
+            toast.warning('Không có dòng khả dụng', 'Các dòng đã chọn chưa có mã kho hoặc không còn khối lượng khả dụng để tạo yêu cầu.');
+            return false;
+        }
+        if (skippedCount > 0) {
+            toast.warning('Bỏ qua một số dòng', `${skippedCount} dòng chưa có mã kho hoặc không còn khối lượng khả dụng.`);
+        }
+        setSelectedRequest(undefined);
+        setRequestModalInitialAction(undefined);
+        setRequestModalInitialDraft({
+            workBoqItemId: options.workBoqItemId || null,
+            note: options.note,
+            lines: draftLines,
+        });
+        setReqModalOpen(true);
+        return true;
+    }, [canCreateMaterialRequest, getBoqMaterialRequestStats, toast, workBoqItemById]);
+
+    const createRequestFromSelectedBoqLines = useCallback(() => {
+        if (selectedBoqRequestMaterials.length === 0) {
+            toast.warning('Chưa chọn dòng vật tư', 'Vui lòng chọn ít nhất một dòng vật tư trong BOQ.');
+            return;
+        }
+        openBoqMaterialRequestDraft(selectedBoqRequestMaterials, {
+            workBoqItemId: null,
+            note: `Yêu cầu vật tư từ ${selectedBoqRequestSummary.workCount || 1} đầu mục BOQ`,
+        });
+    }, [openBoqMaterialRequestDraft, selectedBoqRequestMaterials, selectedBoqRequestSummary.workCount, toast]);
+
+    const createRequestFromWorkBoqCard = useCallback((workItem: ProjectWorkBoqItem, materials: MaterialBudgetItem[]) => {
+        const requestableMaterials = materials.filter(material => {
+            const stats = getBoqMaterialRequestStats(material);
+            return stats.inventoryItem && stats.requestableQty > 0;
+        });
+        openBoqMaterialRequestDraft(requestableMaterials.length > 0 ? requestableMaterials : materials, {
+            workBoqItemId: workItem.id,
+            fallbackWorkItem: workItem,
+            note: `Yêu cầu vật tư từ BOQ ${workItem.wbsCode || ''} ${workItem.name}`.trim(),
+        });
+    }, [getBoqMaterialRequestStats, openBoqMaterialRequestDraft]);
+
+    const clearBoqRequestSelection = useCallback(() => {
+        setSelectedBoqRequestLineIds(new Set());
+    }, []);
+
+    const handleMaterialRequestSavedFromBoq = useCallback(() => {
+        if (!requestModalInitialDraft) return;
+        clearBoqRequestSelection();
+    }, [clearBoqRequestSelection, requestModalInitialDraft]);
 
     const getWorkComparison = (workItem: ProjectWorkBoqItem) => {
         const linkedIds = workItem.sourceTaskId ? taskContractLinks[workItem.sourceTaskId] || [] : [];
@@ -2276,210 +2475,259 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                 <p className="text-xs text-slate-300 mt-1">Bấm “Đồng bộ với tiến độ” để sinh cây đầu mục từ bảng tiến độ.</p>
                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-xs min-w-[1760px] table-fixed">
-                                    <thead className="bg-slate-50 border-b border-slate-200 dark:bg-slate-800/80 dark:border-slate-700">
-                                        <tr className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                                            <th className="text-left px-4 py-3 relative select-none" style={{ width: boqNameColWidth, minWidth: boqNameColWidth, maxWidth: boqNameColWidth }}>
-                                                <div className="flex items-center justify-between">
-                                                    <span>Đầu mục / Vật tư</span>
-                                                    {/* Resize Handle */}
-                                                    <div
-                                                        onMouseDown={handleBoqResizeStart}
-                                                        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-indigo-500 bg-slate-300/40 dark:bg-slate-700/50 transition-colors z-20"
-                                                        title="Kéo để thay đổi độ rộng cột"
-                                                    />
-                                                </div>
-                                            </th>
-                                            <th className="text-center px-2 py-3 whitespace-nowrap" style={{ width: 70, minWidth: 70 }}>ĐVT</th>
-                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 100, minWidth: 100 }}>KL Dự toán</th>
-                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>Ngưỡng hao hụt</th>
-                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 110, minWidth: 110 }}>Đơn giá</th>
-                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 130, minWidth: 130 }}>GT Triển khai</th>
-                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>KL Thực tế CT</th>
-                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 130, minWidth: 130 }}>GT Thực tế CT</th>
-                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 100, minWidth: 100 }}>Chênh KL</th>
-                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 100, minWidth: 100 }}>KL HĐ</th>
-                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>GT HĐ</th>
-                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>Chênh lệch</th>
-                                            <th className="text-center px-2 py-3 whitespace-nowrap" style={{ width: 80, minWidth: 80 }}>TT</th>
-                                            <th className="text-center px-2 py-3" style={{ width: 80, minWidth: 80 }}></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700/40">
-                                        {workBoqTree.map(({ item, level }) => {
-                                            const comparison = getWorkComparison(item);
-                                            const childMaterials = boqItemsByWork.get(item.id) || [];
-                                            const isOrphan = item.syncStatus === 'orphaned';
-                                            const isLevel0 = level === 0;
-                                            
-                                            // Phân cấp dòng (cha - con) tương phản cao
-                                            const rowBgCls = isOrphan 
-                                                ? 'bg-amber-100/50 dark:bg-amber-950/20 hover:bg-amber-100 dark:hover:bg-amber-950/30' 
-                                                : isLevel0 
-                                                    ? 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-750 font-extrabold text-[13px] border-b border-slate-200 dark:border-slate-700' 
-                                                    : 'bg-indigo-50/25 dark:bg-indigo-950/10 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 font-bold';
-                                            const textCls = isLevel0 
-                                                ? 'text-slate-900 dark:text-white' 
-                                                : 'text-indigo-950 dark:text-indigo-300';
+                            <div className="space-y-4 p-4">
+                                <div className="sticky top-0 z-20 rounded-2xl border border-blue-200 bg-white/95 p-3 shadow-lg shadow-blue-100/40 backdrop-blur dark:border-blue-900/50 dark:bg-slate-900/95 dark:shadow-none">
+                                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                                        <div>
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="rounded-xl bg-[#2563EB] px-3 py-1.5 text-[11px] font-black text-white">Giỏ yêu cầu vật tư BOQ</span>
+                                                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black text-[#0F172A] dark:bg-slate-800 dark:text-white">
+                                                    {selectedBoqRequestSummary.selectedLineCount} dòng đã chọn
+                                                </span>
+                                                <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-black text-[#2563EB]">
+                                                    {selectedBoqRequestSummary.workCount} đầu mục
+                                                </span>
+                                                <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-black text-[#16A34A]">
+                                                    {selectedBoqRequestSummary.requestableLineCount} còn khả dụng
+                                                </span>
+                                                {selectedBoqRequestSummary.skippedLineCount > 0 && (
+                                                    <span className="rounded-full bg-red-50 px-2 py-1 text-[10px] font-black text-[#DC2626]">
+                                                        {selectedBoqRequestSummary.skippedLineCount} lỗi/chưa đủ điều kiện
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="mt-1 text-[10px] font-bold text-[#64748B]">
+                                                Chọn vật tư ở nhiều đầu mục, sau đó tạo một phiếu đề xuất duy nhất; mỗi dòng vẫn giữ đúng BOQ gốc.
+                                            </p>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={createRequestFromSelectedBoqLines}
+                                                disabled={!canCreateMaterialRequest || selectedBoqRequestSummary.selectedLineCount === 0}
+                                                className="inline-flex items-center gap-1 rounded-xl bg-[#2563EB] px-4 py-2 text-[10px] font-black text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                <Package size={12} /> Tạo yêu cầu từ dòng đã chọn
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={clearBoqRequestSelection}
+                                                disabled={selectedBoqRequestSummary.selectedLineCount === 0}
+                                                className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[10px] font-black text-[#64748B] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800"
+                                            >
+                                                <X size={12} /> Bỏ chọn tất cả
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {selectedBoqRequestSummary.skippedLineCount > 0 && (
+                                        <div className="mt-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-[10px] font-bold text-[#DC2626]">
+                                            Có {selectedBoqRequestSummary.missingInventoryCount} dòng chưa có mã kho và {selectedBoqRequestSummary.unavailableLineCount} dòng hết KL khả dụng; các dòng này sẽ bị bỏ qua khi tạo phiếu.
+                                        </div>
+                                    )}
+                                </div>
+                                {workBoqTree.map(({ item, level }) => {
+                                    const comparison = getWorkComparison(item);
+                                    const childMaterials = boqItemsByWork.get(item.id) || [];
+                                    const showChildMaterials = expandedWorkBoqMaterialIds.has(item.id);
+                                    const supplyStatus = getWorkSupplyStatus(childMaterials);
+                                    const isOrphan = item.syncStatus === 'orphaned';
+                                    const isLevel0 = level === 0;
+                                    const materialTotal = childMaterials.reduce((sum, material) => sum + Number(material.budgetTotal || 0), 0);
+                                    const requestableCount = childMaterials.filter(material => {
+                                        const stats = getBoqMaterialRequestStats(material);
+                                        return stats.inventoryItem && stats.requestableQty > 0;
+                                    }).length;
+                                    const selectedCount = childMaterials.filter(material => selectedBoqRequestLineIds.has(material.id)).length;
 
-                                            return (
-                                                <React.Fragment key={item.id}>
-                                                    <tr className={`${rowBgCls} transition-colors group`}>
-                                                        <td className="px-4 py-2.5" style={{ width: boqNameColWidth, minWidth: boqNameColWidth, maxWidth: boqNameColWidth }}>
-                                                            <div className="flex items-center gap-2 truncate" style={{ paddingLeft: `${level * 18}px` }}>
-                                                                <ListTree size={12} className={isOrphan ? 'text-amber-500 shrink-0' : isLevel0 ? 'text-slate-600 dark:text-slate-400 shrink-0' : 'text-indigo-500 shrink-0'} />
-                                                                <span className="font-mono text-[11px] text-indigo-600 dark:text-indigo-400 font-bold shrink-0">{item.wbsCode || '-'}</span>
-                                                                <span className={`${textCls} truncate`} title={item.name}>{item.name}</span>
-                                                                {isOrphan && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[9px] font-black shrink-0">ORPHAN</span>}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-2 py-2.5 text-center text-slate-500 dark:text-slate-400 font-bold whitespace-nowrap">{item.unit || '—'}</td>
-                                                        <td className="px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">{formatQuantity(Number(item.plannedQty || 0))}</td>
-                                                        <td className="px-3 py-2.5 text-right text-slate-300 dark:text-slate-600 whitespace-nowrap">—</td>
-                                                        <td className="px-3 py-2.5 text-right text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">{fmt(Number(item.unitPrice || 0))}</td>
-                                                        <td className="px-3 py-2.5 text-right font-black text-indigo-700 dark:text-indigo-450 whitespace-nowrap">{fmt(comparison.plannedValue)}</td>
-                                                        <td className="px-3 py-2.5 text-right text-slate-300 dark:text-slate-600 whitespace-nowrap">—</td>
-                                                        <td className="px-3 py-2.5 text-right text-slate-300 dark:text-slate-600 whitespace-nowrap">—</td>
-                                                        <td className="px-3 py-2.5 text-right text-slate-300 dark:text-slate-600 whitespace-nowrap">—</td>
-                                                        <td className="px-3 py-2.5 text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">{comparison.hasLink ? formatQuantity(comparison.contractQty) : '—'}</td>
-                                                        <td className="px-3 py-2.5 text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">{comparison.hasLink ? fmt(comparison.contractValue) : '—'}</td>
-                                                        <td className={`px-3 py-2.5 text-right font-black whitespace-nowrap ${
-                                                            comparison.hasLink 
-                                                                ? comparison.valueDiff > 0 
-                                                                    ? 'text-rose-600 dark:text-rose-400' 
-                                                                    : comparison.valueDiff < 0 
-                                                                        ? 'text-emerald-600 dark:text-emerald-400' 
-                                                                        : 'text-slate-500 dark:text-slate-450' 
-                                                                : 'text-slate-300 dark:text-slate-600'
-                                                        }`}>
-                                                            {comparison.hasLink ? `${comparison.valueDiff > 0 ? '+' : ''}${fmt(comparison.valueDiff)}` : 'Chưa đối chiếu'}
-                                                        </td>
-                                                        <td className="px-2 py-2.5 text-center whitespace-nowrap">
-                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${comparison.hasLink ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400' : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'}`}>
-                                                                {comparison.hasLink ? 'Đã link HĐ' : 'Chưa link'}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-2 py-2.5 text-center whitespace-nowrap">
-                                                            {canEditBoq && (
-                                                                <button onClick={() => { resetBoqForm(); setBWorkBoqItemId(item.id); setShowBoqForm(true); }}
-                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold text-indigo-600 hover:bg-indigo-100 dark:text-indigo-400 dark:hover:bg-indigo-950/40 transition-colors">
-                                                                    <Plus size={10} /> Vật tư
-                                                                </button>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                    {childMaterials.map(mat => {
-                                                        const isOver = (mat.wasteQty || 0) > 0;
-                                                        const wasteQty = mat.wasteQty || 0;
-                                                        const wastePercent = mat.wastePercent || 0;
-                                                        return (
-                                                            <tr key={mat.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors group">
-                                                                <td className="px-4 py-2.5" style={{ width: boqNameColWidth, minWidth: boqNameColWidth, maxWidth: boqNameColWidth }}>
-                                                                    <div className="flex items-center gap-2 text-slate-700 dark:text-slate-350 truncate" style={{ paddingLeft: `${(level + 1) * 18}px` }}>
-                                                                        <MinusCircle size={10} className="text-slate-400 dark:text-slate-500 shrink-0" />
-                                                                        <span className="font-semibold truncate text-slate-800 dark:text-slate-200" title={mat.itemName}>{mat.itemName}</span>
-                                                                        <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] font-bold shrink-0">{mat.category}</span>
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-2 py-2.5 text-center text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">{mat.unit}</td>
-                                                                <td className="px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">{formatQuantity(mat.budgetQty)}</td>
-                                                                <td className="px-3 py-2.5 text-right font-black text-indigo-600 dark:text-indigo-400 whitespace-nowrap">{formatQuantity(mat.wasteThreshold)}</td>
-                                                                <td className="px-3 py-2.5 text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">{fmt(mat.budgetUnitPrice)}</td>
-                                                                <td className="px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">{fmt(mat.budgetTotal || 0)}</td>
-                                                                <td className="px-3 py-2.5 text-right font-black text-cyan-700 dark:text-cyan-400 whitespace-nowrap">{formatQuantity(mat.actualQty || 0)}</td>
-                                                                <td className="px-3 py-2.5 text-right font-bold text-cyan-700 dark:text-cyan-400 whitespace-nowrap">{fmt(mat.actualTotal || 0)}</td>
-                                                                <td className={`px-3 py-2.5 text-right font-black whitespace-nowrap ${
-                                                                    wasteQty > 0 
-                                                                        ? 'text-rose-600 dark:text-rose-450 font-extrabold' 
-                                                                        : wasteQty < 0 
-                                                                            ? 'text-emerald-600 dark:text-emerald-450' 
-                                                                            : 'text-slate-500 dark:text-slate-450'
-                                                                }`}>
-                                                                    {wasteQty > 0 ? '+' : ''}{formatQuantity(wasteQty)}
-                                                                </td>
-                                                                <td className="px-3 py-2.5 text-right text-slate-300 dark:text-slate-600 whitespace-nowrap">—</td>
-                                                                <td className="px-3 py-2.5 text-right text-slate-300 dark:text-slate-600 whitespace-nowrap">—</td>
-                                                                <td className={`px-3 py-2.5 text-right font-black whitespace-nowrap ${
-                                                                    isOver 
-                                                                        ? 'text-rose-600 dark:text-rose-450 font-extrabold' 
-                                                                        : wastePercent > 0 
-                                                                            ? 'text-amber-500 dark:text-amber-450' 
-                                                                            : 'text-emerald-500 dark:text-emerald-450'
-                                                                }`}>
-                                                                    {wastePercent > 0 ? '+' : ''}{formatPercent(wastePercent)}%
-                                                                </td>
-                                                                <td className="px-2 py-2.5 text-center whitespace-nowrap">
-                                                                    {isOver ? <AlertTriangle size={12} className="inline text-rose-500" /> : <CheckCircle2 size={12} className="inline text-emerald-500" />}
-                                                                </td>
-                                                                <td className="px-2 py-2.5 whitespace-nowrap">
-                                                                    {(canEditBoq || canDeleteBoq) && (
-                                                                        <div className="flex items-center justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                            {canEditBoq && (
-                                                                                <button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors"><Edit2 size={11} /></button>
-                                                                            )}
-                                                                            {canDeleteBoq && (
-                                                                                <button onClick={() => handleDeleteBoq(mat.id, mat.itemName)} className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"><Trash2 size={11} /></button>
-                                                                            )}
-                                                                        </div>
-                                                                    )}
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </React.Fragment>
-                                            );
-                                        })}
-                                        {unassignedBoqItems.map(mat => (
-                                            <tr key={mat.id} className="bg-amber-50/20 dark:bg-amber-950/5 hover:bg-amber-50/40 dark:hover:bg-amber-950/10 transition-colors group">
-                                                <td className="px-4 py-2.5" style={{ width: boqNameColWidth, minWidth: boqNameColWidth, maxWidth: boqNameColWidth }}>
-                                                    <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 truncate">
-                                                        <MinusCircle size={10} className="text-amber-500 shrink-0" />
-                                                        <span className="font-bold truncate text-slate-800 dark:text-slate-200" title={mat.itemName}>{mat.itemName}</span>
-                                                        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[9px] font-black shrink-0">Chưa gắn đầu mục</span>
+                                    return (
+                                        <section
+                                            key={item.id}
+                                            className={`overflow-hidden rounded-2xl border bg-white shadow-sm transition dark:bg-slate-800 ${isOrphan ? 'border-amber-200 border-l-4 border-l-amber-500' : 'border-slate-200 border-l-4 border-l-[#2563EB] dark:border-slate-700'} ${level > 0 ? 'ml-4 md:ml-8' : ''}`}
+                                        >
+                                            <div className={`${isLevel0 ? 'bg-[#eff6ff]' : 'bg-slate-50'} px-4 py-4 dark:bg-slate-900/40`}>
+                                                <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={showChildMaterials}
+                                                                onChange={event => toggleWorkBoqMaterials(item.id, event.target.checked)}
+                                                                aria-label={`Hiển thị vật tư của ${item.name}`}
+                                                                className="h-4 w-4 shrink-0 rounded border-slate-300 text-[#2563EB] focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-800"
+                                                            />
+                                                            <span className="rounded-lg bg-white px-2 py-1 font-mono text-[11px] font-black text-[#2563EB] shadow-sm dark:bg-slate-800">{item.wbsCode || '-'}</span>
+                                                            {isOrphan && <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-black text-amber-700">ORPHAN</span>}
+                                                            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${supplyStatus.className}`}>{supplyStatus.label}</span>
+                                                        </div>
+                                                        <h4 className="truncate text-base font-black text-[#0F172A] dark:text-white" title={item.name}>{item.name}</h4>
+                                                        <p className="mt-1 text-[11px] font-bold text-[#64748B]">BOQ triển khai theo tiến độ • {childMaterials.length} dòng vật tư trực tiếp</p>
                                                     </div>
-                                                </td>
-                                                <td className="px-2 py-2.5 text-center text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">{mat.unit}</td>
-                                                <td className="px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">{formatQuantity(mat.budgetQty)}</td>
-                                                <td className="px-3 py-2.5 text-right font-black text-indigo-600 dark:text-indigo-400 whitespace-nowrap">{formatQuantity(mat.wasteThreshold)}</td>
-                                                <td className="px-3 py-2.5 text-right text-slate-500 dark:text-slate-450 whitespace-nowrap">{fmt(mat.budgetUnitPrice)}</td>
-                                                <td className="px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">{fmt(mat.budgetTotal || 0)}</td>
-                                                <td className="px-3 py-2.5 text-right font-black text-cyan-700 dark:text-cyan-400 whitespace-nowrap">{formatQuantity(mat.actualQty || 0)}</td>
-                                                <td className="px-3 py-2.5 text-right font-bold text-cyan-700 dark:text-cyan-400 whitespace-nowrap">{fmt(mat.actualTotal || 0)}</td>
-                                                <td className={`px-3 py-2.5 text-right font-black whitespace-nowrap ${(mat.wasteQty || 0) > 0 ? 'text-rose-600 dark:text-rose-450 font-extrabold' : (mat.wasteQty || 0) < 0 ? 'text-emerald-600 dark:text-emerald-450' : 'text-slate-500'}`}>
-                                                    {(mat.wasteQty || 0) > 0 ? '+' : ''}{formatQuantity(mat.wasteQty || 0)}
-                                                </td>
-                                                <td colSpan={4}></td>
-                                                <td className="px-2 py-2.5 whitespace-nowrap">
-                                                    {(canEditBoq || canDeleteBoq) && (
-                                                        <div className="flex items-center justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                            {canEditBoq && (
-                                                                <button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors"><Edit2 size={11} /></button>
-                                                            )}
-                                                            {canDeleteBoq && (
-                                                                <button onClick={() => handleDeleteBoq(mat.id, mat.itemName)} className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"><Trash2 size={11} /></button>
-                                                            )}
+
+                                                    <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:min-w-[620px]">
+                                                        <div className="rounded-xl bg-white px-3 py-2 shadow-sm dark:bg-slate-800">
+                                                            <div className="text-[9px] font-black uppercase text-[#64748B]">KL chính</div>
+                                                            <div className="text-lg font-black text-[#2563EB]">{formatQuantity(Number(item.plannedQty || 0))}</div>
+                                                            <div className="text-[10px] font-bold text-[#64748B]">{item.unit || '—'}</div>
+                                                        </div>
+                                                        <div className="rounded-xl bg-white px-3 py-2 shadow-sm dark:bg-slate-800">
+                                                            <div className="text-[9px] font-black uppercase text-[#64748B]">Vật tư</div>
+                                                            <div className="text-lg font-black text-[#0F172A] dark:text-white">{childMaterials.length}</div>
+                                                            <div className="text-[10px] font-bold text-[#64748B]">{requestableCount} còn khả dụng</div>
+                                                        </div>
+                                                        <div className="rounded-xl bg-white px-3 py-2 shadow-sm dark:bg-slate-800">
+                                                            <div className="text-[9px] font-black uppercase text-[#64748B]">GT triển khai</div>
+                                                            <div className="text-lg font-black text-[#0F172A] dark:text-white">{fmt(comparison.plannedValue)}</div>
+                                                            <div className="text-[10px] font-bold text-[#64748B]">Vật tư {fmt(materialTotal)}</div>
+                                                        </div>
+                                                        <div className="rounded-xl bg-white px-3 py-2 shadow-sm dark:bg-slate-800">
+                                                            <div className="text-[9px] font-black uppercase text-[#64748B]">Hợp đồng</div>
+                                                            <div className={`text-lg font-black ${comparison.hasLink ? comparison.valueDiff > 0 ? 'text-[#DC2626]' : 'text-[#16A34A]' : 'text-[#64748B]'}`}>
+                                                                {comparison.hasLink ? `${comparison.valueDiff > 0 ? '+' : ''}${fmt(comparison.valueDiff)}` : '—'}
+                                                            </div>
+                                                            <div className="text-[10px] font-bold text-[#64748B]">{comparison.hasLink ? 'Đã đối chiếu' : 'Chưa link'}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                                                    <div className="text-[10px] font-bold text-[#64748B]">
+                                                        {selectedCount > 0 ? `Đã chọn ${selectedCount} dòng vật tư trong card này` : 'Shortcut này tạo nhanh từ các dòng còn khả dụng của riêng card.'}
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        <button
+                                                            onClick={() => createRequestFromWorkBoqCard(item, childMaterials)}
+                                                            disabled={!canCreateMaterialRequest || childMaterials.length === 0}
+                                                            className="inline-flex items-center gap-1 rounded-xl bg-[#2563EB] px-3 py-2 text-[10px] font-black text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                        >
+                                                            <Package size={12} /> {selectedBoqRequestSummary.selectedLineCount > 0 ? 'Tạo nhanh card này' : 'Tạo yêu cầu vật tư'}
+                                                        </button>
+                                                        {canEditBoq && (
+                                                            <button onClick={() => { resetBoqForm(); setBWorkBoqItemId(item.id); setShowBoqForm(true); }}
+                                                                className="inline-flex items-center gap-1 rounded-xl border border-blue-200 bg-white px-3 py-2 text-[10px] font-black text-[#2563EB] transition hover:bg-blue-50 dark:bg-slate-800">
+                                                                <Plus size={12} /> Thêm vật tư
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {showChildMaterials && (
+                                                <div className="border-t border-slate-100 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                                                    {childMaterials.length === 0 ? (
+                                                        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-xs font-bold text-[#64748B] dark:border-slate-700 dark:bg-slate-900/40">
+                                                            Chưa kê khai vật tư cho đầu mục này
+                                                        </div>
+                                                    ) : (
+                                                        <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
+                                                            <table className="w-full min-w-[900px] text-xs">
+                                                                <thead className="sticky top-0 bg-[#0F172A] text-[10px] font-black uppercase tracking-wider text-white">
+                                                                    <tr>
+                                                                        <th className="px-3 py-3 text-center">Chọn</th>
+                                                                        <th className="px-3 py-3 text-left">Tên vật tư</th>
+                                                                        <th className="px-3 py-3 text-right">KL còn khả dụng</th>
+                                                                        <th className="px-3 py-3 text-right">KL dự toán</th>
+                                                                        <th className="px-3 py-3 text-center">ĐVT</th>
+                                                                        <th className="px-3 py-3 text-center">Trạng thái</th>
+                                                                        <th className="px-3 py-3 text-right">Giá trị</th>
+                                                                        <th className="px-3 py-3 text-center">Thao tác</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody className="divide-y-4 divide-slate-50 bg-slate-50 dark:divide-slate-900 dark:bg-slate-900">
+                                                                    {childMaterials.map(material => {
+                                                                        const materialStats = getBoqMaterialRequestStats(material);
+                                                                        const hasInventory = Boolean(materialStats.inventoryItem);
+                                                                        const isSelected = selectedBoqRequestLineIds.has(material.id);
+                                                                        const isOver = materialStats.availableQty < 0 || (material.budgetOverPercent || 0) > 0;
+                                                                        const isEnough = Number(material.budgetQty || 0) > 0 && materialStats.receivedQty >= Number(material.budgetQty || 0);
+                                                                        const lineStatus = !hasInventory
+                                                                            ? { label: 'Chưa có mã kho', className: 'bg-red-50 text-[#DC2626] border-red-200' }
+                                                                            : isOver
+                                                                                ? { label: 'Vượt', className: 'bg-red-50 text-[#DC2626] border-red-200' }
+                                                                                : isEnough
+                                                                                    ? { label: 'Đủ', className: 'bg-emerald-50 text-[#16A34A] border-emerald-200' }
+                                                                                    : materialStats.requestedQty > 0
+                                                                                        ? { label: 'Đang cung ứng', className: 'bg-amber-50 text-[#F59E0B] border-amber-200' }
+                                                                                        : { label: 'Chưa yêu cầu', className: 'bg-blue-50 text-[#2563EB] border-blue-200' };
+                                                                        const canSelectLine = hasInventory && materialStats.requestableQty > 0;
+                                                                        return (
+                                                                            <tr key={material.id} className="bg-white align-middle shadow-sm transition hover:bg-blue-50/30 dark:bg-slate-800 dark:hover:bg-blue-950/20">
+                                                                                <td className="px-3 py-3 text-center">
+                                                                                    <input
+                                                                                        type="checkbox"
+                                                                                        checked={isSelected}
+                                                                                        disabled={!canSelectLine && !isSelected}
+                                                                                        onChange={event => toggleBoqRequestLineSelection(material.id, event.target.checked)}
+                                                                                        title={canSelectLine ? 'Chọn dòng tạo yêu cầu' : 'Dòng chưa có mã kho hoặc không còn KL khả dụng'}
+                                                                                        className="h-4 w-4 rounded border-slate-300 text-[#2563EB] focus:ring-blue-200 disabled:opacity-40"
+                                                                                    />
+                                                                                </td>
+                                                                                <td className="px-3 py-3">
+                                                                                    <div className="flex min-w-0 items-center gap-2">
+                                                                                        <span className="truncate font-black text-[#0F172A] dark:text-white" title={material.itemName}>{material.itemName}</span>
+                                                                                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black text-[#64748B] dark:bg-slate-900">{material.category}</span>
+                                                                                    </div>
+                                                                                    <div className="mt-1 text-[10px] font-bold text-[#64748B]">{material.materialCode || materialStats.inventoryItem?.sku || 'Chưa liên kết mã kho'}</div>
+                                                                                </td>
+                                                                                <td className={`px-3 py-3 text-right text-sm font-black ${materialStats.requestableQty > 0 ? 'text-[#2563EB]' : 'text-[#64748B]'}`}>{formatQuantity(materialStats.requestableQty)}</td>
+                                                                                <td className="px-3 py-3 text-right font-bold text-[#0F172A] dark:text-slate-200">{formatQuantity(material.budgetQty)}</td>
+                                                                                <td className="px-3 py-3 text-center font-bold text-[#64748B]">{material.unit}</td>
+                                                                                <td className="px-3 py-3 text-center">
+                                                                                    <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-black ${lineStatus.className}`}>{lineStatus.label}</span>
+                                                                                </td>
+                                                                                <td className="px-3 py-3 text-right font-bold text-[#0F172A] dark:text-slate-200">{fmt(material.budgetTotal || 0)}</td>
+                                                                                <td className="px-3 py-3">
+                                                                                    {(canEditBoq || canDeleteBoq) && (
+                                                                                        <div className="flex items-center justify-center gap-1">
+                                                                                            {canEditBoq && (
+                                                                                                <button onClick={() => openEditBoq(material)} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-blue-50 hover:text-[#2563EB] dark:hover:bg-blue-950/40"><Edit2 size={12} /></button>
+                                                                                            )}
+                                                                                            {canDeleteBoq && (
+                                                                                                <button onClick={() => handleDeleteBoq(material.id, material.itemName)} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-[#DC2626] dark:hover:bg-red-950/40"><Trash2 size={12} /></button>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </td>
+                                                                            </tr>
+                                                                        );
+                                                                    })}
+                                                                </tbody>
+                                                            </table>
                                                         </div>
                                                     )}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                    <tfoot className="bg-slate-100/90 dark:bg-slate-800/90 font-bold border-t-2 border-slate-200 dark:border-slate-700">
-                                        <tr className="text-xs">
-                                            <td className="px-4 py-3 text-slate-600 dark:text-slate-300" style={{ width: boqNameColWidth, minWidth: boqNameColWidth, maxWidth: boqNameColWidth }}>TỔNG CỘNG VẬT TƯ</td>
-                                            <td className="px-2 py-3 text-center text-slate-400">—</td>
-                                            <td className="px-3 py-3 text-right text-slate-400">—</td>
-                                            <td className="px-3 py-3 text-right text-slate-400">—</td>
-                                            <td className="px-3 py-3 text-right text-slate-400">—</td>
-                                            <td className="px-3 py-3 text-right text-slate-700 dark:text-slate-300 whitespace-nowrap">{fmt(stats.totalBudget)} đ</td>
-                                            <td className="px-3 py-3 text-right text-slate-400">—</td>
-                                            <td className="px-3 py-3 text-right text-cyan-700 dark:text-cyan-400 whitespace-nowrap">{fmt(stats.totalActual)} đ</td>
-                                            <td className="px-3 py-3 text-right text-slate-400">—</td>
-                                            <td colSpan={5}></td>
-                                        </tr>
-                                    </tfoot>
-                                </table>
+                                                </div>
+                                            )}
+                                        </section>
+                                    );
+                                })}
+                                {unassignedBoqItems.length > 0 && (
+                                    <section className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 dark:border-amber-900/40 dark:bg-amber-950/10">
+                                        <div className="mb-3 flex items-center justify-between gap-2">
+                                            <div>
+                                                <h4 className="text-sm font-black text-amber-800 dark:text-amber-300">Vật tư chưa gắn đầu mục</h4>
+                                                <p className="text-[10px] font-bold text-amber-600/80">{unassignedBoqItems.length} dòng cần gắn vào BOQ triển khai để tạo yêu cầu theo hạng mục.</p>
+                                            </div>
+                                        </div>
+                                        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                                            {unassignedBoqItems.map(material => (
+                                                <div key={material.id} className="rounded-xl border border-amber-100 bg-white p-3 shadow-sm dark:border-amber-900/40 dark:bg-slate-800">
+                                                    <div className="font-black text-[#0F172A] dark:text-white">{material.itemName}</div>
+                                                    <div className="mt-1 text-[11px] font-bold text-[#64748B]">{formatQuantity(material.budgetQty)} {material.unit} • {fmt(material.budgetTotal || 0)}</div>
+                                                    {(canEditBoq || canDeleteBoq) && (
+                                                        <div className="mt-2 flex gap-1">
+                                                            {canEditBoq && <button onClick={() => openEditBoq(material)} className="rounded-lg px-2 py-1 text-[10px] font-black text-[#2563EB] hover:bg-blue-50">Sửa</button>}
+                                                            {canDeleteBoq && <button onClick={() => handleDeleteBoq(material.id, material.itemName)} className="rounded-lg px-2 py-1 text-[10px] font-black text-[#DC2626] hover:bg-red-50">Xóa</button>}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </section>
+                                )}
+                                <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold text-[#0F172A] dark:border-slate-700 dark:bg-slate-900/40 dark:text-white md:flex-row md:items-center md:justify-between">
+                                    <span>TỔNG CỘNG VẬT TƯ</span>
+                                    <span>GT triển khai: <span className="font-black text-[#2563EB]">{fmt(stats.totalBudget)} đ</span></span>
+                                    <span>GT thực tế CT: <span className="font-black text-[#16A34A]">{fmt(stats.totalActual)} đ</span></span>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -2518,7 +2766,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             <p className="mt-1 text-[10px] font-bold text-slate-400">Kanban SLA theo luồng công trường - phòng vật tư - kho công trường</p>
                         </div>
                         {canCreateMaterialRequest && (
-                            <button onClick={() => { setSelectedRequest(undefined); setReqModalOpen(true); }}
+                            <button onClick={() => { setSelectedRequest(undefined); setRequestModalInitialDraft(null); setReqModalOpen(true); }}
                                 className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-purple-600 bg-purple-50 border border-purple-200 hover:bg-purple-100">
                                 <Plus size={12} /> Tạo đề xuất
                             </button>
@@ -2547,7 +2795,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                 subjectsByRequestId={requestWorkflowSubjects}
                                 users={users}
                                 currentUserId={user.id}
-                                onOpenRequest={req => { setSelectedRequest(req); setRequestModalInitialAction(undefined); setReqModalOpen(true); }}
+                                onOpenRequest={req => { setSelectedRequest(req); setRequestModalInitialAction(undefined); setRequestModalInitialDraft(null); setReqModalOpen(true); }}
                             />
                             <ProjectWorkflowAnalyticsPanel
                                 requests={sortedRequests}
@@ -2623,7 +2871,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             hideEmptyWorkflowLanes={hideEmptyWorkflowLanes}
                             canMoveRequest={canMoveMaterialRequest}
                             onMoveRequest={handleMoveMaterialRequest}
-                            onOpenRequest={req => { setSelectedRequest(req); setRequestModalInitialAction(undefined); setReqModalOpen(true); }}
+                            onOpenRequest={req => { setSelectedRequest(req); setRequestModalInitialAction(undefined); setRequestModalInitialDraft(null); setReqModalOpen(true); }}
                         />
                     )}
                 </div>
@@ -3046,8 +3294,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     constructionSiteId={constructionSiteId || null}
                     requestOrigin="project"
                     workBoqItems={workBoqItems}
-                    materialBudgetItems={boqItems}
+                    materialBudgetItems={computedBoqItems}
                     requestFulfillmentSummariesByRequestId={requestFulfillmentSummaries}
+                    initialDraft={requestModalInitialDraft}
                     initialAction={requestModalInitialAction}
                     canProcessProjectWorkflow={selectedRequestLive ? canActOnProjectRequest(selectedRequestLive) : false}
                     canManageProjectWorkflow={selectedRequestLive ? canManageProjectWorkflow(selectedRequestLive) : false}
@@ -3067,6 +3316,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     projectWorkflowNextNode={selectedRequestLive ? getWorkflowNextNode(requestWorkflowSubjects[selectedRequestLive.id]) : null}
                     projectWorkflowReturnTargetNode={selectedRequestLive ? getWorkflowReturnTargetNode(requestWorkflowSubjects[selectedRequestLive.id]) : null}
                     onProjectWorkflowAction={handleProjectWorkflowActionFromModal}
+                    onSaved={handleMaterialRequestSavedFromBoq}
                     onDeleted={handleRequestDeleted}
                 />
             )}

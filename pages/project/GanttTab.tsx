@@ -301,7 +301,7 @@ const deriveActualDates = (task: ProjectTask, allLogs: DailyLog[], linkedContrac
 };
 
 const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string; bg: string; icon: any }> = {
-    not_started: { label: 'Chưa BĐ', color: 'text-slate-500', bg: 'bg-slate-100', icon: Circle },
+    not_started: { label: 'Chưa BĐ', color: 'text-muted-foreground', bg: 'bg-slate-100', icon: Circle },
     in_progress: { label: 'Đang TH', color: 'text-blue-600', bg: 'bg-blue-50', icon: PlayCircle },
     pending_gate: { label: 'Chờ NT', color: 'text-amber-600', bg: 'bg-amber-50', icon: Shield },
     completed: { label: 'Hoàn thành', color: 'text-emerald-600', bg: 'bg-emerald-50', icon: CheckCircle2 },
@@ -315,7 +315,7 @@ const COMPLETION_STATUS_CONFIG: Record<string, { label: string; className: strin
     verified: { label: 'Chờ duyệt', className: 'bg-blue-50 text-blue-700 border-blue-200' },
     approved: { label: 'Đã duyệt', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
     returned: { label: 'Trả lại', className: 'bg-red-50 text-red-700 border-red-200' },
-    cancelled: { label: 'Đã hủy', className: 'bg-slate-50 text-slate-500 border-slate-200' },
+    cancelled: { label: 'Đã hủy', className: 'bg-slate-50 text-muted-foreground border-border' },
 };
 
 const DELAY_CATEGORY_LABELS: Record<string, string> = {
@@ -374,7 +374,7 @@ const ProgressCell: React.FC<{ value: number; onChange: (v: number) => void; dis
                 }}>
                 <div className="h-full rounded-full transition-all duration-300" style={{ width: `${safeValue}%`, backgroundColor: color }} />
             </div>
-            <span className={`text-[11px] font-bold w-8 text-right ${safeValue >= 100 ? 'text-emerald-600' : safeValue > 0 ? 'text-blue-600' : 'text-slate-400'}`}>
+            <span className={`text-[11px] font-bold w-8 text-right ${safeValue >= 100 ? 'text-emerald-600' : safeValue > 0 ? 'text-blue-600' : 'text-muted-foreground'}`}>
                 {safeValue}%
             </span>
         </div>
@@ -2475,8 +2475,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             {/* Header */}
             <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                    <h3 className="text-base font-black text-slate-800 dark:text-white">📊 Tiến độ thi công</h3>
-                    <p className="text-xs text-slate-400 mt-0.5">
+                    <h3 className="text-base font-black text-foreground dark:text-white">📊 Tiến độ thi công</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
                         {stats.total} hạng mục • Tiến độ thi công: {weeklyConstructionProgress}% • Theo giá trị: {valueProgressMetric.valueProgressPercent}%
                         {criticalPathResult && criticalPathResult.criticalPath.length > 0 && (
                             <span className="ml-2 text-red-500 font-bold">
@@ -2507,7 +2507,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                 <button onClick={() => setShowGatePanel(v => !v)}
                                     className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showGatePanel
                                         ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700'
-                                        : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                        : 'border-border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
                                         }`}
                                     title="Danh sách chờ nghiệm thu">
                                     <Shield size={13} /> Gate
@@ -2521,17 +2521,17 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         })()}
                         {/* GĐ1: Lock Baseline */}
                         <button onClick={lockBaseline}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all whitespace-nowrap shrink-0"
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 border border-border dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all whitespace-nowrap shrink-0"
                             title="Chốt kế hoạch gốc (Baseline)">
                             <Lock size={13} /> Chốt Baseline
-                            {baselines.length > 0 && <span className="text-[9px] text-slate-400">v{baselines.length}</span>}
+                            {baselines.length > 0 && <span className="text-[9px] text-muted-foreground">v{baselines.length}</span>}
                         </button>
                         {/* T3: Baseline Compare Panel toggle */}
                         {baselines.length > 0 && (
                             <button onClick={() => setShowBaselinePanel(v => !v)}
                                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showBaselinePanel
                                         ? 'border-sky-400 bg-sky-50 dark:bg-sky-900/20 text-sky-700'
-                                        : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                        : 'border-border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
                                     }`}
                                 title="So sánh kế hoạch vs thực tế">
                                 <BarChart3 size={13} /> So sánh BL
@@ -2540,7 +2540,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         <button onClick={() => setShowForecastPanel(v => !v)}
                             className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showForecastPanel
                                     ? 'border-red-400 bg-red-50 dark:bg-red-900/20 text-red-700'
-                                    : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    : 'border-border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                             title="Dự báo tác động chậm tiến độ">
                             <AlertTriangle size={13} /> Dự báo
@@ -2554,7 +2554,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         <button onClick={toggleSandbox}
                             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${isSandboxMode
                                 ? 'border-violet-400 bg-violet-50 dark:bg-violet-900/30 text-violet-700 ring-2 ring-violet-300 shadow-lg shadow-violet-500/20'
-                                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                : 'border-border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                             title="Chế độ giả lập (không lưu vào DB)">
                             <FlaskConical size={13} /> {isSandboxMode ? 'Tắt Giả lập' : 'Giả lập'}
@@ -2563,7 +2563,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         <button onClick={() => setShowAiInsights(v => !v)}
                             className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap shrink-0 ${showAiInsights
                                 ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-amber-700'
-                                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                : 'border-border dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
                                 }`}
                             title="AI Dự báo rủi ro">
                             <Lightbulb size={13} /> AI
@@ -2611,13 +2611,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
             {/* Schedule Forecast Panel */}
             {showForecastPanel && (
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-red-100 dark:border-red-900/60 shadow-sm overflow-hidden">
+                <div className="bg-card rounded-2xl border border-destructive/20 shadow-sm overflow-hidden">
                     <div className="px-5 py-3 border-b border-red-100 dark:border-red-900/60 flex items-center justify-between bg-red-50/50 dark:bg-red-900/10">
                         <div className="flex items-center gap-2">
                             <AlertTriangle size={15} className="text-red-500" />
                             <div>
-                                <h4 className="text-sm font-black text-slate-800 dark:text-white">Dự báo tác động chậm tiến độ</h4>
-                                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                                <h4 className="text-sm font-black text-foreground dark:text-white">Dự báo tác động chậm tiến độ</h4>
+                                <p className="text-[10px] text-muted-foreground dark:text-muted-foreground">
                                     {activeDelayEventCount} sự kiện đang tính forecast • {scheduleForecast.changedTasks.length} hạng mục bị đổi lịch
                                     {scheduleForecast.projectEndDeltaDays !== 0 && (
                                         <span className={scheduleForecast.projectEndDeltaDays > 0 ? ' text-red-600 font-black' : ' text-emerald-600 font-black'}>
@@ -2629,7 +2629,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         </div>
                         <div className="flex items-center gap-2">
                             {scheduleRevisions.length > 0 && (
-                                <span className="text-[10px] font-bold text-slate-400">Revision: {scheduleRevisions.length}</span>
+                                <span className="text-[10px] font-bold text-muted-foreground">Revision: {scheduleRevisions.length}</span>
                             )}
                             <button onClick={applyScheduleForecast}
                                 disabled={applyingForecast || scheduleForecast.changedTasks.length === 0}
@@ -2637,7 +2637,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                 {applyingForecast ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} Áp dụng forecast
                             </button>
                             <button onClick={() => setShowForecastPanel(false)}
-                                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+                                className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-slate-600 hover:bg-slate-100">
                                 <X size={14} />
                             </button>
                         </div>
@@ -2647,24 +2647,24 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         <div className="p-6 text-center">
                             <CheckCircle2 size={26} className="text-emerald-400 mx-auto mb-2" />
                             <p className="text-xs font-bold text-emerald-600">Chưa có sự kiện chậm tiến độ đang ảnh hưởng forecast.</p>
-                            <p className="text-[10px] text-slate-400 mt-1">Daily Log đã xác nhận có hạng mục trễ sẽ tự tạo sự kiện ở đây.</p>
+                            <p className="text-[10px] text-muted-foreground mt-1">Daily Log đã xác nhận có hạng mục trễ sẽ tự tạo sự kiện ở đây.</p>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-0">
-                            <div className="p-4 border-b xl:border-b-0 xl:border-r border-slate-100 dark:border-slate-700">
-                                <div className="text-[10px] font-black text-slate-400 uppercase mb-2">Sự kiện chậm</div>
+                            <div className="p-4 border-b xl:border-b-0 xl:border-r border-border dark:border-slate-700">
+                                <div className="text-[10px] font-black text-muted-foreground uppercase mb-2">Sự kiện chậm</div>
                                 <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
                                     {scheduleForecast.activeDelayEvents.map(event => (
                                         <div key={event.id} className="rounded-xl border border-red-100 dark:border-red-900/50 bg-red-50/40 dark:bg-red-900/10 p-3">
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="min-w-0">
-                                                    <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">{event.taskNameSnapshot}</div>
-                                                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-slate-500">
+                                                    <div className="text-xs font-black text-foreground dark:text-slate-100 truncate">{event.taskNameSnapshot}</div>
+                                                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-muted-foreground">
                                                         <span>{fmtShort(event.occurredOn)}</span>
                                                         <span>•</span>
                                                         <span>{DELAY_CATEGORY_LABELS[event.category] || event.category}</span>
                                                         <span className="rounded-full bg-red-100 text-red-700 px-2 py-0.5">+{event.impactDays} ngày</span>
-                                                        <span className="rounded-full bg-white/80 text-slate-500 px-2 py-0.5 border border-red-100">{DELAY_STATUS_LABELS[event.status]}</span>
+                                                        <span className="rounded-full bg-white/80 text-muted-foreground px-2 py-0.5 border border-red-100">{DELAY_STATUS_LABELS[event.status]}</span>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-1 shrink-0">
@@ -2679,23 +2679,23 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                         Đã xử lý
                                                     </button>
                                                     <button onClick={() => handleDelayEventStatus(event, 'void')}
-                                                        className="px-2 py-1 rounded-lg text-[9px] font-black text-slate-500 bg-white border border-slate-200 hover:bg-slate-50">
+                                                        className="px-2 py-1 rounded-lg text-[9px] font-black text-muted-foreground bg-white border border-border hover:bg-slate-50">
                                                         Bỏ qua
                                                     </button>
                                                 </div>
                                             </div>
-                                            {event.reason && <p className="mt-2 text-[10px] text-slate-500 leading-relaxed">{event.reason}</p>}
+                                            {event.reason && <p className="mt-2 text-[10px] text-muted-foreground leading-relaxed">{event.reason}</p>}
                                         </div>
                                     ))}
                                 </div>
                             </div>
                             <div className="p-4">
-                                <div className="text-[10px] font-black text-slate-400 uppercase mb-2">
+                                <div className="text-[10px] font-black text-muted-foreground uppercase mb-2">
                                     Hạng mục bị ảnh hưởng • downstream: {scheduleForecast.impactedTaskIds.size}
                                 </div>
                                 <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
                                     {scheduleForecast.changedTasks.length === 0 ? (
-                                        <div className="rounded-xl bg-slate-50 dark:bg-slate-700/30 p-4 text-center text-xs font-bold text-slate-500">
+                                        <div className="rounded-xl bg-slate-50 dark:bg-slate-700/30 p-4 text-center text-xs font-bold text-muted-foreground">
                                             Các sự kiện hiện tại chưa làm đổi lịch điều hành.
                                         </div>
                                     ) : scheduleForecast.changedTasks.slice(0, 12).map(task => {
@@ -2703,11 +2703,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                         const meta = scheduleForecast.taskForecastMeta.get(task.id);
                                         if (!original) return null;
                                         return (
-                                            <div key={task.id} className="rounded-xl border border-slate-100 dark:border-slate-700 p-3 bg-slate-50/50 dark:bg-slate-700/20">
+                                            <div key={task.id} className="rounded-xl border border-border dark:border-slate-700 p-3 bg-slate-50/50 dark:bg-slate-700/20">
                                                 <div className="flex items-center justify-between gap-2">
                                                     <div className="min-w-0">
-                                                        <div className="text-xs font-black text-slate-800 dark:text-slate-100 truncate">{task.name}</div>
-                                                        <div className="mt-1 text-[10px] text-slate-500">
+                                                        <div className="text-xs font-black text-foreground dark:text-slate-100 truncate">{task.name}</div>
+                                                        <div className="mt-1 text-[10px] text-muted-foreground">
                                                             {fmtShort(original.startDate)}-{fmtShort(original.endDate)} → <span className="font-black text-red-600">{fmtShort(task.startDate)}-{fmtShort(task.endDate)}</span>
                                                         </div>
                                                     </div>
@@ -2721,7 +2721,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                         );
                                     })}
                                     {scheduleForecast.changedTasks.length > 12 && (
-                                        <div className="text-[10px] font-bold text-slate-400 text-center">
+                                        <div className="text-[10px] font-bold text-muted-foreground text-center">
                                             Còn {scheduleForecast.changedTasks.length - 12} hạng mục khác trong forecast.
                                         </div>
                                     )}
@@ -2734,11 +2734,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
             {/* T3: Baseline Compare Panel */}
             {showBaselinePanel && baselines.length > 0 && (
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-sky-200 dark:border-sky-800 shadow-lg overflow-hidden">
+                <div className="bg-card rounded-2xl border border-blue-500/20 shadow-lg overflow-hidden">
                     <div className="px-5 py-3 border-b border-sky-100 dark:border-sky-800 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <BarChart3 size={16} className="text-sky-500" />
-                            <h4 className="text-sm font-black text-slate-800 dark:text-white">So sánh Baseline vs Thực tế</h4>
+                            <h4 className="text-sm font-black text-foreground dark:text-white">So sánh Baseline vs Thực tế</h4>
                         </div>
                         <div className="flex items-center gap-2">
                             {/* Baseline selector */}
@@ -2748,14 +2748,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     const bl = baselines.find(b => b.id === e.target.value) || null;
                                     setActiveBaseline(bl);
                                 }}
-                                className="text-xs font-bold border border-slate-200 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-700 dark:border-slate-600 text-slate-700 dark:text-slate-200"
+                                className="text-xs font-bold border border-border rounded-lg px-2 py-1.5 bg-muted text-foreground"
                             >
                                 {baselines.map(bl => (
                                     <option key={bl.id} value={bl.id}>{bl.name}</option>
                                 ))}
                             </select>
                             <button onClick={() => setShowBaselinePanel(false)}
-                                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+                                className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-slate-600 hover:bg-slate-100">
                                 <X size={14} />
                             </button>
                         </div>
@@ -2779,7 +2779,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         return (
                             <div>
                                 {/* Summary badges */}
-                                <div className="px-5 py-2.5 flex items-center gap-3 bg-slate-50 dark:bg-slate-700/50 border-b border-slate-100 dark:border-slate-700">
+                                <div className="px-5 py-2.5 flex items-center gap-3 bg-slate-50 dark:bg-slate-700/50 border-b border-border dark:border-slate-700">
                                     <span className="text-[10px] font-black text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
                                         ⏰ Trễ: {delayed}
                                     </span>
@@ -2789,7 +2789,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     <span className="text-[10px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
                                         ⚡ Sớm: {ahead}
                                     </span>
-                                    <span className="text-[10px] text-slate-400 ml-auto">
+                                    <span className="text-[10px] text-muted-foreground ml-auto">
                                         Baseline: {new Date(activeBaseline.lockedAt).toLocaleDateString('vi-VN')}
                                     </span>
                                 </div>
@@ -2797,7 +2797,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                 <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
                                     <table className="w-full text-xs">
                                         <thead className="bg-slate-50 dark:bg-slate-700 sticky top-0">
-                                            <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                                            <tr className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">
                                                 <th className="text-left px-4 py-2.5">Hạng mục</th>
                                                 <th className="text-center px-3 py-2.5">Tiến độ</th>
                                                 <th className="text-right px-3 py-2.5">NGÀY BĐ (BL)</th>
@@ -2815,8 +2815,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                     <tr key={task.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors ${isDelayed ? 'bg-red-50/30 dark:bg-red-900/10' : isAhead ? 'bg-emerald-50/30 dark:bg-emerald-900/10' : ''
                                                         }`}>
                                                         <td className="px-4 py-2">
-                                                            <div className="font-bold text-slate-800 dark:text-slate-200 truncate max-w-[200px]">{task.name}</div>
-                                                            {task.assignee && <div className="text-[9px] text-slate-400">{task.assignee}</div>}
+                                                            <div className="font-bold text-foreground dark:text-slate-200 truncate max-w-[200px]">{task.name}</div>
+                                                            {task.assignee && <div className="text-[9px] text-muted-foreground">{task.assignee}</div>}
                                                         </td>
                                                         <td className="px-3 py-2 text-center">
                                                             <div className="flex items-center gap-1">
@@ -2827,10 +2827,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                                 <span className="text-[10px] font-bold text-slate-600">{task.progress}%</span>
                                                             </div>
                                                         </td>
-                                                        <td className="px-3 py-2 text-right text-slate-500">{fmtShort(bl.startDate)}</td>
-                                                        <td className="px-3 py-2 text-right text-slate-500">{fmtShort(bl.endDate)}</td>
-                                                        <td className="px-3 py-2 text-right font-bold text-slate-700 dark:text-slate-200">{fmtShort(task.startDate)}</td>
-                                                        <td className="px-3 py-2 text-right font-bold text-slate-700 dark:text-slate-200">{fmtShort(task.endDate)}</td>
+                                                        <td className="px-3 py-2 text-right text-muted-foreground">{fmtShort(bl.startDate)}</td>
+                                                        <td className="px-3 py-2 text-right text-muted-foreground">{fmtShort(bl.endDate)}</td>
+                                                        <td className="px-3 py-2 text-right font-bold text-foreground dark:text-slate-200">{fmtShort(task.startDate)}</td>
+                                                        <td className="px-3 py-2 text-right font-bold text-foreground dark:text-slate-200">{fmtShort(task.endDate)}</td>
                                                         <td className="px-3 py-2 text-center">
                                                             {endDelta === 0 ? (
                                                                 <span className="text-[10px] font-bold text-emerald-600">✔ Đúng hạn</span>
@@ -2858,7 +2858,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             {/* Stats Cards */}
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-3">
                 {[
-                    { label: 'Tổng hạng mục', value: stats.total, color: 'text-slate-800', icon: '📋' },
+                    { label: 'Tổng hạng mục', value: stats.total, color: 'text-foreground', icon: '📋' },
                     { label: 'Tiến độ thi công', value: `${stats.avgProgress}%`, color: 'text-orange-600', icon: '📈', bar: stats.avgProgress },
                     {
                         label: 'Tiến độ theo giá trị',
@@ -2869,18 +2869,18 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         sub: `${formatMoneyShort(valueProgressMetric.recognizedValue)} / ${formatMoneyShort(valueProgressMetric.contractTotalValue)}`,
                     },
                     { label: 'Hoàn thành', value: stats.completed, color: 'text-emerald-600', icon: '✅' },
-                    { label: 'Chờ NT', value: stats.pendingGate, color: stats.pendingGate > 0 ? 'text-amber-600' : 'text-slate-400', icon: '🛡️' },
+                    { label: 'Chờ NT', value: stats.pendingGate, color: stats.pendingGate > 0 ? 'text-amber-600' : 'text-muted-foreground', icon: '🛡️' },
                     { label: 'Đang thực hiện', value: stats.inProgress, color: 'text-blue-600', icon: '🔄' },
-                    { label: 'Trễ hạn', value: stats.overdue, color: stats.overdue > 0 ? 'text-red-600' : 'text-slate-400', icon: '⚠️' },
+                    { label: 'Trễ hạn', value: stats.overdue, color: stats.overdue > 0 ? 'text-red-600' : 'text-muted-foreground', icon: '⚠️' },
                 ].map((s, i) => (
-                    <div key={i} className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow">
+                    <div key={i} className="bg-card rounded-2xl p-4 border border-border shadow-sm hover:shadow-md transition-shadow">
                         <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{s.label}</span>
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{s.label}</span>
                             <span className="text-sm">{s.icon}</span>
                         </div>
                         <div className={`text-2xl font-black ${s.color}`}>{s.value}</div>
                         {'sub' in s && s.sub && (
-                            <div className="mt-0.5 text-[9px] font-bold text-slate-400 truncate" title={s.sub}>{s.sub}</div>
+                            <div className="mt-0.5 text-[9px] font-bold text-muted-foreground truncate" title={s.sub}>{s.sub}</div>
                         )}
                         {s.bar !== undefined && (
                             <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -2892,7 +2892,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             </div>
 
             {tasks.length > 0 && (
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
+                <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
                     <button
                         type="button"
                         onClick={() => setWeeklyProgressOpen(open => !open)}
@@ -2901,29 +2901,29 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         <div className="flex items-center gap-2 min-w-0">
                             <ClipboardCheck size={16} className="text-orange-500 shrink-0" />
                             <div className="min-w-0">
-                                <h4 className="text-sm font-black text-slate-800 dark:text-white">Chốt tiến độ tuần</h4>
-                                <p className="text-[10px] font-bold text-slate-400 truncate">
+                                <h4 className="text-sm font-black text-foreground dark:text-white">Chốt tiến độ tuần</h4>
+                                <p className="text-[10px] font-bold text-muted-foreground truncate">
                                     {getISOWeekLabel(selectedWeekStart)} • {weeklyLeafTasks.length} hạng mục lá • Preview thi công {draftWeeklyConstructionProgress}%
                                 </p>
                             </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                            <span className="hidden sm:inline text-[10px] font-black uppercase text-slate-400">
+                            <span className="hidden sm:inline text-[10px] font-black uppercase text-muted-foreground">
                                 {weeklyProgressOpen ? 'Thu gọn' : 'Mở nhập liệu'}
                             </span>
-                            <ChevronDown size={16} className={`text-slate-400 transition-transform ${weeklyProgressOpen ? 'rotate-180' : ''}`} />
+                            <ChevronDown size={16} className={`text-muted-foreground transition-transform ${weeklyProgressOpen ? 'rotate-180' : ''}`} />
                         </div>
                     </button>
                     {weeklyProgressOpen && (
                         <>
-                            <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-700 flex items-center justify-end gap-2 flex-wrap bg-slate-50/40 dark:bg-slate-700/20">
+                            <div className="px-4 py-3 border-t border-border dark:border-slate-700 flex items-center justify-end gap-2 flex-wrap bg-slate-50/40 dark:bg-slate-700/20">
                                 <input
                                     type="date"
                                     value={selectedWeekStart}
                                     onChange={e => {
                                         if (e.target.value) setSelectedWeekStart(getWeekStart(e.target.value));
                                     }}
-                                    className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-xs font-bold bg-transparent focus:ring-2 focus:ring-orange-500 outline-none"
+                                    className="px-3 py-2 rounded-xl border border-border dark:border-slate-600 text-xs font-bold bg-transparent focus:ring-2 focus:ring-orange-500 outline-none"
                                     title="Tuần chốt"
                                 />
                                 <button
@@ -2935,15 +2935,15 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     Chốt tuần
                                 </button>
                             </div>
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-0 border-t border-slate-100 dark:border-slate-700">
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-0 border-t border-border dark:border-slate-700">
                                 {[
                                     { label: 'Thi công tuần', value: `${draftWeeklyConstructionProgress}%`, tone: 'text-orange-600' },
                                     { label: 'Theo giá trị', value: `${valueProgressMetric.valueProgressPercent}%`, tone: 'text-emerald-600' },
                                     { label: 'PO hợp lệ', value: formatMoneyShort(valueProgressMetric.purchasedValue), tone: 'text-blue-600' },
                                     { label: 'Kho đã cấp', value: formatMoneyShort(valueProgressMetric.issuedValue), tone: 'text-violet-600' },
                                 ].map(item => (
-                                    <div key={item.label} className="px-4 py-3 border-r last:border-r-0 border-slate-100 dark:border-slate-700">
-                                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{item.label}</div>
+                                    <div key={item.label} className="px-4 py-3 border-r last:border-r-0 border-border dark:border-slate-700">
+                                        <div className="text-[9px] font-black text-muted-foreground uppercase tracking-wider">{item.label}</div>
                                         <div className={`mt-1 text-lg font-black ${item.tone}`}>{item.value}</div>
                                     </div>
                                 ))}
@@ -2951,7 +2951,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             <div className="overflow-x-auto max-h-[360px]">
                                 <table className="w-full min-w-[820px] text-xs">
                                     <thead className="sticky top-0 bg-slate-50 dark:bg-slate-700 z-10">
-                                        <tr className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                                        <tr className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
                                             <th className="px-3 py-2 text-left w-[90px]">WBS</th>
                                             <th className="px-3 py-2 text-left">Hạng mục lá</th>
                                             <th className="px-3 py-2 text-right w-[130px]">% hoàn thành</th>
@@ -2969,8 +2969,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                 <tr key={task.id} className={`hover:bg-orange-50/30 dark:hover:bg-slate-700/30 ${isOverProgress ? 'bg-red-50/50 dark:bg-red-900/10' : ''}`}>
                                                     <td className="px-3 py-2 font-mono font-bold text-indigo-600">{task.wbsCode || '–'}</td>
                                                     <td className="px-3 py-2">
-                                                        <div className="font-bold text-slate-700 dark:text-slate-200 truncate" title={task.name}>{task.name}</div>
-                                                        <div className="text-[9px] font-bold text-slate-400">
+                                                        <div className="font-bold text-foreground dark:text-slate-200 truncate" title={task.name}>{task.name}</div>
+                                                        <div className="text-[9px] font-bold text-muted-foreground">
                                                             KH: {formatQuantity(task.provisionalQuantity)} {getTaskUnit(task, linkedIds, contractItems)}
                                                             {isOverProgress && (
                                                                 <span className="ml-2 inline-flex items-center rounded-md border border-red-200 bg-red-50 px-1.5 py-0.5 text-[9px] font-black text-red-600 dark:border-red-800 dark:bg-red-900/30">
@@ -2988,7 +2988,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                             onChange={e => { void updateWeeklyProgressPercent(task, e.target.value); }}
                                                             className={`w-full px-2 py-1.5 rounded-lg border text-right font-black bg-transparent focus:ring-2 outline-none ${isOverProgress
                                                                 ? 'border-red-300 text-red-600 bg-red-50/60 focus:ring-red-400 dark:bg-red-900/20'
-                                                                : 'border-slate-200 dark:border-slate-600 focus:ring-orange-500'
+                                                                : 'border-border dark:border-slate-600 focus:ring-orange-500'
                                                                 }`}
                                                         />
                                                     </td>
@@ -3002,7 +3002,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                             title="Tự tính % hoàn thành = KL hoàn thành / KL tạm tính"
                                                             className={`w-full px-2 py-1.5 rounded-lg border text-right font-bold bg-transparent focus:ring-2 outline-none ${isOverProgress
                                                                 ? 'border-red-200 text-red-600 bg-red-50/60 focus:ring-red-400 dark:bg-red-900/20'
-                                                                : 'border-slate-200 dark:border-slate-600 focus:ring-orange-500'
+                                                                : 'border-border dark:border-slate-600 focus:ring-orange-500'
                                                                 }`}
                                                         />
                                                     </td>
@@ -3011,7 +3011,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                             value={draft.note}
                                                             onChange={e => updateWeeklyDraft(task.id, { note: e.target.value })}
                                                             placeholder="Ghi chú tuần"
-                                                            className="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-transparent focus:ring-2 focus:ring-orange-500 outline-none"
+                                                            className="w-full px-2 py-1.5 rounded-lg border border-border dark:border-slate-600 bg-transparent focus:ring-2 focus:ring-orange-500 outline-none"
                                                         />
                                                     </td>
                                                 </tr>
@@ -3026,8 +3026,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             )}
 
             {/* Toolbar */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
-                <div className="p-3 flex items-center justify-between flex-wrap gap-2 border-b border-slate-100 dark:border-slate-700">
+            <div className="bg-card rounded-2xl border border-border shadow-sm">
+                <div className="p-3 flex items-center justify-between flex-wrap gap-2 border-b border-border dark:border-slate-700">
                     {/* Left: View toggle + search */}
                     <div className="flex items-center gap-2">
                         {/* View mode toggle */}
@@ -3039,8 +3039,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             ]).map(v => (
                                 <button key={v.mode} onClick={() => setViewMode(v.mode)}
                                     className={`items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${v.className} ${viewMode === v.mode
-                                        ? 'bg-white dark:bg-slate-600 text-orange-600 shadow-sm'
-                                        : 'text-slate-400 hover:text-slate-600'
+                                        ? 'bg-muted text-orange-500 shadow-sm'
+                                        : 'text-muted-foreground hover:text-slate-600'
                                         }`}>
                                     <v.icon size={12} /> <span className="hidden sm:inline">{v.label}</span>
                                 </button>
@@ -3049,14 +3049,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
                         {/* Search */}
                         <div className="relative">
-                            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                             <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                                 placeholder="Tìm hạng mục..."
-                                className="pl-7 pr-7 py-1.5 w-44 rounded-xl border border-slate-200 dark:border-slate-600 text-xs bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                className="pl-7 pr-7 py-1.5 w-44 rounded-xl border border-border dark:border-slate-600 text-xs bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                             {searchQuery && (
                                 <button
                                     onClick={() => setSearchQuery('')}
-                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-slate-600 dark:hover:text-slate-300"
                                 >
                                     <X size={10} />
                                 </button>
@@ -3066,7 +3066,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         {/* Filter */}
                         <div className="relative">
                             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as any)}
-                                className="pl-7 pr-8 py-1.5 rounded-xl border border-slate-200 dark:border-slate-600 text-xs bg-transparent appearance-none cursor-pointer focus:ring-2 focus:ring-orange-500 outline-none font-medium">
+                                className="pl-7 pr-8 py-1.5 rounded-xl border border-border dark:border-slate-600 text-xs bg-transparent appearance-none cursor-pointer focus:ring-2 focus:ring-orange-500 outline-none font-medium">
                                 <option value="all">Tất cả</option>
                                 <option value="not_started">Chưa bắt đầu</option>
                                 <option value="in_progress">Đang thực hiện</option>
@@ -3074,7 +3074,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                 <option value="completed">Hoàn thành</option>
                                 <option value="overdue">Trễ hạn</option>
                             </select>
-                            <Filter size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            <Filter size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                         </div>
                     </div>
 
@@ -3083,15 +3083,15 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         <div className="flex items-center gap-2">
                             {/* GĐ2: Workload toggle */}
                             <button onClick={() => setShowWorkload(v => !v)}
-                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${showWorkload ? 'border-violet-400 bg-violet-50 dark:bg-violet-900/20 text-violet-600' : 'border-slate-200 dark:border-slate-600 text-slate-400 hover:text-slate-600'
+                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${showWorkload ? 'border-violet-400 bg-violet-50 dark:bg-violet-900/20 text-violet-600' : 'border-border dark:border-slate-600 text-muted-foreground hover:text-slate-600'
                                     }`}
                                 title="Biểu đồ phân bổ nguồn lực">
                                 <Users size={11} /> Workload
                             </button>
                             {/* Zoom */}
-                            <button onClick={() => setZoom(z => Math.max(10, z - 6))} className="w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-600 flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"><ZoomOut size={12} /></button>
-                            <span className="text-[10px] font-bold text-slate-400 w-10 text-center">{zoom}px</span>
-                            <button onClick={() => setZoom(z => Math.min(60, z + 6))} className="w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-600 flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"><ZoomIn size={12} /></button>
+                            <button onClick={() => setZoom(z => Math.max(10, z - 6))} className="w-7 h-7 rounded-lg border border-border dark:border-slate-600 flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"><ZoomOut size={12} /></button>
+                            <span className="text-[10px] font-bold text-muted-foreground w-10 text-center">{zoom}px</span>
+                            <button onClick={() => setZoom(z => Math.min(60, z + 6))} className="w-7 h-7 rounded-lg border border-border dark:border-slate-600 flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"><ZoomIn size={12} /></button>
                         </div>
                     )}
                 </div>
@@ -3100,15 +3100,15 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 {loading ? (
                     <div className="p-12 text-center">
                         <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                        <p className="text-xs font-bold text-slate-400">Đang tải dữ liệu...</p>
+                        <p className="text-xs font-bold text-muted-foreground">Đang tải dữ liệu...</p>
                     </div>
                 ) : tasks.length === 0 ? (
                     <div className="p-16 text-center">
                         <div className="w-16 h-16 bg-orange-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
                             <Flag size={28} className="text-orange-300" />
                         </div>
-                        <p className="text-sm font-bold text-slate-500 mb-1">Chưa có hạng mục nào</p>
-                        <p className="text-xs text-slate-400 mb-4">Thêm hạng mục thi công để bắt đầu theo dõi tiến độ</p>
+                        <p className="text-sm font-bold text-muted-foreground mb-1">Chưa có hạng mục nào</p>
+                        <p className="text-xs text-muted-foreground mb-4">Thêm hạng mục thi công để bắt đầu theo dõi tiến độ</p>
                         <button onClick={() => openAdd()}
                             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg hover:shadow-xl transition-all">
                             <Plus size={14} /> Thêm hạng mục đầu tiên
@@ -3120,92 +3120,92 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         {(viewMode === 'table' || viewMode === 'split') && (
                             <div
                                 style={{ width: viewMode === 'split' ? `${splitTableWidth}px` : undefined }}
-                                className={`${viewMode === 'split' ? 'shrink-0 lg:border-r border-b lg:border-b-0 border-slate-100 dark:border-slate-700' : 'flex-1'} overflow-auto`}>
+                                className={`${viewMode === 'split' ? 'shrink-0 lg:border-r border-b lg:border-b-0 border-border dark:border-slate-700' : 'flex-1'} overflow-auto`}>
                                 <table className={`${viewMode === 'table' ? 'w-full min-w-[900px] lg:min-w-[1530px] table-fixed' : 'w-full min-w-[900px] table-fixed'} text-xs`}>
                                     <thead>
-                                        <tr className="bg-slate-50/80 dark:bg-slate-700/50 border-b border-slate-100 dark:border-slate-700" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
+                                        <tr className="bg-slate-50/80 dark:bg-slate-700/50 border-b border-border dark:border-slate-700" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
                                             {viewMode === 'table' && (
                                                 <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[40px]">
-                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">STT</span>
+                                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">STT</span>
                                                 </th>
                                             )}
                                             {(viewMode === 'table' || viewMode === 'split') && (
                                                 <th className={`sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left ${viewMode === 'split' ? 'w-[80px]' : 'hidden sm:table-cell w-[76px]'}`}>
-                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Mã WBS</span>
+                                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Mã WBS</span>
                                                 </th>
                                             )}
                                             <th className={`sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-3 py-2.5 text-left ${viewMode === 'split' ? 'w-[220px]' : ''}`}>
-                                                <button onClick={() => handleSort('name')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                <button onClick={() => handleSort('name')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
                                                     Công việc <SortIcon field="name" />
                                                 </button>
                                             </th>
                                             {viewMode === 'table' && (
                                                 <th className="hidden md:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[128px]">
-                                                    <button onClick={() => handleSort('assignee')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                    <button onClick={() => handleSort('assignee')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
                                                         Người thực hiện <SortIcon field="assignee" />
                                                     </button>
                                                 </th>
                                             )}
                                             {viewMode === 'table' && (
                                                 <th className="hidden lg:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[88px]">
-                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Thời gian<br />(ngày)</span>
+                                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Thời gian<br />(ngày)</span>
                                                 </th>
                                             )}
                                             {viewMode === 'split' && (
                                                 <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[85px]">
-                                                    <button onClick={() => handleSort('status')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                    <button onClick={() => handleSort('status')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
                                                         T.Thái <SortIcon field="status" />
                                                     </button>
                                                 </th>
                                             )}
                                             <th className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[80px]`}>
-                                                <button onClick={() => handleSort('startDate')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                <button onClick={() => handleSort('startDate')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
                                                     BĐ KH <SortIcon field="startDate" />
                                                 </button>
                                             </th>
                                             <th className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[80px]`}>
-                                                <button onClick={() => handleSort('endDate')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                <button onClick={() => handleSort('endDate')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
                                                     KT KH <SortIcon field="endDate" />
                                                 </button>
                                             </th>
                                             {viewMode === 'table' && (
                                                 <>
                                                     <th className="hidden lg:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[86px]">
-                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">BĐ thực tế</span>
+                                                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">BĐ thực tế</span>
                                                     </th>
                                                     <th className="hidden lg:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[86px]">
-                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">KT thực tế</span>
+                                                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">KT thực tế</span>
                                                     </th>
                                                     <th className="hidden lg:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[102px]">
-                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">KL tạm tính</span>
+                                                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">KL tạm tính</span>
                                                     </th>
                                                     <th className="hidden lg:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[112px]">
-                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Nhân công<br />dự kiến</span>
+                                                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Nhân công<br />dự kiến</span>
                                                     </th>
                                                 </>
                                             )}
                                             <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[120px]">
-                                                <button onClick={() => handleSort('progress')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                <button onClick={() => handleSort('progress')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
                                                     Tiến độ <SortIcon field="progress" />
                                                 </button>
                                             </th>
                                             <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[132px]">
-                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Tiến độ<br />theo giá trị</span>
+                                                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Tiến độ<br />theo giá trị</span>
                                             </th>
                                             {viewMode === 'table' && (
                                                 <th className="hidden xl:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[70px]">
-                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Đơn vị</span>
+                                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Đơn vị</span>
                                                 </th>
                                             )}
                                             {viewMode === 'table' && (
                                                 <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[96px]">
-                                                    <button onClick={() => handleSort('status')} className="flex items-center gap-1 text-[10px] font-black text-slate-400 uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                    <button onClick={() => handleSort('status')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
                                                         T.Thái <SortIcon field="status" />
                                                     </button>
                                                 </th>
                                             )}
                                             <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[80px]">
-                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Thao tác</span>
+                                                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Thao tác</span>
                                             </th>
                                         </tr>
                                     </thead>
@@ -3224,7 +3224,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                     className={`border-b border-slate-50 dark:border-slate-700/50 hover:bg-orange-50/30 dark:hover:bg-slate-700/30 group transition-colors ${status === 'overdue' ? 'bg-red-50/20' : status === 'pending_gate' ? 'bg-amber-50/20' : ''}`}>
                                                     {/* STT */}
                                                     {viewMode === 'table' && (
-                                                        <td className="px-2 py-2.5 text-center text-slate-400 font-bold">{idx + 1}</td>
+                                                        <td className="px-2 py-2.5 text-center text-muted-foreground font-bold">{idx + 1}</td>
                                                     )}
                                                     {/* Mã WBS */}
                                                     {(viewMode === 'table' || viewMode === 'split') && (
@@ -3241,7 +3241,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                         style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
                                                         <div className="flex items-center gap-1 min-w-0 h-full" style={{ paddingLeft: viewMode === 'split' ? `${level * 16}px` : 0 }}>
                                                             {viewMode === 'split' && hasChildren ? (
-                                                                <button onClick={() => toggleCollapse(task.id)} className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-orange-500 shrink-0 rounded hover:bg-orange-50 transition-colors">
+                                                                <button onClick={() => toggleCollapse(task.id)} className="w-5 h-5 flex items-center justify-center text-muted-foreground hover:text-orange-500 shrink-0 rounded hover:bg-orange-50 transition-colors">
                                                                     {collapsedParents.has(task.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
                                                                 </button>
                                                             ) : viewMode === 'split' ? (
@@ -3249,7 +3249,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                             ) : null}
                                                             {task.isMilestone && <Flag size={11} className="text-red-500 shrink-0" />}
                                                             <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: task.color || COLORS[idx % COLORS.length] }} />
-                                                            <span className="font-bold text-slate-700 dark:text-slate-200 truncate cursor-pointer hover:text-orange-600 transition-colors"
+                                                            <span className="font-bold text-foreground dark:text-slate-200 truncate cursor-pointer hover:text-orange-600 transition-colors"
                                                                 onClick={() => openEdit(task)} title={task.name}>
                                                                 {task.name}
                                                             </span>
@@ -3260,7 +3260,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                             )}
                                                         </div>
                                                         {viewMode === 'table' && (
-                                                            <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[9px] font-bold text-slate-400 md:hidden">
+                                                            <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[9px] font-bold text-muted-foreground md:hidden">
                                                                 {task.wbsCode && <span>WBS {task.wbsCode}</span>}
                                                                 {task.assignee && <span>{task.assignee}</span>}
                                                                 <span>{fmtShort(task.startDate)}→{fmtShort(task.endDate)}</span>
@@ -3284,7 +3284,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                         <td className="hidden md:table-cell px-2 py-2.5">
                                                             {task.assignee ? (
                                                                 <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300 font-medium">
-                                                                    <User size={10} className="text-slate-400" /> {task.assignee}
+                                                                    <User size={10} className="text-muted-foreground" /> {task.assignee}
                                                                 </span>
                                                             ) : (
                                                                 <span className="text-slate-300">—</span>
@@ -3293,16 +3293,16 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                     )}
                                                     {/* Duration */}
                                                     {viewMode === 'table' && (
-                                                        <td className="hidden lg:table-cell px-2 py-2.5 text-center font-bold text-slate-500">{task.duration}</td>
+                                                        <td className="hidden lg:table-cell px-2 py-2.5 text-center font-bold text-muted-foreground">{task.duration}</td>
                                                     )}
                                                     {/* Planned Dates */}
-                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${viewMode === 'split' ? 'py-0' : 'py-2.5'} text-slate-500 font-medium whitespace-nowrap`}
+                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${viewMode === 'split' ? 'py-0' : 'py-2.5'} text-muted-foreground font-medium whitespace-nowrap`}
                                                         style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
                                                         <div className="flex items-center h-full">
                                                             {fmtShort(task.startDate)}
                                                         </div>
                                                     </td>
-                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${viewMode === 'split' ? 'py-0' : 'py-2.5'} text-slate-500 font-medium whitespace-nowrap`}
+                                                    <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${viewMode === 'split' ? 'py-0' : 'py-2.5'} text-muted-foreground font-medium whitespace-nowrap`}
                                                         style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
                                                         <div className="flex items-center h-full">
                                                             {fmtShort(task.endDate)}
@@ -3343,7 +3343,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                                 <span className="text-[11px] font-black text-emerald-600 w-8 text-right">{valueProgressMetric.valueProgressPercent}%</span>
                                                             </div>
                                                             {viewMode === 'table' && (
-                                                                <div className="text-[9px] font-bold text-slate-400 truncate">
+                                                                <div className="text-[9px] font-bold text-muted-foreground truncate">
                                                                     {formatMoneyShort(valueProgressMetric.recognizedValue)}
                                                                 </div>
                                                             )}
@@ -3351,7 +3351,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                     </td>
                                                     {/* Unit (table mode only) */}
                                                     {viewMode === 'table' && (
-                                                        <td className="hidden xl:table-cell px-2 py-2.5 text-slate-500 font-medium" title={unitTitle}>
+                                                        <td className="hidden xl:table-cell px-2 py-2.5 text-muted-foreground font-medium" title={unitTitle}>
                                                             {unitLabel}
                                                         </td>
                                                     )}
@@ -3364,19 +3364,19 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                         style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
                                                         <div className="flex items-center justify-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity h-full">
                                                             <button onClick={() => openEdit(task)} title="Sửa"
-                                                                className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                                                                className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-blue-600 hover:bg-blue-50 transition-colors">
                                                                 <Edit2 size={12} />
                                                             </button>
                                                             <button onClick={() => duplicateTask(task)} title="Nhân bản"
-                                                                className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors">
+                                                                className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-violet-600 hover:bg-violet-50 transition-colors">
                                                                 <Copy size={12} />
                                                             </button>
                                                             <button onClick={() => openAdd(task.id)} title="Thêm hạng mục con"
-                                                                className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
+                                                                className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
                                                                 <Plus size={12} />
                                                             </button>
                                                             <button onClick={() => setDeleteTarget(task)} title="Xoá"
-                                                                className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                                                                className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors">
                                                                 <Trash2 size={12} />
                                                             </button>
                                                         </div>
@@ -3389,7 +3389,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                 {filteredTasks.length === 0 && tasks.length > 0 && (
                                     <div className="p-8 text-center">
                                         <Search size={24} className="mx-auto mb-2 text-slate-200" />
-                                        <p className="text-xs font-bold text-slate-400">Không tìm thấy hạng mục phù hợp</p>
+                                        <p className="text-xs font-bold text-muted-foreground">Không tìm thấy hạng mục phù hợp</p>
                                     </div>
                                 )}
                             </div>
@@ -3397,7 +3397,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
                         {viewMode === 'split' && (
                             <div
-                                className="hidden lg:flex w-1.5 hover:w-2 bg-slate-100 hover:bg-orange-400 dark:bg-slate-800 dark:hover:bg-orange-500 cursor-col-resize self-stretch transition-all items-center justify-center group relative z-30 shrink-0 border-x border-slate-200/50 dark:border-slate-700/50"
+                                className="hidden lg:flex w-1.5 hover:w-2 bg-slate-100 hover:bg-orange-400 dark:bg-slate-800 dark:hover:bg-orange-500 cursor-col-resize self-stretch transition-all items-center justify-center group relative z-30 shrink-0 border-x border-border/50 dark:border-slate-700/50"
                                 onMouseDown={e => {
                                     e.preventDefault();
                                     e.stopPropagation();
@@ -3431,26 +3431,26 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             <div className="flex-1 overflow-x-auto overflow-y-hidden relative">
                                 <div className="relative" style={{ width: `${ganttOffset + (totalDays + 1) * zoom}px`, minWidth: '100%' }}>
                                     {/* Month + day headers */}
-                                    <div className="border-b border-slate-100 dark:border-slate-700 relative bg-slate-50/50 dark:bg-slate-700/30" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
+                                    <div className="border-b border-border dark:border-slate-700 relative bg-slate-50/50 dark:bg-slate-700/30" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
                                         {viewMode === 'gantt' && (
-                                            <div className="absolute left-0 top-0 bottom-0 z-30 w-[140px] shrink-0 bg-slate-100 dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700/80 px-2.5 flex items-center font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider text-[9px] select-none shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+                                            <div className="absolute left-0 top-0 bottom-0 z-30 w-[140px] shrink-0 bg-slate-100 dark:bg-slate-800 border-r border-border dark:border-slate-700/80 px-2.5 flex items-center font-black text-muted-foreground dark:text-muted-foreground uppercase tracking-wider text-[9px] select-none shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
                                                 Hạng mục
                                             </div>
                                         )}
                                         {months.map((m, i) => (
-                                            <div key={i} className="absolute top-0 h-[30px] flex items-center justify-center border-r border-slate-100 dark:border-slate-700"
+                                            <div key={i} className="absolute top-0 h-[30px] flex items-center justify-center border-r border-border dark:border-slate-700"
                                                 style={{ left: `${ganttOffset + m.startDay * zoom}px`, width: `${m.days * zoom}px` }}>
-                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider px-2 truncate text-center w-full">{m.label}</span>
+                                                <span className="text-[9px] font-black text-muted-foreground uppercase tracking-wider px-2 truncate text-center w-full">{m.label}</span>
                                             </div>
                                         ))}
-                                        <div className="absolute left-0 right-0 top-[30px] h-[34px] border-t border-slate-100 dark:border-slate-700">
+                                        <div className="absolute left-0 right-0 top-[30px] h-[34px] border-t border-border dark:border-slate-700">
                                             {days.map(day => {
                                                 const showLabel = zoom >= 26 || day.startDay % Math.ceil(28 / zoom) === 0;
                                                 return (
                                                     <div key={day.date}
-                                                        className={`absolute top-0 h-full border-r border-slate-100 dark:border-slate-700 flex items-center justify-center ${day.isWeekend ? 'bg-slate-100/60 dark:bg-slate-800/40' : ''}`}
+                                                        className={`absolute top-0 h-full border-r border-border dark:border-slate-700 flex items-center justify-center ${day.isWeekend ? 'bg-slate-100/60 dark:bg-slate-800/40' : ''}`}
                                                         style={{ left: `${ganttOffset + day.startDay * zoom}px`, width: `${zoom}px` }}>
-                                                        {showLabel && <span className="text-[8px] font-bold text-slate-400 whitespace-nowrap">{day.label}</span>}
+                                                        {showLabel && <span className="text-[8px] font-bold text-muted-foreground whitespace-nowrap">{day.label}</span>}
                                                     </div>
                                                 );
                                             })}
@@ -3467,7 +3467,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     <div className="absolute left-0 pointer-events-none z-0" style={{ top: `${GANTT_HEADER_HEIGHT}px`, height: `${taskTree.length * ROW_HEIGHT}px`, width: `${ganttOffset + (totalDays + 1) * zoom}px` }}>
                                         {days.map(day => (
                                             <div key={`grid-${day.date}`}
-                                                className={`absolute top-0 h-full border-r border-slate-100/70 dark:border-slate-700/60 ${day.isWeekend ? 'bg-slate-100/45 dark:bg-slate-800/30' : ''}`}
+                                                className={`absolute top-0 h-full border-r border-border/70 dark:border-slate-700/60 ${day.isWeekend ? 'bg-slate-100/45 dark:bg-slate-800/30' : ''}`}
                                                 style={{ left: `${ganttOffset + day.startDay * zoom}px`, width: `${zoom}px` }} />
                                         ))}
                                     </div>
@@ -3506,16 +3506,16 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                         return (
                                             <div key={task.id} className="w-full relative border-b border-slate-50 dark:border-slate-700/50" style={{ height: `${ROW_HEIGHT}px` }}>
                                                 {viewMode === 'gantt' && (
-                                                    <div className="absolute left-0 top-0 bottom-0 z-20 w-[140px] shrink-0 bg-white/95 dark:bg-slate-800/95 border-r border-slate-200 dark:border-slate-700/80 px-2 flex items-center gap-1 shadow-[2px_0_5px_rgba(0,0,0,0.02)] select-none overflow-hidden"
+                                                    <div className="absolute left-0 top-0 bottom-0 z-20 w-[140px] shrink-0 bg-card/95 border-r border-border px-2 flex items-center gap-1 shadow-[2px_0_5px_rgba(0,0,0,0.02)] select-none overflow-hidden"
                                                         style={{ paddingLeft: `${8 + level * 8}px` }}>
                                                         {hasChildren ? (
-                                                            <button onClick={() => toggleCollapse(task.id)} className="w-3.5 h-3.5 flex items-center justify-center text-slate-400 hover:text-orange-500 shrink-0">
+                                                            <button onClick={() => toggleCollapse(task.id)} className="w-3.5 h-3.5 flex items-center justify-center text-muted-foreground hover:text-orange-500 shrink-0">
                                                                 {collapsedParents.has(task.id) ? <ChevronRight size={10} /> : <ChevronDown size={10} />}
                                                             </button>
                                                         ) : <span className="w-3.5 shrink-0" />}
                                                         {task.isMilestone && <Flag size={9} className="text-red-500 shrink-0" />}
-                                                        <span className="truncate font-black text-slate-700 dark:text-slate-200 flex-1 text-[10px]" title={task.name}>{task.name}</span>
-                                                        <span className="text-[9px] font-bold text-slate-400 shrink-0">{task.progress}%</span>
+                                                        <span className="truncate font-black text-foreground dark:text-slate-200 flex-1 text-[10px]" title={task.name}>{task.name}</span>
+                                                        <span className="text-[9px] font-bold text-muted-foreground shrink-0">{task.progress}%</span>
                                                     </div>
                                                 )}
 
@@ -3641,7 +3641,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                         )}
                                                         {/* GĐ2: Gate-blocked indicator */}
                                                         {isGateBlocked && (
-                                                            <span className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 text-[7px] font-bold text-slate-500 bg-slate-100 px-1.5 rounded-full whitespace-nowrap z-20 border border-slate-200">
+                                                            <span className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 text-[7px] font-bold text-muted-foreground bg-slate-100 px-1.5 rounded-full whitespace-nowrap z-20 border border-border">
                                                                 <Lock size={7} className="inline mr-0.5" />Chờ gate
                                                             </span>
                                                         )}
@@ -3775,9 +3775,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     const maxVal = Math.max(threshold + 2, ...workloadData.map(d => d.total));
 
                                     return (
-                                        <div className="border-t-2 border-slate-200 dark:border-slate-700 pt-2 pb-1 w-full">
+                                        <div className="border-t-2 border-border dark:border-slate-700 pt-2 pb-1 w-full">
                                             <div className="px-2 mb-1 flex items-center gap-3 flex-wrap">
-                                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">📊 Phân bổ nguồn lực</span>
+                                                <span className="text-[9px] font-black text-muted-foreground uppercase tracking-wider">📊 Phân bổ nguồn lực</span>
                                                 <span className="flex items-center gap-1 text-[8px] text-blue-500"><span className="w-2 h-2 rounded bg-blue-400" /> Nhân công</span>
                                                 <span className="flex items-center gap-1 text-[8px] text-amber-500"><span className="w-2 h-2 rounded bg-amber-400" /> Máy</span>
                                                 <span className="flex items-center gap-1 text-[8px] text-violet-500"><span className="w-2 h-2 rounded bg-violet-400" /> Chuyên gia</span>
@@ -3845,13 +3845,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                 const approved = tasks.filter(t => t.gateStatus === 'approved');
                 const rejected = tasks.filter(t => t.gateStatus === 'rejected');
                 return (
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
-                        <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-700/30">
+                    <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+                        <div className="px-4 py-3 border-b border-border dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-700/30">
                             <div className="flex items-center gap-2">
                                 <Shield size={14} className="text-amber-500" />
-                                <span className="text-xs font-black text-slate-700 dark:text-white">Cổng Nghiệm Thu (Gate Approval)</span>
+                                <span className="text-xs font-black text-foreground dark:text-white">Cổng Nghiệm Thu (Gate Approval)</span>
                             </div>
-                            <button onClick={() => setShowGatePanel(false)} className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors">
+                            <button onClick={() => setShowGatePanel(false)} className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-slate-100 transition-colors">
                                 <X size={13} />
                             </button>
                         </div>
@@ -3862,18 +3862,18 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     <Clock size={9} /> Chờ nghiệm thu ({pending.length})
                                 </p>
                                 <div className="space-y-1.5">
-                                    {pending.length === 0 && <p className="text-[10px] text-slate-400 italic">Không có</p>}
+                                    {pending.length === 0 && <p className="text-[10px] text-muted-foreground italic">Không có</p>}
                                     {pending.map(t => (
                                         <button key={t.id}
                                             onClick={() => setGateModalTask(t)}
                                             className={`w-full flex items-center gap-2 p-2 rounded-xl border text-left hover:scale-[1.01] transition-all ${t.gateStatus === 'pending'
                                                 ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800'
-                                                : 'bg-slate-50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600'
+                                                : 'bg-slate-50 dark:bg-slate-700/50 border-border dark:border-slate-600'
                                                 }`}>
                                             <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#f97316' }} />
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-[10px] font-bold text-slate-700 dark:text-slate-200 truncate">{t.name}</p>
-                                                <p className="text-[9px] text-slate-400">
+                                                <p className="text-[10px] font-bold text-foreground dark:text-slate-200 truncate">{t.name}</p>
+                                                <p className="text-[9px] text-muted-foreground">
                                                     {t.gateStatus === 'pending' ? '⏳ Chờ duyệt' : '📋 Chưa nộp'}
                                                     {t.assignee && ` • ${t.assignee}`}
                                                 </p>
@@ -3889,14 +3889,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     <CheckCircle2 size={9} /> Đã duyệt ({approved.length})
                                 </p>
                                 <div className="space-y-1.5">
-                                    {approved.length === 0 && <p className="text-[10px] text-slate-400 italic">Không có</p>}
+                                    {approved.length === 0 && <p className="text-[10px] text-muted-foreground italic">Không có</p>}
                                     {approved.map(t => (
                                         <button key={t.id}
                                             onClick={() => setGateModalTask(t)}
                                             className="w-full flex items-center gap-2 p-2 rounded-xl border text-left bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800 hover:scale-[1.01] transition-all">
                                             <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#10b981' }} />
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-[10px] font-bold text-slate-700 dark:text-slate-200 truncate">{t.name}</p>
+                                                <p className="text-[10px] font-bold text-foreground dark:text-slate-200 truncate">{t.name}</p>
                                                 <p className="text-[9px] text-emerald-600">
                                                     ✓ {t.gateApprovedAt ? new Date(t.gateApprovedAt).toLocaleDateString('vi-VN') : 'Đã duyệt'}
                                                 </p>
@@ -3912,14 +3912,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     <AlertTriangle size={9} /> Bị từ chối ({rejected.length})
                                 </p>
                                 <div className="space-y-1.5">
-                                    {rejected.length === 0 && <p className="text-[10px] text-slate-400 italic">Không có</p>}
+                                    {rejected.length === 0 && <p className="text-[10px] text-muted-foreground italic">Không có</p>}
                                     {rejected.map(t => (
                                         <button key={t.id}
                                             onClick={() => setGateModalTask(t)}
                                             className="w-full flex items-center gap-2 p-2 rounded-xl border text-left bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800 hover:scale-[1.01] transition-all">
                                             <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: t.color || '#ef4444' }} />
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-[10px] font-bold text-slate-700 dark:text-slate-200 truncate">{t.name}</p>
+                                                <p className="text-[10px] font-bold text-foreground dark:text-slate-200 truncate">{t.name}</p>
                                                 <p className="text-[9px] text-red-500 truncate">
                                                     ✗ {t.gateApprovedBy || 'Không đạt'}
                                                 </p>
@@ -3936,13 +3936,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
             {/* GĐ5: AI Insights Panel */}
             {showAiInsights && (
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
-                    <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/10 dark:to-orange-900/10">
+                <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+                    <div className="px-4 py-3 border-b border-border dark:border-slate-700 flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/10 dark:to-orange-900/10">
                         <div className="flex items-center gap-2">
                             <Lightbulb size={14} className="text-amber-500" />
-                            <span className="text-xs font-black text-slate-700 dark:text-white">🤖 AI Dự báo Rủi ro ({aiInsights.length})</span>
+                            <span className="text-xs font-black text-foreground dark:text-white">🤖 AI Dự báo Rủi ro ({aiInsights.length})</span>
                         </div>
-                        <button onClick={() => setShowAiInsights(false)} className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors">
+                        <button onClick={() => setShowAiInsights(false)} className="w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-slate-100 transition-colors">
                             <X size={13} />
                         </button>
                     </div>
@@ -3951,23 +3951,23 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             <div className="text-center py-6">
                                 <CheckCircle2 size={28} className="text-emerald-400 mx-auto mb-2" />
                                 <p className="text-xs font-bold text-emerald-600">Không phát hiện rủi ro nào! 🎉</p>
-                                <p className="text-[10px] text-slate-400 mt-1">Dự án đang ổn định.</p>
+                                <p className="text-[10px] text-muted-foreground mt-1">Dự án đang ổn định.</p>
                             </div>
                         ) : (
                             <div className="space-y-2">
                                 {aiInsights.map((insight, i) => (
                                     <div key={i} className={`flex items-start gap-3 p-3 rounded-xl border ${insight.severity === 'high' ? 'bg-red-50/50 dark:bg-red-900/10 border-red-200 dark:border-red-800' :
                                             insight.severity === 'medium' ? 'bg-amber-50/50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800' :
-                                                'bg-slate-50 dark:bg-slate-700/30 border-slate-200 dark:border-slate-600'
+                                                'bg-slate-50 dark:bg-slate-700/30 border-border dark:border-slate-600'
                                         }`}>
                                         <span className="text-lg shrink-0 mt-0.5">{insight.icon}</span>
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{insight.title}</p>
-                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">{insight.desc}</p>
+                                            <p className="text-[11px] font-bold text-foreground dark:text-slate-200">{insight.title}</p>
+                                            <p className="text-[10px] text-muted-foreground dark:text-muted-foreground mt-0.5 leading-relaxed">{insight.desc}</p>
                                         </div>
                                         <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full shrink-0 ${insight.severity === 'high' ? 'bg-red-100 text-red-600' :
                                                 insight.severity === 'medium' ? 'bg-amber-100 text-amber-600' :
-                                                    'bg-slate-100 text-slate-500'
+                                                    'bg-slate-100 text-muted-foreground'
                                             }`}>{insight.severity === 'high' ? 'Cao' : insight.severity === 'medium' ? 'TB' : 'Thấp'}</span>
                                     </div>
                                 ))}
@@ -3980,9 +3980,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
             {/* ====== TASK FORM MODAL ====== */}
             {showForm && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && resetForm()}>
-                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+                    <div className="bg-card border border-border rounded-3xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
                         {/* Header */}
-                        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-gradient-to-r from-orange-500 to-amber-500 rounded-t-3xl flex items-center justify-between">
+                        <div className="px-6 py-4 border-b border-border dark:border-slate-700 bg-gradient-to-r from-orange-500 to-amber-500 rounded-t-3xl flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editing ? <><Edit2 size={18} /> Sửa hạng mục</> : <><Plus size={18} /> Thêm hạng mục</>}
                             </span>
@@ -3993,58 +3993,58 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         <div className="p-6 space-y-4">
                             {/* Task name */}
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Tên hạng mục <span className="text-red-400">*</span></label>
+                                <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5">Tên hạng mục <span className="text-red-400">*</span></label>
                                 <input value={fName} onChange={e => setFName(e.target.value)} placeholder="VD: Đào móng, Đổ bê tông..."
-                                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm font-bold bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" autoFocus />
+                                    className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm font-bold bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" autoFocus />
                             </div>
 
                             {/* WBS Code + Unit + Provisional quantity + expected labor */}
                             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Mã WBS</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5">Mã WBS</label>
                                     <input value={fWbsCode} onChange={e => setFWbsCode(e.target.value)} placeholder="VD: 1.1.3"
-                                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Đơn vị</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5">Đơn vị</label>
                                     <input value={fFallbackUnit} onChange={e => setFFallbackUnit(e.target.value)} placeholder="m³, kg, m²..."
-                                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">KL tạm tính</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5">KL tạm tính</label>
                                     <input type="number" min={0} step="0.001" value={fProvisionalQuantity} onChange={e => setFProvisionalQuantity(e.target.value)} placeholder="0"
-                                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Nhân công dự kiến</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5">Nhân công dự kiến</label>
                                     <input type="number" min={0} step="1" value={fResourceCount} onChange={e => { setFResourceCount(e.target.value); setFResourceType('worker'); }} placeholder="0"
-                                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                                 </div>
                             </div>
 
                             {/* Planned Dates */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> BĐ kế hoạch <span className="text-red-400">*</span></label>
+                                    <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> BĐ kế hoạch <span className="text-red-400">*</span></label>
                                     <input type="date" value={fStart} onChange={e => setFStart(e.target.value)}
-                                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> KT kế hoạch <span className="text-red-400">*</span></label>
+                                    <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> KT kế hoạch <span className="text-red-400">*</span></label>
                                     <input type="date" value={fEnd} onChange={e => setFEnd(e.target.value)}
-                                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                                 </div>
                             </div>
 
                             {/* Actual Dates */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> BĐ thực tế</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> BĐ thực tế</label>
                                     <input type="date" value={fActualStart} onChange={e => setFActualStart(e.target.value)}
                                         className="w-full px-3.5 py-2.5 rounded-xl border border-emerald-200 dark:border-emerald-700 text-sm bg-emerald-50/30 dark:bg-emerald-900/10 focus:ring-2 focus:ring-emerald-500 outline-none" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> KT thực tế</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5 flex items-center gap-1"><Calendar size={10} /> KT thực tế</label>
                                     <input type="date" value={fActualEnd} onChange={e => setFActualEnd(e.target.value)}
                                         className="w-full px-3.5 py-2.5 rounded-xl border border-emerald-200 dark:border-emerald-700 text-sm bg-emerald-50/30 dark:bg-emerald-900/10 focus:ring-2 focus:ring-emerald-500 outline-none" />
                                 </div>
@@ -4060,12 +4060,12 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             {/* Progress + Assignee */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">
+                                    <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5">
                                         Tiến độ: <span className="text-orange-600">{fProgress}%</span>
                                     </label>
                                     <input type="range" min={0} max={100} step={5} value={fProgress} disabled={formProgressReadOnly} onChange={e => setFProgress(e.target.value)}
                                         className="w-full accent-orange-500 disabled:opacity-40" />
-                                    <div className="flex justify-between text-[9px] text-slate-400 mt-0.5">
+                                    <div className="flex justify-between text-[9px] text-muted-foreground mt-0.5">
                                         <span>0%</span><span>50%</span><span>100%</span>
                                     </div>
                                     {formProgressReadOnly && (
@@ -4075,7 +4075,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     )}
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5 flex items-center gap-1"><User size={10} /> Người phụ trách</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5 flex items-center gap-1"><User size={10} /> Người phụ trách</label>
                                     <select
                                         value={fAssigneeUserId}
                                         onChange={e => {
@@ -4083,7 +4083,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                             setFAssigneeUserId(uid);
                                             if (uid) setFAssignee(staffUserMap.get(uid)?.name || '');
                                         }}
-                                        className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-xs bg-transparent focus:ring-2 focus:ring-orange-500 outline-none mb-1.5"
+                                        className="w-full px-3.5 py-2 rounded-xl border border-border dark:border-slate-600 text-xs bg-transparent focus:ring-2 focus:ring-orange-500 outline-none mb-1.5"
                                     >
                                         <option value="">Chọn từ nhân sự dự án...</option>
                                         {watcherOptions.map(opt => (
@@ -4091,12 +4091,12 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                         ))}
                                     </select>
                                     <input value={fAssignee} onChange={e => setFAssignee(e.target.value)} placeholder="Tên hiển thị"
-                                        className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                        className="w-full px-3.5 py-2 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                                 </div>
                             </div>
 
                             <div className="rounded-xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/30 dark:bg-blue-900/10 p-3">
-                                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-1 mb-2">
+                                <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase flex items-center gap-1 mb-2">
                                     <Eye size={11} className="text-blue-500" /> Người theo dõi
                                 </label>
                                 {fWatchers.length > 0 && (
@@ -4118,7 +4118,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                         setFWatchers(prev => prev.includes(e.target.value) ? prev : [...prev, e.target.value]);
                                     }}
                                     disabled={watcherOptions.length === 0}
-                                    className="w-full px-3 py-2 rounded-xl border border-blue-100 dark:border-blue-800 text-xs bg-white/70 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50"
+                                    className="w-full px-3 py-2 rounded-xl border border-blue-500/20 text-xs bg-muted/50 text-foreground focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50"
                                 >
                                     <option value="">{watcherOptions.length === 0 ? 'Chưa có nhân sự dự án' : '+ Thêm người theo dõi'}</option>
                                     {watcherOptions.filter(opt => !fWatchers.includes(opt.id)).map(opt => (
@@ -4128,9 +4128,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             </div>
 
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Nguồn tiến độ</label>
+                                <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5">Nguồn tiến độ</label>
                                 <select value={fProgressMode} onChange={e => setFProgressMode(e.target.value as ProjectTaskProgressMode)}
-                                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none">
+                                    className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none">
                                     <option value="weekly_report">Báo cáo tiến độ tuần</option>
                                     <option value="daily_log">Nhật ký thi công đã xác nhận</option>
                                     <option value="manual">Nhập tay theo kế hoạch thi công</option>
@@ -4142,9 +4142,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             {/* Parent + Color */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Thuộc hạng mục cha</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5">Thuộc hạng mục cha</label>
                                     <select value={fParentId} onChange={e => setFParentId(e.target.value)}
-                                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none">
+                                        className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none">
                                         <option value="">— Gốc (không cha) —</option>
                                         {tasks.filter(t => t.id !== editing?.id).map(t => (
                                             <option key={t.id} value={t.id}>{t.name}</option>
@@ -4152,7 +4152,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Màu sắc</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5">Màu sắc</label>
                                     <div className="flex gap-1.5 flex-wrap">
                                         {COLORS.map(c => (
                                             <button key={c} onClick={() => setFColor(c)}
@@ -4164,9 +4164,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             </div>
 
                             {contractItems.length > 0 && (
-                                <div className="border border-slate-100 dark:border-slate-700 rounded-xl p-3">
-                                    <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1">Liên kết BOQ hợp đồng tham khảo</label>
-                                    <p className="text-[10px] text-slate-400 mb-2">Đối chiếu tham khảo nằm ở BOQ triển khai &gt; Đối chiếu BOQ hợp đồng.</p>
+                                <div className="border border-border dark:border-slate-700 rounded-xl p-3">
+                                    <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1">Liên kết BOQ hợp đồng tham khảo</label>
+                                    <p className="text-[10px] text-muted-foreground mb-2">Đối chiếu tham khảo nằm ở BOQ triển khai &gt; Đối chiếu BOQ hợp đồng.</p>
                                     <div className="max-h-28 overflow-y-auto space-y-1">
                                         {contractItems.map(item => (
                                             <label key={item.id} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
@@ -4189,22 +4189,22 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             )}
 
                             {/* Milestone */}
-                            <label className="flex items-center gap-2.5 cursor-pointer p-2.5 rounded-xl border border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                            <label className="flex items-center gap-2.5 cursor-pointer p-2.5 rounded-xl border border-border dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                                 <input type="checkbox" checked={fMilestone} onChange={e => setFMilestone(e.target.checked)}
                                     className="w-4 h-4 rounded accent-red-500" />
                                 <span className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1"><Flag size={12} className="text-red-500" /> Đánh dấu là Milestone (Mốc quan trọng)</span>
                             </label>
 
                             {/* GĐ1: Dependencies */}
-                            <div className="border border-slate-100 dark:border-slate-700 rounded-xl p-3 space-y-2">
-                                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-1"><Link2 size={10} /> Phụ thuộc (Dependencies)</label>
+                            <div className="border border-border dark:border-slate-700 rounded-xl p-3 space-y-2">
+                                <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase flex items-center gap-1"><Link2 size={10} /> Phụ thuộc (Dependencies)</label>
                                 {fDeps.map((dep, i) => (
                                     <div key={i} className="flex items-center gap-2">
                                         <select value={dep.taskId} onChange={e => {
                                             const newDeps = [...fDeps];
                                             newDeps[i] = { ...newDeps[i], taskId: e.target.value };
                                             setFDeps(newDeps);
-                                        }} className="flex-1 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-xs bg-transparent">
+                                        }} className="flex-1 px-2 py-1.5 rounded-lg border border-border dark:border-slate-600 text-xs bg-transparent">
                                             <option value="">— Chọn task —</option>
                                             {tasks.filter(t => t.id !== editing?.id).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                                         </select>
@@ -4212,13 +4212,13 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                             const newDeps = [...fDeps];
                                             newDeps[i] = { ...newDeps[i], type: e.target.value as TaskDependencyType };
                                             setFDeps(newDeps);
-                                        }} className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-xs bg-transparent font-bold">
+                                        }} className="w-20 px-2 py-1.5 rounded-lg border border-border dark:border-slate-600 text-xs bg-transparent font-bold">
                                             <option value="FS">FS</option>
                                             <option value="SS">SS</option>
                                             <option value="FF">FF</option>
                                             <option value="SF">SF</option>
                                         </select>
-                                        <label className="flex items-center gap-1 text-[9px] font-bold text-slate-500 whitespace-nowrap">
+                                        <label className="flex items-center gap-1 text-[9px] font-bold text-muted-foreground whitespace-nowrap">
                                             <input type="checkbox" checked={!!dep.requiresGateApproval} onChange={e => {
                                                 const newDeps = [...fDeps];
                                                 newDeps[i] = { ...newDeps[i], requiresGateApproval: e.target.checked };
@@ -4237,14 +4237,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
                             {/* Notes */}
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase block mb-1.5">Ghi chú</label>
+                                <label className="text-[10px] font-bold text-muted-foreground dark:text-muted-foreground uppercase block mb-1.5">Ghi chú</label>
                                 <textarea value={fNotes} onChange={e => setFNotes(e.target.value)} rows={2} placeholder="Ghi chú, yêu cầu kỹ thuật..."
-                                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none resize-none" />
+                                    className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-orange-500 outline-none resize-none" />
                             </div>
                         </div>
 
                         {/* Footer */}
-                        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center">
+                        <div className="px-6 py-4 border-t border-border dark:border-slate-700 flex justify-between items-center">
                             <div>
                                 {editing && (
                                     <button onClick={() => { setDeleteTarget(editing); resetForm(); }}
@@ -4267,24 +4267,24 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
             {completionModalTask && (
                 <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && setCompletionModalTask(null)}>
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md mx-4 overflow-hidden">
-                        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                    <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-border dark:border-slate-700 flex items-center justify-between">
                             <div className="flex items-center gap-2 min-w-0">
                                 <ClipboardCheck size={18} className="text-amber-600 shrink-0" />
                                 <div className="min-w-0">
-                                    <h4 className="text-sm font-black text-slate-800 dark:text-white truncate">Báo hoàn thành công việc</h4>
-                                    <p className="text-[10px] text-slate-500 truncate">{completionModalTask.name}</p>
+                                    <h4 className="text-sm font-black text-foreground dark:text-white truncate">Báo hoàn thành công việc</h4>
+                                    <p className="text-[10px] text-muted-foreground truncate">{completionModalTask.name}</p>
                                 </div>
                             </div>
-                            <button onClick={() => setCompletionModalTask(null)} className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
+                            <button onClick={() => setCompletionModalTask(null)} className="w-8 h-8 rounded-xl flex items-center justify-center text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-700">
                                 <X size={16} />
                             </button>
                         </div>
                         <div className="p-5 space-y-4">
                             <div className="grid grid-cols-3 gap-2">
                                 <div className="rounded-xl bg-slate-50 dark:bg-slate-700/40 p-2">
-                                    <p className="text-[9px] font-bold text-slate-400 uppercase">KL tạm tính</p>
-                                    <p className="text-sm font-black text-slate-700 dark:text-slate-200">{formatQuantity(completionModalTask.provisionalQuantity)}</p>
+                                    <p className="text-[9px] font-bold text-muted-foreground uppercase">KL tạm tính</p>
+                                    <p className="text-sm font-black text-foreground dark:text-slate-200">{formatQuantity(completionModalTask.provisionalQuantity)}</p>
                                 </div>
                                 <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 p-2">
                                     <p className="text-[9px] font-bold text-emerald-500 uppercase">Đã duyệt</p>
@@ -4297,18 +4297,18 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             </div>
 
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Khối lượng hoàn thành</label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1.5">Khối lượng hoàn thành</label>
                                 <input type="number" min={0} step="0.001" value={completionQty} onChange={e => setCompletionQty(e.target.value)}
-                                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-amber-500 outline-none" />
+                                    className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-amber-500 outline-none" />
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Ghi chú</label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1.5">Ghi chú</label>
                                 <textarea value={completionNote} onChange={e => setCompletionNote(e.target.value)} rows={3}
                                     placeholder="Mô tả phần việc đã hoàn thành, vị trí, điều kiện thi công..."
-                                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-amber-500 outline-none resize-none" />
+                                    className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-amber-500 outline-none resize-none" />
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Bằng chứng</label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1.5">Bằng chứng</label>
                                 <label className="flex items-center justify-center gap-2 px-3 py-3 rounded-xl border border-dashed border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10 text-xs font-bold text-amber-700 cursor-pointer hover:bg-amber-100/70 transition-colors">
                                     <Paperclip size={14} /> Chọn ảnh/file
                                     <input type="file" multiple className="hidden" onChange={e => setCompletionFiles(Array.from(e.target.files || []))} />
@@ -4316,7 +4316,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                 {completionFiles.length > 0 && (
                                     <div className="mt-2 space-y-1">
                                         {completionFiles.map(file => (
-                                            <div key={`${file.name}-${file.size}`} className="flex items-center justify-between gap-2 text-[10px] font-bold text-slate-500 bg-slate-50 dark:bg-slate-700/40 rounded-lg px-2 py-1">
+                                            <div key={`${file.name}-${file.size}`} className="flex items-center justify-between gap-2 text-[10px] font-bold text-muted-foreground bg-slate-50 dark:bg-slate-700/40 rounded-lg px-2 py-1">
                                                 <span className="truncate">{file.name}</span>
                                                 <span className="shrink-0">{Math.round(file.size / 1024)} KB</span>
                                             </div>
@@ -4325,7 +4325,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                 )}
                             </div>
                         </div>
-                        <div className="px-5 py-4 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2">
+                        <div className="px-5 py-4 border-t border-border dark:border-slate-700 flex justify-end gap-2">
                             <button onClick={() => setCompletionModalTask(null)} className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
                                 Huỷ
                             </button>
@@ -4341,20 +4341,20 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
             {completionReturnRequest && (
                 <div className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && setCompletionReturnRequest(null)}>
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-sm mx-4 overflow-hidden">
-                        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
-                            <h4 className="text-sm font-black text-slate-800 dark:text-white">Trả lại phiếu hoàn thành</h4>
-                            <button onClick={() => setCompletionReturnRequest(null)} className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
+                    <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+                        <div className="px-5 py-4 border-b border-border dark:border-slate-700 flex items-center justify-between">
+                            <h4 className="text-sm font-black text-foreground dark:text-white">Trả lại phiếu hoàn thành</h4>
+                            <button onClick={() => setCompletionReturnRequest(null)} className="w-8 h-8 rounded-xl flex items-center justify-center text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-700">
                                 <X size={16} />
                             </button>
                         </div>
                         <div className="p-5">
-                            <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">Lý do trả lại</label>
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1.5">Lý do trả lại</label>
                             <textarea value={completionReturnReason} onChange={e => setCompletionReturnReason(e.target.value)} rows={4}
-                                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-red-500 outline-none resize-none"
+                                className="w-full px-3.5 py-2.5 rounded-xl border border-border dark:border-slate-600 text-sm bg-transparent focus:ring-2 focus:ring-red-500 outline-none resize-none"
                                 placeholder="Ví dụ: thiếu ảnh nghiệm thu, khối lượng chưa đúng, cần bổ sung biên bản..." />
                         </div>
-                        <div className="px-5 py-4 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2">
+                        <div className="px-5 py-4 border-t border-border dark:border-slate-700 flex justify-end gap-2">
                             <button onClick={() => setCompletionReturnRequest(null)} className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
                                 Huỷ
                             </button>
@@ -4389,27 +4389,27 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
             {/* GĐ3: Photo Tooltip */}
             {photoTooltip && (
-                <div className="fixed z-[9999] pointer-events-none bg-white rounded-lg shadow-xl border border-slate-200 p-2"
+                <div className="fixed z-[9999] pointer-events-none bg-card rounded-lg shadow-xl border border-border p-2"
                     style={{ left: photoTooltip.x + 15, top: photoTooltip.y + 15 }}>
                     <img src={photoTooltip.photoUrl} className="w-32 h-24 object-cover rounded shadow-sm mb-1" />
-                    <div className="text-[10px] font-bold text-slate-700 truncate w-32">{photoTooltip.taskName}</div>
-                    <div className="text-[9px] text-slate-500">{new Date(photoTooltip.date).toLocaleDateString('vi-VN')}</div>
+                    <div className="text-[10px] font-bold text-foreground truncate w-32">{photoTooltip.taskName}</div>
+                    <div className="text-[9px] text-muted-foreground">{new Date(photoTooltip.date).toLocaleDateString('vi-VN')}</div>
                 </div>
             )}
 
             {/* ====== GĐ3: EXCEL IMPORT MODAL ====== */}
             {showImportModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-[95vw] max-w-6xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                    <div className="bg-card border border-border rounded-2xl shadow-2xl w-[95vw] max-w-6xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
                         {/* Header */}
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-border dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
                                     <FileSpreadsheet size={20} />
                                 </div>
                                 <div>
-                                    <h3 className="text-lg font-bold text-slate-800 dark:text-white">Xem trước dữ liệu Excel</h3>
-                                    <p className="text-sm text-slate-500 font-medium">
+                                    <h3 className="text-lg font-bold text-foreground dark:text-white">Xem trước dữ liệu Excel</h3>
+                                    <p className="text-sm text-muted-foreground font-medium">
                                         {importMode === 'update' ? 'Chế độ cập nhật theo Mã WBS' : 'Chế độ nhập mới'} • Hệ thống tìm thấy {importRows.length} hạng mục từ file
                                     </p>
                                 </div>
@@ -4421,7 +4421,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                 <button onClick={downloadTemplate} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
                                     <Download size={14} /> Tải file mẫu
                                 </button>
-                                <button onClick={() => { setShowImportModal(false); setImportRows([]); setImportErrors({}); setImportMode('create'); }} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                                <button onClick={() => { setShowImportModal(false); setImportRows([]); setImportErrors({}); setImportMode('create'); }} className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors">
                                     <X size={16} />
                                 </button>
                             </div>
@@ -4429,20 +4429,20 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
                         {/* Content */}
                         <div className="flex-1 overflow-auto bg-slate-50/50 dark:bg-slate-900/50 p-6">
-                            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
+                            <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left text-[11px]">
-                                        <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 uppercase tracking-wider font-bold">
+                                        <thead className="bg-slate-50 dark:bg-slate-800/50 text-muted-foreground uppercase tracking-wider font-bold">
                                             <tr>
-                                                <th className="px-3 py-2 border-b border-slate-200 w-10 text-center">STT</th>
-                                                <th className="px-3 py-2 border-b border-slate-200">Mã WBS</th>
-                                                <th className="px-3 py-2 border-b border-slate-200">Công việc</th>
-                                                <th className="px-3 py-2 border-b border-slate-200">BĐ Kế hoạch</th>
-                                                <th className="px-3 py-2 border-b border-slate-200">KT Kế hoạch</th>
-                                                <th className="px-3 py-2 border-b border-slate-200">KL tạm tính</th>
-                                                <th className="px-3 py-2 border-b border-slate-200">Nhân công dự kiến</th>
-                                                <th className="px-3 py-2 border-b border-slate-200">Tiến độ</th>
-                                                <th className="px-3 py-2 border-b border-slate-200">Trạng thái</th>
+                                                <th className="px-3 py-2 border-b border-border w-10 text-center">STT</th>
+                                                <th className="px-3 py-2 border-b border-border">Mã WBS</th>
+                                                <th className="px-3 py-2 border-b border-border">Công việc</th>
+                                                <th className="px-3 py-2 border-b border-border">BĐ Kế hoạch</th>
+                                                <th className="px-3 py-2 border-b border-border">KT Kế hoạch</th>
+                                                <th className="px-3 py-2 border-b border-border">KL tạm tính</th>
+                                                <th className="px-3 py-2 border-b border-border">Nhân công dự kiến</th>
+                                                <th className="px-3 py-2 border-b border-border">Tiến độ</th>
+                                                <th className="px-3 py-2 border-b border-border">Trạng thái</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-700/40 dark:divide-slate-700">
@@ -4455,9 +4455,9 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                                 const progressPreview = hasExcelValue(row, ['Tiến độ (%)']) ? `${parseProgress(getExcelValue(row, ['Tiến độ (%)']))}%` : (importMode === 'update' ? 'Giữ nguyên' : '0%');
                                                 return (
                                                     <tr key={idx} className={`hover:bg-slate-50 transition-colors ${err ? 'bg-red-50/50 dark:bg-red-900/10' : ''}`}>
-                                                        <td className="px-3 py-2 text-center text-slate-400">{idx + 1}</td>
+                                                        <td className="px-3 py-2 text-center text-muted-foreground">{idx + 1}</td>
                                                         <td className="px-3 py-2 font-mono text-slate-600">{wbsPreview}</td>
-                                                        <td className="px-3 py-2 font-semibold text-slate-700">{taskPreview}</td>
+                                                        <td className="px-3 py-2 font-semibold text-foreground">{taskPreview}</td>
                                                         <td className="px-3 py-2 text-slate-600">{plannedStart ? fmtDate(plannedStart) : '-'}</td>
                                                         <td className="px-3 py-2 text-slate-600">{plannedEnd ? fmtDate(plannedEnd) : '-'}</td>
                                                         <td className="px-3 py-2 text-slate-600">{hasExcelValue(row, ['Khối lượng tạm tính']) ? formatQuantity(parseNonNegativeNumber(getExcelValue(row, ['Khối lượng tạm tính']))) : (importMode === 'update' ? 'Giữ nguyên' : '0')}</td>
@@ -4486,7 +4486,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         </div>
 
                         {/* Footer */}
-                        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center bg-white dark:bg-slate-800">
+                        <div className="px-6 py-4 border-t border-border flex justify-between items-center bg-card">
                             <div className="flex gap-4 text-xs font-bold">
                                 <span className="text-emerald-600 flex items-center gap-1"><CheckCircle2 size={14} /> {importRows.length - Object.keys(importErrors).length} Hợp lệ</span>
                                 {Object.keys(importErrors).length > 0 && (

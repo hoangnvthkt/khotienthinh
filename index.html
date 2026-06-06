@@ -35,6 +35,19 @@
             success: '#059669',   // emerald-600
             danger: '#dc2626',
             warning: '#f59e0b',
+
+            // Semantic Theme Tokens
+            background: 'var(--background)',
+            foreground: 'var(--foreground)',
+            card: 'var(--card)',
+            'card-foreground': 'var(--card-foreground)',
+            'muted-foreground': 'var(--muted-foreground)',
+            border: 'var(--border)',
+            muted: 'var(--muted)',
+            popover: 'var(--popover)',
+            'popover-foreground': 'var(--popover-foreground)',
+            destructive: 'var(--destructive)',
+            'destructive-foreground': 'var(--destructive-foreground)',
           },
           keyframes: {
             shrink: {
@@ -152,6 +165,18 @@
 
     /* Neon Accent CSS Variables */
     :root {
+      --background: #f8fafc; /* slate-50 */
+      --foreground: #0f172a; /* slate-900 */
+      --card: #ffffff;
+      --card-foreground: #0f172a;
+      --muted: #f1f5f9; /* slate-100 */
+      --muted-foreground: #64748b; /* slate-500 */
+      --border: #e2e8f0; /* slate-250 */
+      --popover: #ffffff;
+      --popover-foreground: #0f172a;
+      --destructive: #dc2626;
+      --destructive-foreground: #ffffff;
+
       --neon-blue: #38BDF8;
       --neon-green: #34D399;
       --neon-amber: #FBBF24;
@@ -170,6 +195,20 @@
       -webkit-backdrop-filter: blur(16px);
       border: 1px solid rgba(255, 255, 255, 0.5);
       box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+    }
+
+    .dark {
+      --background: #101214; /* layer-0 */
+      --foreground: #cbd5e1; /* slate-300 */
+      --card: #23272c; /* layer-2 */
+      --card-foreground: #f1f5f9; /* slate-100 */
+      --muted: #1c1f22; /* layer-1 */
+      --muted-foreground: #94a3b8; /* slate-400 */
+      --border: #2d3135; /* border-subtle */
+      --popover: #1c1f22; /* layer-1 */
+      --popover-foreground: #f1f5f9;
+      --destructive: #ef4444;
+      --destructive-foreground: #ffffff;
     }
 
     .dark .glass-panel {

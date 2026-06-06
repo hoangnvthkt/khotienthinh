@@ -29,6 +29,21 @@ const fromDb = (obj: any) => mapKeys(obj, toCamel);
 
 const FULFILLMENT_BATCH_TABLE = 'material_request_fulfillment_batches';
 const FULFILLMENT_LINE_TABLE = 'material_request_fulfillment_lines';
+const DEFAULT_PROJECT_LIST_PAGE_SIZE = 500;
+
+type ListPage<T> = {
+    rows: T[];
+    nextCursor: string | null;
+    hasMore: boolean;
+};
+
+const normalizePageLimit = (limit?: number | null): number =>
+    Math.max(1, Math.min(Math.floor(Number(limit || DEFAULT_PROJECT_LIST_PAGE_SIZE)), 1000));
+
+const parseOffsetCursor = (cursor?: string | null): number => {
+    const offset = Number(cursor || 0);
+    return Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 0;
+};
 
 const extractReturnTransactionIds = (note?: string | null): string[] => {
     if (!note) return [];
@@ -120,6 +135,32 @@ const getPoReceiptCleanupState = async (po: PurchaseOrder) => {
         hasInsufficientReturnQty,
         hasCompletedReturnTransaction: completedReturnTransactionIds.size > 0,
     };
+};
+
+const mapPage = <T>(
+    data: any[] | null,
+    limit: number,
+    offset: number,
+    mapper: (row: any) => T,
+): ListPage<T> => {
+    const rawRows = data || [];
+    const hasMore = rawRows.length > limit;
+    return {
+        rows: rawRows.slice(0, limit).map(mapper),
+        hasMore,
+        nextCursor: hasMore ? String(offset + limit) : null,
+    };
+};
+
+const loadAllPages = async <T>(loadPage: (cursor: string | null) => Promise<ListPage<T>>): Promise<T[]> => {
+    const rows: T[] = [];
+    let cursor: string | null = null;
+    do {
+        const page = await loadPage(cursor);
+        rows.push(...page.rows);
+        cursor = page.nextCursor;
+    } while (cursor);
+    return rows;
 };
 
 const taskFromDb = (row: any): ProjectTask => ({
@@ -584,15 +625,96 @@ export const vendorService = {
 };
 
 // ==================== PURCHASE ORDERS ====================
+const listPurchaseOrdersPage = async (input: {
+    projectIdOrSiteId: string;
+    constructionSiteId?: string | null;
+    limit?: number | null;
+    cursor?: string | null;
+}): Promise<ListPage<PurchaseOrder>> => {
+    const limit = normalizePageLimit(input.limit);
+    const offset = parseOffsetCursor(input.cursor);
+    const { data, error } = await supabase
+        .from('purchase_orders')
+        .select('*')
+        .or(buildProjectScopeFilter(input.projectIdOrSiteId, input.constructionSiteId))
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(offset, offset + limit);
+    if (error) throw error;
+    return mapPage(data || [], limit, offset, fromDb);
+};
+
+const listAllPurchaseOrders = async (projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<PurchaseOrder[]> => {
+    const rows = await loadAllPages(cursor => listPurchaseOrdersPage({
+        projectIdOrSiteId,
+        constructionSiteId,
+        cursor,
+    }));
+    return dedupeRowsById(rows);
+};
+
+const listStockPurchaseOrdersPage = async (input: {
+    limit?: number | null;
+    cursor?: string | null;
+} = {}): Promise<ListPage<PurchaseOrder>> => {
+    const limit = normalizePageLimit(input.limit);
+    const offset = parseOffsetCursor(input.cursor);
+    const { data, error } = await supabase
+        .from('purchase_orders')
+        .select('*')
+        .eq('source_mode', 'proactive_stock')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(offset, offset + limit);
+    if (error) throw error;
+    return mapPage(data || [], limit, offset, fromDb);
+};
+
+const listAllStockPurchaseOrders = async (): Promise<PurchaseOrder[]> =>
+    loadAllPages(cursor => listStockPurchaseOrdersPage({ cursor }));
+
+const listPurchaseOrderRequestLineLinksPage = async (input: {
+    projectIdOrSiteId: string;
+    constructionSiteId?: string | null;
+    limit?: number | null;
+    cursor?: string | null;
+}): Promise<ListPage<PurchaseOrderRequestLineLink>> => {
+    const limit = normalizePageLimit(input.limit);
+    const offset = parseOffsetCursor(input.cursor);
+    const { data, error } = await supabase
+        .from('purchase_order_request_lines')
+        .select('*')
+        .or(buildProjectScopeFilter(input.projectIdOrSiteId, input.constructionSiteId))
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(offset, offset + limit);
+    if (error) throw error;
+    return mapPage(data || [], limit, offset, fromDb);
+};
+
+const listAllPurchaseOrderRequestLineLinks = async (
+    projectIdOrSiteId: string,
+    constructionSiteId?: string | null,
+): Promise<PurchaseOrderRequestLineLink[]> => {
+    const rows = await loadAllPages(cursor => listPurchaseOrderRequestLineLinksPage({
+        projectIdOrSiteId,
+        constructionSiteId,
+        cursor,
+    }));
+    return dedupeRowsById(rows);
+};
+
 export const poService = {
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<PurchaseOrder[]> {
-        const { data, error } = await supabase
-            .from('purchase_orders')
-            .select('*')
-            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-            .order('created_at', { ascending: false });
-        if (error) throw error;
-        return dedupeRowsById(data || []).map(fromDb);
+        return listAllPurchaseOrders(projectIdOrSiteId, constructionSiteId);
+    },
+    async listPage(input: {
+        projectIdOrSiteId: string;
+        constructionSiteId?: string | null;
+        limit?: number | null;
+        cursor?: string | null;
+    }): Promise<ListPage<PurchaseOrder>> {
+        return listPurchaseOrdersPage(input);
     },
     async upsert(item: PurchaseOrder): Promise<void> {
         const { error } = await supabase
@@ -615,22 +737,24 @@ export const poService = {
         if (error) throw error;
     },
     async listStockOrders(): Promise<PurchaseOrder[]> {
-        const { data, error } = await supabase
-            .from('purchase_orders')
-            .select('*')
-            .eq('source_mode', 'proactive_stock')
-            .order('created_at', { ascending: false });
-        if (error) throw error;
-        return (data || []).map(fromDb);
+        return listAllStockPurchaseOrders();
+    },
+    async listStockOrdersPage(input: {
+        limit?: number | null;
+        cursor?: string | null;
+    } = {}): Promise<ListPage<PurchaseOrder>> {
+        return listStockPurchaseOrdersPage(input);
     },
     async listRequestLineLinks(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<PurchaseOrderRequestLineLink[]> {
-        const { data, error } = await supabase
-            .from('purchase_order_request_lines')
-            .select('*')
-            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-            .order('created_at', { ascending: false });
-        if (error) throw error;
-        return dedupeRowsById(data || []).map(fromDb);
+        return listAllPurchaseOrderRequestLineLinks(projectIdOrSiteId, constructionSiteId);
+    },
+    async listRequestLineLinksPage(input: {
+        projectIdOrSiteId: string;
+        constructionSiteId?: string | null;
+        limit?: number | null;
+        cursor?: string | null;
+    }): Promise<ListPage<PurchaseOrderRequestLineLink>> {
+        return listPurchaseOrderRequestLineLinksPage(input);
     },
     async replaceRequestLineLinks(purchaseOrderId: string, links: PurchaseOrderRequestLineLink[]): Promise<void> {
         const { error: deleteError } = await supabase

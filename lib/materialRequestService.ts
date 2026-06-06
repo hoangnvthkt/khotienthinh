@@ -15,6 +15,21 @@ import {
 import { materialRequestBoqLineSnapshotService } from './materialRequestBoqLineSnapshotService';
 
 const EVENT_TABLE = 'material_request_events';
+const DEFAULT_PROJECT_REQUEST_PAGE_SIZE = 500;
+
+export type MaterialRequestListPage = {
+  rows: MaterialRequest[];
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
+const normalizePageLimit = (limit?: number | null): number =>
+  Math.max(1, Math.min(Math.floor(Number(limit || DEFAULT_PROJECT_REQUEST_PAGE_SIZE)), 1000));
+
+const parseOffsetCursor = (cursor?: string | null): number => {
+  const offset = Number(cursor || 0);
+  return Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 0;
+};
 
 export const MATERIAL_REQUEST_STEP_SLA_HOURS: Record<MaterialRequestWorkflowStep, number | null> = {
   draft: null,
@@ -58,6 +73,57 @@ const mapEventFromDb = (row: any): MaterialRequestEvent => ({
   metadata: row.metadata || {},
   createdAt: row.created_at ?? row.createdAt,
 });
+
+const listProjectRequestsPage = async (input: {
+  projectId: string;
+  constructionSiteId?: string | null;
+  limit?: number | null;
+  cursor?: string | null;
+}): Promise<MaterialRequestListPage> => {
+  if (!input.projectId) return { rows: [], nextCursor: null, hasMore: false };
+  const limit = normalizePageLimit(input.limit);
+  const offset = parseOffsetCursor(input.cursor);
+
+  let query = supabase
+    .from('requests')
+    .select('*')
+    .eq('request_origin', 'project')
+    .eq('project_id', input.projectId)
+    .order('created_date', { ascending: false })
+    .order('id', { ascending: false })
+    .range(offset, offset + limit);
+
+  if (input.constructionSiteId) {
+    query = query.eq('construction_site_id', input.constructionSiteId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const rows = (data || []).slice(0, limit).map(mapMaterialRequestFromDb);
+  const hasMore = (data || []).length > limit;
+  return {
+    rows,
+    hasMore,
+    nextCursor: hasMore ? String(offset + limit) : null,
+  };
+};
+
+const listAllProjectRequests = async (projectId: string, constructionSiteId?: string | null): Promise<MaterialRequest[]> => {
+  const rows: MaterialRequest[] = [];
+  let cursor: string | null = null;
+  do {
+    const page = await listProjectRequestsPage({
+      projectId,
+      constructionSiteId,
+      limit: DEFAULT_PROJECT_REQUEST_PAGE_SIZE,
+      cursor,
+    });
+    rows.push(...page.rows);
+    cursor = page.nextCursor;
+  } while (cursor);
+  return rows;
+};
 
 export const getMaterialRequestWorkflowPatch = (
   step: MaterialRequestWorkflowStep,
@@ -180,14 +246,16 @@ export const materialRequestService = {
 
   async listByProject(projectId: string): Promise<MaterialRequest[]> {
     if (!projectId) return [];
-    const { data, error } = await supabase
-      .from('requests')
-      .select('*')
-      .eq('request_origin', 'project')
-      .eq('project_id', projectId)
-      .order('created_date', { ascending: false });
-    if (error) throw error;
-    return (data || []).map(mapMaterialRequestFromDb);
+    return listAllProjectRequests(projectId);
+  },
+
+  async listByProjectPage(input: {
+    projectId: string;
+    constructionSiteId?: string | null;
+    limit?: number | null;
+    cursor?: string | null;
+  }): Promise<MaterialRequestListPage> {
+    return listProjectRequestsPage(input);
   },
 
   async listEventsByRequestIds(requestIds: string[]): Promise<Record<string, MaterialRequestEvent[]>> {

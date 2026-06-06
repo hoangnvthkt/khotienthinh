@@ -587,12 +587,12 @@ const SettingsInspectionTemplates: React.FC = () => {
       {/* 3-Tier Multi-Navigation System */}
       <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6">
         {/* Tier 1 & 2 Left Sidebar: Categories & Work Types */}
-        <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm space-y-5 h-fit">
+        <div className="bg-card rounded-3xl p-5 border border-border shadow-sm space-y-5 h-fit">
           {/* Hạng mục chuẩn (Categories) Selector */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                <Layers size={13} className="text-slate-500" />
+              <h3 className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1">
+                <Layers size={13} className="text-muted-foreground" />
                 1. Hạng mục chuẩn
               </h3>
               <button
@@ -613,25 +613,25 @@ const SettingsInspectionTemplates: React.FC = () => {
                       onClick={() => handleCategoryChange(cat.id)}
                       className={`w-full px-3 py-3 rounded-2xl border text-xs font-black transition-all text-center flex flex-col items-center justify-center gap-1.5 min-h-[75px] ${
                         isSelected
-                          ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm'
-                          : 'bg-white border-slate-100 text-slate-600 hover:border-slate-200'
+                          ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400 shadow-sm'
+                          : 'bg-card border-border text-muted-foreground hover:border-border/80'
                       }`}
                     >
                       <span className="text-xl">{icon}</span>
                       <span className="truncate w-full px-1">{cat.name}</span>
                     </button>
                     {/* Hover actions */}
-                    <div className="absolute top-1.5 right-1.5 hidden group-hover:flex gap-1 bg-white/95 backdrop-blur-sm p-1 rounded-lg shadow-sm border border-slate-100">
+                    <div className="absolute top-1.5 right-1.5 hidden group-hover:flex gap-1 bg-card/95 backdrop-blur-sm p-1 rounded-lg shadow-sm border border-border">
                       <button
                         onClick={(e) => handleOpenEditCat(cat, e)}
-                        className="p-1 rounded text-slate-500 hover:text-indigo-600 hover:bg-slate-50 transition"
+                        className="p-1 rounded text-muted-foreground hover:text-indigo-600 hover:bg-muted transition"
                         title="Sửa"
                       >
                         <Edit2 size={10} />
                       </button>
                       <button
                         onClick={(e) => handleDeleteCategory(cat, e)}
-                        className="p-1 rounded text-slate-500 hover:text-red-600 hover:bg-slate-50 transition"
+                        className="p-1 rounded text-muted-foreground hover:text-red-600 hover:bg-muted transition"
                         title="Xóa"
                       >
                         <Trash2 size={10} />
@@ -645,10 +645,10 @@ const SettingsInspectionTemplates: React.FC = () => {
 
           {/* Loại công tác (Work Types) Menu */}
           {selectedCatId && (
-            <div className="border-t border-slate-100 pt-4">
+            <div className="border-t border-border pt-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                  <Compass size={13} className="text-slate-500" />
+                <h3 className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1">
+                  <Compass size={13} className="text-muted-foreground" />
                   2. Loại công tác
                 </h3>
                 <button
@@ -660,7 +660,7 @@ const SettingsInspectionTemplates: React.FC = () => {
                 </button>
               </div>
               {workTypes.length === 0 ? (
-                <p className="text-xs text-slate-400 italic font-bold p-3">Chưa có công tác nào.</p>
+                <p className="text-xs text-muted-foreground italic font-bold p-3">Chưa có công tác nào.</p>
               ) : (
                 <div className="space-y-1.5">
                   {workTypes.map(wt => {
@@ -678,7 +678,7 @@ const SettingsInspectionTemplates: React.FC = () => {
                           className={`w-full flex items-center justify-between pl-4 pr-16 py-3 rounded-xl text-xs font-black transition-all ${
                             isSelected
                               ? 'bg-indigo-600 text-white shadow-md'
-                              : 'text-slate-700 hover:bg-slate-50 border border-transparent'
+                              : 'text-foreground hover:bg-muted/50 border border-transparent'
                           }`}
                         >
                           <span className="truncate">{wt.name}</span>
@@ -691,7 +691,7 @@ const SettingsInspectionTemplates: React.FC = () => {
                             className={`p-1.5 rounded transition ${
                               isSelected
                                 ? 'text-white/80 hover:text-white hover:bg-white/10'
-                                : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'
+                                : 'text-muted-foreground hover:text-indigo-400 hover:bg-muted'
                             }`}
                             title="Sửa"
                           >
@@ -702,7 +702,7 @@ const SettingsInspectionTemplates: React.FC = () => {
                             className={`p-1.5 rounded transition ${
                               isSelected
                                 ? 'text-white/80 hover:text-white hover:bg-white/10'
-                                : 'text-slate-400 hover:text-red-600 hover:bg-slate-100'
+                                : 'text-muted-foreground hover:text-red-400 hover:bg-muted'
                             }`}
                             title="Xóa"
                           >
@@ -722,14 +722,14 @@ const SettingsInspectionTemplates: React.FC = () => {
         <div className="space-y-6">
           {/* Templates Grid */}
           {selectedWtId && (
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden min-h-[250px]">
-              <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between flex-wrap gap-4">
+            <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden min-h-[250px]">
+              <div className="p-6 border-b border-border bg-muted/30 flex items-center justify-between flex-wrap gap-4">
                 <div>
-                  <h2 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                  <h2 className="text-sm font-black text-foreground flex items-center gap-2">
                     <ClipboardCheck size={20} className="text-indigo-600" />
                     Mẫu nghiệm thu chuẩn
                   </h2>
-                  <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                  <p className="text-xs text-muted-foreground font-semibold mt-0.5">
                     Chọn một mẫu để thiết lập các Section động và tiêu chí con QA/QC tương ứng.
                   </p>
                 </div>
@@ -747,9 +747,9 @@ const SettingsInspectionTemplates: React.FC = () => {
                     <div className="animate-spin w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full" />
                   </div>
                 ) : templates.length === 0 ? (
-                  <div className="py-12 text-center border border-dashed border-slate-200 rounded-2xl">
+                  <div className="py-12 text-center border border-dashed border-border rounded-2xl">
                     <Sparkles size={32} className="mx-auto text-slate-300 mb-2" />
-                    <p className="text-xs font-black text-slate-500">Chưa có mẫu nào cho công tác này</p>
+                    <p className="text-xs font-black text-muted-foreground">Chưa có mẫu nào cho công tác này</p>
                     <button
                       onClick={handleOpenCreateTpl}
                       className="mt-2 text-xs text-indigo-600 font-black hover:underline"
@@ -767,46 +767,46 @@ const SettingsInspectionTemplates: React.FC = () => {
                           onClick={() => loadTemplateDetails(tpl.id)}
                           className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
                             isSelected
-                              ? 'bg-indigo-50/40 border-indigo-300 shadow-sm ring-1 ring-indigo-200'
-                              : 'bg-white border-slate-100 hover:border-slate-200 hover:shadow-sm'
+                              ? 'bg-indigo-500/5 border-indigo-500/30 shadow-sm ring-1 ring-indigo-500/20'
+                              : 'bg-card border-border hover:border-border/80 hover:shadow-sm'
                           }`}
                         >
                           <div>
                             <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded">
+                              <span className="text-[10px] font-mono font-bold bg-slate-100 text-muted-foreground px-2 py-0.5 rounded">
                                 {tpl.code} (v{tpl.version})
                               </span>
                               <span className={`px-2 py-0.5 rounded text-[8px] font-black ${
-                                tpl.isActive ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-200 text-slate-500'
+                                tpl.isActive ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-200 text-muted-foreground'
                               }`}>
                                 {tpl.isActive ? 'ĐANG DÙNG' : 'ĐÃ ẨN'}
                               </span>
                             </div>
-                            <h4 className="mt-2.5 text-xs font-black text-slate-800 truncate">{tpl.name}</h4>
-                            <p className="text-[11px] font-semibold text-slate-400 mt-1 line-clamp-2">
+                            <h4 className="mt-2.5 text-xs font-black text-foreground truncate">{tpl.name}</h4>
+                            <p className="text-[11px] font-semibold text-muted-foreground mt-1 line-clamp-2">
                               {tpl.description || 'Chưa có mô tả hướng dẫn.'}
                             </p>
                             {/* AI Metadata Tags Display */}
                             <div className="flex flex-wrap gap-1.5 mt-2.5">
-                              <span className="text-[9px] font-black bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100 uppercase">
+                              <span className="text-[9px] font-black bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20 uppercase">
                                 Tag: {tpl.discipline === 'civil' ? 'Xây dựng' : tpl.discipline === 'steel' ? 'Cơ cấu thép' : tpl.discipline}
                               </span>
                               <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border uppercase ${
-                                tpl.riskLevel === 'high' ? 'bg-red-50 text-red-600 border-red-100' : tpl.riskLevel === 'medium' ? 'bg-orange-50 text-orange-600 border-orange-100' : 'bg-green-50 text-green-600 border-green-100'
+                                tpl.riskLevel === 'high' ? 'bg-destructive/10 text-destructive border-destructive/20' : tpl.riskLevel === 'medium' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' : 'bg-green-500/10 text-green-400 border-green-500/20'
                               }`}>
                                 Rủi ro: {tpl.riskLevel === 'high' ? 'Cao' : tpl.riskLevel === 'medium' ? 'T.Bình' : 'Thấp'}
                               </span>
                             </div>
                           </div>
 
-                          <div className="mt-4 pt-2 border-t border-slate-100/50 flex items-center justify-between">
+                          <div className="mt-4 pt-2 border-t border-border/50 flex items-center justify-between">
                             <span className="text-[10px] text-indigo-600 font-bold flex items-center gap-0.5">
                               Xem tiêu chí <ArrowRight size={10} />
                             </span>
                             <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                              <button onClick={() => handleOpenEditTpl(tpl)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition"><Edit2 size={12} /></button>
-                              <button onClick={() => handleToggleActiveTemplate(tpl)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition"><Archive size={12} /></button>
-                              <button onClick={() => handleDeleteTemplate(tpl)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition"><Trash2 size={12} /></button>
+                              <button onClick={() => handleOpenEditTpl(tpl)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-muted transition"><Edit2 size={12} /></button>
+                              <button onClick={() => handleToggleActiveTemplate(tpl)} className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-muted transition"><Archive size={12} /></button>
+                              <button onClick={() => handleDeleteTemplate(tpl)} className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-muted transition"><Trash2 size={12} /></button>
                             </div>
                           </div>
                         </div>
@@ -820,19 +820,19 @@ const SettingsInspectionTemplates: React.FC = () => {
 
           {/* Dynamic Template Sections & Items Manager */}
           {selectedTemplate && (
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between flex-wrap gap-4">
+            <div className="bg-card rounded-3xl shadow-sm border border-border overflow-hidden">
+              <div className="p-6 border-b border-border bg-muted/30 flex items-center justify-between flex-wrap gap-4">
                 <div>
                   <h3 className="text-sm font-black text-slate-800">
                     Cơ cấu hồ sơ: <span className="text-indigo-600">{selectedTemplate.name}</span>
                   </h3>
-                  <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                  <p className="text-xs text-muted-foreground font-semibold mt-0.5">
                     Quản lý các phân mục và tiêu chí nghiệm thu chi tiết (dung sai, kỹ thuật kiểm tra).
                   </p>
                 </div>
                 <button
                   onClick={handleOpenCreateSec}
-                  className="px-4 py-2 rounded-2xl border border-indigo-200 text-xs font-black text-indigo-600 hover:bg-indigo-50 flex items-center gap-1.5 transition"
+                  className="px-4 py-2 rounded-2xl border border-indigo-500/20 text-xs font-black text-indigo-400 hover:bg-indigo-500/10 flex items-center gap-1.5 transition"
                 >
                   <FolderPlus size={14} /> Thêm Section mới
                 </button>
@@ -844,9 +844,9 @@ const SettingsInspectionTemplates: React.FC = () => {
                     <div className="animate-spin w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full" />
                   </div>
                 ) : (selectedTemplate.sections || []).length === 0 ? (
-                  <div className="py-12 text-center border border-dashed border-slate-200 rounded-2xl">
+                  <div className="py-12 text-center border border-dashed border-border rounded-2xl">
                     <BookOpen size={32} className="mx-auto text-slate-300 mb-2" />
-                    <p className="text-xs font-black text-slate-500">Chưa có Section nào trong mẫu này</p>
+                    <p className="text-xs font-black text-muted-foreground">Chưa có Section nào trong mẫu này</p>
                     <button onClick={handleOpenCreateSec} className="mt-2 text-xs text-indigo-600 font-black hover:underline">Tạo Section đầu tiên</button>
                   </div>
                 ) : (
@@ -855,49 +855,49 @@ const SettingsInspectionTemplates: React.FC = () => {
                     const secItems = sec.items || [];
                     
                     return (
-                      <div key={sec.id} className="p-5 rounded-3xl border border-slate-100 space-y-4">
+                      <div key={sec.id} className="p-5 rounded-3xl border border-border space-y-4">
                         {/* Section Header */}
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <div className="flex items-center justify-between border-b border-border pb-2">
                           <div className="flex items-center gap-3">
-                            <span className="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs font-black">
+                            <span className="w-6 h-6 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-xs font-black">
                               {secIdx + 1}
                             </span>
-                            <span className="text-xs font-black text-slate-800">{sec.name}</span>
-                            <span className="text-[10px] text-slate-400">({secItems.length} tiêu chí)</span>
+                            <span className="text-xs font-black text-foreground">{sec.name}</span>
+                            <span className="text-[10px] text-muted-foreground">({secItems.length} tiêu chí)</span>
                           </div>
                           <div className="flex gap-2">
                             <button
                               onClick={() => handleStartAddItem(sec.id)}
-                              className="px-2.5 py-1 rounded-xl bg-slate-50 hover:bg-slate-100 text-[10px] font-black text-slate-600 flex items-center gap-1 transition"
+                              className="px-2.5 py-1 rounded-xl bg-muted hover:bg-muted/80 text-[10px] font-black text-foreground flex items-center gap-1 transition"
                             >
                               <Plus size={11} /> Thêm tiêu chí
                             </button>
-                            <button onClick={() => handleOpenEditSec(sec)} className="p-1 rounded text-slate-400 hover:text-blue-500 hover:bg-slate-50 transition"><Edit2 size={12} /></button>
-                            <button onClick={() => handleDeleteSection(sec.id)} className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-slate-50 transition"><Trash2 size={12} /></button>
+                            <button onClick={() => handleOpenEditSec(sec)} className="p-1 rounded text-slate-400 hover:text-blue-500 hover:bg-muted transition"><Edit2 size={12} /></button>
+                            <button onClick={() => handleDeleteSection(sec.id)} className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-muted transition"><Trash2 size={12} /></button>
                           </div>
                         </div>
 
                         {/* Inline Adding Form */}
                         {isAddingToThisSec && (
-                          <div className="p-4 rounded-2xl bg-indigo-50/40 border border-indigo-200/50 space-y-3">
+                          <div className="p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 space-y-3">
                             <h5 className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Tiêu chí mới</h5>
                             
                             <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                               <div className="md:col-span-5">
-                                <label className="text-[9px] font-black text-slate-400 block mb-1">Tên tiêu chí *</label>
+                                <label className="text-[9px] font-black text-muted-foreground block mb-1">Tên tiêu chí *</label>
                                 <input
                                   value={newItemForm.itemName || ''}
                                   onChange={e => setNewItemForm(p => ({ ...p, itemName: e.target.value }))}
                                   placeholder="Tên tiêu chí cần kiểm tra..."
-                                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
+                                  className="w-full bg-card border border-border text-foreground rounded-xl px-3 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
                                 />
                               </div>
                               <div className="md:col-span-2">
-                                <label className="text-[9px] font-black text-slate-400 block mb-1">Kiểu dữ liệu</label>
+                                <label className="text-[9px] font-black text-muted-foreground block mb-1">Kiểu dữ liệu</label>
                                 <select
                                   value={newItemForm.dataType || 'checkbox'}
                                   onChange={e => setNewItemForm(p => ({ ...p, dataType: e.target.value as any }))}
-                                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
+                                  className="w-full bg-card border border-border text-foreground rounded-xl px-3 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
                                 >
                                   <option value="checkbox">Nút Check</option>
                                   <option value="number">Đo số liệu</option>
@@ -906,55 +906,55 @@ const SettingsInspectionTemplates: React.FC = () => {
                                 </select>
                               </div>
                               <div className="md:col-span-3">
-                                <label className="text-[9px] font-black text-slate-400 block mb-1">Mức chấp nhận (Criteria)</label>
+                                <label className="text-[9px] font-black text-muted-foreground block mb-1">Mức chấp nhận (Criteria)</label>
                                 <input
                                   value={newItemForm.acceptanceCriteria || ''}
                                   onChange={e => setNewItemForm(p => ({ ...p, acceptanceCriteria: e.target.value }))}
                                   placeholder="Ví dụ: ≤ L/500..."
-                                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
+                                  className="w-full bg-card border border-border text-foreground rounded-xl px-3 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
                                 />
                               </div>
                               <div className="md:col-span-2">
-                                <label className="text-[9px] font-black text-slate-400 block mb-1">Phương pháp đo</label>
+                                <label className="text-[9px] font-black text-muted-foreground block mb-1">Phương pháp đo</label>
                                 <input
                                   value={newItemForm.inspectionMethod || ''}
                                   onChange={e => setNewItemForm(p => ({ ...p, inspectionMethod: e.target.value }))}
                                   placeholder="Ví dụ: Thước, máy đo..."
-                                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
+                                  className="w-full bg-card border border-border text-foreground rounded-xl px-3 py-1.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
                                 />
                               </div>
                             </div>
 
                             {/* Tolerance Fields (Only for number type) */}
                             {newItemForm.dataType === 'number' && (
-                              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white p-3 rounded-xl border border-slate-100">
+                              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-muted/50 p-3 rounded-xl border border-border">
                                 <div>
-                                  <label className="text-[9px] font-black text-slate-400 block mb-1">Sai số nhỏ nhất (Min)</label>
+                                  <label className="text-[9px] font-black text-muted-foreground block mb-1">Sai số nhỏ nhất (Min)</label>
                                   <input
                                     type="number"
                                     value={newItemForm.minValue ?? ''}
                                     onChange={e => setNewItemForm(p => ({ ...p, minValue: e.target.value ? Number(e.target.value) : undefined }))}
                                     placeholder="Không giới hạn"
-                                    className="w-full border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
+                                    className="w-full border border-border bg-card text-foreground rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
                                   />
                                 </div>
                                 <div>
-                                  <label className="text-[9px] font-black text-slate-400 block mb-1">Sai số lớn nhất (Max)</label>
+                                  <label className="text-[9px] font-black text-muted-foreground block mb-1">Sai số lớn nhất (Max)</label>
                                   <input
                                     type="number"
                                     value={newItemForm.maxValue ?? ''}
                                     onChange={e => setNewItemForm(p => ({ ...p, maxValue: e.target.value ? Number(e.target.value) : undefined }))}
                                     placeholder="Không giới hạn"
-                                    className="w-full border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
+                                    className="w-full border border-border bg-card text-foreground rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
                                   />
                                 </div>
                                 <div>
-                                  <label className="text-[9px] font-black text-slate-400 block mb-1">Đơn vị đo (Unit)</label>
+                                  <label className="text-[9px] font-black text-muted-foreground block mb-1">Đơn vị đo (Unit)</label>
                                   <input
                                     value={newItemForm.unit || ''}
                                     onChange={e => setNewItemForm(p => ({ ...p, unit: e.target.value }))}
                                     placeholder="mm, cm, kg/cm²..."
-                                    className="w-full border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
+                                    className="w-full border border-border bg-card text-foreground rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
                                   />
                                 </div>
                               </div>
@@ -962,27 +962,27 @@ const SettingsInspectionTemplates: React.FC = () => {
 
                             <div className="flex gap-4 justify-between items-center flex-wrap pt-1">
                               <div className="flex gap-4">
-                                <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer bg-white border border-slate-200 rounded-xl px-3 py-1.5">
+                                <label className="flex items-center gap-1.5 text-xs font-bold text-foreground cursor-pointer bg-card border border-border rounded-xl px-3 py-1.5">
                                   <input
                                     type="checkbox"
                                     checked={newItemForm.required}
                                     onChange={e => setNewItemForm(p => ({ ...p, required: e.target.checked }))}
-                                    className="rounded border-slate-300"
+                                    className="rounded border-border"
                                   />
                                   Bắt buộc đạt
                                 </label>
                                 <div className="flex items-center gap-1">
-                                  <span className="text-[10px] text-slate-400 font-black">Thứ tự:</span>
+                                  <span className="text-[10px] text-muted-foreground font-black">Thứ tự:</span>
                                   <input
                                     type="number"
                                     value={newItemForm.sortOrder || 1}
                                     onChange={e => setNewItemForm(p => ({ ...p, sortOrder: Number(e.target.value) || 1 }))}
-                                    className="w-12 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-center outline-none"
+                                    className="w-12 border border-border bg-card text-foreground rounded-lg px-2 py-1 text-xs font-bold text-center outline-none"
                                   />
                                 </div>
                               </div>
                               <div className="flex gap-2">
-                                <button onClick={handleCancelAddItem} className="px-3 py-1.5 rounded-xl border border-slate-200 text-[10px] font-black text-slate-500 bg-white hover:bg-slate-50 transition">Hủy</button>
+                                <button onClick={handleCancelAddItem} className="px-3 py-1.5 rounded-xl border border-slate-200 text-[10px] font-black text-muted-foreground bg-white hover:bg-muted transition">Hủy</button>
                                 <button onClick={() => handleSaveNewItem(sec.id)} disabled={savingItem} className="px-4 py-1.5 rounded-xl bg-indigo-600 text-white text-[10px] font-black hover:bg-indigo-700 transition">Thêm tiêu chí</button>
                               </div>
                             </div>
@@ -991,28 +991,28 @@ const SettingsInspectionTemplates: React.FC = () => {
 
                         {/* List Items */}
                         {secItems.length === 0 ? (
-                          <p className="text-xs text-slate-400 italic pl-5 font-bold">Chưa có tiêu chí nào trong phần này.</p>
+                          <p className="text-xs text-muted-foreground italic pl-5 font-bold">Chưa có tiêu chí nào trong phần này.</p>
                         ) : (
                           <div className="space-y-2">
                             {secItems.map(item => {
                               const isEditing = editingItemId === item.id;
                               return isEditing ? (
-                                <div key={item.id} className="p-4 rounded-2xl bg-amber-50/50 border border-amber-200 space-y-3">
+                                <div key={item.id} className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-3">
                                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
                                     <div className="md:col-span-5">
-                                      <label className="text-[9px] font-black text-slate-400 block mb-1">Tên tiêu chí</label>
+                                      <label className="text-[9px] font-black text-muted-foreground block mb-1">Tên tiêu chí</label>
                                       <input
                                         value={itemForm.itemName || ''}
                                         onChange={e => setItemForm(p => ({ ...p, itemName: e.target.value }))}
-                                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold outline-none"
+                                        className="w-full bg-card border border-border text-foreground rounded-xl px-3 py-1.5 text-xs font-bold outline-none"
                                       />
                                     </div>
                                     <div className="md:col-span-2">
-                                      <label className="text-[9px] font-black text-slate-400 block mb-1">Kiểu</label>
+                                      <label className="text-[9px] font-black text-muted-foreground block mb-1">Kiểu</label>
                                       <select
                                         value={itemForm.dataType || 'checkbox'}
                                         onChange={e => setItemForm(p => ({ ...p, dataType: e.target.value as any }))}
-                                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold outline-none"
+                                        className="w-full bg-card border border-border text-foreground rounded-xl px-3 py-1.5 text-xs font-bold outline-none"
                                       >
                                         <option value="checkbox">Nút Check</option>
                                         <option value="number">Đo số liệu</option>
@@ -1021,49 +1021,49 @@ const SettingsInspectionTemplates: React.FC = () => {
                                       </select>
                                     </div>
                                     <div className="md:col-span-3">
-                                      <label className="text-[9px] font-black text-slate-400 block mb-1">Mức chấp nhận</label>
+                                      <label className="text-[9px] font-black text-muted-foreground block mb-1">Mức chấp nhận</label>
                                       <input
                                         value={itemForm.acceptanceCriteria || ''}
                                         onChange={e => setItemForm(p => ({ ...p, acceptanceCriteria: e.target.value }))}
-                                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold outline-none"
+                                        className="w-full bg-card border border-border text-foreground rounded-xl px-3 py-1.5 text-xs font-bold outline-none"
                                       />
                                     </div>
                                     <div className="md:col-span-2">
-                                      <label className="text-[9px] font-black text-slate-400 block mb-1">Phương pháp</label>
+                                      <label className="text-[9px] font-black text-muted-foreground block mb-1">Phương pháp</label>
                                       <input
                                         value={itemForm.inspectionMethod || ''}
                                         onChange={e => setItemForm(p => ({ ...p, inspectionMethod: e.target.value }))}
-                                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold outline-none"
+                                        className="w-full bg-card border border-border text-foreground rounded-xl px-3 py-1.5 text-xs font-bold outline-none"
                                       />
                                     </div>
                                   </div>
 
                                   {itemForm.dataType === 'number' && (
-                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white p-3 rounded-xl border border-slate-100">
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-muted/50 p-3 rounded-xl border border-border">
                                       <div>
-                                        <label className="text-[9px] font-black text-slate-400 block mb-1">Sai số nhỏ nhất (Min)</label>
+                                        <label className="text-[9px] font-black text-muted-foreground block mb-1">Sai số nhỏ nhất (Min)</label>
                                         <input
                                           type="number"
                                           value={itemForm.minValue ?? ''}
                                           onChange={e => setItemForm(p => ({ ...p, minValue: e.target.value ? Number(e.target.value) : undefined }))}
-                                          className="w-full border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
+                                          className="w-full border border-border bg-card text-foreground rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
                                         />
                                       </div>
                                       <div>
-                                        <label className="text-[9px] font-black text-slate-400 block mb-1">Sai số lớn nhất (Max)</label>
+                                        <label className="text-[9px] font-black text-muted-foreground block mb-1">Sai số lớn nhất (Max)</label>
                                         <input
                                           type="number"
                                           value={itemForm.maxValue ?? ''}
                                           onChange={e => setItemForm(p => ({ ...p, maxValue: e.target.value ? Number(e.target.value) : undefined }))}
-                                          className="w-full border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
+                                          className="w-full border border-border bg-card text-foreground rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
                                         />
                                       </div>
                                       <div>
-                                        <label className="text-[9px] font-black text-slate-400 block mb-1">Đơn vị đo (Unit)</label>
+                                        <label className="text-[9px] font-black text-muted-foreground block mb-1">Đơn vị đo (Unit)</label>
                                         <input
                                           value={itemForm.unit || ''}
                                           onChange={e => setItemForm(p => ({ ...p, unit: e.target.value }))}
-                                          className="w-full border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
+                                          className="w-full border border-border bg-card text-foreground rounded-lg px-2.5 py-1 text-xs font-bold outline-none"
                                         />
                                       </div>
                                     </div>
@@ -1071,54 +1071,54 @@ const SettingsInspectionTemplates: React.FC = () => {
 
                                   <div className="flex gap-4 justify-between items-center flex-wrap pt-1">
                                     <div className="flex gap-4">
-                                      <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer bg-white border border-slate-200 rounded-xl px-3 py-1.5">
+                                      <label className="flex items-center gap-1.5 text-xs font-bold text-foreground cursor-pointer bg-card border border-border rounded-xl px-3 py-1.5">
                                         <input
                                           type="checkbox"
                                           checked={itemForm.required}
                                           onChange={e => setItemForm(p => ({ ...p, required: e.target.checked }))}
-                                          className="rounded border-slate-300"
+                                          className="rounded border-border"
                                         />
                                         Bắt buộc đạt
                                       </label>
                                       <div className="flex items-center gap-1">
-                                        <span className="text-[10px] text-slate-400 font-black">Thứ tự:</span>
+                                        <span className="text-[10px] text-muted-foreground font-black">Thứ tự:</span>
                                         <input
                                           type="number"
                                           value={itemForm.sortOrder || 1}
                                           onChange={e => setItemForm(p => ({ ...p, sortOrder: Number(e.target.value) || 1 }))}
-                                          className="w-12 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-center outline-none"
+                                          className="w-12 border border-border bg-card text-foreground rounded-lg px-2 py-1 text-xs font-bold text-center outline-none"
                                         />
                                       </div>
                                     </div>
                                     <div className="flex gap-2">
-                                      <button onClick={handleCancelEditItem} className="px-3 py-1 text-[10px] font-black text-slate-500 hover:underline">Hủy</button>
+                                      <button onClick={handleCancelEditItem} className="px-3 py-1 text-[10px] font-black text-muted-foreground hover:underline">Hủy</button>
                                       <button onClick={() => handleSaveEditItem(item.id)} disabled={savingItem} className="px-4 py-1.5 rounded-xl bg-amber-500 text-white text-[10px] font-black hover:bg-amber-600 flex items-center gap-1">Lưu thay đổi</button>
                                     </div>
                                   </div>
                                 </div>
                               ) : (
-                                <div key={item.id} className="grid grid-cols-12 gap-3 items-center p-3 rounded-2xl border border-slate-100 hover:bg-slate-50/50 group text-xs font-bold text-slate-700">
-                                  <div className="col-span-1 text-[10px] font-black text-slate-400 bg-slate-50 w-5 h-5 rounded-lg flex items-center justify-center shrink-0">
+                                <div key={item.id} className="grid grid-cols-12 gap-3 items-center p-3 rounded-2xl border border-border hover:bg-muted/30 group text-xs font-bold text-foreground">
+                                  <div className="col-span-1 text-[10px] font-black text-muted-foreground bg-muted w-5 h-5 rounded-lg flex items-center justify-center shrink-0">
                                     {item.sortOrder}
                                   </div>
                                   <div className="col-span-4 flex items-center gap-2">
                                     <span>{item.itemName}</span>
                                     {item.required && (
-                                      <span className="text-[8px] font-black bg-red-50 text-red-500 border border-red-100 px-1.5 py-0.5 rounded shrink-0">BẮT BUỘC</span>
+                                      <span className="text-[8px] font-black bg-destructive/10 text-destructive border border-destructive/20 px-1.5 py-0.5 rounded shrink-0">BẮT BUỘC</span>
                                     )}
                                   </div>
-                                  <div className="col-span-2 text-[10px] text-slate-400">
+                                  <div className="col-span-2 text-[10px] text-muted-foreground">
                                     {item.dataType === 'checkbox' ? '☑️ Nút Check' : item.dataType === 'number' ? '🔢 Đo số liệu' : item.dataType === 'photo' ? '📷 Chụp ảnh' : '✏️ Nhập tự do'}
                                   </div>
-                                  <div className="col-span-2 text-[10px] text-slate-500 italic truncate" title={item.acceptanceCriteria}>
+                                  <div className="col-span-2 text-[10px] text-muted-foreground italic truncate" title={item.acceptanceCriteria}>
                                     {item.acceptanceCriteria || '—'}
                                   </div>
-                                  <div className="col-span-2 text-[10px] font-mono text-slate-400">
+                                  <div className="col-span-2 text-[10px] font-mono text-muted-foreground">
                                     {item.inspectionMethod || '—'}
                                   </div>
                                   <div className="col-span-1 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button onClick={() => handleStartEditItem(item)} className="p-1 rounded text-slate-400 hover:text-amber-500 hover:bg-white"><Edit2 size={12} /></button>
-                                    <button onClick={() => handleDeleteItem(item.id)} className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-white"><Trash2 size={12} /></button>
+                                    <button onClick={() => handleStartEditItem(item)} className="p-1 rounded text-muted-foreground hover:text-amber-500 hover:bg-muted"><Edit2 size={12} /></button>
+                                    <button onClick={() => handleDeleteItem(item.id)} className="p-1 rounded text-muted-foreground hover:text-red-500 hover:bg-muted"><Trash2 size={12} /></button>
                                   </div>
                                 </div>
                               );
@@ -1138,13 +1138,13 @@ const SettingsInspectionTemplates: React.FC = () => {
       {/* CREATE / EDIT TEMPLATE MODAL */}
       {isTplModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in-50 duration-200">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-gradient-to-r from-indigo-50/50 to-violet-50/50">
+          <div className="bg-card border border-border rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-border bg-gradient-to-r from-indigo-500/5 to-violet-500/5">
               <div>
-                <h3 className="text-sm font-black text-slate-900">
+                <h3 className="text-sm font-black text-foreground">
                   {editingTemplate ? 'Cập nhật mẫu nghiệm thu' : 'Thêm mẫu nghiệm thu mới'}
                 </h3>
-                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                <p className="text-xs text-muted-foreground font-semibold mt-0.5">
                   Cấu hình công tác: {workTypes.find(w => w.id === selectedWtId)?.name || ''}
                 </p>
               </div>
@@ -1155,48 +1155,48 @@ const SettingsInspectionTemplates: React.FC = () => {
 
             <form onSubmit={handleSaveTemplate} className="p-6 space-y-4 overflow-y-auto flex-1">
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Tên mẫu nghiệm thu *</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Tên mẫu nghiệm thu *</label>
                 <input
                   value={tplForm.name || ''}
                   onChange={e => setTplForm(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="Ví dụ: Nghiệm thu đổ bê tông móng M1..."
-                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
+                  className="w-full bg-muted/30 border border-border text-foreground rounded-2xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
                   required
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Mã mẫu *</label>
+                  <label className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Mã mẫu *</label>
                   <input
                     value={tplForm.code || ''}
                     onChange={e => setTplForm(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
                     placeholder="Ví dụ: TPL-MONG-BT-01"
-                    className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
+                    className="w-full bg-muted/30 border border-border text-foreground rounded-2xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
                     required
                     disabled={!!editingTemplate}
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Phiên bản</label>
+                  <label className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Phiên bản</label>
                   <input
                     type="number"
                     value={tplForm.version || 1}
                     onChange={e => setTplForm(prev => ({ ...prev, version: Number(e.target.value) || 1 }))}
-                    className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-xs font-bold outline-none"
+                    className="w-full bg-muted/30 border border-border text-foreground rounded-2xl px-4 py-2.5 text-xs font-bold outline-none"
                     min={1}
                     required
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+              <div className="grid grid-cols-2 gap-4 bg-muted/50 p-4 rounded-2xl border border-border">
                 <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Bộ môn (Discipline)</label>
+                  <label className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Bộ môn (Discipline)</label>
                   <select
                     value={tplForm.discipline || 'civil'}
                     onChange={e => setTplForm(prev => ({ ...prev, discipline: e.target.value }))}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none"
+                    className="w-full bg-card border border-border text-foreground rounded-xl px-3 py-2 text-xs font-bold outline-none"
                   >
                     <option value="civil">Xây dựng (Civil)</option>
                     <option value="steel">Kết cấu thép (Steel)</option>
@@ -1205,11 +1205,11 @@ const SettingsInspectionTemplates: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Mức độ rủi ro</label>
+                  <label className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Mức độ rủi ro</label>
                   <select
                     value={tplForm.riskLevel || 'medium'}
                     onChange={e => setTplForm(prev => ({ ...prev, riskLevel: e.target.value as any }))}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none"
+                    className="w-full bg-card border border-border text-foreground rounded-xl px-3 py-2 text-xs font-bold outline-none"
                   >
                     <option value="low">Thấp (Low)</option>
                     <option value="medium">Trung bình (Medium)</option>
@@ -1219,52 +1219,52 @@ const SettingsInspectionTemplates: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Quy chuẩn / Tiêu chuẩn tham chiếu</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Quy chuẩn / Tiêu chuẩn tham chiếu</label>
                 <input
                   value={tplForm.standardReference || ''}
                   onChange={e => setTplForm(prev => ({ ...prev, standardReference: e.target.value }))}
                   placeholder="Ví dụ: TCVN 4453:1995, TCVN 170:2007..."
-                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-xs font-bold outline-none"
+                  className="w-full bg-muted/30 border border-border text-foreground rounded-2xl px-4 py-2.5 text-xs font-bold outline-none"
                 />
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Mục đích nghiệm thu (AI Context)</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Mục đích nghiệm thu (AI Context)</label>
                 <textarea
                   value={tplForm.inspectionPurpose || ''}
                   onChange={e => setTplForm(prev => ({ ...prev, inspectionPurpose: e.target.value }))}
                   placeholder="Mô tả cụ thể mục đích nghiệm thu để làm giàu ngữ cảnh hỗ trợ AI Assistant sau này..."
                   rows={2}
-                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2 text-xs font-medium resize-none outline-none"
+                  className="w-full bg-muted/30 border border-border text-foreground rounded-2xl px-4 py-2 text-xs font-medium resize-none outline-none"
                 />
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Mô tả chi tiết</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Mô tả chi tiết</label>
                 <textarea
                   value={tplForm.description || ''}
                   onChange={e => setTplForm(prev => ({ ...prev, description: e.target.value }))}
                   placeholder="Mô tả tóm tắt quy trình nghiệm thu..."
                   rows={2}
-                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2 text-xs font-medium resize-none outline-none"
+                  className="w-full bg-muted/30 border border-border text-foreground rounded-2xl px-4 py-2 text-xs font-medium resize-none outline-none"
                 />
               </div>
 
-              <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
+              <label className="flex items-center gap-2 text-xs font-bold text-foreground cursor-pointer">
                 <input
                   type="checkbox"
                   checked={tplForm.isActive}
                   onChange={e => setTplForm(prev => ({ ...prev, isActive: e.target.checked }))}
-                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  className="rounded border-border text-indigo-600 focus:ring-indigo-500"
                 />
                 Cho phép công trường sử dụng mẫu này
               </label>
 
-              <div className="flex gap-2 pt-2 border-t border-slate-100">
+              <div className="flex gap-2 pt-2 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setIsTplModalOpen(false)}
-                  className="w-1/3 px-5 py-2.5 rounded-2xl border border-slate-200 text-xs font-black text-slate-500 bg-white hover:bg-slate-50 transition"
+                  className="w-1/3 px-5 py-2.5 rounded-2xl border border-slate-200 text-xs font-black text-muted-foreground bg-white hover:bg-muted transition"
                 >
                   Đóng
                 </button>
@@ -1284,9 +1284,9 @@ const SettingsInspectionTemplates: React.FC = () => {
       {/* CREATE / EDIT SECTION MODAL */}
       {isSecModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in-50 duration-200">
-          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-gradient-to-r from-indigo-50/50 to-violet-50/50">
-              <h3 className="text-xs font-black text-slate-900">
+          <div className="bg-card border border-border rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-border bg-gradient-to-r from-indigo-500/5 to-violet-500/5">
+              <h3 className="text-xs font-black text-foreground">
                 {editingSection ? 'Sửa Section' : 'Thêm Section mới'}
               </h3>
               <button onClick={() => setIsSecModalOpen(false)} className="p-1 hover:bg-white rounded-lg text-slate-400 hover:text-slate-800 transition">
@@ -1296,23 +1296,23 @@ const SettingsInspectionTemplates: React.FC = () => {
 
             <form onSubmit={handleSaveSection} className="p-5 space-y-4">
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Tên Section *</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Tên Section *</label>
                 <input
                   value={secNameForm}
                   onChange={e => setSecNameForm(e.target.value)}
                   placeholder="Ví dụ: Kiểm tra kích thước hình học..."
-                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
+                  className="w-full bg-card border border-border text-foreground rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
                   required
                 />
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Thứ tự hiển thị</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Thứ tự hiển thị</label>
                 <input
                   type="number"
                   value={secOrderForm}
                   onChange={e => setSecOrderForm(Number(e.target.value) || 1)}
-                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none"
+                  className="w-full bg-card border border-border text-foreground rounded-xl px-3 py-2 text-xs font-bold outline-none"
                   min={1}
                   required
                 />
@@ -1322,7 +1322,7 @@ const SettingsInspectionTemplates: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsSecModalOpen(false)}
-                  className="w-1/3 px-3 py-2 rounded-xl border border-slate-200 text-xs font-black text-slate-500 bg-white hover:bg-slate-50 transition"
+                  className="w-1/3 px-3 py-2 rounded-xl border border-slate-200 text-xs font-black text-muted-foreground bg-white hover:bg-muted transition"
                 >
                   Hủy
                 </button>
@@ -1342,9 +1342,9 @@ const SettingsInspectionTemplates: React.FC = () => {
       {/* ===================== CATEGORY CRUD MODAL ===================== */}
       {isCatModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in-50 duration-200">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-gradient-to-r from-indigo-50/50 to-violet-50/50">
-              <h3 className="text-sm font-black text-slate-900">
+          <div className="bg-card border border-border rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-6 border-b border-border bg-gradient-to-r from-indigo-500/5 to-violet-500/5">
+              <h3 className="text-sm font-black text-foreground">
                 {editingCategory ? 'Chỉnh sửa Hạng mục chuẩn' : 'Thêm Hạng mục chuẩn mới'}
               </h3>
               <button onClick={() => setIsCatModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-800 transition">
@@ -1354,33 +1354,33 @@ const SettingsInspectionTemplates: React.FC = () => {
 
             <form onSubmit={handleSaveCategory} className="p-6 space-y-4">
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Mã hạng mục *</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Mã hạng mục *</label>
                 <input
                   value={catForm.code || ''}
                   onChange={e => setCatForm(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
                   placeholder="Ví dụ: CAT-MONG, CAT-THEP..."
-                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
+                  className="w-full bg-muted/30 border border-border text-foreground rounded-2xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
                   required
                   disabled={!!editingCategory}
                 />
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Tên Hạng mục chuẩn *</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Tên Hạng mục chuẩn *</label>
                 <input
                   value={catForm.name || ''}
                   onChange={e => setCatForm(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="Ví dụ: Móng, Kết cấu thép, Dầm..."
-                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
+                  className="w-full bg-muted/30 border border-border text-foreground rounded-2xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
                   required
                 />
               </div>
 
-              <div className="flex gap-2 pt-4 border-t border-slate-100">
+              <div className="flex gap-2 pt-4 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setIsCatModalOpen(false)}
-                  className="w-1/3 px-5 py-2.5 rounded-2xl border border-slate-200 text-xs font-black text-slate-500 bg-white hover:bg-slate-50 transition"
+                  className="w-1/3 px-5 py-2.5 rounded-2xl border border-slate-200 text-xs font-black text-muted-foreground bg-white hover:bg-muted transition"
                 >
                   Đóng
                 </button>
@@ -1400,9 +1400,9 @@ const SettingsInspectionTemplates: React.FC = () => {
       {/* ===================== WORK TYPE CRUD MODAL ===================== */}
       {isWtModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in-50 duration-200">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-gradient-to-r from-indigo-50/50 to-violet-50/50">
-              <h3 className="text-sm font-black text-slate-900">
+          <div className="bg-card border border-border rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-6 border-b border-border bg-gradient-to-r from-indigo-500/5 to-violet-500/5">
+              <h3 className="text-sm font-black text-foreground">
                 {editingWorkType ? 'Chỉnh sửa Loại công tác' : 'Thêm Loại công tác mới'}
               </h3>
               <button onClick={() => setIsWtModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-800 transition">
@@ -1412,34 +1412,34 @@ const SettingsInspectionTemplates: React.FC = () => {
 
             <form onSubmit={handleSaveWorkType} className="p-6 space-y-4">
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Mã loại công tác *</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Mã loại công tác *</label>
                 <input
                   value={wtForm.code || ''}
                   onChange={e => setWtForm(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
                   placeholder="Ví dụ: WT-MONG-TONG..."
-                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
+                  className="w-full bg-muted/30 border border-border text-foreground rounded-2xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
                   required
                   disabled={!!editingWorkType}
                 />
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Tên loại công tác *</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Tên loại công tác *</label>
                 <input
                   value={wtForm.name || ''}
                   onChange={e => setWtForm(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="Ví dụ: Bê tông móng, Thép cột..."
-                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
+                  className="w-full bg-muted/30 border border-border text-foreground rounded-2xl px-4 py-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-400"
                   required
                 />
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Thuộc Hạng mục chuẩn</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase block mb-1">Thuộc Hạng mục chuẩn</label>
                 <select
                   value={wtForm.categoryId || ''}
                   onChange={e => setWtForm(prev => ({ ...prev, categoryId: e.target.value }))}
-                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-xs font-bold outline-none"
+                  className="w-full bg-muted/30 border border-border text-foreground rounded-2xl px-4 py-2.5 text-xs font-bold outline-none"
                   required
                   disabled={!!editingWorkType}
                 >
@@ -1450,11 +1450,11 @@ const SettingsInspectionTemplates: React.FC = () => {
                 </select>
               </div>
 
-              <div className="flex gap-2 pt-4 border-t border-slate-100">
+              <div className="flex gap-2 pt-4 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setIsWtModalOpen(false)}
-                  className="w-1/3 px-5 py-2.5 rounded-2xl border border-slate-200 text-xs font-black text-slate-500 bg-white hover:bg-slate-50 transition"
+                  className="w-1/3 px-5 py-2.5 rounded-2xl border border-slate-200 text-xs font-black text-muted-foreground bg-white hover:bg-muted transition"
                 >
                   Đóng
                 </button>
