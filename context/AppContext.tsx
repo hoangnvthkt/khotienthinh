@@ -30,6 +30,11 @@ import {
   getStockDecreaseIssues,
   getStockDecreaseLinesForTransaction,
 } from '../lib/inventoryStockGuard';
+import {
+  formatInventoryItemDeleteBlockers,
+  getLocalInventoryItemDeleteBlockers,
+  getRemoteInventoryItemDeleteBlockers,
+} from '../lib/inventoryItemDeleteGuard';
 
 interface AppSettings {
   name: string;
@@ -1309,6 +1314,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const removeItem = async (id: string) => {
     const oldItem = items.find(i => i.id === id);
+    if (!oldItem) return;
+    const localBlockers = getLocalInventoryItemDeleteBlockers(oldItem, { transactions, requests });
+    if (localBlockers.length > 0) {
+      throw new Error(`Không thể xoá vật tư "${oldItem.name}" vì còn dữ liệu liên quan. ${formatInventoryItemDeleteBlockers(localBlockers)}.`);
+    }
+    const remoteBlockers = await getRemoteInventoryItemDeleteBlockers(id);
+    if (remoteBlockers.length > 0) {
+      throw new Error(`Không thể xoá vật tư "${oldItem.name}" vì Supabase còn dữ liệu liên quan. ${formatInventoryItemDeleteBlockers(remoteBlockers)}.`);
+    }
     setItems(prev => prev.filter(i => i.id !== id));
     if (isSupabaseConfigured) {
       const { error } = await supabase.from('items').delete().eq('id', id);

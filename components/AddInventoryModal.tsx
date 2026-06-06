@@ -287,9 +287,12 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
                     placeholder="Hệ số quy đổi"
                     className="w-full p-2.5 border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none bg-white text-sm font-bold"
                   />
-                  <p className="text-[10px] text-amber-600 font-bold">
-                    1 {formData.purchaseUnit} = {(Number(formData.purchaseConversionFactor || 0) || 0).toLocaleString('vi-VN')} {formData.unit || 'đơn vị kho'}
-                  </p>
+                  <div className="text-[10px] text-amber-600 font-bold">
+                    <p>1 {formData.purchaseUnit} = {(Number(formData.purchaseConversionFactor || 0) || 0).toLocaleString('vi-VN')} {formData.unit || 'đơn vị kho'}</p>
+                    <p className="text-amber-500">
+                      1 {formData.unit || 'đơn vị kho'} = {((Number(formData.purchaseConversionFactor || 0) || 1) > 0 ? 1 / (Number(formData.purchaseConversionFactor || 0) || 1) : 0).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {formData.purchaseUnit}
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

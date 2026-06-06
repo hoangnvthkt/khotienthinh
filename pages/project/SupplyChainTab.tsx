@@ -1915,7 +1915,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         return { partnerCount: partners.length, totalPo, totalValue, delivered, pending };
     }, [partners, pos]);
 
-    const poTotalCalc = useMemo(() => pItems.reduce((s, i) => s + calculateLineTotal(i), 0), [pItems]);
+    const poTotalCalc = pItems.reduce((sum, item) => {
+        const normalizedLine = normalizePoItem(item, inventoryItems);
+        const previewLine = pSourceMode === 'proactive_stock' ? normalizedLine : buildPoBudgetSnapshot(normalizedLine);
+        return sum + calculateLineTotal(previewLine);
+    }, 0);
     const poHasRequestLines = useMemo(() => pItems.some(item => !!item.requestId), [pItems]);
     const procurementGroupCounts = useMemo(() => pos.reduce<Record<string, number>>((acc, po) => {
         if (po.procurementGroupId) acc[po.procurementGroupId] = (acc[po.procurementGroupId] || 0) + 1;
@@ -2512,7 +2516,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             <button onClick={() => setShowRequestPicker(false)} className="w-8 h-8 rounded-xl text-slate-400 hover:bg-slate-100 flex items-center justify-center"><X size={18} /></button>
                         </div>
                         <div className="overflow-auto flex-1">
-                            <table className="w-full text-xs min-w-[850px]">
+                            <table className="w-full text-xs min-w-[1040px]">
                                 <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase sticky top-0 whitespace-nowrap">
                                     <tr>
                                         <th className="px-4 py-3 text-center w-12"></th>
@@ -2522,6 +2526,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         <th className="px-4 py-3 text-right w-20">Đã cấp</th>
                                         <th className="px-4 py-3 text-right w-24">PO mở</th>
                                         <th className="px-4 py-3 text-right w-24">Còn lại</th>
+                                        <th className="px-4 py-3 text-right w-32">Quy đổi mua</th>
+                                        <th className="px-4 py-3 text-right w-32">Tạm tính</th>
                                         <th className="px-4 py-3 text-left w-28">Ngày cần</th>
                                     </tr>
                                 </thead>
@@ -2530,6 +2536,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         const inv = inventoryItems.find(item => item.id === row.line.itemId);
                                         const work = row.line.workBoqItemId ? workBoqMap.get(row.line.workBoqItemId) : undefined;
                                         const remaining = row.remainingQty;
+                                        const conversionLine = normalizePoItem({
+                                            lineId: row.requestLineId,
+                                            itemId: row.line.itemId,
+                                            ...buildPoUnitSnapshot(inv),
+                                            sku: inv?.sku || row.line.skuSnapshot || '',
+                                            name: inv?.name || row.line.itemNameSnapshot || row.line.materialBudgetItemName || '',
+                                        }, inventoryItems);
+                                        const purchaseUnit = getPoLinePurchaseUnit(conversionLine, inv);
+                                        const stockUnit = getPoLineStockUnit(conversionLine, inv) || row.line.unitSnapshot || '';
+                                        const purchaseQty = poLineStockToPurchaseQty(conversionLine, remaining, inv);
+                                        const purchaseUnitPrice = stockUnitPriceToPurchaseUnitPrice(Number(inv?.priceIn || 0), inv);
+                                        const estimatedAmount = purchaseQty * purchaseUnitPrice;
                                         const lineName = inv?.name || row.line.itemNameSnapshot || row.line.materialBudgetItemName || row.line.itemId;
                                         return (
                                             <tr key={row.key} className="hover:bg-amber-50/40">
@@ -2554,10 +2572,21 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     {row.line.isManualItem ? <div className="text-[10px] font-bold text-amber-600">Dòng cần cấp mã vật tư trước</div> : null}
                                                     {row.line.overBudgetQtySnapshot ? <div className="text-[10px] font-bold text-orange-600">Vượt định mức: {row.line.overBudgetReason || 'Đã nhập lý do'}</div> : null}
                                                 </td>
-                                                <td className="px-4 py-3 text-right font-bold whitespace-nowrap">{row.requestedQty.toLocaleString('vi-VN')}</td>
-                                                <td className="px-4 py-3 text-right text-blue-600 font-bold whitespace-nowrap">{row.stockCoveredQty.toLocaleString('vi-VN')}</td>
-                                                <td className="px-4 py-3 text-right text-slate-500 whitespace-nowrap">{row.orderedQty.toLocaleString('vi-VN')}</td>
-                                                <td className="px-4 py-3 text-right font-black text-amber-700 whitespace-nowrap">{remaining.toLocaleString('vi-VN')}</td>
+                                                <td className="px-4 py-3 text-right font-bold whitespace-nowrap">{row.requestedQty.toLocaleString('vi-VN')} {stockUnit}</td>
+                                                <td className="px-4 py-3 text-right text-blue-600 font-bold whitespace-nowrap">{row.stockCoveredQty.toLocaleString('vi-VN')} {stockUnit}</td>
+                                                <td className="px-4 py-3 text-right text-slate-500 whitespace-nowrap">{row.orderedQty.toLocaleString('vi-VN')} {stockUnit}</td>
+                                                <td className="px-4 py-3 text-right font-black text-amber-700 whitespace-nowrap">{remaining.toLocaleString('vi-VN')} {stockUnit}</td>
+                                                <td className="px-4 py-3 text-right font-black text-cyan-700 whitespace-nowrap">
+                                                    {purchaseQty.toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {purchaseUnit}
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-black text-emerald-700 whitespace-nowrap">
+                                                    {purchaseUnitPrice > 0 ? `${fmt(estimatedAmount)} đ` : '—'}
+                                                    {purchaseUnitPrice > 0 && (
+                                                        <div className="text-[9px] font-bold text-slate-400">
+                                                            {fmt(purchaseUnitPrice)} đ/{purchaseUnit}
+                                                        </div>
+                                                    )}
+                                                </td>
                                                 <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{row.line.neededDate || row.request.expectedDate?.slice(0, 10) || '—'}</td>
                                             </tr>
                                         );
@@ -2758,6 +2787,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         const purchaseUnit = getPoLinePurchaseUnit(previewLine, inventory);
                                         const stockUnit = getPoLineStockUnit(previewLine, inventory);
                                         const stockQtyPreview = poLinePurchaseToStockQty(previewLine, Number(previewLine.qty || 0), inventory);
+                                        const lineTotalPreview = calculateLineTotal(previewLine);
                                         const hasUnitConversion = hasPurchaseUnitConversion({
                                             unit: stockUnit,
                                             purchaseUnit,
@@ -2857,6 +2887,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         {hasUnitConversion && (
                                                             <span className="px-1.5 py-0.5 rounded border border-cyan-100 bg-cyan-50 text-[9px] font-bold text-cyan-700">
                                                                 Nhập kho {fmtQty(stockQtyPreview)} {stockUnit} (1 {purchaseUnit} = {fmtQty(Number(previewLine.purchaseConversionFactor || inventory?.purchaseConversionFactor || 1))} {stockUnit})
+                                                            </span>
+                                                        )}
+                                                        {Number(previewLine.qty || 0) > 0 && Number(previewLine.unitPrice || 0) > 0 && (
+                                                            <span className="px-1.5 py-0.5 rounded border border-emerald-100 bg-emerald-50 text-[9px] font-bold text-emerald-700">
+                                                                Tính tiền {fmtQty(Number(previewLine.qty || 0))} {purchaseUnit || previewLine.unit} × {fmt(Number(previewLine.unitPrice || 0))} = {fmt(lineTotalPreview)} đ
                                                             </span>
                                                         )}
                                                         {formatSpecsSummary(item).map((badge, bIdx) => (

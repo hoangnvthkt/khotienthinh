@@ -34,8 +34,13 @@ import {
   ExcelImportPreview,
   applyImportChanges,
   buildImportPreview,
+  getExcelCell,
   parseExcelRows,
 } from '../lib/excelImport';
+import {
+  formatInventoryItemDeleteBlockers,
+  getLocalInventoryItemDeleteBlockers,
+} from '../lib/inventoryItemDeleteGuard';
 
 type MaterialCatalogForm = {
   sku: string;
@@ -58,6 +63,12 @@ const emptyMaterialCatalogForm = (): MaterialCatalogForm => ({
 });
 
 const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
+const roundConversionFactor = (value: number) => Math.round(value * 1_000_000_000_000) / 1_000_000_000_000;
+const invertConversionFactor = (value: unknown) => {
+  const factor = Number(value || 0);
+  return Number.isFinite(factor) && factor > 0 ? roundConversionFactor(1 / factor) : 0;
+};
+const formatConversionInput = (value: number) => value > 0 ? String(value) : '';
 
 const Settings: React.FC = () => {
   const {
@@ -69,7 +80,7 @@ const Settings: React.FC = () => {
     users, addUser, updateUser, removeUser, user: currentUser, logout, isLoading, realtimeStatus, lastRealtimeEvent,
     hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
     addHrmItem, updateHrmItem, removeHrmItem,
-    items, addItem, updateItem, removeItem, lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
+    items, addItem, updateItem, removeItem, transactions, requests, lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
     saveSignature, deleteSignature
   } = useApp();
   useModuleData('wms');
@@ -152,6 +163,7 @@ const Settings: React.FC = () => {
   const [newSup, setNewSup] = useState({ name: '', contact: '', phone: '' });
   const [editingMaterialItem, setEditingMaterialItem] = useState<InventoryItem | null>(null);
   const [materialForm, setMaterialForm] = useState<MaterialCatalogForm>(emptyMaterialCatalogForm());
+  const [stockToPurchaseFactorInput, setStockToPurchaseFactorInput] = useState('1');
   const [materialQuery, setMaterialQuery] = useState('');
   const [materialImporting, setMaterialImporting] = useState(false);
   const [materialImportMode, setMaterialImportMode] = useState<ExcelImportMode>('create');
@@ -411,6 +423,7 @@ const Settings: React.FC = () => {
   const resetMaterialForm = () => {
     setEditingMaterialItem(null);
     setMaterialForm(emptyMaterialCatalogForm());
+    setStockToPurchaseFactorInput('1');
   };
 
   const findCategoryName = (value: string) =>
@@ -473,9 +486,27 @@ const Settings: React.FC = () => {
         },
         {
           key: 'purchaseConversionFactor',
-          label: 'Hệ số quy đổi',
-          aliases: ['Hệ số quy đổi', 'He so quy doi', '1 đơn vị mua =', 'Hệ số ĐV mua -> ĐV kho'],
-          normalize: value => value === undefined ? undefined : Number(value) || 0,
+          label: 'Hệ số quy đổi phụ >> chính',
+          aliases: [
+            'Hệ số quy đổi từ ĐVT Chính >> ĐVT phụ',
+            'Hệ số quy đổi chính >> phụ',
+            'Hệ số ĐVT chính -> ĐVT phụ',
+            'Hệ số quy đổi từ ĐVT phụ >> ĐVT Chính',
+            'Hệ số quy đổi phụ >> chính',
+            'Hệ số quy đổi',
+            'He so quy doi',
+            '1 đơn vị mua =',
+            'Hệ số ĐV mua -> ĐV kho',
+          ],
+          normalize: (value, row) => {
+            const stockToPurchaseValue = getExcelCell(row, [
+              'Hệ số quy đổi từ ĐVT Chính >> ĐVT phụ',
+              'Hệ số quy đổi chính >> phụ',
+              'Hệ số ĐVT chính -> ĐVT phụ',
+            ]);
+            if (stockToPurchaseValue) return invertConversionFactor(Number(stockToPurchaseValue) || 0);
+            return value === undefined ? undefined : Number(value) || 0;
+          },
           validate: value => value === undefined || Number(value) > 0 ? undefined : 'Hệ số quy đổi phải > 0.',
         },
         {
@@ -552,6 +583,7 @@ const Settings: React.FC = () => {
   };
 
   const handleEditMaterialItem = (item: InventoryItem) => {
+    const purchaseConversionFactor = Number(item.purchaseConversionFactor || 1);
     setEditingMaterialItem(item);
     setMaterialForm({
       sku: item.sku || '',
@@ -559,15 +591,24 @@ const Settings: React.FC = () => {
       category: item.category || '',
       unit: item.unit || '',
       purchaseUnit: item.purchaseUnit || '',
-      purchaseConversionFactor: Number(item.purchaseConversionFactor || 1),
+      purchaseConversionFactor,
       defaultLeadTimeDays: Number(item.defaultLeadTimeDays ?? 7),
     });
+    setStockToPurchaseFactorInput(formatConversionInput(invertConversionFactor(purchaseConversionFactor)));
   };
 
   const handleDeleteMaterialItem = (item: InventoryItem) => {
+    const blockers = getLocalInventoryItemDeleteBlockers(item, { transactions, requests });
+    if (blockers.length > 0) {
+      toast.warning(
+        'Không thể xoá vật tư',
+        `Vật tư "${item.name}" đang có dữ liệu liên quan. ${formatInventoryItemDeleteBlockers(blockers)}. Chỉ xoá được khi tồn kho = 0 và không còn phiếu/giao dịch nào liên quan, kể cả pending.`,
+      );
+      return;
+    }
     triggerAction(
       'Xoá vật tư',
-      `Bạn chắc chắn muốn xoá vật tư "${item.name}" (${item.sku}) khỏi danh mục? Nếu vật tư đã phát sinh giao dịch, Supabase có thể chặn xoá để bảo toàn dữ liệu.`,
+      `Bạn chắc chắn muốn xoá vật tư "${item.name}" (${item.sku}) khỏi danh mục? Hệ thống sẽ kiểm tra lại Supabase trước khi xoá để bảo toàn dữ liệu.`,
       'danger',
       'Xoá vật tư',
       async () => {
@@ -591,7 +632,7 @@ const Settings: React.FC = () => {
           'Danh mục *': sampleCategory,
           'ĐVT Chính *': sampleUnit,
           'Đơn vị phụ (Đơn vị mua hàng)': samplePurchaseUnit,
-          'Hệ số quy đổi': samplePurchaseUnit ? 100 : 1,
+          'Hệ số quy đổi từ ĐVT Chính >> ĐVT phụ': samplePurchaseUnit ? 10 : 1,
           'Lead time mặc định': 15,
         },
       ];
@@ -605,7 +646,7 @@ const Settings: React.FC = () => {
           'Mã SKU *': items[0]?.sku || 'STEEL-001',
           'ĐVT Chính': sampleUnit,
           'Đơn vị phụ (Đơn vị mua hàng)': samplePurchaseUnit,
-          'Hệ số quy đổi': samplePurchaseUnit ? 100 : 1,
+          'Hệ số quy đổi từ ĐVT Chính >> ĐVT phụ': samplePurchaseUnit ? 10 : 1,
           'Lead time mặc định': 15,
         },
       ];
@@ -619,7 +660,7 @@ const Settings: React.FC = () => {
         ['Cập nhật', 'Dùng sheet Cap_nhat hoặc file chỉ gồm Mã SKU và các cột muốn sửa. Cột không có trong file sẽ giữ nguyên.'],
         ['Ô trống', 'Trong chế độ Cập nhật, ô trống nghĩa là không đổi dữ liệu.'],
         ['Xoá giá trị', 'Dùng __CLEAR__ cho field cho phép xoá, ví dụ Đơn vị phụ.'],
-        ['Hệ số quy đổi', 'Chỉ dùng khi Đơn vị phụ khác ĐVT Chính. Ví dụ mua 1 tấn nhập kho 100 cây thì nhập 100.'],
+        ['Hệ số quy đổi từ ĐVT Chính >> ĐVT phụ', 'Chỉ dùng khi Đơn vị phụ khác ĐVT Chính. Nhập số Đơn vị phụ tương ứng với 1 ĐVT Chính. Ví dụ 1 cây = 10 kg thì nhập 10.'],
         ['Lead time mặc định', 'Số ngày chuẩn của vật tư, dùng trong Kế hoạch vật tư nếu dự án chưa khai báo rule riêng.'],
         ['Danh mục / Đơn vị', 'Phải nhập đúng giá trị có trong các sheet danh mục hợp lệ.'],
       ]);
@@ -1083,20 +1124,66 @@ const Settings: React.FC = () => {
                               </select>
                             </div>
                             <div>
-                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Hệ số quy đổi</label>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                                Hệ số quy đổi từ ĐVT phụ &gt;&gt; ĐVT Chính
+                              </label>
                               <input
                                 type="number"
                                 min={0.000001}
                                 step="any"
                                 disabled={!materialForm.purchaseUnit || materialForm.purchaseUnit === materialForm.unit}
                                 value={materialForm.purchaseConversionFactor || ''}
-                                onChange={event => setMaterialForm(prev => ({ ...prev, purchaseConversionFactor: Number(event.target.value) }))}
-                                placeholder="VD: 100"
+                                onChange={event => {
+                                  const purchaseToStockFactor = Number(event.target.value || 0);
+                                  setMaterialForm(prev => ({ ...prev, purchaseConversionFactor: purchaseToStockFactor }));
+                                  setStockToPurchaseFactorInput(formatConversionInput(invertConversionFactor(purchaseToStockFactor)));
+                                }}
+                                placeholder="VD: 1 kg = 10 cây thì nhập 10"
                                 className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:bg-slate-100 disabled:text-slate-400"
                               />
+                              <div className="mt-1 text-[10px] font-bold text-slate-400">
+                                Nhập số lượng ĐVT Chính nhận được từ 1 Đơn vị phụ.
+                              </div>
                               {materialForm.purchaseUnit && materialForm.purchaseUnit !== materialForm.unit && materialForm.unit && (
                                 <div className="mt-1 text-[10px] font-bold text-amber-600">
-                                  1 {materialForm.purchaseUnit} = {Number(materialForm.purchaseConversionFactor || 0).toLocaleString('vi-VN')} {materialForm.unit}
+                                  <div>1 {materialForm.purchaseUnit} = {Number(materialForm.purchaseConversionFactor || 0).toLocaleString('vi-VN')} {materialForm.unit}</div>
+                                  <div className="text-amber-500">
+                                    1 {materialForm.unit} = {invertConversionFactor(materialForm.purchaseConversionFactor).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {materialForm.purchaseUnit}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                                Hệ số quy đổi từ ĐVT Chính &gt;&gt; ĐVT phụ
+                              </label>
+                              <input
+                                type="number"
+                                min={0.000001}
+                                step="any"
+                                disabled={!materialForm.purchaseUnit || materialForm.purchaseUnit === materialForm.unit}
+                                value={stockToPurchaseFactorInput}
+                                onChange={event => {
+                                  const rawValue = event.target.value;
+                                  setStockToPurchaseFactorInput(rawValue);
+                                  const stockToPurchaseFactor = Number(rawValue || 0);
+                                  setMaterialForm(prev => ({
+                                    ...prev,
+                                    purchaseConversionFactor: stockToPurchaseFactor > 0 ? invertConversionFactor(stockToPurchaseFactor) : 0,
+                                  }));
+                                }}
+                                placeholder="VD: 1 cây = 10 kg thì nhập 10"
+                                className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:bg-slate-100 disabled:text-slate-400"
+                              />
+                              <div className="mt-1 text-[10px] font-bold text-slate-400">
+                                Nhập số lượng Đơn vị phụ tương ứng với 1 ĐVT Chính.
+                              </div>
+                              {materialForm.purchaseUnit && materialForm.purchaseUnit !== materialForm.unit && materialForm.unit && (
+                                <div className="mt-1 text-[10px] font-bold text-cyan-600">
+                                  <div>1 {materialForm.unit} = {invertConversionFactor(materialForm.purchaseConversionFactor).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {materialForm.purchaseUnit}</div>
+                                  <div className="text-cyan-500">
+                                    1 {materialForm.purchaseUnit} = {Number(materialForm.purchaseConversionFactor || 0).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {materialForm.unit}
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -1144,7 +1231,7 @@ const Settings: React.FC = () => {
                                 <th className="px-4 py-3 text-left">Danh mục</th>
                                 <th className="px-4 py-3 text-left">ĐVT Chính</th>
                                 <th className="px-4 py-3 text-left">Đơn vị phụ</th>
-                                <th className="px-4 py-3 text-right">Hệ số</th>
+                                <th className="px-4 py-3 text-right">HS phụ &gt;&gt; chính</th>
                                 <th className="px-4 py-3 text-right">Lead time</th>
                                 <th className="px-4 py-3 text-right">Thao tác</th>
                               </tr>
@@ -1164,7 +1251,16 @@ const Settings: React.FC = () => {
                                   <td className="px-4 py-3 text-slate-500 font-bold">{item.unit || '-'}</td>
                                   <td className="px-4 py-3 text-slate-500">{item.purchaseUnit || item.unit || '-'}</td>
                                   <td className="px-4 py-3 text-right font-bold text-slate-600">
-                                    {item.purchaseUnit && item.purchaseUnit !== item.unit ? Number(item.purchaseConversionFactor || 1).toLocaleString('vi-VN') : '-'}
+                                    {item.purchaseUnit && item.purchaseUnit !== item.unit
+                                      ? (
+                                        <div>
+                                          <div>1 {item.purchaseUnit} = {Number(item.purchaseConversionFactor || 1).toLocaleString('vi-VN')} {item.unit}</div>
+                                          <div className="text-[10px] text-cyan-600">
+                                            1 {item.unit} = {invertConversionFactor(item.purchaseConversionFactor).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {item.purchaseUnit}
+                                          </div>
+                                        </div>
+                                      )
+                                      : '-'}
                                   </td>
                                   <td className="px-4 py-3 text-right font-bold text-slate-600">{Number(item.defaultLeadTimeDays ?? 7).toLocaleString()} ngày</td>
                                   <td className="px-4 py-3">
