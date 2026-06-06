@@ -365,7 +365,7 @@ export const contractCatalogInventoryService = {
     if (!isSupabaseConfigured) return [];
     const { data, error } = await supabase
       .from('items')
-      .select('id, sku, name, category, unit, purchase_unit, price_in, price_out, min_stock, supplier_id, image_url, location, stock_by_warehouse')
+      .select('id, sku, name, category, unit, purchase_unit, purchase_conversion_factor, price_in, price_out, min_stock, supplier_id, image_url, location, stock_by_warehouse')
       .order('name', { ascending: true });
     if (error) throw error;
     return (data || []).map(mapInventoryItem);

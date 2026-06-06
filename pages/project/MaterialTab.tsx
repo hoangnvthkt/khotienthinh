@@ -10,15 +10,17 @@ import {
     FileSpreadsheet, GitBranch, ListTree, MinusCircle
 } from 'lucide-react';
 import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment } from '../../types';
+import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowBoardFilter, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment } from '../../types';
 import { boqService, taskService, workBoqService, WorkBoqSyncPreview, poService } from '../../lib/projectService';
 import { materialRequestFulfillmentService, getRequestLineId } from '../../lib/materialRequestFulfillmentService';
 import { useApp } from '../../context/AppContext';
 import RequestModal from '../../components/RequestModal';
 import MaterialRequestKanbanBoard from '../../components/project/MaterialRequestKanbanBoard';
+import ProjectWorkflowAnalyticsPanel from '../../components/project/ProjectWorkflowAnalyticsPanel';
 import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
 import ProjectWorkflowActionDialog from '../../components/project/ProjectWorkflowActionDialog';
 import ProjectWorkflowBindingPanel from '../../components/project/ProjectWorkflowBindingPanel';
+import ProjectWorkflowInbox from '../../components/project/ProjectWorkflowInbox';
 import ProjectWorkflowStartDialog from '../../components/project/ProjectWorkflowStartDialog';
 import BoqReconciliationPanel from '../../components/project/BoqReconciliationPanel';
 import { useToast } from '../../context/ToastContext';
@@ -210,6 +212,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [requestWorkflowAssignments, setRequestWorkflowAssignments] = useState<Record<string, WorkflowStepAssignment[]>>({});
     const [requestWorkflowRuntimeContexts, setRequestWorkflowRuntimeContexts] = useState<Record<string, ProjectWorkflowRuntimeContext>>({});
     const [workflowConfiguration, setWorkflowConfiguration] = useState<ProjectWorkflowConfiguration | null>(null);
+    const [workflowBoardFilter, setWorkflowBoardFilter] = useState<ProjectWorkflowBoardFilter>('all');
+    const [workflowBoardSearch, setWorkflowBoardSearch] = useState('');
+    const [hideEmptyWorkflowLanes, setHideEmptyWorkflowLanes] = useState(false);
     const [startWorkflowRequest, setStartWorkflowRequest] = useState<MaterialRequest | null>(null);
     const [workflowActionTransition, setWorkflowActionTransition] = useState<{ request: MaterialRequest; subject: ProjectWorkflowSubject; nextNode: WorkflowNode } | null>(null);
     const [submissionTransition, setSubmissionTransition] = useState<{
@@ -233,6 +238,40 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [terminalNote, setTerminalNote] = useState('');
     const [transitioningRequestId, setTransitioningRequestId] = useState<string | null>(null);
     const openedDeepLinkRequestRef = useRef<string | null>(null);
+
+    // BOQ Resize Column Width
+    const [boqNameColWidth, setBoqNameColWidth] = useState(380);
+    const boqResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+    const handleBoqResizeStart = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        boqResizeRef.current = {
+            startX: e.clientX,
+            startWidth: boqNameColWidth,
+        };
+        document.addEventListener('mousemove', handleBoqResizeMove);
+        document.addEventListener('mouseup', handleBoqResizeEnd);
+    }, [boqNameColWidth]);
+
+    const handleBoqResizeMove = useCallback((e: MouseEvent) => {
+        if (!boqResizeRef.current) return;
+        const deltaX = e.clientX - boqResizeRef.current.startX;
+        const newWidth = Math.max(200, Math.min(850, boqResizeRef.current.startWidth + deltaX));
+        setBoqNameColWidth(newWidth);
+    }, []);
+
+    const handleBoqResizeEnd = useCallback(() => {
+        boqResizeRef.current = null;
+        document.removeEventListener('mousemove', handleBoqResizeMove);
+        document.removeEventListener('mouseup', handleBoqResizeEnd);
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            document.removeEventListener('mousemove', handleBoqResizeMove);
+            document.removeEventListener('mouseup', handleBoqResizeEnd);
+        };
+    }, [handleBoqResizeMove, handleBoqResizeEnd]);
 
     useEffect(() => {
         loadModuleData('wms-core');
@@ -336,11 +375,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             const subjects = await projectWorkflowService.listSubjectsByMaterialRequestIds(rows.map(row => row.id));
             setRequestWorkflowSubjects(subjects);
             const subjectIds = Object.values(subjects).map(subject => subject.id).filter(Boolean);
-            const [assignments, runtimeContexts] = await Promise.all([
-                projectWorkflowService.listAssignmentsBySubjectIds(subjectIds),
-                projectWorkflowService.listRuntimeContextsBySubjects(Object.values(subjects)),
-            ]);
-            setRequestWorkflowAssignments(assignments);
+            const runtimeContexts = await projectWorkflowService.listRuntimeContextsBySubjects(Object.values(subjects));
+            setRequestWorkflowAssignments(prev => {
+                const activeSubjectIds = new Set(subjectIds);
+                return Object.entries(prev).reduce<Record<string, WorkflowStepAssignment[]>>((acc, [subjectId, rows]) => {
+                    if (activeSubjectIds.has(subjectId)) acc[subjectId] = rows;
+                    return acc;
+                }, {});
+            });
             setRequestWorkflowRuntimeContexts(runtimeContexts);
         } catch (error: any) {
             console.error('Failed to load project material requests', error);
@@ -353,6 +395,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     useEffect(() => {
         setProjectRequests([]);
         setProjectRequestsLoaded(false);
+        projectWorkflowService.clearAssigneeCandidateCache();
         void loadProjectRequests();
     }, [loadProjectRequests]);
 
@@ -552,6 +595,20 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         () => selectedRequest ? requests.find(request => request.id === selectedRequest.id) || selectedRequest : undefined,
         [requests, selectedRequest],
     );
+
+    useEffect(() => {
+        const subject = selectedRequestLive ? requestWorkflowSubjects[selectedRequestLive.id] : null;
+        if (!subject || requestWorkflowAssignments[subject.id]) return;
+        let cancelled = false;
+        projectWorkflowService.listAssignmentsBySubjectIds([subject.id])
+            .then(assignments => {
+                if (!cancelled) setRequestWorkflowAssignments(prev => ({ ...prev, ...assignments }));
+            })
+            .catch(error => {
+                if (!cancelled) console.warn('Failed to lazy load workflow assignments', error);
+            });
+        return () => { cancelled = true; };
+    }, [requestWorkflowAssignments, requestWorkflowSubjects, selectedRequestLive]);
 
     useEffect(() => {
         const requestId = new URLSearchParams(location.search).get('requestId');
@@ -824,6 +881,53 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         });
     };
 
+    const refreshSingleProjectRequestWorkflow = async (
+        requestId: string,
+        knownSubject?: ProjectWorkflowSubject | null,
+    ): Promise<MaterialRequest | null> => {
+        const previousSubjectId = requestWorkflowSubjects[requestId]?.id;
+        const [updated, subject, events] = await Promise.all([
+            materialRequestService.getById(requestId),
+            knownSubject !== undefined
+                ? Promise.resolve(knownSubject)
+                : projectWorkflowService.getSubjectByMaterialRequestId(requestId),
+            materialRequestService.listEventsByRequestIds([requestId]),
+        ]);
+
+        if (updated) upsertProjectRequest(updated);
+        setRequestEventsByRequest(prev => ({ ...prev, ...events }));
+
+        if (subject) {
+            setRequestWorkflowSubjects(prev => ({ ...prev, [requestId]: subject }));
+            const [assignments, runtimeContexts] = await Promise.all([
+                projectWorkflowService.listAssignmentsBySubjectIds([subject.id]),
+                projectWorkflowService.listRuntimeContextsBySubjects([subject]),
+            ]);
+            setRequestWorkflowAssignments(prev => ({ ...prev, ...assignments }));
+            setRequestWorkflowRuntimeContexts(prev => ({ ...prev, ...runtimeContexts }));
+        } else {
+            setRequestWorkflowSubjects(prev => {
+                const next = { ...prev };
+                delete next[requestId];
+                return next;
+            });
+            if (previousSubjectId) {
+                setRequestWorkflowAssignments(prev => {
+                    const next = { ...prev };
+                    delete next[previousSubjectId];
+                    return next;
+                });
+                setRequestWorkflowRuntimeContexts(prev => {
+                    const next = { ...prev };
+                    delete next[previousSubjectId];
+                    return next;
+                });
+            }
+        }
+
+        return updated;
+    };
+
     const performRequestTransition = async (params: {
         request: MaterialRequest;
         toStep: MaterialRequestWorkflowStep;
@@ -933,17 +1037,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 });
             }
 
-            if (subject) {
-                setRequestWorkflowSubjects(prev => ({ ...prev, [params.request.id]: subject! }));
-                const assignments = await projectWorkflowService.listAssignmentsBySubjectIds([subject.id]);
-                setRequestWorkflowAssignments(prev => ({ ...prev, ...assignments }));
-                const runtimeContexts = await projectWorkflowService.listRuntimeContextsBySubjects([subject]);
-                setRequestWorkflowRuntimeContexts(prev => ({ ...prev, ...runtimeContexts }));
-            }
-            const updated = await materialRequestService.getById(params.request.id);
-            if (updated) upsertProjectRequest(updated);
-            const events = await materialRequestService.listEventsByRequestIds([params.request.id]);
-            setRequestEventsByRequest(prev => ({ ...prev, ...events }));
+            const updated = await refreshSingleProjectRequestWorkflow(params.request.id, subject);
 
             if (targetUserIds.length > 0 && updated) {
                 targetUserIds.forEach(targetUserId => {
@@ -968,7 +1062,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 });
             }
 
-            await refreshMaterialRequestWorkflow();
             toast.success('Đã cập nhật luồng vật tư', `Phiếu ${(updated || params.request).code} đã chuyển bước.`);
         } catch (error: any) {
             logApiError('materialTab.dynamicRequestTransition', error);
@@ -2184,63 +2277,93 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
-                                <table className="w-full text-xs min-w-[1620px]">
-                                    <thead className="bg-slate-50/80">
-                                        <tr className="text-[10px] font-bold text-slate-400 uppercase">
-                                            <th className="text-left px-4 py-3">Đầu mục / Vật tư</th>
-                                            <th className="text-center px-4 py-3">ĐVT</th>
-                                            <th className="text-right px-4 py-3">KL Dự toán</th>
-                                            <th className="text-right px-4 py-3">Ngưỡng hao hụt</th>
-                                            <th className="text-right px-4 py-3">Đơn giá</th>
-                                            <th className="text-right px-4 py-3">GT Triển khai</th>
-                                            <th className="text-right px-4 py-3">KL Thực tế CT</th>
-                                            <th className="text-right px-4 py-3">GT Thực tế CT</th>
-                                            <th className="text-right px-4 py-3">Chênh KL</th>
-                                            <th className="text-right px-4 py-3">KL HĐ</th>
-                                            <th className="text-right px-4 py-3">GT HĐ</th>
-                                            <th className="text-right px-4 py-3">Chênh lệch</th>
-                                            <th className="text-center px-4 py-3">TT</th>
-                                            <th className="text-center px-4 py-3"></th>
+                                <table className="w-full text-xs min-w-[1760px] table-fixed">
+                                    <thead className="bg-slate-50 border-b border-slate-200 dark:bg-slate-800/80 dark:border-slate-700">
+                                        <tr className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                                            <th className="text-left px-4 py-3 relative select-none" style={{ width: boqNameColWidth, minWidth: boqNameColWidth, maxWidth: boqNameColWidth }}>
+                                                <div className="flex items-center justify-between">
+                                                    <span>Đầu mục / Vật tư</span>
+                                                    {/* Resize Handle */}
+                                                    <div
+                                                        onMouseDown={handleBoqResizeStart}
+                                                        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-indigo-500 bg-slate-300/40 dark:bg-slate-700/50 transition-colors z-20"
+                                                        title="Kéo để thay đổi độ rộng cột"
+                                                    />
+                                                </div>
+                                            </th>
+                                            <th className="text-center px-2 py-3 whitespace-nowrap" style={{ width: 70, minWidth: 70 }}>ĐVT</th>
+                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 100, minWidth: 100 }}>KL Dự toán</th>
+                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>Ngưỡng hao hụt</th>
+                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 110, minWidth: 110 }}>Đơn giá</th>
+                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 130, minWidth: 130 }}>GT Triển khai</th>
+                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>KL Thực tế CT</th>
+                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 130, minWidth: 130 }}>GT Thực tế CT</th>
+                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 100, minWidth: 100 }}>Chênh KL</th>
+                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 100, minWidth: 100 }}>KL HĐ</th>
+                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>GT HĐ</th>
+                                            <th className="text-right px-3 py-3 whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>Chênh lệch</th>
+                                            <th className="text-center px-2 py-3 whitespace-nowrap" style={{ width: 80, minWidth: 80 }}>TT</th>
+                                            <th className="text-center px-2 py-3" style={{ width: 80, minWidth: 80 }}></th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700/40">
                                         {workBoqTree.map(({ item, level }) => {
                                             const comparison = getWorkComparison(item);
                                             const childMaterials = boqItemsByWork.get(item.id) || [];
                                             const isOrphan = item.syncStatus === 'orphaned';
+                                            const isLevel0 = level === 0;
+                                            
+                                            // Phân cấp dòng (cha - con) tương phản cao
+                                            const rowBgCls = isOrphan 
+                                                ? 'bg-amber-100/50 dark:bg-amber-950/20 hover:bg-amber-100 dark:hover:bg-amber-950/30' 
+                                                : isLevel0 
+                                                    ? 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/70 dark:hover:bg-slate-750 font-extrabold text-[13px] border-b border-slate-200 dark:border-slate-700' 
+                                                    : 'bg-indigo-50/25 dark:bg-indigo-950/10 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 font-bold';
+                                            const textCls = isLevel0 
+                                                ? 'text-slate-900 dark:text-white' 
+                                                : 'text-indigo-950 dark:text-indigo-300';
+
                                             return (
                                                 <React.Fragment key={item.id}>
-                                                    <tr className={`${isOrphan ? 'bg-amber-50/60' : 'bg-indigo-50/40'} hover:bg-indigo-50 group`}>
-                                                        <td className="px-4 py-2.5 font-black text-slate-800">
-                                                            <div className="flex items-center gap-2" style={{ paddingLeft: `${level * 18}px` }}>
-                                                                <ListTree size={12} className={isOrphan ? 'text-amber-500' : 'text-indigo-500'} />
-                                                                <span className="font-mono text-indigo-600">{item.wbsCode || '-'}</span>
-                                                                <span>{item.name}</span>
-                                                                {isOrphan && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[9px] font-black">ORPHAN</span>}
+                                                    <tr className={`${rowBgCls} transition-colors group`}>
+                                                        <td className="px-4 py-2.5" style={{ width: boqNameColWidth, minWidth: boqNameColWidth, maxWidth: boqNameColWidth }}>
+                                                            <div className="flex items-center gap-2 truncate" style={{ paddingLeft: `${level * 18}px` }}>
+                                                                <ListTree size={12} className={isOrphan ? 'text-amber-500 shrink-0' : isLevel0 ? 'text-slate-600 dark:text-slate-400 shrink-0' : 'text-indigo-500 shrink-0'} />
+                                                                <span className="font-mono text-[11px] text-indigo-600 dark:text-indigo-400 font-bold shrink-0">{item.wbsCode || '-'}</span>
+                                                                <span className={`${textCls} truncate`} title={item.name}>{item.name}</span>
+                                                                {isOrphan && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[9px] font-black shrink-0">ORPHAN</span>}
                                                             </div>
                                                         </td>
-                                                        <td className="px-4 py-2.5 text-center text-slate-500">{item.unit || '—'}</td>
-                                                        <td className="px-4 py-2.5 text-right font-bold text-slate-700">{formatQuantity(Number(item.plannedQty || 0))}</td>
-                                                        <td className="px-4 py-2.5 text-right text-slate-300">—</td>
-                                                        <td className="px-4 py-2.5 text-right text-slate-500">{fmt(Number(item.unitPrice || 0))}</td>
-                                                        <td className="px-4 py-2.5 text-right font-black text-indigo-700">{fmt(comparison.plannedValue)}</td>
-                                                        <td className="px-4 py-2.5 text-right text-slate-300">—</td>
-                                                        <td className="px-4 py-2.5 text-right text-slate-300">—</td>
-                                                        <td className="px-4 py-2.5 text-right text-slate-300">—</td>
-                                                        <td className="px-4 py-2.5 text-right text-slate-500">{comparison.hasLink ? formatQuantity(comparison.contractQty) : '—'}</td>
-                                                        <td className="px-4 py-2.5 text-right text-slate-500">{comparison.hasLink ? fmt(comparison.contractValue) : '—'}</td>
-                                                        <td className={`px-4 py-2.5 text-right font-black ${comparison.hasLink ? comparison.valueDiff > 0 ? 'text-red-500' : comparison.valueDiff < 0 ? 'text-emerald-600' : 'text-slate-500' : 'text-slate-300'}`}>
+                                                        <td className="px-2 py-2.5 text-center text-slate-500 dark:text-slate-400 font-bold whitespace-nowrap">{item.unit || '—'}</td>
+                                                        <td className="px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">{formatQuantity(Number(item.plannedQty || 0))}</td>
+                                                        <td className="px-3 py-2.5 text-right text-slate-300 dark:text-slate-600 whitespace-nowrap">—</td>
+                                                        <td className="px-3 py-2.5 text-right text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">{fmt(Number(item.unitPrice || 0))}</td>
+                                                        <td className="px-3 py-2.5 text-right font-black text-indigo-700 dark:text-indigo-450 whitespace-nowrap">{fmt(comparison.plannedValue)}</td>
+                                                        <td className="px-3 py-2.5 text-right text-slate-300 dark:text-slate-600 whitespace-nowrap">—</td>
+                                                        <td className="px-3 py-2.5 text-right text-slate-300 dark:text-slate-600 whitespace-nowrap">—</td>
+                                                        <td className="px-3 py-2.5 text-right text-slate-300 dark:text-slate-600 whitespace-nowrap">—</td>
+                                                        <td className="px-3 py-2.5 text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">{comparison.hasLink ? formatQuantity(comparison.contractQty) : '—'}</td>
+                                                        <td className="px-3 py-2.5 text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">{comparison.hasLink ? fmt(comparison.contractValue) : '—'}</td>
+                                                        <td className={`px-3 py-2.5 text-right font-black whitespace-nowrap ${
+                                                            comparison.hasLink 
+                                                                ? comparison.valueDiff > 0 
+                                                                    ? 'text-rose-600 dark:text-rose-400' 
+                                                                    : comparison.valueDiff < 0 
+                                                                        ? 'text-emerald-600 dark:text-emerald-400' 
+                                                                        : 'text-slate-500 dark:text-slate-450' 
+                                                                : 'text-slate-300 dark:text-slate-600'
+                                                        }`}>
                                                             {comparison.hasLink ? `${comparison.valueDiff > 0 ? '+' : ''}${fmt(comparison.valueDiff)}` : 'Chưa đối chiếu'}
                                                         </td>
-                                                        <td className="px-4 py-2.5 text-center">
-                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${comparison.hasLink ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                        <td className="px-2 py-2.5 text-center whitespace-nowrap">
+                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${comparison.hasLink ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400' : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'}`}>
                                                                 {comparison.hasLink ? 'Đã link HĐ' : 'Chưa link'}
                                                             </span>
                                                         </td>
-                                                        <td className="px-4 py-2.5 text-center">
+                                                        <td className="px-2 py-2.5 text-center whitespace-nowrap">
                                                             {canEditBoq && (
                                                                 <button onClick={() => { resetBoqForm(); setBWorkBoqItemId(item.id); setShowBoqForm(true); }}
-                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold text-indigo-600 hover:bg-indigo-100">
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold text-indigo-600 hover:bg-indigo-100 dark:text-indigo-400 dark:hover:bg-indigo-950/40 transition-colors">
                                                                     <Plus size={10} /> Vật tư
                                                                 </button>
                                                             )}
@@ -2248,41 +2371,55 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                     </tr>
                                                     {childMaterials.map(mat => {
                                                         const isOver = (mat.wasteQty || 0) > 0;
+                                                        const wasteQty = mat.wasteQty || 0;
+                                                        const wastePercent = mat.wastePercent || 0;
                                                         return (
-                                                            <tr key={mat.id} className="hover:bg-slate-50/70 group">
-                                                                <td className="px-4 py-2.5">
-                                                                    <div className="flex items-center gap-2 text-slate-700" style={{ paddingLeft: `${(level + 1) * 18}px` }}>
-                                                                        <MinusCircle size={11} className="text-slate-300" />
-                                                                        <span className="font-bold">{mat.itemName}</span>
-                                                                        <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-400 text-[9px] font-bold">{mat.category}</span>
+                                                            <tr key={mat.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors group">
+                                                                <td className="px-4 py-2.5" style={{ width: boqNameColWidth, minWidth: boqNameColWidth, maxWidth: boqNameColWidth }}>
+                                                                    <div className="flex items-center gap-2 text-slate-700 dark:text-slate-350 truncate" style={{ paddingLeft: `${(level + 1) * 18}px` }}>
+                                                                        <MinusCircle size={10} className="text-slate-400 dark:text-slate-500 shrink-0" />
+                                                                        <span className="font-semibold truncate text-slate-800 dark:text-slate-200" title={mat.itemName}>{mat.itemName}</span>
+                                                                        <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] font-bold shrink-0">{mat.category}</span>
                                                                     </div>
                                                                 </td>
-                                                                <td className="px-4 py-2.5 text-center text-slate-500">{mat.unit}</td>
-                                                                <td className="px-4 py-2.5 text-right font-bold text-slate-700">{formatQuantity(mat.budgetQty)}</td>
-                                                                <td className="px-4 py-2.5 text-right font-black text-indigo-600">{formatQuantity(mat.wasteThreshold)}</td>
-                                                                <td className="px-4 py-2.5 text-right text-slate-500">{fmt(mat.budgetUnitPrice)}</td>
-                                                                <td className="px-4 py-2.5 text-right font-bold text-slate-700">{fmt(mat.budgetTotal || 0)}</td>
-                                                                <td className="px-4 py-2.5 text-right font-black text-cyan-700">{formatQuantity(mat.actualQty || 0)}</td>
-                                                                <td className="px-4 py-2.5 text-right font-bold text-cyan-700">{fmt(mat.actualTotal || 0)}</td>
-                                                                <td className={`px-4 py-2.5 text-right font-black ${(mat.wasteQty || 0) > 0 ? 'text-red-500' : (mat.wasteQty || 0) < 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
-                                                                    {(mat.wasteQty || 0) > 0 ? '+' : ''}{formatQuantity(mat.wasteQty || 0)}
+                                                                <td className="px-2 py-2.5 text-center text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">{mat.unit}</td>
+                                                                <td className="px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">{formatQuantity(mat.budgetQty)}</td>
+                                                                <td className="px-3 py-2.5 text-right font-black text-indigo-600 dark:text-indigo-400 whitespace-nowrap">{formatQuantity(mat.wasteThreshold)}</td>
+                                                                <td className="px-3 py-2.5 text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">{fmt(mat.budgetUnitPrice)}</td>
+                                                                <td className="px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">{fmt(mat.budgetTotal || 0)}</td>
+                                                                <td className="px-3 py-2.5 text-right font-black text-cyan-700 dark:text-cyan-400 whitespace-nowrap">{formatQuantity(mat.actualQty || 0)}</td>
+                                                                <td className="px-3 py-2.5 text-right font-bold text-cyan-700 dark:text-cyan-400 whitespace-nowrap">{fmt(mat.actualTotal || 0)}</td>
+                                                                <td className={`px-3 py-2.5 text-right font-black whitespace-nowrap ${
+                                                                    wasteQty > 0 
+                                                                        ? 'text-rose-600 dark:text-rose-450 font-extrabold' 
+                                                                        : wasteQty < 0 
+                                                                            ? 'text-emerald-600 dark:text-emerald-450' 
+                                                                            : 'text-slate-500 dark:text-slate-450'
+                                                                }`}>
+                                                                    {wasteQty > 0 ? '+' : ''}{formatQuantity(wasteQty)}
                                                                 </td>
-                                                                <td className="px-4 py-2.5 text-right text-slate-300">—</td>
-                                                                <td className="px-4 py-2.5 text-right text-slate-300">—</td>
-                                                                <td className={`px-4 py-2.5 text-right font-black ${isOver ? 'text-red-500' : (mat.wastePercent || 0) > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>
-                                                                    {(mat.wastePercent || 0) > 0 ? '+' : ''}{formatPercent(mat.wastePercent || 0)}%
+                                                                <td className="px-3 py-2.5 text-right text-slate-300 dark:text-slate-600 whitespace-nowrap">—</td>
+                                                                <td className="px-3 py-2.5 text-right text-slate-300 dark:text-slate-600 whitespace-nowrap">—</td>
+                                                                <td className={`px-3 py-2.5 text-right font-black whitespace-nowrap ${
+                                                                    isOver 
+                                                                        ? 'text-rose-600 dark:text-rose-450 font-extrabold' 
+                                                                        : wastePercent > 0 
+                                                                            ? 'text-amber-500 dark:text-amber-450' 
+                                                                            : 'text-emerald-500 dark:text-emerald-450'
+                                                                }`}>
+                                                                    {wastePercent > 0 ? '+' : ''}{formatPercent(wastePercent)}%
                                                                 </td>
-                                                                <td className="px-4 py-2.5 text-center">
-                                                                    {isOver ? <AlertTriangle size={12} className="inline text-red-500" /> : <CheckCircle2 size={12} className="inline text-emerald-500" />}
+                                                                <td className="px-2 py-2.5 text-center whitespace-nowrap">
+                                                                    {isOver ? <AlertTriangle size={12} className="inline text-rose-500" /> : <CheckCircle2 size={12} className="inline text-emerald-500" />}
                                                                 </td>
-                                                                <td className="px-4 py-2.5">
+                                                                <td className="px-2 py-2.5 whitespace-nowrap">
                                                                     {(canEditBoq || canDeleteBoq) && (
-                                                                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
+                                                                        <div className="flex items-center justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                                                             {canEditBoq && (
-                                                                                <button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
+                                                                                <button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors"><Edit2 size={11} /></button>
                                                                             )}
                                                                             {canDeleteBoq && (
-                                                                                <button onClick={() => handleDeleteBoq(mat.id, mat.itemName)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
+                                                                                <button onClick={() => handleDeleteBoq(mat.id, mat.itemName)} className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"><Trash2 size={11} /></button>
                                                                             )}
                                                                         </div>
                                                                     )}
@@ -2294,27 +2431,33 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                             );
                                         })}
                                         {unassignedBoqItems.map(mat => (
-                                            <tr key={mat.id} className="hover:bg-slate-50/70 group">
-                                                <td className="px-4 py-2.5 font-bold text-slate-700">{mat.itemName}<span className="ml-2 text-[9px] text-amber-500">Chưa gắn đầu mục</span></td>
-                                                <td className="px-4 py-2.5 text-center text-slate-500">{mat.unit}</td>
-                                                <td className="px-4 py-2.5 text-right font-bold text-slate-700">{formatQuantity(mat.budgetQty)}</td>
-                                                <td className="px-4 py-2.5 text-right font-black text-indigo-600">{formatQuantity(mat.wasteThreshold)}</td>
-                                                <td className="px-4 py-2.5 text-right text-slate-500">{fmt(mat.budgetUnitPrice)}</td>
-                                                <td className="px-4 py-2.5 text-right font-bold text-slate-700">{fmt(mat.budgetTotal || 0)}</td>
-                                                <td className="px-4 py-2.5 text-right font-black text-cyan-700">{formatQuantity(mat.actualQty || 0)}</td>
-                                                <td className="px-4 py-2.5 text-right font-bold text-cyan-700">{fmt(mat.actualTotal || 0)}</td>
-                                                <td className={`px-4 py-2.5 text-right font-black ${(mat.wasteQty || 0) > 0 ? 'text-red-500' : (mat.wasteQty || 0) < 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
+                                            <tr key={mat.id} className="bg-amber-50/20 dark:bg-amber-950/5 hover:bg-amber-50/40 dark:hover:bg-amber-950/10 transition-colors group">
+                                                <td className="px-4 py-2.5" style={{ width: boqNameColWidth, minWidth: boqNameColWidth, maxWidth: boqNameColWidth }}>
+                                                    <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 truncate">
+                                                        <MinusCircle size={10} className="text-amber-500 shrink-0" />
+                                                        <span className="font-bold truncate text-slate-800 dark:text-slate-200" title={mat.itemName}>{mat.itemName}</span>
+                                                        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 text-[9px] font-black shrink-0">Chưa gắn đầu mục</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-2 py-2.5 text-center text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">{mat.unit}</td>
+                                                <td className="px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">{formatQuantity(mat.budgetQty)}</td>
+                                                <td className="px-3 py-2.5 text-right font-black text-indigo-600 dark:text-indigo-400 whitespace-nowrap">{formatQuantity(mat.wasteThreshold)}</td>
+                                                <td className="px-3 py-2.5 text-right text-slate-500 dark:text-slate-450 whitespace-nowrap">{fmt(mat.budgetUnitPrice)}</td>
+                                                <td className="px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">{fmt(mat.budgetTotal || 0)}</td>
+                                                <td className="px-3 py-2.5 text-right font-black text-cyan-700 dark:text-cyan-400 whitespace-nowrap">{formatQuantity(mat.actualQty || 0)}</td>
+                                                <td className="px-3 py-2.5 text-right font-bold text-cyan-700 dark:text-cyan-400 whitespace-nowrap">{fmt(mat.actualTotal || 0)}</td>
+                                                <td className={`px-3 py-2.5 text-right font-black whitespace-nowrap ${(mat.wasteQty || 0) > 0 ? 'text-rose-600 dark:text-rose-450 font-extrabold' : (mat.wasteQty || 0) < 0 ? 'text-emerald-600 dark:text-emerald-450' : 'text-slate-500'}`}>
                                                     {(mat.wasteQty || 0) > 0 ? '+' : ''}{formatQuantity(mat.wasteQty || 0)}
                                                 </td>
                                                 <td colSpan={4}></td>
-                                                <td className="px-4 py-2.5">
+                                                <td className="px-2 py-2.5 whitespace-nowrap">
                                                     {(canEditBoq || canDeleteBoq) && (
-                                                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
+                                                        <div className="flex items-center justify-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                                             {canEditBoq && (
-                                                                <button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
+                                                                <button onClick={() => openEditBoq(mat)} className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors"><Edit2 size={11} /></button>
                                                             )}
                                                             {canDeleteBoq && (
-                                                                <button onClick={() => handleDeleteBoq(mat.id, mat.itemName)} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
+                                                                <button onClick={() => handleDeleteBoq(mat.id, mat.itemName)} className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"><Trash2 size={11} /></button>
                                                             )}
                                                         </div>
                                                     )}
@@ -2322,13 +2465,17 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                             </tr>
                                         ))}
                                     </tbody>
-                                    <tfoot className="bg-slate-50/80 font-bold">
+                                    <tfoot className="bg-slate-100/90 dark:bg-slate-800/90 font-bold border-t-2 border-slate-200 dark:border-slate-700">
                                         <tr className="text-xs">
-                                            <td colSpan={5} className="px-4 py-3 text-slate-600">TỔNG CỘNG VẬT TƯ</td>
-                                            <td className="px-4 py-3 text-right text-slate-700">{fmt(stats.totalBudget)} đ</td>
-                                            <td className="px-4 py-3 text-right text-slate-300">—</td>
-                                            <td className="px-4 py-3 text-right text-cyan-700">{fmt(stats.totalActual)} đ</td>
-                                            <td className="px-4 py-3 text-right text-slate-300">—</td>
+                                            <td className="px-4 py-3 text-slate-600 dark:text-slate-300" style={{ width: boqNameColWidth, minWidth: boqNameColWidth, maxWidth: boqNameColWidth }}>TỔNG CỘNG VẬT TƯ</td>
+                                            <td className="px-2 py-3 text-center text-slate-400">—</td>
+                                            <td className="px-3 py-3 text-right text-slate-400">—</td>
+                                            <td className="px-3 py-3 text-right text-slate-400">—</td>
+                                            <td className="px-3 py-3 text-right text-slate-400">—</td>
+                                            <td className="px-3 py-3 text-right text-slate-700 dark:text-slate-300 whitespace-nowrap">{fmt(stats.totalBudget)} đ</td>
+                                            <td className="px-3 py-3 text-right text-slate-400">—</td>
+                                            <td className="px-3 py-3 text-right text-cyan-700 dark:text-cyan-400 whitespace-nowrap">{fmt(stats.totalActual)} đ</td>
+                                            <td className="px-3 py-3 text-right text-slate-400">—</td>
                                             <td colSpan={5}></td>
                                         </tr>
                                     </tfoot>
@@ -2393,6 +2540,62 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             Đang cập nhật luồng phiếu {transitioningRequestId.slice(-6)}...
                         </div>
                     )}
+                    {requests.length > 0 && (
+                        <>
+                            <ProjectWorkflowInbox
+                                requests={sortedRequests}
+                                subjectsByRequestId={requestWorkflowSubjects}
+                                users={users}
+                                currentUserId={user.id}
+                                onOpenRequest={req => { setSelectedRequest(req); setRequestModalInitialAction(undefined); setReqModalOpen(true); }}
+                            />
+                            <ProjectWorkflowAnalyticsPanel
+                                requests={sortedRequests}
+                                subjectsByRequestId={requestWorkflowSubjects}
+                                users={users}
+                            />
+                            <div className="flex flex-col gap-3 border-b border-slate-100 bg-white px-5 py-3 lg:flex-row lg:items-center lg:justify-between">
+                                <div className="flex flex-wrap gap-1.5">
+                                    {([
+                                        ['all', 'Tất cả'],
+                                        ['mine', 'Của tôi'],
+                                        ['overdue', 'Quá hạn'],
+                                        ['returned', 'Đã trả lại'],
+                                        ['watching', 'Theo dõi'],
+                                    ] as Array<[ProjectWorkflowBoardFilter, string]>).map(([filter, label]) => (
+                                        <button
+                                            key={filter}
+                                            type="button"
+                                            onClick={() => setWorkflowBoardFilter(filter)}
+                                            className={`rounded-lg border px-3 py-1.5 text-[10px] font-black transition ${workflowBoardFilter === filter ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}
+                                        >
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                    <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500">
+                                        <input
+                                            type="checkbox"
+                                            checked={hideEmptyWorkflowLanes}
+                                            onChange={event => setHideEmptyWorkflowLanes(event.target.checked)}
+                                            className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200"
+                                        />
+                                        Chỉ hiện bước có phiếu
+                                    </label>
+                                    <div className="flex min-w-[260px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                        <Search size={14} className="shrink-0 text-slate-300" />
+                                        <input
+                                            value={workflowBoardSearch}
+                                            onChange={event => setWorkflowBoardSearch(event.target.value)}
+                                            placeholder="Tìm mã phiếu, người yêu cầu, người xử lý..."
+                                            className="w-full border-none bg-transparent text-xs font-bold text-slate-600 outline-none placeholder:text-slate-300"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
                     {requests.length === 0 ? (
                         <div className="p-12 text-center">
                             <Package size={36} className="mx-auto mb-2 text-slate-200" />
@@ -2414,6 +2617,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                 ? workflowNodes.filter(node => node.templateId === workflowConfiguration.binding?.workflowTemplateId)
                                 : []}
                             workflowRuntimeNodes={requestWorkflowRuntimeNodes}
+                            currentUserId={user.id}
+                            boardFilter={workflowBoardFilter}
+                            searchTerm={workflowBoardSearch}
+                            hideEmptyWorkflowLanes={hideEmptyWorkflowLanes}
                             canMoveRequest={canMoveMaterialRequest}
                             onMoveRequest={handleMoveMaterialRequest}
                             onOpenRequest={req => { setSelectedRequest(req); setRequestModalInitialAction(undefined); setReqModalOpen(true); }}

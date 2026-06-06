@@ -29,6 +29,19 @@ const BINDING_TABLE = 'project_workflow_bindings';
 const ASSIGNMENT_TABLE = 'workflow_step_assignments';
 
 const WORKFLOW_INSTANCE_SELECT = 'id,template_id,template_version_id,current_instance_node_id,code,title,created_by,current_node_id,status,watchers,step_assignees,created_at,updated_at';
+const ASSIGNEE_CANDIDATE_CACHE_TTL_MS = 60_000;
+const assigneeCandidateCache = new Map<string, { expiresAt: number; rows: ProjectStaff[] }>();
+
+const getAssigneeCandidateCacheKey = (subject: ProjectWorkflowSubject, node?: WorkflowNode | null): string => JSON.stringify({
+  projectId: subject.projectId || null,
+  constructionSiteId: subject.constructionSiteId || null,
+  subjectId: subject.subjectId,
+  nodeId: node?.id || null,
+  mode: node?.config?.assignmentMode || null,
+  role: node?.config?.assigneeRole || null,
+  targets: node?.config?.assignmentTargets || [],
+  permissions: node?.config?.eligiblePermissionCodes || [],
+});
 
 const isMissingProjectWorkflowError = (error: any): boolean => {
   return ['42P01', '42883', 'PGRST202', 'PGRST205'].includes(error?.code);
@@ -413,7 +426,17 @@ export const projectWorkflowService = {
     }, {});
   },
 
+  clearAssigneeCandidateCache(): void {
+    assigneeCandidateCache.clear();
+  },
+
   async getAssigneeCandidates(subject: ProjectWorkflowSubject, node?: WorkflowNode | null): Promise<ProjectStaff[]> {
+    const cacheKey = getAssigneeCandidateCacheKey(subject, node);
+    const cached = assigneeCandidateCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.rows;
+    }
+
     const codes = node?.config?.eligiblePermissionCodes?.filter(Boolean) || [];
     const staff = codes.length > 0
       ? await projectStaffService.listProjectStaffWithPermissions(
@@ -427,7 +450,12 @@ export const projectWorkflowService = {
           ? await projectStaffService.listBySite(subject.constructionSiteId)
           : [];
 
-    return staff.filter(row => !row.endDate);
+    const rows = staff.filter(row => !row.endDate);
+    assigneeCandidateCache.set(cacheKey, {
+      rows,
+      expiresAt: Date.now() + ASSIGNEE_CANDIDATE_CACHE_TTL_MS,
+    });
+    return rows;
   },
 
   resolveAssignmentTargetUserIds(input: {

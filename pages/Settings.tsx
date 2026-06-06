@@ -43,6 +43,7 @@ type MaterialCatalogForm = {
   category: string;
   unit: string;
   purchaseUnit: string;
+  purchaseConversionFactor: number;
   defaultLeadTimeDays: number;
 };
 
@@ -52,6 +53,7 @@ const emptyMaterialCatalogForm = (): MaterialCatalogForm => ({
   category: '',
   unit: '',
   purchaseUnit: '',
+  purchaseConversionFactor: 1,
   defaultLeadTimeDays: 7,
 });
 
@@ -431,6 +433,7 @@ const Settings: React.FC = () => {
         category: '',
         unit: '',
         purchaseUnit: undefined,
+        purchaseConversionFactor: 1,
         priceIn: 0,
         priceOut: 0,
         minStock: 0,
@@ -469,6 +472,13 @@ const Settings: React.FC = () => {
           validate: value => value === undefined || value ? undefined : 'Đơn vị phụ chưa tồn tại.',
         },
         {
+          key: 'purchaseConversionFactor',
+          label: 'Hệ số quy đổi',
+          aliases: ['Hệ số quy đổi', 'He so quy doi', '1 đơn vị mua =', 'Hệ số ĐV mua -> ĐV kho'],
+          normalize: value => value === undefined ? undefined : Number(value) || 0,
+          validate: value => value === undefined || Number(value) > 0 ? undefined : 'Hệ số quy đổi phải > 0.',
+        },
+        {
           key: 'defaultLeadTimeDays',
           label: 'Lead time mặc định',
           aliases: ['Lead time mặc định', 'Lead time', 'Default lead time', 'Số ngày lead time'],
@@ -484,6 +494,8 @@ const Settings: React.FC = () => {
     const category = findCategoryName(materialForm.category);
     const unit = findUnitName(materialForm.unit);
     const purchaseUnit = materialForm.purchaseUnit ? findUnitName(materialForm.purchaseUnit) : '';
+    const normalizedPurchaseUnit = purchaseUnit && purchaseUnit !== unit ? purchaseUnit : undefined;
+    const purchaseConversionFactor = normalizedPurchaseUnit ? Number(materialForm.purchaseConversionFactor || 0) : 1;
 
     if (!sku || !name || !category || !unit) {
       toast.warning('Thiếu thông tin', 'Vui lòng nhập Mã SKU, Tên vật tư, Danh mục và ĐVT Chính.');
@@ -491,6 +503,10 @@ const Settings: React.FC = () => {
     }
     if (materialForm.purchaseUnit && !purchaseUnit) {
       toast.warning('Đơn vị phụ không hợp lệ', 'Đơn vị phụ phải nằm trong danh sách Đơn vị tính.');
+      return;
+    }
+    if (normalizedPurchaseUnit && (!Number.isFinite(purchaseConversionFactor) || purchaseConversionFactor <= 0)) {
+      toast.warning('Hệ số quy đổi không hợp lệ', 'Khi đơn vị phụ khác ĐVT Chính, hệ số quy đổi phải lớn hơn 0.');
       return;
     }
     const duplicatedSku = items.find(item => normalizeText(item.sku) === normalizeText(sku) && item.id !== editingMaterialItem?.id);
@@ -507,7 +523,8 @@ const Settings: React.FC = () => {
           name,
           category,
           unit,
-          purchaseUnit: purchaseUnit && purchaseUnit !== unit ? purchaseUnit : undefined,
+          purchaseUnit: normalizedPurchaseUnit,
+          purchaseConversionFactor,
           defaultLeadTimeDays: Math.max(0, Math.min(365, Number(materialForm.defaultLeadTimeDays) || 0)),
         });
       } else {
@@ -517,7 +534,8 @@ const Settings: React.FC = () => {
           name,
           category,
           unit,
-          purchaseUnit: purchaseUnit && purchaseUnit !== unit ? purchaseUnit : undefined,
+          purchaseUnit: normalizedPurchaseUnit,
+          purchaseConversionFactor,
           priceIn: 0,
           priceOut: 0,
           minStock: 0,
@@ -541,6 +559,7 @@ const Settings: React.FC = () => {
       category: item.category || '',
       unit: item.unit || '',
       purchaseUnit: item.purchaseUnit || '',
+      purchaseConversionFactor: Number(item.purchaseConversionFactor || 1),
       defaultLeadTimeDays: Number(item.defaultLeadTimeDays ?? 7),
     });
   };
@@ -572,12 +591,13 @@ const Settings: React.FC = () => {
           'Danh mục *': sampleCategory,
           'ĐVT Chính *': sampleUnit,
           'Đơn vị phụ (Đơn vị mua hàng)': samplePurchaseUnit,
+          'Hệ số quy đổi': samplePurchaseUnit ? 100 : 1,
           'Lead time mặc định': 15,
         },
       ];
       const wb = XLSX.utils.book_new();
       const createSheet = XLSX.utils.json_to_sheet(createRows);
-      createSheet['!cols'] = [{ wch: 18 }, { wch: 32 }, { wch: 24 }, { wch: 16 }, { wch: 30 }, { wch: 18 }];
+      createSheet['!cols'] = [{ wch: 18 }, { wch: 32 }, { wch: 24 }, { wch: 16 }, { wch: 30 }, { wch: 16 }, { wch: 18 }];
       XLSX.utils.book_append_sheet(wb, createSheet, 'Nhap_moi');
 
       const updateRows = [
@@ -585,11 +605,12 @@ const Settings: React.FC = () => {
           'Mã SKU *': items[0]?.sku || 'STEEL-001',
           'ĐVT Chính': sampleUnit,
           'Đơn vị phụ (Đơn vị mua hàng)': samplePurchaseUnit,
+          'Hệ số quy đổi': samplePurchaseUnit ? 100 : 1,
           'Lead time mặc định': 15,
         },
       ];
       const updateSheet = XLSX.utils.json_to_sheet(updateRows);
-      updateSheet['!cols'] = [{ wch: 18 }, { wch: 16 }, { wch: 30 }, { wch: 18 }];
+      updateSheet['!cols'] = [{ wch: 18 }, { wch: 16 }, { wch: 30 }, { wch: 16 }, { wch: 18 }];
       XLSX.utils.book_append_sheet(wb, updateSheet, 'Cap_nhat');
 
       const guideSheet = XLSX.utils.aoa_to_sheet([
@@ -598,6 +619,7 @@ const Settings: React.FC = () => {
         ['Cập nhật', 'Dùng sheet Cap_nhat hoặc file chỉ gồm Mã SKU và các cột muốn sửa. Cột không có trong file sẽ giữ nguyên.'],
         ['Ô trống', 'Trong chế độ Cập nhật, ô trống nghĩa là không đổi dữ liệu.'],
         ['Xoá giá trị', 'Dùng __CLEAR__ cho field cho phép xoá, ví dụ Đơn vị phụ.'],
+        ['Hệ số quy đổi', 'Chỉ dùng khi Đơn vị phụ khác ĐVT Chính. Ví dụ mua 1 tấn nhập kho 100 cây thì nhập 100.'],
         ['Lead time mặc định', 'Số ngày chuẩn của vật tư, dùng trong Kế hoạch vật tư nếu dự án chưa khai báo rule riêng.'],
         ['Danh mục / Đơn vị', 'Phải nhập đúng giá trị có trong các sheet danh mục hợp lệ.'],
       ]);
@@ -675,6 +697,9 @@ const Settings: React.FC = () => {
         const normalizedRecord = {
           ...record,
           purchaseUnit: record.purchaseUnit && record.purchaseUnit !== record.unit ? record.purchaseUnit : undefined,
+          purchaseConversionFactor: record.purchaseUnit && record.purchaseUnit !== record.unit
+            ? Math.max(Number(record.purchaseConversionFactor || 1), 0.000001)
+            : 1,
           defaultLeadTimeDays: Math.max(0, Math.min(365, Number(record.defaultLeadTimeDays ?? 7) || 0)),
         };
         const existing = items.find(item => normalizeText(item.sku) === normalizeText(normalizedRecord.sku));
@@ -771,7 +796,7 @@ const Settings: React.FC = () => {
     const keyword = materialQuery.trim().toLowerCase();
     const rows = [...items].sort((a, b) => a.sku.localeCompare(b.sku, 'vi'));
     if (!keyword) return rows;
-    return rows.filter(item => [item.sku, item.name, item.category, item.unit, item.purchaseUnit, item.defaultLeadTimeDays]
+    return rows.filter(item => [item.sku, item.name, item.category, item.unit, item.purchaseUnit, item.purchaseConversionFactor, item.defaultLeadTimeDays]
       .some(value => String(value || '').toLowerCase().includes(keyword)));
   }, [items, materialQuery]);
 
@@ -1005,7 +1030,7 @@ const Settings: React.FC = () => {
                           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                             <FileSpreadsheet size={14} /> {editingMaterialItem ? 'Cập nhật vật tư' : 'Thêm mới danh mục vật tư'}
                           </h3>
-                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-4">
                             <div>
                               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Mã SKU *</label>
                               <input
@@ -1058,6 +1083,24 @@ const Settings: React.FC = () => {
                               </select>
                             </div>
                             <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Hệ số quy đổi</label>
+                              <input
+                                type="number"
+                                min={0.000001}
+                                step="any"
+                                disabled={!materialForm.purchaseUnit || materialForm.purchaseUnit === materialForm.unit}
+                                value={materialForm.purchaseConversionFactor || ''}
+                                onChange={event => setMaterialForm(prev => ({ ...prev, purchaseConversionFactor: Number(event.target.value) }))}
+                                placeholder="VD: 100"
+                                className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:bg-slate-100 disabled:text-slate-400"
+                              />
+                              {materialForm.purchaseUnit && materialForm.purchaseUnit !== materialForm.unit && materialForm.unit && (
+                                <div className="mt-1 text-[10px] font-bold text-amber-600">
+                                  1 {materialForm.purchaseUnit} = {Number(materialForm.purchaseConversionFactor || 0).toLocaleString('vi-VN')} {materialForm.unit}
+                                </div>
+                              )}
+                            </div>
+                            <div>
                               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Lead time</label>
                               <input
                                 type="number"
@@ -1101,6 +1144,7 @@ const Settings: React.FC = () => {
                                 <th className="px-4 py-3 text-left">Danh mục</th>
                                 <th className="px-4 py-3 text-left">ĐVT Chính</th>
                                 <th className="px-4 py-3 text-left">Đơn vị phụ</th>
+                                <th className="px-4 py-3 text-right">Hệ số</th>
                                 <th className="px-4 py-3 text-right">Lead time</th>
                                 <th className="px-4 py-3 text-right">Thao tác</th>
                               </tr>
@@ -1108,7 +1152,7 @@ const Settings: React.FC = () => {
                             <tbody className="divide-y divide-slate-100 bg-white">
                               {filteredMaterialItems.length === 0 ? (
                                 <tr>
-                                  <td colSpan={7} className="py-12 text-center text-slate-400 text-sm font-bold">
+                                  <td colSpan={8} className="py-12 text-center text-slate-400 text-sm font-bold">
                                     Chưa có vật tư phù hợp.
                                   </td>
                                 </tr>
@@ -1119,6 +1163,9 @@ const Settings: React.FC = () => {
                                   <td className="px-4 py-3 text-slate-500">{item.category || '-'}</td>
                                   <td className="px-4 py-3 text-slate-500 font-bold">{item.unit || '-'}</td>
                                   <td className="px-4 py-3 text-slate-500">{item.purchaseUnit || item.unit || '-'}</td>
+                                  <td className="px-4 py-3 text-right font-bold text-slate-600">
+                                    {item.purchaseUnit && item.purchaseUnit !== item.unit ? Number(item.purchaseConversionFactor || 1).toLocaleString('vi-VN') : '-'}
+                                  </td>
                                   <td className="px-4 py-3 text-right font-bold text-slate-600">{Number(item.defaultLeadTimeDays ?? 7).toLocaleString()} ngày</td>
                                   <td className="px-4 py-3">
                                     <div className="flex items-center justify-end gap-1">

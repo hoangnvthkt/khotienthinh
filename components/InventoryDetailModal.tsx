@@ -101,9 +101,19 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
 
   const handleAdminSave = async () => {
     if (!item) return;
+    const purchaseUnit = editData.purchaseUnit && editData.purchaseUnit !== editData.unit ? editData.purchaseUnit : undefined;
+    const purchaseConversionFactor = purchaseUnit ? Number(editData.purchaseConversionFactor || 0) : 1;
+    if (purchaseUnit && (!Number.isFinite(purchaseConversionFactor) || purchaseConversionFactor <= 0)) {
+      toast.error('Hệ số quy đổi không hợp lệ', 'Khi đơn vị mua khác đơn vị kho, hệ số quy đổi phải lớn hơn 0.');
+      return;
+    }
     setAdminSaving(true);
     try {
-      await updateItem(editData as InventoryItem);
+      await updateItem({
+        ...editData,
+        purchaseUnit,
+        purchaseConversionFactor,
+      } as InventoryItem);
       logActivity('SYSTEM', 'Sửa dữ liệu gốc', `Admin đã thay đổi thông tin vật tư "${item.name}" (${item.sku})`, 'WARNING');
       setIsEditing(false);
       toast.success('Cập nhật thành công', `Thông tin vật tư "${item.name}" đã được cập nhật.`);
@@ -409,7 +419,26 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                   ) : (
                     <div className="font-bold text-amber-800 text-sm flex items-center gap-1">
                       {item.purchaseUnit}
-                      <span className="text-[9px] text-amber-500 font-black ml-1 bg-amber-100 px-1 rounded">KHÁC Đ.VỌN KHO</span>
+                      <span className="text-[9px] text-amber-500 font-black ml-1 bg-amber-100 px-1 rounded">KHÁC ĐV KHO</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              {((editData.purchaseUnit && editData.purchaseUnit !== editData.unit) || (item.purchaseUnit && item.purchaseUnit !== item.unit && !isEditing)) && (
+                <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                  <div className="text-amber-600 mb-1 text-[10px] uppercase font-bold tracking-tight">Hệ số quy đổi</div>
+                  {isEditing ? (
+                    <input
+                      type="number"
+                      min={0.000001}
+                      step="any"
+                      className="w-full bg-white border border-amber-200 text-sm font-bold p-1 rounded outline-none focus:ring-2 focus:ring-amber-400"
+                      value={editData.purchaseConversionFactor ?? 1}
+                      onChange={e => setEditData({ ...editData, purchaseConversionFactor: Number(e.target.value) })}
+                    />
+                  ) : (
+                    <div className="font-bold text-amber-800 text-sm">
+                      1 {item.purchaseUnit} = {Number(item.purchaseConversionFactor || 1).toLocaleString('vi-VN')} {item.unit}
                     </div>
                   )}
                 </div>

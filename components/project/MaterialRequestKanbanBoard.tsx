@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { ArrowRight, ChevronDown, ChevronUp, Clock, FileText, GitBranch, MessageSquare, Package, UserRound } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowRight, ChevronDown, ChevronUp, Clock, FileText, GripVertical, MessageSquare, Package, UserRound } from 'lucide-react';
 import {
   InventoryItem,
   MaterialRequest,
@@ -8,6 +8,7 @@ import {
   MaterialRequestFulfillmentSummary,
   MaterialRequestKanbanLaneId,
   MaterialRequestKanbanStage,
+  ProjectWorkflowBoardFilter,
   ProjectWorkflowSubject,
   ProjectWorkBoqItem,
   Transaction,
@@ -34,34 +35,84 @@ interface MaterialRequestKanbanBoardProps {
   workflowSubjectsByRequestId?: Record<string, ProjectWorkflowSubject>;
   workflowNodes?: WorkflowNode[];
   workflowRuntimeNodes?: WorkflowRuntimeNode[];
+  currentUserId?: string;
+  boardFilter?: ProjectWorkflowBoardFilter;
+  searchTerm?: string;
+  hideEmptyWorkflowLanes?: boolean;
   canMoveRequest: (request: MaterialRequest, toStage: MaterialRequestKanbanLaneId, fromStage: MaterialRequestKanbanLaneId) => boolean;
   onMoveRequest: (request: MaterialRequest, toStage: MaterialRequestKanbanLaneId, fromStage: MaterialRequestKanbanLaneId) => void;
   onOpenRequest: (request: MaterialRequest) => void;
 }
 
-const columnTone: Record<MaterialRequestKanbanStage, string> = {
-  draft: 'border-slate-200 bg-slate-50',
-  site_manager_review: 'border-amber-200 bg-amber-50/50',
-  material_department_review: 'border-blue-200 bg-blue-50/50',
-  batch_planning: 'border-indigo-200 bg-indigo-50/50',
-  site_quality_check: 'border-orange-200 bg-orange-50/50',
-  site_receipt: 'border-cyan-200 bg-cyan-50/50',
-  completed: 'border-emerald-200 bg-emerald-50/50',
-  closed: 'border-rose-200 bg-rose-50/50',
+const columnHeaderGradient: Record<MaterialRequestKanbanStage, string> = {
+  draft: 'from-slate-500 to-slate-600',
+  site_manager_review: 'from-amber-500 to-orange-500',
+  material_department_review: 'from-blue-500 to-blue-600',
+  batch_planning: 'from-indigo-500 to-violet-500',
+  site_quality_check: 'from-orange-500 to-amber-500',
+  site_receipt: 'from-cyan-500 to-teal-500',
+  completed: 'from-emerald-500 to-emerald-600',
+  closed: 'from-rose-500 to-red-600',
 };
 
-const getColumnTone = (id: MaterialRequestKanbanLaneId) => {
-  if (id.startsWith('workflow:')) return 'border-indigo-200 bg-indigo-50/50';
-  if (id === 'legacy_review') return 'border-amber-200 bg-amber-50/50';
-  return columnTone[id];
+const columnBgTone: Record<MaterialRequestKanbanStage, string> = {
+  draft: 'bg-slate-50/50 dark:bg-slate-900/40',
+  site_manager_review: 'bg-amber-50/30 dark:bg-amber-900/10',
+  material_department_review: 'bg-blue-50/30 dark:bg-blue-900/10',
+  batch_planning: 'bg-indigo-50/30 dark:bg-indigo-900/10',
+  site_quality_check: 'bg-orange-50/30 dark:bg-orange-900/10',
+  site_receipt: 'bg-cyan-50/30 dark:bg-cyan-900/10',
+  completed: 'bg-emerald-50/30 dark:bg-emerald-900/10',
+  closed: 'bg-rose-50/30 dark:bg-rose-900/10',
 };
 
-const slaTone = {
-  none: 'bg-slate-50 text-slate-400 border-slate-100',
-  normal: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-  urgent: 'bg-amber-50 text-amber-700 border-amber-100',
-  overdue: 'bg-red-50 text-red-600 border-red-100',
+const columnBorderTone: Record<MaterialRequestKanbanStage, string> = {
+  draft: 'border-slate-200 dark:border-slate-700',
+  site_manager_review: 'border-amber-200/50 dark:border-amber-800/30',
+  material_department_review: 'border-blue-200/50 dark:border-blue-800/30',
+  batch_planning: 'border-indigo-200/50 dark:border-indigo-800/30',
+  site_quality_check: 'border-orange-200/50 dark:border-orange-800/30',
+  site_receipt: 'border-cyan-200/50 dark:border-cyan-800/30',
+  completed: 'border-emerald-200/50 dark:border-emerald-800/30',
+  closed: 'border-rose-200/50 dark:border-rose-800/30',
 };
+
+const getHeaderGradient = (id: MaterialRequestKanbanLaneId) => {
+  if (id.startsWith('workflow:')) return 'from-purple-500 to-violet-500';
+  if (id === 'legacy_review') return 'from-amber-500 to-orange-500';
+  return columnHeaderGradient[id as MaterialRequestKanbanStage] || 'from-slate-500 to-slate-600';
+};
+
+const getColumnBg = (id: MaterialRequestKanbanLaneId) => {
+  if (id.startsWith('workflow:')) return 'bg-purple-50/30 dark:bg-purple-900/10';
+  if (id === 'legacy_review') return 'bg-amber-50/30 dark:bg-amber-900/10';
+  return columnBgTone[id as MaterialRequestKanbanStage] || 'bg-slate-50/50 dark:bg-slate-900/40';
+};
+
+const getColumnBorder = (id: MaterialRequestKanbanLaneId) => {
+  if (id.startsWith('workflow:')) return 'border-purple-200/50 dark:border-purple-800/30';
+  if (id === 'legacy_review') return 'border-amber-200/50 dark:border-amber-800/30';
+  return columnBorderTone[id as MaterialRequestKanbanStage] || 'border-slate-200 dark:border-slate-700';
+};
+
+const getLaneBorderColor = (laneId: MaterialRequestKanbanLaneId) => {
+  if (laneId.startsWith('workflow:')) return 'border-l-purple-500';
+  if (laneId === 'legacy_review') return 'border-l-amber-500';
+  
+  const colors: Record<MaterialRequestKanbanStage, string> = {
+    draft: 'border-l-slate-400',
+    site_manager_review: 'border-l-amber-500',
+    material_department_review: 'border-l-blue-500',
+    batch_planning: 'border-l-indigo-500',
+    site_quality_check: 'border-l-orange-500',
+    site_receipt: 'border-l-cyan-500',
+    completed: 'border-l-emerald-500',
+    closed: 'border-l-rose-500',
+  };
+  return colors[laneId as MaterialRequestKanbanStage] || 'border-l-slate-400';
+};
+
+
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '-';
@@ -81,6 +132,9 @@ const formatSlaLabel = (request: MaterialRequest) => {
   return `Còn ${absHours >= 24 ? `${Math.floor(absHours / 24)} ngày` : `${Math.ceil(absHours)}h`}`;
 };
 
+const normalizeText = (value: string) =>
+  value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
 const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
   requests,
   fulfillmentSummaries,
@@ -93,6 +147,10 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
   workflowSubjectsByRequestId = {},
   workflowNodes = [],
   workflowRuntimeNodes = [],
+  currentUserId,
+  boardFilter = 'all',
+  searchTerm = '',
+  hideEmptyWorkflowLanes = false,
   canMoveRequest,
   onMoveRequest,
   onOpenRequest,
@@ -100,7 +158,29 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [draggedRequestId, setDraggedRequestId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<MaterialRequestKanbanLaneId | null>(null);
+  const [hoverCandidateId, setHoverCandidateId] = useState<string | null>(null);
   const [hoveredRequestId, setHoveredRequestId] = useState<string | null>(null);
+  const [hoverCapable, setHoverCapable] = useState(true);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    setHoverCapable(window.matchMedia('(hover: hover) and (pointer: fine)').matches);
+  }, []);
+
+  useEffect(() => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    if (!hoverCandidateId || !hoverCapable || draggedRequestId) {
+      setHoveredRequestId(null);
+      return;
+    }
+    hoverTimerRef.current = setTimeout(() => {
+      setHoveredRequestId(hoverCandidateId);
+    }, 180);
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    };
+  }, [draggedRequestId, hoverCandidateId, hoverCapable]);
 
   const columns = useMemo(() => {
     const dynamicById = new Map<string, { id: MaterialRequestKanbanLaneId; label: string; hint: string; order: number }>();
@@ -154,8 +234,39 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
     ];
   }, [workflowNodes, workflowRuntimeNodes, workflowSubjectsByRequestId]);
 
+  const visibleRequests = useMemo(() => {
+    const needle = normalizeText(searchTerm.trim());
+    return requests.filter(request => {
+      const subject = workflowSubjectsByRequestId[request.id];
+      const assigneeIds = subject?.currentAssigneeUserIds?.length
+        ? subject.currentAssigneeUserIds
+        : subject?.currentAssigneeUserId
+          ? [subject.currentAssigneeUserId]
+          : request.submittedToUserId
+            ? [request.submittedToUserId]
+            : [];
+      if (needle) {
+        const requester = userById.get(request.requesterId);
+        const handlerNames = assigneeIds.map(id => userById.get(id)?.name || id).join(' ');
+        const text = normalizeText(`${request.code || ''} ${request.id || ''} ${requester?.name || ''} ${request.submittedToName || ''} ${handlerNames}`);
+        if (!text.includes(needle)) return false;
+      }
+      if (boardFilter === 'mine') {
+        return Boolean(currentUserId && (assigneeIds.includes(currentUserId) || request.requesterId === currentUserId));
+      }
+      if (boardFilter === 'overdue') return getMaterialRequestSlaState(request) === 'overdue';
+      if (boardFilter === 'returned') return subject?.status === 'RETURNED' || request.workflowStep === 'returned_to_creator';
+      if (boardFilter === 'watching') {
+        return Boolean(currentUserId && subject?.participants?.some(participant =>
+          participant.isActive && participant.role === 'WATCHER' && participant.userId === currentUserId
+        ));
+      }
+      return true;
+    });
+  }, [boardFilter, currentUserId, requests, searchTerm, userById, workflowSubjectsByRequestId]);
+
   const stageByRequestId = useMemo(() => {
-    return requests.reduce<Record<string, MaterialRequestKanbanLaneId>>((acc, request) => {
+    return visibleRequests.reduce<Record<string, MaterialRequestKanbanLaneId>>((acc, request) => {
       const subject = workflowSubjectsByRequestId[request.id];
       if (subject?.status === 'RUNNING' && subject.currentRuntimeNode?.type !== WorkflowNodeType.END) {
         const laneNodeId = subject.currentRuntimeNode?.templateNodeId || subject.currentRuntimeNode?.id || subject.currentNodeId;
@@ -176,20 +287,29 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
       );
       return acc;
     }, {});
-  }, [fulfillmentBatches, fulfillmentSummaries, requests, transactions, workflowSubjectsByRequestId]);
+  }, [fulfillmentBatches, fulfillmentSummaries, transactions, visibleRequests, workflowSubjectsByRequestId]);
 
   const requestsByStage = useMemo(() => {
     const grouped = columns.reduce<Record<string, MaterialRequest[]>>((acc, column) => {
       acc[column.id] = [];
       return acc;
     }, {});
-    requests.forEach(request => {
+    visibleRequests.forEach(request => {
       const stage = stageByRequestId[request.id] || 'draft';
       if (!grouped[stage]) grouped[stage] = [];
       grouped[stage].push(request);
     });
     return grouped;
-  }, [columns, requests, stageByRequestId]);
+  }, [columns, stageByRequestId, visibleRequests]);
+
+  const displayColumns = useMemo(() => {
+    return columns.filter(column => {
+      if (column.id === 'legacy_review') return (requestsByStage[column.id] || []).length > 0;
+      if (!hideEmptyWorkflowLanes) return true;
+      if (!column.id.startsWith('workflow:')) return true;
+      return (requestsByStage[column.id] || []).length > 0;
+    });
+  }, [columns, hideEmptyWorkflowLanes, requestsByStage]);
 
   const toggleExpanded = (id: string) => {
     setExpandedIds(prev => {
@@ -213,10 +333,10 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
   return (
     <div className="overflow-x-auto">
       <div
-        className="grid gap-4 p-4"
-        style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(290px, 1fr))`, minWidth: `${Math.max(columns.length, 1) * 306}px` }}
+        className="flex gap-4 pb-4 px-1"
+        style={{ minHeight: '60vh' }}
       >
-        {columns.map((column, colIndex) => {
+        {displayColumns.map((column, colIndex) => {
           const columnRequests = requestsByStage[column.id] || [];
           const isDropTarget = dragOverStage === column.id;
           return (
@@ -228,17 +348,21 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
               }}
               onDragLeave={() => setDragOverStage(null)}
               onDrop={() => handleDrop(column.id)}
-              className={`min-h-[520px] rounded-xl border ${getColumnTone(column.id)} ${isDropTarget ? 'ring-2 ring-indigo-300' : ''}`}
+              className={`flex flex-col rounded-2xl overflow-hidden border shrink-0 transition-all duration-200 ${getColumnBorder(column.id)} ${isDropTarget ? 'ring-2 ring-indigo-400 ring-offset-2 scale-[1.01]' : ''}`}
+              style={{ width: '320px', maxHeight: 'calc(100vh - 250px)' }}
             >
-              <div className="border-b border-white/70 px-3 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <h4 className="text-[11px] font-black uppercase tracking-wide text-slate-700">{column.label}</h4>
-                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-500">{columnRequests.length}</span>
+              {/* Gradient Header */}
+              <div className={`px-4 py-3 bg-gradient-to-r ${getHeaderGradient(column.id)} text-white`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase tracking-wider">{column.label}</span>
+                  <span className="text-[10px] font-bold bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded-full">
+                    {columnRequests.length}
+                  </span>
                 </div>
-                <p className="mt-1 line-clamp-2 text-[10px] font-medium text-slate-400">{column.hint}</p>
+                <p className="mt-1 line-clamp-1 text-[10px] font-medium text-white/70">{column.hint}</p>
               </div>
 
-              <div className="space-y-2 p-2">
+              <div className={`flex-1 overflow-y-auto p-2.5 space-y-2.5 ${getColumnBg(column.id)} ${isDropTarget ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : ''}`}>
                 {columnRequests.map((request, reqIndex) => {
                   const expanded = expandedIds.has(request.id);
                   const requester = userById.get(request.requesterId);
@@ -279,50 +403,79 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                         setDraggedRequestId(null);
                         setDragOverStage(null);
                       }}
-                      onMouseEnter={() => setHoveredRequestId(request.id)}
-                      onMouseLeave={() => setHoveredRequestId(null)}
-                      className="group relative rounded-xl border border-white bg-white shadow-sm transition hover:border-indigo-100 hover:shadow-md"
+                      onMouseEnter={() => setHoverCandidateId(request.id)}
+                      onMouseLeave={() => {
+                        setHoverCandidateId(null);
+                        setHoveredRequestId(null);
+                      }}
+                      className={`group relative rounded-xl border-l-4 bg-white dark:bg-slate-800 shadow-sm hover:shadow-lg cursor-pointer transition-all duration-200 ${getLaneBorderColor(column.id)} ${draggedRequestId === request.id ? 'opacity-50 scale-95 rotate-1' : 'hover:-translate-y-0.5'}`}
                     >
                       <button
                         onClick={() => toggleExpanded(request.id)}
-                        className="w-full px-3 py-3 text-left"
+                        className="w-full p-4 text-left"
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="truncate font-mono text-xs font-black text-indigo-600">{request.code}</div>
-                            <div className="mt-1 flex items-center gap-1 text-[10px] font-bold text-slate-400">
-                              <UserRound size={11} />
-                              <span className="truncate">{requester?.name || request.requesterId}</span>
+                          <div className="flex items-start gap-1.5 min-w-0">
+                            <GripVertical
+                              size={14}
+                              className="text-slate-300 dark:text-slate-600 shrink-0 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+                            />
+                            <div className="min-w-0">
+                              <h4 className="text-[13px] font-bold text-slate-800 dark:text-white leading-tight line-clamp-2">
+                                {request.code} - Đề xuất vật tư
+                              </h4>
+                              <span className="font-mono text-[9px] font-bold text-slate-400 dark:text-slate-500 mt-0.5 block">
+                                WF-{request.id?.substring(0, 8)}
+                              </span>
                             </div>
                           </div>
-                          {expanded ? <ChevronUp size={15} className="text-slate-300" /> : <ChevronDown size={15} className="text-slate-300" />}
+                          {expanded ? <ChevronUp size={15} className="text-slate-300 dark:text-slate-600" /> : <ChevronDown size={15} className="text-slate-300 dark:text-slate-600" />}
                         </div>
 
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black ${slaTone[slaState]}`}>
-                            <Clock size={10} /> {formatSlaLabel(request)}
+                        {/* Meta info row */}
+                        <div className="mt-2 flex items-center gap-3 text-[10px] text-slate-400 dark:text-slate-500">
+                          <span className="flex items-center gap-1">
+                            <UserRound size={9} />
+                            <span className="truncate max-w-[100px]">{requester?.name || request.requesterId}</span>
                           </span>
+                          <span className="flex items-center gap-1">
+                            <Clock size={9} />
+                            {formatSlaLabel(request)}
+                          </span>
+                        </div>
+
+                        {/* SLA Warning */}
+                        {slaState === 'overdue' && (
+                          <div className="mt-2 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-500">
+                            <Clock size={10} />
+                            {formatSlaLabel(request)}
+                          </div>
+                        )}
+                        {slaState === 'urgent' && (
+                          <div className="mt-2 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-500">
+                            <Clock size={10} />
+                            {formatSlaLabel(request)}
+                          </div>
+                        )}
+
+                        {/* Tags row */}
+                        <div className="mt-2 flex flex-wrap gap-1">
                           {handlerLabel && (
-                            <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-[9px] font-black text-amber-700">
-                              <UserRound size={10} /> {handlerLabel}
+                            <span className="text-[9px] bg-amber-50 dark:bg-amber-900/20 text-amber-600 px-1.5 py-0.5 rounded font-medium truncate max-w-[120px]">
+                              {handlerLabel}
                             </span>
                           )}
                           {workflowStepLabel && (
-                            <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[9px] font-black text-indigo-700">
-                              <GitBranch size={10} /> {workflowStepLabel}
+                            <span className="text-[9px] bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 px-1.5 py-0.5 rounded font-medium truncate max-w-[120px]">
+                              {workflowStepLabel}
                             </span>
                           )}
                         </div>
 
                         {summary && summary.committedQty > 0 && (
-                          <div className="mt-3">
-                            <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                              <div className="h-full rounded-full bg-emerald-500" style={{ width: `${progress}%` }} />
-                            </div>
-                            <div className="mt-1 flex justify-between text-[9px] font-black text-slate-400">
-                              <span>Nhận {summary.receivedQty.toLocaleString('vi-VN')}</span>
-                              <span>Còn {summary.remainingToReceive.toLocaleString('vi-VN')}</span>
-                            </div>
+                          <div className="mt-2 flex items-start gap-1.5 text-[10px] text-slate-400 bg-slate-50 dark:bg-slate-700/30 rounded-lg px-2.5 py-1.5">
+                            <Package size={10} className="shrink-0 mt-0.5 text-slate-300" />
+                            <span className="line-clamp-1">Nhận {summary.receivedQty.toLocaleString('vi-VN')} / {summary.committedQty.toLocaleString('vi-VN')} ({progress}%)</span>
                           </div>
                         )}
                       </button>
@@ -382,7 +535,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                       )}
 
                       {/* Quick View Popover on Hover */}
-                      {isHovered && (
+                      {isHovered && hoverCapable && (
                         <div
                           className={`absolute z-50 w-[400px] rounded-2xl border border-slate-100 bg-white/95 backdrop-blur-md p-4 shadow-[0_20px_50px_rgba(0,0,0,0.15)] transition-all duration-300 ${
                             isRightSide ? 'right-full mr-3' : 'left-full ml-3'
@@ -403,7 +556,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                                   {request.code}
                                 </h4>
                               </div>
-                              <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase border ${getColumnTone(column.id).split(' ')[0]} ${getColumnTone(column.id).split(' ')[1]} ${getColumnTone(column.id).split(' ')[2] || ''}`}>
+                              <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase text-white bg-gradient-to-r ${getHeaderGradient(column.id)}`}>
                                 {column.label}
                               </span>
                             </div>
@@ -555,11 +708,20 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                 })}
 
                 {columnRequests.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-slate-200 bg-white/60 px-3 py-8 text-center">
-                    <Package size={20} className="mx-auto text-slate-200" />
-                    <p className="mt-2 text-[10px] font-bold text-slate-300">Không có phiếu</p>
+                  <div className={`flex flex-col items-center justify-center py-10 text-slate-300 dark:text-slate-600 transition-all ${isDropTarget ? 'opacity-100' : 'opacity-50'}`}>
+                    <Package size={28} className="mb-2" />
+                    <p className="text-[10px] font-bold uppercase tracking-wider">
+                      {isDropTarget ? 'Thả vào đây' : 'Không có phiếu'}
+                    </p>
                   </div>
                 )}
+              </div>
+
+              {/* Column Footer */}
+              <div className={`px-4 py-2 border-t ${getColumnBorder(column.id)} bg-white/60 dark:bg-slate-800/60`}>
+                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                  {columnRequests.length} phiếu
+                </span>
               </div>
             </section>
           );

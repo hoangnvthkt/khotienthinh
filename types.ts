@@ -1595,6 +1595,9 @@ export interface PurchaseOrderItem {
   isManualItem?: boolean;
   itemNameSnapshot?: string;
   unitSnapshot?: string;
+  stockUnitSnapshot?: string;
+  purchaseUnitSnapshot?: string;
+  purchaseConversionFactor?: number;
   specification?: string;
   manualReason?: string;
   note?: string;
@@ -1724,6 +1727,7 @@ export interface InventoryItem {
   category: string;
   unit: string;          // Đơn vị tồn kho & xuất kho (VD: Cây, Cái, Tấm)
   purchaseUnit?: string; // Đơn vị mua hàng (VD: KG, Tấn) - khác với unit nếu có
+  purchaseConversionFactor?: number; // 1 đơn vị mua = bao nhiêu đơn vị tồn kho
   priceIn: number;
   priceOut: number;
   minStock: number;
@@ -1765,11 +1769,188 @@ export interface TransactionItem {
   materialRequestId?: string;
   requestLineId?: string;
   fulfillmentBatchId?: string;
+  materialIssueOrderId?: string;
+  materialIssueLineId?: string;
+  materialIssueReturnId?: string;
+  recipientType?: MaterialIssueRecipientType;
+  recipientNameSnapshot?: string;
   varianceReason?: string;
   // --- Thông tin kế toán (chỉ áp dụng khi NHẬP KHO với đơn vị mua khác) ---
   accountingQty?: number;      // Số lượng theo đơn vị mua (VD: 10.05 KG)
   accountingUnit?: string;     // Đơn vị mua (VD: 'KG') - snapshot tại thời điểm nhập
   accountingPrice?: number;    // Đơn giá theo đơn vị mua (VD: 15000 VNĐ/KG)
+}
+
+export type MaterialIssueRecipientType = 'employee' | 'work_group' | 'subcontractor' | 'partner' | 'manual';
+
+export type MaterialIssueStatus =
+  | 'draft'
+  | 'submitted'
+  | 'wms_pending'
+  | 'issued'
+  | 'partially_received'
+  | 'received'
+  | 'settling'
+  | 'partially_returned'
+  | 'closed'
+  | 'rejected'
+  | 'cancelled';
+
+export type MaterialIssueLedgerType =
+  | 'issue'
+  | 'receive_confirm'
+  | 'return'
+  | 'consume'
+  | 'loss'
+  | 'adjustment';
+
+export interface MaterialIssueLine {
+  id: string;
+  issueOrderId: string;
+  itemId: string;
+  skuSnapshot?: string | null;
+  itemNameSnapshot: string;
+  unit?: string | null;
+  requestedQty: number;
+  approvedQty: number;
+  issuedQty: number;
+  receivedQty: number;
+  consumedQty: number;
+  returnedQty: number;
+  lostQty: number;
+  unitPrice: number;
+  materialBudgetItemId?: string | null;
+  materialRequestLineId?: string | null;
+  workBoqItemId?: string | null;
+  subcontractorContractId?: string | null;
+  note?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface MaterialIssueReceiptLine {
+  id: string;
+  receiptId: string;
+  issueLineId: string;
+  itemId: string;
+  receivedQty: number;
+  varianceReason?: string | null;
+  createdAt?: string;
+}
+
+export interface MaterialIssueReceipt {
+  id: string;
+  issueOrderId: string;
+  receiptNo: string;
+  status: 'confirmed' | 'cancelled';
+  receivedBy?: string | null;
+  receivedByName?: string | null;
+  receivedAt: string;
+  note?: string | null;
+  signatureUrl?: string | null;
+  attachments?: any[];
+  createdAt?: string;
+  lines?: MaterialIssueReceiptLine[];
+}
+
+export interface MaterialIssueReturnLine {
+  id: string;
+  issueReturnId: string;
+  issueLineId: string;
+  itemId: string;
+  returnQty: number;
+  unit?: string | null;
+  reason?: string | null;
+  createdAt?: string;
+}
+
+export interface MaterialIssueReturn {
+  id: string;
+  issueOrderId: string;
+  returnNo: string;
+  targetWarehouseId: string;
+  status: 'pending' | 'completed' | 'cancelled';
+  transactionId: string;
+  reason: string;
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+  completedBy?: string | null;
+  completedAt?: string | null;
+  cancelledAt?: string | null;
+  updatedAt?: string;
+  lines?: MaterialIssueReturnLine[];
+}
+
+export interface MaterialIssueOrder {
+  id: string;
+  issueNo: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  sourceWarehouseId: string;
+  recipientType: MaterialIssueRecipientType;
+  recipientId?: string | null;
+  recipientName: string;
+  responsibleUserId?: string | null;
+  subcontractorContractId?: string | null;
+  materialRequestId?: string | null;
+  workBoqItemId?: string | null;
+  neededDate?: string | null;
+  status: MaterialIssueStatus;
+  transactionId?: string | null;
+  qrToken?: string | null;
+  note?: string | null;
+  overrideReason?: string | null;
+  attachments?: any[];
+  createdBy?: string | null;
+  submittedBy?: string | null;
+  submittedAt?: string | null;
+  issuedBy?: string | null;
+  issuedAt?: string | null;
+  closedBy?: string | null;
+  closedAt?: string | null;
+  cancelledBy?: string | null;
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  lines: MaterialIssueLine[];
+  receipts?: MaterialIssueReceipt[];
+  returns?: MaterialIssueReturn[];
+}
+
+export interface MaterialPartyLedgerEntry {
+  id: string;
+  issueOrderId: string;
+  issueLineId?: string | null;
+  sourceDocumentType: string;
+  sourceDocumentId: string;
+  ledgerType: MaterialIssueLedgerType;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  recipientType: MaterialIssueRecipientType;
+  recipientId?: string | null;
+  recipientName: string;
+  itemId: string;
+  itemNameSnapshot: string;
+  unit?: string | null;
+  quantityDelta: number;
+  reason?: string | null;
+  metadata?: Record<string, any>;
+  createdBy?: string | null;
+  createdAt?: string;
+}
+
+export interface MaterialPartyBalance {
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  recipientType: MaterialIssueRecipientType;
+  recipientId?: string | null;
+  recipientName: string;
+  itemId: string;
+  itemNameSnapshot: string;
+  unit?: string | null;
+  balanceQty: number;
 }
 
 export interface Transaction {
@@ -2288,6 +2469,153 @@ export interface ProjectWorkflowRuntimeContext {
   subject: ProjectWorkflowSubject;
   nodes: WorkflowRuntimeNode[];
   edges: WorkflowRuntimeEdge[];
+}
+
+export interface ProjectWorkflowCommentAttachment {
+  id: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  storagePath: string;
+  kind: 'image' | 'file';
+  uploadedAt?: string;
+}
+
+export interface ProjectWorkflowComment {
+  id: string;
+  workflowSubjectId: string;
+  workflowInstanceId?: string | null;
+  subjectType: ProjectWorkflowSubjectType;
+  subjectId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  authorUserId: string;
+  body: string;
+  attachments?: ProjectWorkflowCommentAttachment[];
+  metadata?: Record<string, any>;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type ProjectWorkflowBoardFilter = 'all' | 'mine' | 'overdue' | 'returned' | 'watching';
+export type WorkflowTemplateLifecycleStatus = 'draft' | 'published' | 'deactivated';
+
+export interface MaterialRequestWorkflowBoardCard {
+  id: string;
+  code?: string;
+  status?: RequestStatus | string;
+  workflowStep?: MaterialRequestWorkflowStep | string | null;
+  workflowStepStartedAt?: string | null;
+  workflowStepDueAt?: string | null;
+  workflowStepSlaHours?: number | null;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  requesterId?: string | null;
+  requesterName?: string | null;
+  submittedToUserId?: string | null;
+  submittedToName?: string | null;
+  createdDate?: string | null;
+  expectedDate?: string | null;
+  subject?: Partial<ProjectWorkflowSubject> & {
+    currentNodeLabel?: string | null;
+    currentNodeType?: string | null;
+  } | null;
+  currentRuntimeNode?: Partial<WorkflowRuntimeNode> | null;
+  currentAssignees?: Array<{ id: string; name?: string | null }>;
+  slaState?: 'none' | 'normal' | 'urgent' | 'overdue';
+  fulfillmentSummary?: {
+    batchCount: number;
+    activeBatchCount: number;
+    committedQty: number;
+    issuedQty: number;
+    receivedQty: number;
+  };
+  eventPreview?: Array<{
+    id: string;
+    action: string;
+    actorUserId?: string | null;
+    targetUserId?: string | null;
+    note?: string | null;
+    createdAt?: string | null;
+  }>;
+  downstream?: {
+    activeCount: number;
+    totalCount: number;
+  };
+}
+
+export interface ProjectWorkflowTimelineEntry {
+  kind: 'assignment' | 'event';
+  id: string;
+  workflowSubjectId?: string;
+  workflowInstanceId?: string | null;
+  nodeId?: string | null;
+  instanceNodeId?: string | null;
+  assignmentRoundId?: string | null;
+  nodeLabel?: string | null;
+  nodeType?: string | null;
+  assigneeUserId?: string | null;
+  assigneeName?: string | null;
+  assignedBy?: string | null;
+  assignedByName?: string | null;
+  status?: WorkflowStepAssignmentStatus | string;
+  assignedAt?: string | null;
+  actedAt?: string | null;
+  actionComment?: string | null;
+  action?: string;
+  actorUserId?: string | null;
+  actorName?: string | null;
+  targetUserId?: string | null;
+  targetName?: string | null;
+  note?: string | null;
+  dueAt?: string | null;
+  slaHours?: number | null;
+  metadata?: Record<string, any>;
+  createdAt?: string | null;
+}
+
+export interface ProjectWorkflowActionContextResult {
+  subjectType: ProjectWorkflowSubjectType;
+  subjectId: string;
+  workflowSubjectId: string;
+  status: ProjectWorkflowSubjectStatus;
+  currentNode?: Partial<WorkflowRuntimeNode | WorkflowNode> | null;
+  nextNode?: Partial<WorkflowRuntimeNode | WorkflowNode> | null;
+  returnTargetNode?: Partial<WorkflowRuntimeNode | WorkflowNode> | null;
+  pendingAssigneeUserIds: string[];
+  isPendingAssignee: boolean;
+  isWorkflowAdmin: boolean;
+  isWatcher: boolean;
+  isCreator: boolean;
+  canApprove: boolean;
+  canReturn: boolean;
+  canReject: boolean;
+  canResubmit: boolean;
+  canReassign: boolean;
+  canRollback: boolean;
+  rollbackDependencies?: ProjectWorkflowRollbackDependencyResult | null;
+}
+
+export interface WorkflowDelegationRule {
+  id: string;
+  delegatorUserId: string;
+  delegateUserId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  startsAt: string;
+  endsAt: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface WorkflowAnalyticsSummary {
+  totalRunning: number;
+  overdueCount: number;
+  returnedCount: number;
+  watcherCount: number;
+  byStep: Array<{ stepId: string; label: string; count: number; overdueCount: number }>;
+  workloadByUser: Array<{ userId: string; name?: string; pendingCount: number; overdueCount: number }>;
 }
 
 export interface WorkflowEdge {

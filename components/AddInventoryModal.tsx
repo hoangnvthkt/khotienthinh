@@ -29,6 +29,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
     category: '',
     unit: '',
     purchaseUnit: '', // Đơn vị mua (KG, Tấn...) - để trống nếu giống đơn vị tồn kho
+    purchaseConversionFactor: 1,
     supplierId: '',
     priceIn: 0,
     priceOut: 0,
@@ -105,7 +106,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    const numberFields = ['priceIn', 'priceOut', 'minStock', 'defaultLeadTimeDays', 'initialStock'];
+    const numberFields = ['purchaseConversionFactor', 'priceIn', 'priceOut', 'minStock', 'defaultLeadTimeDays', 'initialStock'];
 
     setFormData(prev => ({
       ...prev,
@@ -119,6 +120,12 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
       toast.error('Thiếu thông tin', 'Vui lòng nhập đầy đủ: Mã SKU, Tên, Danh mục, Đơn vị tính');
       return;
     }
+    const purchaseUnit = formData.purchaseUnit && formData.purchaseUnit !== formData.unit ? formData.purchaseUnit : undefined;
+    const purchaseConversionFactor = purchaseUnit ? Number(formData.purchaseConversionFactor || 0) : 1;
+    if (purchaseUnit && (!Number.isFinite(purchaseConversionFactor) || purchaseConversionFactor <= 0)) {
+      toast.error('Hệ số quy đổi không hợp lệ', 'Khi đơn vị mua khác đơn vị kho, hệ số quy đổi phải lớn hơn 0.');
+      return;
+    }
 
     // 1. Tạo vật tư mới trong danh mục
     const newItem: InventoryItem = {
@@ -127,7 +134,8 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
       name: formData.name,
       category: formData.category,
       unit: formData.unit,
-      purchaseUnit: (formData.purchaseUnit && formData.purchaseUnit !== formData.unit) ? formData.purchaseUnit : undefined,
+      purchaseUnit,
+      purchaseConversionFactor,
       supplierId: formData.supplierId || undefined,
       priceIn: formData.priceIn,
       priceOut: formData.priceOut,
@@ -169,7 +177,7 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
 
       onClose();
       setFormData({
-        sku: '', name: '', category: '', unit: '', purchaseUnit: '', supplierId: '',
+        sku: '', name: '', category: '', unit: '', purchaseUnit: '', purchaseConversionFactor: 1, supplierId: '',
         priceIn: 0, priceOut: 0, minStock: 0, defaultLeadTimeDays: 7, location: '',
         initialWarehouseId: '', initialStock: 0
       });
@@ -268,9 +276,21 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
                 )}
               </div>
               {formData.purchaseUnit && formData.purchaseUnit !== formData.unit && (
-                <p className="text-[10px] text-amber-600 font-bold">
-                  ℹ️ Vật tư này sẽ hỗ trợ nhập kho theo {formData.purchaseUnit}, xuất kho theo {formData.unit || '...'}
-                </p>
+                <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-2 items-center">
+                  <input
+                    type="number"
+                    min={0.000001}
+                    step="any"
+                    name="purchaseConversionFactor"
+                    value={formData.purchaseConversionFactor || ''}
+                    onChange={handleChange}
+                    placeholder="Hệ số quy đổi"
+                    className="w-full p-2.5 border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none bg-white text-sm font-bold"
+                  />
+                  <p className="text-[10px] text-amber-600 font-bold">
+                    1 {formData.purchaseUnit} = {(Number(formData.purchaseConversionFactor || 0) || 0).toLocaleString('vi-VN')} {formData.unit || 'đơn vị kho'}
+                  </p>
+                </div>
               )}
             </div>
 

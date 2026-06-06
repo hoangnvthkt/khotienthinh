@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { CheckCircle2, Clock, GitBranch, RotateCcw, UserRound, XCircle } from 'lucide-react';
 import { User, WorkflowNode, WorkflowStepAssignment, WorkflowStepAssignmentStatus } from '../../types';
 
@@ -8,12 +8,12 @@ interface Props {
   users: User[];
 }
 
-const statusLabel: Record<WorkflowStepAssignmentStatus, string> = {
+const baseStatusLabel: Record<WorkflowStepAssignmentStatus, string> = {
   PENDING: 'Đang chờ',
   APPROVED: 'Đã xử lý',
   RETURNED: 'Đã trả lại',
   REJECTED: 'Đã từ chối',
-  SKIPPED: 'Đã đổi người',
+  SKIPPED: 'Đã bỏ qua',
 };
 
 const statusTone: Record<WorkflowStepAssignmentStatus, string> = {
@@ -46,12 +46,23 @@ const formatDateTime = (value?: string | null) => {
 };
 
 const ProjectWorkflowTimeline: React.FC<Props> = ({ assignments, nodes, users }) => {
+  const [showAll, setShowAll] = useState(false);
   const nodeById = useMemo(() => new Map(nodes.map(node => [node.id, node])), [nodes]);
   const userById = useMemo(() => new Map(users.map(user => [user.id, user])), [users]);
   const sortedAssignments = useMemo(
     () => [...assignments].sort((a, b) => (a.assignedAt || '').localeCompare(b.assignedAt || '')),
     [assignments],
   );
+  const visibleAssignments = showAll ? sortedAssignments : sortedAssignments.slice(-5);
+  const hiddenCount = Math.max(0, sortedAssignments.length - visibleAssignments.length);
+
+  const getStatusLabel = (assignment: WorkflowStepAssignment) => {
+    if (assignment.status !== 'SKIPPED') return baseStatusLabel[assignment.status];
+    const metadata = assignment.metadata || {};
+    if (metadata.reassignedToUserIds || metadata.fromAssigneeUserIds || metadata.reassigned) return 'Bị thay thế do đổi người';
+    if (metadata.skippedByPolicy === 'ANY_ONE' || metadata.approvedByUserId) return 'Bỏ qua do người khác đã duyệt';
+    return baseStatusLabel.SKIPPED;
+  };
 
   if (sortedAssignments.length === 0) {
     return (
@@ -64,8 +75,17 @@ const ProjectWorkflowTimeline: React.FC<Props> = ({ assignments, nodes, users })
   return (
     <div className="space-y-2">
       <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Timeline xử lý</div>
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="rounded-lg border border-slate-100 bg-white px-3 py-1.5 text-[10px] font-black text-slate-500 hover:bg-slate-50"
+        >
+          Hiển thị thêm {hiddenCount} sự kiện cũ
+        </button>
+      )}
       <div className="space-y-2">
-        {sortedAssignments.map(assignment => {
+        {visibleAssignments.map(assignment => {
           const node = assignment.nodeId
             ? nodeById.get(assignment.nodeId) || (assignment.instanceNodeId ? nodeById.get(assignment.instanceNodeId) : null)
             : assignment.instanceNodeId
@@ -98,7 +118,7 @@ const ProjectWorkflowTimeline: React.FC<Props> = ({ assignments, nodes, users })
                 </div>
                 <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-black ${statusTone[assignment.status]}`}>
                   {statusIcon[assignment.status]}
-                  {statusLabel[assignment.status]}
+                  {getStatusLabel(assignment)}
                 </span>
               </div>
 

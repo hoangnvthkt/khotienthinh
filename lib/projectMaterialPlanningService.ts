@@ -20,6 +20,7 @@ import {
   TransactionType,
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
+import { buildPoUnitSnapshot, getPoLineStockUnitPrice, poLinePurchaseToStockQty, stockToPurchaseQty, stockUnitPriceToPurchaseUnitPrice } from './materialUnitConversion';
 import { isSupabaseConfigured, supabase } from './supabase';
 
 const TABLE = 'material_planning_rules';
@@ -169,7 +170,7 @@ const getPlanningUnitPrice = (input: {
     .flatMap(po => (po.items || [])
       .filter(line => line.itemId === itemId && Number(line.unitPrice || 0) > 0)
       .map(line => ({
-        unitPrice: Number(line.unitPrice || 0),
+        unitPrice: getPoLineStockUnitPrice(line, input.item),
         date: po.orderDate || po.expectedDeliveryDate || po.createdAt || '',
       })))
     .sort((a, b) => b.date.localeCompare(a.date))[0];
@@ -181,9 +182,9 @@ const getPlanningUnitPrice = (input: {
     .filter(tx => [TransactionStatus.COMPLETED, TransactionStatus.APPROVED, TransactionStatus.LEGACY_COMPLETED].includes(tx.status))
     .filter(tx => [TransactionType.IMPORT, TransactionType.TRANSFER, TransactionType.LEGACY_IN, TransactionType.LEGACY_NHAP].includes(tx.type))
     .flatMap(tx => (tx.items || [])
-      .filter(line => line.itemId === itemId && Number(line.accountingPrice ?? line.price ?? 0) > 0)
+      .filter(line => line.itemId === itemId && Number(line.price ?? line.accountingPrice ?? 0) > 0)
       .map(line => ({
-        unitPrice: Number(line.accountingPrice ?? line.price ?? 0),
+        unitPrice: Number(line.price ?? line.accountingPrice ?? 0),
         date: tx.date || '',
       })))
     .sort((a, b) => b.date.localeCompare(a.date))[0];
@@ -486,7 +487,9 @@ export const projectMaterialPlanningService = {
       for (const line of po.items || []) {
         const row = rowsByItemId.get(line.itemId);
         if (!row) continue;
-        const remainingQty = roundQty(Math.max(0, Number(line.qty || 0) - Number(line.receivedQty || 0)));
+        const inventoryItem = input.inventoryItems.find(item => item.id === line.itemId);
+        const remainingPurchaseQty = Math.max(0, Number(line.qty || 0) - Number(line.receivedQty || 0));
+        const remainingQty = roundQty(poLinePurchaseToStockQty(line, remainingPurchaseQty, inventoryItem));
         if (remainingQty <= 0) continue;
         if (!po.expectedDeliveryDate) {
           row.warnings.push('PO đã xác nhận nhưng chưa có ETA');
@@ -581,9 +584,10 @@ export const projectMaterialPlanningService = {
       vendorName: null,
       sku: item.sku,
       name: item.name,
-      unit: item.unit,
-      qty,
-      unitPrice: Number(input.row.planningUnitPrice || input.row.unitPrice || item.priceIn || 0),
+      ...buildPoUnitSnapshot(item),
+      unit: item.purchaseUnit || item.unit,
+      qty: stockToPurchaseQty(qty, item),
+      unitPrice: stockUnitPriceToPurchaseUnitPrice(Number(input.row.planningUnitPrice || input.row.unitPrice || item.priceIn || 0), item),
       receivedQty: 0,
       neededDate,
       workBoqItemId: sourceDetail?.workBoqItemId || null,
