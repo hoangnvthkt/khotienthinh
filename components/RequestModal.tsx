@@ -33,7 +33,7 @@ import ProjectWorkflowCommentsPanel from './project/ProjectWorkflowCommentsPanel
 import ProjectWorkflowStartDialog from './project/ProjectWorkflowStartDialog';
 import MaterialIssuePanel from './project/MaterialIssuePanel';
 import { useReservedStock } from '../hooks/useReservedStock';
-import { canApproveMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, isAdmin, isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../lib/wmsPermissions';
+import { canApproveMaterialRequest, canApproveWmsTransaction, canExportMaterialRequest, canReceiveMaterialRequest, canReceiveWmsTransaction, isAdmin, isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../lib/wmsPermissions';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
@@ -78,6 +78,7 @@ interface RequestModalProps {
     workBoqItems?: ProjectWorkBoqItem[];
     materialBudgetItems?: MaterialBudgetItem[];
     requestFulfillmentSummariesByRequestId?: Record<string, MaterialRequestFulfillmentSummary>;
+    initialDraft?: MaterialRequestInitialDraft | null;
     initialAction?: 'createFulfillmentBatch';
     canProcessProjectWorkflow?: boolean;
     canManageProjectWorkflow?: boolean;
@@ -87,8 +88,21 @@ interface RequestModalProps {
     projectWorkflowNextNode?: WorkflowNode | null;
     projectWorkflowReturnTargetNode?: WorkflowNode | null;
     onProjectWorkflowAction?: (context: ProjectWorkflowActionContext) => void | Promise<void>;
+    onSaved?: (request: MaterialRequest) => void;
     onDeleted?: (requestId: string) => void;
 }
+
+export type MaterialRequestInitialDraft = {
+    workBoqItemId?: string | null;
+    note?: string;
+    neededDate?: string;
+    lines: Array<{
+        materialBudgetItemId: string;
+        qty: number;
+        neededDate?: string;
+        note?: string;
+    }>;
+};
 
 type RequestLineDraft = {
     lineId: string;
@@ -121,6 +135,8 @@ type ReceiveQtyDraft = {
     qty: string;
     reason: string;
 };
+
+type ReceivePanelMode = 'quality_review' | 'receipt';
 
 const budgetHoldingStatuses = new Set<RequestStatus | string>([
     RequestStatus.DRAFT,
@@ -175,6 +191,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     workBoqItems = [],
     materialBudgetItems = [],
     requestFulfillmentSummariesByRequestId = {},
+    initialDraft = null,
     initialAction,
     canProcessProjectWorkflow = false,
     canManageProjectWorkflow = false,
@@ -184,9 +201,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
     projectWorkflowNextNode,
     projectWorkflowReturnTargetNode,
     onProjectWorkflowAction,
+    onSaved,
     onDeleted,
 }) => {
-    const { items, warehouses, user, users, employees, orgUnits, requests, addRequest, updateRequestStatus, removeRequest, loadModuleData, addTransaction } = useApp();
+    const { items, warehouses, user, users, employees, orgUnits, requests, transactions, addRequest, updateRequestStatus, removeRequest, loadModuleData, addTransaction, updateTransactionStatus } = useApp();
     const { getStockSummary, getOnHandStock } = useReservedStock();
     const toast = useToast();
     const confirm = useConfirm();
@@ -219,6 +237,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [issueLines, setIssueLines] = useState<FulfillmentQtyDraft[]>([]);
     const [issueNote, setIssueNote] = useState('');
     const [receivingBatch, setReceivingBatch] = useState<MaterialRequestFulfillmentBatch | null>(null);
+    const [receivePanelMode, setReceivePanelMode] = useState<ReceivePanelMode>('receipt');
     const [selectedFulfillmentBatch, setSelectedFulfillmentBatch] = useState<MaterialRequestFulfillmentBatch | null>(null);
     const [receiveLines, setReceiveLines] = useState<ReceiveQtyDraft[]>([]);
     const [returningReceivedBatch, setReturningReceivedBatch] = useState<MaterialRequestFulfillmentBatch | null>(null);
@@ -391,6 +410,33 @@ const RequestModal: React.FC<RequestModalProps> = ({
         return inventory?.sku || line.skuSnapshot || (line.isManualItem ? 'CHƯA MÃ' : '');
     };
 
+    const buildDraftLineFromBudget = (budget: MaterialBudgetItem, qty: number, neededDate?: string, note?: string): RequestLineDraft | null => {
+        const inventoryItem = items.find(item =>
+            item.id === budget.inventoryItemId ||
+            (!!budget.materialCode && item.sku.toLowerCase() === budget.materialCode.toLowerCase()) ||
+            item.name.toLowerCase() === budget.itemName.toLowerCase()
+        );
+        if (!inventoryItem) return null;
+        const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
+        return {
+            lineId: crypto.randomUUID(),
+            itemId: inventoryItem.id,
+            qty: Math.max(0, Number(qty || 0)),
+            workBoqItemId: budget.workBoqItemId || initialDraft?.workBoqItemId || null,
+            workBoqItemName: work?.name || '',
+            materialBudgetItemId: budget.id,
+            materialBudgetItemName: budget.itemName,
+            neededDate: neededDate || initialDraft?.neededDate || '',
+            note: note || '',
+            isManualItem: false,
+            itemNameSnapshot: inventoryItem.name,
+            unitSnapshot: inventoryItem.unit,
+            skuSnapshot: inventoryItem.sku,
+            specification: budget.notes || '',
+            overBudgetReason: '',
+        };
+    };
+
     const getWarehouseName = (warehouseId?: string | null) =>
         warehouses.find(w => w.id === warehouseId)?.name || warehouseId || '-';
 
@@ -444,6 +490,55 @@ const RequestModal: React.FC<RequestModalProps> = ({
         () => fulfillmentBatches.filter(batch => batch.status === 'issued' || batch.status === 'variance_pending'),
         [fulfillmentBatches],
     );
+    const getFulfillmentBatchTransaction = (batch?: MaterialRequestFulfillmentBatch | null): Transaction | null => {
+        if (!batch?.transactionId) return null;
+        return transactions.find(tx => tx.id === batch.transactionId) || null;
+    };
+    const getFulfillmentBatchUiStatus = (batch: MaterialRequestFulfillmentBatch) => {
+        if (batch.status === 'issued') {
+            const tx = getFulfillmentBatchTransaction(batch);
+            if (!tx) return {
+                label: 'Đang tải phiếu kho',
+                color: 'bg-slate-50 dark:bg-slate-805/40 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800/40',
+            };
+            if (tx.status === TransactionStatus.PENDING) return {
+                label: 'Chờ duyệt SL/CL',
+                color: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-405 border-amber-200 dark:border-amber-800/40',
+            };
+            if (tx.status === TransactionStatus.APPROVED) return {
+                label: batch.fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Chờ xác nhận sử dụng' : 'Chờ xác nhận nhập kho',
+                color: 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-405 border-blue-200 dark:border-blue-800/40',
+            };
+            if (tx.status === TransactionStatus.COMPLETED) return {
+                label: 'Phiếu kho đã hoàn tất',
+                color: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-405 border-emerald-200 dark:border-emerald-800/40',
+            };
+            if (tx.status === TransactionStatus.CANCELLED) return {
+                label: 'Phiếu kho bị từ chối',
+                color: 'bg-red-50 dark:bg-red-955/40 text-red-600 dark:text-red-405 border-red-200 dark:border-red-800/40',
+            };
+        }
+        if (batch.status === 'received') return {
+            label: 'Đã nhận',
+            color: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-405 border-emerald-200 dark:border-emerald-800/40',
+        };
+        if (batch.status === 'variance_pending') return {
+            label: 'Chờ chốt lệch',
+            color: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-405 border-amber-200 dark:border-amber-800/40',
+        };
+        if (batch.status === 'returned') return {
+            label: 'Đã trả lại',
+            color: 'bg-rose-50 dark:bg-rose-955/40 text-rose-600 dark:text-rose-405 border-rose-200 dark:border-rose-800/40',
+        };
+        if (batch.status === 'cancelled') return {
+            label: 'Đã huỷ',
+            color: 'bg-red-50 dark:bg-red-955/40 text-red-600 dark:text-red-405 border-red-200 dark:border-red-800/40',
+        };
+        return {
+            label: 'Nháp',
+            color: 'bg-slate-50 dark:bg-slate-805/40 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800/40',
+        };
+    };
 
     const refreshFulfillmentBatches = async (requestId: string) => {
         setIsLoadingFulfillment(true);
@@ -477,12 +572,23 @@ const RequestModal: React.FC<RequestModalProps> = ({
     }, [isOpen, fulfillmentBatches, poSourceLabelsById]);
 
     useEffect(() => {
+        if (!isOpen || !isBatchFulfillmentRequest || fulfillmentBatches.length === 0) return;
+        const missingTransaction = fulfillmentBatches.some(batch =>
+            !!batch.transactionId && !transactions.some(tx => tx.id === batch.transactionId)
+        );
+        if (missingTransaction) {
+            void loadModuleData('wms');
+        }
+    }, [fulfillmentBatches, isBatchFulfillmentRequest, isOpen, loadModuleData, transactions]);
+
+    useEffect(() => {
         if (isOpen) {
             initialActionHandledRef.current = false;
             setShowApprovalPanel(false);
             setIsSaving(false);
             setIsIssuePanelOpen(false);
             setReceivingBatch(null);
+            setReceivePanelMode('receipt');
             setReturningReceivedBatch(null);
             setReturnDestinationWarehouseId('');
             setReturnReceivedReason('');
@@ -509,20 +615,26 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 setSiteWarehouseId(defaultSiteWarehouseId || user.assignedWarehouseId || '');
                 setSourceWarehouseId('');
                 setStockPreviewWarehouseId('');
-                setNote('');
-                setExpectedDate(new Date(Date.now() + 86400000 * 3).toISOString());
+                setNote(initialDraft?.note || '');
+                setExpectedDate(initialDraft?.neededDate || new Date(Date.now() + 86400000 * 3).toISOString());
                 setFulfillmentMode(MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
                 setOverrideReason('');
-                setReqItems([]);
+                const initialLines = (initialDraft?.lines || [])
+                    .map(line => {
+                        const budget = materialBudgetMap.get(line.materialBudgetItemId);
+                        return budget ? buildDraftLineFromBudget(budget, line.qty, line.neededDate, line.note) : null;
+                    })
+                    .filter((line): line is RequestLineDraft => Boolean(line) && line.qty > 0);
+                setReqItems(initialLines);
                 setApprovedItems([]);
-                setDraftWorkBoqItemId('');
+                setDraftWorkBoqItemId(initialDraft?.workBoqItemId || '');
                 setDraftMaterialBudgetItemId('');
                 setDraftQty('');
                 setDraftNeededDate('');
                 setDraftLineNote('');
             }
         }
-    }, [canReviewProjectWorkflow, defaultSiteWarehouseId, isOpen, isProjectRequest, items, request, user]);
+    }, [canReviewProjectWorkflow, defaultSiteWarehouseId, initialDraft, isOpen, isProjectRequest, items, materialBudgetMap, request, user]);
 
     useEffect(() => {
         if (!isOpen || !request) {
@@ -655,6 +767,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 throw new Error('Không lưu được phiếu đề xuất lên hệ thống.');
             }
             toast.success(successTitle, successMessage);
+            onSaved?.(requestToSave);
             onClose();
         } catch (err: any) {
             logApiError('requestModal.save', err);
@@ -730,6 +843,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             }
             setSubmittingProjectRequest(null);
             toast.success('Đã gửi đề xuất vật tư', `Phiếu đã gửi tới ${submissionTarget.name}.`);
+            onSaved?.(requestToSave);
             onClose();
         } catch (err: any) {
             logApiError('requestModal.submitApproval', err);
@@ -1220,9 +1334,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
     };
 
-    const openReceivePanel = (batch: MaterialRequestFulfillmentBatch) => {
+    const openReceivePanel = (batch: MaterialRequestFulfillmentBatch, mode: ReceivePanelMode = 'receipt') => {
         setSelectedFulfillmentBatch(null);
         setReceivingBatch(batch);
+        setReceivePanelMode(mode);
         setReceiveLines(batch.lines.map(line => ({
             lineId: line.id,
             qty: String(line.issuedQty || 0),
@@ -1230,8 +1345,104 @@ const RequestModal: React.FC<RequestModalProps> = ({
         })));
     };
 
+    const buildFulfillmentQualityReviewLines = (
+        batch: MaterialRequestFulfillmentBatch,
+        transaction: Transaction,
+    ) => transaction.items.map((item, index) => {
+        const batchLine = batch.lines.find(line =>
+            line.requestLineId === item.requestLineId
+            || (line.itemId === item.itemId && item.fulfillmentBatchId === batch.id)
+        );
+        if (!batchLine) {
+            throw new Error(`Dòng ${index + 1}: Không tìm thấy dòng đợt cấp tương ứng.`);
+        }
+
+        const draft = receiveLines.find(line => line.lineId === batchLine.id);
+        const quantity = Number(draft?.qty || 0);
+        const originalQty = Number(item.quantity || 0);
+        const reason = draft?.reason?.trim() || '';
+
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+            throw new Error(`Dòng ${index + 1}: Số lượng duyệt phải lớn hơn 0.`);
+        }
+        if (quantity > originalQty) {
+            throw new Error(`Dòng ${index + 1}: Số lượng duyệt không được lớn hơn số lượng đã xuất.`);
+        }
+        if (quantity !== originalQty && !reason) {
+            throw new Error(`Dòng ${index + 1}: Nhập lý do khi duyệt lệch số lượng xuất.`);
+        }
+
+        return { index, quantity, reason };
+    });
+
+    const handleApproveFulfillmentQuality = async () => {
+        if (!request || !receivingBatch || isSaving) return;
+        const tx = getFulfillmentBatchTransaction(receivingBatch);
+        if (!tx) {
+            toast.warning('Chưa tải được phiếu kho', 'Vui lòng tải lại dữ liệu WMS rồi thử lại.');
+            await loadModuleData('wms', true);
+            return;
+        }
+        if (tx.status !== TransactionStatus.PENDING) {
+            toast.warning('Không đúng trạng thái', 'Phiếu kho không còn ở trạng thái chờ duyệt SL/CL.');
+            return;
+        }
+        if (!canApproveWmsTransaction(user, tx)) {
+            toast.warning('Không có quyền duyệt', 'Tài khoản của bạn không được phân công duyệt SL/CL cho phiếu kho này.');
+            return;
+        }
+
+        let qualityLines: ReturnType<typeof buildFulfillmentQualityReviewLines>;
+        try {
+            qualityLines = buildFulfillmentQualityReviewLines(receivingBatch, tx);
+        } catch (err: any) {
+            toast.warning('Kiểm tra số lượng', getApiErrorMessage(err, 'Số lượng duyệt không hợp lệ.'));
+            return;
+        }
+
+        const hasVariance = qualityLines.some(line => line.quantity !== Number(tx.items[line.index]?.quantity || 0));
+        const ok = await confirm({
+            title: 'Duyệt SL/CL đợt cấp',
+            targetName: receivingBatch.batchNo,
+            subtitle: hasVariance
+                ? 'Có chênh lệch so với số lượng xuất. Hệ thống chỉ duyệt SL/CL và cập nhật số lượng phiếu kho, chưa cộng tồn kho nhận.'
+                : 'Hệ thống chuyển phiếu kho sang trạng thái chờ xác nhận nhập kho. Tồn kho nhận chưa được cộng ở bước này.',
+            confirmText: 'Xác nhận duyệt SL/CL',
+            actionLabel: 'Duyệt SL/CL',
+            cancelLabel: 'Kiểm tra lại',
+            intent: hasVariance ? 'warning' : 'success',
+            countdownSeconds: 1,
+        });
+        if (!ok) return;
+
+        setIsSaving(true);
+        try {
+            await materialRequestFulfillmentService.updateTransactionReceiptQuantities({
+                transaction: tx,
+                stage: 'approval',
+                lines: qualityLines,
+            });
+            await updateTransactionStatus(tx.id, TransactionStatus.APPROVED, user.id);
+            const freshBatches = await refreshFulfillmentBatches(request.id);
+            const freshSelected = freshBatches.find(batch => batch.id === receivingBatch.id) || receivingBatch;
+            await loadModuleData('wms', true);
+            setReceivingBatch(null);
+            setSelectedFulfillmentBatch(freshSelected);
+            toast.success('Đã duyệt SL/CL', hasVariance ? 'Phiếu kho đã cập nhật theo số lượng duyệt và chờ xác nhận nhập kho.' : 'Phiếu kho đang chờ xác nhận nhập kho.');
+        } catch (err: any) {
+            logApiError('requestModal.fulfillment.qualityReview', err);
+            toast.error('Không thể duyệt SL/CL', getApiErrorMessage(err, 'Không cập nhật được phiếu kho.'));
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const handleReceiveFulfillmentBatch = async () => {
         if (!request || !receivingBatch || isSaving) return;
+        if (receivePanelMode === 'quality_review') {
+            await handleApproveFulfillmentQuality();
+            return;
+        }
         const hasVariance = receivingBatch.lines.some(line => {
             const draft = receiveLines.find(item => item.lineId === line.id);
             return Number(draft?.qty || 0) !== Number(line.issuedQty || 0);
@@ -1620,6 +1831,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
             || isWarehouseKeeperFor(user, request.siteWarehouseId)
             || (request.fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION && isWarehouseKeeperFor(user, sourceWarehouseId || request.sourceWarehouseId))
         );
+    const selectedFulfillmentTransaction = getFulfillmentBatchTransaction(selectedFulfillmentBatch);
+    const selectedFulfillmentUiStatus = selectedFulfillmentBatch ? getFulfillmentBatchUiStatus(selectedFulfillmentBatch) : null;
+    const canApproveSelectedFulfillmentTransaction = !!selectedFulfillmentTransaction && canApproveWmsTransaction(user, selectedFulfillmentTransaction);
+    const canReceiveSelectedFulfillmentTransaction = !!selectedFulfillmentTransaction && canReceiveWmsTransaction(user, selectedFulfillmentTransaction);
 
     const sourceWh = warehouses.find(w => w.id === sourceWarehouseId);
     const targetWh = warehouses.find(w => w.id === siteWarehouseId);
@@ -2294,7 +2509,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 <div className="p-4 text-xs font-bold text-muted-foreground">Chưa có đợt cấp hàng nào cho phiếu này.</div>
                             ) : (
                                 <div className="divide-y divide-border">
-                                    {fulfillmentBatches.map(batch => (
+                                    {fulfillmentBatches.map(batch => {
+                                        const batchUi = getFulfillmentBatchUiStatus(batch);
+                                        return (
                                         <div
                                             key={batch.id}
                                             role="button"
@@ -2312,8 +2529,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                 <div>
                                                     <div className="flex flex-wrap items-center gap-2">
                                                         <span className="font-mono text-xs font-black text-indigo-600 dark:text-indigo-400">{batch.batchNo}</span>
-                                                        <span className={`px-2 py-0.5 rounded-full border text-[9px] font-black ${batch.status === 'received' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-405 border-emerald-200 dark:border-emerald-800/40' : batch.status === 'issued' ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-405 border-indigo-200 dark:border-indigo-800/40' : batch.status === 'variance_pending' ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-405 border-amber-200 dark:border-amber-800/40' : batch.status === 'returned' ? 'bg-rose-50 dark:bg-rose-955/40 text-rose-600 dark:text-rose-405 border-rose-200 dark:border-rose-800/40' : batch.status === 'cancelled' ? 'bg-red-50 dark:bg-red-955/40 text-red-600 dark:text-red-405 border-red-200 dark:border-red-800/40' : 'bg-slate-50 dark:bg-slate-805/40 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800/40'}`}>
-                                                            {batch.status === 'received' ? 'Đã nhận' : batch.status === 'issued' ? 'Đã xuất' : batch.status === 'variance_pending' ? 'Chờ chốt lệch' : batch.status === 'returned' ? 'Đã trả lại' : batch.status === 'cancelled' ? 'Đã huỷ' : 'Nháp'}
+                                                        <span className={`px-2 py-0.5 rounded-full border text-[9px] font-black ${batchUi.color}`}>
+                                                            {batchUi.label}
                                                         </span>
                                                         <span className="text-[10px] font-bold text-muted-foreground">{new Date(batch.batchDate).toLocaleString('vi-VN')}</span>
                                                     </div>
@@ -2350,7 +2567,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                 </table>
                                             </div>
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
@@ -2574,8 +2792,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div className="rounded-xl border border-border bg-muted p-3">
                                     <div className="text-[10px] uppercase font-black text-slate-400">Trạng thái</div>
-                                    <div className="mt-1 font-black text-foreground">
-                                        {selectedFulfillmentBatch.status === 'received' ? 'Đã nhận' : selectedFulfillmentBatch.status === 'issued' ? 'Đã xuất' : selectedFulfillmentBatch.status === 'variance_pending' ? 'Chờ chốt lệch' : selectedFulfillmentBatch.status === 'returned' ? 'Đã trả lại' : selectedFulfillmentBatch.status === 'cancelled' ? 'Đã huỷ' : 'Nháp'}
+                                    <div className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${selectedFulfillmentUiStatus?.color || ''}`}>
+                                        {selectedFulfillmentUiStatus?.label || '-'}
                                     </div>
                                 </div>
                                 <div className="rounded-xl border border-border bg-muted p-3">
@@ -2634,14 +2852,43 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             >
                                 <FileDown size={16} /> Xuất PDF
                             </button>
-                            {canReceiveFulfillmentBatch && selectedFulfillmentBatch.status === 'issued' && (
+                            {canReceiveFulfillmentBatch && selectedFulfillmentBatch.status === 'issued' && !selectedFulfillmentTransaction && (
+                                <button
+                                    disabled
+                                    className="px-4 py-2 rounded-lg bg-slate-200 text-slate-500 font-black disabled:opacity-70 flex items-center gap-2"
+                                >
+                                    <Loader2 size={16} className="animate-spin" /> Đang tải phiếu kho
+                                </button>
+                            )}
+                            {canReceiveFulfillmentBatch && selectedFulfillmentBatch.status === 'issued' && selectedFulfillmentTransaction?.status === TransactionStatus.PENDING && (
                                 <>
                                     <button
-                                        disabled={isSaving}
-                                        onClick={() => openReceivePanel(selectedFulfillmentBatch)}
-                                        className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-black hover:bg-emerald-700 disabled:opacity-60 flex items-center gap-2"
+                                        disabled={isSaving || !canApproveSelectedFulfillmentTransaction}
+                                        onClick={() => openReceivePanel(selectedFulfillmentBatch, 'quality_review')}
+                                        title={canApproveSelectedFulfillmentTransaction ? undefined : 'Tài khoản này không có quyền duyệt SL/CL cho phiếu kho.'}
+                                        className="px-4 py-2 rounded-lg bg-amber-600 text-white font-black hover:bg-amber-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
                                     >
-                                        <CheckCircle size={16} /> Xác nhận nhận
+                                        <CheckCircle size={16} /> Duyệt SL/CL
+                                    </button>
+                                    <button
+                                        disabled={isSaving}
+                                        onClick={() => handleReturnFulfillmentBatch(selectedFulfillmentBatch)}
+                                        className="px-4 py-2 rounded-lg bg-rose-600 text-white font-black hover:bg-rose-700 disabled:opacity-60 flex items-center gap-2"
+                                    >
+                                        <XCircle size={16} /> Trả lại
+                                    </button>
+                                </>
+                            )}
+                            {canReceiveFulfillmentBatch && selectedFulfillmentBatch.status === 'issued' && selectedFulfillmentTransaction?.status === TransactionStatus.APPROVED && (
+                                <>
+                                    <button
+                                        disabled={isSaving || !canReceiveSelectedFulfillmentTransaction}
+                                        onClick={() => openReceivePanel(selectedFulfillmentBatch, 'receipt')}
+                                        title={canReceiveSelectedFulfillmentTransaction ? undefined : 'Tài khoản này không có quyền xác nhận nhập kho cho phiếu kho.'}
+                                        className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-black hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+                                    >
+                                        <CheckCircle size={16} />
+                                        {selectedFulfillmentBatch.fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Xác nhận sử dụng' : 'Xác nhận nhập kho'}
                                     </button>
                                     <button
                                         disabled={isSaving}
@@ -2781,7 +3028,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-card border border-border shadow-2xl flex flex-col">
                         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
                             <div>
-                                <h4 className="text-base font-black text-foreground">Xác nhận nhận hàng</h4>
+                                <h4 className="text-base font-black text-foreground">
+                                    {receivePanelMode === 'quality_review'
+                                        ? 'Duyệt SL/CL đợt cấp'
+                                        : receivingBatch.fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION
+                                            ? 'Xác nhận sử dụng'
+                                            : 'Xác nhận nhập kho'}
+                                </h4>
                                 <p className="text-xs font-bold text-muted-foreground">{receivingBatch.batchNo} • {request.code}</p>
                             </div>
                             <button onClick={() => setReceivingBatch(null)} className="p-2 text-muted-foreground hover:text-foreground"><X size={20} /></button>
@@ -2793,7 +3046,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                         <tr>
                                             <th className="p-3 text-left">Vật tư</th>
                                             <th className="p-3 text-right">Đã xuất</th>
-                                            <th className="p-3 text-right">Thực nhận</th>
+                                            <th className="p-3 text-right">
+                                                {receivePanelMode === 'quality_review' ? 'SL duyệt' : 'Thực nhận'}
+                                            </th>
                                             <th className="p-3 text-left">Lý do lệch</th>
                                         </tr>
                                     </thead>
@@ -2811,15 +3066,21 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                             min={0}
                                                             value={draft?.qty || '0'}
                                                             onChange={event => updateReceiveLine(line.id, { qty: event.target.value })}
-                                                            className="w-24 rounded-lg border border-emerald-250 dark:border-emerald-800/40 bg-card px-2 py-1 text-right font-black text-emerald-700 dark:text-emerald-400 outline-none focus:ring-2 focus:ring-emerald-300"
+                                                            className={`w-24 rounded-lg border bg-card px-2 py-1 text-right font-black outline-none focus:ring-2 ${
+                                                                receivePanelMode === 'quality_review'
+                                                                    ? 'border-amber-250 dark:border-amber-800/40 text-amber-700 dark:text-amber-400 focus:ring-amber-300'
+                                                                    : 'border-emerald-250 dark:border-emerald-800/40 text-emerald-700 dark:text-emerald-400 focus:ring-emerald-300'
+                                                            }`}
                                                         />
                                                     </td>
                                                     <td className="p-3">
                                                         <input
                                                             value={draft?.reason || ''}
                                                             onChange={event => updateReceiveLine(line.id, { reason: event.target.value })}
-                                                            placeholder="Bắt buộc nếu nhận lệch số xuất"
-                                                            className="w-full rounded-lg border border-border bg-card text-foreground px-2 py-1 outline-none focus:ring-2 focus:ring-emerald-300"
+                                                            placeholder={receivePanelMode === 'quality_review' ? 'Bắt buộc nếu duyệt lệch số xuất' : 'Bắt buộc nếu nhận lệch số duyệt'}
+                                                            className={`w-full rounded-lg border border-border bg-card text-foreground px-2 py-1 outline-none focus:ring-2 ${
+                                                                receivePanelMode === 'quality_review' ? 'focus:ring-amber-300' : 'focus:ring-emerald-300'
+                                                            }`}
                                                         />
                                                     </td>
                                                 </tr>
@@ -2831,8 +3092,21 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         </div>
                         <div className="px-5 py-4 border-t border-border flex justify-end gap-3">
                             <button onClick={() => setReceivingBatch(null)} className="px-4 py-2 rounded-lg border border-border text-foreground hover:bg-muted font-bold">Huỷ</button>
-                            <button disabled={isSaving} onClick={handleReceiveFulfillmentBatch} className="px-5 py-2 rounded-lg bg-emerald-600 text-white font-black hover:bg-emerald-700 disabled:opacity-60 flex items-center gap-2">
-                                {isSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />} Xác nhận nhận
+                            <button
+                                disabled={isSaving}
+                                onClick={handleReceiveFulfillmentBatch}
+                                className={`px-5 py-2 rounded-lg text-white font-black disabled:opacity-60 flex items-center gap-2 ${
+                                    receivePanelMode === 'quality_review'
+                                        ? 'bg-amber-600 hover:bg-amber-700'
+                                        : 'bg-emerald-600 hover:bg-emerald-700'
+                                }`}
+                            >
+                                {isSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                                {receivePanelMode === 'quality_review'
+                                    ? 'Duyệt SL/CL'
+                                    : receivingBatch.fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION
+                                        ? 'Xác nhận sử dụng'
+                                        : 'Xác nhận nhập kho'}
                             </button>
                         </div>
                     </div>
