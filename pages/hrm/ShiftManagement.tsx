@@ -235,11 +235,11 @@ const ShiftManagement: React.FC = () => {
       {/* Tabs */}
       <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-2xl p-1">
         <button onClick={() => setActiveTab('types')}
-          className={`px-4 py-2 rounded-xl text-xs font-black transition ${activeTab === 'types' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          className={`px-4 py-2 rounded-xl text-xs font-black transition ${activeTab === 'types' ? 'bg-card text-foreground shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
           <Settings size={14} className="inline mr-1.5" />Ca làm việc
         </button>
         <button onClick={() => setActiveTab('assign')}
-          className={`px-4 py-2 rounded-xl text-xs font-black transition ${activeTab === 'assign' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          className={`px-4 py-2 rounded-xl text-xs font-black transition ${activeTab === 'assign' ? 'bg-card text-foreground shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
           <Calendar size={14} className="inline mr-1.5" />Phân ca
         </button>
       </div>
@@ -265,9 +265,9 @@ const ShiftManagement: React.FC = () => {
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: shift.color }} />
-                    <h3 className="font-black text-slate-800 dark:text-white">{shift.name}</h3>
+                    <h3 className="font-black text-foreground">{shift.name}</h3>
                     {shift.isNightShift && <Moon size={14} className="text-indigo-400" />}
-                    {!shift.isActive && <span className="text-[9px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Tắt</span>}
+                    {!shift.isActive && <span className="text-[9px] font-bold bg-destructive/10 text-destructive px-1.5 py-0.5 rounded">Tắt</span>}
                   </div>
                   <div className="flex items-center gap-1">
                     {canCRUD && <>
@@ -282,21 +282,21 @@ const ShiftManagement: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2">
+                  <div className="bg-muted rounded-lg p-2">
                     <span className="text-slate-400 text-[10px] font-bold block">Giờ làm</span>
-                    <span className="font-black text-slate-700 dark:text-white">{shift.startTime?.slice(0,5)} → {shift.endTime?.slice(0,5)}</span>
+                    <span className="font-black text-foreground">{shift.startTime?.slice(0,5)} → {shift.endTime?.slice(0,5)}</span>
                   </div>
-                  <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2">
+                  <div className="bg-muted rounded-lg p-2">
                     <span className="text-slate-400 text-[10px] font-bold block">Giờ chuẩn</span>
-                    <span className="font-black text-slate-700 dark:text-white">{shift.standardWorkingHours}h</span>
+                    <span className="font-black text-foreground">{shift.standardWorkingHours}h</span>
                   </div>
-                  <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2">
+                  <div className="bg-muted rounded-lg p-2">
                     <span className="text-slate-400 text-[10px] font-bold block">Nghỉ trưa</span>
-                    <span className="font-black text-slate-700 dark:text-white">{shift.breakMinutes} phút</span>
+                    <span className="font-black text-foreground">{shift.breakMinutes} phút</span>
                   </div>
-                  <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2">
+                  <div className="bg-muted rounded-lg p-2">
                     <span className="text-slate-400 text-[10px] font-bold block">Grace</span>
-                    <span className="font-black text-slate-700 dark:text-white">±{shift.graceLateMins} phút</span>
+                    <span className="font-black text-foreground">±{shift.graceLateMins} phút</span>
                   </div>
                 </div>
 
@@ -323,7 +323,7 @@ const ShiftManagement: React.FC = () => {
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
               <div className="glass-card rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
                 <div className="flex items-center justify-between mb-5">
-                  <h2 className="text-lg font-black text-slate-800 dark:text-white">
+                  <h2 className="text-lg font-black text-foreground">
                     {editId ? 'Sửa ca làm việc' : 'Tạo ca làm việc mới'}
                   </h2>
                   <button onClick={resetForm} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"><X size={18} /></button>
@@ -335,7 +335,7 @@ const ShiftManagement: React.FC = () => {
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Tên ca</label>
                       <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                        className="w-full px-3 py-2 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-teal-500"
+                        className="w-full px-3 py-2 text-sm font-bold border border-border rounded-xl bg-card text-foreground outline-none focus:ring-2 focus:ring-teal-500"
                         placeholder="VD: Ca Hành chính" />
                     </div>
                     <div>
@@ -355,17 +355,17 @@ const ShiftManagement: React.FC = () => {
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Giờ bắt đầu</label>
                       <input type="time" value={form.startTime} onChange={e => setForm(f => ({ ...f, startTime: e.target.value }))}
-                        className="w-full px-3 py-2 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                        className="w-full px-3 py-2 text-sm font-bold border border-border rounded-xl bg-card text-foreground outline-none" />
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Giờ kết thúc</label>
                       <input type="time" value={form.endTime} onChange={e => setForm(f => ({ ...f, endTime: e.target.value }))}
-                        className="w-full px-3 py-2 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                        className="w-full px-3 py-2 text-sm font-bold border border-border rounded-xl bg-card text-foreground outline-none" />
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Nghỉ trưa (phút)</label>
                       <input type="number" value={form.breakMinutes} onChange={e => setForm(f => ({ ...f, breakMinutes: parseInt(e.target.value) || 0 }))}
-                        className="w-full px-3 py-2 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                        className="w-full px-3 py-2 text-sm font-bold border border-border rounded-xl bg-card text-foreground outline-none" />
                     </div>
                   </div>
 
@@ -374,17 +374,17 @@ const ShiftManagement: React.FC = () => {
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Grace muộn (phút)</label>
                       <input type="number" value={form.graceLateMins} onChange={e => setForm(f => ({ ...f, graceLateMins: parseInt(e.target.value) || 0 }))}
-                        className="w-full px-3 py-2 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                        className="w-full px-3 py-2 text-sm font-bold border border-border rounded-xl bg-card text-foreground outline-none" />
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Grace sớm (phút)</label>
                       <input type="number" value={form.graceEarlyMins} onChange={e => setForm(f => ({ ...f, graceEarlyMins: parseInt(e.target.value) || 0 }))}
-                        className="w-full px-3 py-2 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                        className="w-full px-3 py-2 text-sm font-bold border border-border rounded-xl bg-card text-foreground outline-none" />
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Giờ chuẩn</label>
                       <input type="number" step="0.5" value={form.standardWorkingHours} onChange={e => setForm(f => ({ ...f, standardWorkingHours: parseFloat(e.target.value) || 8 }))}
-                        className="w-full px-3 py-2 text-sm font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                        className="w-full px-3 py-2 text-sm font-bold border border-border rounded-xl bg-card text-foreground outline-none" />
                     </div>
                   </div>
 
@@ -392,20 +392,20 @@ const ShiftManagement: React.FC = () => {
                   <div>
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Hệ số OT (theo Luật LĐ VN 2019)</label>
                     <div className="grid grid-cols-3 gap-3">
-                      <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3">
+                      <div className="bg-blue-500/10 rounded-xl p-3">
                         <span className="text-[9px] font-black text-blue-500 block mb-1">NGÀY THƯỜNG</span>
                         <input type="number" step="0.1" value={form.otMultiplierNormal} onChange={e => setForm(f => ({ ...f, otMultiplierNormal: parseFloat(e.target.value) || 1.5 }))}
-                          className="w-full px-2 py-1 text-sm font-black text-center border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-slate-800 outline-none" />
+                          className="w-full px-2 py-1 text-sm font-black text-center border border-blue-300 dark:border-blue-700 rounded-lg bg-card text-foreground outline-none" />
                       </div>
-                      <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-3">
+                      <div className="bg-amber-500/10 rounded-xl p-3">
                         <span className="text-[9px] font-black text-amber-500 block mb-1">T7 / CN</span>
                         <input type="number" step="0.1" value={form.otMultiplierWeekend} onChange={e => setForm(f => ({ ...f, otMultiplierWeekend: parseFloat(e.target.value) || 2.0 }))}
-                          className="w-full px-2 py-1 text-sm font-black text-center border border-amber-200 dark:border-amber-700 rounded-lg bg-white dark:bg-slate-800 outline-none" />
+                          className="w-full px-2 py-1 text-sm font-black text-center border border-amber-300 dark:border-amber-700 rounded-lg bg-card text-foreground outline-none" />
                       </div>
-                      <div className="bg-red-50 dark:bg-red-900/20 rounded-xl p-3">
+                      <div className="bg-destructive/10 rounded-xl p-3">
                         <span className="text-[9px] font-black text-red-500 block mb-1">LỄ / TẾT</span>
                         <input type="number" step="0.1" value={form.otMultiplierHoliday} onChange={e => setForm(f => ({ ...f, otMultiplierHoliday: parseFloat(e.target.value) || 3.0 }))}
-                          className="w-full px-2 py-1 text-sm font-black text-center border border-red-200 dark:border-red-700 rounded-lg bg-white dark:bg-slate-800 outline-none" />
+                          className="w-full px-2 py-1 text-sm font-black text-center border border-destructive/30 dark:border-destructive/50 rounded-lg bg-card text-foreground outline-none" />
                       </div>
                     </div>
                   </div>
@@ -421,7 +421,7 @@ const ShiftManagement: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-bold text-slate-400">Phụ cấp:</span>
                         <input type="number" step="0.05" value={form.nightShiftPremium} onChange={e => setForm(f => ({ ...f, nightShiftPremium: parseFloat(e.target.value) || 0.3 }))}
-                          className="w-16 px-2 py-1 text-xs font-bold text-center border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 outline-none" />
+                          className="w-16 px-2 py-1 text-xs font-bold text-center border border-border rounded-lg bg-card text-foreground outline-none" />
                         <span className="text-[10px] font-bold text-slate-400">(={(form.nightShiftPremium * 100).toFixed(0)}%)</span>
                       </div>
                     )}
@@ -441,7 +441,7 @@ const ShiftManagement: React.FC = () => {
                       <Save size={14} /> {editId ? 'Cập nhật' : 'Tạo ca'}
                     </button>
                     <button onClick={resetForm}
-                      className="px-4 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-black hover:bg-slate-50 dark:hover:bg-slate-700 transition">
+                      className="px-4 py-2.5 border border-border text-muted-foreground rounded-xl text-xs font-black hover:bg-muted transition">
                       Hủy
                     </button>
                   </div>
@@ -482,7 +482,7 @@ const ShiftManagement: React.FC = () => {
 
             <div className="flex items-center gap-2 flex-wrap">
               <input type="text" placeholder="Tìm NV..." value={searchText} onChange={e => setSearchText(e.target.value)}
-                className="px-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none w-36" />
+                className="px-3 py-2 text-xs font-bold border border-border rounded-xl bg-card text-foreground outline-none w-36" />
             </div>
           </div>
 
@@ -511,20 +511,20 @@ const ShiftManagement: React.FC = () => {
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-700">
-                    <th className="sticky left-0 z-10 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-left font-black text-slate-500 min-w-[180px]">
+                  <tr className="border-b border-border">
+                    <th className="sticky left-0 z-10 bg-muted px-3 py-2 text-left font-black text-muted-foreground min-w-[180px]">
                       Nhân viên
                     </th>
-                    <th className="px-1 py-1 text-center font-bold text-slate-400 min-w-[40px]">
+                    <th className="px-1 py-1 text-center font-bold text-muted-foreground min-w-[40px]">
                       Mặc định
                     </th>
                     {dayHeaders.map(d => (
-                      <th key={d.dayNum} className={`px-0.5 py-1 text-center min-w-[32px] ${d.isWeekend ? 'bg-red-50 dark:bg-red-900/10' : ''}`}>
-                        <div className={`text-[9px] font-bold ${d.isWeekend ? 'text-red-400' : 'text-slate-400'}`}>{d.dayOfWeek}</div>
-                        <div className={`text-[10px] font-black ${d.isWeekend ? 'text-red-500' : 'text-slate-600 dark:text-slate-300'}`}>{d.dayNum}</div>
+                      <th key={d.dayNum} className={`px-0.5 py-1 text-center min-w-[32px] ${d.isWeekend ? 'bg-red-500/10' : ''}`}>
+                        <div className={`text-[9px] font-bold ${d.isWeekend ? 'text-red-450' : 'text-muted-foreground'}`}>{d.dayOfWeek}</div>
+                        <div className={`text-[10px] font-black ${d.isWeekend ? 'text-red-500' : 'text-foreground'}`}>{d.dayNum}</div>
                       </th>
                     ))}
-                    <th className="px-2 py-1 text-center font-bold text-slate-400 min-w-[60px]">Thao tác</th>
+                    <th className="px-2 py-1 text-center font-bold text-muted-foreground min-w-[60px]">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -532,10 +532,10 @@ const ShiftManagement: React.FC = () => {
                     const defShift = defaultShiftMap.get(emp.id);
                     const defType = defShift ? shiftTypes.find(s => s.id === defShift.shiftTypeId) : null;
                     return (
-                      <tr key={emp.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                        <td className="sticky left-0 z-10 bg-white dark:bg-slate-900 px-3 py-1.5">
-                          <div className="font-bold text-slate-800 dark:text-white truncate">{emp.fullName}</div>
-                          <div className="text-[9px] text-slate-400 font-bold">{emp.employeeCode}</div>
+                      <tr key={emp.id} className="border-b border-border hover:bg-muted/50">
+                        <td className="sticky left-0 z-10 bg-card px-3 py-1.5">
+                          <div className="font-bold text-foreground truncate">{emp.fullName}</div>
+                          <div className="text-[9px] text-muted-foreground font-bold">{emp.employeeCode}</div>
                         </td>
                         <td className="px-1 py-1 text-center">
                           {defType ? (
@@ -547,7 +547,7 @@ const ShiftManagement: React.FC = () => {
                             </div>
                           ) : (
                             <button onClick={() => handleSetDefault(emp.id)}
-                              className="w-6 h-6 rounded-md mx-auto border-2 border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center text-slate-300 hover:border-teal-400 hover:text-teal-400 transition"
+                              className="w-6 h-6 rounded-md mx-auto border-2 border-dashed border-border flex items-center justify-center text-muted-foreground hover:border-teal-400 hover:text-teal-400 transition"
                               title="Gán ca mặc định">
                               <Plus size={10} />
                             </button>
@@ -560,7 +560,7 @@ const ShiftManagement: React.FC = () => {
                           const shiftType = specificShift ? shiftTypes.find(s => s.id === specificShift.shiftTypeId) : null;
                           return (
                             <td key={d.dayNum}
-                              className={`px-0.5 py-1 text-center ${d.isWeekend ? 'bg-red-50/50 dark:bg-red-900/5' : ''}`}
+                              className={`px-0.5 py-1 text-center ${d.isWeekend ? 'bg-red-500/5' : ''}`}
                               onClick={() => handleCellClick(emp.id, d.dayNum)}>
                               {shiftType ? (
                                 <div className="w-6 h-6 rounded-md mx-auto flex items-center justify-center text-white text-[8px] font-black cursor-pointer hover:scale-110 transition-all"
@@ -575,14 +575,14 @@ const ShiftManagement: React.FC = () => {
                                   {shiftTypes.find(s => s.id === cellShift.shiftTypeId)?.name.charAt(0) || '?'}
                                 </div>
                               ) : (
-                                <div className="w-6 h-6 rounded-md mx-auto border border-dashed border-slate-200 dark:border-slate-700 cursor-pointer hover:border-teal-400 transition" />
+                                <div className="w-6 h-6 rounded-md mx-auto border border-dashed border-border cursor-pointer hover:border-teal-400 transition" />
                               )}
                             </td>
                           );
                         })}
                         <td className="px-1 py-1 text-center">
                           <button onClick={() => handleFillMonth(emp.id)}
-                            className="px-2 py-1 bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400 rounded-lg text-[9px] font-black hover:bg-teal-100 dark:hover:bg-teal-900/40 transition"
+                            className="px-2 py-1 bg-teal-500/10 text-teal-500 rounded-lg text-[9px] font-black hover:bg-teal-500/20 transition"
                             title="Gán ca cho tất cả ngày thường">
                             Gán tháng
                           </button>

@@ -55,47 +55,47 @@ const ProjectWorkflowAnalyticsPanel: React.FC<Props> = ({ requests, subjectsByRe
   if (requests.length === 0) return null;
 
   return (
-    <div className="border-b border-slate-100 bg-slate-50/55 px-5 py-4">
-      <div className="mb-3 flex items-center gap-2 text-xs font-black text-slate-700">
+    <div className="border-b border-border bg-muted/40 px-5 py-4">
+      <div className="mb-3 flex items-center gap-2 text-xs font-black text-foreground">
         <BarChart3 size={15} className="text-purple-500" /> Theo dõi workflow
       </div>
       <div className="grid gap-3 lg:grid-cols-[0.8fr_1fr_1fr]">
         <div className="grid grid-cols-3 gap-2">
-          <div className="rounded-xl border border-white bg-white px-3 py-2">
-            <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-400"><Activity size={11} /> Đang chạy</div>
-            <div className="mt-1 text-lg font-black text-slate-800">{summary.runningCount}</div>
+          <div className="rounded-xl border border-border bg-card px-3 py-2">
+            <div className="flex items-center gap-1 text-[10px] font-black uppercase text-muted-foreground"><Activity size={11} /> Đang chạy</div>
+            <div className="mt-1 text-lg font-black text-foreground">{summary.runningCount}</div>
           </div>
-          <div className="rounded-xl border border-white bg-white px-3 py-2">
-            <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-400"><Clock size={11} /> Quá hạn</div>
+          <div className="rounded-xl border border-border bg-card px-3 py-2">
+            <div className="flex items-center gap-1 text-[10px] font-black uppercase text-muted-foreground"><Clock size={11} /> Quá hạn</div>
             <div className="mt-1 text-lg font-black text-red-600">{summary.overdueCount}</div>
           </div>
-          <div className="rounded-xl border border-white bg-white px-3 py-2">
-            <div className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-400"><AlertTriangle size={11} /> Trả lại</div>
+          <div className="rounded-xl border border-border bg-card px-3 py-2">
+            <div className="flex items-center gap-1 text-[10px] font-black uppercase text-muted-foreground"><AlertTriangle size={11} /> Trả lại</div>
             <div className="mt-1 text-lg font-black text-orange-600">{summary.returnedCount}</div>
           </div>
         </div>
-        <div className="rounded-xl border border-white bg-white px-3 py-2">
-          <div className="mb-2 text-[10px] font-black uppercase text-slate-400">Đang chờ xử lý</div>
+        <div className="rounded-xl border border-border bg-card px-3 py-2">
+          <div className="mb-2 text-[10px] font-black uppercase text-muted-foreground">Đang chờ xử lý</div>
           <div className="space-y-1.5">
             {summary.byStep.map(step => (
-              <div key={step.label} className="flex items-center justify-between gap-2 text-[10px] font-bold text-slate-500">
+              <div key={step.label} className="flex items-center justify-between gap-2 text-[10px] font-bold text-muted-foreground">
                 <span className="truncate">{step.label}</span>
-                <span className={step.overdueCount > 0 ? 'text-red-600' : 'text-slate-400'}>{step.count} phiếu{step.overdueCount ? ` • ${step.overdueCount} trễ` : ''}</span>
+                <span className={step.overdueCount > 0 ? 'text-red-600' : 'text-muted-foreground/60'}>{step.count} phiếu{step.overdueCount ? ` • ${step.overdueCount} trễ` : ''}</span>
               </div>
             ))}
-            {summary.byStep.length === 0 && <div className="text-[10px] font-bold text-slate-300">Không có bước đang chạy.</div>}
+            {summary.byStep.length === 0 && <div className="text-[10px] font-bold text-muted-foreground/30">Không có bước đang chạy.</div>}
           </div>
         </div>
-        <div className="rounded-xl border border-white bg-white px-3 py-2">
-          <div className="mb-2 flex items-center gap-1 text-[10px] font-black uppercase text-slate-400"><UserRound size={11} /> Tải việc</div>
+        <div className="rounded-xl border border-border bg-card px-3 py-2">
+          <div className="mb-2 flex items-center gap-1 text-[10px] font-black uppercase text-muted-foreground"><UserRound size={11} /> Tải việc</div>
           <div className="space-y-1.5">
             {summary.workload.map(row => (
-              <div key={row.userId} className="flex items-center justify-between gap-2 text-[10px] font-bold text-slate-500">
+              <div key={row.userId} className="flex items-center justify-between gap-2 text-[10px] font-bold text-muted-foreground">
                 <span className="truncate">{row.name}</span>
-                <span className={row.overdueCount > 0 ? 'text-red-600' : 'text-slate-400'}>{row.pendingCount} việc{row.overdueCount ? ` • ${row.overdueCount} trễ` : ''}</span>
+                <span className={row.overdueCount > 0 ? 'text-red-600' : 'text-muted-foreground/60'}>{row.pendingCount} việc{row.overdueCount ? ` • ${row.overdueCount} trễ` : ''}</span>
               </div>
             ))}
-            {summary.workload.length === 0 && <div className="text-[10px] font-bold text-slate-300">Chưa có người đang chờ xử lý.</div>}
+            {summary.workload.length === 0 && <div className="text-[10px] font-bold text-muted-foreground/30">Chưa có người đang chờ xử lý.</div>}
           </div>
         </div>
       </div>

@@ -94,23 +94,23 @@ const fmt = (n: number) => {
 const fmtQty = (n: number) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 6 });
 
 const PO_STATUS: Record<POStatus, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
-    draft: { label: 'Nháp', color: 'text-slate-600', bg: 'bg-slate-50 border-slate-200', icon: <Clock size={12} /> },
-    sent: { label: 'Đã gửi', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', icon: <Send size={12} /> },
-    confirmed: { label: 'Đã duyệt', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', icon: <CheckCircle2 size={12} /> },
-    in_transit: { label: 'Đang giao', color: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-200', icon: <Truck size={12} /> },
-    partial: { label: 'Giao 1 phần', color: 'text-orange-600', bg: 'bg-orange-50 border-orange-200', icon: <Package size={12} /> },
-    delivered: { label: 'Hoàn thành', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', icon: <CheckCircle2 size={12} /> },
-    closed: { label: 'Đã đóng', color: 'text-slate-700', bg: 'bg-slate-100 border-slate-300', icon: <FileText size={12} /> },
-    returned: { label: 'Hoàn hàng', color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200', icon: <RefreshCcw size={12} /> },
-    cancelled: { label: 'Huỷ', color: 'text-red-600', bg: 'bg-red-50 border-red-200', icon: <Ban size={12} /> },
+    draft: { label: 'Nháp', color: 'text-muted-foreground', bg: 'bg-muted border-border', icon: <Clock size={12} /> },
+    sent: { label: 'Đã gửi', color: 'text-amber-500', bg: 'bg-amber-500/10 border-amber-500/20', icon: <Send size={12} /> },
+    confirmed: { label: 'Đã duyệt', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20', icon: <CheckCircle2 size={12} /> },
+    in_transit: { label: 'Đang giao', color: 'text-indigo-400', bg: 'bg-indigo-500/10 border-indigo-500/20', icon: <Truck size={12} /> },
+    partial: { label: 'Giao 1 phần', color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/20', icon: <Package size={12} /> },
+    delivered: { label: 'Hoàn thành', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20', icon: <CheckCircle2 size={12} /> },
+    closed: { label: 'Đã đóng', color: 'text-muted-foreground', bg: 'bg-muted border-border', icon: <FileText size={12} /> },
+    returned: { label: 'Hoàn hàng', color: 'text-rose-400', bg: 'bg-rose-500/10 border-rose-500/20', icon: <RefreshCcw size={12} /> },
+    cancelled: { label: 'Huỷ', color: 'text-destructive', bg: 'bg-destructive/10 border-destructive/20', icon: <Ban size={12} /> },
 };
 
 const VENDOR_CATS = ['Xi măng', 'Thép', 'Cát & Đá', 'Gạch', 'Gỗ', 'Sơn', 'Ống/Phụ kiện nước', 'Dây & TB điện', 'VLXD khác'];
 
 const PO_SOURCE_MODE: Record<PurchaseOrderSourceMode, { label: string; color: string }> = {
-    from_request: { label: 'Từ đề xuất', color: 'bg-amber-50 text-amber-700 border-amber-200' },
-    proactive_project: { label: 'Mua chủ động dự án', color: 'bg-blue-50 text-blue-700 border-blue-200' },
-    proactive_stock: { label: 'Mua dự trữ kho tổng', color: 'bg-slate-50 text-slate-600 border-slate-200' },
+    from_request: { label: 'Từ đề xuất', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' },
+    proactive_project: { label: 'Mua chủ động dự án', color: 'bg-blue-500/10 text-blue-450 border-blue-500/20' },
+    proactive_stock: { label: 'Mua dự trữ kho tổng', color: 'bg-muted text-muted-foreground border-border' },
 };
 
 const ACTIVE_REQUEST_BUDGET_STATUSES = new Set<RequestStatus | string>([
@@ -1945,20 +1945,20 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             )}
             {/* KPI */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
+                <div className="bg-card rounded-2xl p-5 border border-border shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Users size={10} /> Đối tác HĐ</div>
                     <div className="text-2xl font-black text-slate-800">{stats.partnerCount}</div>
                 </div>
-                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
+                <div className="bg-card rounded-2xl p-5 border border-border shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><ShoppingCart size={10} /> Đơn hàng</div>
                     <div className="text-2xl font-black text-slate-800">{stats.totalPo}</div>
                     <div className="text-[10px] text-slate-400 mt-1">Tổng: {fmt(stats.totalValue)} đ</div>
                 </div>
-                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
+                <div className="bg-card rounded-2xl p-5 border border-border shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Truck size={10} /> Đã giao</div>
                     <div className="text-2xl font-black text-emerald-600">{stats.delivered}</div>
                 </div>
-                <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700/60 shadow-sm">
+                <div className="bg-card rounded-2xl p-5 border border-border shadow-sm">
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Clock size={10} /> Chờ giao</div>
                     <div className="text-2xl font-black text-amber-600">{stats.pending}</div>
                 </div>
@@ -1975,7 +1975,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
             {/* Vendor Tab */}
             {subTab === 'vendor' && (
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-visible">
+                <div className="bg-card rounded-2xl border border-border shadow-sm overflow-visible">
                     <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><Users size={16} className="text-cyan-500" /> Danh sách NCC</h3>
                         {canManageTab && (
@@ -2049,7 +2049,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
             {/* PO Tab */}
             {subTab === 'po' && (
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
+                <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
                     <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="text-sm font-black text-slate-700 flex items-center gap-2"><FileText size={16} className="text-blue-500" /> Đơn đặt hàng (PO)</h3>
                         <div className="flex items-center gap-2">
@@ -2159,7 +2159,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                 {printingPoId === po.id ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
                                                             </button>
                                                             {poPrintMenuId === po.id && (
-                                                                <div onClick={event => event.stopPropagation()} className="absolute right-0 top-8 z-[100] w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                                                                <div onClick={event => event.stopPropagation()} className="absolute right-0 top-8 z-[100] w-56 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-xl">
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => handlePrintPo(po, 'purchase_order')}
@@ -2185,7 +2185,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                     {printingPoId === po.procurementGroupId ? <Loader2 size={12} className="animate-spin" /> : 'In nhóm'}
                                                                 </button>
                                                                 {poPrintMenuId === `group:${po.procurementGroupId}` && (
-                                                                    <div onClick={event => event.stopPropagation()} className="absolute right-0 top-8 z-[100] w-60 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                                                                    <div onClick={event => event.stopPropagation()} className="absolute right-0 top-8 z-[100] w-60 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-xl">
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => handlePrintPoGroup(po.procurementGroupId!, 'purchase_order')}
@@ -2252,7 +2252,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
                                             return (
                                                 <div className="px-5 pb-5 pt-2 bg-slate-50/50 dark:bg-slate-900/40">
-                                                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-4 sm:p-5 space-y-6">
+                                                    <div className="bg-card border border-border rounded-2xl shadow-sm p-4 sm:p-5 space-y-6">
                                                         {/* Upper Section: Metadata Grid & Highlighted Action Bar */}
                                                         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
                                                             <div className="flex-1 min-w-0">
@@ -2311,7 +2311,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                         <th className="text-right py-3 px-4 w-28">Thành tiền</th>
                                                                     </tr>
                                                                 </thead>
-                                                                <tbody className="divide-y divide-slate-150 dark:divide-slate-800 bg-white dark:bg-slate-900">
+                                                                <tbody className="divide-y divide-border bg-card text-foreground">
                                                                     {po.items.map((item, i) => {
                                                                         const work = item.workBoqItemId ? workBoqMap.get(item.workBoqItemId) : undefined;
                                                                         const inventory = inventoryItems.find(inv => inv.id === item.itemId);
@@ -2507,7 +2507,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
             {showRequestPicker && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-5xl max-h-[86vh] overflow-hidden flex flex-col">
+                    <div className="bg-card border border-border rounded-3xl shadow-2xl w-full max-w-5xl max-h-[86vh] overflow-hidden flex flex-col">
                         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                             <div>
                                 <h3 className="font-black text-lg text-slate-800">Tạo PO từ đề xuất công trường</h3>
@@ -2608,7 +2608,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             {/* Vendor Form Modal */}
             {showVendorForm && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+                    <div className="bg-card border border-border rounded-3xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
                         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-t-3xl flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editingVendor ? <><Edit2 size={18} /> Sửa NCC</> : <><Plus size={18} /> Thêm NCC</>}
@@ -2665,7 +2665,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 <div className="flex flex-wrap gap-1.5">
                                     {VENDOR_CATS.map(c => (
                                         <button key={c} onClick={() => setVCats(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
-                                            className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${vCats.includes(c) ? 'bg-cyan-50 border-cyan-300 text-cyan-700' : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'}`}>
+                                            className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all ${vCats.includes(c) ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400' : 'bg-card border-border text-muted-foreground hover:border-border/80'}`}>
                                             {c}
                                         </button>
                                     ))}
@@ -2691,7 +2691,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             {/* PO Form Modal */}
             {showPoForm && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto">
+                    <div className="bg-card border border-border rounded-3xl shadow-2xl w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto">
                         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-t-3xl flex items-center justify-between">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editingPo ? <><Edit2 size={18} /> Sửa PO</> : <><Plus size={18} /> Tạo đơn hàng</>}
@@ -2800,7 +2800,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         value={item.materialBudgetItemId || ''}
                                                         onChange={e => selectPoBudgetItem(i, e.target.value)}
                                                         disabled={!!item.requestId}
-                                                        className="col-span-12 px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-400"
+                                                        className="col-span-12 px-2.5 py-2 rounded-lg border border-border bg-muted/30 text-foreground text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-muted disabled:text-muted-foreground"
                                                     >
                                                         <option value="">Gắn BOQ triển khai / định mức vật tư (tuỳ chọn)</option>
                                                         {materialBudgetItems.map(budget => {
@@ -2829,7 +2829,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     placeholder="NCC dòng vật tư..."
                                                     className="col-span-12 md:col-span-4"
                                                 />
-                                                <div className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-500 font-bold truncate">
+                                                <div className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-border bg-muted/30 text-xs text-muted-foreground font-bold truncate">
                                                     {purchaseUnit || item.unit || 'ĐVT'}
                                                 </div>
                                                 <input
@@ -2853,13 +2853,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     type="date"
                                                     value={item.neededDate || ''}
                                                     onChange={e => updatePoItem(i, { neededDate: e.target.value })}
-                                                    className="col-span-6 md:col-span-2 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                                                    className="col-span-6 md:col-span-2 px-2.5 py-2 rounded-lg border border-border text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-muted/30 text-foreground"
                                                 />
                                                 <input
                                                     value={item.note || ''}
                                                     onChange={e => updatePoItem(i, { note: e.target.value })}
                                                     placeholder="Ghi chú"
-                                                    className="col-span-2 md:col-span-7 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                                                    className="col-span-2 md:col-span-7 px-2.5 py-2 rounded-lg border border-border text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-muted/30 text-foreground"
                                                 />
                                                 <button
                                                     type="button"
@@ -2904,7 +2904,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
                                                 {/* Specs Form Panel */}
                                                 {expandedSpecsIdx.has(i) && (
-                                                    <div className="col-span-12 mt-2 p-3 bg-white border border-slate-200 rounded-xl space-y-3">
+                                                    <div className="col-span-12 mt-2 p-3 bg-card border border-border rounded-xl space-y-3">
                                                         <div className="flex flex-wrap items-center gap-2">
                                                             <span className="text-[10px] font-bold text-slate-400 uppercase">Mẫu quy cách nhanh:</span>
                                                             <div className="flex flex-wrap gap-1">
@@ -2951,7 +2951,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                             computedWeight: mode === 'by_weight' ? getSpecNumeric(item.specs, 'weight') : undefined,
                                                                         });
                                                                     }}
-                                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-700"
+                                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-border text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-muted/30 text-foreground"
                                                                 >
                                                                     <option value="standard">Tiêu chuẩn (SL × Đơn giá)</option>
                                                                     <option value="by_area">Theo diện tích (Rộng × Cao × SL × Đơn giá/m²)</option>
@@ -2991,7 +2991,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                                         });
                                                                                     }}
                                                                                     placeholder="Nhập..."
-                                                                                    className="w-full pl-2 pr-6 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-white text-slate-700"
+                                                                                    className="w-full pl-2 pr-6 py-1.5 rounded-lg border border-border text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-muted/30 text-foreground"
                                                                                 />
                                                                                 <button
                                                                                     type="button"

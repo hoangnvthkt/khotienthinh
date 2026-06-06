@@ -164,8 +164,12 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    setHoverCapable(window.matchMedia('(hover: hover) and (pointer: fine)').matches);
+    if (typeof window === 'undefined') return;
+    // Bật hover popover trên màn hình từ tablet/desktop trở lên (width >= 768px)
+    // Hoặc nếu thiết bị hỗ trợ pointer dạng fine (chuột/trackpad)
+    const isMobile = window.innerWidth < 768;
+    const hasFinePointer = window.matchMedia && window.matchMedia('(pointer: fine)').matches;
+    setHoverCapable(!isMobile || hasFinePointer);
   }, []);
 
   useEffect(() => {
@@ -408,7 +412,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                         setHoverCandidateId(null);
                         setHoveredRequestId(null);
                       }}
-                      className={`group relative rounded-xl border-l-4 bg-white dark:bg-slate-800 shadow-sm hover:shadow-lg cursor-pointer transition-all duration-200 ${getLaneBorderColor(column.id)} ${draggedRequestId === request.id ? 'opacity-50 scale-95 rotate-1' : 'hover:-translate-y-0.5'}`}
+                      className={`group relative rounded-xl border-l-4 bg-card shadow-sm hover:shadow-lg cursor-pointer transition-all duration-200 ${getLaneBorderColor(column.id)} ${draggedRequestId === request.id ? 'opacity-50 scale-95 rotate-1' : 'hover:-translate-y-0.5'}`}
                     >
                       <button
                         onClick={() => toggleExpanded(request.id)}
@@ -418,13 +422,13 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                           <div className="flex items-start gap-1.5 min-w-0">
                             <GripVertical
                               size={14}
-                              className="text-slate-300 dark:text-slate-600 shrink-0 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+                              className="text-muted-foreground/30 shrink-0 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
                             />
                             <div className="min-w-0">
-                              <h4 className="text-[13px] font-bold text-slate-800 dark:text-white leading-tight line-clamp-2">
+                              <h4 className="text-[13px] font-bold text-foreground leading-tight line-clamp-2">
                                 {request.code} - Đề xuất vật tư
                               </h4>
-                              <span className="font-mono text-[9px] font-bold text-slate-400 dark:text-slate-500 mt-0.5 block">
+                              <span className="font-mono text-[9px] font-bold text-muted-foreground mt-0.5 block">
                                 WF-{request.id?.substring(0, 8)}
                               </span>
                             </div>
@@ -433,7 +437,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                         </div>
 
                         {/* Meta info row */}
-                        <div className="mt-2 flex items-center gap-3 text-[10px] text-slate-400 dark:text-slate-500">
+                        <div className="mt-2 flex items-center gap-3 text-[10px] text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <UserRound size={9} />
                             <span className="truncate max-w-[100px]">{requester?.name || request.requesterId}</span>
@@ -446,13 +450,13 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
 
                         {/* SLA Warning */}
                         {slaState === 'overdue' && (
-                          <div className="mt-2 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-500">
+                          <div className="mt-2 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg bg-destructive/10 text-destructive">
                             <Clock size={10} />
                             {formatSlaLabel(request)}
                           </div>
                         )}
                         {slaState === 'urgent' && (
-                          <div className="mt-2 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-500">
+                          <div className="mt-2 flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg bg-amber-500/10 text-amber-500">
                             <Clock size={10} />
                             {formatSlaLabel(request)}
                           </div>
@@ -461,19 +465,19 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                         {/* Tags row */}
                         <div className="mt-2 flex flex-wrap gap-1">
                           {handlerLabel && (
-                            <span className="text-[9px] bg-amber-50 dark:bg-amber-900/20 text-amber-600 px-1.5 py-0.5 rounded font-medium truncate max-w-[120px]">
+                            <span className="text-[9px] bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded font-medium truncate max-w-[120px]">
                               {handlerLabel}
                             </span>
                           )}
                           {workflowStepLabel && (
-                            <span className="text-[9px] bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 px-1.5 py-0.5 rounded font-medium truncate max-w-[120px]">
+                            <span className="text-[9px] bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded font-medium truncate max-w-[120px]">
                               {workflowStepLabel}
                             </span>
                           )}
                         </div>
 
                         {summary && summary.committedQty > 0 && (
-                          <div className="mt-2 flex items-start gap-1.5 text-[10px] text-slate-400 bg-slate-50 dark:bg-slate-700/30 rounded-lg px-2.5 py-1.5">
+                          <div className="mt-2 flex items-start gap-1.5 text-[10px] text-muted-foreground bg-muted rounded-lg px-2.5 py-1.5">
                             <Package size={10} className="shrink-0 mt-0.5 text-slate-300" />
                             <span className="line-clamp-1">Nhận {summary.receivedQty.toLocaleString('vi-VN')} / {summary.committedQty.toLocaleString('vi-VN')} ({progress}%)</span>
                           </div>
@@ -481,46 +485,46 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                       </button>
 
                       {expanded && (
-                        <div className="border-t border-slate-50 px-3 pb-3">
+                        <div className="border-t border-border px-3 pb-3">
                           <div className="mt-3 space-y-1.5">
                             {(request.items || []).slice(0, 5).map((line: any, index: number) => {
                               const item = inventoryItemById.get(line.itemId);
                               const work = line.workBoqItemId ? workBoqItemById.get(line.workBoqItemId) : undefined;
                               return (
-                                <div key={`${request.id}-${line.lineId || line.itemId}-${index}`} className="rounded-lg bg-slate-50 px-2 py-1.5">
-                                  <div className="truncate text-[10px] font-black text-slate-700">
+                                <div key={`${request.id}-${line.lineId || line.itemId}-${index}`} className="rounded-lg bg-muted px-2 py-1.5">
+                                  <div className="truncate text-[10px] font-black text-foreground">
                                     {work?.wbsCode ? `${work.wbsCode} - ` : ''}{line.itemNameSnapshot || item?.name || line.itemId}
                                   </div>
-                                  <div className="mt-0.5 text-[9px] font-bold text-slate-400">
+                                  <div className="mt-0.5 text-[9px] font-bold text-muted-foreground">
                                     KL yêu cầu: {Number(line.requestQty || 0).toLocaleString('vi-VN')} {line.unitSnapshot || item?.unit || ''}
                                   </div>
                                 </div>
                               );
                             })}
                             {(request.items || []).length > 5 && (
-                              <div className="text-[9px] font-bold text-slate-400">+{(request.items || []).length - 5} dòng khác</div>
+                              <div className="text-[9px] font-bold text-muted-foreground">+{(request.items || []).length - 5} dòng khác</div>
                             )}
                           </div>
 
-                          <div className="mt-3 rounded-lg border border-slate-100 bg-white px-2 py-2">
-                            <div className="mb-1.5 flex items-center gap-1 text-[9px] font-black uppercase text-slate-400">
+                          <div className="mt-3 rounded-lg border border-border bg-card px-2 py-2">
+                            <div className="mb-1.5 flex items-center gap-1 text-[9px] font-black uppercase text-muted-foreground">
                               <MessageSquare size={10} /> Timeline
                             </div>
                             <div className="space-y-1.5">
                               {events.slice(0, 4).map(event => (
                                 <div key={event.id} className="text-[10px]">
-                                  <div className="font-black text-slate-600">{event.action} <span className="font-medium text-slate-300">• {formatDateTime(event.createdAt)}</span></div>
-                                  {event.note && <div className="line-clamp-2 text-slate-400">{event.note}</div>}
+                                  <div className="font-black text-foreground/80">{event.action} <span className="font-medium text-muted-foreground/30">• {formatDateTime(event.createdAt)}</span></div>
+                                  {event.note && <div className="line-clamp-2 text-muted-foreground">{event.note}</div>}
                                 </div>
                               ))}
                               {events.length === 0 && (request.logs || []).slice(-3).reverse().map((log, index) => (
                                 <div key={`${request.id}-log-${index}`} className="text-[10px]">
-                                  <div className="font-black text-slate-600">{log.action} <span className="font-medium text-slate-300">• {formatDateTime(log.timestamp)}</span></div>
-                                  {log.note && <div className="line-clamp-2 text-slate-400">{log.note}</div>}
+                                  <div className="font-black text-foreground/80">{log.action} <span className="font-medium text-muted-foreground/30">• {formatDateTime(log.timestamp)}</span></div>
+                                  {log.note && <div className="line-clamp-2 text-muted-foreground">{log.note}</div>}
                                 </div>
                               ))}
                               {events.length === 0 && (!request.logs || request.logs.length === 0) && (
-                                <div className="text-[10px] font-bold text-slate-300">Chưa có ghi chú xử lý.</div>
+                                <div className="text-[10px] font-bold text-muted-foreground/30">Chưa có ghi chú xử lý.</div>
                               )}
                             </div>
                           </div>
@@ -537,7 +541,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                       {/* Quick View Popover on Hover */}
                       {isHovered && hoverCapable && (
                         <div
-                          className={`absolute z-50 w-[400px] rounded-2xl border border-slate-100 bg-white/95 backdrop-blur-md p-4 shadow-[0_20px_50px_rgba(0,0,0,0.15)] transition-all duration-300 ${
+                          className={`absolute z-50 w-[400px] rounded-2xl border border-border bg-popover/95 backdrop-blur-md p-4 shadow-[0_20px_50px_rgba(0,0,0,0.15)] transition-all duration-300 ${
                             isRightSide ? 'right-full mr-3' : 'left-full ml-3'
                           } ${
                             alignBottom ? 'bottom-0' : 'top-0'
@@ -547,9 +551,9 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                         >
                           <div className="space-y-4">
                             {/* Header */}
-                            <div className="flex items-start justify-between border-b border-slate-100 pb-2">
+                            <div className="flex items-start justify-between border-b border-border pb-2">
                               <div>
-                                <span className="inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[9px] font-black uppercase text-indigo-600">
+                                <span className="inline-flex items-center gap-1 rounded bg-indigo-500/10 px-1.5 py-0.5 text-[9px] font-black uppercase text-indigo-400">
                                   Xem nhanh phiếu
                                 </span>
                                 <h4 className="mt-1 font-mono text-sm font-black text-indigo-600">
@@ -564,29 +568,29 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                             {/* General Info Grid */}
                             <div className="grid grid-cols-2 gap-3 text-[11px]">
                               <div className="space-y-1">
-                                <span className="font-bold text-slate-400">Người yêu cầu:</span>
-                                <div className="flex items-center gap-1 font-black text-slate-700">
-                                  <UserRound size={12} className="text-slate-400" />
+                                <span className="font-bold text-muted-foreground">Người yêu cầu:</span>
+                                <div className="flex items-center gap-1 font-black text-foreground">
+                                  <UserRound size={12} className="text-muted-foreground" />
                                   <span className="truncate">{requester?.name || request.requesterId}</span>
                                 </div>
                               </div>
                               <div className="space-y-1">
-                                <span className="font-bold text-slate-400">Người xử lý:</span>
-                                <div className="flex items-center gap-1 font-black text-slate-700">
+                                <span className="font-bold text-muted-foreground">Người xử lý:</span>
+                                <div className="flex items-center gap-1 font-black text-foreground">
                                   <UserRound size={12} className="text-amber-500" />
                                   <span className="truncate">{handlerNames.length > 0 ? handlerNames.join(', ') : request.submittedToName || 'Chưa phân công'}</span>
                                 </div>
                               </div>
                               <div className="space-y-1">
-                                <span className="font-bold text-slate-400">Ngày yêu cầu:</span>
-                                <div className="flex items-center gap-1 font-semibold text-slate-600">
-                                  <Clock size={12} className="text-slate-400" />
+                                <span className="font-bold text-muted-foreground">Ngày yêu cầu:</span>
+                                <div className="flex items-center gap-1 font-semibold text-foreground/80">
+                                  <Clock size={12} className="text-muted-foreground" />
                                   <span>{formatDateTime(request.createdDate || request.date)}</span>
                                 </div>
                               </div>
                               <div className="space-y-1">
-                                <span className="font-bold text-slate-400">Hạn mong muốn:</span>
-                                <div className="flex items-center gap-1 font-semibold text-slate-600">
+                                <span className="font-bold text-muted-foreground">Hạn mong muốn:</span>
+                                <div className="flex items-center gap-1 font-semibold text-foreground/80">
                                   <Clock size={12} className="text-rose-400" />
                                   <span>{formatDateTime(request.expectedDate)}</span>
                                 </div>
@@ -595,13 +599,13 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
 
                             {/* Note */}
                             {(request.note || request.submissionNote) && (
-                              <div className="rounded-lg bg-amber-50/50 border border-amber-100/50 p-2 text-[10px] text-slate-600">
+                              <div className="rounded-lg bg-amber-500/5 border border-amber-500/20 p-2 text-[10px] text-foreground">
                                 <div className="font-bold text-amber-800">Ghi chú:</div>
                                 <p className="mt-0.5 italic">{request.note || request.submissionNote}</p>
                               </div>
                             )}
                             {workflowStepLabel && (
-                              <div className="rounded-lg bg-indigo-50/60 border border-indigo-100 p-2 text-[10px] text-indigo-700">
+                              <div className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 p-2 text-[10px] text-indigo-400">
                                 <div className="font-bold">Bước workflow hiện tại:</div>
                                 <p className="mt-0.5 font-black">{workflowStepLabel}</p>
                               </div>
@@ -609,7 +613,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
 
                             {/* Items List */}
                             <div className="space-y-1.5">
-                              <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wide text-slate-400">
+                              <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wide text-muted-foreground">
                                 <span>Danh sách vật tư ({request.items?.length || 0})</span>
                               </div>
                               <div className="max-h-[180px] overflow-y-auto space-y-1.5 pr-1">
@@ -617,9 +621,9 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                                   const item = inventoryItemById.get(line.itemId);
                                   const work = line.workBoqItemId ? workBoqItemById.get(line.workBoqItemId) : undefined;
                                   return (
-                                    <div key={`${request.id}-hover-${line.lineId || line.itemId}-${index}`} className="flex items-start justify-between gap-2 rounded-lg bg-slate-50 border border-slate-100/80 px-2 py-1.5 hover:bg-slate-100/50 transition">
+                                    <div key={`${request.id}-hover-${line.lineId || line.itemId}-${index}`} className="flex items-start justify-between gap-2 rounded-lg bg-muted border border-border px-2 py-1.5 hover:bg-muted/80 transition">
                                       <div className="min-w-0 flex-1">
-                                        <div className="truncate text-[10px] font-black text-slate-700">
+                                        <div className="truncate text-[10px] font-black text-foreground">
                                           {line.itemNameSnapshot || item?.name || line.itemId}
                                         </div>
                                         {work?.wbsCode && (
@@ -646,15 +650,15 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
 
                             {/* Fulfillment progress */}
                             {summary && summary.committedQty > 0 && (
-                              <div className="border-t border-slate-100 pt-3">
-                                <div className="flex justify-between text-[10px] font-black text-slate-500 mb-1">
+                              <div className="border-t border-border pt-3">
+                                <div className="flex justify-between text-[10px] font-black text-muted-foreground mb-1">
                                   <span>Tiến độ nhận hàng</span>
                                   <span>{progress}%</span>
                                 </div>
-                                <div className="h-2 overflow-hidden rounded-full bg-slate-100 border border-slate-200/50">
+                                <div className="h-2 overflow-hidden rounded-full bg-muted border border-border">
                                   <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${progress}%` }} />
                                 </div>
-                                <div className="mt-1 flex justify-between text-[9px] font-bold text-slate-400 font-mono">
+                                <div className="mt-1 flex justify-between text-[9px] font-bold text-muted-foreground font-mono">
                                   <span>Đã nhận: {summary.receivedQty.toLocaleString('vi-VN')}</span>
                                   <span>Còn lại: {summary.remainingToReceive.toLocaleString('vi-VN')}</span>
                                 </div>
@@ -662,32 +666,32 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                             )}
 
                             {/* Timeline */}
-                            <div className="border-t border-slate-100 pt-3">
-                              <div className="mb-1.5 flex items-center gap-1 text-[9px] font-black uppercase text-slate-400">
+                            <div className="border-t border-border pt-3">
+                              <div className="mb-1.5 flex items-center gap-1 text-[9px] font-black uppercase text-muted-foreground">
                                 <MessageSquare size={10} /> Hoạt động gần đây
                               </div>
                               <div className="space-y-2 max-h-[100px] overflow-y-auto pr-1">
                                 {events.slice(0, 3).map(event => (
                                   <div key={event.id} className="text-[10px]">
-                                    <div className="font-black text-slate-600">{event.action} <span className="font-medium text-slate-300">• {formatDateTime(event.createdAt)}</span></div>
-                                    {event.note && <div className="line-clamp-2 text-slate-400 mt-0.5">{event.note}</div>}
+                                    <div className="font-black text-foreground/80">{event.action} <span className="font-medium text-muted-foreground/30">• {formatDateTime(event.createdAt)}</span></div>
+                                    {event.note && <div className="line-clamp-2 text-muted-foreground mt-0.5">{event.note}</div>}
                                   </div>
                                 ))}
                                 {events.length === 0 && (request.logs || []).slice(-3).reverse().map((log, index) => (
                                   <div key={`${request.id}-log-hover-${index}`} className="text-[10px]">
-                                    <div className="font-black text-slate-600">{log.action} <span className="font-medium text-slate-300">• {formatDateTime(log.timestamp)}</span></div>
-                                    {log.note && <div className="line-clamp-2 text-slate-400 mt-0.5">{log.note}</div>}
+                                    <div className="font-black text-foreground/80">{log.action} <span className="font-medium text-muted-foreground/30">• {formatDateTime(log.timestamp)}</span></div>
+                                    {log.note && <div className="line-clamp-2 text-muted-foreground mt-0.5">{log.note}</div>}
                                   </div>
                                 ))}
                                 {events.length === 0 && (!request.logs || request.logs.length === 0) && (
-                                  <div className="text-[10px] font-bold text-slate-300">Chưa có hoạt động.</div>
+                                  <div className="text-[10px] font-bold text-muted-foreground/30">Chưa có hoạt động.</div>
                                 )}
                               </div>
                             </div>
 
                             {/* Footer Action */}
-                            <div className="border-t border-slate-100 pt-3 flex items-center justify-between gap-3">
-                              <span className="text-[9px] font-bold text-slate-400">
+                            <div className="border-t border-border pt-3 flex items-center justify-between gap-3">
+                              <span className="text-[9px] font-bold text-muted-foreground">
                                 Kéo thả để chuyển trạng thái
                               </span>
                               <button
@@ -708,7 +712,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                 })}
 
                 {columnRequests.length === 0 && (
-                  <div className={`flex flex-col items-center justify-center py-10 text-slate-300 dark:text-slate-600 transition-all ${isDropTarget ? 'opacity-100' : 'opacity-50'}`}>
+                  <div className={`flex flex-col items-center justify-center py-10 text-muted-foreground/30 transition-all ${isDropTarget ? 'opacity-100' : 'opacity-50'}`}>
                     <Package size={28} className="mb-2" />
                     <p className="text-[10px] font-bold uppercase tracking-wider">
                       {isDropTarget ? 'Thả vào đây' : 'Không có phiếu'}
@@ -718,8 +722,8 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
               </div>
 
               {/* Column Footer */}
-              <div className={`px-4 py-2 border-t ${getColumnBorder(column.id)} bg-white/60 dark:bg-slate-800/60`}>
-                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+              <div className={`px-4 py-2 border-t ${getColumnBorder(column.id)} bg-card/60`}>
+                <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
                   {columnRequests.length} phiếu
                 </span>
               </div>

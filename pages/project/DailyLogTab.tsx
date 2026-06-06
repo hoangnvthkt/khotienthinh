@@ -35,10 +35,10 @@ const WEATHER: Record<WeatherType, { label: string; icon: React.ReactNode; emoji
 };
 
 const STATUS_CFG: Record<DailyLogStatus, { label: string; cls: string }> = {
-    draft: { label: 'Nháp', cls: 'bg-slate-50 text-slate-600 border-slate-200' },
-    submitted: { label: 'Chờ xác nhận', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-    verified: { label: 'Đã xác nhận', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-    rejected: { label: 'Trả lại', cls: 'bg-red-50 text-red-700 border-red-200' },
+    draft: { label: 'Nháp', cls: 'bg-muted text-muted-foreground border-border' },
+    submitted: { label: 'Chờ xác nhận', cls: 'bg-amber-500/10 text-amber-500 border-amber-500/20' },
+    verified: { label: 'Đã xác nhận', cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+    rejected: { label: 'Trả lại', cls: 'bg-destructive/10 text-destructive border-destructive/20' },
 };
 
 const STATUS_DOT: Record<DailyLogStatus, string> = {
@@ -187,7 +187,7 @@ const VoiceTextarea: React.FC<{
                     onClick={toggleListening}
                     className={`absolute top-2 right-2 w-7 h-7 rounded-lg flex items-center justify-center transition-all ${isListening
                             ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 animate-pulse'
-                            : 'bg-slate-100 text-slate-400 hover:bg-teal-50 hover:text-teal-600'
+                            : 'bg-muted text-muted-foreground hover:bg-teal-500/10 hover:text-teal-400'
                         }`}
                     title={isListening ? 'Dừng ghi âm' : 'Voice input (tiếng Việt)'}
                 >
@@ -254,115 +254,115 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
 
     return (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm px-3" onClick={e => e.target === e.currentTarget && onClose()}>
-            <div className="w-[96vw] h-[92vh] max-w-[1180px] rounded-3xl bg-white shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
+            <div className="w-[96vw] h-[92vh] max-w-[1180px] rounded-3xl bg-card shadow-2xl border border-border flex flex-col overflow-hidden">
+                <div className="px-6 py-4 border-b border-border flex items-start justify-between gap-4">
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2 mb-1">
-                            <h3 className="text-lg font-black text-slate-800">Nhật ký công trường</h3>
+                            <h3 className="text-lg font-black text-foreground">Nhật ký công trường</h3>
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusClassName}`}>{STATUS_CFG[status].label}</span>
                             <span className="text-sm">{weatherEmoji}</span>
                         </div>
-                        <p className="text-xs font-bold text-slate-500">
+                        <p className="text-xs font-bold text-muted-foreground">
                             {new Date(log.date).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
-                            <span className="mx-2 text-slate-300">•</span>{weatherLabel}
-                            <span className="mx-2 text-slate-300">•</span>{log.workerCount || 0} nhân công
+                            <span className="mx-2 text-muted-foreground/30">•</span>{weatherLabel}
+                            <span className="mx-2 text-muted-foreground/30">•</span>{log.workerCount || 0} nhân công
                         </p>
                     </div>
-                    <button onClick={onClose} className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-100 shrink-0">
+                    <button onClick={onClose} className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:bg-muted shrink-0">
                         <X size={18} />
                     </button>
                 </div>
 
                 <div className="p-6 overflow-y-auto flex-1 space-y-5">
                     <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-4">
-                        <div className="rounded-2xl border border-slate-100 p-4 space-y-4">
+                        <div className="rounded-2xl border border-border p-4 space-y-4">
                             <div>
-                                <div className="text-[10px] font-black text-slate-400 uppercase mb-1">Nội dung công việc thi công</div>
-                                <p className="text-sm text-slate-750 leading-relaxed whitespace-pre-wrap">{log.description || 'Không có nội dung.'}</p>
+                                <div className="text-[10px] font-black text-muted-foreground uppercase mb-1">Nội dung công việc thi công</div>
+                                <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">{log.description || 'Không có nội dung.'}</p>
                             </div>
                             {log.acceptanceDescription && (
-                                <div className="border-t border-slate-100 pt-3">
-                                    <div className="text-[10px] font-black text-slate-400 uppercase mb-1">Nội dung công việc nghiệm thu</div>
-                                    <p className="text-sm text-slate-750 leading-relaxed whitespace-pre-wrap">{log.acceptanceDescription}</p>
+                                <div className="border-t border-border pt-3">
+                                    <div className="text-[10px] font-black text-muted-foreground uppercase mb-1">Nội dung công việc nghiệm thu</div>
+                                    <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">{log.acceptanceDescription}</p>
                                 </div>
                             )}
-                            <div className="border-t border-slate-100 pt-3">
-                                <div className="text-[10px] font-black text-slate-400 uppercase mb-2">Đảm bảo an toàn & vệ sinh</div>
+                            <div className="border-t border-border pt-3">
+                                <div className="text-[10px] font-black text-muted-foreground uppercase mb-2">Đảm bảo an toàn & vệ sinh</div>
                                 <div className="grid grid-cols-3 gap-2">
-                                    <div className={`p-2.5 rounded-xl border text-center text-xs font-bold ${log.workSafetyOk !== false ? 'bg-emerald-50/50 border-emerald-200 text-emerald-700' : 'bg-red-50/50 border-red-200 text-red-700'}`}>
+                                    <div className={`p-2.5 rounded-xl border text-center text-xs font-bold ${log.workSafetyOk !== false ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-destructive/10 border-destructive/20 text-destructive'}`}>
                                         An toàn lao động: {log.workSafetyOk !== false ? 'Đạt' : 'Không đạt'}
                                     </div>
-                                    <div className={`p-2.5 rounded-xl border text-center text-xs font-bold ${log.envHygieneOk !== false ? 'bg-emerald-50/50 border-emerald-200 text-emerald-700' : 'bg-red-50/50 border-red-200 text-red-700'}`}>
+                                    <div className={`p-2.5 rounded-xl border text-center text-xs font-bold ${log.envHygieneOk !== false ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-destructive/10 border-destructive/20 text-destructive'}`}>
                                         Vệ sinh môi trường: {log.envHygieneOk !== false ? 'Đạt' : 'Không đạt'}
                                     </div>
-                                    <div className={`p-2.5 rounded-xl border text-center text-xs font-bold ${log.trafficSafetyOk !== false ? 'bg-emerald-50/50 border-emerald-200 text-emerald-700' : 'bg-red-50/50 border-red-200 text-red-700'}`}>
+                                    <div className={`p-2.5 rounded-xl border text-center text-xs font-bold ${log.trafficSafetyOk !== false ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-destructive/10 border-destructive/20 text-destructive'}`}>
                                         An toàn giao thông: {log.trafficSafetyOk !== false ? 'Đạt' : 'Không đạt'}
                                     </div>
                                 </div>
                             </div>
                             {log.issues && (
-                                <div className="rounded-xl border border-red-100 bg-red-50 p-3">
-                                    <div className="text-[10px] font-black text-red-500 uppercase mb-1 flex items-center gap-1"><AlertTriangle size={11} /> Vấn đề / Sự cố</div>
-                                    <p className="text-sm text-red-600 whitespace-pre-wrap">{log.issues}</p>
+                                <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-3">
+                                    <div className="text-[10px] font-black text-destructive uppercase mb-1 flex items-center gap-1"><AlertTriangle size={11} /> Vấn đề / Sự cố</div>
+                                    <p className="text-sm text-destructive whitespace-pre-wrap">{log.issues}</p>
                                 </div>
                             )}
                         </div>
-                        <div className="rounded-2xl border border-slate-100 p-4 space-y-3">
+                        <div className="rounded-2xl border border-border p-4 space-y-3">
                             <div className="grid grid-cols-2 gap-2">
-                                <div className="rounded-xl bg-slate-50 p-3">
-                                    <div className="text-[9px] font-black text-slate-400 uppercase">Người lập</div>
-                                    <div className="text-sm font-bold text-slate-700 truncate">{log.createdBy || log.submittedBy || 'Không rõ'}</div>
+                                <div className="rounded-xl bg-muted p-3">
+                                    <div className="text-[9px] font-black text-muted-foreground uppercase">Người lập</div>
+                                    <div className="text-sm font-bold text-foreground truncate">{log.createdBy || log.submittedBy || 'Không rõ'}</div>
                                 </div>
-                                <div className="rounded-xl bg-slate-50 p-3">
-                                    <div className="text-[9px] font-black text-slate-400 uppercase">Người xác nhận</div>
-                                    <div className="text-sm font-bold text-slate-700 truncate">{log.requestedVerifierName || log.verifiedBy || 'Chưa có'}</div>
+                                <div className="rounded-xl bg-muted p-3">
+                                    <div className="text-[9px] font-black text-muted-foreground uppercase">Người xác nhận</div>
+                                    <div className="text-sm font-bold text-foreground truncate">{log.requestedVerifierName || log.verifiedBy || 'Chưa có'}</div>
                                 </div>
                             </div>
                             {log.gpsLat && log.gpsLng && (
-                                <div className="rounded-xl border border-teal-100 bg-teal-50 p-3 text-xs font-bold text-teal-700 flex items-center gap-2">
+                                <div className="rounded-xl border border-teal-500/20 bg-teal-500/10 p-3 text-xs font-bold text-teal-400 flex items-center gap-2">
                                     <MapPin size={14} /> {log.gpsLat.toFixed(5)}, {log.gpsLng.toFixed(5)}
                                     {log.gpsAccuracy ? <span className="text-teal-500">±{Math.round(log.gpsAccuracy)}m</span> : null}
                                 </div>
                             )}
                             <div className="grid grid-cols-3 gap-2">
-                                <div className="rounded-xl bg-amber-50 p-3">
+                                <div className="rounded-xl bg-amber-500/10 p-3">
                                     <div className="text-[9px] font-black text-amber-500 uppercase">Vật tư</div>
-                                    <div className="text-sm font-black text-amber-700">{materialSummary}</div>
+                                    <div className="text-sm font-black text-amber-400">{materialSummary}</div>
                                 </div>
-                                <div className="rounded-xl bg-blue-50 p-3">
+                                <div className="rounded-xl bg-blue-500/10 p-3">
                                     <div className="text-[9px] font-black text-blue-500 uppercase">Nhân công</div>
-                                    <div className="text-sm font-black text-blue-700">{formatNumber(laborCount)} người</div>
+                                    <div className="text-sm font-black text-blue-400">{formatNumber(laborCount)} người</div>
                                 </div>
-                                <div className="rounded-xl bg-purple-50 p-3">
+                                <div className="rounded-xl bg-purple-500/10 p-3">
                                     <div className="text-[9px] font-black text-purple-500 uppercase">Máy TC</div>
-                                    <div className="text-sm font-black text-purple-700">{formatNumber(machineShifts)} ca</div>
+                                    <div className="text-sm font-black text-purple-400">{formatNumber(machineShifts)} ca</div>
                                 </div>
                             </div>
 
                             {/* Supervisor Eval */}
                             {(log.supervisorConstructionEval || log.supervisorAcceptanceEval || log.supervisorSafetyOk !== undefined) && (
-                                <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-4 space-y-3">
-                                    <div className="text-[10px] font-black text-slate-500 uppercase">Đánh giá của Giám sát</div>
+                                <div className="rounded-2xl border border-border bg-muted/40 p-4 space-y-3">
+                                    <div className="text-[10px] font-black text-muted-foreground uppercase">Đánh giá của Giám sát</div>
                                     {log.supervisorConstructionEval && (
                                         <div>
-                                            <div className="text-[9px] font-bold text-slate-400 uppercase">Nhận xét thi công</div>
-                                            <div className="text-xs text-slate-600 whitespace-pre-wrap">{log.supervisorConstructionEval}</div>
+                                            <div className="text-[9px] font-bold text-muted-foreground uppercase">Nhận xét thi công</div>
+                                            <div className="text-xs text-muted-foreground whitespace-pre-wrap">{log.supervisorConstructionEval}</div>
                                         </div>
                                     )}
                                     {log.supervisorAcceptanceEval && (
                                         <div>
-                                            <div className="text-[9px] font-bold text-slate-400 uppercase">Nhận xét nghiệm thu</div>
-                                            <div className="text-xs text-slate-600 whitespace-pre-wrap">{log.supervisorAcceptanceEval}</div>
+                                            <div className="text-[9px] font-bold text-muted-foreground uppercase">Nhận xét nghiệm thu</div>
+                                            <div className="text-xs text-muted-foreground whitespace-pre-wrap">{log.supervisorAcceptanceEval}</div>
                                         </div>
                                     )}
-                                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200/60">
-                                        <div className={`text-[10px] text-center font-bold p-1 rounded ${log.supervisorSafetyOk !== false ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-55'}`}>
+                                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/60">
+                                        <div className={`text-[10px] text-center font-bold p-1 rounded ${log.supervisorSafetyOk !== false ? 'text-emerald-400 bg-emerald-500/10' : 'text-destructive bg-destructive/10'}`}>
                                             ATLĐ: {log.supervisorSafetyOk !== false ? 'Đạt' : 'K.Đạt'}
                                         </div>
-                                        <div className={`text-[10px] text-center font-bold p-1 rounded ${log.supervisorHygieneOk !== false ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-55'}`}>
+                                        <div className={`text-[10px] text-center font-bold p-1 rounded ${log.supervisorHygieneOk !== false ? 'text-emerald-400 bg-emerald-500/10' : 'text-destructive bg-destructive/10'}`}>
                                             VSMT: {log.supervisorHygieneOk !== false ? 'Đạt' : 'K.Đạt'}
                                         </div>
-                                        <div className={`text-[10px] text-center font-bold p-1 rounded ${log.supervisorTrafficOk !== false ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-55'}`}>
+                                        <div className={`text-[10px] text-center font-bold p-1 rounded ${log.supervisorTrafficOk !== false ? 'text-emerald-400 bg-emerald-500/10' : 'text-destructive bg-destructive/10'}`}>
                                             ATGT: {log.supervisorTrafficOk !== false ? 'Đạt' : 'K.Đạt'}
                                         </div>
                                     </div>
@@ -372,8 +372,8 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                     </div>
 
                     {(log.photos || []).length > 0 && (
-                        <section className="rounded-2xl border border-slate-100 dark:border-slate-700/60 p-4">
-                            <h4 className="text-xs font-black text-slate-600 dark:text-slate-400 uppercase mb-3 flex items-center gap-1"><Camera size={13} /> Ảnh công trường</h4>
+                        <section className="rounded-2xl border border-border p-4">
+                            <h4 className="text-xs font-black text-muted-foreground uppercase mb-3 flex items-center gap-1"><Camera size={13} /> Ảnh công trường</h4>
                             <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
                                 {(log.photos || []).map((photo, index) => (
                                     <div 
@@ -385,34 +385,34 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                         }}
                                         className="group cursor-zoom-in"
                                     >
-                                        <img src={photo.url} alt={photo.name || `Ảnh ${index + 1}`} className="w-full aspect-square object-cover rounded-xl border border-slate-100 dark:border-slate-700/60 group-hover:border-teal-300 dark:group-hover:border-teal-500 hover:scale-[1.03] transition-all duration-200" />
-                                        <div className="mt-1 text-[10px] font-bold text-slate-400 dark:text-slate-500 truncate">{photo.name}</div>
+                                        <img src={photo.url} alt={photo.name || `Ảnh ${index + 1}`} className="w-full aspect-square object-cover rounded-xl border border-border group-hover:border-teal-500 hover:scale-[1.03] transition-all duration-200" />
+                                        <div className="mt-1 text-[10px] font-bold text-muted-foreground truncate">{photo.name}</div>
                                     </div>
                                 ))}
                             </div>
                         </section>
                     )}
 
-                    <section className="rounded-2xl border border-amber-100 p-4">
-                        <h4 className="text-xs font-black text-slate-600 uppercase mb-3 flex items-center gap-1"><Layers size={13} className="text-amber-600" /> Khối lượng</h4>
+                    <section className="rounded-2xl border-amber-500/20 p-4">
+                        <h4 className="text-xs font-black text-muted-foreground uppercase mb-3 flex items-center gap-1"><Layers size={13} className="text-amber-600" /> Khối lượng</h4>
                         {(log.volumes || []).length === 0 ? (
-                            <p className="text-xs font-bold text-slate-400">Chưa có khối lượng.</p>
+                            <p className="text-xs font-bold text-muted-foreground">Chưa có khối lượng.</p>
                         ) : (
                             <div className="space-y-2">
                                 {(log.volumes || []).map((row, index) => {
                                     const attachments = row.attachments || [];
                                     return (
-                                        <div key={index} className="rounded-xl bg-amber-50/50 border border-amber-100 p-3">
+                                        <div key={index} className="rounded-xl bg-amber-500/5 border border-amber-500/20 p-3">
                                             <div className="flex flex-wrap items-start justify-between gap-2">
                                                 <div className="min-w-0">
-                                                    <div className="text-sm font-black text-slate-800 truncate">{row.workBoqItemName || row.taskName || row.contractItemName || 'Hạng mục chưa đặt tên'}</div>
+                                                    <div className="text-sm font-black text-foreground truncate">{row.workBoqItemName || row.taskName || row.contractItemName || 'Hạng mục chưa đặt tên'}</div>
                                                     {row.workBoqItemName && row.taskName && row.workBoqItemName !== row.taskName && (
-                                                        <div className="text-[10px] font-bold text-slate-400 truncate">Tiến độ: {row.taskName}</div>
+                                                        <div className="text-[10px] font-bold text-muted-foreground truncate">Tiến độ: {row.taskName}</div>
                                                     )}
-                                                    {row.note && <p className="mt-1 text-xs text-slate-500 whitespace-pre-wrap">{row.note}</p>}
+                                                    {row.note && <p className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">{row.note}</p>}
                                                 </div>
                                                 <div className="text-right shrink-0">
-                                                    <div className="text-base font-black text-amber-700">{formatNumber(row.quantity)} {row.unit}</div>
+                                                    <div className="text-base font-black text-amber-400">{formatNumber(row.quantity)} {row.unit}</div>
                                                 </div>
                                             </div>
                                             {attachments.length > 0 && (
@@ -438,7 +438,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                                             );
                                                         }
                                                         return (
-                                                            <a key={file.id || attachmentUrl || label} href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[10px] font-bold text-blue-600 border border-blue-100 hover:bg-blue-50">
+                                                            <a key={file.id || attachmentUrl || label} href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-card px-2 py-1 text-[10px] font-bold text-blue-400 border border-border hover:bg-muted">
                                                                 <Paperclip size={10} /> {label}
                                                             </a>
                                                         );
@@ -453,34 +453,34 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                     </section>
 
                     <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                        <section className="rounded-2xl border border-orange-100 p-4">
-                            <h4 className="text-xs font-black text-slate-600 uppercase mb-3 flex items-center gap-1"><Package size={13} className="text-orange-500" /> Vật tư</h4>
-                            {(log.materials || []).length === 0 ? <p className="text-xs font-bold text-slate-400">Chưa có vật tư.</p> : (
+                        <section className="rounded-2xl border-orange-500/20 p-4">
+                            <h4 className="text-xs font-black text-muted-foreground uppercase mb-3 flex items-center gap-1"><Package size={13} className="text-orange-500" /> Vật tư</h4>
+                            {(log.materials || []).length === 0 ? <p className="text-xs font-bold text-muted-foreground">Chưa có vật tư.</p> : (
                                 <div className="space-y-2">
                                     {(log.materials || []).map((row, index) => (
-                                        <div key={index} className="flex items-start justify-between gap-2 text-xs rounded-xl bg-orange-50/50 p-2">
+                                        <div key={index} className="flex items-start justify-between gap-2 text-xs rounded-xl bg-orange-500/5 p-2">
                                             <div className="min-w-0">
-                                                <div className="font-black text-slate-700 truncate">{row.itemName}</div>
-                                                {row.note && <div className="text-slate-400 truncate">{row.note}</div>}
+                                                <div className="font-black text-foreground truncate">{row.itemName}</div>
+                                                {row.note && <div className="text-muted-foreground truncate">{row.note}</div>}
                                             </div>
-                                            <div className="font-black text-orange-700 shrink-0">{formatNumber(row.quantity)} {row.unit}</div>
+                                            <div className="font-black text-orange-400 shrink-0">{formatNumber(row.quantity)} {row.unit}</div>
                                         </div>
                                     ))}
                                 </div>
                             )}
                         </section>
-                        <section className="rounded-2xl border border-blue-100 p-4">
-                            <h4 className="text-xs font-black text-slate-600 uppercase mb-3 flex items-center gap-1"><Users size={13} className="text-blue-500" /> Nhân công</h4>
-                            {(log.laborDetails || []).length === 0 ? <p className="text-xs font-bold text-slate-400">Chưa có nhân công.</p> : (
+                        <section className="rounded-2xl border-blue-500/20 p-4">
+                            <h4 className="text-xs font-black text-muted-foreground uppercase mb-3 flex items-center gap-1"><Users size={13} className="text-blue-500" /> Nhân công</h4>
+                            {(log.laborDetails || []).length === 0 ? <p className="text-xs font-bold text-muted-foreground">Chưa có nhân công.</p> : (
                                 <div className="space-y-2">
                                     {(log.laborDetails || []).map((row, index) => (
-                                        <div key={index} className="text-xs rounded-xl bg-blue-50/50 p-2">
+                                        <div key={index} className="text-xs rounded-xl bg-blue-500/5 p-2">
                                             <div className="flex items-start justify-between gap-2">
                                                 <div className="min-w-0">
-                                                    <div className="font-black text-slate-700 truncate">{row.catalogName || row.partnerName || row.groupName || row.laborType}</div>
-                                                    <div className="text-slate-400 truncate">{row.taskName || 'Chưa gắn hạng mục'}</div>
+                                                    <div className="font-black text-foreground truncate">{row.catalogName || row.partnerName || row.groupName || row.laborType}</div>
+                                                    <div className="text-muted-foreground truncate">{row.taskName || 'Chưa gắn hạng mục'}</div>
                                                 </div>
-                                                <div className="font-black text-blue-700 shrink-0">{formatNumber(row.count)} người</div>
+                                                <div className="font-black text-blue-400 shrink-0">{formatNumber(row.count)} người</div>
                                             </div>
                                             <div className="mt-1 text-[10px] text-slate-400">Giờ: {formatNumber(row.hours || 0)} • Đơn giá: {formatMoney(row.unitCost)}</div>
                                         </div>
@@ -488,18 +488,18 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                 </div>
                             )}
                         </section>
-                        <section className="rounded-2xl border border-purple-100 p-4">
-                            <h4 className="text-xs font-black text-slate-600 uppercase mb-3 flex items-center gap-1"><Wrench size={13} className="text-purple-500" /> Máy thi công</h4>
-                            {(log.machines || []).length === 0 ? <p className="text-xs font-bold text-slate-400">Chưa có máy thi công.</p> : (
+                        <section className="rounded-2xl border-purple-500/20 p-4">
+                            <h4 className="text-xs font-black text-muted-foreground uppercase mb-3 flex items-center gap-1"><Wrench size={13} className="text-purple-500" /> Máy thi công</h4>
+                            {(log.machines || []).length === 0 ? <p className="text-xs font-bold text-muted-foreground">Chưa có máy thi công.</p> : (
                                 <div className="space-y-2">
                                     {(log.machines || []).map((row, index) => (
-                                        <div key={index} className="text-xs rounded-xl bg-purple-50/50 p-2">
+                                        <div key={index} className="text-xs rounded-xl bg-purple-500/5 p-2">
                                             <div className="flex items-start justify-between gap-2">
                                                 <div className="min-w-0">
-                                                    <div className="font-black text-slate-700 truncate">{row.catalogName || row.machineName}</div>
-                                                    <div className="text-slate-400 truncate">{row.taskName || row.groupName || 'Chưa gắn hạng mục'}</div>
+                                                    <div className="font-black text-foreground truncate">{row.catalogName || row.machineName}</div>
+                                                    <div className="text-muted-foreground truncate">{row.taskName || row.groupName || 'Chưa gắn hạng mục'}</div>
                                                 </div>
-                                                <div className="font-black text-purple-700 shrink-0">{formatNumber(row.shifts)} ca</div>
+                                                <div className="font-black text-purple-400 shrink-0">{formatNumber(row.shifts)} ca</div>
                                             </div>
                                             <div className="mt-1 text-[10px] text-slate-400">Đơn giá: {formatMoney(row.unitCost)}</div>
                                         </div>
@@ -510,11 +510,11 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                     </div>
 
                     {(log.delayTasks || []).length > 0 && (
-                        <section className="rounded-2xl border border-red-100 p-4">
-                            <h4 className="text-xs font-black text-slate-600 uppercase mb-3 flex items-center gap-1"><Clock size={13} className="text-red-500" /> Ghi nhận trễ tiến độ</h4>
+                        <section className="rounded-2xl border-destructive/20 p-4">
+                            <h4 className="text-xs font-black text-muted-foreground uppercase mb-3 flex items-center gap-1"><Clock size={13} className="text-red-500" /> Ghi nhận trễ tiến độ</h4>
                             <div className="space-y-2">
                                 {(log.delayTasks || []).map((row, index) => (
-                                    <div key={index} className="rounded-xl bg-red-50/50 p-3 text-xs">
+                                    <div key={index} className="rounded-xl bg-destructive/5 p-3 text-xs">
                                         <div className="font-black text-slate-700">{row.taskName}</div>
                                         <div className="text-red-600 font-bold">{row.delayDays} ngày • {row.category}</div>
                                         {row.reason && <div className="mt-1 text-slate-500">{row.reason}</div>}
@@ -525,10 +525,10 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                     )}
                 </div>
 
-                <div className="px-6 py-4 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
+                <div className="px-6 py-4 border-t border-border flex flex-wrap items-center justify-end gap-2">
                     {canReview && (
                         <>
-                            <button onClick={onReject} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 flex items-center gap-1.5">
+                            <button onClick={onReject} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-destructive bg-destructive/10 hover:bg-destructive/20 disabled:opacity-50 flex items-center gap-1.5">
                                 {busy ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />} Trả lại
                             </button>
                             <button onClick={onVerify} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5">
@@ -537,26 +537,26 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                         </>
                     )}
                     {canEdit && (
-                        <button onClick={onEdit} className="px-4 py-2 rounded-xl text-sm font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 flex items-center gap-1.5">
+                        <button onClick={onEdit} className="px-4 py-2 rounded-xl text-sm font-bold text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 flex items-center gap-1.5">
                             <Edit2 size={15} /> Sửa phiếu
                         </button>
                     )}
                     {canRollback && (
-                        <button onClick={onRollback} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 flex items-center gap-1.5">
+                        <button onClick={onRollback} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-destructive bg-destructive/10 hover:bg-destructive/20 disabled:opacity-50 flex items-center gap-1.5">
                             {busy ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />} Rollback
                         </button>
                     )}
                     {canSubmit && (
-                        <button onClick={onSubmit} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 flex items-center gap-1.5">
+                        <button onClick={onSubmit} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-50 flex items-center gap-1.5">
                             {busy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Gửi xác nhận
                         </button>
                     )}
                     {canDelete && (
-                        <button onClick={onDelete} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 flex items-center gap-1.5">
+                        <button onClick={onDelete} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-destructive bg-destructive/10 hover:bg-destructive/20 disabled:opacity-50 flex items-center gap-1.5">
                             <Trash2 size={15} /> Xoá phiếu
                         </button>
                     )}
-                    <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Đóng</button>
+                    <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:bg-muted">Đóng</button>
                 </div>
             </div>
         </div>
@@ -1496,7 +1496,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 {/* Tổng nhật ký */}
                 <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-teal-500/5 dark:bg-teal-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
-                    <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><FileSpreadsheet size={11} className="text-teal-500" /> Tổng nhật ký</div>
+                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5"><FileSpreadsheet size={11} className="text-teal-500" /> Tổng nhật ký</div>
                     <div className="text-3xl font-black text-slate-800 dark:text-white leading-none tracking-tight">{stats.total}</div>
                     <div className="text-[10px] text-teal-600 dark:text-teal-400 font-bold mt-2 flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-teal-50 dark:bg-teal-400 animate-pulse" /> Tháng này: {stats.monthCount}
@@ -1506,30 +1506,30 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 {/* Nhân công trung bình */}
                 <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 dark:bg-blue-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
-                    <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={11} className="text-blue-500" /> CN TB/ngày</div>
+                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5"><Users size={11} className="text-blue-500" /> CN TB/ngày</div>
                     <div className="text-3xl font-black text-blue-600 dark:text-blue-400 leading-none tracking-tight">{stats.avgWorkers}</div>
-                    <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mt-2">Nhân công bình quân công trường</div>
+                    <div className="text-[10px] text-muted-foreground font-medium mt-2">Nhân công bình quân công trường</div>
                 </div>
 
                 {/* Ngày mưa */}
                 <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/5 dark:bg-cyan-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
-                    <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><CloudRain size={11} className="text-cyan-500" /> Ngày mưa</div>
+                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5"><CloudRain size={11} className="text-cyan-500" /> Ngày mưa</div>
                     <div className="text-3xl font-black text-cyan-600 dark:text-cyan-400 leading-none tracking-tight">{stats.rainyDays}</div>
-                    <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mt-2">Ảnh hưởng đến tiến độ</div>
+                    <div className="text-[10px] text-muted-foreground font-medium mt-2">Ảnh hưởng đến tiến độ</div>
                 </div>
 
                 {/* Vấn đề sự cố */}
                 <div className="relative overflow-hidden bg-gradient-to-br from-white to-slate-50/50 dark:from-slate-800 dark:to-slate-900/50 rounded-2xl p-5 border border-slate-100/80 dark:border-slate-700/60 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] group">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-red-500/5 dark:bg-red-400/5 rounded-bl-full pointer-events-none transition-transform duration-300 group-hover:scale-110" />
-                    <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><AlertTriangle size={11} className="text-red-500" /> Vấn đề ghi nhận</div>
+                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5"><AlertTriangle size={11} className="text-red-500" /> Vấn đề ghi nhận</div>
                     <div className="text-3xl font-black text-red-500 dark:text-red-400 leading-none tracking-tight">{stats.issueCount}</div>
-                    <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium mt-2">Sự cố, vướng mắc phát sinh</div>
+                    <div className="text-[10px] text-muted-foreground font-medium mt-2">Sự cố, vướng mắc phát sinh</div>
                 </div>
             </div>
 
             {/* Log List */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
+            <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
                 <div className="p-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
                     <h3 className="text-sm font-black text-slate-700 flex items-center gap-2">
                         <Calendar size={16} className="text-teal-500" /> Nhật ký công trường
@@ -1538,7 +1538,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         <div className="flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200">
                             <button
                                 onClick={() => setViewMode('list')}
-                                className={`w-8 h-7 rounded-lg flex items-center justify-center transition-colors ${viewMode === 'list' ? 'bg-white text-teal-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                className={`w-8 h-7 rounded-lg flex items-center justify-center transition-colors ${viewMode === 'list' ? 'bg-muted text-teal-500 shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                                 title="Danh sách"
                             >
                                 <LayoutList size={14} />
@@ -1548,14 +1548,14 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     setCalendarMonth(filterMonth || calendarMonth);
                                     setViewMode('calendar');
                                 }}
-                                className={`w-8 h-7 rounded-lg flex items-center justify-center transition-colors ${viewMode === 'calendar' ? 'bg-white text-teal-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                className={`w-8 h-7 rounded-lg flex items-center justify-center transition-colors ${viewMode === 'calendar' ? 'bg-muted text-teal-500 shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                                 title="Lịch tháng"
                             >
                                 <Calendar size={14} />
                             </button>
                         </div>
                         {viewMode === 'calendar' ? (
-                            <div className="flex items-center gap-1.5 px-2 py-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                            <div className="flex items-center gap-1.5 px-2 py-1 rounded-xl border border-border bg-card">
                                 <button onClick={() => setCalendarMonth(shiftMonth(calendarMonth, -1))}
                                     className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
                                     title="Tháng trước">
@@ -1570,7 +1570,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             </div>
                         ) : (
                             <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
-                                className="text-xs font-bold text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none">
+                                className="text-xs font-bold text-slate-600 px-3 py-1.5 rounded-lg border border-border bg-card outline-none">
                                 <option value="">Tất cả</option>
                                 {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
@@ -1588,7 +1588,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     <div className="flex flex-col sm:flex-row gap-3">
                         {/* Search Input */}
                         <div className="relative flex-1">
-                            <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
+                            <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground">
                                 <Search size={15} />
                             </span>
                             <input
@@ -1596,7 +1596,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 value={searchQuery}
                                 onChange={e => setSearchQuery(e.target.value)}
                                 placeholder="Gõ để tìm kiếm theo nội dung, sự cố, người lập, vật tư, thiết bị, hạng mục..."
-                                className="w-full text-xs pl-9 pr-8 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:border-teal-500 dark:focus:border-teal-500 transition-all font-medium text-slate-700 dark:text-slate-200"
+                                className="w-full text-xs pl-9 pr-8 py-2 rounded-xl border border-border bg-card outline-none focus:border-teal-500 dark:focus:border-teal-500 transition-all font-medium text-slate-700 dark:text-slate-200"
                             />
                             {searchQuery && (
                                 <button
@@ -1613,7 +1613,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             <select
                                 value={filterMonth}
                                 onChange={e => setFilterMonth(e.target.value)}
-                                className="text-xs font-bold text-slate-600 dark:text-slate-300 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 outline-none focus:border-teal-500 transition-all cursor-pointer min-w-[120px]"
+                                className="text-xs font-bold text-slate-600 dark:text-slate-300 px-3 py-2 rounded-xl border border-border bg-card outline-none focus:border-teal-500 transition-all cursor-pointer min-w-[120px]"
                             >
                                 <option value="">Tất cả các tháng</option>
                                 {availableMonths.map(m => (
@@ -1627,7 +1627,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             onClick={() => setShowAdvanced(!showAdvanced)}
                             className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${showAdvanced || filterStatus !== 'all' || filterWeather !== 'all'
                                     ? 'text-teal-600 bg-teal-50 border-teal-200 dark:bg-teal-950/30 dark:border-teal-800 dark:text-teal-400'
-                                    : 'text-slate-600 bg-white border-slate-200 dark:text-slate-300 dark:bg-slate-900 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                    : 'text-foreground bg-card border-border hover:bg-muted'
                                 }`}
                         >
                             <SlidersHorizontal size={14} />
@@ -1647,7 +1647,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         <div className="pt-4 border-t border-dashed border-slate-200 dark:border-slate-700/60 grid grid-cols-1 md:grid-cols-2 gap-4">
                             {/* Status Filter */}
                             <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
                                     Trạng thái phê duyệt
                                 </label>
                                 <div className="flex flex-wrap gap-1.5">
@@ -1655,7 +1655,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         onClick={() => setFilterStatus('all')}
                                         className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${filterStatus === 'all'
                                                 ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
-                                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700'
+                                                : 'bg-card text-foreground border-border hover:bg-muted'
                                             }`}
                                     >
                                         Tất cả
@@ -1669,7 +1669,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                 onClick={() => setFilterStatus(statusKey)}
                                                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 ${active
                                                         ? 'bg-teal-600 text-white border-teal-600 dark:bg-teal-500 dark:border-teal-500'
-                                                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700'
+                                                        : 'bg-card text-foreground border-border hover:bg-muted'
                                                     }`}
                                             >
                                                 <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-white' : STATUS_DOT[statusKey]}`} />
@@ -1682,7 +1682,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
                             {/* Weather Filter */}
                             <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
                                     Điều kiện thời tiết
                                 </label>
                                 <div className="flex flex-wrap gap-1.5">
@@ -1690,7 +1690,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         onClick={() => setFilterWeather('all')}
                                         className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${filterWeather === 'all'
                                                 ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
-                                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700'
+                                                : 'bg-card text-foreground border-border hover:bg-muted'
                                             }`}
                                     >
                                         Tất cả
@@ -1704,7 +1704,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                 onClick={() => setFilterWeather(weatherKey)}
                                                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 ${active
                                                         ? 'bg-teal-600 text-white border-teal-600 dark:bg-teal-500 dark:border-teal-500'
-                                                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700'
+                                                        : 'bg-card text-foreground border-border hover:bg-muted'
                                                     }`}
                                             >
                                                 <span>{cfg.emoji}</span>
@@ -1719,7 +1719,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         {/* Reset filters panel */}
                         {(filterStatus !== 'all' || filterWeather !== 'all' || searchQuery.trim() !== '') && (
                             <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                                <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500">
+                                <span className="text-[11px] font-bold text-muted-foreground">
                                     Đang lọc ra {filtered.length} nhật ký
                                 </span>
                                 <button
@@ -1755,7 +1755,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     <button
                                         key={cell.date}
                                         onClick={() => handleCalendarDayClick(cell.date, dayLogs)}
-                                        className={`min-h-[72px] sm:min-h-[92px] border-r border-b border-slate-100 p-1.5 sm:p-2 text-left transition-colors hover:bg-teal-50/60 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-teal-400 ${cell.inMonth ? 'bg-white' : 'bg-slate-50/70 text-slate-300'} ${isToday ? 'ring-2 ring-inset ring-teal-400' : ''}`}
+                                        className={`min-h-[72px] sm:min-h-[92px] border-r border-b border-border p-1.5 sm:p-2 text-left transition-colors hover:bg-teal-500/10 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-teal-400 ${cell.inMonth ? 'bg-card' : 'bg-muted/50 text-muted-foreground'} ${isToday ? 'ring-2 ring-inset ring-teal-400' : ''}`}
                                     >
                                         <div className="flex items-start justify-between gap-1">
                                             <span className={`text-xs font-black ${cell.inMonth ? 'text-slate-700' : 'text-slate-300'}`}>{cell.day}</span>
@@ -1805,7 +1805,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     key={l.id}
                                     ref={el => { logRefs.current[l.id] = el; }}
                                     onClick={() => openView(l)}
-                                    className={`relative pl-7 pr-5 py-4 bg-white dark:bg-slate-800/40 hover:bg-slate-50/70 dark:hover:bg-slate-700/20 border-b border-slate-100 dark:border-slate-700/40 transition-all duration-200 cursor-pointer group flex items-start justify-between gap-3 overflow-hidden ${highlightLogId === l.id ? 'bg-amber-50/80 dark:bg-amber-950/30 ring-2 ring-amber-300 dark:ring-amber-800 ring-inset' : ''
+                                    className={`relative pl-7 pr-5 py-4 bg-card hover:bg-muted/40 border-b border-border transition-all duration-200 cursor-pointer group flex items-start justify-between gap-3 overflow-hidden ${highlightLogId === l.id ? 'bg-amber-500/10 ring-2 ring-amber-500/40 ring-inset' : ''
                                         }`}
                                 >
                                     {/* Left Accent Status Border */}
@@ -1814,7 +1814,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     <div className="flex items-start gap-3.5 flex-1 min-w-0">
                                         <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900 border border-slate-200/60 dark:border-slate-700/60 flex flex-col items-center justify-center shrink-0 shadow-sm transition-transform duration-250 group-hover:scale-105">
                                             <div className="text-[10px] font-black text-slate-700 dark:text-slate-200">{new Date(l.date).getDate()}</div>
-                                            <div className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase">T{new Date(l.date).getMonth() + 1}</div>
+                                            <div className="text-[8px] font-bold text-muted-foreground uppercase">T{new Date(l.date).getMonth() + 1}</div>
                                         </div>
                                         <div className="min-w-0 flex-1">
                                             <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -1853,7 +1853,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
             {submitTarget && (
                 <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/30 backdrop-blur-sm px-4" onClick={e => e.target === e.currentTarget && closeSubmitVerifierPicker()}>
-                    <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-100 overflow-hidden">
+                    <div className="w-full max-w-lg rounded-2xl bg-card border border-border overflow-hidden">
                         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
                             <div>
                                 <p className="text-sm font-black text-slate-800 flex items-center gap-2">
@@ -1895,8 +1895,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         >
                                             <div className="flex items-center justify-between gap-3">
                                                 <div className="min-w-0">
-                                                    <div className="text-sm font-black text-slate-800 truncate">{staff.userName || staff.userId}</div>
-                                                    <div className="text-[11px] font-bold text-slate-400 truncate">{staff.positionName || 'Thành viên dự án'} • quyền verify</div>
+                                                    <div className="text-sm font-black text-foreground truncate">{staff.userName || staff.userId}</div>
+                                                    <div className="text-[11px] font-bold text-muted-foreground truncate">{staff.positionName || 'Thành viên dự án'} • quyền verify</div>
                                                 </div>
                                                 {selected && <CheckCircle2 size={16} className="text-amber-500 shrink-0" />}
                                             </div>
@@ -1907,7 +1907,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         </div>
                         <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-3">
                             <button onClick={closeSubmitVerifierPicker} disabled={busyLogIds.has(submitTarget.id)}
-                                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50">
+                                className="px-4 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:bg-muted disabled:opacity-50">
                                 Huỷ
                             </button>
                             <button onClick={confirmSubmitWithVerifier} disabled={!selectedVerifier || loadingVerifiers || busyLogIds.has(submitTarget.id)}
@@ -1922,7 +1922,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
             {dayLogPicker && (
                 <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/30 backdrop-blur-sm px-4" onClick={e => e.target === e.currentTarget && setDayLogPicker(null)}>
-                    <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-100 overflow-hidden">
+                    <div className="w-full max-w-md rounded-2xl bg-card border border-border overflow-hidden">
                         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
                             <div>
                                 <p className="text-sm font-black text-slate-700">{new Date(dayLogPicker.date).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
@@ -2020,30 +2020,30 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             {/* Form Modal */}
             {showForm && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/45 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700/80 w-[95vw] h-[90vh] sm:w-[80vw] sm:h-[80vh] max-w-[1280px] min-w-[320px] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                    <div className="bg-card border border-border rounded-3xl shadow-2xl w-[95vw] h-[90vh] sm:w-[80vw] sm:h-[80vh] max-w-[1280px] min-w-[320px] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700/60 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-t-3xl flex items-center justify-between shrink-0">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editing ? <><Edit2 size={18} /> Sửa nhật ký</> : <><Plus size={18} /> Ghi nhật ký</>}
                             </span>
                             <button onClick={resetForm} disabled={savingLog} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center disabled:opacity-50 transition-colors"><X size={18} /></button>
                         </div>
-                        <div className="p-6 space-y-5 overflow-y-auto flex-1 bg-white dark:bg-slate-800">
+                        <div className="p-6 space-y-5 overflow-y-auto flex-1 bg-card">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-1">Ngày</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Ngày</label>
                                     <input type="date" value={fDate} onChange={e => setFDate(e.target.value)}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-sm focus:ring-2 focus:ring-teal-500 outline-none transition-all" />
+                                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-muted/30 text-foreground text-sm focus:ring-2 focus:ring-teal-500 outline-none transition-all" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-1">Nhân công</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Nhân công</label>
                                     <div className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-900/50 text-sm font-black text-slate-700 dark:text-slate-300">
                                         {getWorkerCountFromLabor(fLabor)} người
                                     </div>
-                                    <p className="mt-1 text-[10px] font-medium text-slate-400 dark:text-slate-500">Tự cộng từ Chi tiết thi công &gt; Nhân công.</p>
+                                    <p className="mt-1 text-[10px] font-medium text-muted-foreground">Tự cộng từ Chi tiết thi công &gt; Nhân công.</p>
                                 </div>
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-1.5">Thời tiết</label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1.5">Thời tiết</label>
                                 <div className="grid grid-cols-4 gap-2">
                                     {(Object.entries(WEATHER) as [WeatherType, typeof WEATHER[WeatherType]][]).map(([k, v]) => (
                                         <button key={k} onClick={() => setFWeather(k)}
@@ -2055,28 +2055,28 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 </div>
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-1">Nội dung công việc thi công</label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Nội dung công việc thi công</label>
                                 <VoiceTextarea
                                     value={fDesc}
                                     onChange={setFDesc}
                                     rows={3}
                                     placeholder="Mô tả công việc thi công đã thực hiện trong ngày... (nhấn 🎤 để voice input)"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-sm focus:ring-2 focus:ring-teal-500 outline-none resize-none transition-all"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-muted/30 text-foreground text-sm focus:ring-2 focus:ring-teal-500 outline-none resize-none transition-all"
                                 />
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-1">Nội dung công việc nghiệm thu</label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Nội dung công việc nghiệm thu</label>
                                 <VoiceTextarea
                                     value={fAcceptanceDesc}
                                     onChange={setFAcceptanceDesc}
                                     rows={3}
                                     placeholder="Mô tả công việc nghiệm thu đã thực hiện trong ngày... (nhấn 🎤 để voice input)"
-                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-sm focus:ring-2 focus:ring-teal-500 outline-none resize-none transition-all"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-muted/30 text-foreground text-sm focus:ring-2 focus:ring-teal-500 outline-none resize-none transition-all"
                                 />
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-100 dark:border-slate-700/60 pt-4">
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-2">Đảm bảo An toàn lao động</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-2">Đảm bảo An toàn lao động</label>
                                     <div className="flex gap-2">
                                         <button onClick={() => setFWorkSafetyOk(true)}
                                             className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${fWorkSafetyOk ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-750'}`}>
@@ -2089,7 +2089,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-2">Vệ sinh môi trường</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-2">Vệ sinh môi trường</label>
                                     <div className="flex gap-2">
                                         <button onClick={() => setFEnvHygieneOk(true)}
                                             className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${fEnvHygieneOk ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-750'}`}>
@@ -2102,7 +2102,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-2">An toàn giao thông</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-2">An toàn giao thông</label>
                                     <div className="flex gap-2">
                                         <button onClick={() => setFTrafficSafetyOk(true)}
                                             className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${fTrafficSafetyOk ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-750'}`}>
@@ -2116,32 +2116,32 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 </div>
                             </div>
                             <div className="border-t border-slate-100 dark:border-slate-700/60 pt-4 space-y-4">
-                                <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase block">Đánh giá của Giám sát</label>
+                                <label className="text-[10px] font-black text-muted-foreground uppercase block">Đánh giá của Giám sát</label>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block mb-1">Nhận xét Công tác thi công</label>
+                                        <label className="text-[10px] font-bold text-muted-foreground block mb-1">Nhận xét Công tác thi công</label>
                                         <VoiceTextarea
                                             value={fSupervisorConstructionEval}
                                             onChange={setFSupervisorConstructionEval}
                                             rows={2}
                                             placeholder="Đánh giá công tác thi công..."
-                                            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-150 text-xs focus:ring-1 focus:ring-teal-500 outline-none resize-none"
+                                            className="w-full px-3 py-2 rounded-xl border border-border bg-card text-slate-800 dark:text-slate-150 text-xs focus:ring-1 focus:ring-teal-500 outline-none resize-none"
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block mb-1">Nhận xét Công tác nghiệm thu</label>
+                                        <label className="text-[10px] font-bold text-muted-foreground block mb-1">Nhận xét Công tác nghiệm thu</label>
                                         <VoiceTextarea
                                             value={fSupervisorAcceptanceEval}
                                             onChange={setFSupervisorAcceptanceEval}
                                             rows={2}
                                             placeholder="Đánh giá công tác nghiệm thu..."
-                                            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-150 text-xs focus:ring-1 focus:ring-teal-500 outline-none resize-none"
+                                            className="w-full px-3 py-2 rounded-xl border border-border bg-card text-slate-800 dark:text-slate-150 text-xs focus:ring-1 focus:ring-teal-500 outline-none resize-none"
                                         />
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
-                                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block mb-2">Giám sát đánh giá ATLĐ</label>
+                                        <label className="text-[10px] font-bold text-muted-foreground block mb-2">Giám sát đánh giá ATLĐ</label>
                                         <div className="flex gap-2">
                                             <button onClick={() => setFSupervisorSafetyOk(true)}
                                                 className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${fSupervisorSafetyOk ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 text-emerald-700' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500'}`}>
@@ -2154,7 +2154,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block mb-2">Giám sát đánh giá VSMT</label>
+                                        <label className="text-[10px] font-bold text-muted-foreground block mb-2">Giám sát đánh giá VSMT</label>
                                         <div className="flex gap-2">
                                             <button onClick={() => setFSupervisorHygieneOk(true)}
                                                 className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${fSupervisorHygieneOk ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 text-emerald-700' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500'}`}>
@@ -2167,7 +2167,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 block mb-2">Giám sát đánh giá ATGT</label>
+                                        <label className="text-[10px] font-bold text-muted-foreground block mb-2">Giám sát đánh giá ATGT</label>
                                         <div className="flex gap-2">
                                             <button onClick={() => setFSupervisorTrafficOk(true)}
                                                 className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${fSupervisorTrafficOk ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 text-emerald-700' : 'border-slate-200 dark:border-slate-700 bg-transparent text-slate-500'}`}>
@@ -2182,7 +2182,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 </div>
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-1 flex items-center gap-1"><AlertTriangle size={10} className="text-red-400" /> Vấn đề / Sự cố</label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1 flex items-center gap-1"><AlertTriangle size={10} className="text-red-400" /> Vấn đề / Sự cố</label>
                                 <VoiceTextarea
                                     value={fIssues}
                                     onChange={setFIssues}
@@ -2195,7 +2195,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             <div className="grid grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-700/60 pt-4">
                                 {/* GPS */}
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase block mb-2">Vị trí hiện trường</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-2">Vị trí hiện trường</label>
                                     {gpsCoords ? (
                                         <div className="flex items-center justify-between p-2.5 rounded-xl border border-teal-200/60 dark:border-teal-900/40 bg-teal-50/40 dark:bg-teal-950/15">
                                             <div className="flex items-center gap-2">
@@ -2217,7 +2217,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 {/* Photos */}
                                 <div>
                                     <div className="flex items-center justify-between mb-2">
-                                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase flex items-center gap-1">
+                                        <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
                                             Ảnh chụp <span className="text-red-500">*</span>
                                         </label>
                                         <label className="flex items-center gap-1.5 text-[10px] cursor-pointer text-slate-500 dark:text-slate-400">
@@ -2255,13 +2255,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             {/* Delay Tasks */}
                             {tasks && tasks.length > 0 && (
                                 <div className="border-t border-slate-100 dark:border-slate-700/60 pt-4">
-                                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase flex items-center gap-1 mb-2">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1 mb-2">
                                         <Clock size={12} className="text-amber-500" /> Ghi nhận trễ tiến độ
                                     </label>
                                     <div className="space-y-2.5">
                                         {fDelayTasks.map((dt, i) => (
                                             <div key={i} className="flex gap-2 items-start bg-amber-50/20 dark:bg-amber-950/10 p-2.5 rounded-xl border border-amber-100/50 dark:border-amber-900/30">
-                                                <select className="flex-1 text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-amber-400"
+                                                <select className="flex-1 text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-muted/30 text-foreground outline-none focus:ring-1 focus:ring-amber-400"
                                                     value={dt.taskId} onChange={e => {
                                                         const newDt = [...fDelayTasks];
                                                         const t = tasks.find(x => x.id === e.target.value);
@@ -2272,16 +2272,16 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                     <option value="" disabled className="dark:bg-slate-900">Chọn hạng mục...</option>
                                                     {tasks.map(t => <option key={t.id} value={t.id} className="dark:bg-slate-900">{t.name}</option>)}
                                                 </select>
-                                                <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 w-[80px]">
+                                                <div className="flex items-center gap-1 bg-muted/30 border border-border rounded-lg px-2 w-[80px]">
                                                     <input type="number" className="w-full text-xs text-center py-1.5 outline-none bg-transparent text-slate-800 dark:text-slate-200" placeholder="Số" min="1"
                                                         value={dt.delayDays || ''} onChange={e => {
                                                             const newDt = [...fDelayTasks];
                                                             newDt[i].delayDays = Number(e.target.value);
                                                             setFDelayTasks(newDt);
                                                         }} />
-                                                    <span className="text-[10px] text-slate-400 dark:text-slate-500">ngày</span>
+                                                    <span className="text-[10px] text-muted-foreground">ngày</span>
                                                 </div>
-                                                <select className="w-[110px] text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-amber-400"
+                                                <select className="w-[110px] text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-muted/30 text-foreground outline-none focus:ring-1 focus:ring-amber-400"
                                                     value={dt.category} onChange={e => {
                                                         const newDt = [...fDelayTasks];
                                                         newDt[i].category = e.target.value as DelayCategory;
@@ -2293,13 +2293,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                     <option value="drawing" className="dark:bg-slate-900">Bản vẽ</option>
                                                     <option value="other" className="dark:bg-slate-900">Khác</option>
                                                 </select>
-                                                <input type="text" className="flex-1 text-xs border border-slate-250 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-amber-400" placeholder="Ghi chú thêm..."
+                                                <input type="text" className="flex-1 text-xs border border-border dark:border-slate-700 rounded-lg px-2 py-1.5 bg-muted/30 text-foreground outline-none focus:ring-1 focus:ring-amber-400" placeholder="Ghi chú thêm..."
                                                     value={dt.reason} onChange={e => {
                                                         const newDt = [...fDelayTasks];
                                                         newDt[i].reason = e.target.value;
                                                         setFDelayTasks(newDt);
                                                     }} />
-                                                <button onClick={() => setFDelayTasks(fDelayTasks.filter((_, idx) => idx !== i))} className="w-7 h-7 flex items-center justify-center text-amber-400 dark:text-amber-500 hover:text-red-500 hover:bg-white dark:hover:bg-slate-700 rounded-lg shrink-0 mt-0.5 transition-colors"><X size={14} /></button>
+                                                <button onClick={() => setFDelayTasks(fDelayTasks.filter((_, idx) => idx !== i))} className="w-7 h-7 flex items-center justify-center text-amber-400 dark:text-amber-500 hover:text-red-500 hover:bg-muted rounded-lg shrink-0 mt-0.5 transition-colors"><X size={14} /></button>
                                             </div>
                                         ))}
                                         <button onClick={() => setFDelayTasks([...fDelayTasks, { taskId: '', taskName: '', delayDays: 1, reason: '', category: 'weather' }])}
@@ -2329,7 +2329,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             />
                         </div>
                         <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/45 flex justify-end gap-3 shrink-0">
-                            <button onClick={resetForm} disabled={savingLog} className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60 disabled:opacity-50 transition-colors">Huỷ</button>
+                            <button onClick={resetForm} disabled={savingLog} className="px-5 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-700/60 disabled:opacity-50 transition-colors">Huỷ</button>
                             <button onClick={handleSave} disabled={savingLog || !fDate || !fDesc || (photoRequired && fPhotos.length === 0)}
                                 className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-teal-500 to-cyan-500 shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50 transition-all hover:-translate-y-0.5 active:translate-y-0">
                                 {savingLog ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {savingLog ? 'Đang lưu...' : editing ? 'Lưu' : 'Ghi nhật ký'}

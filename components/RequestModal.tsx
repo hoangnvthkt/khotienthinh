@@ -1654,16 +1654,16 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
-            <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-full sm:w-[96vw] xl:max-w-[1480px] 2xl:max-w-[1680px] shadow-2xl flex flex-col max-h-[95vh] sm:max-h-[95vh] overflow-hidden relative">
+            <div className="bg-card text-card-foreground border border-border rounded-t-2xl sm:rounded-2xl w-full max-w-full sm:w-[96vw] xl:max-w-[1480px] 2xl:max-w-[1680px] shadow-2xl flex flex-col max-h-[95vh] sm:max-h-[95vh] overflow-hidden relative">
 
                 {/* Decision Overlay */}
                 {showApprovalPanel && (
-                    <div className="absolute inset-0 z-[60] bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center p-8 animate-in fade-in zoom-in duration-200">
-                        <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-6">
+                    <div className="absolute inset-0 z-[60] bg-card/95 text-card-foreground backdrop-blur-sm flex flex-col items-center justify-center p-8 animate-in fade-in zoom-in duration-200">
+                        <div className="w-16 h-16 bg-blue-100 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-6">
                             <AlertCircle size={32} />
                         </div>
-                        <h3 className="text-2xl font-bold text-slate-800 mb-2">Xác nhận xử lý phiếu</h3>
-                        <p className="text-slate-500 mb-10 text-center max-w-md">Vui lòng chọn Phê duyệt để chuyển sang bước xuất kho, hoặc Từ chối để hủy yêu cầu này.</p>
+                        <h3 className="text-2xl font-bold text-foreground mb-2">Xác nhận xử lý phiếu</h3>
+                        <p className="text-muted-foreground mb-10 text-center max-w-md">Vui lòng chọn Phê duyệt để chuyển sang bước xuất kho, hoặc Từ chối để hủy yêu cầu này.</p>
 
                         <div className="flex gap-4 w-full max-w-md">
                             <button
@@ -1683,7 +1683,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         </div>
                         <button
                             onClick={() => setShowApprovalPanel(false)}
-                            className="mt-8 text-slate-400 font-bold hover:text-slate-600"
+                            className="mt-8 text-muted-foreground font-bold hover:text-foreground"
                         >
                             Quay lại xem thông tin
                         </button>
@@ -1691,16 +1691,16 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 )}
 
                 {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+                <div className="flex items-center justify-between p-4 border-b border-border bg-muted/50">
                     <div>
-                        <h3 className="font-bold text-lg text-slate-800">
+                        <h3 className="font-bold text-lg text-foreground">
                             {isEditable && !request ? 'Tạo đề xuất vật tư' : `Phiếu đề xuất: ${request?.code}`}
                         </h3>
-                        <p className="text-xs text-slate-500">
+                        <p className="text-xs text-muted-foreground">
                             {isEditable && !request ? 'Tạo phiếu nháp trước, kiểm tra lại rồi gửi duyệt sau.' : `Trạng thái: ${requestStatusText}${request?.submittedToName ? ` • Gửi: ${request.submittedToName}` : ''}`}
                         </p>
                     </div>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+                    <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
                         <X size={24} />
                     </button>
                 </div>
@@ -1711,8 +1711,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         request?.status === RequestStatus.APPROVED ? 'bg-blue-600' :
                             request?.status === RequestStatus.IN_TRANSIT ? 'bg-indigo-600' :
                                 request?.status === RequestStatus.COMPLETED ? 'bg-emerald-600' :
-                                    request?.status === RequestStatus.REJECTED ? 'bg-red-600' :
-                                        isReturnedDraft ? 'bg-rose-600' :
+                                    request?.status === RequestStatus.REJECTED ? 'bg-red-655' :
+                                        isReturnedDraft ? 'bg-rose-605' :
                                             request?.status === RequestStatus.DRAFT ? 'bg-slate-500' : 'bg-slate-600'
                         }`}>
                         <div className="flex items-center uppercase tracking-widest">
@@ -1730,7 +1730,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 )}
 
                 {/* Content */}
-                <div className="p-6 overflow-y-auto flex-1 bg-slate-50/30">
+                <div className="p-6 overflow-y-auto flex-1 bg-slate-50/10 dark:bg-background/20">
                     {projectWorkflowSubject && request && (
                         <ProjectWorkflowPanel
                             subject={projectWorkflowSubject}
@@ -1770,7 +1770,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     )}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
+                        <div className="bg-card p-4 rounded-xl border border-border shadow-sm space-y-2">
                             <label className="text-[10px] uppercase font-black text-slate-400">Người yêu cầu</label>
                             <div className="flex items-center gap-2 text-slate-800 font-bold">
                                 <User size={18} className="text-slate-400" />
@@ -1779,7 +1779,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         </div>
 
                         {!isEditable && request?.submittedToName && (
-                            <div className="bg-white p-4 rounded-xl border border-amber-100 shadow-sm space-y-2">
+                            <div className="bg-card p-4 rounded-xl border border-amber-200/40 dark:border-amber-900/40 shadow-sm space-y-2">
                                 <label className="text-[10px] uppercase font-black text-amber-500">Người nhận xử lý</label>
                                 <div className="flex items-center gap-2 text-amber-700 font-bold">
                                     <User size={18} className="text-amber-400" />
@@ -1789,7 +1789,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             </div>
                         )}
 
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
+                        <div className="bg-card p-4 rounded-xl border border-border shadow-sm space-y-2">
                             <label className="text-[10px] uppercase font-black text-slate-400">Kho nhận hàng</label>
                             <div className="flex items-center gap-2 text-slate-800 font-bold">
                                 <Truck size={18} className="text-slate-400" />
@@ -1809,7 +1809,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         </div>
 
                         {showSourceWarehouseField && (
-                            <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm space-y-2">
+                            <div className="bg-card p-4 rounded-xl border border-blue-200/40 dark:border-blue-900/40 shadow-sm space-y-2">
                                 <label className="text-[10px] uppercase font-black text-blue-400">Kho cung cấp</label>
                                 <div className="flex items-center gap-2 text-blue-700 font-bold">
                                     <PackageCheck size={18} className="text-blue-400" />
@@ -1832,7 +1832,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         )}
 
                         {isEditable && isProjectRequest && (
-                            <div className="bg-white p-4 rounded-xl border border-cyan-100 shadow-sm space-y-2">
+                            <div className="bg-card p-4 rounded-xl border border-cyan-200/40 dark:border-cyan-900/40 shadow-sm space-y-2">
                                 <label className="text-[10px] uppercase font-black text-cyan-500">Xem tồn kho khi đề xuất</label>
                                 <div className="flex items-center gap-2 text-cyan-700 font-bold">
                                     <PackageCheck size={18} className="text-cyan-400" />
@@ -1849,7 +1849,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         )}
 
                         {/* Ngày giờ yêu cầu */}
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
+                        <div className="bg-card p-4 rounded-xl border border-border shadow-sm space-y-2">
                             <label className="text-[10px] uppercase font-black text-slate-400">Ngày giờ yêu cầu</label>
                             <div className="flex items-center gap-2 text-slate-800 font-bold">
                                 <Clock size={18} className="text-slate-400" />
@@ -1862,7 +1862,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         </div>
 
                         {/* Hạn giao mong muốn */}
-                        <div className="bg-white p-4 rounded-xl border border-rose-100 shadow-sm space-y-2">
+                        <div className="bg-card p-4 rounded-xl border border-rose-200/40 dark:border-rose-900/40 shadow-sm space-y-2">
                             <label className="text-[10px] uppercase font-black text-rose-500">Hạn giao mong muốn (Ngày cần)</label>
                             <div className="flex items-center gap-2 text-slate-800 font-bold">
                                 <Clock size={18} className="text-rose-400" />
@@ -1881,7 +1881,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             </div>
                         </div>
 
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
+                        <div className="bg-card p-4 rounded-xl border border-border shadow-sm space-y-2">
                             <label className="text-[10px] uppercase font-black text-slate-400">Ghi chú phiếu</label>
                             <input
                                 type="text"
@@ -1892,7 +1892,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 placeholder="Lý do hoặc chỉ dẫn..."
                             />
                         </div>
-                        <div className="bg-white p-4 rounded-xl border border-emerald-100 shadow-sm space-y-2">
+                        <div className="bg-card p-4 rounded-xl border border-emerald-250/40 dark:border-emerald-900/40 shadow-sm space-y-2">
                             <label className="text-[10px] uppercase font-black text-emerald-500">Cách cấp vật tư</label>
                             {isEditable ? (
                                 <select
@@ -1911,7 +1911,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         </div>
 
                         {canEditApprovalQuantities && isAdmin(user) && (
-                            <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm space-y-2">
+                            <div className="bg-card p-4 rounded-xl border border-amber-250/45 dark:border-amber-900/45 shadow-sm space-y-2">
                                 <label className="text-[10px] uppercase font-black text-amber-600">Lý do override</label>
                                 <input
                                     type="text"
@@ -1925,11 +1925,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     </div>
 
                     {isEditable && isProjectRequest && (
-                        <div className="mb-5 rounded-xl border border-amber-100 bg-amber-50/40 p-4">
+                        <div className="mb-5 rounded-xl border border-amber-200/30 dark:border-amber-900/30 bg-amber-50/10 dark:bg-amber-950/10 p-4">
                             <div className="flex items-center justify-between gap-3 mb-3">
                                 <div>
-                                    <div className="text-xs font-black text-slate-700">Thêm vật tư theo BOQ triển khai</div>
-                                    <div className="text-[10px] font-bold text-slate-400">BOQ là mức trần cảnh báo; đề xuất vượt vẫn gửi được khi nhập lý do.</div>
+                                    <div className="text-xs font-black text-foreground">Thêm vật tư theo BOQ triển khai</div>
+                                    <div className="text-[10px] font-bold text-muted-foreground">BOQ là mức trần cảnh báo; đề xuất vượt vẫn gửi được khi nhập lý do.</div>
                                 </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
@@ -1939,7 +1939,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                         setDraftWorkBoqItemId(event.target.value);
                                         setDraftMaterialBudgetItemId('');
                                     }}
-                                    className="md:col-span-4 px-3 py-2 rounded-xl border border-amber-100 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300"
+                                    className="md:col-span-4 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
                                 >
                                     <option value="">Chọn đầu mục BOQ triển khai...</option>
                                     {workBoqItems.map(item => <option key={item.id} value={item.id}>{item.wbsCode ? `${item.wbsCode} - ` : ''}{item.name}</option>)}
@@ -1947,7 +1947,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 <select
                                     value={draftMaterialBudgetItemId}
                                     onChange={event => setDraftMaterialBudgetItemId(event.target.value)}
-                                    className="md:col-span-4 px-3 py-2 rounded-xl border border-amber-100 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300"
+                                    className="md:col-span-4 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
                                 >
                                     <option value="">Chọn vật tư/định mức...</option>
                                     {budgetOptions.length === 0 && (
@@ -1971,19 +1971,19 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     value={draftQty}
                                     onChange={event => setDraftQty(event.target.value)}
                                     placeholder="Số lượng"
-                                    className="md:col-span-1 px-3 py-2 rounded-xl border border-amber-100 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300"
+                                    className="md:col-span-1 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
                                 />
                                 <input
                                     type="date"
                                     value={draftNeededDate}
                                     onChange={event => setDraftNeededDate(event.target.value)}
-                                    className="md:col-span-2 px-3 py-2 rounded-xl border border-amber-100 bg-white text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300"
+                                    className="md:col-span-2 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
                                 />
                                 <button onClick={handleAddBudgetLine} className="md:col-span-1 px-3 py-2 rounded-xl bg-amber-500 text-white text-xs font-black hover:bg-amber-600">
                                     Thêm
                                 </button>
                                 {draftBudgetReservation && (
-                                    <div className={`md:col-span-12 rounded-xl border px-3 py-2 text-[10px] ${draftBudgetReservation.availableQty < 0 ? 'border-orange-200 bg-orange-50 text-orange-700' : 'border-amber-100 bg-white text-slate-500'}`}>
+                                    <div className={`md:col-span-12 rounded-xl border px-3 py-2 text-[10px] ${draftBudgetReservation.availableQty < 0 ? 'border-orange-205/50 bg-orange-50/10 text-orange-700 dark:text-orange-400' : 'border-amber-250/40 dark:border-amber-800/40 bg-card text-muted-foreground'}`}>
                                         <div className="flex flex-wrap gap-x-4 gap-y-1 font-bold">
                                             <span>Dự toán: {draftBudgetReservation.budgetQty.toLocaleString('vi-VN')} {draftBudgetReservation.budget?.unit || ''}</span>
                                             <span>Đã giữ/nhận: {draftBudgetReservation.reservedQty.toLocaleString('vi-VN')} {draftBudgetReservation.budget?.unit || ''}</span>
@@ -2008,16 +2008,16 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     value={draftLineNote}
                                     onChange={event => setDraftLineNote(event.target.value)}
                                     placeholder="Ghi chú dòng..."
-                                    className="md:col-span-12 px-3 py-2 rounded-xl border border-amber-100 bg-white text-xs outline-none focus:ring-2 focus:ring-amber-300"
+                                    className="md:col-span-12 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
                                 />
                             </div>
                         </div>
                     )}
 
                     {/* Desktop table view */}
-                    <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden hidden md:block">
+                    <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden hidden md:block">
                         <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-100 text-slate-500 font-bold border-b border-slate-200">
+                            <thead className="bg-muted text-muted-foreground font-bold border-b border-border">
                                 <tr>
                                     <th className="p-4">Vật tư đề xuất</th>
                                     <th className="p-4 w-24 text-center">ĐVT</th>
@@ -2034,7 +2034,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     {isEditable && <th className="p-4 w-12"></th>}
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-100">
+                            <tbody className="divide-y divide-border">
                                 {(isEditable ? reqItems : (request?.items || [])).map((row, idx) => {
                                     const itemId = row.itemId;
                                     const requestQty = isEditable ? row.qty : row.requestQty;
@@ -2056,53 +2056,53 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                         <tr key={idx} className={`transition-colors ${isExcess ? 'bg-orange-50/50' : 'hover:bg-slate-50/50'}`}>
                                             <td className="p-4">
                                                 <div>
-                                                    <div className="font-bold text-slate-800">{getLineName(row)}</div>
-                                                    <div className="text-[10px] font-mono text-slate-400">{getLineSku(row) || '—'}</div>
-                                                    {row.specification && <div className="text-[10px] text-slate-400 mt-0.5">{row.specification}</div>}
+                                                    <div className="font-bold text-foreground">{getLineName(row)}</div>
+                                                    <div className="text-[10px] font-mono text-muted-foreground">{getLineSku(row) || '—'}</div>
+                                                    {row.specification && <div className="text-[10px] text-muted-foreground mt-0.5">{row.specification}</div>}
                                                     {isProjectRequest && (
                                                         <div className="mt-1 space-y-1">
                                                             <div className="flex flex-wrap gap-1">
                                                                 {(row.workBoqItemName || row.materialBudgetItemName) && (
-                                                                    <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 text-[9px] font-bold">
+                                                                    <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/40 dark:border-amber-800/40 text-[9px] font-bold">
                                                                         {row.workBoqItemName || 'BOQ'}{row.materialBudgetItemName ? ` • ${row.materialBudgetItemName}` : ''}
                                                                     </span>
                                                                 )}
-                                                                {!row.materialBudgetItemId && <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100 text-[9px] font-bold">Ngoài BOQ</span>}
+                                                                {!row.materialBudgetItemId && <span className="px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-950/40 text-red-650 dark:text-red-400 border border-red-200/40 dark:border-red-900/40 text-[9px] font-bold">Ngoài BOQ</span>}
                                                                 {isEditable && row.materialBudgetItemId && (
-                                                                    <span className="px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700 border border-cyan-100 text-[9px] font-bold">
+                                                                    <span className="px-1.5 py-0.5 rounded bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-400 border border-cyan-200/40 dark:border-cyan-800/40 text-[9px] font-bold">
                                                                         Khả dụng trước dòng {Math.max(0, budgetSnapshot.availableQty).toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}
                                                                     </span>
                                                                 )}
                                                                 {isEditable && budgetSnapshot.pendingSources.length > 0 && (
-                                                                    <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 text-[9px] font-bold">
+                                                                    <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/40 dark:border-amber-800/40 text-[9px] font-bold">
                                                                         {budgetSnapshot.pendingSources.length} phiếu đang giữ chỗ
                                                                     </span>
                                                                 )}
-                                                                {budgetSnapshot.overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 border border-orange-100 text-[9px] font-bold">Vượt {budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}</span>}
+                                                                {budgetSnapshot.overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-950/40 text-orange-650 dark:text-orange-400 border border-orange-200/40 dark:border-orange-900/40 text-[9px] font-bold">Vượt {budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}</span>}
                                                             </div>
                                                             {needsReason && (
                                                                 <input
                                                                     value={(row as RequestLineDraft).overBudgetReason || ''}
                                                                     onChange={event => handleUpdateItem(idx, 'overBudgetReason', event.target.value)}
                                                                     placeholder={!row.materialBudgetItemId ? 'Lý do ngoài BOQ/ngoài định mức...' : 'Lý do đề xuất vượt định mức...'}
-                                                                    className="w-full px-2 py-1 rounded-lg border border-orange-200 text-[10px] outline-none focus:ring-1 focus:ring-orange-300"
+                                                                    className="w-full px-2 py-1 rounded-lg border border-orange-200 dark:border-orange-800/40 bg-card text-foreground text-[10px] outline-none focus:ring-1 focus:ring-orange-300"
                                                                 />
                                                             )}
                                                         </div>
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="p-4 text-center text-slate-500 font-medium">{getLineUnit(row) || '-'}</td>
+                                            <td className="p-4 text-center text-muted-foreground font-medium">{getLineUnit(row) || '-'}</td>
                                             <td className="p-4 text-right">
                                                 {isEditable ? (
                                                     <input
                                                         type="number" min="1"
                                                         value={requestQty}
                                                         onChange={(e) => handleUpdateItem(idx, 'qty', e.target.value)}
-                                                        className="w-20 text-right p-1 border border-slate-200 rounded font-bold"
+                                                        className="w-20 text-right p-1 border border-border bg-card text-foreground rounded font-bold"
                                                     />
                                                 ) : (
-                                                    <span className="font-bold text-slate-600">{requestQty}</span>
+                                                    <span className="font-bold text-foreground">{requestQty}</span>
                                                 )}
                                             </td>
                                             {!isEditable && (
@@ -2110,7 +2110,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                     <td className="p-4 text-right font-bold text-blue-600">
                                                         {sourceStock.toLocaleString()}
                                                         {stockSummary.reserved > 0 && (
-                                                            <div className="text-[9px] text-amber-600 font-bold">Giữ chỗ: {stockSummary.reserved}</div>
+                                                            <div className="text-[9px] text-amber-600 dark:text-amber-400 font-bold">Giữ chỗ: {stockSummary.reserved}</div>
                                                         )}
                                                     </td>
                                                     <td className="p-4 text-right">
@@ -2120,19 +2120,19 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                                     type="number" min="0" max={!isProjectRequest && itemInfo ? sourceStock : undefined}
                                                                     value={approvedQty}
                                                                     onChange={(e) => handleUpdateApprovedItem(row as RequestItem, Number(e.target.value))}
-                                                                    className={`w-20 text-right p-1 border rounded font-bold bg-white focus:ring-2 outline-none transition-colors ${isExcess ? 'border-orange-400 text-orange-700 focus:ring-orange-500' : 'border-emerald-200 text-emerald-700 focus:ring-emerald-500'}`}
+                                                                    className={`w-20 text-right p-1 border rounded font-bold bg-card text-foreground focus:ring-2 outline-none transition-colors ${isExcess ? 'border-orange-400 text-orange-700 dark:text-orange-400 focus:ring-orange-500' : 'border-emerald-250 text-emerald-705 focus:ring-emerald-500'}`}
                                                                 />
-                                                                {isExcess && <span className="text-[9px] text-orange-600 font-bold mt-1 uppercase">Duyệt vượt mức</span>}
+                                                                {isExcess && <span className="text-[9px] text-orange-600 dark:text-orange-400 font-bold mt-1 uppercase">Duyệt vượt mức</span>}
                                                             </div>
                                                         ) : (
-                                                            <span className={`font-bold ${isExcess ? 'text-orange-600 underline' : 'text-emerald-700'}`}>
+                                                            <span className={`font-bold ${isExcess ? 'text-orange-600 dark:text-orange-400 underline' : 'text-emerald-750 dark:text-emerald-400'}`}>
                                                                 {row.approvedQty || 0}
                                                             </span>
                                                         )}
                                                     </td>
                                                     <td className="p-4 text-right font-bold text-indigo-600">{issuedQty.toLocaleString('vi-VN')}</td>
                                                     <td className="p-4 text-right font-bold text-cyan-600">{receivedQty.toLocaleString('vi-VN')}</td>
-                                                    <td className="p-4 text-right font-bold text-slate-500">{remainingToReceive.toLocaleString('vi-VN')}</td>
+                                                    <td className="p-4 text-right font-bold text-muted-foreground">{remainingToReceive.toLocaleString('vi-VN')}</td>
                                                 </>
                                             )}
                                             {isEditable && (
@@ -2148,7 +2148,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             </tbody>
                         </table>
                         {isEditable && (
-                            <button onClick={handleAddItem} className="w-full py-4 text-accent font-bold hover:bg-slate-50 transition-colors border-t border-dashed border-slate-200 flex items-center justify-center">
+                            <button onClick={handleAddItem} className="w-full py-4 text-accent font-bold hover:bg-muted transition-colors border-t border-dashed border-border flex items-center justify-center">
                                 <Plus size={16} className="mr-2" /> {isProjectRequest ? 'Thêm vật tư ngoài BOQ' : 'Thêm vật tư vào đề xuất'}
                             </button>
                         )}
@@ -2174,27 +2174,27 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             const needsReason = isEditable && isProjectRequest && (!row.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0);
 
                             return (
-                                <div key={idx} className={`bg-white rounded-xl p-3 border ${isExcess ? 'border-orange-200 bg-orange-50/50' : 'border-slate-200'} shadow-sm`}>
+                                <div key={idx} className={`bg-card rounded-xl p-3 border ${isExcess ? 'border-orange-200 bg-orange-50/10 dark:bg-orange-955/20' : 'border-border'} shadow-sm`}>
                                     <div className="flex items-start justify-between mb-2">
                                         <div className="min-w-0 flex-1">
-                                            <div className="font-bold text-sm text-slate-800 truncate">{getLineName(row)}</div>
-                                            <div className="text-[10px] font-mono text-slate-400">{getLineSku(row) || '—'} • {getLineUnit(row) || '-'}</div>
-                                            {row.specification && <div className="text-[10px] text-slate-400 mt-0.5 line-clamp-2">{row.specification}</div>}
+                                            <div className="font-bold text-sm text-foreground truncate">{getLineName(row)}</div>
+                                            <div className="text-[10px] font-mono text-muted-foreground">{getLineSku(row) || '—'} • {getLineUnit(row) || '-'}</div>
+                                            {row.specification && <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{row.specification}</div>}
                                             {isProjectRequest && (row.workBoqItemName || row.materialBudgetItemName || !row.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0) && (
                                                 <div className="mt-1 flex flex-wrap gap-1">
-                                                    {(row.workBoqItemName || row.materialBudgetItemName) && <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 text-[9px] font-bold">{row.workBoqItemName || 'BOQ'}{row.materialBudgetItemName ? ` • ${row.materialBudgetItemName}` : ''}</span>}
-                                                    {!row.materialBudgetItemId && <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100 text-[9px] font-bold">Ngoài BOQ</span>}
+                                                    {(row.workBoqItemName || row.materialBudgetItemName) && <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/40 dark:border-amber-800/40 text-[9px] font-bold">{row.workBoqItemName || 'BOQ'}{row.materialBudgetItemName ? ` • ${row.materialBudgetItemName}` : ''}</span>}
+                                                    {!row.materialBudgetItemId && <span className="px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-950/40 text-red-650 dark:text-red-400 border border-red-200/40 dark:border-red-900/40 text-[9px] font-bold">Ngoài BOQ</span>}
                                                     {isEditable && row.materialBudgetItemId && (
-                                                        <span className="px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700 border border-cyan-100 text-[9px] font-bold">
+                                                        <span className="px-1.5 py-0.5 rounded bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-400 border border-cyan-200/40 dark:border-cyan-800/40 text-[9px] font-bold">
                                                             Khả dụng trước dòng {Math.max(0, budgetSnapshot.availableQty).toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}
                                                         </span>
                                                     )}
                                                     {isEditable && budgetSnapshot.pendingSources.length > 0 && (
-                                                        <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100 text-[9px] font-bold">
+                                                        <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/40 dark:border-amber-800/40 text-[9px] font-bold">
                                                             {budgetSnapshot.pendingSources.length} phiếu đang giữ chỗ
                                                         </span>
                                                     )}
-                                                    {budgetSnapshot.overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 border border-orange-100 text-[9px] font-bold">Vượt {budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}</span>}
+                                                    {budgetSnapshot.overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-950/40 text-orange-650 dark:text-orange-400 border border-orange-200/40 dark:border-orange-900/40 text-[9px] font-bold">Vượt {budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}</span>}
                                                 </div>
                                             )}
                                         </div>
@@ -2209,41 +2209,41 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             value={(row as RequestLineDraft).overBudgetReason || ''}
                                             onChange={event => handleUpdateItem(idx, 'overBudgetReason', event.target.value)}
                                             placeholder={!row.materialBudgetItemId ? 'Lý do ngoài BOQ/ngoài định mức...' : 'Lý do đề xuất vượt định mức...'}
-                                            className="mt-2 w-full px-2 py-1.5 rounded-lg border border-orange-200 text-xs outline-none focus:ring-1 focus:ring-orange-300"
+                                            className="mt-2 w-full px-2 py-1.5 rounded-lg border border-orange-200 dark:border-orange-800/40 bg-card text-foreground text-xs outline-none focus:ring-1 focus:ring-orange-300"
                                         />
                                     )}
                                     <div className="flex items-center gap-3">
                                         <div className="flex-1">
-                                            <div className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">SL yêu cầu</div>
+                                            <div className="text-[9px] uppercase font-bold text-muted-foreground mb-0.5">SL yêu cầu</div>
                                             {isEditable ? (
                                                 <input
                                                     type="number" min="1"
                                                     value={requestQty}
                                                     onChange={(e) => handleUpdateItem(idx, 'qty', e.target.value)}
-                                                    className="w-full text-center p-2 border border-slate-200 rounded-lg font-bold text-sm"
+                                                    className="w-full text-center p-2 border border-border bg-card text-foreground rounded-lg font-bold text-sm"
                                                 />
                                             ) : (
-                                                <div className="font-bold text-slate-700 text-sm">{requestQty}</div>
+                                                <div className="font-bold text-foreground text-sm">{requestQty}</div>
                                             )}
                                         </div>
                                         {!isEditable && (
                                             <>
                                                 <div className="flex-1">
-                                                    <div className="text-[9px] uppercase font-bold text-blue-400 mb-0.5">{stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</div>
-                                                    <div className="font-bold text-blue-600 text-sm">{sourceStock.toLocaleString()}</div>
-                                                    {stockSummary.reserved > 0 && <div className="text-[9px] text-amber-600 font-bold">Giữ chỗ: {stockSummary.reserved}</div>}
+                                                    <div className="text-[9px] uppercase font-bold text-blue-500 mb-0.5">{stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</div>
+                                                    <div className="font-bold text-blue-600 dark:text-blue-400 text-sm">{sourceStock.toLocaleString()}</div>
+                                                    {stockSummary.reserved > 0 && <div className="text-[9px] text-amber-600 dark:text-amber-400 font-bold">Giữ chỗ: {stockSummary.reserved}</div>}
                                                 </div>
                                                 <div className="flex-1">
-                                                    <div className="text-[9px] uppercase font-bold text-emerald-400 mb-0.5">Duyệt</div>
+                                                    <div className="text-[9px] uppercase font-bold text-emerald-500 mb-0.5">Duyệt</div>
                                                     {canEditApprovalQuantities ? (
                                                         <input
                                                             type="number" min="0" max={!isProjectRequest && itemInfo ? sourceStock : undefined}
                                                             value={approvedQty}
                                                             onChange={(e) => handleUpdateApprovedItem(row as RequestItem, Number(e.target.value))}
-                                                            className={`w-full text-center p-2 border rounded-lg font-bold text-sm ${isExcess ? 'border-orange-400 text-orange-700' : 'border-emerald-200 text-emerald-700'}`}
+                                                            className={`w-full text-center p-2 border rounded-lg font-bold bg-card text-foreground text-sm ${isExcess ? 'border-orange-400 text-orange-700 dark:text-orange-450' : 'border-emerald-250 text-emerald-705'}`}
                                                         />
                                                     ) : (
-                                                        <div className={`font-bold text-sm ${isExcess ? 'text-orange-600' : 'text-emerald-700'}`}>
+                                                        <div className={`font-bold text-sm ${isExcess ? 'text-orange-600 dark:text-orange-400' : 'text-emerald-750 dark:text-emerald-400'}`}>
                                                             {row.approvedQty || 0}
                                                         </div>
                                                     )}
@@ -2252,18 +2252,18 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                         )}
                                     </div>
                                     {!isEditable && (
-                                        <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-slate-50 border border-slate-100 p-2">
+                                        <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-muted border border-border p-2">
                                             <div>
-                                                <div className="text-[9px] uppercase font-bold text-indigo-400">Đã xuất</div>
-                                                <div className="text-xs font-black text-indigo-600">{issuedQty.toLocaleString('vi-VN')}</div>
+                                                <div className="text-[9px] uppercase font-bold text-indigo-505 dark:text-indigo-400">Đã xuất</div>
+                                                <div className="text-xs font-black text-indigo-650 dark:text-indigo-400">{issuedQty.toLocaleString('vi-VN')}</div>
                                             </div>
                                             <div>
-                                                <div className="text-[9px] uppercase font-bold text-cyan-400">Đã nhận</div>
-                                                <div className="text-xs font-black text-cyan-600">{receivedQty.toLocaleString('vi-VN')}</div>
+                                                <div className="text-[9px] uppercase font-bold text-cyan-505 dark:text-cyan-400">Đã nhận</div>
+                                                <div className="text-xs font-black text-cyan-600 dark:text-cyan-400">{receivedQty.toLocaleString('vi-VN')}</div>
                                             </div>
                                             <div>
-                                                <div className="text-[9px] uppercase font-bold text-slate-400">Còn lại</div>
-                                                <div className="text-xs font-black text-slate-600">{remainingToReceive.toLocaleString('vi-VN')}</div>
+                                                <div className="text-[9px] uppercase font-bold text-muted-foreground">Còn lại</div>
+                                                <div className="text-xs font-black text-foreground">{remainingToReceive.toLocaleString('vi-VN')}</div>
                                             </div>
                                         </div>
                                     )}
@@ -2271,29 +2271,29 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             );
                         })}
                         {isEditable && (
-                            <button onClick={handleAddItem} className="w-full py-3 text-accent font-bold rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center active:scale-95 transition-all">
+                            <button onClick={handleAddItem} className="w-full py-3 text-accent font-bold rounded-xl border-2 border-dashed border-border flex items-center justify-center active:scale-95 transition-all hover:bg-muted">
                                 <Plus size={16} className="mr-2" /> {isProjectRequest ? 'Thêm vật tư ngoài BOQ' : 'Thêm vật tư'}
                             </button>
                         )}
                     </div>
 
                     {!isEditable && request && isBatchFulfillmentRequest && (
-                        <div className="mt-5 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
+                        <div className="mt-5 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+                            <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
                                 <div>
-                                    <div className="text-xs font-black text-slate-700">Lịch sử cấp hàng</div>
-                                    <div className="text-[10px] font-bold text-slate-400">
+                                    <div className="text-xs font-black text-foreground">Lịch sử cấp hàng</div>
+                                    <div className="text-[10px] font-bold text-muted-foreground">
                                         {fulfillmentSummary
                                             ? `Đã nhận ${fulfillmentSummary.receivedQty.toLocaleString('vi-VN')} / ${fulfillmentSummary.committedQty.toLocaleString('vi-VN')}`
                                             : 'Đang tải lũy kế cấp hàng'}
                                     </div>
                                 </div>
-                                {isLoadingFulfillment && <Loader2 size={14} className="text-slate-300 animate-spin" />}
+                                {isLoadingFulfillment && <Loader2 size={14} className="text-muted-foreground animate-spin" />}
                             </div>
                             {fulfillmentBatches.length === 0 ? (
-                                <div className="p-4 text-xs font-bold text-slate-400">Chưa có đợt cấp hàng nào cho phiếu này.</div>
+                                <div className="p-4 text-xs font-bold text-muted-foreground">Chưa có đợt cấp hàng nào cho phiếu này.</div>
                             ) : (
-                                <div className="divide-y divide-slate-100">
+                                <div className="divide-y divide-border">
                                     {fulfillmentBatches.map(batch => (
                                         <div
                                             key={batch.id}
@@ -2306,27 +2306,27 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                     setSelectedFulfillmentBatch(batch);
                                                 }
                                             }}
-                                            className="block w-full p-4 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+                                            className="block w-full p-4 text-left hover:bg-muted transition-colors cursor-pointer"
                                         >
                                             <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                                                 <div>
                                                     <div className="flex flex-wrap items-center gap-2">
-                                                        <span className="font-mono text-xs font-black text-indigo-600">{batch.batchNo}</span>
-                                                        <span className={`px-2 py-0.5 rounded-full border text-[9px] font-black ${batch.status === 'received' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : batch.status === 'issued' ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : batch.status === 'variance_pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : batch.status === 'returned' ? 'bg-rose-50 text-rose-600 border-rose-200' : batch.status === 'cancelled' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                                                        <span className="font-mono text-xs font-black text-indigo-600 dark:text-indigo-400">{batch.batchNo}</span>
+                                                        <span className={`px-2 py-0.5 rounded-full border text-[9px] font-black ${batch.status === 'received' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-405 border-emerald-200 dark:border-emerald-800/40' : batch.status === 'issued' ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-405 border-indigo-200 dark:border-indigo-800/40' : batch.status === 'variance_pending' ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-405 border-amber-200 dark:border-amber-800/40' : batch.status === 'returned' ? 'bg-rose-50 dark:bg-rose-955/40 text-rose-600 dark:text-rose-405 border-rose-200 dark:border-rose-800/40' : batch.status === 'cancelled' ? 'bg-red-50 dark:bg-red-955/40 text-red-600 dark:text-red-405 border-red-200 dark:border-red-800/40' : 'bg-slate-50 dark:bg-slate-805/40 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800/40'}`}>
                                                             {batch.status === 'received' ? 'Đã nhận' : batch.status === 'issued' ? 'Đã xuất' : batch.status === 'variance_pending' ? 'Chờ chốt lệch' : batch.status === 'returned' ? 'Đã trả lại' : batch.status === 'cancelled' ? 'Đã huỷ' : 'Nháp'}
                                                         </span>
-                                                        <span className="text-[10px] font-bold text-slate-400">{new Date(batch.batchDate).toLocaleString('vi-VN')}</span>
+                                                        <span className="text-[10px] font-bold text-muted-foreground">{new Date(batch.batchDate).toLocaleString('vi-VN')}</span>
                                                     </div>
-                                                    <div className="mt-1 text-[10px] text-slate-400">
+                                                    <div className="mt-1 text-[10px] text-muted-foreground">
                                                         Nguồn: {getFulfillmentSourceLabel(batch)} • Đích: {batch.targetWarehouseId ? getWarehouseName(batch.targetWarehouseId) : 'Cấp thẳng sử dụng'}
                                                     </div>
-                                                    {batch.note && <div className="mt-1 text-xs text-slate-500">{batch.note}</div>}
+                                                    {batch.note && <div className="mt-1 text-xs text-muted-foreground">{batch.note}</div>}
                                                 </div>
-                                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Mở chi tiết</span>
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Mở chi tiết</span>
                                             </div>
                                             <div className="mt-3 overflow-x-auto">
                                                 <table className="w-full text-[11px]">
-                                                    <thead className="text-[9px] uppercase text-slate-400">
+                                                    <thead className="text-[9px] uppercase text-muted-foreground">
                                                         <tr>
                                                             <th className="py-1 text-left">Vật tư</th>
                                                             <th className="py-1 text-right">Đã xuất</th>
@@ -2338,11 +2338,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                         {batch.lines.map(line => {
                                                             const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
                                                             return (
-                                                                <tr key={line.id} className="border-t border-slate-50">
-                                                                    <td className="py-1.5 font-bold text-slate-600">{requestLine ? getLineName(requestLine) : line.itemId}</td>
-                                                                    <td className="py-1.5 text-right font-bold text-indigo-600">{Number(line.issuedQty || 0).toLocaleString('vi-VN')}</td>
-                                                                    <td className="py-1.5 text-right font-bold text-cyan-600">{Number(line.receivedQty || 0).toLocaleString('vi-VN')}</td>
-                                                                    <td className="py-1.5 pl-3 text-slate-400">{line.varianceReason || '-'}</td>
+                                                                <tr key={line.id} className="border-t border-border">
+                                                                    <td className="py-1.5 font-bold text-foreground">{requestLine ? getLineName(requestLine) : line.itemId}</td>
+                                                                    <td className="py-1.5 text-right font-bold text-indigo-650 dark:text-indigo-400">{Number(line.issuedQty || 0).toLocaleString('vi-VN')}</td>
+                                                                    <td className="py-1.5 text-right font-bold text-cyan-650 dark:text-cyan-400">{Number(line.receivedQty || 0).toLocaleString('vi-VN')}</td>
+                                                                    <td className="py-1.5 pl-3 text-muted-foreground">{line.varianceReason || '-'}</td>
                                                                 </tr>
                                                             );
                                                         })}
@@ -2358,24 +2358,24 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 </div>
 
                 {/* Footer Actions */}
-                <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center relative">
-                    <div className="text-slate-400 text-[10px] uppercase font-black tracking-widest">
+                <div className="p-4 border-t border-border bg-muted/50 flex justify-between items-center relative">
+                    <div className="text-muted-foreground text-[10px] uppercase font-black tracking-widest">
                         Security: {request?.id.slice(-6) || 'NEW-REQ'}
                     </div>
 
                     <div className="flex gap-3 items-center">
-                        <button onClick={onClose} className="px-5 py-2 rounded-lg border border-slate-300 text-slate-600 font-bold hover:bg-white transition-colors">
+                        <button onClick={onClose} className="px-5 py-2 rounded-lg border border-border text-foreground font-bold hover:bg-muted transition-colors">
                             Đóng
                         </button>
 
                         {canDeleteRequest && (
-                            <button disabled={isSaving} onClick={handleDeleteRequest} className="px-5 py-2 rounded-lg border border-red-200 text-red-700 bg-red-50 font-bold hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed flex items-center">
+                            <button disabled={isSaving} onClick={handleDeleteRequest} className="px-5 py-2 rounded-lg border border-red-200/40 dark:border-red-905/40 text-red-750 dark:text-red-400 bg-red-50/10 dark:bg-red-955/20 font-bold hover:bg-red-100/20 disabled:opacity-60 disabled:cursor-not-allowed flex items-center">
                                 {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Trash2 size={18} className="mr-2" />} Xoá phiếu
                             </button>
                         )}
 
                         {canReturn && !isEditable && (
-                            <button disabled={isSaving} onClick={handleReturnRequest} className="px-5 py-2 rounded-lg border border-amber-200 text-amber-700 bg-amber-50 font-bold hover:bg-amber-100 disabled:opacity-60 disabled:cursor-not-allowed flex items-center">
+                            <button disabled={isSaving} onClick={handleReturnRequest} className="px-5 py-2 rounded-lg border border-amber-200/40 dark:border-amber-905/40 text-amber-700 dark:text-amber-400 bg-amber-50/10 dark:bg-amber-955/20 font-bold hover:bg-amber-100/20 disabled:opacity-60 disabled:cursor-not-allowed flex items-center">
                                 {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <AlertCircle size={18} className="mr-2" />} Trả lại
                             </button>
                         )}
@@ -2438,22 +2438,22 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
             {isIssuePanelOpen && request && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col">
-                        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-card border border-border shadow-2xl flex flex-col">
+                        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
                             <div>
-                                <h4 className="text-base font-black text-slate-800">Tạo đợt cấp vật tư</h4>
-                                <p className="text-xs font-bold text-slate-400">{request.code} • Kho nguồn: {getWarehouseName(sourceWarehouseId || request.sourceWarehouseId)}</p>
+                                <h4 className="text-base font-black text-foreground">Tạo đợt cấp vật tư</h4>
+                                <p className="text-xs font-bold text-muted-foreground">{request.code} • Kho nguồn: {getWarehouseName(sourceWarehouseId || request.sourceWarehouseId)}</p>
                             </div>
-                            <button onClick={() => setIsIssuePanelOpen(false)} className="p-2 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                            <button onClick={() => setIsIssuePanelOpen(false)} className="p-2 text-muted-foreground hover:text-foreground"><X size={20} /></button>
                         </div>
                         <div className="p-5 overflow-y-auto space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div>
-                                    <label className="text-[10px] uppercase font-black text-slate-400 block mb-1">Nguồn hàng</label>
+                                    <label className="text-[10px] uppercase font-black text-muted-foreground block mb-1">Nguồn hàng</label>
                                     <select
                                         value={issueSourceType}
                                         onChange={event => setIssueSourceType(event.target.value as MaterialRequestFulfillmentSourceType)}
-                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300"
+                                        className="w-full px-3 py-2 rounded-xl border border-border bg-card text-foreground text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-300"
                                     >
                                         <option value="stock">Tồn kho</option>
                                         <option value="po_receipt">Hàng đã nhập từ PO</option>
@@ -2461,16 +2461,16 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     </select>
                                 </div>
                                 <div className="md:col-span-2">
-                                    <label className="text-[10px] uppercase font-black text-slate-400 block mb-1">Ghi chú đợt cấp</label>
+                                    <label className="text-[10px] uppercase font-black text-muted-foreground block mb-1">Ghi chú đợt cấp</label>
                                     <input
                                         value={issueNote}
                                         onChange={event => setIssueNote(event.target.value)}
                                         placeholder="VD: cấp đợt 1 theo tiến độ thi công..."
-                                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                                        className="w-full px-3 py-2 rounded-xl border border-border bg-card text-foreground text-sm outline-none focus:ring-2 focus:ring-indigo-300"
                                     />
                                 </div>
                             </div>
-                            <div className="overflow-x-auto rounded-xl border border-slate-200">
+                            <div className="overflow-x-auto rounded-xl border border-border">
                                 <table className="w-full text-xs">
                                     <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
                                         <tr>
@@ -2481,7 +2481,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             <th className="p-3 text-left">Lý do</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-100">
+                                    <tbody className="divide-y divide-border">
                                         {issueLines.map(line => {
                                             const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
                                             const lineSummary = fulfillmentLineSummaryMap.get(line.requestLineId);
@@ -2489,8 +2489,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             const onHand = getOnHandStock(line.itemId, sourceWarehouseId || request.sourceWarehouseId || '');
                                             return (
                                                 <tr key={line.requestLineId}>
-                                                    <td className="p-3 font-bold text-slate-700">{requestLine ? getLineName(requestLine) : line.itemId}</td>
-                                                    <td className="p-3 text-right font-bold text-slate-500">{remaining.toLocaleString('vi-VN')}</td>
+                                                    <td className="p-3 font-bold text-foreground">{requestLine ? getLineName(requestLine) : line.itemId}</td>
+                                                    <td className="p-3 text-right font-bold text-muted-foreground">{remaining.toLocaleString('vi-VN')}</td>
                                                     <td className="p-3 text-right font-bold text-blue-600">{onHand.toLocaleString('vi-VN')}</td>
                                                     <td className="p-3 text-right">
                                                         <input
@@ -2498,7 +2498,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                             min={0}
                                                             value={line.qty}
                                                             onChange={event => updateIssueLine(line.requestLineId, { qty: event.target.value })}
-                                                            className="w-24 rounded-lg border border-indigo-200 px-2 py-1 text-right font-black text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-300"
+                                                            className="w-24 rounded-lg border border-indigo-200 dark:border-indigo-800/40 bg-card px-2 py-1 text-right font-black text-indigo-700 dark:text-indigo-400 outline-none focus:ring-2 focus:ring-indigo-300"
                                                         />
                                                     </td>
                                                     <td className="p-3">
@@ -2506,7 +2506,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                             value={line.reason}
                                                             onChange={event => updateIssueLine(line.requestLineId, { reason: event.target.value })}
                                                             placeholder="Bắt buộc nếu cấp lệch phần còn lại"
-                                                            className="w-full rounded-lg border border-slate-200 px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-300"
+                                                            className="w-full rounded-lg border border-border bg-card text-foreground px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-300"
                                                         />
                                                     </td>
                                                 </tr>
@@ -2516,8 +2516,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 </table>
                             </div>
                         </div>
-                        <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-3">
-                            <button onClick={() => setIsIssuePanelOpen(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 font-bold">Huỷ</button>
+                        <div className="px-5 py-4 border-t border-border flex justify-end gap-3">
+                            <button onClick={() => setIsIssuePanelOpen(false)} className="px-4 py-2 rounded-lg border border-border text-foreground hover:bg-muted font-bold">Huỷ</button>
                             <button disabled={isSaving} onClick={handleCreateFulfillmentBatch} className="px-5 py-2 rounded-lg bg-indigo-600 text-white font-black hover:bg-indigo-700 disabled:opacity-60 flex items-center gap-2">
                                 {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Truck size={16} />} Tạo đợt cấp
                             </button>
@@ -2528,15 +2528,15 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
             {isExternalIssuePanelOpen && request && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-6xl max-h-[88vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col">
-                        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <div className="w-full max-w-6xl max-h-[88vh] overflow-hidden rounded-2xl bg-card border border-border shadow-2xl flex flex-col">
+                        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
                             <div>
-                                <h4 className="text-base font-black text-slate-800">Xuất cấp thi công từ đề xuất</h4>
-                                <p className="text-xs font-bold text-slate-400">
+                                <h4 className="text-base font-black text-foreground">Xuất cấp thi công từ đề xuất</h4>
+                                <p className="text-xs font-bold text-muted-foreground">
                                     {request.code} • Kho nguồn: {getWarehouseName(sourceWarehouseId || request.sourceWarehouseId)}
                                 </p>
                             </div>
-                            <button onClick={() => setIsExternalIssuePanelOpen(false)} className="p-2 text-slate-400 hover:text-slate-600">
+                            <button onClick={() => setIsExternalIssuePanelOpen(false)} className="p-2 text-muted-foreground hover:text-foreground">
                                 <X size={20} />
                             </button>
                         </div>
@@ -2559,40 +2559,40 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
             {selectedFulfillmentBatch && request && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col">
+                    <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-card border border-border shadow-2xl flex flex-col">
                         <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
                             <div>
-                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Chi tiết đợt cấp</div>
-                                <h4 className="text-base font-black text-slate-800 mt-0.5">{selectedFulfillmentBatch.batchNo}</h4>
-                                <p className="text-xs font-bold text-slate-400 mt-1">
+                                <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Chi tiết đợt cấp</div>
+                                <h4 className="text-base font-black text-foreground mt-0.5">{selectedFulfillmentBatch.batchNo}</h4>
+                                <p className="text-xs font-bold text-muted-foreground mt-1">
                                     {request.code} • {new Date(selectedFulfillmentBatch.batchDate).toLocaleString('vi-VN')}
                                 </p>
                             </div>
-                            <button onClick={() => setSelectedFulfillmentBatch(null)} className="p-2 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                            <button onClick={() => setSelectedFulfillmentBatch(null)} className="p-2 text-muted-foreground hover:text-foreground"><X size={20} /></button>
                         </div>
                         <div className="p-5 overflow-y-auto space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                                <div className="rounded-xl border border-border bg-muted p-3">
                                     <div className="text-[10px] uppercase font-black text-slate-400">Trạng thái</div>
-                                    <div className="mt-1 font-black text-slate-700">
+                                    <div className="mt-1 font-black text-foreground">
                                         {selectedFulfillmentBatch.status === 'received' ? 'Đã nhận' : selectedFulfillmentBatch.status === 'issued' ? 'Đã xuất' : selectedFulfillmentBatch.status === 'variance_pending' ? 'Chờ chốt lệch' : selectedFulfillmentBatch.status === 'returned' ? 'Đã trả lại' : selectedFulfillmentBatch.status === 'cancelled' ? 'Đã huỷ' : 'Nháp'}
                                     </div>
                                 </div>
-                                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                                <div className="rounded-xl border border-border bg-muted p-3">
                                     <div className="text-[10px] uppercase font-black text-slate-400">Nguồn</div>
-                                    <div className="mt-1 font-black text-slate-700">{getFulfillmentSourceLabel(selectedFulfillmentBatch)}</div>
+                                    <div className="mt-1 font-black text-foreground">{getFulfillmentSourceLabel(selectedFulfillmentBatch)}</div>
                                 </div>
-                                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                                <div className="rounded-xl border border-border bg-muted p-3">
                                     <div className="text-[10px] uppercase font-black text-slate-400">Đích</div>
-                                    <div className="mt-1 font-black text-slate-700">{selectedFulfillmentBatch.targetWarehouseId ? getWarehouseName(selectedFulfillmentBatch.targetWarehouseId) : 'Cấp thẳng sử dụng'}</div>
+                                    <div className="mt-1 font-black text-foreground">{selectedFulfillmentBatch.targetWarehouseId ? getWarehouseName(selectedFulfillmentBatch.targetWarehouseId) : 'Cấp thẳng sử dụng'}</div>
                                 </div>
                             </div>
                             {selectedFulfillmentBatch.note && (
-                                <div className="rounded-xl border border-slate-100 bg-white p-3 text-xs font-bold text-slate-500">
+                                <div className="rounded-xl border border-border bg-muted/30 p-3 text-xs font-bold text-muted-foreground">
                                     {selectedFulfillmentBatch.note}
                                 </div>
                             )}
-                            <div className="overflow-x-auto rounded-xl border border-slate-200">
+                            <div className="overflow-x-auto rounded-xl border border-border">
                                 <table className="w-full text-xs">
                                     <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
                                         <tr>
@@ -2602,12 +2602,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             <th className="p-3 text-left">Lý do lệch</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-100">
+                                    <tbody className="divide-y divide-border">
                                         {selectedFulfillmentBatch.lines.map(line => {
                                             const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
                                             return (
                                                 <tr key={line.id}>
-                                                    <td className="p-3 font-bold text-slate-700">{requestLine ? getLineName(requestLine) : line.itemId}</td>
+                                                    <td className="p-3 font-bold text-foreground">{requestLine ? getLineName(requestLine) : line.itemId}</td>
                                                     <td className="p-3 text-right font-black text-indigo-600">{Number(line.issuedQty || 0).toLocaleString('vi-VN')}</td>
                                                     <td className="p-3 text-right font-black text-cyan-600">{Number(line.receivedQty || 0).toLocaleString('vi-VN')}</td>
                                                     <td className="p-3 text-slate-400">{line.varianceReason || '-'}</td>
@@ -2618,19 +2618,19 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 </table>
                             </div>
                         </div>
-                        <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-3">
-                            <button onClick={() => setSelectedFulfillmentBatch(null)} className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 font-bold">Đóng</button>
+                        <div className="px-5 py-4 border-t border-border flex justify-end gap-3">
+                            <button onClick={() => setSelectedFulfillmentBatch(null)} className="px-4 py-2 rounded-lg border border-border text-foreground hover:bg-muted font-bold">Đóng</button>
                             <button
                                 disabled={isSaving}
                                 onClick={() => handlePrintFulfillmentBatch(selectedFulfillmentBatch)}
-                                className="px-4 py-2 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 font-black hover:bg-indigo-100 disabled:opacity-60 flex items-center gap-2"
+                                className="px-4 py-2 rounded-lg border border-indigo-250 dark:border-indigo-900/40 bg-indigo-50/10 dark:bg-indigo-950/20 text-indigo-750 dark:text-indigo-400 font-black hover:bg-indigo-100/20 disabled:opacity-60 flex items-center gap-2"
                             >
                                 <Truck size={16} /> In phiếu QR
                             </button>
                             <button
                                 disabled={isSaving}
                                 onClick={() => handlePrintFulfillmentBatch(selectedFulfillmentBatch, 'pdf')}
-                                className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 font-black hover:bg-slate-50 disabled:opacity-60 flex items-center gap-2"
+                                className="px-4 py-2 rounded-lg border border-border bg-card text-foreground font-black hover:bg-muted disabled:opacity-60 flex items-center gap-2"
                             >
                                 <FileDown size={16} /> Xuất PDF
                             </button>
@@ -2679,34 +2679,34 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
             {returningReceivedBatch && request && (
                 <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
-                    <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col">
+                    <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-card border border-border shadow-2xl flex flex-col">
                         <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
                             <div>
                                 <div className="text-[10px] font-black uppercase tracking-widest text-rose-500">Hoàn trả / đảo tồn</div>
-                                <h4 className="text-base font-black text-slate-800 mt-0.5">{returningReceivedBatch.batchNo}</h4>
-                                <p className="text-xs font-bold text-slate-400 mt-1">{request.code} • Nguồn gốc: {getFulfillmentSourceLabel(returningReceivedBatch)}</p>
+                                <h4 className="text-base font-black text-foreground mt-0.5">{returningReceivedBatch.batchNo}</h4>
+                                <p className="text-xs font-bold text-muted-foreground mt-1">{request.code} • Nguồn gốc: {getFulfillmentSourceLabel(returningReceivedBatch)}</p>
                             </div>
                             <button
                                 onClick={() => setReturningReceivedBatch(null)}
-                                className="p-2 text-slate-400 hover:text-slate-600"
+                                className="p-2 text-muted-foreground hover:text-foreground"
                             >
                                 <X size={20} />
                             </button>
                         </div>
                         <div className="p-5 overflow-y-auto space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                                <div className="rounded-xl border border-border bg-muted p-3">
                                     <div className="text-[10px] uppercase font-black text-slate-400">Trừ tồn tại kho</div>
-                                    <div className="mt-1 font-black text-slate-700">
+                                    <div className="mt-1 font-black text-foreground">
                                         {returningReceivedBatch.targetWarehouseId ? getWarehouseName(returningReceivedBatch.targetWarehouseId) : '-'}
                                     </div>
                                 </div>
-                                <label className="rounded-xl border border-rose-100 bg-rose-50/40 p-3 block">
-                                    <div className="text-[10px] uppercase font-black text-rose-500">Kho nhận hoàn trả</div>
+                                <label className="rounded-xl border border-rose-200/30 dark:border-rose-900/30 bg-rose-50/10 dark:bg-rose-955/10 p-3 block">
+                                    <div className="text-[10px] uppercase font-black text-rose-500 dark:text-rose-450">Kho nhận hoàn trả</div>
                                     <select
                                         value={returnDestinationWarehouseId}
                                         onChange={event => setReturnDestinationWarehouseId(event.target.value)}
-                                        className="mt-2 w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-rose-200"
+                                        className="mt-2 w-full rounded-lg border border-rose-200/40 dark:border-rose-800/40 bg-card text-foreground px-3 py-2 text-sm font-bold text-foreground outline-none focus:ring-2 focus:ring-rose-200"
                                     >
                                         <option value="">Chọn kho nhận hoàn trả</option>
                                         {warehouses
@@ -2723,10 +2723,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     value={returnReceivedReason}
                                     onChange={event => setReturnReceivedReason(event.target.value)}
                                     placeholder="Ví dụ: trả NCC do nhập nhầm đơn, hàng sai quy cách..."
-                                    className="w-full min-h-[78px] rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-rose-200"
+                                    className="w-full min-h-[78px] rounded-xl border border-border bg-card text-foreground px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-rose-200"
                                 />
                             </label>
-                            <div className="overflow-x-auto rounded-xl border border-slate-200">
+                            <div className="overflow-x-auto rounded-xl border border-border">
                                 <table className="w-full text-xs">
                                     <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
                                         <tr>
@@ -2735,15 +2735,15 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             <th className="p-3 text-left">ĐVT</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-100">
+                                    <tbody className="divide-y divide-border">
                                         {returningReceivedBatch.lines
                                             .filter(line => Number(line.receivedQty || 0) > 0)
                                             .map(line => {
                                                 const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
                                                 return (
                                                     <tr key={line.id}>
-                                                        <td className="p-3 font-bold text-slate-700">{requestLine ? getLineName(requestLine) : line.itemId}</td>
-                                                        <td className="p-3 text-right font-black text-rose-600">{Number(line.receivedQty || 0).toLocaleString('vi-VN')}</td>
+                                                        <td className="p-3 font-bold text-foreground">{requestLine ? getLineName(requestLine) : line.itemId}</td>
+                                                        <td className="p-3 text-right font-black text-rose-600 dark:text-rose-450">{Number(line.receivedQty || 0).toLocaleString('vi-VN')}</td>
                                                         <td className="p-3 text-slate-500">{line.unit || (requestLine ? getLineUnit(requestLine) : '')}</td>
                                                     </tr>
                                                 );
@@ -2752,15 +2752,15 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 </table>
                             </div>
                             {!returningReceivedBatch.sourceWarehouseId && (
-                                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
+                                <div className="rounded-xl border border-amber-250/40 dark:border-amber-900/40 bg-amber-50/10 dark:bg-amber-955/20 px-3 py-2 text-xs font-bold text-amber-700 dark:text-amber-400">
                                     Đợt này nhập trực tiếp từ PO/NCC nên không có kho nguồn ban đầu. Hệ thống cần chọn kho nhận hoàn trả để tạo phiếu đảo tồn từ kho công trường.
                                 </div>
                             )}
                         </div>
-                        <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-3">
+                        <div className="px-5 py-4 border-t border-border flex justify-end gap-3">
                             <button
                                 onClick={() => setReturningReceivedBatch(null)}
-                                className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 font-bold"
+                                className="px-4 py-2 rounded-lg border border-border text-foreground hover:bg-muted font-bold"
                             >
                                 Huỷ
                             </button>
@@ -2778,16 +2778,16 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
             {receivingBatch && request && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col">
-                        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-card border border-border shadow-2xl flex flex-col">
+                        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
                             <div>
-                                <h4 className="text-base font-black text-slate-800">Xác nhận nhận hàng</h4>
-                                <p className="text-xs font-bold text-slate-400">{receivingBatch.batchNo} • {request.code}</p>
+                                <h4 className="text-base font-black text-foreground">Xác nhận nhận hàng</h4>
+                                <p className="text-xs font-bold text-muted-foreground">{receivingBatch.batchNo} • {request.code}</p>
                             </div>
-                            <button onClick={() => setReceivingBatch(null)} className="p-2 text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                            <button onClick={() => setReceivingBatch(null)} className="p-2 text-muted-foreground hover:text-foreground"><X size={20} /></button>
                         </div>
                         <div className="p-5 overflow-y-auto">
-                            <div className="overflow-x-auto rounded-xl border border-slate-200">
+                            <div className="overflow-x-auto rounded-xl border border-border">
                                 <table className="w-full text-xs">
                                     <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
                                         <tr>
@@ -2797,13 +2797,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             <th className="p-3 text-left">Lý do lệch</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-100">
+                                    <tbody className="divide-y divide-border">
                                         {receivingBatch.lines.map(line => {
                                             const requestLine = request.items.find((item, index) => getRequestLineId(request, item, index) === line.requestLineId);
                                             const draft = receiveLines.find(item => item.lineId === line.id);
                                             return (
                                                 <tr key={line.id}>
-                                                    <td className="p-3 font-bold text-slate-700">{requestLine ? getLineName(requestLine) : line.itemId}</td>
+                                                    <td className="p-3 font-bold text-foreground">{requestLine ? getLineName(requestLine) : line.itemId}</td>
                                                     <td className="p-3 text-right font-bold text-indigo-600">{Number(line.issuedQty || 0).toLocaleString('vi-VN')}</td>
                                                     <td className="p-3 text-right">
                                                         <input
@@ -2811,7 +2811,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                             min={0}
                                                             value={draft?.qty || '0'}
                                                             onChange={event => updateReceiveLine(line.id, { qty: event.target.value })}
-                                                            className="w-24 rounded-lg border border-emerald-200 px-2 py-1 text-right font-black text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-300"
+                                                            className="w-24 rounded-lg border border-emerald-250 dark:border-emerald-800/40 bg-card px-2 py-1 text-right font-black text-emerald-700 dark:text-emerald-400 outline-none focus:ring-2 focus:ring-emerald-300"
                                                         />
                                                     </td>
                                                     <td className="p-3">
@@ -2819,7 +2819,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                             value={draft?.reason || ''}
                                                             onChange={event => updateReceiveLine(line.id, { reason: event.target.value })}
                                                             placeholder="Bắt buộc nếu nhận lệch số xuất"
-                                                            className="w-full rounded-lg border border-slate-200 px-2 py-1 outline-none focus:ring-2 focus:ring-emerald-300"
+                                                            className="w-full rounded-lg border border-border bg-card text-foreground px-2 py-1 outline-none focus:ring-2 focus:ring-emerald-300"
                                                         />
                                                     </td>
                                                 </tr>
@@ -2829,8 +2829,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 </table>
                             </div>
                         </div>
-                        <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-3">
-                            <button onClick={() => setReceivingBatch(null)} className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 font-bold">Huỷ</button>
+                        <div className="px-5 py-4 border-t border-border flex justify-end gap-3">
+                            <button onClick={() => setReceivingBatch(null)} className="px-4 py-2 rounded-lg border border-border text-foreground hover:bg-muted font-bold">Huỷ</button>
                             <button disabled={isSaving} onClick={handleReceiveFulfillmentBatch} className="px-5 py-2 rounded-lg bg-emerald-600 text-white font-black hover:bg-emerald-700 disabled:opacity-60 flex items-center gap-2">
                                 {isSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />} Xác nhận nhận
                             </button>

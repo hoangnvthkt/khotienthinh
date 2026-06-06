@@ -196,13 +196,13 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+      <div className="bg-card text-card-foreground border border-border rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between p-4 border-b border-border bg-muted/50">
           <div>
-            <h3 className="font-bold text-lg text-slate-800">Thêm vật tư mới</h3>
-            {hasAssignedWarehouse && <p className="text-[10px] text-orange-600 font-bold uppercase tracking-tight">Bạn chỉ thêm vật tư vào kho được phân công</p>}
+            <h3 className="font-bold text-lg text-foreground">Thêm vật tư mới</h3>
+            {hasAssignedWarehouse && <p className="text-[10px] text-orange-600 dark:text-orange-400 font-bold uppercase tracking-tight">Bạn chỉ thêm vật tư vào kho được phân công</p>}
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
             <X size={24} />
           </button>
         </div>
@@ -210,68 +210,68 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Mã SKU <span className="text-red-500">*</span></label>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Mã SKU <span className="text-red-500">*</span></label>
               <input
                 type="text" name="sku" value={formData.sku} onChange={handleChange}
                 placeholder="VD: STEEL-001"
-                className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none font-mono"
+                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none font-mono bg-white dark:bg-muted text-slate-900 dark:text-[#CBD5E1]"
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Tên vật tư <span className="text-red-500">*</span></label>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Tên vật tư <span className="text-red-500">*</span></label>
               <input
                 type="text" name="name" value={formData.name} onChange={handleChange}
                 placeholder="VD: Thép cuộn phi 6"
-                className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none"
+                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white dark:bg-muted text-slate-900 dark:text-[#CBD5E1]"
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Danh mục <span className="text-red-500">*</span></label>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Danh mục <span className="text-red-500">*</span></label>
               <select
                 name="category" value={formData.category} onChange={handleChange}
-                className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white"
+                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white dark:bg-muted text-slate-900 dark:text-[#CBD5E1]"
                 required
               >
-                <option value="">-- Chọn danh mục --</option>
-                {categories.map(cat => <option key={cat.id} value={cat.name}>{cat.name}</option>)}
+                <option value="" className="bg-white dark:bg-muted">-- Chọn danh mục --</option>
+                {categories.map(cat => <option key={cat.id} value={cat.name} className="bg-white dark:bg-muted">{cat.name}</option>)}
               </select>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Đơn vị tính <span className="text-red-500">*</span></label>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Đơn vị tính <span className="text-red-500">*</span></label>
               <select
                 name="unit" value={formData.unit} onChange={handleChange}
-                className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white"
+                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white dark:bg-muted text-slate-900 dark:text-[#CBD5E1]"
                 required
               >
-                <option value="">-- Chọn đơn vị --</option>
-                {units.map(unit => <option key={unit.id} value={unit.name}>{unit.name}</option>)}
+                <option value="" className="bg-white dark:bg-muted">-- Chọn đơn vị --</option>
+                {units.map(unit => <option key={unit.id} value={unit.name} className="bg-white dark:bg-muted">{unit.name}</option>)}
               </select>
             </div>
 
             {/* Đơn vị mua hàng - Tính năng Dual Unit */}
             <div className="space-y-2 md:col-span-2">
-              <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-350 flex items-center gap-2">
                 Đơn vị mua hàng
-                <span className="text-[10px] font-normal text-slate-400">(tùy chọn - chỉ điền nếu khác đơn vị tồn kho)</span>
+                <span className="text-[10px] font-normal text-slate-400 dark:text-slate-500">(tùy chọn - chỉ điền nếu khác đơn vị tồn kho)</span>
               </label>
               <div className="flex gap-3 items-start">
                 <select
                   name="purchaseUnit" value={formData.purchaseUnit} onChange={handleChange}
-                  className="flex-1 p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none bg-white"
+                  className="flex-1 p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-amber-400 outline-none bg-white dark:bg-muted text-slate-900 dark:text-[#CBD5E1]"
                 >
-                  <option value="">— Giống đơn vị tồn kho —</option>
-                  {units.map(unit => <option key={unit.id} value={unit.name}>{unit.name}</option>)}
+                  <option value="" className="bg-white dark:bg-muted">— Giống đơn vị tồn kho —</option>
+                  {units.map(unit => <option key={unit.id} value={unit.name} className="bg-white dark:bg-muted">{unit.name}</option>)}
                 </select>
                 {formData.purchaseUnit && formData.purchaseUnit !== formData.unit && formData.unit && (
-                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-black px-3 py-2.5 rounded-lg whitespace-nowrap">
-                    Mua: <span className="text-amber-600">{formData.purchaseUnit}</span>
-                    <span className="text-amber-400">→</span>
-                    Kho: <span className="text-amber-600">{formData.unit}</span>
+                  <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/40 text-amber-800 dark:text-amber-300 text-[10px] font-black px-3 py-2.5 rounded-lg whitespace-nowrap">
+                    Mua: <span className="text-amber-600 dark:text-amber-400">{formData.purchaseUnit}</span>
+                    <span className="text-amber-400 dark:text-amber-600">→</span>
+                    Kho: <span className="text-amber-600 dark:text-amber-400">{formData.unit}</span>
                   </div>
                 )}
               </div>
@@ -285,11 +285,11 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
                     value={formData.purchaseConversionFactor || ''}
                     onChange={handleChange}
                     placeholder="Hệ số quy đổi"
-                    className="w-full p-2.5 border border-amber-200 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none bg-white text-sm font-bold"
+                    className="w-full p-2.5 border border-amber-250 dark:border-amber-800/60 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none bg-white dark:bg-muted text-slate-900 dark:text-[#CBD5E1] text-sm font-bold"
                   />
-                  <div className="text-[10px] text-amber-600 font-bold">
+                  <div className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
                     <p>1 {formData.purchaseUnit} = {(Number(formData.purchaseConversionFactor || 0) || 0).toLocaleString('vi-VN')} {formData.unit || 'đơn vị kho'}</p>
-                    <p className="text-amber-500">
+                    <p className="text-amber-500 dark:text-amber-500">
                       1 {formData.unit || 'đơn vị kho'} = {((Number(formData.purchaseConversionFactor || 0) || 1) > 0 ? 1 / (Number(formData.purchaseConversionFactor || 0) || 1) : 0).toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {formData.purchaseUnit}
                     </p>
                   </div>
@@ -298,8 +298,8 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <label className="text-sm font-medium text-slate-700 flex items-center">
-                <Truck size={14} className="mr-2 text-slate-400" /> Nhà cung cấp mặc định
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-350 flex items-center">
+                <Truck size={14} className="mr-2 text-slate-400 dark:text-slate-500" /> Nhà cung cấp mặc định
               </label>
               <div className="relative">
                 <input
@@ -313,22 +313,22 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
                     setSupplierOpen(true);
                   }}
                   placeholder="Gõ tên để tìm NCC từ HĐ đối tác..."
-                  className="w-full p-2.5 pr-20 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white"
+                  className="w-full p-2.5 pr-20 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white dark:bg-muted text-slate-900 dark:text-[#CBD5E1]"
                 />
                 {(formData.supplierId || supplierSearch) && (
                   <button
                     type="button"
                     onMouseDown={event => event.preventDefault()}
                     onClick={clearSupplier}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-md text-[10px] font-bold text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-md text-[10px] font-bold text-slate-400 hover:bg-slate-100 dark:hover:bg-muted hover:text-slate-600 dark:hover:text-foreground"
                   >
                     Xoá
                   </button>
                 )}
                 {supplierOpen && (
-                  <div className="absolute z-30 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+                  <div className="absolute z-30 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-border bg-popover text-popover-foreground shadow-xl">
                     {supplierLoading && (
-                      <div className="px-3 py-3 text-xs font-bold text-slate-400 flex items-center gap-2">
+                      <div className="px-3 py-3 text-xs font-bold text-muted-foreground flex items-center gap-2">
                         <Loader2 size={13} className="animate-spin" /> Đang tải HĐ đối tác...
                       </div>
                     )}
@@ -338,133 +338,133 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
                         type="button"
                         onMouseDown={event => event.preventDefault()}
                         onClick={() => pickSupplier(partner)}
-                        className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50 border-b border-slate-50 last:border-b-0"
+                        className="w-full px-3 py-2 text-left text-xs hover:bg-muted border-b border-border last:border-b-0"
                       >
-                        <div className="font-bold text-slate-700 truncate">{partner.name}</div>
-                        <div className="text-[10px] text-slate-400 truncate">
+                        <div className="font-bold text-foreground truncate">{partner.name}</div>
+                        <div className="text-[10px] text-muted-foreground truncate">
                           {[partner.code, partner.taxCode, partner.phone, partner.contactName].filter(Boolean).join(' • ') || 'HĐ đối tác'}
                         </div>
                       </button>
                     ))}
                     {!supplierLoading && filteredSupplierPartners.length === 0 && (
-                      <div className="px-3 py-3 text-xs font-bold text-amber-600">
+                      <div className="px-3 py-3 text-xs font-bold text-amber-600 dark:text-amber-400">
                         Không tìm thấy NCC trong HĐ đối tác.
                       </div>
                     )}
                   </div>
                 )}
               </div>
-              <p className="text-[10px] text-slate-400 font-medium">
+              <p className="text-[10px] text-muted-foreground font-medium">
                 Danh sách lấy từ Hợp đồng → HĐ đối tác, chỉ các đối tác được phân loại “Nhà cung cấp”.
               </p>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Giá nhập (VNĐ)</label>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Giá nhập (VNĐ)</label>
               <input
                 type="number" name="priceIn" value={formData.priceIn} onChange={handleChange} min="0"
-                className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-slate-700"
+                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-slate-700 dark:text-[#CBD5E1] bg-white dark:bg-muted"
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Giá xuất (VNĐ)</label>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Giá xuất (VNĐ)</label>
               <input
                 type="number" name="priceOut" value={formData.priceOut} onChange={handleChange} min="0"
-                className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-accent"
+                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-accent bg-white dark:bg-muted"
               />
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <label className="text-sm font-medium text-slate-700">Mức tồn tối thiểu (Cảnh báo)</label>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Mức tồn tối thiểu (Cảnh báo)</label>
               <input
                 type="number" name="minStock" value={formData.minStock} onChange={handleChange} min="0"
-                className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none"
+                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white dark:bg-muted text-slate-900 dark:text-[#CBD5E1]"
               />
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <label className="text-sm font-medium text-slate-700">Lead time mặc định cho kế hoạch vật tư (ngày)</label>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-350">Lead time mặc định cho kế hoạch vật tư (ngày)</label>
               <input
                 type="number" name="defaultLeadTimeDays" value={formData.defaultLeadTimeDays} onChange={handleChange} min="0" max="365"
-                className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-slate-700"
+                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-slate-700 dark:text-[#CBD5E1] bg-white dark:bg-muted"
               />
-              <p className="text-[10px] text-slate-400 font-medium">Dùng khi dự án chưa khai báo rule lead time riêng cho vật tư này.</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Dùng khi dự án chưa khai báo rule lead time riêng cho vật tư này.</p>
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <label className="text-sm font-medium text-slate-700 flex items-center">
-                <MapPin size={14} className="mr-2 text-slate-400" /> Vị trí trong kho (Bin Location)
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-350 flex items-center">
+                <MapPin size={14} className="mr-2 text-slate-400 dark:text-slate-500" /> Vị trí trong kho (Bin Location)
               </label>
               <input
                 type="text" name="location" value={formData.location} onChange={handleChange}
                 placeholder="VD: Kệ A-3, Ô 2"
-                className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none"
+                className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white dark:bg-muted text-slate-900 dark:text-[#CBD5E1]"
               />
             </div>
 
             {/* Initial Stock Section */}
-            <div className="md:col-span-2 border-t border-slate-100 pt-4 mt-2">
+            <div className="md:col-span-2 border-t border-border pt-4 mt-2">
               <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-bold text-slate-800 flex items-center">
+                <h4 className="text-sm font-bold text-foreground flex items-center">
                   Nhập tồn kho khởi tạo
                 </h4>
                 {hasAssignedWarehouse && (
-                  <span className="text-[9px] bg-orange-50 text-orange-600 px-2 py-1 rounded-full border border-orange-100 flex items-center">
+                  <span className="text-[9px] bg-orange-50 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400 px-2 py-1 rounded-full border border-orange-100 dark:border-orange-900/40 flex items-center">
                     <ShieldAlert size={10} className="mr-1" /> Cần Admin phê duyệt
                   </span>
                 )}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-muted/40 rounded-xl border border-border">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Kho nhận hàng</label>
+                  <label className="text-xs font-bold text-muted-foreground uppercase">Kho nhận hàng</label>
                   <select
                     name="initialWarehouseId"
                     value={formData.initialWarehouseId}
                     onChange={handleChange}
                     disabled={hasAssignedWarehouse}
-                    className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white disabled:bg-white disabled:text-slate-700 font-bold"
+                    className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none bg-white dark:bg-muted disabled:bg-slate-100 dark:disabled:bg-[#1a1c1e] text-slate-700 dark:text-[#CBD5E1] font-bold"
                   >
-                    {!hasAssignedWarehouse && <option value="">-- Chọn kho --</option>}
+                    {!hasAssignedWarehouse && <option value="" className="bg-white dark:bg-muted">-- Chọn kho --</option>}
                     {warehouses.map(w => (
-                      <option key={w.id} value={w.id}>{w.name}</option>
+                      <option key={w.id} value={w.id} className="bg-white dark:bg-muted">{w.name}</option>
                     ))}
                   </select>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase">Số lượng ban đầu</label>
+                  <label className="text-xs font-bold text-muted-foreground uppercase">Số lượng ban đầu</label>
                   <input
                     type="number"
                     name="initialStock"
                     value={formData.initialStock}
                     onChange={handleChange}
                     min="0"
-                    className="w-full p-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-accent"
+                    className="w-full p-2.5 border border-slate-200 dark:border-border rounded-lg focus:ring-2 focus:ring-accent outline-none font-bold text-accent bg-white dark:bg-muted"
                     placeholder="0"
                   />
                 </div>
               </div>
               {hasAssignedWarehouse && (
-                <p className="text-[10px] text-slate-400 mt-2 italic">
+                <p className="text-[10px] text-muted-foreground mt-2 italic">
                   * Bạn chỉ được phép thêm vật tư vào kho <strong>{warehouses.find(w => w.id === user.assignedWarehouseId)?.name}</strong>.
                 </p>
               )}
             </div>
           </div>
 
-          <div className="mt-8 pt-4 border-t border-slate-100 flex justify-end gap-3">
+          <div className="mt-8 pt-4 border-t border-border flex justify-end gap-3">
             <button
               type="button" onClick={onClose}
               disabled={saving}
-              className="px-6 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-slate-50 transition-colors disabled:opacity-60"
+              className="px-6 py-2.5 border border-border rounded-lg text-foreground font-medium hover:bg-muted transition-colors disabled:opacity-60"
             >
               Hủy
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="px-6 py-2.5 bg-accent text-white rounded-lg font-medium hover:bg-blue-700 transition-colors flex items-center shadow-lg shadow-blue-500/30 disabled:opacity-60"
+              className="px-6 py-2.5 bg-accent text-white rounded-lg font-medium hover:opacity-90 transition-colors flex items-center shadow-lg shadow-accent/20 disabled:opacity-60"
             >
               {saving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />} {saving ? 'Đang lưu...' : 'Lưu & Gửi đề xuất'}
             </button>
