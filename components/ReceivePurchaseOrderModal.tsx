@@ -7,6 +7,12 @@ import { materialRequestFulfillmentService } from '../lib/materialRequestFulfill
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { usePermission } from '../hooks/usePermission';
 import { parseQuantityInput, sanitizeQuantityInput } from '../lib/quantityInput';
+import {
+  getPoLinePurchaseUnit,
+  getPoLineStockUnit,
+  hasPurchaseUnitConversion,
+  poLinePurchaseToStockQty,
+} from '../lib/materialUnitConversion';
 
 interface ReceivePurchaseOrderModalProps {
   isOpen: boolean;
@@ -41,9 +47,17 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
       const receivedQty = Number(item.receivedQty) || 0;
       const remainingQty = Math.max(orderedQty - receivedQty, 0);
       const key = `${item.itemId}-${index}`;
-      return { ...item, key, orderedQty, receivedQty, remainingQty };
+      const inventoryItem = items.find(candidate => candidate.id === item.itemId);
+      const purchaseUnit = getPoLinePurchaseUnit(item, inventoryItem);
+      const stockUnit = getPoLineStockUnit(item, inventoryItem);
+      const hasUnitConversion = hasPurchaseUnitConversion({
+        unit: stockUnit,
+        purchaseUnit,
+        purchaseConversionFactor: item.purchaseConversionFactor ?? inventoryItem?.purchaseConversionFactor ?? 1,
+      });
+      return { ...item, key, orderedQty, receivedQty, remainingQty, inventoryItem, purchaseUnit, stockUnit, hasUnitConversion };
     });
-  }, [po]);
+  }, [items, po]);
 
   useEffect(() => {
     if (!po || !isOpen) return;
@@ -186,6 +200,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                   {lines.map(line => {
                     const qty = parseQuantityInput(quantities[line.key]) || 0;
                     const invalid = qty < 0 || qty > line.remainingQty;
+                    const stockQty = poLinePurchaseToStockQty(line, qty, line.inventoryItem);
                     return (
                       <tr key={line.key} className={line.remainingQty <= 0 ? 'bg-slate-50/60 opacity-70' : ''}>
                         <td className="p-4">
@@ -197,9 +212,9 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                             </div>
                           )}
                         </td>
-                        <td className="p-4 text-right font-black text-slate-700">{line.orderedQty.toLocaleString()} {line.unit}</td>
-                        <td className="p-4 text-right font-bold text-slate-500">{line.receivedQty.toLocaleString()} {line.unit}</td>
-                        <td className="p-4 text-right font-black text-emerald-600">{line.remainingQty.toLocaleString()} {line.unit}</td>
+                        <td className="p-4 text-right font-black text-slate-700">{line.orderedQty.toLocaleString()} {line.purchaseUnit || line.unit}</td>
+                        <td className="p-4 text-right font-bold text-slate-500">{line.receivedQty.toLocaleString()} {line.purchaseUnit || line.unit}</td>
+                        <td className="p-4 text-right font-black text-emerald-600">{line.remainingQty.toLocaleString()} {line.purchaseUnit || line.unit}</td>
                         <td className="p-4">
                           <input
                             type="text"
@@ -211,6 +226,11 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                               invalid ? 'border-red-300 bg-red-50 text-red-600 focus:ring-red-200' : 'border-slate-200 focus:ring-emerald-200'
                             }`}
                           />
+                          {line.hasUnitConversion && (
+                            <div className="mt-1 text-[10px] font-bold text-cyan-700 text-center">
+                              Nhập kho: {stockQty.toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {line.stockUnit}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
@@ -224,6 +244,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
               {lines.map(line => {
                 const qty = parseQuantityInput(quantities[line.key]) || 0;
                 const invalid = qty < 0 || qty > line.remainingQty;
+                const stockQty = poLinePurchaseToStockQty(line, qty, line.inventoryItem);
                 return (
                   <div key={line.key} className={`p-4 space-y-3 ${line.remainingQty <= 0 ? 'bg-slate-50/60 opacity-70' : ''}`}>
                     <div>
@@ -239,15 +260,15 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                     <div className="grid grid-cols-3 gap-2 bg-slate-50 rounded-xl p-3 text-center">
                       <div>
                         <div className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Đặt</div>
-                        <div className="text-xs font-black text-slate-700 mt-0.5 truncate">{line.orderedQty.toLocaleString()} {line.unit}</div>
+                        <div className="text-xs font-black text-slate-700 mt-0.5 truncate">{line.orderedQty.toLocaleString()} {line.purchaseUnit || line.unit}</div>
                       </div>
                       <div>
                         <div className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Đã nhận</div>
-                        <div className="text-xs font-bold text-slate-500 mt-0.5 truncate">{line.receivedQty.toLocaleString()} {line.unit}</div>
+                        <div className="text-xs font-bold text-slate-500 mt-0.5 truncate">{line.receivedQty.toLocaleString()} {line.purchaseUnit || line.unit}</div>
                       </div>
                       <div>
                         <div className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Còn lại</div>
-                        <div className="text-xs font-black text-emerald-600 mt-0.5 truncate">{line.remainingQty.toLocaleString()} {line.unit}</div>
+                        <div className="text-xs font-black text-emerald-600 mt-0.5 truncate">{line.remainingQty.toLocaleString()} {line.purchaseUnit || line.unit}</div>
                       </div>
                     </div>
 
@@ -264,6 +285,11 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                             invalid ? 'border-red-300 bg-red-50 text-red-600 focus:ring-red-200' : 'border-slate-200 focus:ring-emerald-200'
                           }`}
                         />
+                        {line.hasUnitConversion && (
+                          <div className="mt-1 text-[10px] font-bold text-cyan-700 text-right">
+                            Nhập kho: {stockQty.toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {line.stockUnit}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

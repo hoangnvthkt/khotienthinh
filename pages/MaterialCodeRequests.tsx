@@ -163,6 +163,7 @@ const MaterialCodeRequests: React.FC = () => {
         name: approvalForm.name.trim(),
         category: approvalForm.category.trim(),
         unit: approvalForm.unit.trim(),
+        purchaseConversionFactor: 1,
         supplierId: approvalForm.supplierId || undefined,
         priceIn: Number(approvalForm.priceIn) || 0,
         priceOut: Number(approvalForm.priceOut) || 0,

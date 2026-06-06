@@ -31,6 +31,7 @@ import ProjectSubmissionDialog from './project/ProjectSubmissionDialog';
 import ProjectWorkflowPanel from './project/ProjectWorkflowPanel';
 import ProjectWorkflowCommentsPanel from './project/ProjectWorkflowCommentsPanel';
 import ProjectWorkflowStartDialog from './project/ProjectWorkflowStartDialog';
+import MaterialIssuePanel from './project/MaterialIssuePanel';
 import { useReservedStock } from '../hooks/useReservedStock';
 import { canApproveMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, isAdmin, isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../lib/wmsPermissions';
 import { useToast } from '../context/ToastContext';
@@ -212,6 +213,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [fulfillmentBatches, setFulfillmentBatches] = useState<MaterialRequestFulfillmentBatch[]>([]);
     const [isLoadingFulfillment, setIsLoadingFulfillment] = useState(false);
     const [isIssuePanelOpen, setIsIssuePanelOpen] = useState(false);
+    const [isExternalIssuePanelOpen, setIsExternalIssuePanelOpen] = useState(false);
     const initialActionHandledRef = useRef(false);
     const [issueSourceType, setIssueSourceType] = useState<MaterialRequestFulfillmentSourceType>('stock');
     const [issueLines, setIssueLines] = useState<FulfillmentQtyDraft[]>([]);
@@ -2413,6 +2415,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             </button>
                         )}
 
+                        {canCreateFulfillmentBatch && (
+                            <button disabled={isSaving || !(sourceWarehouseId || request?.sourceWarehouseId)} onClick={() => setIsExternalIssuePanelOpen(true)} className="px-6 py-2 rounded-lg bg-slate-900 text-white font-bold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-slate-500/20">
+                                <PackageCheck size={18} className="mr-2" /> Xuất cấp thi công
+                            </button>
+                        )}
+
                         {canExport && (
                             <button disabled={isSaving} onClick={() => handleAction(RequestStatus.IN_TRANSIT)} className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-indigo-500/20">
                                 {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Truck size={18} className="mr-2" />} {isSaving ? 'Đang xử lý...' : 'Xác nhận xuất kho'}
@@ -2513,6 +2521,37 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             <button disabled={isSaving} onClick={handleCreateFulfillmentBatch} className="px-5 py-2 rounded-lg bg-indigo-600 text-white font-black hover:bg-indigo-700 disabled:opacity-60 flex items-center gap-2">
                                 {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Truck size={16} />} Tạo đợt cấp
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {isExternalIssuePanelOpen && request && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
+                    <div className="w-full max-w-6xl max-h-[88vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col">
+                        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                            <div>
+                                <h4 className="text-base font-black text-slate-800">Xuất cấp thi công từ đề xuất</h4>
+                                <p className="text-xs font-bold text-slate-400">
+                                    {request.code} • Kho nguồn: {getWarehouseName(sourceWarehouseId || request.sourceWarehouseId)}
+                                </p>
+                            </div>
+                            <button onClick={() => setIsExternalIssuePanelOpen(false)} className="p-2 text-slate-400 hover:text-slate-600">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-5 overflow-y-auto">
+                            <MaterialIssuePanel
+                                projectId={request.projectId || projectId || null}
+                                constructionSiteId={request.constructionSiteId || constructionSiteId || null}
+                                materialRequestId={request.id}
+                                defaultSourceWarehouseId={sourceWarehouseId || request.sourceWarehouseId || null}
+                                compact
+                                canCreate
+                                onChanged={() => {
+                                    void loadModuleData('wms', true);
+                                }}
+                            />
                         </div>
                     </div>
                 </div>

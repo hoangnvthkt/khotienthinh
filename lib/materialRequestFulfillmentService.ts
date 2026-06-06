@@ -6,7 +6,9 @@ import {
   MaterialRequestLineFulfillmentSummary,
   MaterialRequestFulfillmentSourceType,
   MaterialRequestFulfillmentSummary,
+  InventoryItem,
   PurchaseOrder,
+  PurchaseOrderItem,
   PurchaseOrderRequestLineLink,
   RequestItem,
   RequestStatus,
@@ -15,6 +17,14 @@ import {
   TransactionType,
 } from '../types';
 import { createFulfillmentBatchQrToken } from './fulfillmentBatchQr';
+import {
+  getPoLinePurchaseUnit,
+  getPoLineStockUnit,
+  getPoLineStockUnitPrice,
+  hasPurchaseUnitConversion,
+  poLinePurchaseToStockQty,
+  poLineStockToPurchaseQty,
+} from './materialUnitConversion';
 
 const BATCH_TABLE = 'material_request_fulfillment_batches';
 const LINE_TABLE = 'material_request_fulfillment_lines';
@@ -44,6 +54,59 @@ const formatPoNumber = (poNumber?: string | null): string => {
   return /^PO[\s-]/i.test(trimmed) ? trimmed : `PO ${trimmed}`;
 };
 
+const mapInventoryItem = (row: any): InventoryItem => ({
+  ...fromDb(row),
+  purchaseConversionFactor: Number(row.purchase_conversion_factor ?? row.purchaseConversionFactor ?? 1),
+  stockByWarehouse: row.stock_by_warehouse || row.stockByWarehouse || {},
+}) as InventoryItem;
+
+const loadInventoryByIds = async (ids: string[]): Promise<Map<string, InventoryItem>> => {
+  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+  if (uniqueIds.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from('items')
+    .select('id, sku, name, category, unit, purchase_unit, purchase_conversion_factor, price_in, price_out, min_stock, supplier_id, image_url, location, stock_by_warehouse')
+    .in('id', uniqueIds);
+  if (error) throw error;
+  return new Map((data || []).map(row => {
+    const item = mapInventoryItem(row);
+    return [item.id, item] as const;
+  }));
+};
+
+const loadInventoryForPo = (po: PurchaseOrder): Promise<Map<string, InventoryItem>> =>
+  loadInventoryByIds((po.items || []).map(item => item.itemId));
+
+const shouldStorePoAccountingUnit = (line: PurchaseOrderItem, inventory?: InventoryItem | null) =>
+  hasPurchaseUnitConversion({
+    unit: getPoLineStockUnit(line, inventory),
+    purchaseUnit: getPoLinePurchaseUnit(line, inventory),
+    purchaseConversionFactor: line.purchaseConversionFactor ?? inventory?.purchaseConversionFactor ?? 1,
+  });
+
+const buildPoReceiptTransactionItem = (
+  poItem: PurchaseOrderItem | undefined,
+  stockQty: number,
+  inventory: InventoryItem | undefined,
+  extra: Record<string, any> = {},
+) => {
+  const purchaseQty = poItem ? poLineStockToPurchaseQty(poItem, stockQty, inventory) : stockQty;
+  const purchaseUnit = poItem ? getPoLinePurchaseUnit(poItem, inventory) : inventory?.unit || '';
+  const stockUnitPrice = poItem ? getPoLineStockUnitPrice(poItem, inventory) : Number(inventory?.priceIn || 0);
+  const useAccountingUnit = poItem ? shouldStorePoAccountingUnit(poItem, inventory) : false;
+  return {
+    itemId: poItem?.itemId || inventory?.id || extra.itemId,
+    quantity: stockQty,
+    price: stockUnitPrice,
+    ...(useAccountingUnit ? {
+      accountingQty: purchaseQty,
+      accountingUnit: purchaseUnit,
+      accountingPrice: Number(poItem?.unitPrice || 0),
+    } : {}),
+    ...extra,
+  };
+};
+
 export const getRequestLineId = (request: MaterialRequest, line: RequestItem, index = 0): string =>
   line.lineId || `${request.id}-${index}`;
 
@@ -68,16 +131,16 @@ const syncPurchaseOrderReceiptFromBatch = async (
   const poLines = (batch.lines || []).filter(line => line.poId && line.poLineId);
   if (poLines.length === 0) return;
 
-  const receiptByPo = new Map<string, Map<string, number>>();
+  const receiptStockByPo = new Map<string, Map<string, number>>();
   poLines.forEach(line => {
     const received = Number(receivedByLineId.get(line.id)?.receivedQty ?? line.receivedQty ?? 0);
     if (received <= 0 || !line.poId || !line.poLineId) return;
-    const poReceipt = receiptByPo.get(line.poId) || new Map<string, number>();
+    const poReceipt = receiptStockByPo.get(line.poId) || new Map<string, number>();
     poReceipt.set(line.poLineId, (poReceipt.get(line.poLineId) || 0) + received);
-    receiptByPo.set(line.poId, poReceipt);
+    receiptStockByPo.set(line.poId, poReceipt);
   });
 
-  for (const [poId, receiptByLineId] of receiptByPo.entries()) {
+  for (const [poId, stockReceiptByLineId] of receiptStockByPo.entries()) {
     const { data, error } = await supabase
       .from('purchase_orders')
       .select('*')
@@ -86,10 +149,13 @@ const syncPurchaseOrderReceiptFromBatch = async (
     if (error) throw error;
 
     const po = fromDb(data) as PurchaseOrder;
+    const inventoryById = await loadInventoryForPo(po);
     let hasReceipt = false;
     const nextItems = (po.items || []).map(item => {
       const key = item.lineId || item.itemId;
-      const receivedNow = receiptByLineId.get(key) || 0;
+      const stockReceivedNow = stockReceiptByLineId.get(key) || 0;
+      const inventory = inventoryById.get(item.itemId);
+      const receivedNow = poLineStockToPurchaseQty(item, stockReceivedNow, inventory);
       if (receivedNow <= 0) return item;
       const orderedQty = Number(item.qty || 0);
       const currentReceivedQty = Number(item.receivedQty || 0);
@@ -642,6 +708,7 @@ export const materialRequestFulfillmentService = {
     });
 
     const poItemByLineId = new Map((input.po.items || []).map(item => [item.lineId || item.itemId, item]));
+    const inventoryById = await loadInventoryForPo(input.po);
     const linksByRequest = new Map<string, PurchaseOrderRequestLineLink[]>();
     links.forEach(link => {
       const receiptQty = receiptByPoLine.get(link.purchaseOrderLineId) || 0;
@@ -680,7 +747,9 @@ export const materialRequestFulfillmentService = {
 
       const linePayloads = requestLinks.map(link => {
         const poItem = poItemByLineId.get(link.purchaseOrderLineId);
-        const receivedQty = receiptByPoLine.get(link.purchaseOrderLineId) || 0;
+        const purchaseReceivedQty = receiptByPoLine.get(link.purchaseOrderLineId) || 0;
+        const inventory = inventoryById.get(link.itemId);
+        const receivedQty = poItem ? poLinePurchaseToStockQty(poItem, purchaseReceivedQty, inventory) : purchaseReceivedQty;
         return {
           id: newId(),
           batchId,
@@ -695,7 +764,7 @@ export const materialRequestFulfillmentService = {
           committedQtySnapshot: Number(link.requestedQty || poItem?.qty || 0),
           issuedQty: receivedQty,
           receivedQty,
-          unit: link.unit || poItem?.unit || null,
+          unit: getPoLineStockUnit(poItem || ({} as PurchaseOrderItem), inventory) || link.unit || poItem?.unit || null,
           varianceReason: null,
           note: `Nhập thực nhận ${poNumber}${poSourceSuffix}`,
         };
@@ -793,6 +862,8 @@ export const materialRequestFulfillmentService = {
     const pendingBatchIds = new Set(pendingBatches.map(batch => batch.id));
     const pendingLines = (lineRows || []).filter(line => pendingBatchIds.has(line.batch_id));
 
+    const poItemByLineId = new Map((input.po.items || []).map(item => [item.lineId || item.itemId, item]));
+    const inventoryById = await loadInventoryForPo(input.po);
     const poLineIdsByItemId = new Map<string, string[]>();
     (input.po.items || []).forEach(item => {
       const lineId = item.lineId || item.itemId;
@@ -809,7 +880,10 @@ export const materialRequestFulfillmentService = {
       const quantity = Number(line.quantity || 0);
       if (quantity <= 0) return;
       const key = resolveReceiptKey(line);
-      receiptByPoLine.set(key, (receiptByPoLine.get(key) || 0) + quantity);
+      const poItem = poItemByLineId.get(key);
+      const inventory = inventoryById.get(line.itemId || poItem?.itemId || '');
+      const stockQuantity = poItem ? poLinePurchaseToStockQty(poItem, quantity, inventory) : quantity;
+      receiptByPoLine.set(key, (receiptByPoLine.get(key) || 0) + stockQuantity);
     });
     if (receiptByPoLine.size === 0) throw new Error('Chưa có số lượng thực nhận hợp lệ.');
 
@@ -849,9 +923,17 @@ export const materialRequestFulfillmentService = {
         if (quantity <= 0) {
           throw new Error('Mỗi dòng trong đợt giao phải có số lượng thực nhận lớn hơn 0. Nếu NCC chưa giao dòng này, hãy tách thành đợt giao khác.');
         }
+        const poLineId = fulfillmentLine.po_line_id || fulfillmentLine.item_id;
+        const poItem = poItemByLineId.get(poLineId);
+        const inventory = inventoryById.get(item.itemId || poItem?.itemId || fulfillmentLine.item_id);
+        const receiptItem = buildPoReceiptTransactionItem(poItem, quantity, inventory, { itemId: item.itemId });
         return {
           ...item,
-          quantity,
+          quantity: receiptItem.quantity,
+          price: receiptItem.price,
+          accountingQty: receiptItem.accountingQty,
+          accountingUnit: receiptItem.accountingUnit,
+          accountingPrice: receiptItem.accountingPrice,
           varianceReason: quantity === Number(fulfillmentLine.issued_qty || 0)
             ? item.varianceReason
             : 'Thủ kho công trường ghi nhận thực nhận từ QR lệch số lượng đợt giao.',
@@ -911,6 +993,7 @@ export const materialRequestFulfillmentService = {
     if (links.length === 0) return [];
 
     const poItemByLineId = new Map((input.po.items || []).map(item => [item.lineId || item.itemId, item]));
+    const inventoryById = await loadInventoryForPo(input.po);
     const remainingByPoLine = new Map<string, number>();
     (input.po.items || []).forEach(item => {
       const key = item.lineId || item.itemId;
@@ -937,8 +1020,12 @@ export const materialRequestFulfillmentService = {
       const requestCode = requestLinks[0]?.materialRequestCode || materialRequestId;
       const linePayloads = requestLinks.map(link => {
         const poItem = poItemByLineId.get(link.purchaseOrderLineId);
-        const remainingQty = remainingByPoLine.get(link.purchaseOrderLineId) || 0;
-        const deliveryQty = Math.min(remainingQty, Number(link.orderedQty || poItem?.qty || 0));
+        const inventory = inventoryById.get(link.itemId || poItem?.itemId || '');
+        const remainingPurchaseQty = remainingByPoLine.get(link.purchaseOrderLineId) || 0;
+        const remainingStockQty = poItem ? poLinePurchaseToStockQty(poItem, remainingPurchaseQty, inventory) : remainingPurchaseQty;
+        const linkedStockQty = Number(link.orderedQty || (poItem ? poLinePurchaseToStockQty(poItem, Number(poItem.qty || 0), inventory) : 0));
+        const deliveryQty = Math.min(remainingStockQty, linkedStockQty || remainingStockQty);
+        const stockUnit = poItem ? getPoLineStockUnit(poItem, inventory) : inventory?.unit || link.unit || null;
         return {
           id: newId(),
           batchId,
@@ -949,11 +1036,11 @@ export const materialRequestFulfillmentService = {
           workBoqItemId: link.workBoqItemId || poItem?.workBoqItemId || null,
           poId: input.po.id,
           poLineId: link.purchaseOrderLineId,
-          requestedQtySnapshot: Number(link.requestedQty || poItem?.qty || 0),
-          committedQtySnapshot: Number(link.requestedQty || poItem?.qty || 0),
+          requestedQtySnapshot: Number(link.requestedQty || linkedStockQty || deliveryQty || 0),
+          committedQtySnapshot: Number(link.requestedQty || linkedStockQty || deliveryQty || 0),
           issuedQty: deliveryQty,
           receivedQty: 0,
-          unit: link.unit || poItem?.unit || null,
+          unit: stockUnit,
           varianceReason: null,
           note: `Chờ nhận hàng từ ${poNumber}${poSourceSuffix}`,
         };
@@ -967,14 +1054,12 @@ export const materialRequestFulfillmentService = {
         date: now,
         items: linePayloads.map(line => {
           const poItem = poItemByLineId.get(line.poLineId);
-          return {
-            itemId: line.itemId,
-            quantity: line.issuedQty,
-            price: Number(poItem?.unitPrice || 0),
+          const inventory = inventoryById.get(line.itemId || poItem?.itemId || '');
+          return buildPoReceiptTransactionItem(poItem, line.issuedQty, inventory, {
             materialRequestId,
             requestLineId: line.requestLineId,
             fulfillmentBatchId: batchId,
-          };
+          });
         }),
         targetWarehouseId: input.po.targetWarehouseId,
         requesterId: input.actorUserId,

@@ -225,6 +225,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const mapInventoryItemFromDb = (i: any): InventoryItem => ({
   ...i,
   purchaseUnit: i.purchase_unit,
+  purchaseConversionFactor: Number(i.purchase_conversion_factor ?? 1),
   priceIn: i.price_in,
   priceOut: i.price_out,
   minStock: i.min_stock,
@@ -480,7 +481,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const mapped = {
           ...i, priceIn: i.price_in, priceOut: i.price_out, minStock: i.min_stock, defaultLeadTimeDays: i.default_lead_time_days ?? 7,
           supplierId: i.supplier_id, imageUrl: i.image_url, stockByWarehouse: i.stock_by_warehouse,
-          purchaseUnit: i.purchase_unit ?? undefined
+          purchaseUnit: i.purchase_unit ?? undefined,
+          purchaseConversionFactor: Number(i.purchase_conversion_factor ?? 1)
         };
         setItems(prev => {
           const exists = prev.find(item => item.id === mapped.id);
@@ -993,6 +995,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         payload = {
           id: data.id, sku: data.sku, name: data.name, category: data.category, unit: data.unit,
           purchase_unit: data.purchaseUnit ?? null,
+          purchase_conversion_factor: Number(data.purchaseConversionFactor || 1),
           price_in: data.priceIn, price_out: data.priceOut, min_stock: data.minStock,
           default_lead_time_days: data.defaultLeadTimeDays ?? 7,
           supplier_id: data.supplierId, image_url: data.imageUrl, stock_by_warehouse: data.stockByWarehouse,

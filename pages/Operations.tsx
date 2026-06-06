@@ -18,6 +18,7 @@ import TransactionDetailModal from '../components/TransactionDetailModal';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import Pagination from '../components/Pagination';
 import SearchableSelect from '../components/common/SearchableSelect';
+import MaterialIssuePanel from '../components/project/MaterialIssuePanel';
 import { usePagination } from '../hooks/usePagination';
 import { useReservedStock } from '../hooks/useReservedStock';
 import { useModuleData } from '../hooks/useModuleData';
@@ -391,6 +392,7 @@ const Operations: React.FC = () => {
         <div className="flex border-b border-slate-100 overflow-x-auto bg-slate-50/50 scrollbar-hide">
           <button onClick={() => handleTabChange('IMPORT')} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'IMPORT' ? 'border-accent text-accent bg-white shadow-[0_-4px_0_inset_#2563eb]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Nhập kho</button>
           <button onClick={() => handleTabChange('EXPORT')} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'EXPORT' ? 'border-accent text-accent bg-white shadow-[0_-4px_0_inset_#2563eb]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Xuất kho</button>
+          <button onClick={() => handleTabChange('MATERIAL_ISSUE')} className={`flex-1 min-w-[140px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'MATERIAL_ISSUE' ? 'border-indigo-500 text-indigo-600 bg-white shadow-[0_-4px_0_inset_#6366f1]' : 'border-transparent text-slate-400 hover:text-indigo-500'}`}>Xuất cấp thi công</button>
           <button onClick={() => handleTabChange('TRANSFER')} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'TRANSFER' ? 'border-accent text-accent bg-white shadow-[0_-4px_0_inset_#2563eb]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Chuyển kho</button>
           <button onClick={() => handleTabChange('LIQUIDATION')} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'LIQUIDATION' ? 'border-red-600 text-red-600 bg-white shadow-[0_-4px_0_inset_#dc2626]' : 'border-transparent text-slate-400 hover:text-red-400'}`}>Xuất hủy</button>
           <button onClick={() => setActiveTab('PENDING')} className={`flex-1 min-w-[120px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all relative ${activeTab === 'PENDING' ? 'border-orange-500 text-orange-600 bg-white shadow-[0_-4px_0_inset_#f97316]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
@@ -400,7 +402,9 @@ const Operations: React.FC = () => {
         </div>
 
         <div className="p-6 bg-white">
-          {activeTab === 'PENDING' ? (
+          {activeTab === 'MATERIAL_ISSUE' ? (
+            <MaterialIssuePanel />
+          ) : activeTab === 'PENDING' ? (
             <div className="space-y-12">
               {/* PHIẾU CHỜ DUYỆT */}
               <section className="space-y-4">
@@ -434,7 +438,8 @@ const Operations: React.FC = () => {
                         : [];
                       const hasStockConflict = stockConflicts.length > 0;
                       const isFulfillmentTx = isFulfillmentBatchTransaction(tx);
-                      const pendingLabel = isFulfillmentTx ? 'CHỜ DUYỆT SL/CL' : 'CHỜ DUYỆT';
+                      const isMaterialIssueTx = tx.items.some(item => !!item.materialIssueOrderId);
+                      const pendingLabel = isFulfillmentTx ? 'CHỜ DUYỆT SL/CL' : (isMaterialIssueTx ? 'CHỜ KHO XUẤT CẤP' : 'CHỜ DUYỆT');
 
                       return (
                         <div key={tx.id} onClick={() => setViewingHistoryTx(tx)}
@@ -446,7 +451,7 @@ const Operations: React.FC = () => {
                               <div className="flex items-center gap-2 mb-2 flex-wrap">
                                 <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider bg-orange-100 text-orange-700">{pendingLabel}</span>
                                 <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider bg-blue-50 text-blue-600 border border-blue-100">
-                                  {tx.type === 'IMPORT' ? '📥 Nhập kho' : tx.type === 'EXPORT' ? '📤 Xuất kho' : tx.type === 'TRANSFER' ? '🔄 Chuyển kho' : '🗑️ Xuất hủy'}
+                                  {isMaterialIssueTx ? '🏗️ Xuất cấp thi công' : tx.type === 'IMPORT' ? '📥 Nhập kho' : tx.type === 'EXPORT' ? '📤 Xuất kho' : tx.type === 'TRANSFER' ? '🔄 Chuyển kho' : '🗑️ Xuất hủy'}
                                 </span>
                                 <span className="text-[10px] text-slate-400 font-mono font-bold">{new Date(tx.date).toLocaleString()}</span>
                                 {/* ── Badge cảnh báo tồn khả dụng ── */}

@@ -56,6 +56,7 @@ import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
 import InventoryItemCombobox from '../../components/InventoryItemCombobox';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
 import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
+import MaterialIssuePanel from '../../components/project/MaterialIssuePanel';
 import { projectSubmissionService } from '../../lib/projectSubmissionService';
 import SupplierCombobox from '../../components/SupplierCombobox';
 import { useReservedStock } from '../../hooks/useReservedStock';
@@ -64,6 +65,16 @@ import { materialRequestService } from '../../lib/materialRequestService';
 import { isAdmin, isGlobalWarehouseKeeper } from '../../lib/wmsPermissions';
 import { purchaseOrderSupplierReturnService } from '../../lib/purchaseOrderSupplierReturnService';
 import PurchaseOrderSupplierReturnDialog from '../../components/project/PurchaseOrderSupplierReturnDialog';
+import {
+    buildPoUnitSnapshot,
+    getPoLinePurchaseUnit,
+    getPoLineStockUnit,
+    getPoLineStockUnitPrice,
+    hasPurchaseUnitConversion,
+    poLinePurchaseToStockQty,
+    poLineStockToPurchaseQty,
+    stockUnitPriceToPurchaseUnitPrice,
+} from '../../lib/materialUnitConversion';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -79,6 +90,8 @@ const fmt = (n: number) => {
     if (n >= 1e6) return (n / 1e6).toFixed(0) + ' tr';
     return n.toLocaleString('vi-VN');
 };
+
+const fmtQty = (n: number) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 6 });
 
 const PO_STATUS: Record<POStatus, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
     draft: { label: 'Nháp', color: 'text-slate-600', bg: 'bg-slate-50 border-slate-200', icon: <Clock size={12} /> },
@@ -126,6 +139,10 @@ const createEmptyPoItem = (): PurchaseOrderItem => ({
     sku: '',
     name: '',
     unit: '',
+    unitSnapshot: '',
+    stockUnitSnapshot: '',
+    purchaseUnitSnapshot: '',
+    purchaseConversionFactor: 1,
     qty: 0,
     unitPrice: 0,
     neededDate: '',
@@ -143,6 +160,13 @@ const normalizePoItem = (item: Partial<PurchaseOrderItem>, inventoryItems: Inven
         (!!item.sku && inv.sku.toLowerCase() === item.sku.toLowerCase()) ||
         (!!item.name && inv.name.toLowerCase() === item.name.toLowerCase())
     );
+    const stockUnitSnapshot = item.stockUnitSnapshot || item.unitSnapshot || matched?.unit || item.unit || '';
+    const purchaseUnitSnapshot = item.purchaseUnitSnapshot || item.unit || matched?.purchaseUnit || matched?.unit || '';
+    const purchaseConversionFactor = Number(item.purchaseConversionFactor ?? (
+        stockUnitSnapshot && purchaseUnitSnapshot && stockUnitSnapshot.toLowerCase() !== purchaseUnitSnapshot.toLowerCase()
+            ? matched?.purchaseConversionFactor
+            : 1
+    ) ?? 1) || 1;
 
     return {
         itemId: item.itemId || matched?.id || '',
@@ -151,7 +175,7 @@ const normalizePoItem = (item: Partial<PurchaseOrderItem>, inventoryItems: Inven
         vendorName: item.vendorName || null,
         sku: item.sku || matched?.sku || '',
         name: item.name || matched?.name || '',
-        unit: item.unit || matched?.unit || '',
+        unit: purchaseUnitSnapshot || item.unit || matched?.unit || '',
         qty: Number(item.qty) || 0,
         unitPrice: Number(item.unitPrice) || 0,
         receivedQty: Number(item.receivedQty) || 0,
@@ -177,7 +201,10 @@ const normalizePoItem = (item: Partial<PurchaseOrderItem>, inventoryItems: Inven
         overBudgetReason: item.overBudgetReason || '',
         isManualItem: item.isManualItem || (!matched && !!item.itemId?.startsWith('manual-')),
         itemNameSnapshot: item.itemNameSnapshot || item.name || matched?.name || '',
-        unitSnapshot: item.unitSnapshot || item.unit || matched?.unit || '',
+        unitSnapshot: stockUnitSnapshot,
+        stockUnitSnapshot,
+        purchaseUnitSnapshot,
+        purchaseConversionFactor,
         specification: item.specification || '',
         manualReason: item.manualReason || '',
         note: item.note || '',
@@ -415,11 +442,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             const receivedQty = Number(poLine?.receivedQty || 0);
             const openQty = Math.max(0, orderedQty - receivedQty);
             if (openQty <= 0) return;
+            const inventory = inventoryItems.find(item => item.id === (poLine?.itemId || link.itemId));
+            const openStockQty = poLine ? poLinePurchaseToStockQty(poLine, openQty, inventory) : openQty;
             const key = `${link.materialRequestId}:${link.requestLineId}`;
-            map.set(key, (map.get(key) || 0) + openQty);
+            map.set(key, (map.get(key) || 0) + openStockQty);
         });
         return map;
-    }, [poRequestLinks, pos]);
+    }, [inventoryItems, poRequestLinks, pos]);
     const scopedMaterialRequests = useMemo(() => {
         if (!projectId) return [];
         const byId = new Map<string, MaterialRequest>();
@@ -510,11 +539,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             .forEach(po => {
                 (po.items || []).forEach(line => {
                     if (!line.materialBudgetItemId) return;
-                    map.set(line.materialBudgetItemId, (map.get(line.materialBudgetItemId) || 0) + Number(line.qty || 0));
+                    const inventory = inventoryItems.find(item => item.id === line.itemId);
+                    const stockQty = poLinePurchaseToStockQty(line, Number(line.qty || 0), inventory);
+                    map.set(line.materialBudgetItemId, (map.get(line.materialBudgetItemId) || 0) + stockQty);
                 });
             });
         return map;
-    }, [editingPo?.id, pos]);
+    }, [editingPo?.id, inventoryItems, pos]);
     const findInventoryForBudget = (budget?: MaterialBudgetItem) => {
         if (!budget) return undefined;
         return inventoryItems.find(item =>
@@ -526,7 +557,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const getFormQtyByBudget = (budgetId: string, excludedLineId?: string) => {
         return pItems.reduce((sum, line) => {
             if (line.materialBudgetItemId !== budgetId || (excludedLineId && line.lineId === excludedLineId)) return sum;
-            return sum + Number(line.qty || 0);
+            const normalizedLine = normalizePoItem(line, inventoryItems);
+            const inventory = inventoryItems.find(item => item.id === normalizedLine.itemId);
+            return sum + poLinePurchaseToStockQty(normalizedLine, Number(normalizedLine.qty || 0), inventory);
         }, 0);
     };
     const buildPoBudgetSnapshot = (line: PurchaseOrderItem): PurchaseOrderItem => {
@@ -537,7 +570,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const previousRequested = requestedQtyByBudget.get(budget.id) || 0;
         const previousOrdered = existingOrderedQtyByBudget.get(budget.id) || 0;
         const currentOtherQty = getFormQtyByBudget(budget.id, line.lineId);
-        const totalCommitted = previousRequested + previousOrdered + currentOtherQty + Number(line.qty || 0);
+        const inventory = inventoryItems.find(item => item.id === line.itemId);
+        const lineStockQty = poLinePurchaseToStockQty(line, Number(line.qty || 0), inventory);
+        const totalCommitted = previousRequested + previousOrdered + currentOtherQty + lineStockQty;
         const reservedBeforeQty = previousRequested + previousOrdered + currentOtherQty;
         const budgetQty = Number(budget.budgetQty || 0);
         const overBeforeQty = Math.max(0, reservedBeforeQty - budgetQty);
@@ -661,11 +696,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 lineId: crypto.randomUUID(),
                 itemId: row.line.itemId,
                 ...supplierPatch,
+                ...buildPoUnitSnapshot(inventory),
                 sku: inventory?.sku || row.line.skuSnapshot || '',
                 name: inventory?.name || row.line.itemNameSnapshot || row.line.materialBudgetItemName || '',
-                unit: inventory?.unit || row.line.unitSnapshot || budget?.unit || '',
-                qty: remainingQty,
-                unitPrice: inventory?.priceIn || budget?.budgetUnitPrice || 0,
+                qty: poLineStockToPurchaseQty({
+                    ...createEmptyPoItem(),
+                    itemId: row.line.itemId,
+                    ...buildPoUnitSnapshot(inventory),
+                }, remainingQty, inventory),
+                unitPrice: stockUnitPriceToPurchaseUnitPrice(
+                    Number(inventory?.priceIn || budget?.budgetUnitPrice || 0),
+                    inventory,
+                ),
                 receivedQty: 0,
                 neededDate: row.line.neededDate || '',
                 workBoqItemId: row.line.workBoqItemId || null,
@@ -688,6 +730,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 isManualItem: false,
                 itemNameSnapshot: inventory?.name || row.line.itemNameSnapshot,
                 unitSnapshot: inventory?.unit || row.line.unitSnapshot,
+                stockUnitSnapshot: inventory?.unit || row.line.unitSnapshot,
+                purchaseUnitSnapshot: inventory?.purchaseUnit || inventory?.unit || row.line.unitSnapshot || budget?.unit || '',
+                purchaseConversionFactor: Number(inventory?.purchaseConversionFactor || 1),
                 specification: row.line.specification,
                 manualReason: '',
                 note: row.line.note || `Từ đề xuất ${row.request.code}`,
@@ -777,9 +822,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         );
         if (missingOverBudgetReason) {
             const missingOverQty = Number(missingOverBudgetReason.overQty ?? missingOverBudgetReason.overBudgetQtySnapshot ?? 0);
+            const missingInventory = inventoryItems.find(item => item.id === missingOverBudgetReason.itemId);
+            const missingStockUnit = getPoLineStockUnit(missingOverBudgetReason, missingInventory);
             toast.warning(
                 'Cần nhập lý do vượt ngân sách',
-                `${missingOverBudgetReason.materialBudgetItemName || missingOverBudgetReason.name} vượt ${missingOverQty.toLocaleString('vi-VN')} ${missingOverBudgetReason.unit || ''}.`
+                `${missingOverBudgetReason.materialBudgetItemName || missingOverBudgetReason.name} vượt ${missingOverQty.toLocaleString('vi-VN')} ${missingStockUnit || missingOverBudgetReason.unit || ''}.`
             );
             return;
         }
@@ -797,6 +844,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             .map(item => {
                 const sourceRequest = scopedMaterialRequests.find(req => req.id === item.requestId);
                 const sourceLine = sourceRequest?.items.find((line, index) => (line.lineId || `${sourceRequest.id}-${index}`) === item.requestLineId);
+                const inventory = inventoryItems.find(inv => inv.id === item.itemId);
+                const orderedStockQty = poLinePurchaseToStockQty(item, Number(item.qty || 0), inventory);
                 return {
                     projectId: projectId || null,
                     constructionSiteId: constructionSiteId || null,
@@ -808,9 +857,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     itemId: item.itemId,
                     workBoqItemId: item.workBoqItemId || null,
                     materialBudgetItemId: item.materialBudgetItemId || null,
-                    requestedQty: Number(sourceLine?.requestQty || item.qty || 0),
-                    orderedQty: Number(item.qty || 0),
-                    unit: item.unit || null,
+                    requestedQty: Number(sourceLine?.requestQty || orderedStockQty || 0),
+                    orderedQty: orderedStockQty,
+                    unit: getPoLineStockUnit(item, inventory) || null,
                     note: item.note || null,
                 };
             });
@@ -956,19 +1005,22 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 const invalidReturnLine = po.items.map(item => ({
                     ...item,
                     returnQty: Number(item.receivedQty || 0),
+                    returnStockQty: poLinePurchaseToStockQty(item, Number(item.receivedQty || 0), inventoryItems.find(inv => inv.id === item.itemId)),
                     summary: getStockSummary(item.itemId, po.targetWarehouseId!),
                 })).find(item => {
-                    const qty = Number(item.receivedQty || 0);
+                    const qty = Number(item.returnStockQty || 0);
                     if (qty <= 0) return false;
                     return item.summary.available < qty;
                 });
                 if (invalidReturnLine) {
-                    const needQty = Number(invalidReturnLine.returnQty || 0);
+                    const needQty = Number(invalidReturnLine.returnStockQty || 0);
+                    const returnInventory = inventoryItems.find(inv => inv.id === invalidReturnLine.itemId);
+                    const returnStockUnit = getPoLineStockUnit(invalidReturnLine, returnInventory);
                     const reason = needQty > invalidReturnLine.summary.onHand
                         ? `tồn thực ${invalidReturnLine.summary.onHand.toLocaleString('vi-VN')}`
                         : `tồn thực ${invalidReturnLine.summary.onHand.toLocaleString('vi-VN')}, đang giữ ${invalidReturnLine.summary.reserved.toLocaleString('vi-VN')}, khả dụng ${invalidReturnLine.summary.available.toLocaleString('vi-VN')}`;
                     const blockers = formatReservationSourceList(invalidReturnLine.summary.entries);
-                    toast.warning('Không đủ tồn để hoàn', `${invalidReturnLine.sku || invalidReturnLine.name} tại kho nhận cần hoàn ${needQty.toLocaleString('vi-VN')}; ${reason}.${blockers ? ` Vị trí giữ chỗ: ${blockers}.` : ''} Vui lòng xử lý phiếu pending/giữ chỗ trước khi hoàn PO.`);
+                    toast.warning('Không đủ tồn để hoàn', `${invalidReturnLine.sku || invalidReturnLine.name} tại kho nhận cần hoàn ${needQty.toLocaleString('vi-VN')} ${returnStockUnit || ''}; ${reason}.${blockers ? ` Vị trí giữ chỗ: ${blockers}.` : ''} Vui lòng xử lý phiếu pending/giữ chỗ trước khi hoàn PO.`);
                     return;
                 }
             }
@@ -1032,11 +1084,26 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     date: new Date().toISOString(),
                     items: po.items
                         .filter(item => Number(item.receivedQty || 0) > 0)
-                        .map(item => ({
-                            itemId: item.itemId,
-                            quantity: Number(item.receivedQty || 0),
-                            price: Number(item.unitPrice || 0),
-                        })),
+                        .map(item => {
+                            const inventory = inventoryItems.find(inv => inv.id === item.itemId);
+                            const stockQty = poLinePurchaseToStockQty(item, Number(item.receivedQty || 0), inventory);
+                            const purchaseUnit = getPoLinePurchaseUnit(item, inventory);
+                            const hasConversion = hasPurchaseUnitConversion({
+                                unit: getPoLineStockUnit(item, inventory),
+                                purchaseUnit,
+                                purchaseConversionFactor: item.purchaseConversionFactor ?? inventory?.purchaseConversionFactor ?? 1,
+                            });
+                            return {
+                                itemId: item.itemId,
+                                quantity: stockQty,
+                                price: getPoLineStockUnitPrice(item, inventory),
+                                ...(hasConversion ? {
+                                    accountingQty: Number(item.receivedQty || 0),
+                                    accountingUnit: purchaseUnit,
+                                    accountingPrice: Number(item.unitPrice || 0),
+                                } : {}),
+                            };
+                        }),
                     sourceWarehouseId: po.targetWarehouseId,
                     requesterId: user.id,
                     approverId: user.id,
@@ -1180,13 +1247,22 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         updatePoItem(index, {
             itemId,
             ...supplierPatch,
+            ...(selected ? buildPoUnitSnapshot(selected) : {
+                unit: '',
+                unitSnapshot: '',
+                stockUnitSnapshot: '',
+                purchaseUnitSnapshot: '',
+                purchaseConversionFactor: 1,
+            }),
             sku: selected?.sku || '',
             name: selected?.name || '',
-            unit: selected?.unit || '',
-            unitPrice: selected?.priceIn || 0,
+            unitPrice: stockUnitPriceToPurchaseUnitPrice(Number(selected?.priceIn || 0), selected),
             isManualItem: false,
             itemNameSnapshot: selected?.name || '',
             unitSnapshot: selected?.unit || '',
+            stockUnitSnapshot: selected?.unit || '',
+            purchaseUnitSnapshot: selected?.purchaseUnit || selected?.unit || '',
+            purchaseConversionFactor: Number(selected?.purchaseConversionFactor || 1),
         });
     };
 
@@ -1220,16 +1296,22 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             toast.warning('Chưa có mã kho', 'Dòng BOQ này chưa liên kết với vật tư trong danh mục. Vui lòng tạo Đề xuất cấp mã vật tư/vật liệu trước khi đặt hàng.');
             return;
         }
+        const defaultStockUnitPrice = Number(inventory.priceIn || budget.budgetUnitPrice || 0);
         updatePoItem(index, {
             itemId: inventory.id,
             ...(pItems[index]?.vendorId ? {} : getDefaultSupplierPatchForInventory(inventory)),
+            ...buildPoUnitSnapshot(inventory),
             sku: inventory.sku,
             name: inventory.name,
-            unit: inventory.unit,
-            unitPrice: inventory.priceIn || budget.budgetUnitPrice || pItems[index]?.unitPrice || 0,
+            unitPrice: defaultStockUnitPrice > 0
+                ? stockUnitPriceToPurchaseUnitPrice(defaultStockUnitPrice, inventory)
+                : Number(pItems[index]?.unitPrice || 0),
             isManualItem: false,
             itemNameSnapshot: inventory.name,
             unitSnapshot: inventory.unit,
+            stockUnitSnapshot: inventory.unit,
+            purchaseUnitSnapshot: inventory.purchaseUnit || inventory.unit,
+            purchaseConversionFactor: Number(inventory.purchaseConversionFactor || 1),
             workBoqItemId: budget.workBoqItemId || null,
             workBoqItemName: work?.name || null,
             materialBudgetItemId: budget.id,
@@ -1240,9 +1322,17 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
     const handleDownloadPoTemplate = async () => {
         const XLSX = await loadXlsx();
-        const headers = [['Mã SKU *', 'Tên vật tư', 'ĐVT', 'Khối lượng đặt *', 'Đơn giá', 'Ngày cần', 'Ghi chú']];
+        const headers = [['Mã SKU *', 'Tên vật tư', 'ĐVT mua', 'Khối lượng đặt *', 'Đơn giá theo ĐVT mua', 'Ngày cần', 'Ghi chú']];
         const sample = inventoryItems[0]
-            ? [[inventoryItems[0].sku, inventoryItems[0].name, inventoryItems[0].unit, 10, inventoryItems[0].priceIn || 0, new Date().toISOString().split('T')[0], '']]
+            ? [[
+                inventoryItems[0].sku,
+                inventoryItems[0].name,
+                inventoryItems[0].purchaseUnit || inventoryItems[0].unit,
+                10,
+                stockUnitPriceToPurchaseUnitPrice(Number(inventoryItems[0].priceIn || 0), inventoryItems[0]),
+                new Date().toISOString().split('T')[0],
+                '',
+            ]]
             : [];
         const ws = XLSX.utils.aoa_to_sheet([...headers, ...sample]);
         const wb = XLSX.utils.book_new();
@@ -1251,7 +1341,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
         const updateWs = XLSX.utils.aoa_to_sheet([
             ['Mã SKU *', 'Khối lượng đặt', 'Đơn giá', 'Ngày cần', 'Ghi chú'],
-            inventoryItems[0] ? [inventoryItems[0].sku, 20, inventoryItems[0].priceIn || 0, new Date().toISOString().split('T')[0], 'Cập nhật PO'] : ['STEEL-001', 20, 0, '', ''],
+            inventoryItems[0]
+                ? [inventoryItems[0].sku, 20, stockUnitPriceToPurchaseUnitPrice(Number(inventoryItems[0].priceIn || 0), inventoryItems[0]), new Date().toISOString().split('T')[0], 'Cập nhật PO']
+                : ['STEEL-001', 20, 0, '', ''],
         ]);
         updateWs['!cols'] = [{ wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 28 }];
         XLSX.utils.book_append_sheet(wb, updateWs, 'Cap_nhat');
@@ -1261,6 +1353,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             ['Nhập mới', 'Dùng sheet Nhap_moi để nạp danh sách vật tư vào PO đang tạo/sửa. SKU trùng trong PO sẽ báo lỗi.'],
             ['Cập nhật', 'Dùng sheet Cap_nhat hoặc file chỉ gồm Mã SKU và cột muốn sửa. SKU phải đang có trong PO form.'],
             ['Ô trống', 'Trong chế độ Cập nhật, ô trống nghĩa là không đổi dữ liệu.'],
+            ['ĐVT mua', 'PO đặt theo Đơn vị mua của NCC trong danh mục vật tư. Khi nhập kho, hệ thống tự quy đổi sang ĐVT kho theo hệ số vật tư.'],
         ]);
         guideWs['!cols'] = [{ wch: 24 }, { wch: 100 }];
         XLSX.utils.book_append_sheet(wb, guideWs, 'Huong_dan');
@@ -1293,11 +1386,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     lineId: crypto.randomUUID(),
                     itemId: item?.id || '',
                     ...supplierPatch,
+                    ...buildPoUnitSnapshot(item),
                     sku: item?.sku || sku,
                     name: item?.name || '',
-                    unit: item?.unit || '',
+                    unit: item?.purchaseUnit || item?.unit || '',
                     qty: 0,
-                    unitPrice: item?.priceIn || 0,
+                    unitPrice: stockUnitPriceToPurchaseUnitPrice(Number(item?.priceIn || 0), item),
                     receivedQty: 0,
                     neededDate: '',
                     note: '',
@@ -1866,6 +1960,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 </div>
             </div>
 
+            {subTab === 'po' && (
+                <MaterialIssuePanel
+                    projectId={projectId || null}
+                    constructionSiteId={constructionSiteId || null}
+                    compact={compact}
+                    canCreate={!!canManageTab}
+                />
+            )}
+
             {/* Vendor Tab */}
             {subTab === 'vendor' && (
                 <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-visible">
@@ -2207,6 +2310,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                 <tbody className="divide-y divide-slate-150 dark:divide-slate-800 bg-white dark:bg-slate-900">
                                                                     {po.items.map((item, i) => {
                                                                         const work = item.workBoqItemId ? workBoqMap.get(item.workBoqItemId) : undefined;
+                                                                        const inventory = inventoryItems.find(inv => inv.id === item.itemId);
+                                                                        const stockUnit = getPoLineStockUnit(item, inventory);
                                                                         return (
                                                                             <tr key={i} className="hover:bg-slate-50/30 dark:hover:bg-slate-800/10 transition-colors">
                                                                                 <td className="py-3.5 px-4 vertical-top">
@@ -2225,7 +2330,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                                         {item.requestCode && <span className="px-1.5 py-0.5 rounded border border-amber-100 bg-amber-50 text-[9px] font-bold text-amber-700">YC {item.requestCode}</span>}
                                                                                         {(item.workBoqItemName || work?.name) && <span className="px-1.5 py-0.5 rounded border border-blue-100 bg-blue-50 text-[9px] font-bold text-blue-700">{work?.wbsCode ? `${work.wbsCode} - ` : ''}{item.workBoqItemName || work?.name}</span>}
                                                                                         {item.materialBudgetItemName && <span className="px-1.5 py-0.5 rounded border border-emerald-100 bg-emerald-50 text-[9px] font-bold text-emerald-700">{item.materialBudgetItemName}</span>}
-                                                                                        {Number(item.overBudgetQtySnapshot || 0) > 0 && <span className="px-1.5 py-0.5 rounded border border-orange-100 bg-orange-50 text-[9px] font-bold text-orange-700">Vượt {Number(item.overBudgetQtySnapshot || 0).toLocaleString('vi-VN')} {item.unit}</span>}
+                                                                                        {Number(item.overBudgetQtySnapshot || 0) > 0 && <span className="px-1.5 py-0.5 rounded border border-orange-100 bg-orange-50 text-[9px] font-bold text-orange-700">Vượt {Number(item.overBudgetQtySnapshot || 0).toLocaleString('vi-VN')} {stockUnit || item.unit}</span>}
                                                                                     </div>
                                                                                     {item.overBudgetReason && <div className="text-[10px] text-orange-600 font-semibold mt-1.5 bg-orange-50 border border-orange-100 p-1.5 rounded">Lý do mua vượt: {item.overBudgetReason}</div>}
 
@@ -2649,6 +2754,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         const previewLine = pSourceMode === 'proactive_stock' ? normalizedLine : buildPoBudgetSnapshot(normalizedLine);
                                         const overBudgetQty = Number(previewLine.overBudgetQtySnapshot || 0);
                                         const rowWork = item.workBoqItemId ? workBoqMap.get(item.workBoqItemId) : undefined;
+                                        const inventory = inventoryItems.find(inv => inv.id === previewLine.itemId);
+                                        const purchaseUnit = getPoLinePurchaseUnit(previewLine, inventory);
+                                        const stockUnit = getPoLineStockUnit(previewLine, inventory);
+                                        const stockQtyPreview = poLinePurchaseToStockQty(previewLine, Number(previewLine.qty || 0), inventory);
+                                        const hasUnitConversion = hasPurchaseUnitConversion({
+                                            unit: stockUnit,
+                                            purchaseUnit,
+                                            purchaseConversionFactor: previewLine.purchaseConversionFactor ?? inventory?.purchaseConversionFactor ?? 1,
+                                        });
                                         return (
                                             <div key={i} className="grid grid-cols-12 gap-2 items-start rounded-xl border border-slate-100 bg-slate-50/60 p-2">
                                                 {pSourceMode !== 'proactive_stock' && (
@@ -2686,7 +2800,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                     className="col-span-12 md:col-span-4"
                                                 />
                                                 <div className="col-span-4 md:col-span-1 px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-500 font-bold truncate">
-                                                    {item.unit || 'ĐVT'}
+                                                    {purchaseUnit || item.unit || 'ĐVT'}
                                                 </div>
                                                 <input
                                                     type="number"
@@ -2733,13 +2847,18 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                 >
                                                     <X size={14} />
                                                 </button>
-                                                {(item.isManualItem || item.requestCode || item.materialBudgetItemName || item.workBoqItemName || rowWork?.name || overBudgetQty > 0 || (item.specs && Object.keys(item.specs).length > 0)) && (
+                                                {(item.isManualItem || item.requestCode || item.materialBudgetItemName || item.workBoqItemName || rowWork?.name || overBudgetQty > 0 || hasUnitConversion || (item.specs && Object.keys(item.specs).length > 0)) && (
                                                     <div className="col-span-12 flex flex-wrap gap-1">
                                                         {item.isManualItem && <span className="px-1.5 py-0.5 rounded border border-rose-100 bg-rose-50 text-[9px] font-bold text-rose-700">Cần cấp mã vật tư trước</span>}
                                                         {item.requestCode && <span className="px-1.5 py-0.5 rounded border border-amber-100 bg-amber-50 text-[9px] font-bold text-amber-700">YC {item.requestCode}</span>}
                                                         {(item.workBoqItemName || rowWork?.name) && <span className="px-1.5 py-0.5 rounded border border-blue-100 bg-blue-50 text-[9px] font-bold text-blue-700">{rowWork?.wbsCode ? `${rowWork.wbsCode} - ` : ''}{item.workBoqItemName || rowWork?.name}</span>}
                                                         {item.materialBudgetItemName && <span className="px-1.5 py-0.5 rounded border border-emerald-100 bg-emerald-50 text-[9px] font-bold text-emerald-700">{item.materialBudgetItemName}</span>}
-                                                        {overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded border border-orange-100 bg-orange-50 text-[9px] font-bold text-orange-700">Vượt {overBudgetQty.toLocaleString('vi-VN')} {previewLine.unit}</span>}
+                                                        {overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded border border-orange-100 bg-orange-50 text-[9px] font-bold text-orange-700">Vượt {overBudgetQty.toLocaleString('vi-VN')} {stockUnit || previewLine.unit}</span>}
+                                                        {hasUnitConversion && (
+                                                            <span className="px-1.5 py-0.5 rounded border border-cyan-100 bg-cyan-50 text-[9px] font-bold text-cyan-700">
+                                                                Nhập kho {fmtQty(stockQtyPreview)} {stockUnit} (1 {purchaseUnit} = {fmtQty(Number(previewLine.purchaseConversionFactor || inventory?.purchaseConversionFactor || 1))} {stockUnit})
+                                                            </span>
+                                                        )}
                                                         {formatSpecsSummary(item).map((badge, bIdx) => (
                                                             <span key={bIdx} className="px-1.5 py-0.5 rounded border border-violet-100 bg-violet-50 text-[9px] font-bold text-violet-700">
                                                                 {badge}

@@ -253,6 +253,7 @@ const Inventory: React.FC = () => {
         'Danh mục *': sampleCategory,
         'ĐVT Chính *': sampleUnit,
         'Đơn vị phụ (Đơn vị mua hàng)': samplePurchaseUnit,
+        'Hệ số quy đổi': samplePurchaseUnit ? 100 : 1,
         'Giá nhập': 15000,
         'Giá xuất': 16500,
         'Tồn tối thiểu': 10,
@@ -263,7 +264,7 @@ const Inventory: React.FC = () => {
       }]);
       createSheet['!cols'] = [
         { wch: 18 }, { wch: 32 }, { wch: 24 }, { wch: 18 }, { wch: 30 }, { wch: 16 },
-        { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 24 }, { wch: 28 }, { wch: 20 },
+        { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 24 }, { wch: 28 }, { wch: 20 },
       ];
       XLSX.utils.book_append_sheet(workbook, createSheet, 'Nhap_moi');
 
@@ -273,6 +274,7 @@ const Inventory: React.FC = () => {
         'Danh mục': '',
         'ĐVT Chính': '',
         'Đơn vị phụ (Đơn vị mua hàng)': '',
+        'Hệ số quy đổi': '',
         'Giá nhập': '',
         'Giá xuất': '',
         'Tồn tối thiểu': '',
@@ -281,7 +283,7 @@ const Inventory: React.FC = () => {
       }]);
       updateSheet['!cols'] = [
         { wch: 18 }, { wch: 32 }, { wch: 24 }, { wch: 18 }, { wch: 30 },
-        { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 24 },
+        { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 24 },
       ];
       XLSX.utils.book_append_sheet(workbook, updateSheet, 'Cap_nhat');
 
@@ -291,6 +293,7 @@ const Inventory: React.FC = () => {
         ['Cập nhật', 'Dùng sheet Cap_nhat. Mã SKU phải tồn tại; ô trống nghĩa là giữ nguyên giá trị hiện tại.'],
         ['Đối chiếu', 'Sau khi chọn file, hệ thống hiển thị từng lỗi và từng thay đổi cũ → mới để người dùng kiểm tra.'],
         ['Xoá giá trị', 'Dùng __CLEAR__ cho Đơn vị phụ hoặc Vị trí khi cập nhật.'],
+        ['Hệ số quy đổi', 'Chỉ cần nhập khi Đơn vị phụ khác ĐVT Chính. Ví dụ mua 1 tấn, nhập kho 100 cây thì Hệ số quy đổi = 100.'],
         ['Tồn ban đầu', 'Kho nhận hàng là bắt buộc nếu Số lượng ban đầu > 0. Tồn ban đầu sẽ tạo phiếu nhập kho chờ duyệt.'],
         ['Danh mục / Đơn vị / Kho', 'Phải nhập đúng giá trị có trong các sheet danh mục hợp lệ.'],
       ]);
@@ -336,6 +339,7 @@ const Inventory: React.FC = () => {
           'Danh mục': item.category,
           'ĐVT Chính': item.unit,
           'Đơn vị phụ': item.purchaseUnit || '',
+          'Hệ số quy đổi': item.purchaseUnit && item.purchaseUnit !== item.unit ? Number(item.purchaseConversionFactor || 1) : 1,
           'Giá nhập': item.priceIn || 0,
           'Giá xuất': item.priceOut || 0,
           'Tồn tối thiểu': item.minStock || 0,
@@ -386,6 +390,7 @@ const Inventory: React.FC = () => {
         name: '',
         category: '',
         unit: '',
+        purchaseConversionFactor: 1,
         priceIn: 0,
         priceOut: 0,
         minStock: 0,
@@ -427,6 +432,14 @@ const Inventory: React.FC = () => {
             const raw = getExcelCell(row, ['Đơn vị phụ (Đơn vị mua hàng)', 'Đơn vị phụ', 'Đơn vị mua hàng']);
             return raw && value !== undefined && !value ? `Đơn vị phụ "${raw}" không tồn tại.` : undefined;
           },
+        },
+        {
+          key: 'purchaseConversionFactor',
+          label: 'Hệ số quy đổi',
+          aliases: ['Hệ số quy đổi', 'He so quy doi', '1 đơn vị mua =', 'Hệ số ĐV mua -> ĐV kho'],
+          normalize: value => value === undefined ? undefined : parseExcelNumber(value),
+          validate: value => value === undefined || Number(value) > 0 ? undefined : 'Hệ số quy đổi phải lớn hơn 0.',
+          format: formatNumber,
         },
         {
           key: 'priceIn',
@@ -553,6 +566,9 @@ const Inventory: React.FC = () => {
         const normalizedItem: InventoryItem = {
           ...itemData,
           purchaseUnit: itemData.purchaseUnit && itemData.purchaseUnit !== itemData.unit ? itemData.purchaseUnit : undefined,
+          purchaseConversionFactor: itemData.purchaseUnit && itemData.purchaseUnit !== itemData.unit
+            ? Math.max(Number(itemData.purchaseConversionFactor || 1), 0.000001)
+            : 1,
           defaultLeadTimeDays: Math.max(0, Math.min(365, Number(itemData.defaultLeadTimeDays ?? 7))),
           location: itemData.location || undefined,
           stockByWarehouse: itemData.stockByWarehouse || {},

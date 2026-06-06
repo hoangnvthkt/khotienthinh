@@ -5,6 +5,12 @@ import { purchaseOrderSupplierReturnService } from '../../lib/purchaseOrderSuppl
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { parseQuantityInput, sanitizeQuantityInput } from '../../lib/quantityInput';
 import { useToast } from '../../context/ToastContext';
+import {
+  getPoLinePurchaseUnit,
+  getPoLineStockUnit,
+  poLinePurchaseToStockQty,
+  poLineStockToPurchaseQty,
+} from '../../lib/materialUnitConversion';
 
 interface PurchaseOrderSupplierReturnDialogProps {
   purchaseOrder: PurchaseOrder | null;
@@ -73,11 +79,16 @@ const PurchaseOrderSupplierReturnDialog: React.FC<PurchaseOrderSupplierReturnDia
   const selectedWarehouse = warehouses.find(warehouse => warehouse.id === sourceWarehouseId);
   const drafts = lines.map(line => {
     const quantity = parseQuantityInput(quantities[line.lineId]);
-    const onHand = Number(inventoryItems.find(item => item.id === line.itemId)?.stockByWarehouse?.[sourceWarehouseId] || 0);
-    return { ...line, quantity, onHand };
+    const inventoryItem = inventoryItems.find(item => item.id === line.itemId);
+    const onHand = Number(inventoryItem?.stockByWarehouse?.[sourceWarehouseId] || 0);
+    const stockQuantity = poLinePurchaseToStockQty(line, quantity, inventoryItem);
+    const maxByStock = poLineStockToPurchaseQty(line, onHand, inventoryItem);
+    const purchaseUnit = getPoLinePurchaseUnit(line, inventoryItem);
+    const stockUnit = getPoLineStockUnit(line, inventoryItem);
+    return { ...line, quantity, stockQuantity, maxByStock, onHand, inventoryItem, purchaseUnit, stockUnit };
   });
   const invalidLine = drafts.find(line =>
-    line.quantity < 0 || line.quantity > line.returnableQty || line.quantity > line.onHand
+    line.quantity < 0 || line.quantity > line.returnableQty || line.stockQuantity > line.onHand
   );
   const selectedLines = drafts
     .filter(line => line.quantity > 0)
@@ -157,16 +168,16 @@ const PurchaseOrderSupplierReturnDialog: React.FC<PurchaseOrderSupplierReturnDia
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {drafts.map(line => {
-                  const invalid = line.quantity < 0 || line.quantity > line.returnableQty || line.quantity > line.onHand;
+                  const invalid = line.quantity < 0 || line.quantity > line.returnableQty || line.stockQuantity > line.onHand;
                   return (
                     <tr key={line.lineId}>
                       <td className="px-4 py-3">
                         <div className="font-black text-slate-800">{line.name}</div>
-                        <div className="text-[10px] font-bold text-slate-400">{line.sku} · {line.unit}</div>
+                        <div className="text-[10px] font-bold text-slate-400">{line.sku} · {line.purchaseUnit || line.unit}</div>
                       </td>
-                      <td className="px-3 py-3 text-right font-bold">{line.receivedQty.toLocaleString('vi-VN')}</td>
-                      <td className="px-3 py-3 text-right font-bold text-rose-600">{line.returnedQty.toLocaleString('vi-VN')}</td>
-                      <td className="px-3 py-3 text-right font-bold text-blue-600">{line.onHand.toLocaleString('vi-VN')}</td>
+                      <td className="px-3 py-3 text-right font-bold">{line.receivedQty.toLocaleString('vi-VN')} {line.purchaseUnit || line.unit}</td>
+                      <td className="px-3 py-3 text-right font-bold text-rose-600">{line.returnedQty.toLocaleString('vi-VN')} {line.purchaseUnit || line.unit}</td>
+                      <td className="px-3 py-3 text-right font-bold text-blue-600">{line.onHand.toLocaleString('vi-VN')} {line.stockUnit || line.unit}</td>
                       <td className="px-4 py-3">
                         <input
                           type="text"
@@ -175,12 +186,15 @@ const PurchaseOrderSupplierReturnDialog: React.FC<PurchaseOrderSupplierReturnDia
                           onChange={event => setQuantities(previous => ({
                             ...previous,
                             [line.lineId]: sanitizeQuantityInput(event.target.value, {
-                              max: Math.min(line.returnableQty, line.onHand),
+                              max: Math.min(line.returnableQty, line.maxByStock),
                               previousValue: previous[line.lineId] || '0',
                             }),
                           }))}
                           className={`w-full rounded-lg border px-3 py-2 text-right font-black outline-none ${invalid ? 'border-red-300 bg-red-50 text-red-600' : 'border-slate-200 focus:ring-2 focus:ring-rose-200'}`}
                         />
+                        <div className="mt-1 text-right text-[10px] font-bold text-slate-400">
+                          Trừ kho: {line.stockQuantity.toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {line.stockUnit || line.unit}
+                        </div>
                       </td>
                     </tr>
                   );

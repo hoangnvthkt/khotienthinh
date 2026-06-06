@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import { CheckCircle2, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -111,12 +111,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setToasts(prev => prev.filter(t => t.id !== id));
     }, []);
 
-    const toast = {
+    const toast = useMemo(() => ({
         success: (title: string, message?: string) => addToast('success', title, message),
         error: (title: string, message?: string) => addToast('error', title, message),
         warning: (title: string, message?: string) => addToast('warning', title, message),
         info: (title: string, message?: string) => addToast('info', title, message),
-    };
+    }), [addToast]);
 
     return (
         <ToastContext.Provider value={{ toasts, toast, removeToast }}>
