@@ -14,6 +14,7 @@ import {
     Edit2, Trash2, Ban, Save, Upload, Paperclip, Table2, FileSpreadsheet, Eye, Download, Undo2,
     LayoutGrid, List, Printer, Shield, UserPlus
 } from 'lucide-react';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import KanbanBoard from '../../components/KanbanBoard';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
@@ -594,8 +595,7 @@ const WorkflowInstances: React.FC = () => {
         }
 
         if (searchTerm) {
-            const term = searchTerm.toLowerCase();
-            list = list.filter(i => i.code.toLowerCase().includes(term) || i.title.toLowerCase().includes(term));
+            list = list.filter(i => matchesSearchQueryMultiple([i.code, i.title], searchTerm));
         }
 
         return list;

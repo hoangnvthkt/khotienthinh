@@ -29,7 +29,7 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
   onClose,
   onReceived,
 }) => {
-  const { user, warehouses, updateRequestStatus, loadModuleData } = useApp();
+  const { user, warehouses, updateRequestStatus, refreshWmsRecords } = useApp();
   const toast = useToast();
   const [receiveLines, setReceiveLines] = useState<ReceiveLineDraft[]>([]);
   const [saving, setSaving] = useState(false);
@@ -111,7 +111,11 @@ const ReceiveFulfillmentBatchModal: React.FC<ReceiveFulfillmentBatchModalProps> 
         request.overrideReason,
         'FULFILLMENT_RECEIVED',
       );
-      await loadModuleData('wms', true);
+      await refreshWmsRecords({
+        itemIds: savedBatch.lines.map(line => line.itemId),
+        transactionIds: [savedBatch.transactionId],
+        requestIds: [request.id],
+      });
       toast.success(
         receiveLines.some(line => {
           const batchLine = batch.lines.find(item => item.id === line.lineId);

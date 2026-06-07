@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { AssetMaintenance as MaintenanceType, MaintenanceAttachment, AssetStatus } from '../../types';
 import { loadXlsx } from '../../lib/loadXlsx';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 const TYPE_LABELS: Record<string, string> = { scheduled: 'Bảo trì định kỳ', repair: 'Sửa chữa', inspection: 'Kiểm tra', warranty: 'Bảo hành' };
 const STATUS_LABELS: Record<string, string> = { planned: 'Lên kế hoạch', in_progress: 'Đang thực hiện', completed: 'Hoàn thành' };
@@ -63,11 +64,9 @@ const AssetMaintenancePage: React.FC = () => {
             if (filterType !== 'all' && m.type !== filterType) return false;
             if (searchTerm) {
                 const asset = assets.find(a => a.id === m.assetId);
-                const q = searchTerm.toLowerCase();
-                if (!m.description.toLowerCase().includes(q) &&
-                    !(asset?.name || '').toLowerCase().includes(q) &&
-                    !(asset?.code || '').toLowerCase().includes(q) &&
-                    !(m.vendor || '').toLowerCase().includes(q)) return false;
+                if (!matchesSearchQueryMultiple([m.description, asset?.name, asset?.code, m.vendor], searchTerm)) {
+                    return false;
+                }
             }
             return true;
         });

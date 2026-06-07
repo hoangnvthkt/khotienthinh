@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { useRequest } from '../../context/RequestContext';
 import { useApp } from '../../context/AppContext';
 import { Role, WorkflowCustomField, CustomFieldType, RequestPrintTemplate } from '../../types';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import {
     Plus, FileText, Search, Trash2, Edit2, ToggleLeft, ToggleRight,
     ShieldAlert, X, ChevronDown, ChevronUp, GripVertical, Settings2,
@@ -73,8 +74,10 @@ const RequestCategories: React.FC = () => {
     }
 
     const filtered = categories.filter(c =>
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.description.toLowerCase().includes(searchTerm.toLowerCase())
+        !searchTerm.trim() || matchesSearchQueryMultiple([
+            c.name,
+            c.description
+        ], searchTerm)
     );
 
     const resetForm = () => {

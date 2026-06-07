@@ -34,6 +34,7 @@ const TAB_CONFIG: { key: DocTab; label: string; icon: React.ReactNode; color: st
 import { usePermission } from '../../hooks/usePermission';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 const HrmDocuments: React.FC = () => {
   useModuleData('hrm');
@@ -93,19 +94,31 @@ const HrmDocuments: React.FC = () => {
   const loadDocs = useCallback(async () => {
     setIsSearching(true);
     try {
-      let docs: HrmDocument[];
-      if (searchQuery.trim()) {
-        docs = await hrmDocumentService.search(searchQuery.trim(), activeTab);
-      } else {
-        docs = await hrmDocumentService.list(activeTab, filterCategory !== 'all' ? filterCategory : undefined);
-      }
+      const docs = await hrmDocumentService.list(activeTab, filterCategory !== 'all' ? filterCategory : undefined);
       setDocuments(docs);
     } finally {
       setIsSearching(false);
     }
-  }, [activeTab, searchQuery, filterCategory]);
+  }, [activeTab, filterCategory]);
 
   useEffect(() => { loadDocs(); }, [loadDocs]);
+
+  const filteredDocuments = useMemo(() => {
+    if (!searchQuery.trim()) return documents;
+    return documents.filter(doc => {
+      const emp = doc.employeeId ? employeeMap.get(doc.employeeId) : null;
+      return matchesSearchQueryMultiple([
+        doc.title,
+        doc.fileName,
+        doc.docNumber,
+        doc.sender,
+        doc.receiver,
+        doc.description,
+        emp?.fullName,
+        ...(doc.tags || [])
+      ], searchQuery);
+    });
+  }, [documents, searchQuery, employeeMap]);
 
   // Debounce search
   const handleSearchChange = (val: string) => {
@@ -290,7 +303,7 @@ const HrmDocuments: React.FC = () => {
         </div>
         {searchQuery && (
           <div className="mt-2 text-[10px] font-bold text-slate-400">
-            {isSearching ? '⏳ Đang tìm...' : `📋 Tìm thấy ${documents.length} kết quả cho "${searchQuery}"`}
+            {isSearching ? '⏳ Đang tìm...' : `📋 Tìm thấy ${filteredDocuments.length} kết quả cho "${searchQuery}"`}
           </div>
         )}
       </div>
@@ -349,7 +362,7 @@ const HrmDocuments: React.FC = () => {
         } shadow-sm overflow-hidden`}
         onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
       >
-        {documents.length === 0 ? (
+        {filteredDocuments.length === 0 ? (
           <div className="p-16 text-center cursor-pointer" onClick={() => fileInputRef.current?.click()}>
             <Upload size={48} className={`mx-auto mb-4 ${dragOver ? 'text-indigo-400 animate-bounce' : 'text-slate-200'}`} />
             <p className="text-sm font-bold text-slate-400">
@@ -360,7 +373,7 @@ const HrmDocuments: React.FC = () => {
           <div>
             <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
               <span className="text-xs font-black text-slate-700 dark:text-slate-200 flex items-center gap-2">
-                {currentTabConfig.icon} {currentTabConfig.label} ({documents.length})
+                {currentTabConfig.icon} {currentTabConfig.label} ({filteredDocuments.length})
               </span>
               <button onClick={() => fileInputRef.current?.click()}
                 className="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1">
@@ -369,7 +382,7 @@ const HrmDocuments: React.FC = () => {
             </div>
 
             <div className="divide-y divide-slate-50 dark:divide-slate-700/50">
-              {documents.map(doc => {
+              {filteredDocuments.map(doc => {
                 const fi = getFileIcon(doc.fileType);
                 const catConfig = categories.find(c => c.key === doc.docCategory);
                 const isImg = hrmDocumentService.isImage(doc.fileType);

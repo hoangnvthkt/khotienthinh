@@ -12,6 +12,7 @@ import {
   LeaveType, LeaveRequest, LeaveRequestStatus, LeaveApprover,
   LEAVE_TYPE_LABELS, Role
 } from '../../types';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 const STATUS_LABELS: Record<LeaveRequestStatus, string> = {
   pending: 'Chờ duyệt', approved: 'Đã duyệt', rejected: 'Từ chối', cancelled: 'Đã huỷ',
@@ -132,10 +133,9 @@ const LeaveManagement: React.FC = () => {
     let list = [...leaveRequests].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     if (filterStatus) list = list.filter(r => r.status === filterStatus);
     if (searchText) {
-      const q = searchText.toLowerCase();
       list = list.filter(r => {
         const emp = employeeMap.get(r.employeeId);
-        return emp?.fullName.toLowerCase().includes(q) || emp?.employeeCode.toLowerCase().includes(q) || (r.code || '').toLowerCase().includes(q);
+        return matchesSearchQueryMultiple([emp?.fullName, emp?.employeeCode, r.code], searchText);
       });
     }
     return list;

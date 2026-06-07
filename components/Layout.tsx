@@ -10,6 +10,7 @@ import PWAInstallPrompt from './PWAInstallPrompt';
 import OfflineIndicator from './OfflineIndicator';
 import EasterEggs from './EasterEggs';
 import ChibiBot from './ChibiBot';
+import LoadingSpinner from './LoadingSpinner';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
 import { useOfflineSync } from '../hooks/useOfflineSync';
@@ -137,7 +138,7 @@ const Layout: React.FC = () => {
   }
 
   return (
-    <div className={`flex h-screen overflow-hidden relative transparent`}>
+    <div className={`flex h-[100dvh] min-h-[100dvh] w-full overflow-hidden relative transparent`}>
       <CommandPalette />
       {/* Session Warning Modal */}
       {sessionWarning && (
@@ -173,9 +174,9 @@ const Layout: React.FC = () => {
 
       <Sidebar isOpen={sidebarOpen} toggle={() => setSidebarOpen(!sidebarOpen)} collapsed={sidebarCollapsed} setCollapsed={(v) => { setSidebarCollapsed(v); localStorage.setItem('sidebar_collapsed', String(v)); }} />
 
-      <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
+      <div className="flex-1 flex flex-col h-[100dvh] min-h-[100dvh] overflow-hidden relative">
         {/* Mobile Header */}
-        <header className="lg:hidden h-16 flex items-center justify-between px-4 shrink-0 z-20 glass-panel border-b-0 m-2 rounded-2xl">
+        <header className="lg:hidden h-16 flex items-center justify-between px-4 shrink-0 z-[50] glass-panel border-b-0 m-2 mt-[calc(0.5rem+env(safe-area-inset-top,0px))] rounded-2xl">
           <div className="flex items-center gap-3">
             {appSettings.logo ? (
               <img src={appSettings.logo} alt="Logo" className="w-8 h-8 object-contain rounded" />
@@ -325,7 +326,9 @@ const Layout: React.FC = () => {
             </div>
           ) : (
             <div className="max-w-[1600px] mx-auto w-full">
-              <Outlet />
+              <React.Suspense fallback={<LoadingSpinner />}>
+                <Outlet />
+              </React.Suspense>
             </div>
           )}
         </main>

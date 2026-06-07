@@ -8,6 +8,7 @@ import {
     Plus, GitBranch, Settings2, Trash2, ToggleLeft, ToggleRight,
     Search, Layers, Clock, User, ShieldAlert, ChevronRight, Edit2, Shield, Eye, X
 } from 'lucide-react';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 const WorkflowTemplates: React.FC = () => {
     const navigate = useNavigate();
@@ -79,8 +80,7 @@ const WorkflowTemplates: React.FC = () => {
     const visibleTemplates = canViewAllTemplates ? templates : templates.filter(t => t.managers?.includes(user.id));
 
     const filtered = visibleTemplates.filter(t =>
-        t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        t.description.toLowerCase().includes(searchTerm.toLowerCase())
+        matchesSearchQueryMultiple([t.name, t.description], searchTerm)
     );
 
     const handleCreate = async () => {

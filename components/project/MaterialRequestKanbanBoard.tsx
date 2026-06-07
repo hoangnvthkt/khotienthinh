@@ -22,6 +22,7 @@ import {
   MATERIAL_REQUEST_KANBAN_COLUMNS,
   resolveRequestKanbanStage,
 } from '../../lib/materialRequestService';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 interface MaterialRequestKanbanBoardProps {
   requests: MaterialRequest[];
@@ -239,7 +240,6 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
   }, [workflowNodes, workflowRuntimeNodes, workflowSubjectsByRequestId]);
 
   const visibleRequests = useMemo(() => {
-    const needle = normalizeText(searchTerm.trim());
     return requests.filter(request => {
       const subject = workflowSubjectsByRequestId[request.id];
       const assigneeIds = subject?.currentAssigneeUserIds?.length
@@ -249,11 +249,17 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
           : request.submittedToUserId
             ? [request.submittedToUserId]
             : [];
-      if (needle) {
+      if (searchTerm.trim()) {
         const requester = userById.get(request.requesterId);
         const handlerNames = assigneeIds.map(id => userById.get(id)?.name || id).join(' ');
-        const text = normalizeText(`${request.code || ''} ${request.id || ''} ${requester?.name || ''} ${request.submittedToName || ''} ${handlerNames}`);
-        if (!text.includes(needle)) return false;
+        const matched = matchesSearchQueryMultiple([
+          request.code,
+          request.id,
+          requester?.name,
+          request.submittedToName,
+          handlerNames
+        ], searchTerm);
+        if (!matched) return false;
       }
       if (boardFilter === 'mine') {
         return Boolean(currentUserId && (assigneeIds.includes(currentUserId) || request.requesterId === currentUserId));

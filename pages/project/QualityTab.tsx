@@ -23,6 +23,7 @@ import {
   ProjectStaff,
   ProjectSubmissionTarget
 } from '../../types';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
@@ -539,8 +540,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
   const filtered = checklists.filter(c => {
     if (statusFilter && c.status !== statusFilter) return false;
     if (search) {
-      const q = search.toLowerCase();
-      return (c.code?.toLowerCase().includes(q) || c.title?.toLowerCase().includes(q) || c.templateName?.toLowerCase().includes(q) || c.workLocation?.toLowerCase().includes(q));
+      return matchesSearchQueryMultiple([c.code, c.title, c.templateName, c.workLocation], search);
     }
     return true;
   });

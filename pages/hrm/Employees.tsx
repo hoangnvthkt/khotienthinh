@@ -14,6 +14,7 @@ import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 const Employees: React.FC = () => {
     const { employees, users, addEmployee, updateEmployee, removeEmployee, addHrmItem, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user } = useApp();
@@ -38,9 +39,11 @@ const Employees: React.FC = () => {
 
     const filteredEmployees = useMemo(() => {
         return employees.filter(emp =>
-            emp.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            emp.employeeCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (emp.phone && emp.phone.includes(searchTerm))
+            !searchTerm.trim() || matchesSearchQueryMultiple([
+                emp.fullName,
+                emp.employeeCode,
+                emp.phone
+            ], searchTerm)
         );
     }, [employees, searchTerm]);
 

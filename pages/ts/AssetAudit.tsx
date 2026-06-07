@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { AssetStatus, ASSET_STATUS_LABELS } from '../../types';
 import { loadXlsx } from '../../lib/loadXlsx';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 type AssetCondition = 'good' | 'damaged' | 'lost' | 'wrong_location';
 const CONDITION_LABELS: Record<AssetCondition, string> = {
@@ -68,8 +69,7 @@ const AssetAudit: React.FC = () => {
 
     const filteredAssets = useMemo(() => {
         return assets.filter(a => {
-            const matchesSearch = a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                a.code.toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesSearch = matchesSearchQueryMultiple([a.name, a.code], searchTerm);
             const matchesCategory = filterCategory === 'ALL' || a.categoryId === filterCategory;
             return matchesSearch && matchesCategory;
         });

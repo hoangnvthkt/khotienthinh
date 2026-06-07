@@ -12,6 +12,7 @@ import {
   LaborContract, LaborContractType, LaborContractStatus,
   LABOR_CONTRACT_LABELS
 } from '../../types';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 const STATUS_LABELS: Record<LaborContractStatus, string> = {
   active: 'Hiệu lực', expired: 'Hết hạn', terminated: 'Chấm dứt', renewed: 'Đã gia hạn',
@@ -68,10 +69,9 @@ const LaborContractPage: React.FC = () => {
     let list = [...laborContracts].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     if (filterStatus) list = list.filter(c => c.status === filterStatus);
     if (searchText) {
-      const q = searchText.toLowerCase();
       list = list.filter(c => {
         const emp = employeeMap.get(c.employeeId);
-        return emp?.fullName.toLowerCase().includes(q) || emp?.employeeCode.toLowerCase().includes(q) || c.contractNumber.toLowerCase().includes(q);
+        return matchesSearchQueryMultiple([emp?.fullName, emp?.employeeCode, c.contractNumber], searchText);
       });
     }
     return list;

@@ -10,7 +10,6 @@ import {
     Upload, Download, Table2, CheckCircle2, Loader2, ChevronDown, ChevronRight, Layers, LayoutGrid, ArrowLeftRight, RefreshCcw
 } from 'lucide-react';
 import { Asset, AssetStatus, ASSET_STATUS_LABELS, ASSET_CATEGORY_LABELS, AssetCategoryType, AssetLocationStock, AssetTransfer } from '../../types';
-import ScannerModal from '../../components/ScannerModal';
 import { usePermission } from '../../hooks/usePermission';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { loadXlsx } from '../../lib/loadXlsx';
@@ -20,6 +19,9 @@ import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import SearchableSelect from '../../components/common/SearchableSelect';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+
+const ScannerModal = React.lazy(() => import('../../components/ScannerModal'));
 
 const AssetCatalog: React.FC = () => {
     const navigate = useNavigate();
@@ -508,9 +510,7 @@ const AssetCatalog: React.FC = () => {
         let list = assets;
         if (searchTerm) {
             list = list.filter(a => 
-                a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                a.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (a.serialNumber || '').toLowerCase().includes(searchTerm.toLowerCase())
+                matchesSearchQueryMultiple([a.name, a.code, a.serialNumber], searchTerm)
             );
         } else {
              list = list.filter(a => !a.parentId);
@@ -735,7 +735,11 @@ const AssetCatalog: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            <ScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScan={handleScanResult} />
+            {isScannerOpen && (
+                <React.Suspense fallback={null}>
+                    <ScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScan={handleScanResult} />
+                </React.Suspense>
+            )}
             {importPreview && (
                 <ExcelImportReviewModal
                     title={importPreview.mode === 'create' ? 'Preview nhập mới tài sản' : 'Preview cập nhật tài sản'}

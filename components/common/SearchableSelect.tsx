@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 interface SearchableSelectProps<T> {
   value?: string | null;
@@ -58,12 +59,11 @@ export default function SearchableSelect<T>({
   }, [open]);
 
   const filtered = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return options.slice(0, 40);
+    if (!query.trim()) return options.slice(0, 40);
     return options
       .filter(option => {
-        const haystack = (getOptionSearchText?.(option) || getOptionLabel(option)).toLowerCase();
-        return haystack.includes(normalized);
+        const haystack = getOptionSearchText?.(option) || getOptionLabel(option);
+        return matchesSearchQueryMultiple([haystack], query);
       })
       .slice(0, 40);
   }, [getOptionLabel, getOptionSearchText, options, query]);

@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
@@ -10,7 +10,6 @@ import {
   AlertTriangle, Flame, ShieldAlert, PackageSearch,
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Inbox, Minus, Scale, Banknote, Lock, Loader2
 } from 'lucide-react';
-import ScannerModal from '../components/ScannerModal';
 import ItemSelectionModal from '../components/ItemSelectionModal';
 import WarningModal from '../components/WarningModal';
 import ConfirmTransferModal from '../components/ConfirmTransferModal';
@@ -26,6 +25,8 @@ import { canApproveWmsTransaction, canReceiveWmsTransaction, isFulfillmentBatchT
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { clampQuantity, parseQuantityInput } from '../lib/quantityInput';
 
+const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
+
 const Operations: React.FC = () => {
   const location = useLocation();
   const { items, warehouses, suppliers, users, user, transactions, addTransaction, updateTransactionStatus, clearTransactionHistory } = useApp();
@@ -33,6 +34,7 @@ const Operations: React.FC = () => {
   const toast = useToast();
   const { getStockSummary, getConflictingTxs } = useReservedStock();
   const [activeTab, setActiveTab] = useState<string>('IMPORT');
+  const openedStateTransactionRef = useRef<string | null>(null);
 
 
 
@@ -41,6 +43,16 @@ const Operations: React.FC = () => {
       setActiveTab(location.state.tab);
     }
   }, [location.state]);
+
+  useEffect(() => {
+    const transactionId = location.state?.transactionId;
+    if (!transactionId || openedStateTransactionRef.current === transactionId) return;
+    const tx = transactions.find(item => item.id === transactionId);
+    if (!tx) return;
+    openedStateTransactionRef.current = transactionId;
+    setActiveTab(location.state?.tab || 'PENDING');
+    setViewingHistoryTx(tx);
+  }, [location.state, transactions]);
   const [isScannerOpen, setScannerOpen] = useState(false);
   const [isItemSelectOpen, setItemSelectOpen] = useState(false);
 
@@ -343,10 +355,14 @@ const Operations: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <ScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScan={(sku) => {
-        const item = items.find(i => i.sku === sku);
-        if (item) handleSelectItem(item);
-      }} />
+      {isScannerOpen && (
+        <React.Suspense fallback={null}>
+          <ScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScan={(sku) => {
+            const item = items.find(i => i.sku === sku);
+            if (item) handleSelectItem(item);
+          }} />
+        </React.Suspense>
+      )}
 
       <ItemSelectionModal
         isOpen={isItemSelectOpen}

@@ -104,6 +104,7 @@ const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }
     { to: '/ep', icon: IdCard, label: 'Tra cứu nhân viên' },
   ],
   HD: [
+    { to: '/hd/overview', icon: FileSignature, label: 'Tổng quan HĐ' },
     { to: '/hd/supplier', icon: FileSignature, label: 'HĐ Nhà cung cấp' },
     { to: '/hd/customer', icon: Users, label: 'HĐ Khách hàng' },
     { to: '/hd/subcontractor', icon: FileSignature, label: 'HĐ Thầu phụ' },

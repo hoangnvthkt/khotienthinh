@@ -1971,6 +1971,93 @@ export interface Transaction {
   pendingItems?: InventoryItem[]; // Full metadata for new items created during bulk import
 }
 
+export type InventoryLedgerTransactionType =
+  | 'purchase_receipt'
+  | 'transfer_receipt'
+  | 'project_return_receipt'
+  | 'project_issue'
+  | 'transfer_issue'
+  | 'loss_issue'
+  | 'adjustment_in'
+  | 'adjustment_out'
+  | 'reversal';
+
+export type InventoryLedgerMovementDirection = 'in' | 'out';
+
+export interface InventoryTransactionLedgerHeader {
+  id: string;
+  code: string;
+  transactionType: InventoryLedgerTransactionType;
+  status: 'posted' | 'reversed';
+  transactionDate: string;
+  sourceType: string;
+  sourceId: string;
+  sourceCode: string;
+  relatedRequestId?: string | null;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  description?: string | null;
+  metadata?: Record<string, any>;
+  createdBy?: string | null;
+  approvedBy?: string | null;
+  postedAt?: string | null;
+  reversedAt?: string | null;
+  reversalOfInventoryTransactionId?: string | null;
+  createdAt?: string;
+}
+
+export interface InventoryLedgerEntry {
+  id: string;
+  inventoryTransactionId: string;
+  entryNo: number;
+  documentCode: string;
+  transactionDate: string;
+  transactionType: InventoryLedgerTransactionType;
+  movementDirection: InventoryLedgerMovementDirection;
+  materialId: string;
+  warehouseId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  lotNo?: string | null;
+  batchNo?: string | null;
+  serialNo?: string | null;
+  sourceType: string;
+  sourceId: string;
+  sourceCode: string;
+  sourceLineId?: string | null;
+  relatedRequestId?: string | null;
+  quantityIn: number;
+  quantityOut: number;
+  quantityDelta: number;
+  unit?: string | null;
+  unitPrice: number;
+  amount: number;
+  balanceAfterQty: number;
+  balanceAfterValue: number;
+  description?: string | null;
+  metadata?: Record<string, any>;
+  createdBy?: string | null;
+  approvedBy?: string | null;
+  createdAt?: string;
+}
+
+export interface InventoryBalance {
+  id: string;
+  materialId: string;
+  warehouseId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  lotNo?: string | null;
+  batchNo?: string | null;
+  serialNo?: string | null;
+  onHandQty: number;
+  totalValue: number;
+  averageUnitCost: number;
+  lastLedgerEntryId?: string | null;
+  lastTransactionDate?: string | null;
+  updatedAt?: string;
+}
+
 export interface AuditLog {
   action: string;
   userId: string;
@@ -2516,6 +2603,8 @@ export interface MaterialRequestWorkflowBoardCard {
   submittedToName?: string | null;
   createdDate?: string | null;
   expectedDate?: string | null;
+  itemCount?: number;
+  itemPreview?: RequestItem[];
   subject?: Partial<ProjectWorkflowSubject> & {
     currentNodeLabel?: string | null;
     currentNodeType?: string | null;
@@ -2542,6 +2631,34 @@ export interface MaterialRequestWorkflowBoardCard {
     activeCount: number;
     totalCount: number;
   };
+}
+
+export type MaterialRequestBoardCard = MaterialRequestWorkflowBoardCard;
+
+export interface MaterialRequestBoardFilters {
+  filter?: ProjectWorkflowBoardFilter;
+  search?: string;
+  status?: string;
+  stage?: string;
+  mineOnly?: boolean;
+  overdueOnly?: boolean;
+  returnedOnly?: boolean;
+  watchingOnly?: boolean;
+}
+
+export interface MaterialRequestBoardPage {
+  cards: MaterialRequestBoardCard[];
+  cursor?: string | null;
+  nextCursor?: string | null;
+}
+
+export interface MaterialRequestDetailResult {
+  request: MaterialRequest;
+  workflowSubject?: ProjectWorkflowSubject | null;
+  runtimeContext?: ProjectWorkflowRuntimeContext | null;
+  assignments: WorkflowStepAssignment[];
+  fulfillmentBatches: MaterialRequestFulfillmentBatch[];
+  events: MaterialRequestEvent[];
 }
 
 export interface ProjectWorkflowTimelineEntry {
@@ -2594,6 +2711,53 @@ export interface ProjectWorkflowActionContextResult {
   canReassign: boolean;
   canRollback: boolean;
   rollbackDependencies?: ProjectWorkflowRollbackDependencyResult | null;
+}
+
+export interface InventoryLedgerStockReportRow {
+  id: string;
+  sku: string;
+  name: string;
+  unit?: string | null;
+  opening: number;
+  inImport: number;
+  inTransfer: number;
+  inAdjustment: number;
+  totalIn: number;
+  outExport: number;
+  outTransfer: number;
+  outLiquidation: number;
+  totalOut: number;
+  closing: number;
+  value: number;
+}
+
+export interface InventoryLedgerWarehouseReportRow {
+  key?: string;
+  warehouseId: string;
+  materialId: string;
+  warehouseName?: string | null;
+  materialName?: string | null;
+  sku?: string | null;
+  unit?: string | null;
+  inQty: number;
+  outQty: number;
+  balanceQty: number;
+  lastDate?: string | null;
+}
+
+export interface InventoryLedgerReportResult {
+  summary: {
+    opening: number;
+    totalIn: number;
+    totalOut: number;
+    closing: number;
+    totalValue: number;
+  };
+  stockRows: InventoryLedgerStockReportRow[];
+  warehouseRows: InventoryLedgerWarehouseReportRow[];
+  entriesPage: InventoryLedgerEntry[];
+  nextCursor?: string | null;
+  available: boolean;
 }
 
 export interface WorkflowDelegationRule {

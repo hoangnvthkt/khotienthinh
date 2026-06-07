@@ -8,7 +8,11 @@ import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
-import { SubcontractorContract, HdContractStatus, ContractAttachment } from '../../types';
+import { SubcontractorContract, HdContractStatus, ContractAttachment, Project, BusinessPartner } from '../../types';
+import { projectMasterService } from '../../lib/projectMasterService';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import SearchableSelect from '../../components/common/SearchableSelect';
+import { partnerService } from '../../lib/partnerService';
 
 const formatCurrency = (v: number, currency = 'VND') =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(v);
@@ -49,6 +53,8 @@ const SubcontractorContracts: React.FC = () => {
   const confirm = useConfirm();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [contracts, setContracts] = useState<SubcontractorContract[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [subcontractors, setSubcontractors] = useState<BusinessPartner[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -63,6 +69,8 @@ const SubcontractorContracts: React.FC = () => {
 
   const fetchContracts = async () => {
     setLoading(true);
+    projectMasterService.list().then(setProjects).catch(console.error);
+    partnerService.list({ classification: 'contractor' }).then(setSubcontractors).catch(console.error);
     if (!isSupabaseConfigured) { setContracts([]); setLoading(false); return; }
     const { data, error } = await supabase.from('subcontractor_contracts').select('*').order('created_at', { ascending: false });
     if (!error && data) {
@@ -86,6 +94,10 @@ const SubcontractorContracts: React.FC = () => {
 
   const handleSave = async () => {
     if (!form.code.trim() || !form.name.trim() || !form.subcontractorName.trim()) return;
+    if (!form.projectId) {
+      toast.warning('Thiếu thông tin', 'Vui lòng chọn dự án liên kết.');
+      return;
+    }
     setSaving(true);
     const payload = {
       id: editingId || crypto.randomUUID(),
@@ -188,9 +200,12 @@ const SubcontractorContracts: React.FC = () => {
   };
 
   const filtered = contracts.filter(c => {
-    const q = searchTerm.toLowerCase();
-    return (!q || c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q) || c.subcontractorName.toLowerCase().includes(q))
-      && (!filterStatus || c.status === filterStatus);
+    const matchesSearch = !searchTerm.trim() || matchesSearchQueryMultiple([
+      c.code,
+      c.name,
+      c.subcontractorName
+    ], searchTerm);
+    return matchesSearch && (!filterStatus || c.status === filterStatus);
   });
 
   return (
@@ -308,12 +323,36 @@ const SubcontractorContracts: React.FC = () => {
                   className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 dark:text-white outline-none"
                   placeholder="Mô tả ngắn..." />
               </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dự án *</label>
+                <SearchableSelect
+                  value={form.projectId || ''}
+                  options={projects}
+                  onChange={val => setForm({ ...form, projectId: val ? val.id : '', constructionSiteId: val?.constructionSiteId || '' })}
+                  getOptionValue={p => p.id}
+                  getOptionLabel={p => p.code ? `${p.code} - ${p.name}` : p.name}
+                  placeholder="Chọn dự án..."
+                  emptyLabel="Không tìm thấy dự án"
+                  className="w-full"
+                />
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Đơn vị thầu phụ *</label>
-                  <input value={form.subcontractorName} onChange={e => setForm({...form, subcontractorName: e.target.value})}
-                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 dark:text-white outline-none"
-                    placeholder="Công ty xây dựng XYZ" />
+                  <SearchableSelect
+                    value={subcontractors.find(s => s.name === form.subcontractorName)?.id || ''}
+                    options={subcontractors}
+                    onChange={val => setForm({
+                      ...form,
+                      subcontractorName: val ? val.name : '',
+                      subcontractorTaxCode: val ? (val.taxCode || '') : ''
+                    })}
+                    getOptionValue={s => s.id}
+                    getOptionLabel={s => s.code ? `${s.code} - ${s.name}` : s.name}
+                    placeholder="Chọn thầu phụ..."
+                    emptyLabel="Không tìm thấy thầu phụ"
+                    className="w-full"
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Mã số thuế TP</label>

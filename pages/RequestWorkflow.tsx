@@ -3,10 +3,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { MaterialRequest, MaterialRequestFulfillmentSummary, RequestStatus } from '../types';
 import { Plus, Search, FileText, ArrowRight, Truck, CheckCircle, Clock, AlertCircle, Inbox, Send as SendIcon, PackageSearch } from 'lucide-react';
-import RequestModal from '../components/RequestModal';
 import { useModuleData } from '../hooks/useModuleData';
 import { canApproveMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, canViewMaterialRequest } from '../lib/wmsPermissions';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
+import { matchesSearchQueryMultiple } from '../lib/searchUtils';
+
+const RequestModal = React.lazy(() => import('../components/RequestModal'));
 
 const RequestWorkflow: React.FC = () => {
   const { requests, warehouses, user, users } = useApp();
@@ -66,10 +68,14 @@ const RequestWorkflow: React.FC = () => {
 
         const effectiveStatus = getEffectiveStatus(req);
         const matchStatus = filterStatus === 'ALL' || effectiveStatus === filterStatus;
-        const matchSearch = req.code.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchSearch = !searchTerm.trim() || matchesSearchQueryMultiple([
+          req.code,
+          warehouses.find(w => w.id === req.siteWarehouseId)?.name || '',
+          warehouses.find(w => w.id === req.sourceWarehouseId)?.name || '',
+        ], searchTerm);
         return matchStatus && matchSearch;
      });
-  }, [requests, filterStatus, searchTerm, user, fulfillmentSummaries]);
+  }, [requests, filterStatus, searchTerm, user, warehouses, fulfillmentSummaries]);
 
   const handleOpenCreate = () => {
      setSelectedRequest(undefined);
@@ -94,7 +100,11 @@ const RequestWorkflow: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <RequestModal isOpen={isModalOpen} onClose={() => setModalOpen(false)} request={selectedRequest} />
+      {isModalOpen && (
+        <React.Suspense fallback={null}>
+          <RequestModal isOpen={isModalOpen} onClose={() => setModalOpen(false)} request={selectedRequest} />
+        </React.Suspense>
+      )}
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
          <div>

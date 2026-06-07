@@ -26,7 +26,6 @@ import {
     TransactionType,
 } from '../types';
 import ItemSelectionModal from './ItemSelectionModal';
-import ScannerModal from './ScannerModal';
 import ProjectSubmissionDialog from './project/ProjectSubmissionDialog';
 import ProjectWorkflowPanel from './project/ProjectWorkflowPanel';
 import ProjectWorkflowCommentsPanel from './project/ProjectWorkflowCommentsPanel';
@@ -43,6 +42,8 @@ import { getMaterialRequestWorkflowPatch } from '../lib/materialRequestService';
 import { materialRequestFulfillmentService, getCommittedQty, getRequestLineId } from '../lib/materialRequestFulfillmentService';
 import { buildFulfillmentBatchReceiveUrl } from '../lib/fulfillmentBatchQr';
 import { formatReservationSourceList } from '../lib/inventoryStockGuard';
+
+const ScannerModal = React.lazy(() => import('./ScannerModal'));
 
 const formatFullDateTime = (isoString?: string | null) => {
     if (!isoString) return '-';
@@ -204,7 +205,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     onSaved,
     onDeleted,
 }) => {
-    const { items, warehouses, user, users, employees, orgUnits, requests, transactions, addRequest, updateRequestStatus, removeRequest, loadModuleData, addTransaction, updateTransactionStatus } = useApp();
+    const { items, warehouses, user, users, employees, orgUnits, requests, transactions, addRequest, updateRequestStatus, removeRequest, refreshWmsRecords, addTransaction, updateTransactionStatus } = useApp();
     const { getStockSummary, getOnHandStock } = useReservedStock();
     const toast = useToast();
     const confirm = useConfirm();
@@ -499,7 +500,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             const tx = getFulfillmentBatchTransaction(batch);
             if (!tx) return {
                 label: 'Đang tải phiếu kho',
-                color: 'bg-slate-50 dark:bg-slate-805/40 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800/40',
+                color: 'bg-slate-50 dark:bg-slate-800/40 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800/40',
             };
             if (tx.status === TransactionStatus.PENDING) return {
                 label: 'Chờ duyệt SL/CL',
@@ -536,7 +537,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         };
         return {
             label: 'Nháp',
-            color: 'bg-slate-50 dark:bg-slate-805/40 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800/40',
+            color: 'bg-slate-50 dark:bg-slate-800/40 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800/40',
         };
     };
 
@@ -549,6 +550,27 @@ const RequestModal: React.FC<RequestModalProps> = ({
         } finally {
             setIsLoadingFulfillment(false);
         }
+    };
+
+    const getFulfillmentBatchItemIds = (batches: Array<MaterialRequestFulfillmentBatch | null | undefined>) =>
+        Array.from(new Set(batches.flatMap(batch => (batch?.lines || []).map(line => line.itemId).filter(Boolean))));
+
+    const getFulfillmentBatchTransactionIds = (batches: Array<MaterialRequestFulfillmentBatch | null | undefined>) =>
+        Array.from(new Set(batches.map(batch => batch?.transactionId).filter(Boolean) as string[]));
+
+    const refreshFulfillmentWmsRecords = async (
+        batches: Array<MaterialRequestFulfillmentBatch | null | undefined>,
+        extra: {
+            itemIds?: Array<string | null | undefined>;
+            transactionIds?: Array<string | null | undefined>;
+            requestIds?: Array<string | null | undefined>;
+        } = {},
+    ) => {
+        await refreshWmsRecords({
+            itemIds: [...getFulfillmentBatchItemIds(batches), ...(extra.itemIds || [])],
+            transactionIds: [...getFulfillmentBatchTransactionIds(batches), ...(extra.transactionIds || [])],
+            requestIds: [request?.id, ...(extra.requestIds || [])],
+        });
     };
 
     useEffect(() => {
@@ -573,13 +595,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     useEffect(() => {
         if (!isOpen || !isBatchFulfillmentRequest || fulfillmentBatches.length === 0) return;
-        const missingTransaction = fulfillmentBatches.some(batch =>
+        const missingTransactionBatches = fulfillmentBatches.filter(batch =>
             !!batch.transactionId && !transactions.some(tx => tx.id === batch.transactionId)
         );
-        if (missingTransaction) {
-            void loadModuleData('wms');
+        if (missingTransactionBatches.length > 0) {
+            void refreshFulfillmentWmsRecords(missingTransactionBatches);
         }
-    }, [fulfillmentBatches, isBatchFulfillmentRequest, isOpen, loadModuleData, transactions]);
+    }, [fulfillmentBatches, isBatchFulfillmentRequest, isOpen, transactions]);
 
     useEffect(() => {
         if (isOpen) {
@@ -1323,7 +1345,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             const freshBatches = await refreshFulfillmentBatches(request.id);
             const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
             await updateRequestStatus(request.id, nextStatus, issueNote.trim() || 'Tạo đợt cấp vật tư', undefined, effectiveSource, overrideReason.trim() || undefined, 'FULFILLMENT_ISSUED');
-            await loadModuleData('wms', true);
+            await refreshFulfillmentWmsRecords(freshBatches);
             toast.success('Đã tạo đợt cấp', 'Đợt cấp đã được ghi nhận; thủ kho công trường sẽ duyệt SL/CL rồi xác nhận nhập kho.');
             onClose();
         } catch (err: any) {
@@ -1380,7 +1402,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         const tx = getFulfillmentBatchTransaction(receivingBatch);
         if (!tx) {
             toast.warning('Chưa tải được phiếu kho', 'Vui lòng tải lại dữ liệu WMS rồi thử lại.');
-            await loadModuleData('wms', true);
+            await refreshFulfillmentWmsRecords([receivingBatch]);
             return;
         }
         if (tx.status !== TransactionStatus.PENDING) {
@@ -1425,7 +1447,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             await updateTransactionStatus(tx.id, TransactionStatus.APPROVED, user.id);
             const freshBatches = await refreshFulfillmentBatches(request.id);
             const freshSelected = freshBatches.find(batch => batch.id === receivingBatch.id) || receivingBatch;
-            await loadModuleData('wms', true);
+            await refreshFulfillmentWmsRecords(freshBatches, { transactionIds: [tx.id] });
             setReceivingBatch(null);
             setSelectedFulfillmentBatch(freshSelected);
             toast.success('Đã duyệt SL/CL', hasVariance ? 'Phiếu kho đã cập nhật theo số lượng duyệt và chờ xác nhận nhập kho.' : 'Phiếu kho đang chờ xác nhận nhập kho.');
@@ -1477,7 +1499,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             const freshBatches = await refreshFulfillmentBatches(request.id);
             const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
             await updateRequestStatus(request.id, nextStatus, 'Xác nhận nhận đợt cấp vật tư', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_RECEIVED');
-            await loadModuleData('wms', true);
+            await refreshFulfillmentWmsRecords(freshBatches, { transactionIds: [savedBatch.transactionId] });
             toast.success(
                 hasVariance ? 'Đã xác nhận nhận lệch' : 'Đã xác nhận nhận hàng',
                 nextStatus === RequestStatus.COMPLETED ? 'Phiếu đề xuất đã đủ số lượng công trường đề xuất.' : 'Đã cập nhật tồn kho và lũy kế nhận hàng cho phiếu.'
@@ -1591,7 +1613,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             const freshBatches = await refreshFulfillmentBatches(request.id);
             const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
             await updateRequestStatus(request.id, nextStatus, 'Admin hoàn trả đợt cấp đã nhận và đảo tồn kho', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_RECEIVED');
-            await loadModuleData('wms', true);
+            await refreshFulfillmentWmsRecords(freshBatches, { transactionIds: [batch.transactionId, returnTransactionId] });
             toast.success('Đã hoàn trả đợt cấp', nextStatus === RequestStatus.APPROVED ? 'Phiếu đề xuất đã quay lại trạng thái chờ cấp hàng.' : 'Đã đảo tồn và cập nhật lại lũy kế.');
             setReturningReceivedBatch(null);
             setReturnDestinationWarehouseId('');
@@ -1650,7 +1672,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             const freshBatches = await refreshFulfillmentBatches(request.id);
             const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
             await updateRequestStatus(request.id, nextStatus, 'Trả lại/hoàn hàng đợt cấp vật tư', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_RECEIVED');
-            await loadModuleData('wms', true);
+            await refreshFulfillmentWmsRecords(freshBatches, { transactionIds: [batch.transactionId] });
             toast.success('Đã trả lại đợt cấp', nextStatus === RequestStatus.APPROVED ? 'Phiếu đề xuất đã quay lại trạng thái chờ cấp hàng.' : 'Đã cập nhật lại lũy kế cấp/nhận cho phiếu.');
             onClose();
         } catch (err: any) {
@@ -1683,7 +1705,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             const freshBatches = await refreshFulfillmentBatches(request.id);
             const nextStatus = materialRequestFulfillmentService.nextRequestStatus(request, freshBatches);
             await updateRequestStatus(request.id, nextStatus, 'Chốt lệch đợt cấp vật tư theo thực nhận', undefined, sourceWarehouseId || request.sourceWarehouseId, overrideReason.trim() || undefined, 'FULFILLMENT_RECEIVED');
-            await loadModuleData('wms', true);
+            await refreshFulfillmentWmsRecords(freshBatches, { transactionIds: [batch.transactionId] });
             toast.success('Đã chốt lệch', nextStatus === RequestStatus.COMPLETED ? 'Phiếu đề xuất đã đủ số lượng công trường đề xuất.' : 'Tồn kho đã cập nhật theo số thực nhận.');
             onClose();
         } catch (err: any) {
@@ -1869,7 +1891,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
-            <div className="bg-card text-card-foreground border border-border rounded-t-2xl sm:rounded-2xl w-full max-w-full sm:w-[96vw] xl:max-w-[1480px] 2xl:max-w-[1680px] shadow-2xl flex flex-col max-h-[95vh] sm:max-h-[95vh] overflow-hidden relative">
+            <div className="bg-card text-card-foreground border border-border rounded-t-2xl sm:rounded-2xl w-full sm:w-[70vw] xl:max-w-[1050px] 2xl:max-w-[1180px] shadow-2xl flex flex-col max-h-[85vh] sm:max-h-[85vh] overflow-hidden relative">
 
                 {/* Decision Overlay */}
                 {showApprovalPanel && (
@@ -2767,7 +2789,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 compact
                                 canCreate
                                 onChanged={() => {
-                                    void loadModuleData('wms', true);
+                                    void refreshWmsRecords({ requestIds: [request.id] });
                                 }}
                             />
                         </div>
@@ -3123,15 +3145,19 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 allowAllItems={isProjectRequest}
             />
 
-            <ScannerModal
-                isOpen={isScannerOpen}
-                onClose={() => setScannerOpen(false)}
-                onScan={(sku) => {
-                    const item = items.find(i => i.sku === sku);
-                    if (item) handleSelectFromModal(item);
-                    setScannerOpen(false);
-                }}
-            />
+            {isScannerOpen && (
+                <React.Suspense fallback={null}>
+                    <ScannerModal
+                        isOpen={isScannerOpen}
+                        onClose={() => setScannerOpen(false)}
+                        onScan={(sku) => {
+                            const item = items.find(i => i.sku === sku);
+                            if (item) handleSelectFromModal(item);
+                            setScannerOpen(false);
+                        }}
+                    />
+                </React.Suspense>
+            )}
 
             {submittingProjectRequest && isProjectRequest && (
                 <ProjectWorkflowStartDialog

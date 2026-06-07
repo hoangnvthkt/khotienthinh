@@ -16,6 +16,7 @@ import Docxtemplater from 'docxtemplater';
 import { saveAs } from 'file-saver';
 import { supabase } from '../../lib/supabase';
 import { useCelebration } from '../../components/Celebration';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 const STATUS_MAP: Record<RQStatus, { label: string; color: string; icon: any }> = {
     DRAFT: { label: 'Nháp', color: 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400', icon: FileText },
@@ -203,8 +204,7 @@ const RequestList: React.FC = () => {
 
         if (filterStatus !== 'ALL') list = list.filter(r => r.status === filterStatus);
         if (searchTerm) {
-            const term = searchTerm.toLowerCase();
-            list = list.filter(r => r.code.toLowerCase().includes(term) || r.title.toLowerCase().includes(term));
+            list = list.filter(r => matchesSearchQueryMultiple([r.code, r.title], searchTerm));
         }
         return list;
     }, [requests, activeTab, filterStatus, searchTerm, user, categories]);

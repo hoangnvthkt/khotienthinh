@@ -595,7 +595,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [pbacLoaded, setPbacLoaded] = useState(false);
 
     useEffect(() => {
-        loadModuleData('wms');
+        loadModuleData('wms-core');
     }, [loadModuleData]);
 
     const siteWarehouse = useMemo(() => {

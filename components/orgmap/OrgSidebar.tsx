@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { OrgUnit, Employee } from '../../types';
 import { useOrgMapStore } from './useOrgMapStore';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import {
   Search, X, ChevronLeft, Users, Building2, MapPin,
   Filter, Eye
@@ -22,11 +23,7 @@ const OrgSidebar: React.FC<OrgSidebarProps> = ({ orgUnits, employees }) => {
   const filtered = useMemo(() => {
     return employees.filter(emp => {
       const matchUnit = !filterUnitId || emp.orgUnitId === filterUnitId;
-      const q = searchQuery.toLowerCase();
-      const matchSearch = !q ||
-        emp.fullName.toLowerCase().includes(q) ||
-        emp.title?.toLowerCase().includes(q) ||
-        emp.employeeCode?.toLowerCase().includes(q);
+      const matchSearch = matchesSearchQueryMultiple([emp.fullName, emp.title, emp.employeeCode], searchQuery);
       return matchUnit && matchSearch && emp.status === 'Đang làm việc';
     });
   }, [employees, filterUnitId, searchQuery]);
