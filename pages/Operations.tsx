@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
@@ -33,6 +33,7 @@ const Operations: React.FC = () => {
   const toast = useToast();
   const { getStockSummary, getConflictingTxs } = useReservedStock();
   const [activeTab, setActiveTab] = useState<string>('IMPORT');
+  const openedStateTransactionRef = useRef<string | null>(null);
 
 
 
@@ -41,6 +42,16 @@ const Operations: React.FC = () => {
       setActiveTab(location.state.tab);
     }
   }, [location.state]);
+
+  useEffect(() => {
+    const transactionId = location.state?.transactionId;
+    if (!transactionId || openedStateTransactionRef.current === transactionId) return;
+    const tx = transactions.find(item => item.id === transactionId);
+    if (!tx) return;
+    openedStateTransactionRef.current = transactionId;
+    setActiveTab(location.state?.tab || 'PENDING');
+    setViewingHistoryTx(tx);
+  }, [location.state, transactions]);
   const [isScannerOpen, setScannerOpen] = useState(false);
   const [isItemSelectOpen, setItemSelectOpen] = useState(false);
 

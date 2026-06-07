@@ -1971,6 +1971,93 @@ export interface Transaction {
   pendingItems?: InventoryItem[]; // Full metadata for new items created during bulk import
 }
 
+export type InventoryLedgerTransactionType =
+  | 'purchase_receipt'
+  | 'transfer_receipt'
+  | 'project_return_receipt'
+  | 'project_issue'
+  | 'transfer_issue'
+  | 'loss_issue'
+  | 'adjustment_in'
+  | 'adjustment_out'
+  | 'reversal';
+
+export type InventoryLedgerMovementDirection = 'in' | 'out';
+
+export interface InventoryTransactionLedgerHeader {
+  id: string;
+  code: string;
+  transactionType: InventoryLedgerTransactionType;
+  status: 'posted' | 'reversed';
+  transactionDate: string;
+  sourceType: string;
+  sourceId: string;
+  sourceCode: string;
+  relatedRequestId?: string | null;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  description?: string | null;
+  metadata?: Record<string, any>;
+  createdBy?: string | null;
+  approvedBy?: string | null;
+  postedAt?: string | null;
+  reversedAt?: string | null;
+  reversalOfInventoryTransactionId?: string | null;
+  createdAt?: string;
+}
+
+export interface InventoryLedgerEntry {
+  id: string;
+  inventoryTransactionId: string;
+  entryNo: number;
+  documentCode: string;
+  transactionDate: string;
+  transactionType: InventoryLedgerTransactionType;
+  movementDirection: InventoryLedgerMovementDirection;
+  materialId: string;
+  warehouseId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  lotNo?: string | null;
+  batchNo?: string | null;
+  serialNo?: string | null;
+  sourceType: string;
+  sourceId: string;
+  sourceCode: string;
+  sourceLineId?: string | null;
+  relatedRequestId?: string | null;
+  quantityIn: number;
+  quantityOut: number;
+  quantityDelta: number;
+  unit?: string | null;
+  unitPrice: number;
+  amount: number;
+  balanceAfterQty: number;
+  balanceAfterValue: number;
+  description?: string | null;
+  metadata?: Record<string, any>;
+  createdBy?: string | null;
+  approvedBy?: string | null;
+  createdAt?: string;
+}
+
+export interface InventoryBalance {
+  id: string;
+  materialId: string;
+  warehouseId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  lotNo?: string | null;
+  batchNo?: string | null;
+  serialNo?: string | null;
+  onHandQty: number;
+  totalValue: number;
+  averageUnitCost: number;
+  lastLedgerEntryId?: string | null;
+  lastTransactionDate?: string | null;
+  updatedAt?: string;
+}
+
 export interface AuditLog {
   action: string;
   userId: string;

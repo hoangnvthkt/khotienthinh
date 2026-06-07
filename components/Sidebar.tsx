@@ -284,8 +284,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   return (
     <>
-      {isOpen && <div className="fixed inset-0 bg-black/60 z-20 lg:hidden backdrop-blur-sm" onClick={toggle} />}
-      <aside className={`fixed top-0 left-0 z-30 h-screen ${sidebarWidth} text-slate-800 dark:text-white transition-all duration-300 lg:translate-x-0 lg:static ${sidebarBg} ${isOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col`}>
+      {isOpen && <div className="fixed inset-0 bg-black/60 z-[60] lg:hidden backdrop-blur-sm" onClick={toggle} />}
+      <aside className={`fixed top-0 left-0 z-[70] h-[100dvh] ${sidebarWidth} text-slate-800 dark:text-white transition-all duration-300 lg:translate-x-0 lg:static ${sidebarBg} ${isOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col`}>
 
         {/* Logo */}
         <div className={`flex items-center h-16 px-4 border-b border-white/20 dark:border-white/5 shrink-0 ${collapsed ? 'justify-center' : 'space-x-3'}`}>

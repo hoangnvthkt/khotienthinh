@@ -309,7 +309,7 @@ const BottomNav: React.FC = () => {
       )}
 
       {/* === Actual Bottom Nav (compact) === */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 btm-nav-safe">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-[50] btm-nav-safe">
         <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-lg border-t border-slate-200/40 dark:border-slate-700/40">
           <div ref={navContainerRef} className="flex justify-around items-center px-0.5 py-0.5">
             {visibleItems.map((item, idx) => {
