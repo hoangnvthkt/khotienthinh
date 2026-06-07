@@ -486,3 +486,220 @@ button:not(:disabled):active,
 .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background-color: #64748b; /* slate-500 */
 }
+
+/* ==========================================================================
+   REACT ERP SYSTEM STANDARDIZATION — DARK MODE, RESPONSIVE UX, MOBILE SHEETS
+   ========================================================================== */
+
+/* 1. Global Dark Mode Semantic Translation for Hardcoded Tailwind Classes */
+.dark .bg-white {
+  background-color: var(--card) !important;
+}
+.dark .bg-slate-50, 
+.dark .bg-gray-50,
+.dark .bg-slate-50\/30,
+.dark .bg-slate-50\/40,
+.dark .bg-slate-55\/40,
+.dark .bg-slate-50\/10 {
+  background-color: var(--background) !important;
+}
+.dark .bg-slate-100, 
+.dark .bg-gray-100, 
+.dark .bg-slate-200, 
+.dark .bg-gray-200,
+.dark .bg-slate-100\/50,
+.dark .bg-slate-200\/50,
+.dark .bg-slate-200\/40 {
+  background-color: var(--muted) !important;
+}
+.dark .bg-slate-900 {
+  background-color: var(--background) !important;
+}
+
+/* Foreground / Typography overrides */
+.dark .text-slate-900, 
+.dark .text-gray-900, 
+.dark .text-slate-800, 
+.dark .text-gray-800,
+.dark .text-slate-850,
+.dark .text-slate-950,
+.dark .text-black {
+  color: var(--card-foreground) !important;
+}
+.dark .text-slate-700, 
+.dark .text-gray-700,
+.dark .text-slate-600, 
+.dark .text-gray-600,
+.dark .text-slate-650 {
+  color: var(--muted-foreground) !important;
+}
+.dark .text-slate-500, 
+.dark .text-gray-500,
+.dark .text-slate-400, 
+.dark .text-gray-400 {
+  color: var(--muted-foreground) !important;
+}
+.dark .text-slate-350 {
+  color: #94a3b8 !important; /* Keep it light gray */
+}
+
+/* Border overrides */
+.dark .border-slate-100, 
+.dark .border-gray-100,
+.dark .border-slate-150, 
+.dark .border-slate-200, 
+.dark .border-gray-200,
+.dark .border-slate-300, 
+.dark .border-gray-300,
+.dark .border-slate-800\/50,
+.dark .border-slate-800\/40,
+.dark .border-slate-200\/40,
+.dark .border-slate-100\/40 {
+  border-color: var(--border) !important;
+}
+
+/* Table elements */
+.dark thead, 
+.dark thead th, 
+.dark tr[class*="bg-slate-50"],
+.dark thead[class*="bg-slate-50"] {
+  background-color: var(--muted) !important;
+  color: var(--card-foreground) !important;
+}
+.dark table tbody tr:hover {
+  background-color: rgba(56, 189, 248, 0.05) !important;
+}
+.dark table td {
+  border-color: var(--border) !important;
+}
+
+/* Form input, select, placeholder overrides */
+.dark input, 
+.dark select, 
+.dark textarea {
+  background-color: rgba(16, 18, 20, 0.6) !important;
+  border-color: var(--border) !important;
+  color: var(--card-foreground) !important;
+}
+.dark input:disabled, 
+.dark select:disabled, 
+.dark textarea:disabled {
+  background-color: rgba(16, 18, 20, 0.3) !important;
+  opacity: 0.6 !important;
+}
+
+/* 2. Responsive Modals & Dialogs on Mobile (viewport <= 640px) */
+@media (max-width: 640px) {
+  /* Enforce bottom sheet drawer behaviour on mobile to save vertical viewport space */
+  .fixed.inset-0.z-50, 
+  .fixed.inset-0.z-\[1000\], 
+  .fixed.inset-0.z-\[70\], 
+  .fixed.inset-0.z-\[80\] {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+
+  .fixed.inset-0.z-50 > div, 
+  .fixed.inset-0.z-\[1000\] > div, 
+  .fixed.inset-0.z-\[70\] > div, 
+  .fixed.inset-0.z-\[80\] > div {
+    max-height: 85dvh !important;
+    width: 100% !important;
+    margin: 0 !important;
+    border-bottom-left-radius: 0px !important;
+    border-bottom-right-radius: 0px !important;
+    border-top-left-radius: 16px !important;
+    border-top-right-radius: 16px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    box-shadow: 0 -8px 30px rgba(0,0,0,0.3) !important;
+  }
+
+  /* Make sure modal header does not shrink */
+  .fixed.inset-0.z-50 > div > div:first-child,
+  .fixed.inset-0.z-\[1000\] > div > div:first-child,
+  .fixed.inset-0.z-\[70\] > div > div:first-child {
+    flex-shrink: 0 !important;
+  }
+
+  /* Content scrolling area */
+  .fixed.inset-0.z-50 form, 
+  .fixed.inset-0.z-50 .overflow-y-auto,
+  .fixed.inset-0.z-\[1000\] .overflow-y-auto, 
+  .fixed.inset-0.z-\[70\] .overflow-y-auto,
+  .fixed.inset-0.z-\[80\] .overflow-y-auto {
+    overflow-y: auto !important;
+    flex: 1 1 0% !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding-bottom: 24px !important;
+  }
+
+  /* Sticky footer actions at the bottom of the modal */
+  .fixed.inset-0.z-50 div[class*="border-t"], 
+  .fixed.inset-0.z-50 form > div:last-child,
+  .fixed.inset-0.z-\[1000\] div[class*="border-t"],
+  .fixed.inset-0.z-\[70\] div[class*="border-t"] {
+    position: sticky !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    background-color: var(--card) !important;
+    border-top: 1px solid var(--border) !important;
+    padding: 12px 16px !important;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+    z-index: 50 !important;
+    flex-shrink: 0 !important;
+    box-shadow: 0 -4px 10px rgba(0,0,0,0.05) !important;
+    margin-top: auto !important;
+  }
+
+  .dark .fixed.inset-0.z-50 div[class*="border-t"], 
+  .dark .fixed.inset-0.z-50 form > div:last-child,
+  .dark .fixed.inset-0.z-\[1000\] div[class*="border-t"],
+  .dark .fixed.inset-0.z-\[70\] div[class*="border-t"] {
+    background-color: var(--card) !important;
+    box-shadow: 0 -4px 10px rgba(0,0,0,0.2) !important;
+  }
+
+  /* Target buttons inside modal footer to be easily touchable (minimum 44px height) */
+  .fixed.inset-0.z-50 button, 
+  .fixed.inset-0.z-\[1000\] button,
+  .fixed.inset-0.z-\[70\] button {
+    min-height: 44px !important;
+    font-size: 13.5px !important;
+  }
+}
+
+/* 3. Mobile Table Wrap & Column Text Improvements */
+@media (max-width: 640px) {
+  /* Ensure tables allow horizontal scroll on mobile and columns wrapper */
+  .overflow-x-auto {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  
+  /* Prevent word squeezing and enforce line breaking for table columns */
+  table td, table th {
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    min-width: 80px;
+  }
+  
+  /* Set specific columns width-max and clamp behavior */
+  table td:first-child {
+    min-width: 40px !important;
+  }
+  
+  /* Description columns should have spacious width on mobile horizontal scroll */
+  table td[class*="w-"], table th[class*="w-"] {
+    min-width: 100px;
+  }
+}
+
+/* 4. Scanner View Fixes */
+.dark #scanner-overlay, .dark .fixed.inset-0.z-50 .bg-white {
+  background-color: var(--card) !important;
+}

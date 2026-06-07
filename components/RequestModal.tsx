@@ -500,7 +500,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             const tx = getFulfillmentBatchTransaction(batch);
             if (!tx) return {
                 label: 'Đang tải phiếu kho',
-                color: 'bg-slate-50 dark:bg-slate-805/40 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800/40',
+                color: 'bg-slate-50 dark:bg-slate-800/40 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800/40',
             };
             if (tx.status === TransactionStatus.PENDING) return {
                 label: 'Chờ duyệt SL/CL',
@@ -537,7 +537,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         };
         return {
             label: 'Nháp',
-            color: 'bg-slate-50 dark:bg-slate-805/40 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800/40',
+            color: 'bg-slate-50 dark:bg-slate-800/40 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800/40',
         };
     };
 
