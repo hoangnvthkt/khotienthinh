@@ -6,6 +6,7 @@ import { Plus, Search, FileText, ArrowRight, Truck, CheckCircle, Clock, AlertCir
 import { useModuleData } from '../hooks/useModuleData';
 import { canApproveMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, canViewMaterialRequest } from '../lib/wmsPermissions';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
+import { matchesSearchQueryMultiple } from '../lib/searchUtils';
 
 const RequestModal = React.lazy(() => import('../components/RequestModal'));
 
@@ -67,10 +68,14 @@ const RequestWorkflow: React.FC = () => {
 
         const effectiveStatus = getEffectiveStatus(req);
         const matchStatus = filterStatus === 'ALL' || effectiveStatus === filterStatus;
-        const matchSearch = req.code.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchSearch = !searchTerm.trim() || matchesSearchQueryMultiple([
+          req.code,
+          warehouses.find(w => w.id === req.siteWarehouseId)?.name || '',
+          warehouses.find(w => w.id === req.sourceWarehouseId)?.name || '',
+        ], searchTerm);
         return matchStatus && matchSearch;
      });
-  }, [requests, filterStatus, searchTerm, user, fulfillmentSummaries]);
+  }, [requests, filterStatus, searchTerm, user, warehouses, fulfillmentSummaries]);
 
   const handleOpenCreate = () => {
      setSelectedRequest(undefined);

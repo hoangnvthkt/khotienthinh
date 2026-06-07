@@ -10,9 +10,12 @@ import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
-import { SupplierContract, HdContractStatus, ContractAttachment, Project } from '../../types';
+import { SupplierContract, HdContractStatus, ContractAttachment, Project, BusinessPartner } from '../../types';
 import { useModuleData } from '../../hooks/useModuleData';
 import { projectMasterService } from '../../lib/projectMasterService';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import SearchableSelect from '../../components/common/SearchableSelect';
+import { partnerService } from '../../lib/partnerService';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatCurrency = (v: number, currency = 'VND') =>
@@ -62,7 +65,8 @@ const EMPTY_FORM: Omit<SupplierContract, 'id' | 'attachments' | 'createdAt' | 'u
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 const SupplierContracts: React.FC = () => {
-  const { user, suppliers } = useApp();
+  const { user } = useApp();
+  const [suppliers, setSuppliers] = useState<BusinessPartner[]>([]);
   useModuleData('wms');
   const navigate = useNavigate();
   const toast = useToast();
@@ -93,6 +97,7 @@ const SupplierContracts: React.FC = () => {
   const fetchContracts = async () => {
     setLoading(true);
     projectMasterService.list().then(setProjects).catch(console.error);
+    partnerService.list({ classification: 'supplier' }).then(setSuppliers).catch(console.error);
     if (!isSupabaseConfigured) {
       setContracts([]);
       setLoading(false);
@@ -126,6 +131,10 @@ const SupplierContracts: React.FC = () => {
   // ── save (add / edit) ────────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!form.code.trim() || !form.name.trim()) return;
+    if (!form.projectId) {
+      toast.warning('Thiếu thông tin', 'Vui lòng chọn dự án liên kết.');
+      return;
+    }
     setSaving(true);
     const project = projects.find(item => item.id === form.projectId);
     const payload = {
@@ -246,8 +255,11 @@ const SupplierContracts: React.FC = () => {
 
   // ── filter ───────────────────────────────────────────────────────────────────
   const filtered = contracts.filter(c => {
-    const q = searchTerm.toLowerCase();
-    const matchSearch = !q || c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q) || (c.supplierName || '').toLowerCase().includes(q);
+    const matchSearch = !searchTerm.trim() || matchesSearchQueryMultiple([
+      c.code,
+      c.name,
+      c.supplierName
+    ], searchTerm);
     const matchStatus = !filterStatus || c.status === filterStatus;
     return matchSearch && matchStatus;
   });
@@ -393,31 +405,36 @@ const SupplierContracts: React.FC = () => {
                   placeholder="Mô tả ngắn về hợp đồng" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dự án</label>
-                <select value={form.projectId || ''} onChange={e => {
-                  const project = projects.find(item => item.id === e.target.value);
-                  setForm({ ...form, projectId: e.target.value, constructionSiteId: project?.constructionSiteId || '' });
-                }} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 dark:text-white outline-none">
-                  <option value="">— Chọn dự án —</option>
-                  {projects.map(project => <option key={project.id} value={project.id}>{project.code ? `${project.code} - ` : ''}{project.name}</option>)}
-                </select>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dự án *</label>
+                <SearchableSelect
+                  value={form.projectId || ''}
+                  options={projects}
+                  onChange={val => setForm({ ...form, projectId: val ? val.id : '', constructionSiteId: val?.constructionSiteId || '' })}
+                  getOptionValue={p => p.id}
+                  getOptionLabel={p => p.code ? `${p.code} - ${p.name}` : p.name}
+                  placeholder="Chọn dự án..."
+                  emptyLabel="Không tìm thấy dự án"
+                  className="w-full"
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nhà cung cấp</label>
-                  {suppliers && suppliers.length > 0 ? (
-                    <select value={form.supplierId} onChange={e => {
-                      const sup = suppliers.find(s => s.id === e.target.value);
-                      setForm({...form, supplierId: e.target.value, supplierName: sup?.name || ''});
-                    }} className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 dark:text-white outline-none">
-                      <option value="">— Chọn nhà cung cấp —</option>
-                      {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                  ) : (
-                    <input value={form.supplierName} onChange={e => setForm({...form, supplierName: e.target.value})}
-                      className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl text-sm bg-white dark:bg-slate-800 dark:text-white outline-none"
-                      placeholder="Tên nhà cung cấp" />
-                  )}
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nhà cung cấp *</label>
+                  <SearchableSelect
+                    value={form.supplierId || ''}
+                    options={suppliers || []}
+                    onChange={val => setForm({
+                      ...form,
+                      supplierId: val ? val.id : '',
+                      supplierName: val ? val.name : '',
+                      supplierRepresentative: val ? (val.contactName || '') : ''
+                    })}
+                    getOptionValue={s => s.id}
+                    getOptionLabel={s => s.code ? `${s.code} - ${s.name}` : s.name}
+                    placeholder="Chọn nhà cung cấp..."
+                    emptyLabel="Không tìm thấy nhà cung cấp"
+                    className="w-full"
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Người đại diện NCC</label>

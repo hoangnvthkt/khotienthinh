@@ -8,6 +8,7 @@ import {
     ArrowLeftRight, Users
 } from 'lucide-react';
 import { Asset, AssetStatus, ASSET_STATUS_LABELS, AssetAssignment as AssetAssignmentType } from '../../types';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 const AssetAssignment: React.FC = () => {
     const {
@@ -36,14 +37,14 @@ const AssetAssignment: React.FC = () => {
     const availableAssets = useMemo(() => {
         return assets.filter(a =>
             a.status === AssetStatus.AVAILABLE &&
-            (a.name.toLowerCase().includes(searchTerm.toLowerCase()) || a.code.toLowerCase().includes(searchTerm.toLowerCase()))
+            matchesSearchQueryMultiple([a.name, a.code], searchTerm)
         );
     }, [assets, searchTerm]);
 
     const assignedAssets = useMemo(() => {
         return assets.filter(a =>
             a.status === AssetStatus.IN_USE && a.assignedToUserId &&
-            (a.name.toLowerCase().includes(searchTerm.toLowerCase()) || a.code.toLowerCase().includes(searchTerm.toLowerCase()))
+            matchesSearchQueryMultiple([a.name, a.code], searchTerm)
         );
     }, [assets, searchTerm]);
 
@@ -51,9 +52,7 @@ const AssetAssignment: React.FC = () => {
     const transferableAssets = useMemo(() => {
         return assets.filter(a => {
             const matchStatus = a.status === AssetStatus.IN_USE && a.assignedToUserId;
-            const matchSearch = a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                a.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (a.assignedToName || '').toLowerCase().includes(searchTerm.toLowerCase());
+            const matchSearch = matchesSearchQueryMultiple([a.name, a.code, a.assignedToName], searchTerm);
             // Filter by department: find user's departmentId from users list
             if (filterDepartment !== 'ALL') {
                 const assignedUser = users.find(u => u.id === a.assignedToUserId);

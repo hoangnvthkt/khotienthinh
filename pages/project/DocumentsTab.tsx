@@ -8,6 +8,7 @@ import {
 import { documentService, ProjectDocument, DOC_CATEGORIES } from '../../lib/documentService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 interface DocumentsTabProps {
     constructionSiteId?: string;
@@ -62,12 +63,12 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, project
 
     // Search filter
     const filteredDocs = documents.filter(d => {
-        if (!searchQuery) return true;
-        const q = searchQuery.toLowerCase();
-        return d.title.toLowerCase().includes(q) ||
-               d.fileName.toLowerCase().includes(q) ||
-               (d.description || '').toLowerCase().includes(q) ||
-               d.tags.some(t => t.toLowerCase().includes(q));
+        return !searchQuery.trim() || matchesSearchQueryMultiple([
+            d.title,
+            d.fileName,
+            d.description,
+            ...d.tags
+        ], searchQuery);
     });
 
     // Drag & drop

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Upload, FileText, Trash2, RefreshCw, CheckCircle, AlertCircle, Clock, Database, Search, BookOpen, Loader2, Filter } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
+import { matchesSearchQueryMultiple } from '../lib/searchUtils';
 
 interface RagDocument {
   id: string;
@@ -234,7 +235,7 @@ const KnowledgeBase: React.FC = () => {
   };
 
   const filteredDocs = documents.filter(d => {
-    const matchSearch = searchQuery ? (d.title.toLowerCase().includes(searchQuery.toLowerCase()) || d.file_name?.toLowerCase().includes(searchQuery.toLowerCase())) : true;
+    const matchSearch = matchesSearchQueryMultiple([d.title, d.file_name], searchQuery);
     const matchStatus = statusFilter === 'all' ? true : d.status === statusFilter;
     return matchSearch && matchStatus;
   });

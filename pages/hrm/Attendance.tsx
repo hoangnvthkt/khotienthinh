@@ -15,6 +15,7 @@ import {
   AttendanceProposal, AttendanceProposalStatus,
   PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_COLORS
 } from '../../types';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { usePermission } from '../../hooks/usePermission';
 import { loadXlsx } from '../../lib/loadXlsx';
 
@@ -143,8 +144,7 @@ const Attendance: React.FC = () => {
     let list = activeEmployees;
     if (filterSite) list = list.filter(e => e.constructionSiteId === filterSite);
     if (searchText) {
-      const q = searchText.toLowerCase();
-      list = list.filter(e => e.fullName.toLowerCase().includes(q) || e.employeeCode.toLowerCase().includes(q));
+      list = list.filter(e => matchesSearchQueryMultiple([e.fullName, e.employeeCode], searchText));
     }
     return list;
   }, [activeEmployees, filterSite, searchText]);

@@ -11,6 +11,7 @@ import {
     Sparkles, Settings, Info, Share2, HelpCircle, CheckCircle, FileText, CornerUpLeft,
     Palette
 } from 'lucide-react';
+import { matchesSearchQueryMultiple } from '../lib/searchUtils';
 
 // ===================== CONSTANTS & THEMES =====================
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡', '🔥', '👏'];
@@ -620,15 +621,13 @@ const Chat: React.FC = () => {
         .filter(candidate => candidate.isActive !== false && companyEmployeeByUserId.has(candidate.id) && !activeWorkspaceMemberIds.has(candidate.id))
         .filter(candidate => {
             const employee = companyEmployeeByUserId.get(candidate.id);
-            const term = workspaceMemberQuery.trim().toLowerCase();
-            if (!term) return true;
-            return [
+            return matchesSearchQueryMultiple([
                 employee?.fullName,
                 employee?.employeeCode,
                 employee?.title,
                 candidate.name,
                 candidate.email,
-            ].some(value => value?.toLowerCase().includes(term));
+            ], workspaceMemberQuery);
         });
     const canManageActiveWorkspace = !!activeWorkspace && (
         String(user.role) === 'ADMIN' ||
@@ -756,7 +755,7 @@ const Chat: React.FC = () => {
         }
 
         if (searchQuery) {
-            list = list.filter(c => getConvName(c).toLowerCase().includes(searchQuery.toLowerCase()));
+            list = list.filter(c => matchesSearchQueryMultiple([getConvName(c)], searchQuery));
         }
         return list;
     }, [conversations, activeServer, searchQuery]);

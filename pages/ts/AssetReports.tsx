@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { AssetStatus, ASSET_STATUS_LABELS } from '../../types';
 import { loadXlsx } from '../../lib/loadXlsx';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 const AssetReports: React.FC = () => {
     const { assets, assetCategories, assetAssignments } = useApp();
@@ -40,8 +41,7 @@ const AssetReports: React.FC = () => {
                 const matchesDate = purchaseDate >= start && purchaseDate <= end;
                 const matchesCategory = selectedCategory === 'ALL' || a.categoryId === selectedCategory;
                 const matchesStatus = selectedStatus === 'ALL' || a.status === selectedStatus;
-                const matchesSearch = a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    a.code.toLowerCase().includes(searchTerm.toLowerCase());
+                const matchesSearch = matchesSearchQueryMultiple([a.name, a.code], searchTerm);
                 return matchesDate && matchesCategory && matchesStatus && matchesSearch;
             })
             .map(a => {

@@ -1,8 +1,8 @@
-
 import React, { useState } from 'react';
 import { X, Search, QrCode, Plus, Filter, PackageOpen } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { InventoryItem } from '../types';
+import { matchesSearchQueryMultiple } from '../lib/searchUtils';
 
 interface ItemSelectionModalProps {
   isOpen: boolean;
@@ -30,8 +30,7 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
 
   // Logic lọc vật tư
   const filteredItems = items.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.sku.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = matchesSearchQueryMultiple([item.name, item.sku], searchTerm);
 
     // allowAllItems = true (nhập kho): hiển thị tất cả vật tư trong hệ thống
     if (allowAllItems) return matchesSearch;

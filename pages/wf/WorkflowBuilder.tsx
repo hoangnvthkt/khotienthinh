@@ -11,6 +11,7 @@ import {
     Zap, Play, Flag, Clock, Type, AlignLeft, Hash, Calendar, List, Paperclip, Printer, Upload, Download, Eye,
     Search, Check
 } from 'lucide-react';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 const FIELD_TYPE_CONFIG: Record<CustomFieldType, { label: string; icon: any; color: string }> = {
     text: { label: 'Văn bản ngắn', icon: Type, color: 'bg-blue-500' },
@@ -39,10 +40,7 @@ const SearchableCheckboxSelect: React.FC<SearchableCheckboxSelectProps> = ({
     const [searchTerm, setSearchTerm] = useState('');
 
     const filteredOptions = options.filter(opt => {
-        const text = `${opt.label} ${opt.sublabel || ''}`.toLowerCase();
-        return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(
-            searchTerm.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        );
+        return matchesSearchQueryMultiple([opt.label, opt.sublabel], searchTerm);
     });
 
     const handleToggle = (id: string) => {

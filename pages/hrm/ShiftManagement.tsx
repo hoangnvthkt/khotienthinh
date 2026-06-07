@@ -10,6 +10,7 @@ import { HrmShiftType, HrmEmployeeShift } from '../../types';
 import { usePermission } from '../../hooks/usePermission';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 const SHIFT_COLORS = [
   '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444',
@@ -108,9 +109,7 @@ const ShiftManagement: React.FC = () => {
   }, [daysInMonth, assignYear, assignMonth]);
 
   const filteredEmps = useMemo(() => {
-    if (!searchText) return activeEmployees;
-    const q = searchText.toLowerCase();
-    return activeEmployees.filter(e => e.fullName.toLowerCase().includes(q) || e.employeeCode.toLowerCase().includes(q));
+    return activeEmployees.filter(e => matchesSearchQueryMultiple([e.fullName, e.employeeCode], searchText));
   }, [activeEmployees, searchText]);
 
   // Build lookup: employeeId + date -> HrmEmployeeShift

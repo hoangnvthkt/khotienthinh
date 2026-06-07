@@ -8,6 +8,7 @@ import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { materialCodeRequestService } from '../lib/materialCodeRequestService';
 import { isGlobalWarehouseKeeper } from '../lib/wmsPermissions';
 import SearchableSelect from '../components/common/SearchableSelect';
+import { matchesSearchQueryMultiple } from '../lib/searchUtils';
 
 const statusLabel: Record<MaterialCodeRequest['status'], string> = {
   pending: 'Chờ cấp mã',
@@ -70,13 +71,13 @@ const MaterialCodeRequests: React.FC = () => {
   }, []);
 
   const filteredRequests = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase();
     return requests.filter(req => {
       const statusOk = statusFilter === 'all' || req.status === statusFilter;
-      const searchOk = !q
-        || req.code.toLowerCase().includes(q)
-        || req.proposedName.toLowerCase().includes(q)
-        || (req.approvedSku || '').toLowerCase().includes(q);
+      const searchOk = !searchTerm.trim() || matchesSearchQueryMultiple([
+        req.code,
+        req.proposedName,
+        req.approvedSku || ''
+      ], searchTerm);
       return statusOk && searchOk;
     });
   }, [requests, searchTerm, statusFilter]);

@@ -18,6 +18,8 @@ import {
   X,
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import SearchableSelect from '../../components/common/SearchableSelect';
+
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -38,6 +40,7 @@ import { customerContractService } from '../../lib/hdService';
 import { partnerService } from '../../lib/partnerService';
 import { contractGuaranteeService, contractTemplateService, contractTypeService } from '../../lib/contractMetadataService';
 import { projectMasterService } from '../../lib/projectMasterService';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 const STATUS_CONFIG: Record<HdContractStatus, { label: string; color: string }> = {
   draft: { label: 'Nháp', color: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
@@ -242,16 +245,15 @@ const CustomerContracts: React.FC = () => {
   }, [selectedContract?.id]);
 
   const filtered = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
     return contracts.filter(contract => {
       const project = projects.find(p => p.id === contract.projectId);
-      const matchesSearch = !query || [
+      const matchesSearch = !searchTerm.trim() || matchesSearchQueryMultiple([
         contract.code,
         contract.name,
         contract.customerName,
         contract.customerTaxCode,
         project?.name,
-      ].some(value => (value || '').toLowerCase().includes(query));
+      ], searchTerm);
       const matchesStatus = !filterStatus || contract.status === filterStatus;
       return matchesSearch && matchesStatus;
     });
@@ -636,18 +638,36 @@ const CustomerContracts: React.FC = () => {
               <section>
                 <h4 className="text-sm font-black text-slate-700 dark:text-slate-200 mb-3">Thông tin hợp đồng</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <SelectInput label="Dự án *" value={form.projectId} onChange={value => setForm({ ...form, projectId: value })}>
-                    <option value="">Tìm kiếm dự án</option>
-                    {projects.map(project => <option key={project.id} value={project.id}>{project.code} - {project.name}</option>)}
-                  </SelectInput>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dự án *</label>
+                    <SearchableSelect
+                      value={form.projectId}
+                      options={projects}
+                      onChange={val => setForm({ ...form, projectId: val ? val.id : '' })}
+                      getOptionValue={p => p.id}
+                      getOptionLabel={p => p.code ? `${p.code} - ${p.name}` : p.name}
+                      placeholder="Chọn dự án..."
+                      emptyLabel="Không tìm thấy dự án"
+                      className="w-full"
+                    />
+                  </div>
                   <SelectInput label="Loại hợp đồng *" value={form.contractTypeId} onChange={value => setForm({ ...form, contractTypeId: value, customData: {} })}>
                     <option value="">Chọn loại hợp đồng</option>
                     {contractTypes.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}
                   </SelectInput>
-                  <SelectInput label="Chủ đầu tư *" value={form.ownerPartnerId} onChange={handleOwnerChange}>
-                    <option value="">Tìm kiếm Chủ đầu tư</option>
-                    {ownerPartners.map(partner => <option key={partner.id} value={partner.id}>{partner.code} - {partner.name}</option>)}
-                  </SelectInput>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Chủ đầu tư *</label>
+                    <SearchableSelect
+                      value={form.ownerPartnerId}
+                      options={ownerPartners}
+                      onChange={val => handleOwnerChange(val ? val.id : '')}
+                      getOptionValue={p => p.id}
+                      getOptionLabel={p => p.code ? `${p.code} - ${p.name}` : p.name}
+                      placeholder="Chọn chủ đầu tư..."
+                      emptyLabel="Không tìm thấy chủ đầu tư"
+                      className="w-full"
+                    />
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                   <TextInput label="Số hợp đồng *" value={form.code} onChange={value => setForm({ ...form, code: value })} placeholder="Nhập số hợp đồng" />

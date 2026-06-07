@@ -103,6 +103,7 @@ const OrgMap3D = React.lazy(() => import('./pages/orgmap/OrgMap3D'));
 
 // Contract management pages
 const ContractLayout = React.lazy(() => import('./pages/hd/ContractLayout'));
+const ContractOverview = React.lazy(() => import('./pages/hd/ContractOverview'));
 const BusinessPartners = React.lazy(() => import('./pages/hd/BusinessPartners'));
 const ContractTypes = React.lazy(() => import('./pages/hd/ContractTypes'));
 const ContractCatalogs = React.lazy(() => import('./pages/hd/ContractCatalogs'));
@@ -256,7 +257,8 @@ const AppRoutes: React.FC = () => {
           <Route path="ep/:employeeId" element={<EmployeeProfilePage />} />
           <Route path="org-map" element={<OrgMap3D />} />
           <Route path="hd" element={<ContractLayout />}>
-            <Route index element={<Navigate to="partners" replace />} />
+            <Route index element={<Navigate to="overview" replace />} />
+            <Route path="overview" element={<ContractOverview />} />
             <Route path="partners" element={<BusinessPartners />} />
             <Route path="contract-types" element={<ContractTypes />} />
             <Route path="catalogs" element={<ContractCatalogs />} />

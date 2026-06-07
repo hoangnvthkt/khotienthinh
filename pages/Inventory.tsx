@@ -16,6 +16,7 @@ import { loadXlsx } from '../lib/loadXlsx';
 import { InventoryItem, Transaction, TransactionType, TransactionStatus, PurchaseOrder, MaterialRequest, MaterialRequestFulfillmentBatch } from '../types';
 import { usePermission } from '../hooks/usePermission';
 import { useModuleData } from '../hooks/useModuleData';
+import { matchesSearchQueryMultiple } from '../lib/searchUtils';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { poService } from '../lib/projectService';
 import { extractPoToken, PO_QR_PARAM } from '../lib/poQr';
@@ -111,8 +112,7 @@ const Inventory: React.FC = () => {
   // Logic lọc vật tư theo yêu cầu bảo mật mới
   const filteredItems = useMemo(() => {
     return items.filter(item => {
-      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.sku.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = matchesSearchQueryMultiple([item.name, item.sku], searchTerm);
 
       let matchesFilter = true;
 

@@ -3,6 +3,7 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { FileSignature, Building2, Users, HardHat, Settings2, Handshake, Database } from 'lucide-react';
 
 const HD_TABS = [
+  { to: '/hd/overview', label: 'Tổng quan', icon: FileSignature, color: 'from-indigo-500 to-purple-600' },
   { to: '/hd/partners', label: 'Đối tác', icon: Handshake, color: 'from-sky-500 to-blue-600' },
   { to: '/hd/contract-types', label: 'Loại HĐ', icon: Settings2, color: 'from-violet-500 to-purple-600' },
   { to: '/hd/catalogs', label: 'Danh mục', icon: Database, color: 'from-emerald-500 to-green-600' },

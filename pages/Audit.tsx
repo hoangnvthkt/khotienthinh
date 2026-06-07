@@ -12,6 +12,7 @@ import { TransactionType, TransactionStatus, InventoryItem, Role, LossReason, LO
 import { loadXlsx } from '../lib/loadXlsx';
 import { useModuleData } from '../hooks/useModuleData';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
+import { matchesSearchQueryMultiple } from '../lib/searchUtils';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
@@ -37,8 +38,7 @@ const Audit: React.FC = () => {
   const filteredItems = useMemo(() => {
     if (!selectedWhId) return [];
     return items.filter(item => {
-      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.sku.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = matchesSearchQueryMultiple([item.name, item.sku], searchTerm);
       return matchesSearch;
     });
   }, [items, searchTerm, selectedWhId]);

@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState, useEffect } from 'react';
 import { X, Save, ShieldAlert, Truck, MapPin, Loader2 } from 'lucide-react';
 import { BusinessPartner, InventoryItem, Role, Transaction, TransactionType, TransactionStatus } from '../types';
@@ -7,6 +6,7 @@ import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { partnerService } from '../lib/partnerService';
 import { supplierPartnerBridge } from '../lib/supplierPartnerBridge';
+import { matchesSearchQueryMultiple } from '../lib/searchUtils';
 
 interface AddInventoryModalProps {
   isOpen: boolean;
@@ -72,19 +72,18 @@ const AddInventoryModal: React.FC<AddInventoryModalProps> = ({ isOpen, onClose, 
   }, [isOpen, toast]);
 
   const filteredSupplierPartners = useMemo(() => {
-    const keyword = supplierSearch.trim().toLowerCase();
-    const rows = supplierPartners.map(partner => ({
-      partner,
-      haystack: [partner.name, partner.code, partner.taxCode, partner.phone, partner.contactName, partner.contactPhone]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase(),
-    }));
-    if (!keyword) return rows.slice(0, 8).map(row => row.partner);
-    return rows
-      .filter(row => row.haystack.includes(keyword))
-      .slice(0, 8)
-      .map(row => row.partner);
+    return supplierPartners
+      .filter(partner => {
+        return matchesSearchQueryMultiple([
+          partner.name,
+          partner.code,
+          partner.taxCode,
+          partner.phone,
+          partner.contactName,
+          partner.contactPhone
+        ], supplierSearch);
+      })
+      .slice(0, 8);
   }, [supplierPartners, supplierSearch]);
 
   const selectedSupplierPartner = useMemo(

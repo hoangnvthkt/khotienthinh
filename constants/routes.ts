@@ -70,6 +70,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/ep/:employeeId': 'EP',
 
   // ── HỢP ĐỒNG ──────────────────────────────────────────
+  '/hd/overview':      'HD',
   '/hd/partners':      'HD',
   '/hd/contract-types': 'HD',
   '/hd/catalogs':      'HD',

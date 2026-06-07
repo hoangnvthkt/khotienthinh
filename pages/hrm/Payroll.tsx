@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
 import { loadXlsx } from '../../lib/loadXlsx';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import {
   DollarSign, Plus, Download, Search, Calculator,
   CheckCircle, Users, Trash2, GripVertical, FileText,
@@ -123,11 +124,9 @@ const Payroll: React.FC = () => {
       }), [payrollRecords, selectedMonth, selectedYear, employeeMap]);
 
   const filteredPayrolls = useMemo(() => {
-    if (!searchText) return currentPayrolls;
-    const q = searchText.toLowerCase();
     return currentPayrolls.filter(p => {
       const emp = employeeMap.get(p.employeeId);
-      return emp?.fullName.toLowerCase().includes(q) || emp?.employeeCode.toLowerCase().includes(q);
+      return matchesSearchQueryMultiple([emp?.fullName, emp?.employeeCode], searchText);
     });
   }, [currentPayrolls, searchText, employeeMap]);
 
