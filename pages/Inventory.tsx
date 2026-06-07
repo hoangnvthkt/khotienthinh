@@ -4,7 +4,6 @@ import { useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { Search, Filter, Plus, QrCode, Upload, FileSpreadsheet, Trash2, MoreHorizontal, ShieldAlert, AlertTriangle, Loader2, Download, RefreshCcw } from 'lucide-react';
-import ScannerModal from '../components/ScannerModal';
 import AddInventoryModal from '../components/AddInventoryModal';
 import InventoryDetailModal from '../components/InventoryDetailModal';
 import DeleteInventoryModal from '../components/DeleteInventoryModal';
@@ -30,6 +29,8 @@ import {
   getExcelCell,
   parseExcelRows,
 } from '../lib/excelImport';
+
+const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
 type InventoryExcelRecord = InventoryItem & {
   initialWarehouseId?: string;
@@ -620,14 +621,18 @@ const Inventory: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <ScannerModal
-        isOpen={isScannerOpen}
-        onClose={() => setScannerOpen(false)}
-        onScan={loadDocumentFromQr}
-        title="Quét QR phiếu nhập kho"
-        description="Quét mã QR trên phiếu NCC hoặc phiếu xuất kho nội bộ để xác nhận thực nhận."
-        manualPlaceholder="Nhập token PO hoặc phiếu xuất..."
-      />
+      {isScannerOpen && (
+        <React.Suspense fallback={null}>
+          <ScannerModal
+            isOpen={isScannerOpen}
+            onClose={() => setScannerOpen(false)}
+            onScan={loadDocumentFromQr}
+            title="Quét QR phiếu nhập kho"
+            description="Quét mã QR trên phiếu NCC hoặc phiếu xuất kho nội bộ để xác nhận thực nhận."
+            manualPlaceholder="Nhập token PO hoặc phiếu xuất..."
+          />
+        </React.Suspense>
+      )}
       {importPreview && (
         <ExcelImportReviewModal
           title={importPreview.mode === 'create' ? 'Đối chiếu nhập mới vật tư' : 'Đối chiếu cập nhật vật tư'}

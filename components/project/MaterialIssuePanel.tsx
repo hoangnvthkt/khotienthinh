@@ -119,6 +119,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
     users,
     user,
     loadModuleData,
+    refreshWmsRecords,
   } = useApp();
   const toast = useToast();
   const { getStockSummary } = useReservedStock();
@@ -202,7 +203,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
   }, [compact, constructionSiteId, projectId, toast]);
 
   useEffect(() => {
-    void loadModuleData('wms');
+    void loadModuleData('wms-core');
     void loadOrders();
   }, [loadModuleData, loadOrders]);
 
@@ -337,7 +338,14 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
       });
       toast.success('Đã tạo phiếu xuất cấp', `${created.issueNo} đang chờ kho xuất duyệt.`);
       resetCreateForm();
-      await Promise.all([loadOrders(), loadModuleData('wms', true)]);
+      await Promise.all([
+        loadOrders(),
+        refreshWmsRecords({
+          itemIds: created.lines.map(line => line.itemId),
+          transactionIds: [created.transactionId],
+          requestIds: [created.materialRequestId || materialRequestId],
+        }),
+      ]);
       onChanged?.();
     } catch (error) {
       logApiError('materialIssueService.createAndSubmit', error);
@@ -385,6 +393,8 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
 
     setActionLoading(true);
     try {
+      const touchedItemIds = order.lines.map(line => line.itemId);
+      const touchedTransactionIds: Array<string | null | undefined> = [order.transactionId];
       if (type === 'receipt') {
         await materialIssueService.confirmReceipt({
           orderId: order.id,
@@ -396,7 +406,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
         });
         toast.success('Đã xác nhận nhận hàng');
       } else if (type === 'return') {
-        await materialIssueService.createReturn({
+        const materialReturn = await materialIssueService.createReturn({
           orderId: order.id,
           targetWarehouseId: returnWarehouseId,
           reason: actionReason.trim(),
@@ -407,6 +417,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
             reason: actionReason.trim(),
           })),
         });
+        touchedTransactionIds.push(materialReturn.transactionId);
         toast.success('Đã tạo phiếu hoàn trả', 'Phiếu nhập trả đang chờ WMS duyệt để cộng tồn.');
       } else if (type === 'consume' || type === 'loss') {
         await materialIssueService.recordSettlement({
@@ -424,7 +435,14 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
         toast.success('Đã hủy phiếu xuất cấp');
       }
       setAction(null);
-      await Promise.all([loadOrders(), loadModuleData('wms', true)]);
+      await Promise.all([
+        loadOrders(),
+        refreshWmsRecords({
+          itemIds: touchedItemIds,
+          transactionIds: touchedTransactionIds,
+          requestIds: [order.materialRequestId || materialRequestId],
+        }),
+      ]);
       onChanged?.();
     } catch (error) {
       logApiError('MaterialIssuePanel.handleActionSubmit', error);

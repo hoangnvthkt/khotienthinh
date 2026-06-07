@@ -18,7 +18,7 @@ interface PurchaseOrderSupplierReturnDialogProps {
   inventoryItems: InventoryItem[];
   existingReturns: PurchaseOrderSupplierReturn[];
   onClose: () => void;
-  onCreated: () => Promise<void> | void;
+  onCreated: (createdReturn: PurchaseOrderSupplierReturn, itemIds: string[]) => Promise<void> | void;
 }
 
 const PurchaseOrderSupplierReturnDialog: React.FC<PurchaseOrderSupplierReturnDialogProps> = ({
@@ -117,8 +117,11 @@ const PurchaseOrderSupplierReturnDialog: React.FC<PurchaseOrderSupplierReturnDia
         note: note.trim(),
         lines: selectedLines,
       });
+      const touchedItemIds = selectedLines
+        .map(line => purchaseOrder.items.find(item => (item.lineId || item.itemId) === line.purchaseOrderLineId)?.itemId)
+        .filter(Boolean) as string[];
       toast.success('Đã tạo phiếu trả NCC', `${result.returnNo} đang chờ WMS duyệt phiếu xuất kho.`);
-      await onCreated();
+      await onCreated(result, touchedItemIds);
       onClose();
     } catch (error) {
       logApiError('purchaseOrderSupplierReturn.create', error);

@@ -240,7 +240,7 @@ const getPoReceiptStats = (po: PurchaseOrder) => {
 const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, projectId, canManageTab = true, compact = false, initialDraftPo = null, initialDraftPoKey = 0 }) => {
     const toast = useToast();
     const confirm = useConfirm();
-    const { items: inventoryItems, warehouses, requests: materialRequests, constructionSites, loadModuleData, user, addTransaction, updateRequestStatus } = useApp();
+    const { items: inventoryItems, warehouses, requests: materialRequests, constructionSites, loadModuleData, refreshWmsRecords, user, addTransaction, updateRequestStatus } = useApp();
     const { getStockSummary } = useReservedStock();
     const effectiveId = projectId || constructionSiteId || '';
     const [subTab] = useState<'vendor' | 'po'>('po');
@@ -3137,10 +3137,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 inventoryItems={inventoryItems}
                 existingReturns={supplierReturnPo ? supplierReturnsByPo[supplierReturnPo.id] || [] : []}
                 onClose={() => setSupplierReturnPo(null)}
-                onCreated={async () => {
+                onCreated={async (createdReturn, itemIds) => {
                     await Promise.all([
                         loadSupplyData(),
-                        loadModuleData('wms-core', true),
+                        refreshWmsRecords({
+                            itemIds,
+                            transactionIds: [createdReturn.transactionId],
+                        }),
                     ]);
                 }}
             />

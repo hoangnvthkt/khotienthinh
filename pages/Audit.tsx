@@ -9,10 +9,11 @@ import {
   Download, Eye, Calendar, FileSpreadsheet, ChevronLeft
 } from 'lucide-react';
 import { TransactionType, TransactionStatus, InventoryItem, Role, LossReason, LOSS_REASON_LABELS, AuditSession, AuditSessionItem } from '../types';
-import ScannerModal from '../components/ScannerModal';
 import { loadXlsx } from '../lib/loadXlsx';
 import { useModuleData } from '../hooks/useModuleData';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
+
+const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
 const Audit: React.FC = () => {
   const { items, warehouses, user, addTransaction, lossNorms, categories, auditSessions, addAuditSession } = useApp();
@@ -408,7 +409,11 @@ const Audit: React.FC = () => {
   // ==================== MAIN RENDER ====================
   return (
     <div className="space-y-6">
-      <ScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScan={handleScanResult} />
+      {isScannerOpen && (
+        <React.Suspense fallback={null}>
+          <ScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScan={handleScanResult} />
+        </React.Suspense>
+      )}
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>

@@ -2603,6 +2603,8 @@ export interface MaterialRequestWorkflowBoardCard {
   submittedToName?: string | null;
   createdDate?: string | null;
   expectedDate?: string | null;
+  itemCount?: number;
+  itemPreview?: RequestItem[];
   subject?: Partial<ProjectWorkflowSubject> & {
     currentNodeLabel?: string | null;
     currentNodeType?: string | null;
@@ -2629,6 +2631,34 @@ export interface MaterialRequestWorkflowBoardCard {
     activeCount: number;
     totalCount: number;
   };
+}
+
+export type MaterialRequestBoardCard = MaterialRequestWorkflowBoardCard;
+
+export interface MaterialRequestBoardFilters {
+  filter?: ProjectWorkflowBoardFilter;
+  search?: string;
+  status?: string;
+  stage?: string;
+  mineOnly?: boolean;
+  overdueOnly?: boolean;
+  returnedOnly?: boolean;
+  watchingOnly?: boolean;
+}
+
+export interface MaterialRequestBoardPage {
+  cards: MaterialRequestBoardCard[];
+  cursor?: string | null;
+  nextCursor?: string | null;
+}
+
+export interface MaterialRequestDetailResult {
+  request: MaterialRequest;
+  workflowSubject?: ProjectWorkflowSubject | null;
+  runtimeContext?: ProjectWorkflowRuntimeContext | null;
+  assignments: WorkflowStepAssignment[];
+  fulfillmentBatches: MaterialRequestFulfillmentBatch[];
+  events: MaterialRequestEvent[];
 }
 
 export interface ProjectWorkflowTimelineEntry {
@@ -2681,6 +2711,53 @@ export interface ProjectWorkflowActionContextResult {
   canReassign: boolean;
   canRollback: boolean;
   rollbackDependencies?: ProjectWorkflowRollbackDependencyResult | null;
+}
+
+export interface InventoryLedgerStockReportRow {
+  id: string;
+  sku: string;
+  name: string;
+  unit?: string | null;
+  opening: number;
+  inImport: number;
+  inTransfer: number;
+  inAdjustment: number;
+  totalIn: number;
+  outExport: number;
+  outTransfer: number;
+  outLiquidation: number;
+  totalOut: number;
+  closing: number;
+  value: number;
+}
+
+export interface InventoryLedgerWarehouseReportRow {
+  key?: string;
+  warehouseId: string;
+  materialId: string;
+  warehouseName?: string | null;
+  materialName?: string | null;
+  sku?: string | null;
+  unit?: string | null;
+  inQty: number;
+  outQty: number;
+  balanceQty: number;
+  lastDate?: string | null;
+}
+
+export interface InventoryLedgerReportResult {
+  summary: {
+    opening: number;
+    totalIn: number;
+    totalOut: number;
+    closing: number;
+    totalValue: number;
+  };
+  stockRows: InventoryLedgerStockReportRow[];
+  warehouseRows: InventoryLedgerWarehouseReportRow[];
+  entriesPage: InventoryLedgerEntry[];
+  nextCursor?: string | null;
+  available: boolean;
 }
 
 export interface WorkflowDelegationRule {

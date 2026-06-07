@@ -41,6 +41,12 @@ interface AppSettings {
   logo: string;
 }
 
+type WmsRecordRefreshOptions = {
+  itemIds?: Array<string | null | undefined>;
+  transactionIds?: Array<string | null | undefined>;
+  requestIds?: Array<string | null | undefined>;
+};
+
 const normalizeDbRole = (role: any): Role => {
   if (role === 'KEEPER') return Role.WAREHOUSE_KEEPER;
   return role as Role;
@@ -218,6 +224,7 @@ interface AppContextType {
   }) => Promise<AssetTransfer | null>;
   isModuleAdmin: (moduleKey: string) => boolean;
   loadModuleData: (module: AppModule, force?: boolean) => Promise<void>;
+  refreshWmsRecords: (options: WmsRecordRefreshOptions) => Promise<void>;
   isLoading: boolean;
   isRefreshing: boolean;
   connectionError: string | null;
@@ -1357,11 +1364,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const refreshInventoryItemsFromSupabase = async () => {
-    if (!isSupabaseConfigured) return;
-    const itemsData = await fetchAllInventoryItemRows();
-    if (itemsData) setItems(itemsData.map(mapInventoryItemFromDb));
+  const normalizeRefreshIds = (ids?: Array<string | null | undefined>): string[] =>
+    Array.from(new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean)));
+
+  const getTransactionItemIds = (...txs: Array<Transaction | null | undefined>): string[] =>
+    normalizeRefreshIds(txs.flatMap(tx => [
+      ...(tx?.items || []).map(item => item.itemId),
+      ...(tx?.pendingItems || []).map(item => item.id),
+    ]));
+
+  const upsertById = <T extends { id: string }>(current: T[], rows: T[], insertPosition: 'prepend' | 'append' = 'append'): T[] => {
+    if (rows.length === 0) return current;
+    const incoming = new Map(rows.map(row => [row.id, row]));
+    let changed = false;
+    const next = current.map(row => {
+      const updated = incoming.get(row.id);
+      if (!updated) return row;
+      incoming.delete(row.id);
+      changed = true;
+      return updated;
+    });
+    const newRows = Array.from(incoming.values());
+    if (!changed && newRows.length === 0) return current;
+    return insertPosition === 'prepend' ? [...newRows, ...next] : [...next, ...newRows];
   };
+
+  const refreshWmsRecords = useCallback(async (options: WmsRecordRefreshOptions) => {
+    if (!isSupabaseConfigured) return;
+    const itemIds = normalizeRefreshIds(options.itemIds);
+    const transactionIds = normalizeRefreshIds(options.transactionIds);
+    const requestIds = normalizeRefreshIds(options.requestIds);
+    if (itemIds.length === 0 && transactionIds.length === 0 && requestIds.length === 0) return;
+
+    const [itemsResult, transactionsResult, requestsResult] = await Promise.all([
+      itemIds.length > 0
+        ? supabase.from('items').select('*').in('id', itemIds)
+        : Promise.resolve({ data: null, error: null } as any),
+      transactionIds.length > 0
+        ? supabase.from('transactions').select('*').in('id', transactionIds)
+        : Promise.resolve({ data: null, error: null } as any),
+      requestIds.length > 0
+        ? supabase.from('requests').select('*').in('id', requestIds)
+        : Promise.resolve({ data: null, error: null } as any),
+    ]);
+
+    if (itemsResult.error) throw itemsResult.error;
+    if (transactionsResult.error) throw transactionsResult.error;
+    if (requestsResult.error) throw requestsResult.error;
+
+    if (itemsResult.data) {
+      setItems(prev => upsertById(prev, itemsResult.data.map(mapInventoryItemFromDb), 'append'));
+    }
+    if (transactionsResult.data) {
+      setTransactions(prev => upsertById(prev, transactionsResult.data.map(mapTransactionFromDb), 'prepend'));
+    }
+    if (requestsResult.data) {
+      setRequests(prev => upsertById(prev, requestsResult.data.map(mapMaterialRequestFromDb), 'prepend'));
+    }
+  }, []);
 
   const applyStockChange = async (
     tx: Transaction,
@@ -1444,7 +1504,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           throw error;
         }
         storedTx = data ? mapTransactionFromDb(data) : tx;
-        await refreshInventoryItemsFromSupabase();
+        await refreshWmsRecords({ itemIds: getTransactionItemIds(storedTx, tx) });
       } else if (isImmediateCompleted) {
         await applyStockChange(tx);
       }
@@ -1574,7 +1634,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const storedTx = data ? mapTransactionFromDb(data) : { ...tx, status, approverId: approverId || user.id };
       setTransactions(prev => prev.map(t => t.id === id ? storedTx : t));
 
-      await refreshInventoryItemsFromSupabase();
+      await refreshWmsRecords({ itemIds: getTransactionItemIds(storedTx, tx) });
 
       if (status === TransactionStatus.COMPLETED) {
         await syncFulfillmentBatchFromCompletedTransaction(storedTx, approverId || user.id);
@@ -1655,7 +1715,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const storedTx = data ? mapTransactionFromDb(data) : updatedTx;
       setTransactions(prev => prev.map(item => item.id === id ? storedTx : item));
-      await refreshInventoryItemsFromSupabase();
+      await refreshWmsRecords({ itemIds: getTransactionItemIds(storedTx, updatedTx, tx) });
     } else {
       if (selectedPendingItems.length > 0) {
         addItems(selectedPendingItems);
@@ -2969,7 +3029,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       assets, assetCategories, assetAssignments, assetMaintenances, assetLocationStocks, assetTransfers,
       addAsset, addAssetWithInitialStock, updateAsset, removeAsset, addAssetCategory, updateAssetCategory, removeAssetCategory,
       addAssetAssignment, addAssetMaintenance, updateAssetMaintenance, addAssetTransfer, transferAssetStock,
-      isModuleAdmin, loadModuleData,
+      isModuleAdmin, loadModuleData, refreshWmsRecords,
       saveSignature, deleteSignature,
       login, logout, isLoading, isRefreshing, connectionError, realtimeStatus, lastRealtimeEvent
     }}>

@@ -1,29 +1,16 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
-import AiInsightPanel from '../../components/AiInsightPanel';
-import SupplyChainTab from './SupplyChainTab';
-import MaterialPlanningPanel from '../../components/project/MaterialPlanningPanel';
 import {
     Plus, Edit2, Trash2, X, Save, Package, AlertTriangle, TrendingUp,
     CheckCircle2, Clock, ChevronDown, ChevronUp,
     BarChart3, Search, RefreshCcw, Download, Upload,
-    FileSpreadsheet, GitBranch, ListTree
+    FileSpreadsheet, GitBranch, ListTree, Loader2
 } from 'lucide-react';
-import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowBoardFilter, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment } from '../../types';
+import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowBoardFilter, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, MaterialRequestWorkflowBoardCard, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment } from '../../types';
 import { boqService, taskService, workBoqService, WorkBoqSyncPreview, poService } from '../../lib/projectService';
 import { materialRequestFulfillmentService, getRequestLineId } from '../../lib/materialRequestFulfillmentService';
 import { useApp } from '../../context/AppContext';
-import RequestModal from '../../components/RequestModal';
 import type { MaterialRequestInitialDraft } from '../../components/RequestModal';
-import MaterialRequestKanbanBoard from '../../components/project/MaterialRequestKanbanBoard';
-import ProjectWorkflowAnalyticsPanel from '../../components/project/ProjectWorkflowAnalyticsPanel';
-import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
-import ProjectWorkflowActionDialog from '../../components/project/ProjectWorkflowActionDialog';
-import ProjectWorkflowBindingPanel from '../../components/project/ProjectWorkflowBindingPanel';
-import ProjectWorkflowInbox from '../../components/project/ProjectWorkflowInbox';
-import ProjectWorkflowStartDialog from '../../components/project/ProjectWorkflowStartDialog';
-import BoqReconciliationPanel from '../../components/project/BoqReconciliationPanel';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { taskContractItemService } from '../../lib/taskContractItemService';
@@ -34,10 +21,42 @@ import { materialRequestService } from '../../lib/materialRequestService';
 import { projectSubmissionService } from '../../lib/projectSubmissionService';
 import { projectStaffService } from '../../lib/projectStaffService';
 import { projectWorkflowService } from '../../lib/projectWorkflowService';
+import { projectWorkflowBoardService } from '../../lib/projectWorkflowBoardService';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../../lib/wmsPermissions';
 import { getMaterialPlanningScopeKey, materialPlanningCurveService, materialPlanningRuleService } from '../../lib/projectMaterialPlanningService';
+
+const AiInsightPanel = React.lazy(() => import('../../components/AiInsightPanel'));
+const SupplyChainTab = React.lazy(() => import('./SupplyChainTab'));
+const MaterialPlanningPanel = React.lazy(() => import('../../components/project/MaterialPlanningPanel'));
+const MaterialRequestKanbanBoard = React.lazy(() => import('../../components/project/MaterialRequestKanbanBoard'));
+const ProjectWorkflowAnalyticsPanel = React.lazy(() => import('../../components/project/ProjectWorkflowAnalyticsPanel'));
+const ProjectSubmissionDialog = React.lazy(() => import('../../components/project/ProjectSubmissionDialog'));
+const ProjectWorkflowActionDialog = React.lazy(() => import('../../components/project/ProjectWorkflowActionDialog'));
+const ProjectWorkflowBindingPanel = React.lazy(() => import('../../components/project/ProjectWorkflowBindingPanel'));
+const ProjectWorkflowInbox = React.lazy(() => import('../../components/project/ProjectWorkflowInbox'));
+const ProjectWorkflowStartDialog = React.lazy(() => import('../../components/project/ProjectWorkflowStartDialog'));
+const BoqReconciliationPanel = React.lazy(() => import('../../components/project/BoqReconciliationPanel'));
+const RequestModal = React.lazy(() => import('../../components/RequestModal'));
+const MaterialWasteComparisonChart = React.lazy(() =>
+    import('../../components/project/MaterialTabCharts').then(module => ({ default: module.MaterialWasteComparisonChart }))
+);
+const MaterialBudgetDashboardCharts = React.lazy(() =>
+    import('../../components/project/MaterialTabCharts').then(module => ({ default: module.MaterialBudgetDashboardCharts }))
+);
+
+const ChartFallback = () => (
+    <div className="flex h-[280px] items-center justify-center rounded-xl bg-slate-50 text-xs font-bold text-slate-400 dark:bg-slate-900/40">
+        Đang tải biểu đồ...
+    </div>
+);
+
+const LazyPanelFallback = ({ label = 'Đang tải dữ liệu...' }: { label?: string }) => (
+    <div className="flex min-h-[120px] items-center justify-center rounded-2xl border border-slate-100 bg-white text-xs font-bold text-slate-400 shadow-sm dark:border-slate-700/60 dark:bg-slate-800">
+        <Loader2 size={14} className="mr-2 animate-spin text-indigo-500" /> {label}
+    </div>
+);
 
 interface MaterialTabProps {
     constructionSiteId?: string;
@@ -63,6 +82,13 @@ const MATERIAL_BOQ_SHEET_NAME = 'Vat_tu';
 const WORK_BOQ_HEADERS = ['Mã WBS', 'Mã cha', 'Tên đầu mục', 'ĐVT', 'KL dự toán', 'Đơn giá', 'Ghi chú'];
 const MATERIAL_BOQ_HEADERS = ['WBS đầu mục', 'Mã vật tư/SKU', 'Tên vật tư', 'Nhóm', 'ĐVT', 'KL dự toán', 'Ngưỡng hao hụt', 'Đơn giá', 'Ghi chú'];
 const MATERIAL_BUDGET_QTY_PRECISION = 6;
+const PROJECT_REQUEST_DATA_TABS = new Set<ProjectMaterialTabKey>(['summary', 'boq', 'request', 'waste', 'dashboard']);
+const PROJECT_REQUEST_FULFILLMENT_TABS = new Set<ProjectMaterialTabKey>(['summary', 'boq', 'request', 'waste', 'dashboard']);
+
+const getValidMaterialTab = (value?: string | null): ProjectMaterialTabKey | null =>
+    PROJECT_MATERIAL_TAB_PERMISSIONS.some(tab => tab.key === value)
+        ? value as ProjectMaterialTabKey
+        : null;
 
 const calculateMaterialBudgetQty = (workPlannedQty: number, wasteThreshold: number) => {
     const value = Number(workPlannedQty) * Number(wasteThreshold);
@@ -155,7 +181,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         () => getMaterialPlanningScopeKey(projectId || null, constructionSiteId || null),
         [constructionSiteId, projectId],
     );
-    const [activeSubTab, setActiveSubTab] = useState<ProjectMaterialTabKey>('summary');
+    const [activeSubTab, setActiveSubTab] = useState<ProjectMaterialTabKey>(() =>
+        getValidMaterialTab(new URLSearchParams(location.search).get('materialTab')) || 'summary'
+    );
     const materialAccess = useMemo<ProjectMaterialTabPermissionMap>(() => {
         const hasScopedPermissions = Boolean(materialPermissions);
         return PROJECT_MATERIAL_TAB_PERMISSIONS.reduce<ProjectMaterialTabPermissionMap>((acc, tab) => {
@@ -189,8 +217,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     }, [activeSubTab, materialAccess, visibleMaterialTabs]);
 
     useEffect(() => {
-        const materialTab = new URLSearchParams(location.search).get('materialTab') as ProjectMaterialTabKey | null;
-        if (!materialTab || !PROJECT_MATERIAL_TAB_PERMISSIONS.some(tab => tab.key === materialTab)) return;
+        const materialTab = getValidMaterialTab(new URLSearchParams(location.search).get('materialTab'));
+        if (!materialTab) return;
         if (materialAccess[materialTab].canView) setActiveSubTab(materialTab);
     }, [location.search, materialAccess]);
 
@@ -213,6 +241,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const loadedBoqScopeRef = useRef<string | null>(null);
     const [projectRequests, setProjectRequests] = useState<MaterialRequest[]>([]);
     const [projectRequestsLoaded, setProjectRequestsLoaded] = useState(false);
+    const [projectRequestBoardHydrated, setProjectRequestBoardHydrated] = useState(false);
     const [canSubmitProjectRequest, setCanSubmitProjectRequest] = useState(false);
     const [canApproveProjectRequest, setCanApproveProjectRequest] = useState(false);
     const [requestEventsByRequest, setRequestEventsByRequest] = useState<Record<string, MaterialRequestEvent[]>>({});
@@ -247,6 +276,21 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [terminalNote, setTerminalNote] = useState('');
     const [transitioningRequestId, setTransitioningRequestId] = useState<string | null>(null);
     const openedDeepLinkRequestRef = useRef<string | null>(null);
+    const [isReqModalOpen, setReqModalOpen] = useState(false);
+    const [selectedRequest, setSelectedRequest] = useState<MaterialRequest | undefined>(undefined);
+    const [requestModalInitialAction, setRequestModalInitialAction] = useState<'createFulfillmentBatch' | undefined>(undefined);
+    const [requestModalInitialDraft, setRequestModalInitialDraft] = useState<MaterialRequestInitialDraft | null>(null);
+    const [selectedBoqRequestLineIds, setSelectedBoqRequestLineIds] = useState<Set<string>>(() => new Set());
+    const [requestFulfillmentSummaries, setRequestFulfillmentSummaries] = useState<Record<string, MaterialRequestFulfillmentSummary>>({});
+    const [requestFulfillmentBatchCounts, setRequestFulfillmentBatchCounts] = useState<Record<string, number>>({});
+    const activeMaterialRequestDeepLinkId = useMemo(
+        () => new URLSearchParams(location.search).get('requestId'),
+        [location.search],
+    );
+    const needsProjectRequestData = PROJECT_REQUEST_DATA_TABS.has(activeSubTab) || isReqModalOpen || Boolean(activeMaterialRequestDeepLinkId);
+    const needsProjectWorkflowBoard = activeSubTab === 'request' || Boolean(activeMaterialRequestDeepLinkId);
+    const needsRequestFulfillmentDetails = PROJECT_REQUEST_FULFILLMENT_TABS.has(activeSubTab) || isReqModalOpen;
+    const needsRequestEvents = activeSubTab === 'request' || isReqModalOpen || Boolean(activeMaterialRequestDeepLinkId);
 
     const [expandedWorkBoqMaterialIds, setExpandedWorkBoqMaterialIds] = useState<Set<string>>(() => new Set());
 
@@ -293,8 +337,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     }, [workBoqItems]);
 
     useEffect(() => {
+        if (activeSubTab === 'po') return;
         loadModuleData('wms-core');
-    }, [loadModuleData]);
+    }, [activeSubTab, loadModuleData]);
 
     useEffect(() => {
         let cancelled = false;
@@ -385,38 +430,159 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             setRequestWorkflowSubjects({});
             setRequestWorkflowAssignments({});
             setRequestWorkflowRuntimeContexts({});
+            setRequestEventsByRequest({});
+            setRequestFulfillmentSummaries({});
+            setRequestFulfillmentBatchCounts({});
+            setRequestFulfillmentBatches({});
+            setProjectRequestBoardHydrated(false);
             setProjectRequestsLoaded(true);
             return;
         }
         try {
-            const rows = await materialRequestService.listByProject(projectId);
+            const [rows, boardPage] = await Promise.all([
+                materialRequestService.listByProject(projectId),
+                needsProjectWorkflowBoard
+                    ? projectWorkflowBoardService.listMaterialRequestCards({
+                        projectId,
+                        constructionSiteId: constructionSiteId || null,
+                        filters: { filter: 'all' },
+                        limit: 300,
+                    }).catch(error => {
+                        console.warn('Material request board RPC unavailable, falling back to legacy loaders:', error);
+                        return null;
+                    })
+                    : Promise.resolve(null),
+            ]);
             setProjectRequests(rows);
-            const subjects = await projectWorkflowService.listSubjectsByMaterialRequestIds(rows.map(row => row.id));
-            setRequestWorkflowSubjects(subjects);
-            const subjectIds = Object.values(subjects).map(subject => subject.id).filter(Boolean);
-            const runtimeContexts = await projectWorkflowService.listRuntimeContextsBySubjects(Object.values(subjects));
-            setRequestWorkflowAssignments(prev => {
-                const activeSubjectIds = new Set(subjectIds);
-                return Object.entries(prev).reduce<Record<string, WorkflowStepAssignment[]>>((acc, [subjectId, rows]) => {
-                    if (activeSubjectIds.has(subjectId)) acc[subjectId] = rows;
+            const boardCards = (boardPage?.cards || []) as MaterialRequestWorkflowBoardCard[];
+            const canHydrateFromBoard = Boolean(boardPage && !boardPage.nextCursor);
+            if (canHydrateFromBoard && (boardCards.length > 0 || rows.length === 0)) {
+                setProjectRequestBoardHydrated(true);
+                const subjects = boardCards.reduce<Record<string, ProjectWorkflowSubject>>((acc, card) => {
+                    if (!card.subject?.id) return acc;
+                    const subject = {
+                        ...card.subject,
+                        id: card.subject.id,
+                        subjectType: 'material_request',
+                        subjectId: card.id,
+                        projectId: card.projectId || projectId,
+                        constructionSiteId: card.constructionSiteId || null,
+                        currentRuntimeNode: card.currentRuntimeNode as any,
+                        currentNode: card.currentRuntimeNode as any,
+                        currentAssigneeUserIds: card.subject.currentAssigneeUserIds || card.currentAssignees?.map(item => item.id) || [],
+                        participants: card.subject.participants || [],
+                    } as ProjectWorkflowSubject;
+                    acc[card.id] = subject;
                     return acc;
                 }, {});
-            });
-            setRequestWorkflowRuntimeContexts(runtimeContexts);
+                setRequestWorkflowSubjects(subjects);
+                setRequestWorkflowRuntimeContexts(Object.values(subjects).reduce<Record<string, ProjectWorkflowRuntimeContext>>((acc, subject) => {
+                    if (subject.currentRuntimeNode) {
+                        acc[subject.id] = {
+                            subject,
+                            nodes: [subject.currentRuntimeNode],
+                            edges: [],
+                        };
+                    }
+                    return acc;
+                }, {}));
+                setRequestFulfillmentSummaries(
+                    boardCards.reduce<Record<string, MaterialRequestFulfillmentSummary>>((acc, card) => {
+                        const summary = card.fulfillmentSummary;
+                        if (!summary) return acc;
+                        acc[card.id] = {
+                            materialRequestId: card.id,
+                            requestedQty: 0,
+                            committedQty: Number(summary.committedQty || 0),
+                            orderedQty: 0,
+                            issuedQty: Number(summary.issuedQty || 0),
+                            receivedQty: Number(summary.receivedQty || 0),
+                            remainingToIssue: Math.max(Number(summary.committedQty || 0) - Number(summary.issuedQty || 0), 0),
+                            remainingToReceive: Math.max(Number(summary.committedQty || 0) - Number(summary.receivedQty || 0), 0),
+                            lineSummaries: [],
+                        };
+                        return acc;
+                    }, {}),
+                );
+                setRequestFulfillmentBatchCounts(
+                    boardCards.reduce<Record<string, number>>((acc, card) => {
+                        acc[card.id] = Number(card.fulfillmentSummary?.batchCount || 0);
+                        return acc;
+                    }, {}),
+                );
+                setRequestFulfillmentBatches({});
+                setRequestEventsByRequest(
+                    boardCards.reduce<Record<string, MaterialRequestEvent[]>>((acc, card) => {
+                        acc[card.id] = (card.eventPreview || []).map(event => ({
+                            id: event.id,
+                            requestId: card.id,
+                            projectId: card.projectId || projectId,
+                            fromStep: null,
+                            toStep: null,
+                            action: event.action,
+                            actorUserId: event.actorUserId || '',
+                            targetUserId: event.targetUserId || null,
+                            targetPermission: null,
+                            note: event.note || null,
+                            slaHours: null,
+                            dueAt: null,
+                            metadata: {},
+                            createdAt: event.createdAt || card.createdDate || '',
+                        }));
+                        return acc;
+                    }, {}),
+                );
+                setRequestWorkflowAssignments(prev => {
+                    const activeSubjectIds = new Set(Object.values(subjects).map(subject => subject.id));
+                    return Object.entries(prev).reduce<Record<string, WorkflowStepAssignment[]>>((acc, [subjectId, rows]) => {
+                        if (activeSubjectIds.has(subjectId)) acc[subjectId] = rows;
+                        return acc;
+                    }, {});
+                });
+            } else if (needsProjectWorkflowBoard) {
+                setProjectRequestBoardHydrated(false);
+                const subjects = await projectWorkflowService.listSubjectsByMaterialRequestIds(rows.map(row => row.id));
+                setRequestWorkflowSubjects(subjects);
+                const subjectIds = Object.values(subjects).map(subject => subject.id).filter(Boolean);
+                const runtimeContexts = await projectWorkflowService.listRuntimeContextsBySubjects(Object.values(subjects));
+                setRequestWorkflowAssignments(prev => {
+                    const activeSubjectIds = new Set(subjectIds);
+                    return Object.entries(prev).reduce<Record<string, WorkflowStepAssignment[]>>((acc, [subjectId, rows]) => {
+                        if (activeSubjectIds.has(subjectId)) acc[subjectId] = rows;
+                        return acc;
+                    }, {});
+                });
+                setRequestWorkflowRuntimeContexts(runtimeContexts);
+            } else {
+                setProjectRequestBoardHydrated(false);
+            }
         } catch (error: any) {
             console.error('Failed to load project material requests', error);
             toast.error('Không tải được phiếu vật tư dự án', error?.message || 'Vui lòng thử lại.');
         } finally {
             setProjectRequestsLoaded(true);
         }
-    }, [projectId]);
+    }, [constructionSiteId, needsProjectWorkflowBoard, projectId, toast]);
 
     useEffect(() => {
         setProjectRequests([]);
         setProjectRequestsLoaded(false);
+        setProjectRequestBoardHydrated(false);
+        setRequestWorkflowSubjects({});
+        setRequestWorkflowAssignments({});
+        setRequestWorkflowRuntimeContexts({});
+        setRequestEventsByRequest({});
+        setRequestFulfillmentSummaries({});
+        setRequestFulfillmentBatchCounts({});
+        setRequestFulfillmentBatches({});
         projectWorkflowService.clearAssigneeCandidateCache();
+    }, [constructionSiteId, projectId]);
+
+    useEffect(() => {
+        if (!needsProjectRequestData) return;
+        setProjectRequestsLoaded(false);
         void loadProjectRequests();
-    }, [loadProjectRequests]);
+    }, [loadProjectRequests, needsProjectRequestData]);
 
     const closeRequestModal = () => {
         setReqModalOpen(false);
@@ -606,13 +772,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     }, [getRequestWorkflowSubject, user.id, workflowTemplates]);
 
     // Request Modal state
-    const [isReqModalOpen, setReqModalOpen] = useState(false);
-    const [selectedRequest, setSelectedRequest] = useState<MaterialRequest | undefined>(undefined);
-    const [requestModalInitialAction, setRequestModalInitialAction] = useState<'createFulfillmentBatch' | undefined>(undefined);
-    const [requestModalInitialDraft, setRequestModalInitialDraft] = useState<MaterialRequestInitialDraft | null>(null);
-    const [selectedBoqRequestLineIds, setSelectedBoqRequestLineIds] = useState<Set<string>>(() => new Set());
-    const [requestFulfillmentSummaries, setRequestFulfillmentSummaries] = useState<Record<string, MaterialRequestFulfillmentSummary>>({});
-    const [requestFulfillmentBatchCounts, setRequestFulfillmentBatchCounts] = useState<Record<string, number>>({});
     const selectedRequestLive = useMemo(
         () => selectedRequest ? requests.find(request => request.id === selectedRequest.id) || selectedRequest : undefined,
         [requests, selectedRequest],
@@ -633,7 +792,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     }, [requestWorkflowAssignments, requestWorkflowSubjects, selectedRequestLive]);
 
     useEffect(() => {
-        const requestId = new URLSearchParams(location.search).get('requestId');
+        const requestId = activeMaterialRequestDeepLinkId;
         if (!requestId || !projectRequestsLoaded || openedDeepLinkRequestRef.current === requestId) return;
         const target = requests.find(request => request.id === requestId);
         if (!target) return;
@@ -642,7 +801,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         setSelectedRequest(target);
         setRequestModalInitialDraft(null);
         setReqModalOpen(true);
-    }, [location.search, projectRequestsLoaded, requests]);
+    }, [activeMaterialRequestDeepLinkId, projectRequestsLoaded, requests]);
 
     const requestFulfillmentLineSummaries = useMemo(() => {
         const map: Record<string, Map<string, MaterialRequestFulfillmentSummary['lineSummaries'][number]>> = {};
@@ -716,6 +875,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     }, [activeSubTab, loadPlanningData, materialAccess.planning.canView]);
 
     useEffect(() => {
+        if (!needsRequestFulfillmentDetails) return;
         let cancelled = false;
         const loadFulfillment = async () => {
             if (requests.length === 0) {
@@ -747,9 +907,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             }
         });
         return () => { cancelled = true; };
-    }, [requests]);
+    }, [needsRequestFulfillmentDetails, requests]);
 
     useEffect(() => {
+        if (!needsRequestEvents) return;
+        if (projectRequestBoardHydrated) return;
         let cancelled = false;
         const loadEvents = async () => {
             if (requests.length === 0) {
@@ -764,7 +926,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             if (!cancelled) setRequestEventsByRequest({});
         });
         return () => { cancelled = true; };
-    }, [requests]);
+    }, [needsRequestEvents, projectRequestBoardHydrated, requests]);
 
     const [showBoqForm, setShowBoqForm] = useState(false);
     const [editingBoq, setEditingBoq] = useState<MaterialBudgetItem | null>(null);
@@ -825,10 +987,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const refreshMaterialRequestWorkflow = async () => {
-        await Promise.all([
-            loadProjectRequests(),
-            loadModuleData('wms-core', true),
-        ]);
+        await loadProjectRequests();
     };
 
     const canManageProjectWorkflow = (request: MaterialRequest) =>
@@ -950,6 +1109,61 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
         return updated;
     };
+
+    const hydrateProjectRequestDetail = useCallback((detail: {
+        request: MaterialRequest;
+        workflowSubject?: ProjectWorkflowSubject | null;
+        runtimeContext?: ProjectWorkflowRuntimeContext | null;
+        assignments: WorkflowStepAssignment[];
+        fulfillmentBatches: MaterialRequestFulfillmentBatch[];
+        events: MaterialRequestEvent[];
+    }) => {
+        upsertProjectRequest(detail.request);
+        setSelectedRequest(prev => prev?.id === detail.request.id ? detail.request : prev);
+        if (detail.workflowSubject) {
+            setRequestWorkflowSubjects(prev => ({ ...prev, [detail.request.id]: detail.workflowSubject as ProjectWorkflowSubject }));
+            setRequestWorkflowAssignments(prev => ({
+                ...prev,
+                [detail.workflowSubject!.id]: detail.assignments,
+            }));
+            if (detail.runtimeContext) {
+                setRequestWorkflowRuntimeContexts(prev => ({
+                    ...prev,
+                    [detail.workflowSubject!.id]: detail.runtimeContext as ProjectWorkflowRuntimeContext,
+                }));
+            }
+        }
+        setRequestFulfillmentBatches(prev => ({
+            ...prev,
+            [detail.request.id]: detail.fulfillmentBatches,
+        }));
+        setRequestFulfillmentSummaries(prev => ({
+            ...prev,
+            [detail.request.id]: materialRequestFulfillmentService.summarizeRequest(detail.request, detail.fulfillmentBatches),
+        }));
+        setRequestFulfillmentBatchCounts(prev => ({
+            ...prev,
+            [detail.request.id]: detail.fulfillmentBatches.length,
+        }));
+        setRequestEventsByRequest(prev => ({
+            ...prev,
+            [detail.request.id]: detail.events,
+        }));
+    }, []);
+
+    const openProjectRequestDetail = useCallback((request: MaterialRequest, initialAction?: 'createFulfillmentBatch') => {
+        setSelectedRequest(request);
+        setRequestModalInitialAction(initialAction);
+        setRequestModalInitialDraft(null);
+        setReqModalOpen(true);
+        projectWorkflowBoardService.getMaterialRequestDetail(request.id)
+            .then(detail => {
+                if (detail) hydrateProjectRequestDetail(detail);
+            })
+            .catch(error => {
+                console.warn('Failed to lazy load material request detail:', error);
+            });
+    }, [hydrateProjectRequestDetail]);
 
     const performRequestTransition = async (params: {
         request: MaterialRequest;
@@ -1188,10 +1402,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             return;
         }
         if (toStage === 'site_quality_check') {
-            setSelectedRequest(request);
-            setRequestModalInitialAction('createFulfillmentBatch');
-            setRequestModalInitialDraft(null);
-            setReqModalOpen(true);
+            openProjectRequestDetail(request, 'createFulfillmentBatch');
             return;
         }
         if (toStage === 'closed') {
@@ -2258,6 +2469,27 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         }));
     }, [computedBoqItems]);
 
+    const budgetCategoryChartData = useMemo(() => {
+        const catMap: Record<string, number> = {};
+        computedBoqItems.forEach(item => {
+            catMap[item.category] = (catMap[item.category] || 0) + (item.budgetTotal || 0);
+        });
+        return Object.entries(catMap)
+            .map(([name, value]) => ({ name, value }))
+            .sort((a, b) => b.value - a.value);
+    }, [computedBoqItems]);
+
+    const topBudgetValueChartData = useMemo(() => {
+        return [...computedBoqItems]
+            .sort((a, b) => (b.budgetTotal || 0) - (a.budgetTotal || 0))
+            .slice(0, 8)
+            .map(item => ({
+                name: item.itemName.length > 10 ? item.itemName.slice(0, 10) + '…' : item.itemName,
+                'Dự toán': (item.budgetTotal || 0) / 1e6,
+                'Thực tế': (item.actualTotal || 0) / 1e6,
+            }));
+    }, [computedBoqItems]);
+
     const handlePlanningRuleSaved = useCallback((rule: MaterialPlanningRule) => {
         setPlanningRules(prev => {
             const sameTarget = (item: MaterialPlanningRule) =>
@@ -2303,7 +2535,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             {/* AI Analysis */}
             <div className="flex items-center justify-between">
                 <h3 className="text-sm font-black text-slate-700 dark:text-white">Quản lý vật tư</h3>
-                <AiInsightPanel module="material" siteId={constructionSiteId} />
+                <React.Suspense fallback={null}>
+                    <AiInsightPanel module="material" siteId={constructionSiteId} />
+                </React.Suspense>
             </div>
             {/* KPI Summary */}
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
@@ -2429,7 +2663,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             <ChevronDown size={16} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
                         </summary>
                         <div className="border-t border-slate-100 p-4 dark:border-slate-700/60">
-                            <BoqReconciliationPanel projectId={projectId || null} constructionSiteId={constructionSiteId || null} />
+                            <React.Suspense fallback={<LazyPanelFallback label="Đang tải đối chiếu BOQ..." />}>
+                                <BoqReconciliationPanel projectId={projectId || null} constructionSiteId={constructionSiteId || null} />
+                            </React.Suspense>
                         </div>
                     </details>
                     <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
@@ -2735,26 +2971,28 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             )}
 
             {materialAccess.planning.canView && activeSubTab === 'planning' && (
-                <MaterialPlanningPanel
-                    projectId={projectId || null}
-                    constructionSiteId={constructionSiteId || null}
-                    scopeKey={planningScopeKey}
-                    siteWarehouseId={defaultSiteWarehouseId}
-                    canManage={canManagePlanning}
-                    userId={user.id}
-                    tasks={tasks}
-                    workBoqItems={workBoqItems}
-                    materialBudgetItems={computedBoqItems}
-                    inventoryItems={inventoryItems}
-                    purchaseOrders={purchaseOrders}
-                    transactions={transactions}
-                    rules={planningRules}
-                    curveTemplates={planningCurveTemplates}
-                    loading={planningLoading}
-                    onRefresh={loadPlanningData}
-                    onRuleSaved={handlePlanningRuleSaved}
-                    onCreateDraftPo={handleCreatePlanningDraftPo}
-                />
+                <React.Suspense fallback={<LazyPanelFallback label="Đang tải kế hoạch vật tư..." />}>
+                    <MaterialPlanningPanel
+                        projectId={projectId || null}
+                        constructionSiteId={constructionSiteId || null}
+                        scopeKey={planningScopeKey}
+                        siteWarehouseId={defaultSiteWarehouseId}
+                        canManage={canManagePlanning}
+                        userId={user.id}
+                        tasks={tasks}
+                        workBoqItems={workBoqItems}
+                        materialBudgetItems={computedBoqItems}
+                        inventoryItems={inventoryItems}
+                        purchaseOrders={purchaseOrders}
+                        transactions={transactions}
+                        rules={planningRules}
+                        curveTemplates={planningCurveTemplates}
+                        loading={planningLoading}
+                        onRefresh={loadPlanningData}
+                        onRuleSaved={handlePlanningRuleSaved}
+                        onCreateDraftPo={handleCreatePlanningDraftPo}
+                    />
+                </React.Suspense>
             )}
 
             {/* Material Request Tab — using MaterialRequest from Inventory module */}
@@ -2772,12 +3010,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             </button>
                         )}
                     </div>
-                    <ProjectWorkflowBindingPanel
-                        projectId={projectId || null}
-                        constructionSiteId={constructionSiteId || null}
-                        templates={workflowTemplates}
-                        onConfigurationChange={setWorkflowConfiguration}
-                    />
+                    <React.Suspense fallback={<LazyPanelFallback label="Đang tải cấu hình workflow..." />}>
+                        <ProjectWorkflowBindingPanel
+                            projectId={projectId || null}
+                            constructionSiteId={constructionSiteId || null}
+                            templates={workflowTemplates}
+                            onConfigurationChange={setWorkflowConfiguration}
+                        />
+                    </React.Suspense>
                     {!canCreateMaterialRequest && (
                         <div className="border-b border-amber-100 bg-amber-50 px-5 py-2 text-[11px] font-bold text-amber-700">
                             Tài khoản chỉ đang có quyền xem. Muốn tạo/gửi đề xuất cần quyền submit trong Tổ chức dự án.
@@ -2790,18 +3030,20 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     )}
                     {requests.length > 0 && (
                         <>
-                            <ProjectWorkflowInbox
-                                requests={sortedRequests}
-                                subjectsByRequestId={requestWorkflowSubjects}
-                                users={users}
-                                currentUserId={user.id}
-                                onOpenRequest={req => { setSelectedRequest(req); setRequestModalInitialAction(undefined); setRequestModalInitialDraft(null); setReqModalOpen(true); }}
-                            />
-                            <ProjectWorkflowAnalyticsPanel
-                                requests={sortedRequests}
-                                subjectsByRequestId={requestWorkflowSubjects}
-                                users={users}
-                            />
+                            <React.Suspense fallback={<LazyPanelFallback label="Đang tải hộp việc workflow..." />}>
+                                <ProjectWorkflowInbox
+                                    requests={sortedRequests}
+                                    subjectsByRequestId={requestWorkflowSubjects}
+                                    users={users}
+                                    currentUserId={user.id}
+                                    onOpenRequest={req => openProjectRequestDetail(req)}
+                                />
+                                <ProjectWorkflowAnalyticsPanel
+                                    requests={sortedRequests}
+                                    subjectsByRequestId={requestWorkflowSubjects}
+                                    users={users}
+                                />
+                            </React.Suspense>
                             <div className="flex flex-col gap-3 border-b border-slate-100 bg-white px-5 py-3 lg:flex-row lg:items-center lg:justify-between">
                                 <div className="flex flex-wrap gap-1.5">
                                     {([
@@ -2851,41 +3093,45 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             <p className="text-[10px] text-slate-300 mt-1">Tạo đề xuất mới để yêu cầu vật tư từ Kho Tổng</p>
                         </div>
                     ) : (
-                        <MaterialRequestKanbanBoard
-                            requests={sortedRequests}
-                            fulfillmentSummaries={requestFulfillmentSummaries}
-                            fulfillmentBatches={requestFulfillmentBatches}
-                            eventsByRequest={requestEventsByRequest}
-                            transactions={transactions}
-                            inventoryItemById={inventoryItemById}
-                            workBoqItemById={workBoqItemById}
-                            userById={userById}
-                            workflowSubjectsByRequestId={requestWorkflowSubjects}
-                            workflowNodes={workflowConfiguration?.binding
-                                ? workflowNodes.filter(node => node.templateId === workflowConfiguration.binding?.workflowTemplateId)
-                                : []}
-                            workflowRuntimeNodes={requestWorkflowRuntimeNodes}
-                            currentUserId={user.id}
-                            boardFilter={workflowBoardFilter}
-                            searchTerm={workflowBoardSearch}
-                            hideEmptyWorkflowLanes={hideEmptyWorkflowLanes}
-                            canMoveRequest={canMoveMaterialRequest}
-                            onMoveRequest={handleMoveMaterialRequest}
-                            onOpenRequest={req => { setSelectedRequest(req); setRequestModalInitialAction(undefined); setRequestModalInitialDraft(null); setReqModalOpen(true); }}
-                        />
+                        <React.Suspense fallback={<LazyPanelFallback label="Đang tải kanban đề xuất..." />}>
+                            <MaterialRequestKanbanBoard
+                                requests={sortedRequests}
+                                fulfillmentSummaries={requestFulfillmentSummaries}
+                                fulfillmentBatches={requestFulfillmentBatches}
+                                eventsByRequest={requestEventsByRequest}
+                                transactions={transactions}
+                                inventoryItemById={inventoryItemById}
+                                workBoqItemById={workBoqItemById}
+                                userById={userById}
+                                workflowSubjectsByRequestId={requestWorkflowSubjects}
+                                workflowNodes={workflowConfiguration?.binding
+                                    ? workflowNodes.filter(node => node.templateId === workflowConfiguration.binding?.workflowTemplateId)
+                                    : []}
+                                workflowRuntimeNodes={requestWorkflowRuntimeNodes}
+                                currentUserId={user.id}
+                                boardFilter={workflowBoardFilter}
+                                searchTerm={workflowBoardSearch}
+                                hideEmptyWorkflowLanes={hideEmptyWorkflowLanes}
+                                canMoveRequest={canMoveMaterialRequest}
+                                onMoveRequest={handleMoveMaterialRequest}
+                                onOpenRequest={req => openProjectRequestDetail(req)}
+                            />
+                        </React.Suspense>
                     )}
                 </div>
             )}
 
             {materialAccess.po.canView && activeSubTab === 'po' && (
-                <SupplyChainTab
-                    constructionSiteId={constructionSiteId}
-                    projectId={projectId}
-                    canManageTab={canManagePo}
-                    initialDraftPo={planningDraftPo}
-                    initialDraftPoKey={planningDraftPoKey}
-                    compact
-                />
+                <React.Suspense fallback={<LazyPanelFallback label="Đang tải đơn hàng PO..." />}>
+                    <SupplyChainTab
+                        constructionSiteId={constructionSiteId}
+                        projectId={projectId}
+                        canManageTab={canManagePo}
+                        initialDraftPo={planningDraftPo}
+                        initialDraftPoKey={planningDraftPoKey}
+                        compact
+                    />
+                </React.Suspense>
             )}
 
             {/* Waste Comparison Tab */}
@@ -2901,21 +3147,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             {/* Bar chart: Budget vs Actual */}
                             <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm p-5">
                                 <h3 className="text-sm font-black text-slate-700 mb-4 flex items-center gap-2"><BarChart3 size={16} className="text-indigo-500" /> Dự toán vs Thực tế</h3>
-                                <ResponsiveContainer width="100%" height={300}>
-                                    <BarChart data={wasteChartData} barGap={4}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                                        <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                                        <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} />
-                                        <Legend wrapperStyle={{ fontSize: 11 }} />
-                                        <Bar dataKey="Dự toán" fill="#818cf8" radius={[4, 4, 0, 0]} />
-                                        <Bar dataKey="Thực tế" radius={[4, 4, 0, 0]}>
-                                            {wasteChartData.map((entry, idx) => (
-                                                <Cell key={idx} fill={entry.isOver ? '#ef4444' : '#10b981'} />
-                                            ))}
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
+                                <React.Suspense fallback={<ChartFallback />}>
+                                    <MaterialWasteComparisonChart data={wasteChartData} />
+                                </React.Suspense>
                             </div>
 
                             {/* Waste detail table */}
@@ -2976,25 +3210,27 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             )}
 
             {submissionTransition && (
-                <ProjectSubmissionDialog
-                    title={submissionTransition.title}
-                    actionLabel="Chuyển bước"
-                    documentLabel="Đề xuất vật tư dự án"
-                    documentName={submissionTransition.request.code}
-                    documentSubtitle={submissionTransition.subtitle}
-                    projectId={projectId || undefined}
-                    constructionSiteId={constructionSiteId || null}
-                    recipientPermissionCodes={submissionTransition.recipientPermissionCodes?.length ? submissionTransition.recipientPermissionCodes as any : ['approve']}
-                    recipientHint={submissionTransition.recipientHint || 'Chọn đích danh nhân sự dự án có quyền approve để xử lý bước tiếp theo.'}
-                    details={[
-                        { label: 'Kho nhận', value: warehouses.find(w => w.id === submissionTransition.request.siteWarehouseId)?.name || submissionTransition.request.siteWarehouseId },
-                        { label: 'Số dòng vật tư', value: `${submissionTransition.request.items.length} dòng` },
-                        { label: submissionTransition.dynamicWorkflow ? 'Bước kế tiếp' : 'SLA bước mới', value: submissionTransition.dynamicWorkflow ? (submissionTransition.nextNodeLabel || 'Theo mẫu workflow') : (submissionTransition.toStep === 'batch_planning' ? '48h' : '24h') },
-                        { label: 'Ghi chú phiếu', value: submissionTransition.request.note || '-' },
-                    ]}
-                    onCancel={() => setSubmissionTransition(null)}
-                    onConfirm={handleSubmitTransitionTarget}
-                />
+                <React.Suspense fallback={<LazyPanelFallback label="Đang mở hộp thoại chuyển bước..." />}>
+                    <ProjectSubmissionDialog
+                        title={submissionTransition.title}
+                        actionLabel="Chuyển bước"
+                        documentLabel="Đề xuất vật tư dự án"
+                        documentName={submissionTransition.request.code}
+                        documentSubtitle={submissionTransition.subtitle}
+                        projectId={projectId || undefined}
+                        constructionSiteId={constructionSiteId || null}
+                        recipientPermissionCodes={submissionTransition.recipientPermissionCodes?.length ? submissionTransition.recipientPermissionCodes as any : ['approve']}
+                        recipientHint={submissionTransition.recipientHint || 'Chọn đích danh nhân sự dự án có quyền approve để xử lý bước tiếp theo.'}
+                        details={[
+                            { label: 'Kho nhận', value: warehouses.find(w => w.id === submissionTransition.request.siteWarehouseId)?.name || submissionTransition.request.siteWarehouseId },
+                            { label: 'Số dòng vật tư', value: `${submissionTransition.request.items.length} dòng` },
+                            { label: submissionTransition.dynamicWorkflow ? 'Bước kế tiếp' : 'SLA bước mới', value: submissionTransition.dynamicWorkflow ? (submissionTransition.nextNodeLabel || 'Theo mẫu workflow') : (submissionTransition.toStep === 'batch_planning' ? '48h' : '24h') },
+                            { label: 'Ghi chú phiếu', value: submissionTransition.request.note || '-' },
+                        ]}
+                        onCancel={() => setSubmissionTransition(null)}
+                        onConfirm={handleSubmitTransitionTarget}
+                    />
+                </React.Suspense>
             )}
 
             {terminalTransition && (
@@ -3195,43 +3431,17 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             {materialAccess.dashboard.canView && activeSubTab === 'dashboard' && (
                 <div className="space-y-6">
                     {/* Row 1: Pie + Bar */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Pie Chart - Budget by Category */}
-                        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm p-5">
-                            <h4 className="text-sm font-black text-slate-800 mb-4">🥧 Ngân sách theo nhóm VT</h4>
-                            <ResponsiveContainer width="100%" height={280}>
-                                <PieChart>
-                                    <Pie data={(() => {
-                                        const catMap: Record<string, number> = {};
-                                        computedBoqItems.forEach(b => { catMap[b.category] = (catMap[b.category] || 0) + (b.budgetTotal || 0); });
-                                        return Object.entries(catMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-                                    })()} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }) => `${name} ${formatQuantity(percent * 100)}%`}>
-                                        {['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316', '#64748b'].map((c, i) => <Cell key={i} fill={c} />)}
-                                    </Pie>
-                                    <Tooltip formatter={(v: number) => fmt(v) + ' đ'} />
-                                </PieChart>
-                            </ResponsiveContainer>
+                    <React.Suspense fallback={
+                        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                            <ChartFallback />
+                            <ChartFallback />
                         </div>
-                        {/* Bar Chart - Top 10 Value */}
-                        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm p-5">
-                            <h4 className="text-sm font-black text-slate-800 mb-4">📊 Top giá trị DT cao nhất</h4>
-                            <ResponsiveContainer width="100%" height={280}>
-                                <BarChart data={[...computedBoqItems].sort((a, b) => (b.budgetTotal || 0) - (a.budgetTotal || 0)).slice(0, 8).map(b => ({
-                                    name: b.itemName.length > 10 ? b.itemName.slice(0, 10) + '…' : b.itemName,
-                                    'Dự toán': (b.budgetTotal || 0) / 1e6,
-                                    'Thực tế': (b.actualTotal || 0) / 1e6,
-                                }))} layout="vertical">
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis type="number" tickFormatter={v => v + 'tr'} />
-                                    <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 10 }} />
-                                    <Tooltip formatter={(v: number) => `${Number(v || 0).toLocaleString('vi-VN', { maximumFractionDigits: 0 })} triệu`} />
-                                    <Legend />
-                                    <Bar dataKey="Dự toán" fill="#6366f1" radius={[0, 4, 4, 0]} />
-                                    <Bar dataKey="Thực tế" fill="#ec4899" radius={[0, 4, 4, 0]} />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
+                    }>
+                        <MaterialBudgetDashboardCharts
+                            categoryData={budgetCategoryChartData}
+                            topValueData={topBudgetValueChartData}
+                        />
+                    </React.Suspense>
 
                     {/* Row 2: Budget Overrun Ranking + Waste Alert Table */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -3285,109 +3495,121 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
             {/* Request Modal — Integrated from Inventory Module */}
             {isReqModalOpen && (
-                <RequestModal
-                    isOpen={isReqModalOpen}
-                    onClose={closeRequestModal}
-                    request={selectedRequestLive}
-                    defaultSiteWarehouseId={defaultSiteWarehouseId}
-                    projectId={projectId || null}
-                    constructionSiteId={constructionSiteId || null}
-                    requestOrigin="project"
-                    workBoqItems={workBoqItems}
-                    materialBudgetItems={computedBoqItems}
-                    requestFulfillmentSummariesByRequestId={requestFulfillmentSummaries}
-                    initialDraft={requestModalInitialDraft}
-                    initialAction={requestModalInitialAction}
-                    canProcessProjectWorkflow={selectedRequestLive ? canActOnProjectRequest(selectedRequestLive) : false}
-                    canManageProjectWorkflow={selectedRequestLive ? canManageProjectWorkflow(selectedRequestLive) : false}
-                    projectWorkflowSubject={selectedRequestLive ? requestWorkflowSubjects[selectedRequestLive.id] : undefined}
-                    projectWorkflowAssignments={
-                        selectedRequestLive && requestWorkflowSubjects[selectedRequestLive.id]
-                            ? requestWorkflowAssignments[requestWorkflowSubjects[selectedRequestLive.id].id] || []
-                            : []
-                    }
-                    projectWorkflowNodes={
-                        selectedRequestLive && requestWorkflowSubjects[selectedRequestLive.id]
-                            ? requestWorkflowRuntimeContexts[requestWorkflowSubjects[selectedRequestLive.id].id]?.nodes
-                                .map(node => runtimeNodeToWorkflowNode(node))
-                                .filter(Boolean) as WorkflowNode[] || workflowNodes
-                            : workflowNodes
-                    }
-                    projectWorkflowNextNode={selectedRequestLive ? getWorkflowNextNode(requestWorkflowSubjects[selectedRequestLive.id]) : null}
-                    projectWorkflowReturnTargetNode={selectedRequestLive ? getWorkflowReturnTargetNode(requestWorkflowSubjects[selectedRequestLive.id]) : null}
-                    onProjectWorkflowAction={handleProjectWorkflowActionFromModal}
-                    onSaved={handleMaterialRequestSavedFromBoq}
-                    onDeleted={handleRequestDeleted}
-                />
+                <React.Suspense fallback={
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 backdrop-blur-sm">
+                        <div className="flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-slate-600 shadow-xl dark:bg-slate-900 dark:text-slate-200">
+                            <Loader2 size={16} className="animate-spin text-blue-500" /> Đang mở phiếu...
+                        </div>
+                    </div>
+                }>
+                    <RequestModal
+                        isOpen={isReqModalOpen}
+                        onClose={closeRequestModal}
+                        request={selectedRequestLive}
+                        defaultSiteWarehouseId={defaultSiteWarehouseId}
+                        projectId={projectId || null}
+                        constructionSiteId={constructionSiteId || null}
+                        requestOrigin="project"
+                        workBoqItems={workBoqItems}
+                        materialBudgetItems={computedBoqItems}
+                        requestFulfillmentSummariesByRequestId={requestFulfillmentSummaries}
+                        initialDraft={requestModalInitialDraft}
+                        initialAction={requestModalInitialAction}
+                        canProcessProjectWorkflow={selectedRequestLive ? canActOnProjectRequest(selectedRequestLive) : false}
+                        canManageProjectWorkflow={selectedRequestLive ? canManageProjectWorkflow(selectedRequestLive) : false}
+                        projectWorkflowSubject={selectedRequestLive ? requestWorkflowSubjects[selectedRequestLive.id] : undefined}
+                        projectWorkflowAssignments={
+                            selectedRequestLive && requestWorkflowSubjects[selectedRequestLive.id]
+                                ? requestWorkflowAssignments[requestWorkflowSubjects[selectedRequestLive.id].id] || []
+                                : []
+                        }
+                        projectWorkflowNodes={
+                            selectedRequestLive && requestWorkflowSubjects[selectedRequestLive.id]
+                                ? requestWorkflowRuntimeContexts[requestWorkflowSubjects[selectedRequestLive.id].id]?.nodes
+                                    .map(node => runtimeNodeToWorkflowNode(node))
+                                    .filter(Boolean) as WorkflowNode[] || workflowNodes
+                                : workflowNodes
+                        }
+                        projectWorkflowNextNode={selectedRequestLive ? getWorkflowNextNode(requestWorkflowSubjects[selectedRequestLive.id]) : null}
+                        projectWorkflowReturnTargetNode={selectedRequestLive ? getWorkflowReturnTargetNode(requestWorkflowSubjects[selectedRequestLive.id]) : null}
+                        onProjectWorkflowAction={handleProjectWorkflowActionFromModal}
+                        onSaved={handleMaterialRequestSavedFromBoq}
+                        onDeleted={handleRequestDeleted}
+                    />
+                </React.Suspense>
             )}
 
             {startWorkflowRequest && (
-                <ProjectWorkflowStartDialog
-                    requestId={startWorkflowRequest.id}
-                    requestCode={startWorkflowRequest.code}
-                    requesterUserId={startWorkflowRequest.requesterId}
-                    projectId={startWorkflowRequest.projectId || projectId || null}
-                    constructionSiteId={startWorkflowRequest.constructionSiteId || constructionSiteId || null}
-                    users={users}
-                    employees={employees}
-                    orgUnits={orgUnits}
-                    onCancel={() => setStartWorkflowRequest(null)}
-                    onConfirm={async input => {
-                        await performDynamicRequestTransition({
-                            request: startWorkflowRequest,
-                            action: 'SUBMITTED',
-                            templateId: input.templateId,
-                            target: {
-                                userId: input.assigneeUserIds[0],
-                                userIds: input.assigneeUserIds,
-                                name: userById.get(input.assigneeUserIds[0])?.name || input.assigneeUserIds[0],
-                                names: input.assigneeUserIds.map(id => userById.get(id)?.name || id),
+                <React.Suspense fallback={<LazyPanelFallback label="Đang mở gửi duyệt..." />}>
+                    <ProjectWorkflowStartDialog
+                        requestId={startWorkflowRequest.id}
+                        requestCode={startWorkflowRequest.code}
+                        requesterUserId={startWorkflowRequest.requesterId}
+                        projectId={startWorkflowRequest.projectId || projectId || null}
+                        constructionSiteId={startWorkflowRequest.constructionSiteId || constructionSiteId || null}
+                        users={users}
+                        employees={employees}
+                        orgUnits={orgUnits}
+                        onCancel={() => setStartWorkflowRequest(null)}
+                        onConfirm={async input => {
+                            await performDynamicRequestTransition({
+                                request: startWorkflowRequest,
+                                action: 'SUBMITTED',
+                                templateId: input.templateId,
+                                target: {
+                                    userId: input.assigneeUserIds[0],
+                                    userIds: input.assigneeUserIds,
+                                    name: userById.get(input.assigneeUserIds[0])?.name || input.assigneeUserIds[0],
+                                    names: input.assigneeUserIds.map(id => userById.get(id)?.name || id),
+                                    note: input.comment,
+                                },
                                 note: input.comment,
-                            },
-                            note: input.comment,
-                            metadata: { source: 'kanban_start_dynamic' },
-                        });
-                        setStartWorkflowRequest(null);
-                    }}
-                />
+                                metadata: { source: 'kanban_start_dynamic' },
+                            });
+                            setStartWorkflowRequest(null);
+                        }}
+                    />
+                </React.Suspense>
             )}
 
             {workflowActionTransition && (
-                <ProjectWorkflowActionDialog
-                    action="approve"
-                    subject={workflowActionTransition.subject}
-                    users={users}
-                    employees={employees}
-                    orgUnits={orgUnits}
-                    currentNode={workflowActionTransition.subject.currentNode}
-                    nextNode={workflowActionTransition.nextNode}
-                    requesterUserId={workflowActionTransition.request.requesterId}
-                    documentName={workflowActionTransition.request.code}
-                    completionHandoff={{
-                        required: true,
-                        eligiblePermissionCodes: ['approve'],
-                        assigneeLabel: 'Người phụ trách tạo đợt cấp / đặt mua',
-                        helperText: 'Workflow phê duyệt sẽ hoàn thành. Phiếu vật tư chuyển sang Chờ tạo đợt cấp và giao cho người được chọn để cấp hàng hoặc đặt mua.',
-                    }}
-                    onCancel={() => setWorkflowActionTransition(null)}
-                    onConfirm={async context => {
-                        const assigneeUserIds = context.assigneeUserIds || [];
-                        await performDynamicRequestTransition({
-                            request: workflowActionTransition.request,
-                            action: 'APPROVED',
-                            target: assigneeUserIds.length > 0 ? {
-                                userId: assigneeUserIds[0],
-                                userIds: assigneeUserIds,
-                                name: userById.get(assigneeUserIds[0])?.name || assigneeUserIds[0],
-                                names: assigneeUserIds.map(id => userById.get(id)?.name || id),
+                <React.Suspense fallback={<LazyPanelFallback label="Đang mở xử lý workflow..." />}>
+                    <ProjectWorkflowActionDialog
+                        action="approve"
+                        subject={workflowActionTransition.subject}
+                        users={users}
+                        employees={employees}
+                        orgUnits={orgUnits}
+                        currentNode={workflowActionTransition.subject.currentNode}
+                        nextNode={workflowActionTransition.nextNode}
+                        requesterUserId={workflowActionTransition.request.requesterId}
+                        documentName={workflowActionTransition.request.code}
+                        completionHandoff={{
+                            required: true,
+                            eligiblePermissionCodes: ['approve'],
+                            assigneeLabel: 'Người phụ trách tạo đợt cấp / đặt mua',
+                            helperText: 'Workflow phê duyệt sẽ hoàn thành. Phiếu vật tư chuyển sang Chờ tạo đợt cấp và giao cho người được chọn để cấp hàng hoặc đặt mua.',
+                        }}
+                        onCancel={() => setWorkflowActionTransition(null)}
+                        onConfirm={async context => {
+                            const assigneeUserIds = context.assigneeUserIds || [];
+                            await performDynamicRequestTransition({
+                                request: workflowActionTransition.request,
+                                action: 'APPROVED',
+                                target: assigneeUserIds.length > 0 ? {
+                                    userId: assigneeUserIds[0],
+                                    userIds: assigneeUserIds,
+                                    name: userById.get(assigneeUserIds[0])?.name || assigneeUserIds[0],
+                                    names: assigneeUserIds.map(id => userById.get(id)?.name || id),
+                                    note: context.comment,
+                                } : null,
                                 note: context.comment,
-                            } : null,
-                            note: context.comment,
-                            metadata: { source: 'kanban_dynamic_step', nextNodeId: workflowActionTransition.nextNode.id },
-                        });
-                        setWorkflowActionTransition(null);
-                    }}
-                />
+                                metadata: { source: 'kanban_dynamic_step', nextNodeId: workflowActionTransition.nextNode.id },
+                            });
+                            setWorkflowActionTransition(null);
+                        }}
+                    />
+                </React.Suspense>
             )}
 
             {importPreview && (

@@ -27,7 +27,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   onClose,
   onReceived,
 }) => {
-  const { warehouses, items, user, loadModuleData } = useApp();
+  const { warehouses, items, user, refreshWmsRecords } = useApp();
   const { canManage } = usePermission();
   const toast = useToast();
   const [quantities, setQuantities] = useState<Record<string, string>>({});
@@ -117,7 +117,11 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
         po,
         receiptLines,
       });
-      await loadModuleData('wms', true);
+      await refreshWmsRecords({
+        itemIds: receiptLines.map(line => line.itemId),
+        transactionIds: result.transactionIds,
+        requestIds: result.materialRequestIds,
+      });
       toast.success(
         'Đã ghi nhận thực nhận',
         `${po.poNumber} đã cập nhật ${result.transactionIds.length} phiếu chờ Duyệt SL/CL. PO và tồn kho chưa được kết thúc.`,

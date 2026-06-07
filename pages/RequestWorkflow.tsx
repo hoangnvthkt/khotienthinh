@@ -3,10 +3,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { MaterialRequest, MaterialRequestFulfillmentSummary, RequestStatus } from '../types';
 import { Plus, Search, FileText, ArrowRight, Truck, CheckCircle, Clock, AlertCircle, Inbox, Send as SendIcon, PackageSearch } from 'lucide-react';
-import RequestModal from '../components/RequestModal';
 import { useModuleData } from '../hooks/useModuleData';
 import { canApproveMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, canViewMaterialRequest } from '../lib/wmsPermissions';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
+
+const RequestModal = React.lazy(() => import('../components/RequestModal'));
 
 const RequestWorkflow: React.FC = () => {
   const { requests, warehouses, user, users } = useApp();
@@ -94,7 +95,11 @@ const RequestWorkflow: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <RequestModal isOpen={isModalOpen} onClose={() => setModalOpen(false)} request={selectedRequest} />
+      {isModalOpen && (
+        <React.Suspense fallback={null}>
+          <RequestModal isOpen={isModalOpen} onClose={() => setModalOpen(false)} request={selectedRequest} />
+        </React.Suspense>
+      )}
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
          <div>

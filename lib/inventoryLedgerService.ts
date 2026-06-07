@@ -2,7 +2,10 @@ import { isSupabaseConfigured, supabase } from './supabase';
 import type {
   InventoryBalance,
   InventoryLedgerEntry,
+  InventoryLedgerReportResult,
+  InventoryLedgerStockReportRow,
   InventoryLedgerTransactionType,
+  InventoryLedgerWarehouseReportRow,
 } from '../types';
 
 export type InventoryLedgerFilters = {
@@ -14,6 +17,8 @@ export type InventoryLedgerFilters = {
   dateFrom?: string;
   dateTo?: string;
   limit?: number;
+  search?: string;
+  cursor?: string | null;
 };
 
 export type InventoryLedgerLoadResult = {
@@ -75,8 +80,42 @@ const mapBalance = (row: any): InventoryBalance => ({
   updatedAt: row.updated_at,
 });
 
+const mapStockReportRow = (row: any): InventoryLedgerStockReportRow => ({
+  id: row.id,
+  sku: row.sku,
+  name: row.name,
+  unit: row.unit,
+  opening: num(row.opening),
+  inImport: num(row.in_import ?? row.inImport),
+  inTransfer: num(row.in_transfer ?? row.inTransfer),
+  inAdjustment: num(row.in_adjustment ?? row.inAdjustment),
+  totalIn: num(row.total_in ?? row.totalIn),
+  outExport: num(row.out_export ?? row.outExport),
+  outTransfer: num(row.out_transfer ?? row.outTransfer),
+  outLiquidation: num(row.out_liquidation ?? row.outLiquidation),
+  totalOut: num(row.total_out ?? row.totalOut),
+  closing: num(row.closing),
+  value: num(row.value),
+});
+
+const mapWarehouseReportRow = (row: any): InventoryLedgerWarehouseReportRow => ({
+  key: row.key || `${row.warehouse_id ?? row.warehouseId}:${row.material_id ?? row.materialId}`,
+  warehouseId: row.warehouse_id ?? row.warehouseId,
+  materialId: row.material_id ?? row.materialId,
+  warehouseName: row.warehouse_name ?? row.warehouseName,
+  materialName: row.material_name ?? row.materialName,
+  sku: row.sku,
+  unit: row.unit,
+  inQty: num(row.in_qty ?? row.inQty),
+  outQty: num(row.out_qty ?? row.outQty),
+  balanceQty: num(row.balance_qty ?? row.balanceQty),
+  lastDate: row.last_date ?? row.lastDate ?? null,
+});
+
 const isMissingLedgerTable = (error: any) =>
   String(error?.code || '') === '42P01'
+  || ['42883', 'PGRST202'].includes(error?.code)
+  || String(error?.message || '').includes('get_inventory_ledger_report')
   || String(error?.message || '').includes('inventory_ledger_entries')
   || String(error?.message || '').includes('inventory_balances');
 
@@ -89,6 +128,63 @@ const toEndOfDayIso = (value?: string) => {
 };
 
 export const inventoryLedgerService = {
+  async getReport(filters: InventoryLedgerFilters = {}): Promise<InventoryLedgerReportResult> {
+    if (!isSupabaseConfigured) {
+      return {
+        summary: { opening: 0, totalIn: 0, totalOut: 0, closing: 0, totalValue: 0 },
+        stockRows: [],
+        warehouseRows: [],
+        entriesPage: [],
+        nextCursor: null,
+        available: false,
+      };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('get_inventory_ledger_report', {
+        p_filters: {
+          warehouseId: filters.warehouseId,
+          materialId: filters.materialId,
+          projectId: filters.projectId,
+          constructionSiteId: filters.constructionSiteId,
+          transactionType: filters.transactionType,
+          dateFrom: filters.dateFrom,
+          dateTo: filters.dateTo,
+          search: filters.search,
+        },
+        p_limit: filters.limit || 500,
+        p_cursor: filters.cursor || null,
+      });
+      if (error) throw error;
+      return {
+        summary: {
+          opening: num(data?.summary?.opening),
+          totalIn: num(data?.summary?.totalIn ?? data?.summary?.total_in),
+          totalOut: num(data?.summary?.totalOut ?? data?.summary?.total_out),
+          closing: num(data?.summary?.closing),
+          totalValue: num(data?.summary?.totalValue ?? data?.summary?.total_value),
+        },
+        stockRows: (data?.stockRows || data?.stock_rows || []).map(mapStockReportRow),
+        warehouseRows: (data?.warehouseRows || data?.warehouse_rows || []).map(mapWarehouseReportRow),
+        entriesPage: (data?.entriesPage || data?.entries_page || []).map(mapLedgerEntry),
+        nextCursor: data?.nextCursor ?? data?.next_cursor ?? null,
+        available: true,
+      };
+    } catch (error: any) {
+      if (isMissingLedgerTable(error)) {
+        return {
+          summary: { opening: 0, totalIn: 0, totalOut: 0, closing: 0, totalValue: 0 },
+          stockRows: [],
+          warehouseRows: [],
+          entriesPage: [],
+          nextCursor: null,
+          available: false,
+        };
+      }
+      throw error;
+    }
+  },
+
   async listEntries(filters: InventoryLedgerFilters = {}): Promise<InventoryLedgerLoadResult> {
     if (!isSupabaseConfigured) return { entries: [], available: false };
 
@@ -114,6 +210,9 @@ export const inventoryLedgerService = {
       }
       if (filters.transactionType && filters.transactionType !== 'all') {
         query = query.eq('transaction_type', filters.transactionType);
+      }
+      if (filters.dateFrom) {
+        query = query.gte('transaction_date', new Date(filters.dateFrom).toISOString());
       }
       if (filters.dateTo) {
         query = query.lte('transaction_date', toEndOfDayIso(filters.dateTo));

@@ -62,6 +62,7 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
     updateProjectFinance,
     addProjectTransaction,
     loadModuleData,
+    refreshWmsRecords,
   } = useApp();
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -211,7 +212,13 @@ const ProjectOpeningBalanceModal: React.FC<ProjectOpeningBalanceModalProps> = ({
       else await addProjectFinance(result.projectFinance);
       if (result.materialProjectTransaction) await addProjectTransaction(result.materialProjectTransaction);
       await Promise.all([
-        loadModuleData('wms', true),
+        refreshWmsRecords({
+          itemIds: [
+            ...result.createdItems.map(item => item.id),
+            ...result.stockTransactions.flatMap(tx => (tx.items || []).map(item => item.itemId)),
+          ],
+          transactionIds: result.stockTransactions.map(tx => tx.id),
+        }),
         loadModuleData('da', true),
       ]);
       setExistingOpening(result.openingBalance);

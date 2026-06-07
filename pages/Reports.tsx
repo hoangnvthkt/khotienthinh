@@ -129,18 +129,21 @@ const Reports: React.FC = () => {
   const ledgerFilters = useMemo(() => ({
     warehouseId: selectedWh,
     materialId: selectedMaterialId === 'ALL' ? undefined : selectedMaterialId,
-    transactionType: 'all' as const,
+    transactionType: selectedType,
+    dateFrom: startDate,
     dateTo: endDate,
-    limit: 10000,
-  }), [endDate, selectedMaterialId, selectedWh]);
+    search: searchTerm,
+    limit: 500,
+  }), [endDate, searchTerm, selectedMaterialId, selectedType, selectedWh, startDate]);
 
-  const { entries: ledgerEntries, available: ledgerAvailable, loading: ledgerLoading, error: ledgerError } = useInventoryLedger(ledgerFilters);
+  const { entries: ledgerEntries, report: ledgerReport, available: ledgerAvailable, loading: ledgerLoading, error: ledgerError } = useInventoryLedger(ledgerFilters);
 
   const itemById = useMemo(() => new Map(items.map(item => [item.id, item])), [items]);
   const warehouseById = useMemo(() => new Map(warehouses.map(warehouse => [warehouse.id, warehouse])), [warehouses]);
   const userById = useMemo(() => new Map(users.map(appUser => [appUser.id, appUser])), [users]);
 
   const filteredLedgerEntries = useMemo(() => {
+    if (ledgerAvailable && ledgerReport) return ledgerReport.entriesPage;
     const start = startOfDay(startDate);
     const end = endOfDay(endDate);
     const search = searchTerm.trim().toLowerCase();
@@ -154,7 +157,7 @@ const Reports: React.FC = () => {
       if (search && !`${item?.sku || ''} ${item?.name || ''} ${entry.documentCode} ${entry.sourceCode}`.toLowerCase().includes(search)) return false;
       return txDate >= start;
     });
-  }, [endDate, itemById, ledgerEntries, searchTerm, selectedMaterialId, selectedType, selectedWh, startDate]);
+  }, [endDate, itemById, ledgerAvailable, ledgerEntries, ledgerReport, searchTerm, selectedMaterialId, selectedType, selectedWh, startDate]);
 
   const reportDataFromLedger = useMemo<StockReportRow[]>(() => {
     const start = startOfDay(startDate);
@@ -297,7 +300,7 @@ const Reports: React.FC = () => {
       .filter(row => !search || `${row.sku} ${row.name}`.toLowerCase().includes(search));
   }, [endDate, hasAssignedWh, items, searchTerm, selectedMaterialId, selectedWh, startDate, transactions, user.assignedWarehouseId]);
 
-  const reportData = ledgerAvailable ? reportDataFromLedger : fallbackReportData;
+  const reportData = ledgerAvailable && ledgerReport ? ledgerReport.stockRows : (ledgerAvailable ? reportDataFromLedger : fallbackReportData);
 
   const summary = useMemo(() => reportData.reduce(
     (acc, row) => ({
@@ -323,6 +326,20 @@ const Reports: React.FC = () => {
       lastDate?: string;
     }>();
 
+    if (ledgerAvailable && ledgerReport) {
+      return ledgerReport.warehouseRows.map(row => ({
+        key: row.key || `${row.warehouseId}:${row.materialId}`,
+        warehouseName: row.warehouseName || row.warehouseId,
+        materialName: row.materialName || row.materialId,
+        sku: row.sku || row.materialId,
+        unit: row.unit || undefined,
+        inQty: row.inQty,
+        outQty: row.outQty,
+        balanceQty: row.balanceQty,
+        lastDate: row.lastDate || undefined,
+      }));
+    }
+
     const source = ledgerAvailable ? filteredLedgerEntries : [];
     source.forEach(entry => {
       const item = itemById.get(entry.materialId);
@@ -346,7 +363,7 @@ const Reports: React.FC = () => {
       grouped.set(key, row);
     });
     return Array.from(grouped.values()).sort((a, b) => a.warehouseName.localeCompare(b.warehouseName, 'vi') || a.materialName.localeCompare(b.materialName, 'vi'));
-  }, [filteredLedgerEntries, itemById, ledgerAvailable, warehouseById]);
+  }, [filteredLedgerEntries, itemById, ledgerAvailable, ledgerReport, warehouseById]);
 
   const selectedMaterial = selectedMaterialId !== 'ALL' ? itemById.get(selectedMaterialId) : null;
 
@@ -532,9 +549,8 @@ const Reports: React.FC = () => {
               <button
                 key={tab.key}
                 onClick={() => setActiveView(tab.key as ReportView)}
-                className={`min-w-[170px] px-4 py-3 text-xs font-black uppercase tracking-widest border-b-2 flex items-center justify-center gap-2 transition ${
-                  activeView === tab.key ? 'border-emerald-500 bg-white text-emerald-700' : 'border-transparent text-slate-400 hover:text-slate-700'
-                }`}
+                className={`min-w-[170px] px-4 py-3 text-xs font-black uppercase tracking-widest border-b-2 flex items-center justify-center gap-2 transition ${activeView === tab.key ? 'border-emerald-500 bg-white text-emerald-700' : 'border-transparent text-slate-400 hover:text-slate-700'
+                  }`}
               >
                 <Icon size={15} /> {tab.label}
               </button>

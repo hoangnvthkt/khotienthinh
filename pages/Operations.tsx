@@ -10,7 +10,6 @@ import {
   AlertTriangle, Flame, ShieldAlert, PackageSearch,
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Inbox, Minus, Scale, Banknote, Lock, Loader2
 } from 'lucide-react';
-import ScannerModal from '../components/ScannerModal';
 import ItemSelectionModal from '../components/ItemSelectionModal';
 import WarningModal from '../components/WarningModal';
 import ConfirmTransferModal from '../components/ConfirmTransferModal';
@@ -25,6 +24,8 @@ import { useModuleData } from '../hooks/useModuleData';
 import { canApproveWmsTransaction, canReceiveWmsTransaction, isFulfillmentBatchTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { clampQuantity, parseQuantityInput } from '../lib/quantityInput';
+
+const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
 const Operations: React.FC = () => {
   const location = useLocation();
@@ -354,10 +355,14 @@ const Operations: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <ScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScan={(sku) => {
-        const item = items.find(i => i.sku === sku);
-        if (item) handleSelectItem(item);
-      }} />
+      {isScannerOpen && (
+        <React.Suspense fallback={null}>
+          <ScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScan={(sku) => {
+            const item = items.find(i => i.sku === sku);
+            if (item) handleSelectItem(item);
+          }} />
+        </React.Suspense>
+      )}
 
       <ItemSelectionModal
         isOpen={isItemSelectOpen}
