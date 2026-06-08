@@ -37,14 +37,16 @@ import ContractPaymentSchedulePanel from './ContractPaymentSchedulePanel';
 import QuantityAcceptancePanel from './QuantityAcceptancePanel';
 import PaymentCertificatePanel from './PaymentCertificatePanel';
 
+type WorkspaceTab = 'info' | 'boq' | 'variation' | 'history' | 'appendices' | 'schedule' | 'acceptance' | 'certificates' | 'documents';
+
 interface Props {
   contract: CustomerContract | SubcontractorContract;
   contractType: ContractItemType;
   embedded?: boolean;
   onBack?: () => void;
+  canManageTab?: boolean;
+  initialTab?: WorkspaceTab;
 }
-
-type WorkspaceTab = 'info' | 'boq' | 'variation' | 'history' | 'appendices' | 'schedule' | 'acceptance' | 'certificates' | 'documents';
 
 const statusConfig: Record<HdContractStatus, { label: string; className: string }> = {
   draft: { label: 'Nháp', className: 'bg-slate-100 text-slate-600' },
@@ -71,13 +73,17 @@ const getEndDate = (contract: CustomerContract | SubcontractorContract, contract
 const isOriginalBoqReadOnly = (status: HdContractStatus) =>
   ['signed', 'active', 'completed', 'expired', 'cancelled'].includes(status);
 
-const ContractWorkspace: React.FC<Props> = ({ contract, contractType, embedded, onBack }) => {
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>('info');
+const ContractWorkspace: React.FC<Props> = ({ contract, contractType, embedded, onBack, canManageTab = true, initialTab }) => {
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab || 'info');
   const projectId = contract.projectId || null;
   const constructionSiteId = contract.constructionSiteId || null;
   const hasSiteLink = Boolean(constructionSiteId);
   const partyName = getPartyName(contract, contractType);
   const originalBoqLocked = isOriginalBoqReadOnly(contract.status);
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
 
   const tabs: { key: WorkspaceTab; label: string; icon: React.ReactNode; siteRequired?: boolean }[] = [
     { key: 'info', label: 'Thông tin HĐ', icon: <Info size={13} /> },
@@ -195,6 +201,9 @@ const ContractWorkspace: React.FC<Props> = ({ contract, contractType, embedded, 
               projectId={projectId}
               constructionSiteId={constructionSiteId}
               contactName={partyName}
+              contractValue={contract.value}
+              currency={contract.currency}
+              canManageTab={canManageTab}
             />
           )}
           {activeTab === 'acceptance' && (

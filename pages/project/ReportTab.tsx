@@ -16,6 +16,7 @@ import { acceptanceService, boqService, matRequestService, vendorService, poServ
 import { customerContractService, subcontractorContractService } from '../../lib/hdService';
 import { calculateProjectProgress } from '../../lib/projectScheduleRules';
 import { projectFinancialService, ProjectFinancialKPIs } from '../../lib/projectFinancialService';
+import { paymentScheduleWorkbenchService } from '../../lib/paymentScheduleWorkbenchService';
 import DailyLogSummaryReport from '../../components/project/DailyLogSummaryReport';
 
 interface ReportTabProps {
@@ -57,6 +58,17 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
     const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
     const [financialKPIs, setFinancialKPIs] = useState<ProjectFinancialKPIs | null>(null);
+    const [paymentScheduleSummary, setPaymentScheduleSummary] = useState({
+        customerContractValue: 0,
+        totalReceivable: 0,
+        totalPayable: 0,
+        upcomingCount: 0,
+        overdueCount: 0,
+        paidAmount: 0,
+        pendingAmount: 0,
+        paidCount: 0,
+        totalCount: 0,
+    });
     const [kpisLoading, setKpisLoading] = useState(true);
     const projectScopeId = projectId || constructionSiteId;
 
@@ -129,6 +141,9 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
             .then(setFinancialKPIs)
             .catch(console.error)
             .finally(() => setKpisLoading(false));
+        paymentScheduleWorkbenchService.getWorkbench({ projectId, constructionSiteId, contractType: 'all' })
+            .then(result => setPaymentScheduleSummary(result.summary))
+            .catch(console.error);
     }, [constructionSiteId, projectId, projectScopeId]);
 
     // ==================== COMPUTED DATA (PHASE 4) ====================
@@ -345,6 +360,10 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
             ['Tuân thủ ảnh', healthScore.photoCompliance.toFixed(0) + '%'],
             ['Tuân thủ GPS', healthScore.gpsCompliance.toFixed(0) + '%'],
             ['Tổng ngày trễ', healthScore.totalDelayDays],
+            ['Tổng phải thu theo kế hoạch', paymentScheduleSummary.totalReceivable],
+            ['Tổng phải trả theo kế hoạch', paymentScheduleSummary.totalPayable],
+            ['Sắp tới hạn', paymentScheduleSummary.upcomingCount],
+            ['Quá hạn', paymentScheduleSummary.overdueCount],
             [],
             ['MA TRẬN RỦI RO'],
             ['Hạng mục', 'Tổng ngày trễ', 'Nguyên nhân', 'Mức độ'],
@@ -840,8 +859,9 @@ const ReportTab: React.FC<ReportTabProps> = React.memo(({ constructionSiteId, pr
                             {[
                                 { name: 'Hợp đồng chính', count: contracts.filter(c => c.type === 'main').length, value: contracts.filter(c => c.type === 'main').reduce((s, c) => s + c.value, 0), status: '📋' },
                                 { name: 'Hợp đồng thầu phụ', count: contracts.filter(c => c.type === 'subcontract').length, value: contracts.filter(c => c.type === 'subcontract').reduce((s, c) => s + c.value, 0), status: '🏗️' },
-                                { name: 'Nghiệm thu', count: acceptances.length, value: kpis.totalAccepted, status: acceptances.filter(a => a.status === 'paid').length === acceptances.length && acceptances.length > 0 ? '✅' : '⏳' },
-                                { name: 'Vật tư (DT)', count: boqItems.length, value: kpis.totalMatBudget, status: '📦' },
+	                                { name: 'Nghiệm thu', count: acceptances.length, value: kpis.totalAccepted, status: acceptances.filter(a => a.status === 'paid').length === acceptances.length && acceptances.length > 0 ? '✅' : '⏳' },
+	                                { name: 'Kế hoạch TT', count: paymentScheduleSummary.totalCount, value: paymentScheduleSummary.totalReceivable - paymentScheduleSummary.totalPayable, status: paymentScheduleSummary.overdueCount > 0 ? '⚠️' : paymentScheduleSummary.upcomingCount > 0 ? '⏳' : '✅' },
+	                                { name: 'Vật tư (DT)', count: boqItems.length, value: kpis.totalMatBudget, status: '📦' },
                                 { name: 'Vật tư (TT)', count: boqItems.length, value: kpis.totalMatActual, status: kpis.totalMatActual > kpis.totalMatBudget ? '⚠️' : '✅' },
                                 { name: 'Đơn hàng (PO)', count: purchaseOrders.length, value: kpis.totalPO, status: '🚛' },
                                 { name: 'Nhà cung cấp', count: vendors.length, value: 0, status: '🏢' },

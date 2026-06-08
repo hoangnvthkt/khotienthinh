@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import AiInsightPanel from '../../components/AiInsightPanel';
 import ConfirmDeleteModal from '../../components/ConfirmDeleteModal';
 import GateStateMachineModal from '../../components/project/GateStateMachineModal';
@@ -386,7 +387,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     const { projectFinances, updateProjectFinance, user } = useApp();
     const toast = useToast();
     const confirm = useConfirm();
+    const location = useLocation();
     const effectiveId = projectId || constructionSiteId || '';
+    const focusTaskId = useMemo(() => new URLSearchParams(location.search).get('taskId'), [location.search]);
+    const focusTaskHandledRef = useRef<string | null>(null);
     const isAdminUser = user?.role === 'ADMIN';
     // Data
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
@@ -569,6 +573,20 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     const [filterStatus, setFilterStatus] = useState<TaskStatus | 'all'>('all');
     const [sortField, setSortField] = useState<SortField>('name');
     const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+    useEffect(() => {
+        if (!focusTaskId || tasks.length === 0 || focusTaskHandledRef.current === focusTaskId) return;
+        const focusTask = tasks.find(task => task.id === focusTaskId);
+        if (!focusTask) return;
+        setViewMode('split');
+        setFilterStatus('all');
+        setSearchQuery(focusTask.wbsCode || focusTask.name);
+        focusTaskHandledRef.current = focusTaskId;
+        window.setTimeout(() => {
+            document.getElementById(`gantt-task-row-${focusTaskId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 150);
+        toast.info('Đã mở hạng mục tiến độ', focusTask.wbsCode ? `${focusTask.wbsCode} - ${focusTask.name}` : focusTask.name);
+    }, [focusTaskId, tasks, toast]);
 
     useEffect(() => {
         const handleResize = () => {
@@ -3210,18 +3228,20 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {(viewMode === 'split' ? taskTree : sortedTasks.map(t => ({ task: t, level: 0, hasChildren: false }))).map(({ task, level, hasChildren }, idx) => {
-                                            const status = getStatus(task);
-                                            const linkedIds = taskContractLinks[task.id] || [];
-                                            const { derivedStart, derivedEnd } = deriveActualDates(task, dailyLogs, linkedIds);
-                                            const unitLabel = getTaskUnit(task, linkedIds, contractItems);
-                                            const unitTitle = getTaskUnitTitle(task, linkedIds, contractItems);
-                                            const rowHasChildren = hasChildren || !!childCountByTaskId.get(task.id);
-                                            const progressReadOnly = rowHasChildren || task.progressMode === 'weekly_report' || task.progressMode === 'daily_log' || task.progressMode === 'completion_request' || task.progressMode === 'children_auto' || task.progressMode === 'derived_from_acceptance';
-                                            return (
-                                                <tr key={task.id}
-                                                    style={{ height: `${ROW_HEIGHT}px` }}
-                                                    className={`border-b border-slate-50 dark:border-slate-700/50 hover:bg-orange-50/30 dark:hover:bg-slate-700/30 group transition-colors ${status === 'overdue' ? 'bg-red-50/20' : status === 'pending_gate' ? 'bg-amber-50/20' : ''}`}>
+	                                        {(viewMode === 'split' ? taskTree : sortedTasks.map(t => ({ task: t, level: 0, hasChildren: false }))).map(({ task, level, hasChildren }, idx) => {
+	                                            const status = getStatus(task);
+	                                            const linkedIds = taskContractLinks[task.id] || [];
+	                                            const { derivedStart, derivedEnd } = deriveActualDates(task, dailyLogs, linkedIds);
+	                                            const unitLabel = getTaskUnit(task, linkedIds, contractItems);
+	                                            const unitTitle = getTaskUnitTitle(task, linkedIds, contractItems);
+	                                            const rowHasChildren = hasChildren || !!childCountByTaskId.get(task.id);
+	                                            const progressReadOnly = rowHasChildren || task.progressMode === 'weekly_report' || task.progressMode === 'daily_log' || task.progressMode === 'completion_request' || task.progressMode === 'children_auto' || task.progressMode === 'derived_from_acceptance';
+	                                            const isFocusedTask = task.id === focusTaskId;
+	                                            return (
+	                                                <tr key={task.id}
+	                                                    id={`gantt-task-row-${task.id}`}
+	                                                    style={{ height: `${ROW_HEIGHT}px` }}
+	                                                    className={`border-b border-slate-50 dark:border-slate-700/50 hover:bg-orange-50/30 dark:hover:bg-slate-700/30 group transition-colors ${status === 'overdue' ? 'bg-red-50/20' : status === 'pending_gate' ? 'bg-amber-50/20' : ''} ${isFocusedTask ? 'bg-orange-100/80 dark:bg-orange-900/30 ring-2 ring-orange-400/60' : ''}`}>
                                                     {/* STT */}
                                                     {viewMode === 'table' && (
                                                         <td className="px-2 py-2.5 text-center text-muted-foreground font-bold">{idx + 1}</td>
@@ -3488,9 +3508,10 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                         const forecastMeta = scheduleForecast.taskForecastMeta.get(task.id);
                                         const hasForecastShift = !!forecastTask && (forecastTask.startDate !== task.startDate || forecastTask.endDate !== task.endDate);
                                         const delayDays = getDelayDays(task);
-                                        const isGateBlocked = gateBlockedIds.has(task.id);
-                                        const isDragging = draggingTaskId === task.id;
-                                        const isRippling = draggingTaskId !== null && draggingTaskId !== task.id;
+	                                        const isGateBlocked = gateBlockedIds.has(task.id);
+	                                        const isDragging = draggingTaskId === task.id;
+	                                        const isRippling = draggingTaskId !== null && draggingTaskId !== task.id;
+	                                        const isFocusedTask = task.id === focusTaskId;
 
                                         // GĐ3: Tìm ảnh mới nhất từ daily logs của task này
                                         const latestPhotoLog = getTaskRelatedPhotoLog(task, dailyLogs);
@@ -3504,7 +3525,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                                         const forecastWidth = forecastTask ? Math.max((forecastDuration || 1) * zoom, zoom) : 0;
 
                                         return (
-                                            <div key={task.id} className="w-full relative border-b border-slate-50 dark:border-slate-700/50" style={{ height: `${ROW_HEIGHT}px` }}>
+	                                            <div key={task.id} className={`w-full relative border-b border-slate-50 dark:border-slate-700/50 ${isFocusedTask ? 'bg-orange-100/50 dark:bg-orange-900/20' : ''}`} style={{ height: `${ROW_HEIGHT}px` }}>
                                                 {viewMode === 'gantt' && (
                                                     <div className="absolute left-0 top-0 bottom-0 z-20 w-[140px] shrink-0 bg-card/95 border-r border-border px-2 flex items-center gap-1 shadow-[2px_0_5px_rgba(0,0,0,0.02)] select-none overflow-hidden"
                                                         style={{ paddingLeft: `${8 + level * 8}px` }}>

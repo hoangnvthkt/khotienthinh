@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  ChevronDown,
+  ChevronUp,
   CheckCircle2,
   ClipboardCheck,
   Loader2,
@@ -9,13 +11,13 @@ import {
   Plus,
   RefreshCcw,
   Send,
+  Search,
   Trash2,
   Undo2,
   Users,
   X,
   XCircle,
 } from 'lucide-react';
-import InventoryItemCombobox from '../InventoryItemCombobox';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useReservedStock } from '../../hooks/useReservedStock';
@@ -29,11 +31,14 @@ import {
   BusinessPartner,
   SubcontractorContract,
   WorkGroup,
+  InventoryItem,
 } from '../../types';
 import { materialIssueService } from '../../lib/materialIssueService';
 import { partnerService } from '../../lib/partnerService';
 import { workGroupService } from '../../lib/workGroupService';
 import { isGlobalWarehouseKeeper } from '../../lib/wmsPermissions';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import { normalizeLookupText, SITE_WAREHOUSE_STOP_WORDS } from '../../lib/projectMaterialTabUtils';
 
 type MaterialIssuePanelProps = {
   projectId?: string | null;
@@ -48,6 +53,18 @@ type MaterialIssuePanelProps = {
 type DraftLine = {
   key: string;
   itemId: string;
+  quantity: string;
+  note: string;
+};
+
+type StockItemOption = {
+  item: InventoryItem;
+  available: number;
+  onHand: number;
+  reserved: number;
+};
+
+type StockDraftInput = {
   quantity: string;
   note: string;
 };
@@ -120,6 +137,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
     user,
     loadModuleData,
     refreshWmsRecords,
+    constructionSites,
   } = useApp();
   const toast = useToast();
   const { getStockSummary } = useReservedStock();
@@ -132,18 +150,22 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
   const [partners, setPartners] = useState<BusinessPartner[]>([]);
   const [subcontracts, setSubcontracts] = useState<SubcontractorContract[]>([]);
 
-  const [sourceWarehouseId, setSourceWarehouseId] = useState(defaultSourceWarehouseId || user.assignedWarehouseId || '');
-  const [recipientType, setRecipientType] = useState<MaterialIssueRecipientType>('work_group');
+  const [sourceWarehouseId, setSourceWarehouseId] = useState('');
+  const [recipientType, setRecipientType] = useState<MaterialIssueRecipientType>('partner');
   const [recipientId, setRecipientId] = useState('');
   const [recipientName, setRecipientName] = useState('');
+  const [recipientSearchQuery, setRecipientSearchQuery] = useState('');
+  const [recipientMenuOpen, setRecipientMenuOpen] = useState(false);
   const [responsibleUserId, setResponsibleUserId] = useState(user.id);
   const [subcontractorContractId, setSubcontractorContractId] = useState('');
   const [neededDate, setNeededDate] = useState('');
   const [note, setNote] = useState('');
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [selectedQty, setSelectedQty] = useState('1');
-  const [selectedNote, setSelectedNote] = useState('');
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [stockSearchQuery, setStockSearchQuery] = useState('');
+  const [stockMenuOpen, setStockMenuOpen] = useState(false);
+  const [stockDraftByItemId, setStockDraftByItemId] = useState<Record<string, StockDraftInput>>({});
   const [draftLines, setDraftLines] = useState<DraftLine[]>([]);
+  const [expandedOrderIds, setExpandedOrderIds] = useState<Set<string>>(() => new Set());
   const [action, setAction] = useState<ActionState>(null);
   const [actionQtyByLine, setActionQtyByLine] = useState<Record<string, string>>({});
   const [actionReason, setActionReason] = useState('');
@@ -157,7 +179,197 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
     return active.filter(warehouse => warehouse.id === user.assignedWarehouseId);
   }, [warehouses, canUseAllWarehouses, user.assignedWarehouseId]);
 
+  const computedProjectWarehouseId = useMemo(() => {
+    if (defaultSourceWarehouseId) return defaultSourceWarehouseId;
+    const activeSiteWarehouses = warehouses.filter(warehouse => !warehouse.isArchived && warehouse.type === 'SITE');
+    const site = constructionSiteId ? (constructionSites || []).find(item => item.id === constructionSiteId) : undefined;
+    const siteName = normalizeLookupText(site?.name);
+    if (!siteName) return undefined;
+    const exactName = activeSiteWarehouses.find(warehouse => normalizeLookupText(warehouse.name).includes(siteName));
+    if (exactName) return exactName.id;
+    const tokens = siteName.split(' ').filter(token => token.length > 1 && !SITE_WAREHOUSE_STOP_WORDS.has(token));
+    if (tokens.length === 0) return undefined;
+    const allTokenMatch = activeSiteWarehouses.find(warehouse => {
+      const warehouseName = normalizeLookupText(warehouse.name);
+      return tokens.every(token => warehouseName.includes(token));
+    });
+    if (allTokenMatch) return allTokenMatch.id;
+    return activeSiteWarehouses.find(warehouse => {
+      const warehouseName = normalizeLookupText(warehouse.name);
+      return tokens.some(token => warehouseName.includes(token));
+    })?.id;
+  }, [constructionSiteId, constructionSites, defaultSourceWarehouseId, warehouses]);
+
   const activeUsers = useMemo(() => users.filter(item => item.isActive !== false), [users]);
+  const selectedWarehouse = warehouses.find(warehouse => warehouse.id === sourceWarehouseId);
+
+  const warehouseStockOptions = useMemo<StockItemOption[]>(() => {
+    if (!sourceWarehouseId) return [];
+    return items.flatMap(item => {
+      const stock = getStockSummary(item.id, sourceWarehouseId);
+      if (stock.available <= 0) return [];
+      return [{
+        item,
+        available: stock.available,
+        onHand: stock.onHand,
+        reserved: stock.reserved,
+      }];
+    }).sort((a, b) => a.item.name.localeCompare(b.item.name, 'vi'));
+  }, [items, sourceWarehouseId, getStockSummary]);
+
+  const availableStockItemIdSet = useMemo(
+    () => new Set(warehouseStockOptions.map(option => option.item.id)),
+    [warehouseStockOptions],
+  );
+
+  const selectedStockOptions = useMemo(
+    () => warehouseStockOptions.filter(option => selectedItemIds.includes(option.item.id)),
+    [selectedItemIds, warehouseStockOptions],
+  );
+
+  const filteredWarehouseStockOptions = useMemo(() => {
+    const query = stockSearchQuery.trim();
+    const rows = query
+      ? warehouseStockOptions.filter(option => matchesSearchQueryMultiple([
+        option.item.sku,
+        option.item.name,
+        option.item.category,
+        option.item.unit,
+        selectedWarehouse?.name,
+      ], query))
+      : warehouseStockOptions;
+    return rows.slice(0, 80);
+  }, [selectedWarehouse?.name, stockSearchQuery, warehouseStockOptions]);
+
+  const visibleStockOptionsSelected = filteredWarehouseStockOptions.length > 0
+    && filteredWarehouseStockOptions.every(option => selectedItemIds.includes(option.item.id));
+
+  const createDefaultStockDraft = (): StockDraftInput => ({ quantity: '1', note: '' });
+
+  const toggleStockItemSelection = (itemId: string, checked: boolean) => {
+    setSelectedItemIds(prev => checked
+      ? [...new Set([...prev, itemId])]
+      : prev.filter(id => id !== itemId)
+    );
+    setStockDraftByItemId(prev => {
+      if (checked) {
+        return prev[itemId] ? prev : { ...prev, [itemId]: createDefaultStockDraft() };
+      }
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+  };
+
+  const toggleVisibleStockOptions = (checked: boolean) => {
+    const visibleIds = filteredWarehouseStockOptions.map(option => option.item.id);
+    setSelectedItemIds(prev => checked
+      ? [...new Set([...prev, ...visibleIds])]
+      : prev.filter(id => !visibleIds.includes(id))
+    );
+    setStockDraftByItemId(prev => {
+      const next = { ...prev };
+      if (checked) {
+        visibleIds.forEach(id => {
+          if (!next[id]) next[id] = createDefaultStockDraft();
+        });
+      } else {
+        visibleIds.forEach(id => {
+          delete next[id];
+        });
+      }
+      return next;
+    });
+  };
+
+  const updateStockDraft = (itemId: string, patch: Partial<StockDraftInput>) => {
+    setStockDraftByItemId(prev => ({
+      ...prev,
+      [itemId]: {
+        ...createDefaultStockDraft(),
+        ...prev[itemId],
+        ...patch,
+      },
+    }));
+  };
+
+  const clearStockSelection = () => {
+    setSelectedItemIds([]);
+    setStockDraftByItemId({});
+    setStockSearchQuery('');
+  };
+
+  const toggleOrderExpanded = (orderId: string) => {
+    setExpandedOrderIds(prev => {
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  };
+
+  const selectedStockSummary = useMemo(
+    () => selectedStockOptions.length === 0
+      ? ''
+      : selectedStockOptions.length === 1
+        ? `${selectedStockOptions[0].item.sku} - ${selectedStockOptions[0].item.name}`
+        : `${selectedStockOptions.length} vật tư đã chọn`,
+    [selectedStockOptions],
+  );
+
+  const filteredSuppliers = useMemo(() => {
+    const suppliers = partners.filter(p => p.classifications?.includes('supplier'));
+    if (!recipientSearchQuery.trim()) return suppliers.slice(0, 50);
+    return suppliers.filter(p =>
+      matchesSearchQueryMultiple([p.name, p.code, p.taxCode], recipientSearchQuery)
+    ).slice(0, 50);
+  }, [partners, recipientSearchQuery]);
+
+  const selectSupplier = (partner: BusinessPartner) => {
+    setRecipientId(partner.id);
+    setRecipientName(partner.name);
+    setRecipientType('partner');
+    setRecipientSearchQuery('');
+    setRecipientMenuOpen(false);
+  };
+
+  const selectManualRecipient = (name: string) => {
+    setRecipientId('');
+    setRecipientName(name);
+    setRecipientType('manual');
+    setRecipientSearchQuery('');
+    setRecipientMenuOpen(false);
+  };
+
+  const clearRecipient = () => {
+    setRecipientId('');
+    setRecipientName('');
+    setRecipientType('manual');
+    setRecipientSearchQuery('');
+    setRecipientMenuOpen(false);
+  };
+
+  useEffect(() => {
+    const handleOutsideClick = (event: PointerEvent) => {
+      const el = document.getElementById('recipient-combobox-wrapper');
+      if (el && !el.contains(event.target as Node)) {
+        setRecipientMenuOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handleOutsideClick);
+    return () => document.removeEventListener('pointerdown', handleOutsideClick);
+  }, []);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: PointerEvent) => {
+      const el = document.getElementById('stock-multi-select-wrapper');
+      if (el && !el.contains(event.target as Node)) {
+        setStockMenuOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handleOutsideClick);
+    return () => document.removeEventListener('pointerdown', handleOutsideClick);
+  }, []);
 
   const recipientOptions = useMemo(() => {
     if (recipientType === 'employee') {
@@ -182,8 +394,6 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
     }
     return [];
   }, [activeUsers, partners, recipientType, subcontracts, workGroups]);
-
-  const selectedWarehouse = warehouses.find(warehouse => warehouse.id === sourceWarehouseId);
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -233,9 +443,22 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
   }, [constructionSiteId, projectId]);
 
   useEffect(() => {
-    if (sourceWarehouseId) return;
-    setSourceWarehouseId(defaultSourceWarehouseId || user.assignedWarehouseId || selectableWarehouses[0]?.id || '');
-  }, [defaultSourceWarehouseId, selectableWarehouses, sourceWarehouseId, user.assignedWarehouseId]);
+    if (computedProjectWarehouseId) {
+      setSourceWarehouseId(computedProjectWarehouseId);
+    } else if (!sourceWarehouseId) {
+      const initialWhId = defaultSourceWarehouseId || user.assignedWarehouseId || selectableWarehouses[0]?.id || '';
+      if (initialWhId) {
+        setSourceWarehouseId(initialWhId);
+      }
+    }
+  }, [computedProjectWarehouseId, defaultSourceWarehouseId, selectableWarehouses, user.assignedWarehouseId]);
+
+  useEffect(() => {
+    setSelectedItemIds(prev => prev.filter(id => availableStockItemIdSet.has(id)));
+    setStockDraftByItemId(prev => Object.fromEntries(
+      Object.entries(prev).filter(([itemId]) => availableStockItemIdSet.has(itemId)),
+    ));
+  }, [availableStockItemIdSet]);
 
   useEffect(() => {
     if (recipientType === 'manual') {
@@ -256,37 +479,67 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
   const resetCreateForm = () => {
     setRecipientId('');
     setRecipientName('');
+    setRecipientSearchQuery('');
+    setRecipientMenuOpen(false);
     setSubcontractorContractId('');
     setNeededDate('');
     setNote('');
-    setSelectedItemId(null);
-    setSelectedQty('1');
-    setSelectedNote('');
+    setSelectedItemIds([]);
+    setStockSearchQuery('');
+    setStockMenuOpen(false);
+    setStockDraftByItemId({});
     setDraftLines([]);
   };
 
   const addDraftLine = () => {
-    const qty = parseQty(selectedQty);
-    if (!selectedItemId || qty <= 0) {
-      toast.warning('Chưa chọn vật tư', 'Chọn vật tư và nhập số lượng lớn hơn 0.');
+    const selectedRows = selectedStockOptions
+      .filter(option => availableStockItemIdSet.has(option.item.id))
+      .map(option => ({
+        option,
+        draft: stockDraftByItemId[option.item.id] || createDefaultStockDraft(),
+        quantity: parseQty(stockDraftByItemId[option.item.id]?.quantity || '1'),
+      }));
+
+    if (selectedRows.length === 0) {
+      toast.warning('Chưa chọn vật tư', 'Tick ít nhất một vật tư và nhập số lượng lớn hơn 0.');
       return;
     }
-    const existing = draftLines.find(line => line.itemId === selectedItemId);
-    if (existing) {
-      setDraftLines(prev => prev.map(line => line.itemId === selectedItemId
-        ? { ...line, quantity: String(parseQty(line.quantity) + qty), note: selectedNote || line.note }
-        : line));
-    } else {
-      setDraftLines(prev => [...prev, {
-        key: crypto.randomUUID(),
-        itemId: selectedItemId,
-        quantity: String(qty),
-        note: selectedNote,
-      }]);
+    const invalidQty = selectedRows.find(row => row.quantity <= 0);
+    if (invalidQty) {
+      toast.warning('Số lượng không hợp lệ', `Nhập số lượng lớn hơn 0 cho ${invalidQty.option.item.sku}.`);
+      return;
     }
-    setSelectedItemId(null);
-    setSelectedQty('1');
-    setSelectedNote('');
+    const overStock = selectedRows.find(row => row.quantity > row.option.available);
+    if (overStock) {
+      toast.warning('Vượt tồn khả dụng', `${overStock.option.item.sku} chỉ còn khả dụng ${formatQty(overStock.option.available)} ${overStock.option.item.unit}.`);
+      return;
+    }
+
+    setDraftLines(prev => {
+      let next = [...prev];
+      selectedRows.forEach(({ option, draft, quantity }) => {
+        const itemId = option.item.id;
+        const trimmedNote = draft.note.trim();
+        const existing = next.find(line => line.itemId === itemId);
+        if (existing) {
+          next = next.map(line => line.itemId === itemId
+            ? { ...line, quantity: String(parseQty(line.quantity) + quantity), note: trimmedNote || line.note }
+            : line);
+        } else {
+          next.push({
+            key: crypto.randomUUID(),
+            itemId,
+            quantity: String(quantity),
+            note: trimmedNote,
+          });
+        }
+      });
+      return next;
+    });
+    setSelectedItemIds([]);
+    setStockSearchQuery('');
+    setStockMenuOpen(false);
+    setStockDraftByItemId({});
   };
 
   const handleCreateIssue = async () => {
@@ -521,7 +774,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
         </div>
       )}
 
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-visible">
         {canCreate && (
         <div className="p-5 border-b border-slate-100 dark:border-slate-700/60 flex flex-col gap-4">
           <div className="flex items-center justify-between gap-3">
@@ -546,34 +799,60 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
               </select>
             </label>
 
-            <label className="space-y-1">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loại bên nhận</span>
-              <select value={recipientType} onChange={event => {
-                setRecipientType(event.target.value as MaterialIssueRecipientType);
-                setRecipientId('');
-                setRecipientName('');
-              }}
-                className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400">
-                {(Object.keys(RECIPIENT_LABELS) as MaterialIssueRecipientType[]).map(type => (
-                  <option key={type} value={type}>{RECIPIENT_LABELS[type]}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-1 md:col-span-2 xl:col-span-1">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{getRecipientOptionLabel(recipientType)}</span>
-              {recipientType === 'manual' ? (
-                <input value={recipientName} onChange={event => setRecipientName(event.target.value)}
-                  className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400"
-                  placeholder="Tên tổ đội/thầu phụ/đơn vị nhận" />
-              ) : (
-                <select value={recipientId} onChange={event => setRecipientId(event.target.value)}
-                  className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400">
-                  <option value="">Chọn bên nhận</option>
-                  {recipientOptions.map(option => <option key={`${option.id}-${option.contractId}`} value={option.id}>{option.name}</option>)}
-                </select>
-              )}
-            </label>
+            <div className="relative space-y-1 md:col-span-2" id="recipient-combobox-wrapper">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Chọn tổ đội</span>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={recipientMenuOpen ? recipientSearchQuery : recipientName}
+                  onFocus={() => {
+                    setRecipientMenuOpen(true);
+                    setRecipientSearchQuery('');
+                  }}
+                  onChange={event => {
+                    setRecipientSearchQuery(event.target.value);
+                    setRecipientMenuOpen(true);
+                  }}
+                  placeholder="Gõ để tìm kiếm hoặc tự nhập..."
+                  className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 pr-8 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+                {recipientName && (
+                  <button
+                    type="button"
+                    onClick={clearRecipient}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+                {recipientMenuOpen && (
+                  <div className="absolute left-0 right-0 z-[1000] mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                    {filteredSuppliers.map(partner => (
+                      <button
+                        key={partner.id}
+                        type="button"
+                        onClick={() => selectSupplier(partner)}
+                        className="block w-full rounded-lg px-3 py-2 text-left text-xs hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                      >
+                        {partner.name} {partner.code ? `(${partner.code})` : ''}
+                      </button>
+                    ))}
+                    {recipientSearchQuery.trim() && !filteredSuppliers.some(p => p.name.toLowerCase() === recipientSearchQuery.trim().toLowerCase()) && (
+                      <button
+                        type="button"
+                        onClick={() => selectManualRecipient(recipientSearchQuery.trim())}
+                        className="block w-full rounded-lg px-3 py-2 text-left text-xs hover:bg-amber-50 hover:text-amber-700 text-amber-700 font-bold dark:hover:bg-slate-800"
+                      >
+                        ✨ Nhập tay: "{recipientSearchQuery.trim()}"
+                      </button>
+                    )}
+                    {filteredSuppliers.length === 0 && !recipientSearchQuery.trim() && (
+                      <div className="px-3 py-2 text-xs font-semibold text-slate-400">Không có nhà cung cấp nào</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
 
             <label className="space-y-1">
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Người chịu trách nhiệm</span>
@@ -599,32 +878,160 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
             </label>
           </div>
 
-          <div className="rounded-xl border border-slate-100 bg-slate-50/60 overflow-hidden">
-            <div className="p-3 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_120px_minmax(0,220px)_auto] gap-2 items-end">
-              <InventoryItemCombobox
-                value={selectedItemId}
-                items={items}
-                onChange={item => setSelectedItemId(item?.id || null)}
-                placeholder="Chọn vật tư cần cấp"
-                inputClassName="h-10"
-              />
-              <label className="space-y-1">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Số lượng</span>
-                <input value={selectedQty} onChange={event => setSelectedQty(event.target.value)}
-                  inputMode="decimal"
-                  className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:border-indigo-400" />
-              </label>
-              <label className="space-y-1">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ghi chú dòng</span>
-                <input value={selectedNote} onChange={event => setSelectedNote(event.target.value)}
-                  className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400"
-                  placeholder="Tùy chọn" />
-              </label>
-              <button onClick={addDraftLine}
-                className="h-10 px-4 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 flex items-center justify-center gap-1.5">
-                <Plus size={13} /> Thêm
+          <div className="rounded-xl border border-slate-100 bg-slate-50/60 overflow-visible">
+            <div className="p-3 grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-2 items-end">
+              <div className="relative space-y-1" id="stock-multi-select-wrapper">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Vật tư cần cấp</span>
+                <div className="relative">
+                  <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={stockMenuOpen ? stockSearchQuery : selectedStockSummary}
+                    disabled={!sourceWarehouseId}
+                    onFocus={() => setStockMenuOpen(true)}
+                    onChange={event => {
+                      setStockSearchQuery(event.target.value);
+                      setStockMenuOpen(true);
+                    }}
+                    placeholder={sourceWarehouseId ? 'Gõ SKU, tên vật tư trong kho đã chọn...' : 'Chọn kho xuất trước'}
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-white px-8 py-2 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-slate-50 disabled:text-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                  {selectedItemIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearStockSelection}
+                      className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+                {stockMenuOpen && sourceWarehouseId && (
+                  <div className="absolute left-0 right-0 z-[1200] mt-1 max-h-96 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+                    {filteredWarehouseStockOptions.length > 0 && (
+                      <label className="flex cursor-pointer items-center gap-2 rounded-lg border-b border-slate-100 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50">
+                        <input
+                          type="checkbox"
+                          checked={visibleStockOptionsSelected}
+                          onChange={event => toggleVisibleStockOptions(event.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-300"
+                        />
+                        Chọn tất cả kết quả đang hiển thị ({filteredWarehouseStockOptions.length})
+                      </label>
+                    )}
+                    {filteredWarehouseStockOptions.length === 0 ? (
+                      <div className="px-3 py-2 text-xs font-semibold text-slate-400">
+                        Kho này chưa có vật tư khả dụng phù hợp
+                      </div>
+                    ) : (
+                      filteredWarehouseStockOptions.map(option => {
+                        const checked = selectedItemIds.includes(option.item.id);
+                        return (
+                          <label
+                            key={option.item.id}
+                            className={`flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2 text-xs hover:bg-indigo-50 hover:text-indigo-700 ${checked ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 dark:text-slate-100'}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={event => toggleStockItemSelection(option.item.id, event.target.checked)}
+                              className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-300"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-black text-slate-800 dark:text-slate-100">
+                                {option.item.sku} - {option.item.name}
+                              </div>
+                              <div className="mt-0.5 text-[10px] font-semibold text-slate-400">
+                                {option.item.category || 'Chưa phân nhóm'} • {option.item.unit}
+                              </div>
+                            </div>
+                            <div className="shrink-0 text-right text-[10px] font-black">
+                              <div className="text-emerald-600">Khả dụng {formatQty(option.available)}</div>
+                              <div className="font-bold text-slate-400">Tồn {formatQty(option.onHand)} • Giữ {formatQty(option.reserved)}</div>
+                            </div>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+                <div className="text-[10px] font-bold text-slate-400">
+                  {sourceWarehouseId
+                    ? selectedStockOptions.length > 0
+                      ? `Đã chọn ${selectedStockOptions.length} vật tư từ kho ${selectedWarehouse?.name || ''}`
+                      : `${warehouseStockOptions.length} vật tư đang có tồn khả dụng trong kho ${selectedWarehouse?.name || ''}`
+                    : 'Chọn kho xuất để tải danh sách vật tư tồn kho.'}
+                </div>
+              </div>
+              <button onClick={addDraftLine} disabled={selectedStockOptions.length === 0}
+                className="h-10 px-4 rounded-lg bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300 flex items-center justify-center gap-1.5">
+                <Plus size={13} /> Thêm{selectedStockOptions.length > 0 ? ` (${selectedStockOptions.length})` : ''}
               </button>
             </div>
+
+            {selectedStockOptions.length > 0 && (
+              <div className="mx-3 mb-3 overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                <table className="w-full min-w-[780px] text-left">
+                  <thead className="bg-slate-50 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    <tr>
+                      <th className="p-3">Vật tư đã chọn</th>
+                      <th className="p-3 text-right">Khả dụng</th>
+                      <th className="p-3 text-right">Số lượng cấp</th>
+                      <th className="p-3">Ghi chú dòng</th>
+                      <th className="p-3 text-center">Bỏ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedStockOptions.map(option => {
+                      const draft = stockDraftByItemId[option.item.id] || createDefaultStockDraft();
+                      const quantity = parseQty(draft.quantity);
+                      const isOver = quantity > option.available;
+                      return (
+                        <tr key={option.item.id} className="text-xs">
+                          <td className="p-3">
+                            <div className="font-black text-slate-800">{option.item.sku} - {option.item.name}</div>
+                            <div className="mt-0.5 text-[10px] font-semibold text-slate-400">
+                              {option.item.category || 'Chưa phân nhóm'} • {option.item.unit}
+                            </div>
+                          </td>
+                          <td className="p-3 text-right">
+                            <div className="text-xs font-black text-emerald-600">{formatQty(option.available)} {option.item.unit}</div>
+                            <div className="text-[10px] font-bold text-slate-400">Tồn {formatQty(option.onHand)} • Giữ {formatQty(option.reserved)}</div>
+                          </td>
+                          <td className="p-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <input
+                                value={draft.quantity}
+                                onChange={event => updateStockDraft(option.item.id, { quantity: event.target.value })}
+                                inputMode="decimal"
+                                className={`h-9 w-28 rounded-lg border px-2 text-right text-xs font-black outline-none focus:border-indigo-400 ${isOver ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-700'}`}
+                              />
+                              <span className="text-[10px] font-black text-slate-400">{option.item.unit}</span>
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <input
+                              value={draft.note}
+                              onChange={event => updateStockDraft(option.item.id, { note: event.target.value })}
+                              className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400"
+                              placeholder="Tùy chọn"
+                            />
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => toggleStockItemSelection(option.item.id, false)}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-300 hover:bg-red-50 hover:text-red-600"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             {draftLines.length > 0 && (
               <div className="border-t border-slate-100 bg-white divide-y divide-slate-100">
@@ -693,79 +1100,94 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                 const warehouse = warehouses.find(item => item.id === order.sourceWarehouseId);
                 const totalIssued = order.lines.reduce((sum, line) => sum + Number(line.issuedQty || 0), 0);
                 const totalOpen = order.lines.reduce((sum, line) => sum + lineOpenQty(line), 0);
+                const expanded = expandedOrderIds.has(order.id);
                 return (
-                  <div key={order.id} className="rounded-2xl border border-slate-100 bg-white p-4 hover:border-indigo-100 transition-colors">
-                    <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-black text-slate-800">{order.issueNo}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${status.tone}`}>{status.label}</span>
-                          <span className="text-[10px] font-bold text-slate-400">{new Date(order.createdAt || '').toLocaleString('vi-VN')}</span>
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
-                          <span className="inline-flex items-center gap-1"><Users size={11} /> {RECIPIENT_LABELS[order.recipientType]}: <b className="text-slate-700">{order.recipientName}</b></span>
-                          <span>Kho xuất: <b className="text-slate-700">{warehouse?.name || order.sourceWarehouseId}</b></span>
-                          {order.neededDate && <span>Cần cấp: <b className="text-slate-700">{new Date(order.neededDate).toLocaleDateString('vi-VN')}</b></span>}
-                          {order.transactionId && <span>WMS: <b className="text-slate-700">{order.transactionId.slice(-8)}</b></span>}
-                        </div>
-                        {order.note && <div className="mt-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">{order.note}</div>}
+                  <div key={order.id} className="rounded-2xl border border-slate-100 bg-white hover:border-indigo-100 transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => toggleOrderExpanded(order.id)}
+                      className="flex w-full items-center justify-between gap-3 p-4 text-left"
+                    >
+                      <div className="min-w-0 flex items-center gap-2">
+                        <span className="truncate text-sm font-black text-slate-800">{order.issueNo}</span>
+                        <span className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${status.tone}`}>{status.label}</span>
                       </div>
-                      <div className="shrink-0 grid grid-cols-3 gap-2 text-center min-w-[260px]">
-                        <div className="rounded-xl bg-slate-50 px-3 py-2">
-                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Dòng</div>
-                          <div className="text-sm font-black text-slate-800">{order.lines.length}</div>
-                        </div>
-                        <div className="rounded-xl bg-indigo-50 px-3 py-2">
-                          <div className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Đã xuất</div>
-                          <div className="text-sm font-black text-indigo-700">{formatQty(totalIssued)}</div>
-                        </div>
-                        <div className="rounded-xl bg-amber-50 px-3 py-2">
-                          <div className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Còn giữ</div>
-                          <div className="text-sm font-black text-amber-700">{formatQty(totalOpen)}</div>
-                        </div>
-                      </div>
-                    </div>
+                      <span className="shrink-0 text-slate-400">
+                        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      </span>
+                    </button>
 
-                    <div className="mt-4 overflow-x-auto rounded-xl border border-slate-100">
-                      <table className="w-full text-left min-w-[720px]">
-                        <thead className="bg-slate-50 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                          <tr>
-                            <th className="p-3">Vật tư</th>
-                            <th className="p-3 text-right">Yêu cầu</th>
-                            <th className="p-3 text-right">Đã xuất</th>
-                            <th className="p-3 text-right">Đã nhận</th>
-                            <th className="p-3 text-right">Đã dùng</th>
-                            <th className="p-3 text-right">Trả</th>
-                            <th className="p-3 text-right">Hao hụt</th>
-                            <th className="p-3 text-right">Còn giữ</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {order.lines.map(line => (
-                            <tr key={line.id} className="text-xs">
-                              <td className="p-3">
-                                <div className="font-black text-slate-800">{line.skuSnapshot} - {line.itemNameSnapshot}</div>
-                                {line.note && <div className="text-[10px] text-slate-400 mt-0.5">{line.note}</div>}
-                              </td>
-                              <td className="p-3 text-right font-bold">{formatQty(line.requestedQty)} {line.unit}</td>
-                              <td className="p-3 text-right font-bold text-indigo-700">{formatQty(line.issuedQty)} {line.unit}</td>
-                              <td className="p-3 text-right font-bold text-emerald-700">{formatQty(line.receivedQty)} {line.unit}</td>
-                              <td className="p-3 text-right font-bold text-slate-700">{formatQty(line.consumedQty)} {line.unit}</td>
-                              <td className="p-3 text-right font-bold text-blue-700">{formatQty(line.returnedQty)} {line.unit}</td>
-                              <td className="p-3 text-right font-bold text-rose-700">{formatQty(line.lostQty)} {line.unit}</td>
-                              <td className="p-3 text-right font-black text-amber-700">{formatQty(lineOpenQty(line))} {line.unit}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    {expanded && (
+                      <div className="border-t border-slate-100 p-4">
+                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[10px] font-bold text-slate-400">{new Date(order.createdAt || '').toLocaleString('vi-VN')}</div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
+                              <span className="inline-flex items-center gap-1"><Users size={11} /> {RECIPIENT_LABELS[order.recipientType]}: <b className="text-slate-700">{order.recipientName}</b></span>
+                              <span>Kho xuất: <b className="text-slate-700">{warehouse?.name || order.sourceWarehouseId}</b></span>
+                              {order.neededDate && <span>Cần cấp: <b className="text-slate-700">{new Date(order.neededDate).toLocaleDateString('vi-VN')}</b></span>}
+                              {order.transactionId && <span>WMS: <b className="text-slate-700">{order.transactionId.slice(-8)}</b></span>}
+                            </div>
+                            {order.note && <div className="mt-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">{order.note}</div>}
+                          </div>
+                          <div className="shrink-0 grid grid-cols-3 gap-2 text-center min-w-[260px]">
+                            <div className="rounded-xl bg-slate-50 px-3 py-2">
+                              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Dòng</div>
+                              <div className="text-sm font-black text-slate-800">{order.lines.length}</div>
+                            </div>
+                            <div className="rounded-xl bg-indigo-50 px-3 py-2">
+                              <div className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Đã xuất</div>
+                              <div className="text-sm font-black text-indigo-700">{formatQty(totalIssued)}</div>
+                            </div>
+                            <div className="rounded-xl bg-amber-50 px-3 py-2">
+                              <div className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Còn giữ</div>
+                              <div className="text-sm font-black text-amber-700">{formatQty(totalOpen)}</div>
+                            </div>
+                          </div>
+                        </div>
 
-                    <div className="mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                      <div className="text-[10px] font-bold text-slate-400">
-                        {order.returns?.length ? `${order.returns.length} phiếu hoàn trả` : 'Chưa có hoàn trả'} • {order.receipts?.length ? `${order.receipts.length} lần xác nhận nhận` : 'Chưa xác nhận nhận'}
+                        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-100">
+                          <table className="w-full text-left min-w-[720px]">
+                            <thead className="bg-slate-50 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                              <tr>
+                                <th className="p-3">Vật tư</th>
+                                <th className="p-3 text-right">Yêu cầu</th>
+                                <th className="p-3 text-right">Đã xuất</th>
+                                <th className="p-3 text-right">Đã nhận</th>
+                                <th className="p-3 text-right">Đã dùng</th>
+                                <th className="p-3 text-right">Trả</th>
+                                <th className="p-3 text-right">Hao hụt</th>
+                                <th className="p-3 text-right">Còn giữ</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {order.lines.map(line => (
+                                <tr key={line.id} className="text-xs">
+                                  <td className="p-3">
+                                    <div className="font-black text-slate-800">{line.skuSnapshot} - {line.itemNameSnapshot}</div>
+                                    {line.note && <div className="text-[10px] text-slate-400 mt-0.5">{line.note}</div>}
+                                  </td>
+                                  <td className="p-3 text-right font-bold">{formatQty(line.requestedQty)} {line.unit}</td>
+                                  <td className="p-3 text-right font-bold text-indigo-700">{formatQty(line.issuedQty)} {line.unit}</td>
+                                  <td className="p-3 text-right font-bold text-emerald-700">{formatQty(line.receivedQty)} {line.unit}</td>
+                                  <td className="p-3 text-right font-bold text-slate-700">{formatQty(line.consumedQty)} {line.unit}</td>
+                                  <td className="p-3 text-right font-bold text-blue-700">{formatQty(line.returnedQty)} {line.unit}</td>
+                                  <td className="p-3 text-right font-bold text-rose-700">{formatQty(line.lostQty)} {line.unit}</td>
+                                  <td className="p-3 text-right font-black text-amber-700">{formatQty(lineOpenQty(line))} {line.unit}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        <div className="mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                          <div className="text-[10px] font-bold text-slate-400">
+                            {order.returns?.length ? `${order.returns.length} phiếu hoàn trả` : 'Chưa có hoàn trả'} • {order.receipts?.length ? `${order.receipts.length} lần xác nhận nhận` : 'Chưa xác nhận nhận'}
+                          </div>
+                          {renderOrderActions(order)}
+                        </div>
                       </div>
-                      {renderOrderActions(order)}
-                    </div>
+                    )}
                   </div>
                 );
               })}

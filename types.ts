@@ -450,6 +450,9 @@ export interface ProjectTransaction {
 }
 
 export type PaymentScheduleStatus = 'pending' | 'paid' | 'overdue';
+export type PaymentScheduleMilestoneType = 'advance' | 'progress' | 'settlement' | 'retention' | 'other';
+export type PaymentDossierStatus = 'not_started' | 'preparing' | 'submitted' | 'approved';
+export type PaymentQualityStatus = 'not_applicable' | 'not_confirmed' | 'passed' | 'failed';
 export interface PaymentSchedule {
   id: string;
   projectId?: string | null;
@@ -457,6 +460,8 @@ export interface PaymentSchedule {
   contractId?: string;
   contractType?: ContractItemType;
   appendixId?: string;
+  sequenceNo?: number;
+  milestoneType?: PaymentScheduleMilestoneType;
   description: string;         // "Đợt 1 - Tạm ứng 30%"
   amount: number;
   dueDate: string;
@@ -465,7 +470,49 @@ export interface PaymentSchedule {
   status: PaymentScheduleStatus;
   type: 'receivable' | 'payable'; // Phải thu (CĐT) / Phải trả (NTP)
   contactName?: string;           // Tên CĐT hoặc NTP
+  plannedTaskIds?: string[];
+  plannedScopeNote?: string;
+  dossierStatus?: PaymentDossierStatus;
+  qualityStatus?: PaymentQualityStatus;
+  qualityConfirmedBy?: string;
+  qualityConfirmedName?: string;
+  qualityConfirmedAt?: string;
+  qualityNote?: string;
   note?: string;
+}
+
+export interface PaymentSchedulePlannedTask {
+  id: string;
+  name: string;
+  wbsCode?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  progress?: number | null;
+}
+
+export interface PaymentScheduleWorkbenchRow extends PaymentSchedule {
+  contractCode?: string;
+  contractName?: string;
+  contractValue?: number;
+  contractCurrency?: 'VND' | 'USD';
+  counterpartyName?: string;
+  plannedTasks: PaymentSchedulePlannedTask[];
+  daysUntilDue: number;
+  isUpcoming: boolean;
+  isOverdue: boolean;
+  remainingAmount: number;
+}
+
+export interface PaymentScheduleWorkbenchSummary {
+  customerContractValue: number;
+  totalReceivable: number;
+  totalPayable: number;
+  upcomingCount: number;
+  overdueCount: number;
+  paidAmount: number;
+  pendingAmount: number;
+  paidCount: number;
+  totalCount: number;
 }
 
 // ==================== HỢP ĐỒNG (HD) ====================
@@ -1060,6 +1107,120 @@ export interface ContractItemResource {
 export type QuantityAcceptanceStatus = 'draft' | 'submitted' | 'returned' | 'approved' | 'cancelled';
 export type PaymentCertificateStatus = 'draft' | 'submitted' | 'returned' | 'approved' | 'paid' | 'cancelled';
 export type ContractVariationStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'cancelled';
+
+export type PaymentEligibilityBlockReason =
+  | 'eligible'
+  | 'missing_verified_log'
+  | 'missing_internal_acceptance'
+  | 'missing_contract_acceptance'
+  | 'missing_task_contract_link'
+  | 'over_boq'
+  | 'certificate_pending'
+  | 'payment_pending'
+  | 'fully_paid'
+  | 'cashflow_unsynced';
+
+export type PaymentEligibilityNextAction =
+  | 'create_acceptance'
+  | 'create_certificate'
+  | 'open_gantt'
+  | 'open_contract'
+  | 'open_certificate'
+  | 'open_cashflow'
+  | 'none';
+
+export type PaymentEligibilityStatus = 'eligible' | 'blocked' | 'pending' | 'paid';
+
+export interface PaymentEligibilitySourceLog {
+  id: string;
+  date: string;
+  quantity: number;
+  unit?: string | null;
+  taskId?: string | null;
+  taskName?: string | null;
+  workBoqItemId?: string | null;
+  workBoqItemName?: string | null;
+  reason?: string;
+}
+
+export interface PaymentEligibilitySourceDocument {
+  id: string;
+  type: 'internal_acceptance' | 'contract_acceptance' | 'payment_certificate';
+  label: string;
+  status: string;
+  periodNumber?: number;
+  amount: number;
+  quantity?: number;
+}
+
+export interface PaymentEligibilityRow {
+  id: string;
+  status: PaymentEligibilityStatus;
+  contractId?: string | null;
+  contractType: ContractItemType;
+  contractCode?: string;
+  contractName?: string;
+  counterpartyName?: string;
+  contractItemId?: string | null;
+  boqCode: string;
+  boqName: string;
+  regionLabel: string;
+  taskId?: string | null;
+  taskName?: string | null;
+  taskWbsCode?: string | null;
+  taskProgress?: number | null;
+  taskStatus?: string | null;
+  taskStartDate?: string | null;
+  taskEndDate?: string | null;
+  taskActualStartDate?: string | null;
+  taskActualEndDate?: string | null;
+  taskIsCritical?: boolean;
+  taskIsOverdue?: boolean;
+  unit?: string;
+  unitPrice: number;
+  contractQuantity: number;
+  revisedContractQuantity: number;
+  contractAmount: number;
+  executedQuantity: number;
+  executedAmount: number;
+  internalAcceptedQuantity: number;
+  internalAcceptedAmount: number;
+  contractAcceptedQuantity: number;
+  contractAcceptedAmount: number;
+  certifiedQuantity: number;
+  certifiedAmount: number;
+  pendingCertifiedAmount: number;
+  paidQuantity: number;
+  paidAmount: number;
+  payableRemainingAmount: number;
+  certifiableRemainingAmount: number;
+  blockedAmount: number;
+  blockReason: PaymentEligibilityBlockReason;
+  blockLabel: string;
+  nextAction: PaymentEligibilityNextAction;
+  nextActionLabel: string;
+  cashflowSynced: boolean;
+  sourceLogs: PaymentEligibilitySourceLog[];
+  sourceDocuments: PaymentEligibilitySourceDocument[];
+}
+
+export interface PaymentEligibilitySummary {
+  totalEligibleAmount: number;
+  totalBlockedAmount: number;
+  totalPayableRemainingAmount: number;
+  eligibleCount: number;
+  blockedCount: number;
+  pendingCount: number;
+  paidCount: number;
+  waitingContractAcceptanceCount: number;
+  waitingProgressMappingCount: number;
+  cashflowUnsyncedCount: number;
+}
+
+export interface PaymentEligibilityWorkbench {
+  rows: PaymentEligibilityRow[];
+  summary: PaymentEligibilitySummary;
+}
 
 export interface PaymentCertificateItem {
   id?: string;

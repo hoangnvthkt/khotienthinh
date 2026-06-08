@@ -29,7 +29,7 @@ import { useToast } from '../context/ToastContext';
 import { usePermission } from '../hooks/usePermission';
 import { taskService } from '../lib/projectService';
 import { calculateProjectProgress } from '../lib/projectScheduleRules';
-import { projectMasterService } from '../lib/projectMasterService';
+import { projectMasterService, type ProjectListSortKey } from '../lib/projectMasterService';
 import { projectMasterDataService } from '../lib/projectMasterDataService';
 import { projectPermissionTypeService, projectStaffService } from '../lib/projectStaffService';
 import { workGroupService } from '../lib/workGroupService';
@@ -49,7 +49,7 @@ import {
 } from '../lib/projectTabPermissions';
 import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
-    Plus, Edit2, Trash2, X, Check, Save, ChevronDown, FileText,
+    Plus, Edit2, Trash2, X, Check, Save, ChevronDown, ChevronLeft, ChevronRight, FileText,
     Building2, HardHat, AlertCircle, ArrowUpRight, ArrowDownRight,
     Upload, Download, Filter, Calendar, Tag, List, Paperclip, Eye, Image,
     Users, UserPlus, Loader2, RefreshCcw, Search, EyeOff, ArchiveRestore, Shield, Pin
@@ -62,6 +62,7 @@ const CashFlowTab = React.lazy(() => import('./project/CashFlowTab'));
 const ContractTab = React.lazy(() => import('./project/ContractTab'));
 const GanttTab = React.lazy(() => import('./project/GanttTab'));
 const DailyLogTab = React.lazy(() => import('./project/DailyLogTab'));
+const PaymentWorkbenchTab = React.lazy(() => import('./project/PaymentWorkbenchTab'));
 const SubcontractTab = React.lazy(() => import('./project/SubcontractTab'));
 const MaterialTab = React.lazy(() => import('./project/MaterialTab'));
 const ReportTab = React.lazy(() => import('./project/ReportTab'));
@@ -77,6 +78,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
     completed: { label: 'Hoàn thành', color: 'text-violet-600', bg: 'bg-violet-50 border-violet-200' },
     cancelled: { label: 'Đã huỷ', color: 'text-slate-500', bg: 'bg-slate-50 border-slate-200' },
 };
+
+const PROJECT_LIST_PAGE_SIZE = 10;
 
 const CATEGORY_CONFIG: Record<ProjectCostCategory, { label: string; icon: string; color: string }> = {
     materials: { label: 'Vật tư', icon: '🧱', color: '#f97316' },
@@ -382,6 +385,9 @@ const ProjectDashboard: React.FC = () => {
     const [projects, setProjects] = useState<Project[]>([]);
     const [projectsLoading, setProjectsLoading] = useState(false);
     const [projectLoadError, setProjectLoadError] = useState<string | null>(null);
+    const [projectPage, setProjectPage] = useState(1);
+    const [projectTotal, setProjectTotal] = useState(0);
+    const [projectHasNextPage, setProjectHasNextPage] = useState(false);
     const [projectFilters, setProjectFilters] = useState<ProjectFilterState>(emptyProjectFilters);
     const [projectSort, setProjectSort] = useState<ProjectSortKey>('updatedAt');
     const [projectSortAsc, setProjectSortAsc] = useState(false);
@@ -488,20 +494,54 @@ const ProjectDashboard: React.FC = () => {
         }
     }, [activeView, overviewTab, visibleOverviewTabs]);
 
-    const loadProjects = useCallback(async () => {
+    const projectServerSort = useMemo<ProjectListSortKey>(
+        () => ['updatedAt', 'code', 'name', 'startDate'].includes(projectSort)
+            ? projectSort as ProjectListSortKey
+            : 'updatedAt',
+        [projectSort]
+    );
+
+    const loadProjects = useCallback(async (page = projectPage) => {
         setProjectsLoading(true);
         try {
-            const data = await projectMasterService.list({ includeHidden: true });
-            setProjects(data);
+            const data = await projectMasterService.listPage({
+                page,
+                pageSize: PROJECT_LIST_PAGE_SIZE,
+                includeHidden: isAdmin,
+                query: projectFilters.query,
+                status: projectFilters.status,
+                groupId: projectFilters.groupId,
+                typeId: projectFilters.typeId,
+                sectorId: projectFilters.sectorId,
+                workflowId: projectFilters.workflowId,
+                siteLink: projectFilters.siteLink,
+                startFrom: projectFilters.startFrom,
+                startTo: projectFilters.startTo,
+                endFrom: projectFilters.endFrom,
+                endTo: projectFilters.endTo,
+                hidden: isAdmin ? projectFilters.hidden : 'active',
+                sort: projectServerSort,
+                ascending: projectSortAsc,
+            });
+            setProjects(data.rows);
+            setProjectPage(data.page);
+            setProjectTotal(data.total);
+            setProjectHasNextPage(data.hasNextPage);
             setProjectLoadError(null);
         } catch (err) {
             logApiError('ProjectDashboard.loadProjects', err);
             setProjects([]);
+            setProjectTotal(0);
+            setProjectHasNextPage(false);
             setProjectLoadError(getApiErrorMessage(err, 'Không tải được danh sách dự án'));
         } finally {
             setProjectsLoading(false);
         }
-    }, []);
+    }, [isAdmin, projectFilters, projectPage, projectServerSort, projectSortAsc]);
+
+    useEffect(() => {
+        setProjectPage(1);
+    }, [projectFilters, projectServerSort, projectSortAsc]);
 
     useEffect(() => {
         loadProjects();
@@ -570,8 +610,9 @@ const ProjectDashboard: React.FC = () => {
 
     const projectRows = useMemo(() => {
         if (projects.length > 0) return projects;
+        if (!projectLoadError) return [];
         return hrmConstructionSites.map(siteToProjectFallback);
-    }, [projects, hrmConstructionSites]);
+    }, [projects, projectLoadError, hrmConstructionSites]);
 
     const goToProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
         if (canViewProjectTab(tabKey)) {
@@ -609,6 +650,26 @@ const ProjectDashboard: React.FC = () => {
 
         if (isProjectOverviewTabKey(tab)) setOverviewTab(tab);
         setActiveView('overview');
+    }, [location.search, projectRows]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const projectIdParam = params.get('projectId');
+        if (!projectIdParam || projectRows.some(project => project.id === projectIdParam)) return;
+
+        let cancelled = false;
+        projectMasterService.getById(projectIdParam)
+            .then(project => {
+                if (cancelled || !project) return;
+                setProjects(prev => prev.some(item => item.id === project.id) ? prev : [project, ...prev]);
+                setSelectedProjectId(project.id);
+                setSelectedSiteId(project.constructionSiteId || null);
+            })
+            .catch(err => {
+                logApiError('ProjectDashboard.loadProjectByUrl', err);
+            });
+
+        return () => { cancelled = true; };
     }, [location.search, projectRows]);
 
     const selectedProject = useMemo(
@@ -799,6 +860,12 @@ const ProjectDashboard: React.FC = () => {
 
         return rows;
     }, [projectRows, projectFilters, projectSort, projectSortAsc, projectFinances, projectTransactions, hrmConstructionSites, isAdmin, taskProgressBySite, getEffectiveContractValue]);
+
+    const projectPageCount = Math.max(1, Math.ceil(projectTotal / PROJECT_LIST_PAGE_SIZE));
+    const projectPageStart = projectTotal === 0 ? 0 : (projectPage - 1) * PROJECT_LIST_PAGE_SIZE + 1;
+    const projectPageEnd = projectTotal === 0
+        ? 0
+        : Math.min(projectTotal, (projectPage - 1) * PROJECT_LIST_PAGE_SIZE + projects.length);
 
     const selectedAgg = selectedProject || effectiveSiteId ? getAggregated(selectedProject?.id, effectiveSiteId) : null;
     const siteTxs = useMemo(() => {
@@ -1411,7 +1478,7 @@ const ProjectDashboard: React.FC = () => {
                     updated += 1;
                 }
             }
-            await loadProjects();
+            await loadProjects(1);
             setProjectImportPreview(null);
             toast.success(
                 projectImportPreview.mode === 'create' ? 'Đã nhập mới dự án' : 'Đã cập nhật dự án',
@@ -1459,7 +1526,7 @@ const ProjectDashboard: React.FC = () => {
             XLSX.utils.book_append_sheet(wb, ws, 'Danh_sach_du_an');
             const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
             downloadBlob(new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `Danh_sach_du_an_${new Date().toISOString().slice(0, 10)}.xlsx`);
-            toast.success('Đã xuất danh sách', `${rows.length} dự án theo bộ lọc hiện tại đã được xuất Excel.`);
+            toast.success('Đã xuất danh sách', `${rows.length} dự án ở trang hiện tại đã được xuất Excel.`);
         } catch (error) {
             logApiError('ProjectDashboard.exportProjectList', error);
             toast.error('Không thể xuất danh sách', getApiErrorMessage(error, 'Không thể xuất danh sách dự án.'));
@@ -1496,7 +1563,7 @@ const ProjectDashboard: React.FC = () => {
                 !project.isPinned,
                 user.name || user.username || user.email || user.id,
             );
-            setProjects(prev => prev.map(item => item.id === updated.id ? updated : item));
+            await loadProjects(1);
             toast.success(
                 updated.isPinned ? 'Đã ghim dự án' : 'Đã bỏ ghim dự án',
                 updated.isPinned ? `${project.code} sẽ hiển thị ưu tiên trên đầu danh sách.` : `${project.code} trở về thứ tự danh sách thường.`,
@@ -1537,7 +1604,7 @@ const ProjectDashboard: React.FC = () => {
                 force: isAdmin && hideProjectImpact.hasImpact,
                 constructionSiteId: hideProjectTarget.constructionSiteId,
             });
-            setProjects(prev => prev.map(project => project.id === updated.id ? updated : project));
+            await loadProjects(projectPage);
             if (selectedProjectId === updated.id) {
                 setActiveView('list');
                 setSelectedProjectId(null);
@@ -1557,7 +1624,7 @@ const ProjectDashboard: React.FC = () => {
         setRestoringProjectId(project.id);
         try {
             const restored = await projectMasterService.restore(project.id);
-            setProjects(prev => prev.map(item => item.id === restored.id ? restored : item));
+            await loadProjects(projectPage);
             toast.success('Đã khôi phục dự án', `${project.code} đã hiển thị lại trong danh sách vận hành.`);
         } catch (error) {
             logApiError('ProjectDashboard.restoreProject', error);
@@ -1632,7 +1699,11 @@ const ProjectDashboard: React.FC = () => {
                     createdBy: user.id,
                 });
                 await seedProjectStaff(created);
-                setProjects(prev => [created, ...prev.filter(p => p.id !== created.id)]);
+                if (openAfterCreate) {
+                    setProjects(prev => [created, ...prev.filter(p => p.id !== created.id)]);
+                } else {
+                    await loadProjects(1);
+                }
                 if (openAfterCreate) openProjectDetail(created);
                 toast.success('Đã tạo dự án', created.name);
             }
@@ -2952,10 +3023,14 @@ const ProjectDashboard: React.FC = () => {
                         <ContractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('contract')} />
                     ) : overviewTab === 'gantt' ? (
                         <GanttTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('gantt')} />
-                    ) : overviewTab === 'dailylog' ? (
-                        <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('dailylog')} />
-                    ) : overviewTab === 'subcontract' ? (
-                        <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('subcontract')} />
+	                    ) : overviewTab === 'dailylog' ? (
+	                        <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('dailylog')} />
+	                    ) : overviewTab === 'payment' ? (
+	                        hasSiteLink ? (
+	                            <PaymentWorkbenchTab constructionSiteId={effectiveSiteId!} projectId={selectedProject.id} canManageTab={canManageProjectTab('payment')} />
+	                        ) : renderSiteRequired('Nghiệm thu & Thanh toán')
+	                    ) : overviewTab === 'subcontract' ? (
+	                        <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('subcontract')} />
                     ) : overviewTab === 'quality' ? (
                         <QualityTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('quality')} />
                     ) : overviewTab === 'material' ? (
@@ -3192,7 +3267,7 @@ const ProjectDashboard: React.FC = () => {
                     <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-5 text-white shadow-lg">
                         <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">Tổng giá trị HĐ</div>
                         <div className="text-2xl font-black">{fmt(allStats.totalContract)}</div>
-                        <div className="text-xs opacity-60 mt-1">{filteredProjectRows.length}/{projectRows.length} dự án</div>
+                        <div className="text-xs opacity-60 mt-1">Trang này: {filteredProjectRows.length} dự án</div>
                     </div>
                     <div className="bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl p-5 text-white shadow-lg">
                         <div className="text-xs font-bold uppercase tracking-wider opacity-70 mb-1">Tổng chi thực tế</div>
@@ -3216,7 +3291,7 @@ const ProjectDashboard: React.FC = () => {
                     <div>
                         <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider">Danh sách dự án</h3>
                         <p className="text-xs text-slate-400 mt-0.5">
-                            {filteredProjectRows.length} đang hiển thị • {projectRows.length} tổng dự án • {hrmConstructionSites.length} công trường HRM có thể liên kết
+                            {projectPageStart}-{projectPageEnd} / {projectTotal} dự án theo bộ lọc • Trang {projectPage}/{projectPageCount} • {hrmConstructionSites.length} công trường HRM có thể liên kết
                         </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -3510,6 +3585,34 @@ const ProjectDashboard: React.FC = () => {
                                 </div>
                             );
                         })}
+                        <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="text-xs font-bold text-slate-500">
+                                Đang xem {projectPageStart}-{projectPageEnd} trên {projectTotal} dự án
+                            </div>
+                            <div className="flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setProjectPage(prev => Math.max(1, prev - 1))}
+                                    disabled={projectsLoading || projectPage <= 1}
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    <ChevronLeft size={14} />
+                                    Trước
+                                </button>
+                                <span className="min-w-[82px] text-center text-xs font-black text-slate-500">
+                                    {projectPage}/{projectPageCount}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => setProjectPage(prev => prev + 1)}
+                                    disabled={projectsLoading || !projectHasNextPage}
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    Sau
+                                    <ChevronRight size={14} />
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard } from 'lucide-react';
+import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard } from 'lucide-react';
 import { Role, User, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
@@ -16,6 +16,7 @@ const PROJECT_TAB_PERMISSION_ICONS: Record<ProjectOverviewTabKey, any> = {
   contract: FileSignature,
   gantt: GitBranch,
   dailylog: ClipboardCheck,
+  payment: CreditCard,
   quality: ClipboardCheck,
   subcontract: Briefcase,
   material: Package,

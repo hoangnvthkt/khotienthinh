@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import AiInsightPanel from '../../components/AiInsightPanel';
 import {
     Plus, Edit2, Trash2, X, Save, FileText,
@@ -63,6 +64,20 @@ const TYPE_CFG = {
 const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
     const toast = useToast();
     const confirm = useConfirm();
+    const location = useLocation();
+    const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+    const targetContractId = queryParams.get('contractId');
+    const targetWorkspaceTab = queryParams.get('contractWorkspaceTab') as
+        | 'info'
+        | 'boq'
+        | 'variation'
+        | 'history'
+        | 'appendices'
+        | 'schedule'
+        | 'acceptance'
+        | 'certificates'
+        | 'documents'
+        | null;
     const effectiveId = projectId || constructionSiteId || '';
     const hasSiteLink = Boolean(constructionSiteId);
     const [customerContracts, setCustomerContracts] = useState<CustomerContract[]>([]);
@@ -115,6 +130,10 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
     const [filterType, setFilterType] = useState<'all' | 'customer' | 'subcontractor'>('all');
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [activeSubTab, setActiveSubTab] = useState<'info' | 'pipeline' | 'boq' | 'variation' | 'acceptance' | 'payment' | 'advance' | 'retention'>('pipeline');
+
+    useEffect(() => {
+        if (targetContractId) setExpandedId(targetContractId);
+    }, [targetContractId]);
     const filtered = useMemo(() => {
         if (filterType === 'all') return contracts;
         return contracts.filter(c => c.type === filterType);
@@ -258,6 +277,8 @@ const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId
                                                     contract={sourceContract}
                                                     contractType={c.type as ContractItemType}
                                                     embedded
+                                                    canManageTab={canManageTab}
+                                                    initialTab={targetContractId === c.id && targetWorkspaceTab ? targetWorkspaceTab : undefined}
                                                 />
                                             ) : (
                                                 <div className="py-6 text-center text-xs font-bold text-slate-400">Không tìm thấy dữ liệu hợp đồng nguồn.</div>

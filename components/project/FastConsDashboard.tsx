@@ -118,9 +118,8 @@ const severityClasses: Record<ExecutiveAlertSeverity, string> = {
 
 const stageLabels: Record<ExecutivePaymentBlockingStage, string> = {
   none: 'Đủ điều kiện',
-  production: 'Khối lượng',
-  acceptance: 'Nghiệm thu',
-  certificate: 'Chứng từ',
+  dossier: 'Hồ sơ',
+  quality: 'Chất lượng',
   cash: 'Dòng tiền',
 };
 
@@ -287,12 +286,11 @@ const PaymentRiskPanel = ({ metrics }: { metrics: ProjectDashboardMetrics }) => 
                   </div>
                   <div className="mt-1 text-[11px] font-semibold text-slate-500">{risk.recommendation}</div>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 lg:w-[640px]">
-                  <MiniMoney label="Target" value={risk.targetCumulative} />
-                  <MiniMoney label="Thi công" value={risk.performedValue} />
-                  <MiniMoney label="Nghiệm thu" value={risk.acceptedValue} />
-                  <MiniMoney label="Chứng từ" value={risk.certifiedValue} />
-                  <MiniMoney label="Tiền" value={risk.paidValue} />
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 lg:w-[560px]">
+                  <MiniMoney label="Kế hoạch" value={risk.targetCumulative} />
+                  <MiniMoney label="Hồ sơ" value={risk.acceptedValue} />
+                  <MiniMoney label="Chất lượng" value={risk.certifiedValue} />
+                  <MiniMoney label="Đã TT" value={risk.paidValue} />
                 </div>
               </div>
             </div>

@@ -2,7 +2,8 @@ import { supabase } from './supabase';
 import {
     ProjectTask, DailyLog, AcceptanceRecord,
     MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor,
-    PurchaseOrder, PaymentSchedule, ProjectBaseline, ProjectWorkBoqItem, PurchaseOrderRequestLineLink
+    PurchaseOrder, PaymentSchedule, ProjectBaseline, ProjectWorkBoqItem, PurchaseOrderRequestLineLink,
+    PaymentDossierStatus, PaymentQualityStatus, PaymentScheduleMilestoneType
 } from '../types';
 import { auditService } from './auditService';
 import { dailyLogDetailService } from './dailyLogDetailService';
@@ -26,6 +27,64 @@ const mapKeys = (obj: any, fn: (k: string) => string): any => {
 };
 const toDb = (obj: any) => mapKeys(obj, toSnake);
 const fromDb = (obj: any) => mapKeys(obj, toCamel);
+
+const PAYMENT_MILESTONE_TYPES = new Set<PaymentScheduleMilestoneType>(['advance', 'progress', 'settlement', 'retention', 'other']);
+const PAYMENT_DOSSIER_STATUSES = new Set<PaymentDossierStatus>(['not_started', 'preparing', 'submitted', 'approved']);
+const PAYMENT_QUALITY_STATUSES = new Set<PaymentQualityStatus>(['not_applicable', 'not_confirmed', 'passed', 'failed']);
+const getDefaultPaymentQualityStatus = (milestoneType: PaymentScheduleMilestoneType): PaymentQualityStatus =>
+    milestoneType === 'advance' ? 'not_applicable' : 'not_confirmed';
+
+const normalizePaymentSchedule = (row: any): PaymentSchedule => {
+    const item = fromDb(row || {}) as PaymentSchedule;
+    const milestoneType = PAYMENT_MILESTONE_TYPES.has(item.milestoneType as PaymentScheduleMilestoneType)
+        ? item.milestoneType as PaymentScheduleMilestoneType
+        : 'progress';
+    const qualityDefault = getDefaultPaymentQualityStatus(milestoneType);
+    return {
+        ...item,
+        sequenceNo: Number(item.sequenceNo || 1),
+        milestoneType,
+        amount: Number(item.amount || 0),
+        paidAmount: Number(item.paidAmount || 0),
+        status: item.status || 'pending',
+        type: item.type || 'receivable',
+        plannedTaskIds: Array.isArray(item.plannedTaskIds) ? item.plannedTaskIds.filter(Boolean) : [],
+        dossierStatus: PAYMENT_DOSSIER_STATUSES.has(item.dossierStatus as PaymentDossierStatus)
+            ? item.dossierStatus
+            : 'not_started',
+        qualityStatus: PAYMENT_QUALITY_STATUSES.has(item.qualityStatus as PaymentQualityStatus)
+            ? item.qualityStatus
+            : qualityDefault,
+    };
+};
+
+const paymentScheduleToDb = (item: PaymentSchedule) => toDb({
+    id: item.id,
+    projectId: item.projectId || null,
+    constructionSiteId: item.constructionSiteId || null,
+    contractId: item.contractId || null,
+    contractType: item.contractType || null,
+    appendixId: item.appendixId || null,
+    sequenceNo: item.sequenceNo || 1,
+    milestoneType: item.milestoneType || 'progress',
+    description: item.description || '',
+    amount: Number(item.amount || 0),
+    dueDate: item.dueDate || new Date().toISOString().slice(0, 10),
+    paidDate: item.paidDate || null,
+    paidAmount: Number(item.paidAmount || 0),
+    status: item.status || 'pending',
+    type: item.type || 'receivable',
+    contactName: item.contactName || null,
+    plannedTaskIds: item.plannedTaskIds || [],
+    plannedScopeNote: item.plannedScopeNote || null,
+    dossierStatus: item.dossierStatus || 'not_started',
+    qualityStatus: item.qualityStatus || getDefaultPaymentQualityStatus(item.milestoneType || 'progress'),
+    qualityConfirmedBy: item.qualityConfirmedBy || null,
+    qualityConfirmedName: item.qualityConfirmedName || null,
+    qualityConfirmedAt: item.qualityConfirmedAt || null,
+    qualityNote: item.qualityNote || null,
+    note: item.note || null,
+});
 
 const FULFILLMENT_BATCH_TABLE = 'material_request_fulfillment_batches';
 const FULFILLMENT_LINE_TABLE = 'material_request_fulfillment_lines';
@@ -770,23 +829,40 @@ export const paymentService = {
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('due_date', { ascending: true });
         if (error) throw error;
-        return dedupeRowsById(data || []).map(fromDb);
+        return dedupeRowsById(data || []).map(normalizePaymentSchedule);
+    },
+    async listScoped(projectId?: string | null, constructionSiteId?: string | null): Promise<PaymentSchedule[]> {
+        let query = supabase
+            .from('payment_schedules')
+            .select('*')
+            .order('due_date', { ascending: true });
+        if (projectId && constructionSiteId) {
+            query = query.or(`project_id.eq.${projectId},construction_site_id.eq.${constructionSiteId}`);
+        } else if (projectId) {
+            query = query.eq('project_id', projectId);
+        } else if (constructionSiteId) {
+            query = query.eq('construction_site_id', constructionSiteId);
+        }
+        const { data, error } = await query;
+        if (error) throw error;
+        return dedupeRowsById(data || []).map(normalizePaymentSchedule);
     },
     async upsert(item: PaymentSchedule): Promise<void> {
+        const normalized = normalizePaymentSchedule(item);
         const { error } = await supabase
             .from('payment_schedules')
-            .upsert(toDb(item), { onConflict: 'id' });
+            .upsert(paymentScheduleToDb(normalized), { onConflict: 'id' });
         if (error) throw error;
-        if (item.status === 'paid') {
+        if (normalized.status === 'paid') {
             await projectTransactionService.ensureWorkflowTransaction({
-                sourceRef: `payment_schedule:${item.id}`,
-                projectId: item.projectId || null,
-                constructionSiteId: item.constructionSiteId,
-                type: item.type === 'receivable' ? 'revenue_received' : 'expense',
-                category: item.type === 'receivable' ? 'other' : item.contractType === 'subcontractor' ? 'subcontract' : 'materials',
-                amount: Number(item.paidAmount || item.amount || 0),
-                description: `${item.type === 'receivable' ? 'Thu' : 'Chi'} lịch thanh toán: ${item.description}`,
-                date: item.paidDate || new Date().toISOString().slice(0, 10),
+                sourceRef: `payment_schedule:${normalized.id}`,
+                projectId: normalized.projectId || null,
+                constructionSiteId: normalized.constructionSiteId,
+                type: normalized.type === 'receivable' ? 'revenue_received' : 'expense',
+                category: normalized.type === 'receivable' ? 'other' : normalized.contractType === 'subcontractor' ? 'subcontract' : 'materials',
+                amount: Number(normalized.paidAmount || normalized.amount || 0),
+                description: `${normalized.type === 'receivable' ? 'Thu' : 'Chi'} lịch thanh toán: ${normalized.description}`,
+                date: normalized.paidDate || new Date().toISOString().slice(0, 10),
             });
         }
     },
@@ -799,7 +875,7 @@ export const paymentService = {
         if (contractType) query = query.eq('contract_type', contractType);
         const { data, error } = await query;
         if (error) throw error;
-        return (data || []).map(fromDb);
+        return (data || []).map(normalizePaymentSchedule);
     },
     async remove(id: string): Promise<void> {
         const { error } = await supabase
