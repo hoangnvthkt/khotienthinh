@@ -3905,6 +3905,286 @@ export interface ContractCostItem {
   updatedAt?: string;
 }
 
+// ==================== AI DỰ TOÁN NHANH & ĐƠN GIÁ NỘI BỘ ====================
+
+export type CostTemplateStatus = 'draft' | 'active' | 'archived';
+export type CostTemplateItemType = 'work' | 'material' | 'labor' | 'machine' | 'subcontract' | 'overhead' | 'other';
+export type CostTemplateParameterType = 'number' | 'text' | 'select' | 'boolean' | 'date';
+export type InternalPriceBookStatus = 'draft' | 'active' | 'archived';
+export type InternalPriceBookItemType = 'material' | 'labor' | 'machine' | 'subcontract' | 'overhead' | 'other';
+export type InternalCostSensitivityLevel = 'internal' | 'restricted';
+export type EstimateScenarioStatus = 'draft' | 'reviewed' | 'finalized' | 'converted' | 'cancelled';
+export type EstimateAdjustmentType = 'discount' | 'markup' | 'risk_contingency' | 'transport' | 'tax' | 'other';
+export type EstimateParameterCode =
+  | 'floor_area'
+  | 'height'
+  | 'span'
+  | 'foundation_type'
+  | 'roof_type'
+  | 'wall_type'
+  | 'crane_capacity'
+  | 'finish_level'
+  | 'region';
+
+export interface CostTemplate {
+  id: string;
+  code: string;
+  name: string;
+  projectType?: string | null;
+  description?: string | null;
+  status: CostTemplateStatus;
+  versionNo: number;
+  parentTemplateId?: string | null;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  parametersSchema?: Record<string, unknown>;
+  assumptions?: unknown[];
+  metadata?: Record<string, unknown>;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CostTemplateSection {
+  id: string;
+  templateId: string;
+  parentId?: string | null;
+  code: string;
+  name: string;
+  description?: string | null;
+  unit?: string | null;
+  calculationMethod?: string | null;
+  sortOrder: number;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CostTemplateItem {
+  id: string;
+  templateId: string;
+  sectionId?: string | null;
+  code: string;
+  name: string;
+  itemType: CostTemplateItemType;
+  unit?: string | null;
+  quantityFormula?: string | null;
+  baseQuantity?: number | null;
+  defaultWastePercent: number;
+  laborRate: number;
+  machineRate: number;
+  overheadPercent: number;
+  profitPercent: number;
+  riskBufferPercent: number;
+  costCategory?: string | null;
+  workCode?: string | null;
+  materialSku?: string | null;
+  normGroupCode?: string | null;
+  sortOrder: number;
+  assumptions?: unknown[];
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CostTemplateParameter {
+  id: string;
+  templateId: string;
+  code: EstimateParameterCode | string;
+  label: string;
+  dataType: CostTemplateParameterType;
+  unit?: string | null;
+  isRequired: boolean;
+  defaultValue?: unknown;
+  options?: unknown[];
+  validationRules?: Record<string, unknown>;
+  sortOrder: number;
+  description?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface InternalPriceBookItem {
+  id: string;
+  itemCode: string;
+  itemName: string;
+  itemType: InternalPriceBookItemType;
+  category?: string | null;
+  spec?: string | null;
+  unit: string;
+  region: string;
+  brand?: string | null;
+  supplierName?: string | null;
+  currency: string;
+  unitPrice: number;
+  versionNo: number;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  status: InternalPriceBookStatus;
+  sensitivityLevel: InternalCostSensitivityLevel;
+  source?: string | null;
+  note?: string | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface InternalNorm {
+  id: string;
+  normCode: string;
+  templateItemId?: string | null;
+  workCode?: string | null;
+  resourceCode?: string | null;
+  resourceName: string;
+  resourceType: InternalPriceBookItemType;
+  unit: string;
+  normQuantity: number;
+  wastePercent: number;
+  formula?: string | null;
+  applicableParameters?: Record<string, unknown>;
+  region: string;
+  versionNo: number;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  status: InternalPriceBookStatus;
+  sourceProjectId?: string | null;
+  sourceNote?: string | null;
+  confidenceScore?: number | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface EstimateScenario {
+  id: string;
+  code?: string | null;
+  name: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  customerName?: string | null;
+  projectType?: string | null;
+  status: EstimateScenarioStatus;
+  templateId?: string | null;
+  templateVersionNo?: number | null;
+  inputParameters: Partial<Record<EstimateParameterCode | string, unknown>>;
+  missingParameters: string[];
+  assumptions: unknown[];
+  riskWarnings: unknown[];
+  confidenceScore?: number | null;
+  totalMaterialAmount: number;
+  totalLaborAmount: number;
+  totalMachineAmount: number;
+  totalSubcontractAmount: number;
+  totalOverheadAmount: number;
+  manualAdjustmentAmount: number;
+  totalAmount: number;
+  quoteAmount: number;
+  currency: string;
+  marginPercent?: number | null;
+  profitAmount?: number | null;
+  templateSnapshot?: Record<string, unknown>;
+  priceBookSnapshot?: unknown[];
+  normsSnapshot?: unknown[];
+  calculationSnapshot?: Record<string, unknown>;
+  quoteSnapshot?: Record<string, unknown>;
+  createdBy?: string | null;
+  reviewedBy?: string | null;
+  finalizedBy?: string | null;
+  convertedProjectId?: string | null;
+  convertedContractId?: string | null;
+  convertedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface EstimateItem {
+  id: string;
+  estimateId: string;
+  sectionId?: string | null;
+  templateItemId?: string | null;
+  code?: string | null;
+  name: string;
+  itemType: CostTemplateItemType;
+  unit?: string | null;
+  quantityFormula?: string | null;
+  originalQuantity?: number | null;
+  originalUnitPrice?: number | null;
+  originalAmount?: number | null;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+  quoteUnitPrice?: number | null;
+  quoteAmount?: number | null;
+  priceBookItemId?: string | null;
+  normId?: string | null;
+  sourceSnapshot?: Record<string, unknown>;
+  assumptions?: unknown[];
+  confidenceScore?: number | null;
+  manualOverride: boolean;
+  overrideReason?: string | null;
+  overrideBy?: string | null;
+  overrideByName?: string | null;
+  overrideAt?: string | null;
+  sortOrder: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface EstimateAdjustment {
+  id: string;
+  estimateId: string;
+  adjustmentType: EstimateAdjustmentType;
+  description: string;
+  amount?: number | null;
+  percent?: number | null;
+  reason?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+}
+
+export interface EstimateVersion {
+  id: string;
+  estimateId: string;
+  versionNo: number;
+  status?: EstimateScenarioStatus | string | null;
+  snapshot: Record<string, unknown>;
+  changeNote?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+}
+
+export type EstimateConversionStatus = 'previewed' | 'completed' | 'cancelled';
+export type EstimateConversionTargetTable = 'contract_items' | 'project_work_boq_items' | 'material_budget_items';
+
+export interface EstimateConversionBatch {
+  id: string;
+  estimateId: string;
+  contractId: string;
+  contractType: ContractItemType;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  status: EstimateConversionStatus;
+  summary: Record<string, unknown>;
+  createdBy?: string | null;
+  createdAt?: string;
+}
+
+export interface EstimateConversionItem {
+  id: string;
+  batchId: string;
+  estimateId: string;
+  estimateItemId?: string | null;
+  targetTable: EstimateConversionTargetTable;
+  targetId: string;
+  targetCode?: string | null;
+  targetName?: string | null;
+  targetSnapshot: Record<string, unknown>;
+  createdAt?: string;
+}
+
 export type ContractGuaranteeType = 'performance' | 'advance' | 'warranty' | 'other';
 export type ContractGuaranteeStatus = 'draft' | 'active' | 'released' | 'expired' | 'cancelled';
 

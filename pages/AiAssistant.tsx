@@ -45,8 +45,8 @@ const MODE_CONFIG = {
     bgLight: 'from-violet-50 to-fuchsia-50',
     bgDark: 'dark:from-violet-950/40 dark:to-fuchsia-950/40',
     welcomeTitle: 'Trợ lý Dữ liệu 📊',
-    welcomeDesc: 'Hỏi về dữ liệu kho, nhân sự, tài sản, dự án, chấm công, lương...',
-    placeholder: 'Hỏi về dữ liệu công ty...',
+    welcomeDesc: 'Hỏi về dữ liệu kho, nhân sự, tài sản, dự án, chào thầu, dự toán...',
+    placeholder: 'Hỏi về dữ liệu công ty, dự toán, chào thầu...',
     loadingText: 'Đang truy vấn database...',
     footerText: 'Truy vấn dữ liệu thực tế từ hệ thống',
     chipBg: 'bg-violet-50 dark:bg-violet-950/30 border-violet-200 dark:border-violet-800 hover:bg-violet-100 dark:hover:bg-violet-900/40',
@@ -55,8 +55,8 @@ const MODE_CONFIG = {
     suggestedQuestions: [
       { icon: '📦', text: 'Tổng tồn kho hiện tại bao nhiêu mặt hàng?' },
       { icon: '👥', text: 'Có bao nhiêu nhân viên đang hoạt động?' },
-      { icon: '📊', text: 'Tháng này chi phí dự án bao nhiêu?' },
-      { icon: '📋', text: 'Có bao nhiêu yêu cầu đang chờ xử lý?' },
+      { icon: '🏭', text: 'Thiết kế module AI dự toán nhanh cần những bảng nào?' },
+      { icon: '🧮', text: 'Tra template dự toán nhà xưởng đang có?' },
       { icon: '🏗️', text: 'Danh sách các công trường đang hoạt động?' },
       { icon: '💰', text: 'Tổng hợp ngân sách và chi phí thực tế' },
     ],
@@ -107,6 +107,14 @@ const AiAssistant: React.FC = () => {
 
   const cfg = MODE_CONFIG[aiMode];
   const ModeIcon = cfg.icon;
+
+  const buildFunctionHeaders = async (): Promise<Record<string, string>> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return {
+      'Content-Type': 'application/json',
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    };
+  };
 
   useEffect(() => { loadConversations(); }, []);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -168,7 +176,7 @@ const AiAssistant: React.FC = () => {
     try {
       await fetch(`${SUPABASE_URL}/functions/v1/ai-assistant`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await buildFunctionHeaders(),
         body: JSON.stringify({
           action: 'feedback',
           messageId: msg.id,
@@ -202,7 +210,7 @@ const AiAssistant: React.FC = () => {
     try {
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/ai-assistant`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await buildFunctionHeaders(),
         body: JSON.stringify({
           question,
           conversationId: activeConvId,

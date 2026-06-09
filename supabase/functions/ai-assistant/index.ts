@@ -26,6 +26,16 @@ interface AssistantRequest {
   model?: string;
 }
 
+interface AppUserContext {
+  id: string;
+  role?: string | null;
+  email?: string | null;
+  isActive?: boolean | null;
+  allowedModules?: string[] | null;
+  adminModules?: string[] | null;
+  source: 'jwt' | 'body';
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -70,6 +80,7 @@ Các chủ đề ĐƯỢC PHÉP HỖ TRỢ (được coi là liên quan):
 - Hỏi về tài sản công ty, danh mục thiết bị, lịch bảo trì thiết bị.
 - Hỏi về tài chính của dự án, doanh thu, ngân sách dự toán, chi phí thực tế, lãi lỗ.
 - Hỏi về nhật ký thi công (daily logs), nghiệm thu chất lượng (quality checklists), biên bản nghiệm thu.
+- Hỏi về chào thầu, dự toán nhanh, đơn giá nội bộ, định mức nội bộ, template dự toán, estimate scenario, chuyển estimate thành BOQ.
 - Hỏi về các quy trình, tài liệu quy định nội bộ hoặc chính sách công ty có trong Kho Kiến Thức.
 - Hướng dẫn hoặc giải đáp thắc mắc về cách sử dụng phần mềm Vioo/Kho Tiến Thịnh.
 
@@ -164,8 +175,166 @@ const TOOL_SOURCES: Record<string, { title: string; fileName: string }> = {
   ai_tool_employee_summary: { title: 'Hồ sơ nhân sự', fileName: 'Hệ thống Quản lý Nhân sự (HRM)' },
   ai_tool_employee_search: { title: 'Tìm kiếm nhân sự', fileName: 'Hệ thống Quản lý Nhân sự (HRM)' },
   ai_tool_attendance_report: { title: 'Báo cáo chấm công', fileName: 'Hệ thống Quản lý Nhân sự (HRM)' },
+  ai_tool_estimate_module_blueprint: { title: 'Blueprint AI dự toán nhanh', fileName: 'Module Đơn giá nội bộ & AI dự toán nhanh' },
+  ai_tool_cost_template_summary: { title: 'Cost templates', fileName: 'Module Đơn giá nội bộ & AI dự toán nhanh' },
+  ai_tool_internal_price_book_lookup: { title: 'Đơn giá nội bộ', fileName: 'Internal Price Book' },
+  ai_tool_internal_norms_lookup: { title: 'Định mức nội bộ', fileName: 'Internal Norms' },
+  ai_tool_estimate_scenario_summary: { title: 'Phương án dự toán', fileName: 'Estimate Scenarios' },
   ai_tool_executive_dashboard: { title: 'Dashboard tổng hợp', fileName: 'Hệ thống Quản lý Vioo ERP' },
 };
+
+const TOOL_ACCESS: Record<string, { requiresJwt?: boolean; adminModules?: string[]; message: string }> = {
+  ai_tool_cost_template_summary: {
+    requiresJwt: true,
+    adminModules: ['HD', 'DA'],
+    message: 'Cost template là dữ liệu nghiệp vụ nội bộ. Anh/chị cần đăng nhập bằng tài khoản Admin hoặc quản trị module Hợp đồng/Dự án để AI tra cứu.',
+  },
+  ai_tool_internal_price_book_lookup: {
+    requiresJwt: true,
+    adminModules: ['HD'],
+    message: 'Đơn giá nội bộ là dữ liệu nhạy cảm. AI chỉ được tra cứu khi tài khoản là Admin hoặc quản trị module Hợp đồng.',
+  },
+  ai_tool_internal_norms_lookup: {
+    requiresJwt: true,
+    adminModules: ['HD', 'DA'],
+    message: 'Định mức nội bộ là dữ liệu nhạy cảm. AI chỉ được tra cứu khi tài khoản là Admin hoặc quản trị module Hợp đồng/Dự án.',
+  },
+  ai_tool_estimate_scenario_summary: {
+    requiresJwt: true,
+    adminModules: ['HD', 'DA'],
+    message: 'Phương án dự toán/chào thầu cần quyền nội bộ. Anh/chị cần đăng nhập bằng tài khoản Admin hoặc quản trị module Hợp đồng/Dự án.',
+  },
+};
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(v => String(v).trim()).filter(Boolean);
+}
+
+function isAdminOrModuleAdmin(actor: AppUserContext | null, modules: string[]) {
+  if (!actor || actor.isActive === false) return false;
+  if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
+  const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
+  return modules.some(moduleCode => adminModules.includes(moduleCode.toUpperCase()));
+}
+
+function getBearerToken(request: Request) {
+  const auth = request.headers.get('authorization') || request.headers.get('Authorization') || '';
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : null;
+}
+
+async function findAppUserByAuthUser(authUser: any): Promise<AppUserContext | null> {
+  if (!authUser?.id && !authUser?.email) return null;
+
+  if (authUser.id) {
+    const byAuthId = await admin
+      .from('users')
+      .select('id, role, email, is_active, allowed_modules, admin_modules')
+      .eq('auth_id', authUser.id)
+      .maybeSingle();
+
+    if (byAuthId.data) {
+      return {
+        id: byAuthId.data.id,
+        role: byAuthId.data.role,
+        email: byAuthId.data.email,
+        isActive: byAuthId.data.is_active,
+        allowedModules: byAuthId.data.allowed_modules,
+        adminModules: byAuthId.data.admin_modules,
+        source: 'jwt',
+      };
+    }
+  }
+
+  if (authUser.email) {
+    const byEmail = await admin
+      .from('users')
+      .select('id, role, email, is_active, allowed_modules, admin_modules')
+      .ilike('email', authUser.email)
+      .maybeSingle();
+
+    if (byEmail.data) {
+      return {
+        id: byEmail.data.id,
+        role: byEmail.data.role,
+        email: byEmail.data.email,
+        isActive: byEmail.data.is_active,
+        allowedModules: byEmail.data.allowed_modules,
+        adminModules: byEmail.data.admin_modules,
+        source: 'jwt',
+      };
+    }
+  }
+
+  return null;
+}
+
+async function resolveActor(request: Request, fallbackUserId?: string): Promise<AppUserContext | null> {
+  const token = getBearerToken(request);
+  if (token) {
+    const { data, error } = await admin.auth.getUser(token);
+    if (!error && data?.user) {
+      const appUser = await findAppUserByAuthUser(data.user);
+      if (appUser) return appUser;
+    } else {
+      console.warn('ai-assistant auth token validation failed:', error?.message);
+    }
+  }
+
+  if (fallbackUserId) {
+    const { data } = await admin
+      .from('users')
+      .select('id, role, email, is_active, allowed_modules, admin_modules')
+      .eq('id', fallbackUserId)
+      .maybeSingle();
+
+    if (data) {
+      return {
+        id: data.id,
+        role: data.role,
+        email: data.email,
+        isActive: data.is_active,
+        allowedModules: data.allowed_modules,
+        adminModules: data.admin_modules,
+        source: 'body',
+      };
+    }
+  }
+
+  return null;
+}
+
+function authorizeTool(toolName: string, actor: AppUserContext | null): { allowed: boolean; message?: string; suggestions?: string[] } {
+  const access = TOOL_ACCESS[toolName];
+  if (!access) return { allowed: true };
+
+  if (access.requiresJwt && actor?.source !== 'jwt') {
+    return {
+      allowed: false,
+      message: `${access.message}\n\nLưu ý: phiên hiện tại chưa gửi access token hợp lệ tới AI Assistant.`,
+      suggestions: [
+        'Thiết kế module AI dự toán nhanh như thế nào?',
+        'Các bảng dữ liệu của module dự toán gồm những gì?',
+        'Nguyên tắc bảo mật đơn giá nội bộ là gì?',
+      ],
+    };
+  }
+
+  if (!isAdminOrModuleAdmin(actor, access.adminModules || [])) {
+    return {
+      allowed: false,
+      message: access.message,
+      suggestions: [
+        'Thiết kế module AI dự toán nhanh như thế nào?',
+        'Các bảng dữ liệu của module dự toán gồm những gì?',
+        'Nguyên tắc snapshot dự toán cũ là gì?',
+      ],
+    };
+  }
+
+  return { allowed: true };
+}
 
 function extractJsonObject(text: string): any {
   const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
@@ -214,6 +383,16 @@ async function callGemini(
 // ═══ Tool Router — Replaces planSql() ════════════════════════
 
 const ALLOWED_TOOL_NAMES = AI_TOOL_DEFINITIONS.map(t => t.name);
+
+function getMissingRequiredParams(toolName: string, params: Record<string, any>) {
+  const definition = AI_TOOL_DEFINITIONS.find(tool => tool.name === toolName);
+  if (!definition?.parameters) return [];
+
+  return Object.entries(definition.parameters)
+    .filter(([, spec]: any) => spec?.required)
+    .map(([key]) => key)
+    .filter(key => params[key] === null || params[key] === undefined || String(params[key]).trim() === '');
+}
 
 async function routeToTool(question: string, history: ChatMessage[], selectedModel?: string | null) {
   const prompt = `
@@ -426,11 +605,13 @@ Deno.serve(async (request: Request) => {
     const mode: AiMode = req.mode === 'knowledge' ? 'knowledge' : 'data';
     const history = (req.history || []).slice(-10);
     const selectedModel = req.model || null;
+    const actor = await resolveActor(request, req.userId);
+    const effectiveUserId = actor?.id || req.userId || null;
 
     // ── Off-topic classification ──
     const relation = await classifyQuestionRelation(question, history, selectedModel);
     if (!relation.isRelated) {
-      const conversationId = await ensureConversation({ ...req, mode }, question);
+      const conversationId = await ensureConversation({ ...req, userId: effectiveUserId || undefined, mode }, question);
       await saveMessage({ conversationId, role: 'user', content: question, mode });
 
       const friendlyRejection = relation.friendlyRejection || 'Xin chào! Em là Trợ lý AI của Kho Tiến Thịnh. Em chỉ có thể hỗ trợ giải đáp các thông tin liên quan đến dữ liệu phần mềm ERP (tồn kho, nhân sự, dự án, tài chính) hoặc tài liệu quy trình trong công ty. Anh/chị vui lòng hỏi đúng chủ đề nhé!';
@@ -451,7 +632,7 @@ Deno.serve(async (request: Request) => {
       });
     }
 
-    const conversationId = await ensureConversation({ ...req, mode }, question);
+    const conversationId = await ensureConversation({ ...req, userId: effectiveUserId || undefined, mode }, question);
     await saveMessage({ conversationId, role: 'user', content: question, mode });
 
     // ── Knowledge Mode ──
@@ -510,8 +691,48 @@ Deno.serve(async (request: Request) => {
 
     // Handle tool_call
     if (route.action === 'tool_call' && route.toolName) {
+      const missingParams = getMissingRequiredParams(route.toolName, route.parameters);
+      if (missingParams.length > 0) {
+        const msg = `Em cần thêm thông tin để tra cứu chính xác: ${missingParams.join(', ')}. Anh/chị cho em biết từ khóa hoặc mã hạng mục/vật tư cụ thể nhé.`;
+        await saveMessage({ conversationId, role: 'assistant', content: msg, mode: 'sql' });
+        return jsonResponse({
+          conversationId,
+          answer: msg,
+          mode: 'sql',
+          suggestions: route.suggestions || [
+            'Tra đơn giá nội bộ của thép D10',
+            'Tra định mức bê tông móng',
+            'Tra template dự toán nhà xưởng',
+          ],
+          hasMemory: false,
+        });
+      }
+
+      const toolAuthorization = authorizeTool(route.toolName, actor);
+      if (!toolAuthorization.allowed) {
+        const msg = toolAuthorization.message || 'Tài khoản hiện tại chưa đủ quyền để AI tra cứu dữ liệu này.';
+        await saveMessage({ conversationId, role: 'assistant', content: msg, mode: 'sql' });
+        return jsonResponse({
+          conversationId,
+          answer: msg,
+          mode: 'sql',
+          suggestions: toolAuthorization.suggestions || route.suggestions,
+          hasMemory: false,
+        });
+      }
+
       let toolResult: any = null;
       try {
+        console.info('ai-assistant tool_access', JSON.stringify({
+          actorId: actor?.id || null,
+          actorSource: actor?.source || null,
+          role: actor?.role || null,
+          toolName: route.toolName,
+          parameters: route.parameters,
+          mode,
+          conversationId,
+          at: new Date().toISOString(),
+        }));
         toolResult = await callToolRpc(route.toolName, route.parameters);
       } catch (rpcErr) {
         console.error(`ai-assistant RPC ${route.toolName} failed:`, rpcErr);

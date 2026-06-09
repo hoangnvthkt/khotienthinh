@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard } from 'lucide-react';
+import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, Calculator } from 'lucide-react';
 import { Role, User, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
@@ -105,6 +105,10 @@ const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }
   ],
   HD: [
     { to: '/hd/overview', icon: FileSignature, label: 'Tổng quan HĐ' },
+    { to: '/hd/partners', icon: Users, label: 'Đối tác' },
+    { to: '/hd/contract-types', icon: Shield, label: 'Loại HĐ & Mẫu' },
+    { to: '/hd/catalogs', icon: FileSpreadsheet, label: 'Danh mục HĐ' },
+    { to: '/hd/cost-library', icon: Calculator, label: 'Dự toán' },
     { to: '/hd/supplier', icon: FileSignature, label: 'HĐ Nhà cung cấp' },
     { to: '/hd/customer', icon: Users, label: 'HĐ Khách hàng' },
     { to: '/hd/subcontractor', icon: FileSignature, label: 'HĐ Thầu phụ' },

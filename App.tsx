@@ -107,6 +107,7 @@ const ContractOverview = React.lazy(() => import('./pages/hd/ContractOverview'))
 const BusinessPartners = React.lazy(() => import('./pages/hd/BusinessPartners'));
 const ContractTypes = React.lazy(() => import('./pages/hd/ContractTypes'));
 const ContractCatalogs = React.lazy(() => import('./pages/hd/ContractCatalogs'));
+const CostLibrary = React.lazy(() => import('./pages/hd/CostLibrary'));
 const SupplierContracts = React.lazy(() => import('./pages/hd/SupplierContracts'));
 const CustomerContracts = React.lazy(() => import('./pages/hd/CustomerContracts'));
 const SubcontractorContracts = React.lazy(() => import('./pages/hd/SubcontractorContracts'));
@@ -262,6 +263,7 @@ const AppRoutes: React.FC = () => {
             <Route path="partners" element={<BusinessPartners />} />
             <Route path="contract-types" element={<ContractTypes />} />
             <Route path="catalogs" element={<ContractCatalogs />} />
+            <Route path="cost-library" element={<CostLibrary />} />
             <Route path="supplier" element={<SupplierContracts />} />
             <Route path="customer" element={<CustomerContracts />} />
             <Route path="customer/:id" element={<ContractWorkspacePage contractType="customer" />} />
@@ -314,6 +316,15 @@ const RouteErrorBoundary: React.FC<{ children: React.ReactNode }> = ({ children 
 
   return <ErrorBoundary resetKey={resetKey}>{children}</ErrorBoundary>;
 };
+
+const normalizeDirectHashRoute = () => {
+  if (typeof window === 'undefined') return;
+  const { pathname, search, hash } = window.location;
+  if (hash || pathname === '/' || pathname === '') return;
+  window.history.replaceState(null, '', `/#${pathname}${search}`);
+};
+
+normalizeDirectHashRoute();
 
 const App: React.FC = () => {
   return (

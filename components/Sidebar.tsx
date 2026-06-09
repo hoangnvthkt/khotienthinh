@@ -7,7 +7,7 @@ import {
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
   Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
-  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2
+  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import NotificationCenter from './NotificationCenter';
@@ -244,8 +244,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/ep', icon: IdCard, label: 'Tra cứu nhân viên' },
     ],
     HD: [
+      { to: '/hd/overview', icon: FileSignature, label: 'Tổng quan HĐ' },
       { to: '/hd/partners', icon: Handshake, label: 'Đối tác' },
       { to: '/hd/contract-types', icon: Settings2, label: 'Loại HĐ & Mẫu' },
+      { to: '/hd/cost-library', icon: Calculator, label: 'Dự toán' },
       { to: '/hd/customer', icon: Users, label: 'HĐ Nhận thầu' },
       { to: '/hd/supplier', icon: Building2, label: 'HĐ Nhà cung cấp' },
       { to: '/hd/subcontractor', icon: HardHat, label: 'HĐ Thầu phụ' },

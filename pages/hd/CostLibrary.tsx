@@ -1,0 +1,1853 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  Calculator,
+  CheckCircle2,
+  Download,
+  Eye,
+  FileSpreadsheet,
+  GitCompare,
+  Layers,
+  Library,
+  Loader2,
+  LockKeyhole,
+  PackageSearch,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  ShieldCheck,
+  Trash2,
+  Upload,
+  Wand2,
+  X,
+} from 'lucide-react';
+import { useApp } from '../../context/AppContext';
+import { useConfirm } from '../../context/ConfirmContext';
+import { useToast } from '../../context/ToastContext';
+import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import {
+  CostTemplateDetails,
+  CostImportValidationResult,
+  costTemplateService,
+  estimateAiSuggestionService,
+  EstimateComparisonResult,
+  EstimateConversionAudit,
+  EstimateConversionPreview,
+  estimateParameterLabels,
+  estimatePermissionService,
+  estimateScenarioService,
+  EstimateScenarioDetails,
+  EstimateExportMode,
+  InternalNormImportPayload,
+  InternalPriceBookImportPayload,
+  internalNormService,
+  internalPriceBookService,
+} from '../../lib/costEstimateService';
+import { customerContractService, subcontractorContractService } from '../../lib/hdService';
+import {
+  ContractItemType,
+  CostTemplateItem,
+  CostTemplateParameter,
+  CostTemplateSection,
+  CustomerContract,
+  EstimateItem,
+  EstimateScenario,
+  InternalNorm,
+  InternalPriceBookItem,
+  SubcontractorContract,
+} from '../../types';
+
+type PageTab = 'builder' | 'templates' | 'prices' | 'norms' | 'estimates';
+type BuilderStep = 1 | 2 | 3 | 4;
+type StatusFilter = 'all' | 'draft' | 'active' | 'archived' | 'reviewed' | 'finalized' | 'converted' | 'cancelled';
+
+const money = (value: number) =>
+  new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(Number(value || 0));
+const num = (value: unknown) => Number(value || 0);
+const today = () => new Date().toISOString().slice(0, 10);
+
+const statusLabel: Record<string, string> = {
+  draft: 'Nháp',
+  active: 'Hiệu lực',
+  archived: 'Lưu trữ',
+  reviewed: 'Đã rà soát',
+  finalized: 'Đã chốt',
+  converted: 'Đã chuyển BOQ',
+  cancelled: 'Huỷ',
+};
+
+const TD = 'px-3 py-2 align-middle text-slate-600 dark:text-slate-300';
+const BTN_SOFT = 'inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:opacity-50';
+const BTN_PRIMARY = 'inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50';
+const BTN_MINI = 'inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600';
+
+const tabs: Array<{ key: PageTab; label: string; icon: React.ReactNode }> = [
+  { key: 'builder', label: 'Tạo dự toán nhanh', icon: <Calculator size={14} /> },
+  { key: 'templates', label: 'Template', icon: <Library size={14} /> },
+  { key: 'prices', label: 'Đơn giá nội bộ', icon: <ShieldCheck size={14} /> },
+  { key: 'norms', label: 'Định mức', icon: <PackageSearch size={14} /> },
+  { key: 'estimates', label: 'Phương án', icon: <FileSpreadsheet size={14} /> },
+];
+
+const emptyTemplate = () => ({
+  code: `NHAXUONG_${Date.now().toString().slice(-5)}`,
+  name: 'Nhà xưởng thép tiền chế',
+  projectType: 'nha_xuong',
+  description: '',
+  status: 'draft' as const,
+  versionNo: 1,
+  effectiveFrom: today(),
+});
+
+const emptySection = (templateId = ''): Partial<CostTemplateSection> & { templateId: string; code: string; name: string } => ({
+  templateId,
+  code: '',
+  name: '',
+  unit: '',
+  calculationMethod: '',
+  sortOrder: 0,
+});
+
+const emptyItem = (templateId = ''): Partial<CostTemplateItem> & { templateId: string; code: string; name: string } => ({
+  templateId,
+  code: '',
+  name: '',
+  itemType: 'work',
+  unit: '',
+  quantityFormula: '',
+  baseQuantity: 0,
+  defaultWastePercent: 0,
+  laborRate: 0,
+  machineRate: 0,
+  overheadPercent: 0,
+  profitPercent: 0,
+  riskBufferPercent: 0,
+  sortOrder: 0,
+});
+
+const emptyParameter = (templateId = ''): Partial<CostTemplateParameter> & { templateId: string; code: string; label: string } => ({
+  templateId,
+  code: '',
+  label: '',
+  dataType: 'number',
+  unit: '',
+  isRequired: true,
+  options: [],
+  sortOrder: 0,
+});
+
+const emptyPrice = (): Partial<InternalPriceBookItem> & { itemCode: string; itemName: string; unit: string; unitPrice: number } => ({
+  itemCode: '',
+  itemName: '',
+  itemType: 'material',
+  category: '',
+  spec: '',
+  unit: '',
+  region: 'all',
+  unitPrice: 0,
+  versionNo: 1,
+  effectiveFrom: today(),
+  status: 'draft',
+  sensitivityLevel: 'internal',
+});
+
+const emptyNorm = (): Partial<InternalNorm> & { normCode: string; resourceName: string; unit: string; normQuantity: number } => ({
+  normCode: '',
+  templateItemId: '',
+  workCode: '',
+  resourceCode: '',
+  resourceName: '',
+  resourceType: 'material',
+  unit: '',
+  normQuantity: 0,
+  wastePercent: 0,
+  formula: '',
+  region: 'all',
+  versionNo: 1,
+  effectiveFrom: today(),
+  status: 'draft',
+  confidenceScore: 0.7,
+});
+
+const factorySections = [
+  { code: 'A', name: 'Móng', unit: 'gói', calculationMethod: 'Theo loại móng và diện tích', sortOrder: 10 },
+  { code: 'B', name: 'Nền bê tông', unit: 'm2', calculationMethod: 'Diện tích nền x chiều dày', sortOrder: 20 },
+  { code: 'C', name: 'Khung thép', unit: 'kg', calculationMethod: 'Diện tích sàn x kg thép/m2', sortOrder: 30 },
+  { code: 'D', name: 'Mái', unit: 'm2', calculationMethod: 'Diện tích sàn x hệ số mái', sortOrder: 40 },
+  { code: 'E', name: 'Vách bao che', unit: 'm2', calculationMethod: 'Chu vi giả định x chiều cao', sortOrder: 50 },
+  { code: 'F', name: 'MEP', unit: 'gói', calculationMethod: 'Theo diện tích và mức hoàn thiện', sortOrder: 60 },
+  { code: 'G', name: 'PCCC', unit: 'gói', calculationMethod: 'Theo diện tích và yêu cầu công năng', sortOrder: 70 },
+];
+
+const CostLibrary: React.FC = () => {
+  const { user } = useApp();
+  const toast = useToast();
+  const confirm = useConfirm();
+  const canManage = estimatePermissionService.canManageCostLibrary(user);
+  const canCreateEstimate = estimatePermissionService.canCreateEstimate(user);
+  const canSeeInternalCost = estimatePermissionService.canSeeInternalCost(user);
+
+  const [activeTab, setActiveTab] = useState<PageTab>('builder');
+  const [templates, setTemplates] = useState<CostTemplateDetails[]>([]);
+  const [prices, setPrices] = useState<InternalPriceBookItem[]>([]);
+  const [norms, setNorms] = useState<InternalNorm[]>([]);
+  const [estimates, setEstimates] = useState<EstimateScenario[]>([]);
+  const [customerContracts, setCustomerContracts] = useState<CustomerContract[]>([]);
+  const [subcontractorContracts, setSubcontractorContracts] = useState<SubcontractorContract[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [selectedEstimateId, setSelectedEstimateId] = useState('');
+  const [estimateDetail, setEstimateDetail] = useState<EstimateScenarioDetails | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [regionFilter, setRegionFilter] = useState('all');
+  const [versionFilter, setVersionFilter] = useState('all');
+  const [builderStep, setBuilderStep] = useState<BuilderStep>(1);
+
+  const [templateForm, setTemplateForm] = useState(emptyTemplate());
+  const [sectionForm, setSectionForm] = useState(emptySection());
+  const [itemForm, setItemForm] = useState(emptyItem());
+  const [parameterForm, setParameterForm] = useState(emptyParameter());
+  const [priceForm, setPriceForm] = useState(emptyPrice());
+  const [normForm, setNormForm] = useState(emptyNorm());
+  const [draftInput, setDraftInput] = useState<Record<string, unknown>>({});
+  const [draftName, setDraftName] = useState('Phương án tiêu chuẩn');
+  const [draftCustomer, setDraftCustomer] = useState('');
+  const [draftMargin, setDraftMargin] = useState(0);
+  const [lineEdits, setLineEdits] = useState<Record<string, { quantity: number; unitPrice: number; quoteUnitPrice: number; overrideReason: string }>>({});
+  const [convertType, setConvertType] = useState<ContractItemType>('customer');
+  const [convertContractId, setConvertContractId] = useState('');
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiSuggestion, setAiSuggestion] = useState<ReturnType<typeof estimateAiSuggestionService.suggestInputs> | null>(null);
+  const [finalizeOverrideReason, setFinalizeOverrideReason] = useState('');
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [compareResult, setCompareResult] = useState<EstimateComparisonResult | null>(null);
+  const [conversionPreview, setConversionPreview] = useState<EstimateConversionPreview | null>(null);
+  const [conversionAudit, setConversionAudit] = useState<EstimateConversionAudit | null>(null);
+  const [importPreview, setImportPreview] = useState<{
+    kind: 'prices' | 'norms';
+    file: File;
+    result: CostImportValidationResult<InternalPriceBookImportPayload | InternalNormImportPayload>;
+  } | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [templateRows, priceRows, normRows, estimateRows, customerRows, subcontractorRows] = await Promise.all([
+        costTemplateService.list(true).catch(() => []),
+        internalPriceBookService.list(true).catch(() => []),
+        internalNormService.list(true).catch(() => []),
+        estimateScenarioService.list().catch(() => []),
+        customerContractService.list().catch(() => []),
+        subcontractorContractService.list().catch(() => []),
+      ]);
+      setTemplates(templateRows);
+      setPrices(priceRows);
+      setNorms(normRows);
+      setEstimates(estimateRows);
+      setCustomerContracts(customerRows);
+      setSubcontractorContracts(subcontractorRows);
+      const firstTemplate = selectedTemplateId || templateRows[0]?.id || '';
+      setSelectedTemplateId(firstTemplate);
+      setSectionForm(emptySection(firstTemplate));
+      setItemForm(emptyItem(firstTemplate));
+      setParameterForm(emptyParameter(firstTemplate));
+    } catch (error) {
+      logApiError('cost-library.load', error);
+      toast.error('Không thể tải dữ liệu dự toán', getApiErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTemplateId, toast]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const selectedTemplate = useMemo(
+    () => templates.find(template => template.id === selectedTemplateId) || templates[0] || null,
+    [selectedTemplateId, templates],
+  );
+
+  const templateTypes = useMemo(() => Array.from(new Set(templates.map(row => row.projectType || '').filter(Boolean))).sort(), [templates]);
+  const priceRegions = useMemo(() => Array.from(new Set([...prices.map(row => row.region), ...norms.map(row => row.region)].filter(Boolean))).sort(), [prices, norms]);
+
+  const filteredTemplates = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    return templates.filter(row => {
+      const matchesKeyword = !keyword || [row.code, row.name, row.projectType, row.description].some(value => (value || '').toLowerCase().includes(keyword));
+      const matchesStatus = statusFilter === 'all' || row.status === statusFilter;
+      const matchesType = typeFilter === 'all' || row.projectType === typeFilter;
+      const matchesVersion = versionFilter === 'all' || String(row.versionNo) === versionFilter;
+      return matchesKeyword && matchesStatus && matchesType && matchesVersion;
+    });
+  }, [query, statusFilter, templates, typeFilter, versionFilter]);
+
+  const filteredPrices = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    return prices.filter(row => {
+      const matchesKeyword = !keyword || [row.itemCode, row.itemName, row.category, row.spec, row.region].some(value => (value || '').toLowerCase().includes(keyword));
+      const matchesStatus = statusFilter === 'all' || row.status === statusFilter;
+      const matchesType = typeFilter === 'all' || row.itemType === typeFilter;
+      const matchesRegion = regionFilter === 'all' || row.region === regionFilter;
+      const matchesVersion = versionFilter === 'all' || String(row.versionNo) === versionFilter;
+      return matchesKeyword && matchesStatus && matchesType && matchesRegion && matchesVersion;
+    });
+  }, [prices, query, regionFilter, statusFilter, typeFilter, versionFilter]);
+
+  const filteredNorms = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    return norms.filter(row => {
+      const matchesKeyword = !keyword || [row.normCode, row.workCode, row.resourceCode, row.resourceName, row.region].some(value => (value || '').toLowerCase().includes(keyword));
+      const matchesStatus = statusFilter === 'all' || row.status === statusFilter;
+      const matchesType = typeFilter === 'all' || row.resourceType === typeFilter;
+      const matchesRegion = regionFilter === 'all' || row.region === regionFilter;
+      const matchesVersion = versionFilter === 'all' || String(row.versionNo) === versionFilter;
+      return matchesKeyword && matchesStatus && matchesType && matchesRegion && matchesVersion;
+    });
+  }, [norms, query, regionFilter, statusFilter, typeFilter, versionFilter]);
+
+  const filteredEstimates = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    return estimates.filter(row => {
+      const matchesKeyword = !keyword || [row.code, row.name, row.customerName, row.projectType].some(value => (value || '').toLowerCase().includes(keyword));
+      const matchesStatus = statusFilter === 'all' || row.status === statusFilter;
+      const matchesType = typeFilter === 'all' || row.projectType === typeFilter;
+      return matchesKeyword && matchesStatus && matchesType;
+    });
+  }, [estimates, query, statusFilter, typeFilter]);
+
+  const activeTemplates = useMemo(() => templates.filter(template => template.status === 'active'), [templates]);
+  const convertContracts = convertType === 'customer' ? customerContracts : subcontractorContracts;
+  const selectedConvertContract = convertContracts.find(contract => contract.id === convertContractId);
+
+  const loadEstimateDetail = useCallback(async (id: string) => {
+    setSelectedEstimateId(id);
+    setConversionPreview(null);
+    const detail = await estimateScenarioService.get(id);
+    setEstimateDetail(detail);
+    setConversionAudit(detail ? await estimateScenarioService.getConversionAudit(detail.id) : null);
+    if (detail) {
+      setLineEdits(Object.fromEntries(detail.items.map(item => [item.id, {
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        quoteUnitPrice: item.quoteUnitPrice ?? item.unitPrice,
+        overrideReason: item.overrideReason || '',
+      }])));
+    }
+  }, []);
+
+  const runSave = async (title: string, action: () => Promise<void>) => {
+    setSaving(true);
+    try {
+      await action();
+      toast.success(title);
+      await load();
+    } catch (error) {
+      logApiError('cost-library.save', error);
+      toast.error('Không thể lưu dữ liệu', getApiErrorMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const downloadBlob = (blob: Blob, fileName: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadPriceTemplate = async () => {
+    const blob = await internalPriceBookService.createImportTemplate();
+    downloadBlob(blob, 'mau-import-don-gia-noi-bo.xlsx');
+  };
+
+  const downloadNormTemplate = async () => {
+    const blob = await internalNormService.createImportTemplate();
+    downloadBlob(blob, 'mau-import-dinh-muc-noi-bo.xlsx');
+  };
+
+  const createFactoryTemplate = async () => {
+    if (!canManage) return;
+    await runSave('Đã tạo template nhà xưởng', async () => {
+      const template = await costTemplateService.upsertTemplate({
+        ...emptyTemplate(),
+        code: `NHAXUONG_THEP_TIEN_CHE_${Date.now().toString().slice(-4)}`,
+        status: 'active',
+        createdBy: user.id,
+        updatedBy: user.id,
+      });
+      const parameterRows = costTemplateService.defaultParameters.map(parameter => costTemplateService.upsertParameter({
+        templateId: template.id,
+        code: parameter.code,
+        label: parameter.label,
+        dataType: parameter.dataType,
+        unit: parameter.unit,
+        isRequired: parameter.isRequired,
+        options: parameter.options || [],
+        sortOrder: parameter.sortOrder,
+      }));
+      const sectionRows = await Promise.all(factorySections.map(section => costTemplateService.upsertSection({ templateId: template.id, ...section })));
+      await Promise.all(parameterRows);
+      const sectionByCode = new Map(sectionRows.map(section => [section.code, section]));
+      await Promise.all([
+        costTemplateService.upsertItem({
+          templateId: template.id,
+          sectionId: sectionByCode.get('A')?.id,
+          code: 'A.01',
+          name: 'Móng nhà xưởng',
+          itemType: 'work',
+          unit: 'm2',
+          quantityFormula: 'floor_area',
+          overheadPercent: 8,
+          profitPercent: 10,
+          riskBufferPercent: 5,
+          workCode: 'FOUNDATION',
+          sortOrder: 10,
+        }),
+        costTemplateService.upsertItem({
+          templateId: template.id,
+          sectionId: sectionByCode.get('C')?.id,
+          code: 'C.01',
+          name: 'Khung thép tiền chế',
+          itemType: 'material',
+          unit: 'kg',
+          quantityFormula: 'floor_area * 35',
+          defaultWastePercent: 3,
+          overheadPercent: 8,
+          profitPercent: 10,
+          riskBufferPercent: 5,
+          materialSku: 'STEEL_STRUCTURE',
+          workCode: 'STEEL_FRAME',
+          sortOrder: 30,
+        }),
+        costTemplateService.upsertItem({
+          templateId: template.id,
+          sectionId: sectionByCode.get('B')?.id,
+          code: 'B.01',
+          name: 'Nền bê tông nhà xưởng',
+          itemType: 'work',
+          unit: 'm2',
+          quantityFormula: 'floor_area',
+          overheadPercent: 8,
+          profitPercent: 10,
+          riskBufferPercent: 4,
+          workCode: 'CONCRETE_FLOOR',
+          sortOrder: 20,
+        }),
+        costTemplateService.upsertItem({
+          templateId: template.id,
+          sectionId: sectionByCode.get('D')?.id,
+          code: 'D.01',
+          name: 'Mái tôn',
+          itemType: 'material',
+          unit: 'm2',
+          quantityFormula: 'floor_area * 1.16',
+          defaultWastePercent: 2,
+          overheadPercent: 8,
+          profitPercent: 10,
+          riskBufferPercent: 3,
+          materialSku: 'ROOF_SHEET',
+          workCode: 'ROOF',
+          sortOrder: 40,
+        }),
+        costTemplateService.upsertItem({
+          templateId: template.id,
+          sectionId: sectionByCode.get('E')?.id,
+          code: 'E.01',
+          name: 'Vách bao che',
+          itemType: 'material',
+          unit: 'm2',
+          quantityFormula: 'floor_area * 0.75',
+          defaultWastePercent: 2,
+          overheadPercent: 8,
+          profitPercent: 10,
+          riskBufferPercent: 3,
+          materialSku: 'WALL_SHEET',
+          workCode: 'WALL',
+          sortOrder: 50,
+        }),
+        costTemplateService.upsertItem({
+          templateId: template.id,
+          sectionId: sectionByCode.get('F')?.id,
+          code: 'F.01',
+          name: 'MEP cơ bản',
+          itemType: 'subcontract',
+          unit: 'm2',
+          quantityFormula: 'floor_area',
+          overheadPercent: 8,
+          profitPercent: 10,
+          riskBufferPercent: 5,
+          workCode: 'MEP',
+          sortOrder: 60,
+        }),
+        costTemplateService.upsertItem({
+          templateId: template.id,
+          sectionId: sectionByCode.get('G')?.id,
+          code: 'G.01',
+          name: 'PCCC sơ bộ',
+          itemType: 'subcontract',
+          unit: 'm2',
+          quantityFormula: 'floor_area',
+          overheadPercent: 8,
+          profitPercent: 10,
+          riskBufferPercent: 6,
+          workCode: 'FIRE_PROTECTION',
+          sortOrder: 70,
+        }),
+      ]);
+      setSelectedTemplateId(template.id);
+    });
+  };
+
+  const saveTemplate = async () => {
+    if (!canManage) return;
+    await runSave('Đã lưu template', async () => {
+      const saved = await costTemplateService.upsertTemplate({ ...templateForm, createdBy: user.id, updatedBy: user.id });
+      setSelectedTemplateId(saved.id);
+      setTemplateForm(emptyTemplate());
+    });
+  };
+
+  const saveSection = async () => {
+    if (!canManage || !selectedTemplate) return;
+    await runSave('Đã lưu nhóm hạng mục', async () => {
+      await costTemplateService.upsertSection({ ...sectionForm, templateId: selectedTemplate.id });
+      setSectionForm(emptySection(selectedTemplate.id));
+    });
+  };
+
+  const saveParameter = async () => {
+    if (!canManage || !selectedTemplate) return;
+    await runSave('Đã lưu tham số', async () => {
+      await costTemplateService.upsertParameter({ ...parameterForm, templateId: selectedTemplate.id });
+      setParameterForm(emptyParameter(selectedTemplate.id));
+    });
+  };
+
+  const saveItem = async () => {
+    if (!canManage || !selectedTemplate) return;
+    await runSave('Đã lưu hạng mục template', async () => {
+      await costTemplateService.upsertItem({ ...itemForm, templateId: selectedTemplate.id });
+      setItemForm(emptyItem(selectedTemplate.id));
+    });
+  };
+
+  const savePrice = async () => {
+    if (!canManage) return;
+    await runSave('Đã lưu đơn giá', async () => {
+      await internalPriceBookService.upsert({ ...priceForm, createdBy: user.id, updatedBy: user.id });
+      setPriceForm(emptyPrice());
+    });
+  };
+
+  const saveNorm = async () => {
+    if (!canManage) return;
+    await runSave('Đã lưu định mức', async () => {
+      await internalNormService.upsert({ ...normForm, createdBy: user.id, updatedBy: user.id });
+      setNormForm(emptyNorm());
+    });
+  };
+
+  const createTemplateVersion = async (template: CostTemplateDetails) => {
+    if (!canManage) return;
+    await runSave('Đã tạo version template mới', async () => {
+      const next = await costTemplateService.createVersion(template, user.id);
+      setSelectedTemplateId(next.id);
+    });
+  };
+
+  const changeTemplateStatus = async (template: CostTemplateDetails, action: 'activate' | 'archive') => {
+    if (!canManage) return;
+    await runSave(action === 'activate' ? 'Đã kích hoạt template' : 'Đã lưu trữ template', async () => {
+      if (action === 'activate') await costTemplateService.activate(template, user.id);
+      else await costTemplateService.archive(template, user.id);
+    });
+  };
+
+  const changePriceStatus = async (row: InternalPriceBookItem, action: 'version' | 'activate' | 'archive') => {
+    if (!canManage) return;
+    await runSave(action === 'version' ? 'Đã tạo version đơn giá' : action === 'activate' ? 'Đã kích hoạt đơn giá' : 'Đã lưu trữ đơn giá', async () => {
+      if (action === 'version') await internalPriceBookService.createVersion(row, user.id);
+      if (action === 'activate') await internalPriceBookService.activate(row, user.id);
+      if (action === 'archive') await internalPriceBookService.archive(row, user.id);
+    });
+  };
+
+  const changeNormStatus = async (row: InternalNorm, action: 'version' | 'activate' | 'archive') => {
+    if (!canManage) return;
+    await runSave(action === 'version' ? 'Đã tạo version định mức' : action === 'activate' ? 'Đã kích hoạt định mức' : 'Đã lưu trữ định mức', async () => {
+      if (action === 'version') await internalNormService.createVersion(row, user.id);
+      if (action === 'activate') await internalNormService.activate(row, user.id);
+      if (action === 'archive') await internalNormService.archive(row, user.id);
+    });
+  };
+
+  const importPrices = async (file?: File | null) => {
+    if (!canManage || !file) return;
+    try {
+      const result = await internalPriceBookService.validateImport(file, user.id);
+      setImportPreview({ kind: 'prices', file, result });
+      if (result.hasErrors) {
+        toast.warning('File đơn giá còn lỗi', `${result.invalidRows} dòng cần sửa trước khi import.`);
+      } else {
+        toast.info('Preview đơn giá', `${result.validRows} dòng hợp lệ, ${result.issues.filter(issue => issue.level === 'warning').length} cảnh báo.`);
+      }
+    } catch (error) {
+      toast.error('Không thể đọc file đơn giá', getApiErrorMessage(error));
+    }
+  };
+
+  const importNorms = async (file?: File | null) => {
+    if (!canManage || !file) return;
+    try {
+      const result = await internalNormService.validateImport(file, user.id);
+      setImportPreview({ kind: 'norms', file, result });
+      if (result.hasErrors) {
+        toast.warning('File định mức còn lỗi', `${result.invalidRows} dòng cần sửa trước khi import.`);
+      } else {
+        toast.info('Preview định mức', `${result.validRows} dòng hợp lệ, ${result.issues.filter(issue => issue.level === 'warning').length} cảnh báo.`);
+      }
+    } catch (error) {
+      toast.error('Không thể đọc file định mức', getApiErrorMessage(error));
+    }
+  };
+
+  const confirmImportPreview = async () => {
+    if (!importPreview || importPreview.result.hasErrors) return;
+    const { kind, file } = importPreview;
+    await runSave(kind === 'prices' ? 'Đã import đơn giá từ Excel' : 'Đã import định mức từ Excel', async () => {
+      const count = kind === 'prices'
+        ? await internalPriceBookService.importFromExcel(file, user.id)
+        : await internalNormService.importFromExcel(file, user.id);
+      toast.info(kind === 'prices' ? 'Import đơn giá' : 'Import định mức', `Đã ghi ${count} dòng hợp lệ.`);
+      setImportPreview(null);
+    });
+  };
+
+  const runAiSuggestion = () => {
+    const suggestion = estimateAiSuggestionService.suggestInputs({
+      prompt: aiPrompt,
+      templates,
+      currentInput: draftInput,
+      selectedTemplateId,
+    });
+    setAiSuggestion(suggestion);
+    if (suggestion.templateId) setSelectedTemplateId(suggestion.templateId);
+  };
+
+  const applyAiSuggestion = () => {
+    if (!aiSuggestion) return;
+    setDraftInput(aiSuggestion.suggestedInputs);
+    if (aiSuggestion.templateId) setSelectedTemplateId(aiSuggestion.templateId);
+    toast.success('Đã áp dụng gợi ý vào form');
+  };
+
+  const createDraft = async () => {
+    const templateId = selectedTemplate?.id || '';
+    if (!templateId || !canCreateEstimate) return;
+    await runSave('Đã tạo dự toán nháp', async () => {
+      const draft = await estimateScenarioService.createDraft({
+        templateId,
+        name: draftName,
+        customerName: draftCustomer,
+        inputParameters: draftInput,
+        marginPercent: draftMargin,
+        createdBy: user.id,
+      });
+      await loadEstimateDetail(draft.id);
+      setActiveTab('estimates');
+    });
+  };
+
+  const saveLineOverride = async (item: EstimateItem) => {
+    const draft = lineEdits[item.id];
+    if (!draft?.overrideReason.trim()) {
+      toast.warning('Thiếu lý do chỉnh tay', 'Vui lòng nhập lý do để lưu thay đổi dòng dự toán.');
+      return;
+    }
+    await runSave('Đã cập nhật dòng dự toán', async () => {
+      await estimateScenarioService.updateItemOverride(item, { ...draft, actorId: user.id, actorName: user.name || user.username });
+      await loadEstimateDetail(item.estimateId);
+    });
+  };
+
+  const updateEstimateStatus = async (status: EstimateScenario['status']) => {
+    if (!estimateDetail) return;
+    await runSave(`Đã cập nhật trạng thái ${statusLabel[status] || status}`, async () => {
+      await estimateScenarioService.updateStatus(
+        estimateDetail,
+        status,
+        user.id,
+        undefined,
+        {
+          actorCanOverride: canManage,
+          allowMissingPriceOverride: Boolean(finalizeOverrideReason.trim()),
+          missingPriceOverrideReason: finalizeOverrideReason,
+        },
+      );
+      setFinalizeOverrideReason('');
+      await loadEstimateDetail(estimateDetail.id);
+    });
+  };
+
+  const exportQuote = async (mode: EstimateExportMode) => {
+    if (!estimateDetail) return;
+    const blob = await estimateScenarioService.exportExcel(estimateDetail, mode, canSeeInternalCost);
+    const customer = (estimateDetail.customerName || 'khach-hang').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
+    downloadBlob(blob, `${estimateDetail.code || estimateDetail.id}-${customer}-${mode === 'internal' ? 'noi-bo' : 'bao-gia'}.xlsx`);
+  };
+
+  const runCompare = async () => {
+    if (compareIds.length < 2) {
+      toast.warning('Chọn ít nhất 2 phương án', 'Có thể so sánh tối đa 3 phương án.');
+      return;
+    }
+    const result = await estimateScenarioService.compare(compareIds);
+    setCompareResult(result);
+  };
+
+  const previewConvert = () => {
+    if (!estimateDetail || !selectedConvertContract) return;
+    try {
+      setConversionPreview(estimateScenarioService.previewConversion({
+        estimate: estimateDetail,
+        contractId: selectedConvertContract.id,
+        contractType: convertType,
+        projectId: selectedConvertContract.projectId || null,
+        constructionSiteId: selectedConvertContract.constructionSiteId || null,
+        actorId: user.id,
+      }));
+    } catch (error) {
+      toast.error('Không thể preview chuyển đổi', getApiErrorMessage(error));
+    }
+  };
+
+  const convertEstimate = async () => {
+    if (!estimateDetail || !selectedConvertContract) return;
+    const ok = await confirm({
+      title: 'Tạo bản nháp vận hành từ estimate?',
+      targetName: estimateDetail.name,
+      subtitle: 'Hệ thống sẽ tạo BOQ hợp đồng, Work BOQ và Material Plan từ preview đã kiểm tra.',
+      actionLabel: 'Tạo nháp',
+      intent: 'warning',
+    });
+    if (!ok) return;
+    await runSave('Đã chuyển dự toán sang dữ liệu dự án', async () => {
+      await estimateScenarioService.convertToProjectDraft({
+        estimate: estimateDetail,
+        contractId: selectedConvertContract.id,
+        contractType: convertType,
+        projectId: selectedConvertContract.projectId || null,
+        constructionSiteId: selectedConvertContract.constructionSiteId || null,
+        actorId: user.id,
+      });
+      await loadEstimateDetail(estimateDetail.id);
+    });
+  };
+
+  const rollbackConversion = async () => {
+    if (!estimateDetail) return;
+    const ok = await confirm({
+      title: 'Rollback dữ liệu đã chuyển đổi?',
+      targetName: estimateDetail.name,
+      subtitle: 'Chỉ rollback được khi BOQ/Material Plan chưa phát sinh nhật ký, nghiệm thu, thanh toán, đề xuất vật tư hoặc xuất kho.',
+      actionLabel: 'Rollback',
+      intent: 'danger',
+    });
+    if (!ok) return;
+    setSaving(true);
+    try {
+      const result = await estimateScenarioService.rollbackConversionBatch(estimateDetail, user.id);
+      if (result.blockedReasons.length > 0) {
+        toast.warning('Rollback bị chặn', result.blockedReasons.slice(0, 3).join(' • '));
+        return;
+      }
+      toast.success('Đã rollback conversion', `Đã xoá ${result.deletedTargets} dòng nháp từ batch ${result.batchId}.`);
+      await loadEstimateDetail(estimateDetail.id);
+      await load();
+    } catch (error) {
+      logApiError('cost-library.rollbackConversion', error);
+      toast.error('Không thể rollback chuyển đổi', getApiErrorMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteChild = async (table: 'sections' | 'items' | 'parameters', id: string, name: string) => {
+    if (!canManage) return;
+    const ok = await confirm({ title: 'Xoá dữ liệu?', targetName: name, actionLabel: 'Xoá', intent: 'danger' });
+    if (!ok) return;
+    await runSave('Đã xoá dữ liệu', async () => costTemplateService.removeChild(table, id));
+  };
+
+  const deletePrice = async (row: InternalPriceBookItem) => {
+    if (!canManage) return;
+    const ok = await confirm({ title: 'Xoá đơn giá?', targetName: row.itemName, actionLabel: 'Xoá', intent: 'danger' });
+    if (!ok) return;
+    await runSave('Đã xoá đơn giá', async () => internalPriceBookService.remove(row.id));
+  };
+
+  const deleteNorm = async (row: InternalNorm) => {
+    if (!canManage) return;
+    const ok = await confirm({ title: 'Xoá định mức?', targetName: row.resourceName, actionLabel: 'Xoá', intent: 'danger' });
+    if (!ok) return;
+    await runSave('Đã xoá định mức', async () => internalNormService.remove(row.id));
+  };
+
+  const renderSearch = () => (
+    <div className="grid grid-cols-1 gap-2 rounded-2xl border border-slate-200 bg-white p-2 dark:bg-slate-900 dark:border-slate-800 md:grid-cols-[minmax(0,1fr)_130px_150px_130px_110px]">
+      <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800">
+        <Search size={15} className="text-slate-400" />
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Tìm kiếm..."
+          className="w-full bg-transparent outline-none text-sm text-slate-700 dark:text-slate-200"
+        />
+      </div>
+      <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StatusFilter)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold">
+        <option value="all">Mọi trạng thái</option>
+        {['draft', 'active', 'archived', 'reviewed', 'finalized', 'converted', 'cancelled'].map(status => <option key={status} value={status}>{statusLabel[status]}</option>)}
+      </select>
+      <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold">
+        <option value="all">Mọi loại</option>
+        {[...templateTypes, 'material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].filter((value, index, arr) => value && arr.indexOf(value) === index).map(type => <option key={type} value={type}>{type}</option>)}
+      </select>
+      <select value={regionFilter} onChange={e => setRegionFilter(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold">
+        <option value="all">Mọi khu vực</option>
+        {priceRegions.map(region => <option key={region} value={region}>{region}</option>)}
+      </select>
+      <input value={versionFilter} onChange={e => setVersionFilter(e.target.value || 'all')} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold" placeholder="version" />
+    </div>
+  );
+
+  const renderImportPreview = () => {
+    if (!importPreview) return null;
+    const { result, kind, file } = importPreview;
+    const warnings = result.issues.filter(issue => issue.level === 'warning').length;
+    const title = kind === 'prices' ? 'Preview import đơn giá' : 'Preview import định mức';
+    return (
+      <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-3xl rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-black text-slate-800 dark:text-white">{title}</h2>
+              <p className="text-xs font-bold text-slate-400">{file.name}</p>
+            </div>
+            <button onClick={() => setImportPreview(null)} className={BTN_MINI}><X size={14} /></button>
+          </div>
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-8">
+            <Metric label="Tổng dòng" value={result.totalRows} />
+            <Metric label="Hợp lệ" value={result.validRows} />
+            <Metric label="Tạo mới" value={result.createRows} />
+            <Metric label="Cập nhật" value={result.updateRows} />
+            <Metric label="Dòng lỗi" value={result.invalidRows} />
+            <Metric label="Trùng file" value={result.duplicateRows} />
+            <Metric label="Quá cũ" value={result.staleRows} />
+            <Metric label="Cảnh báo" value={warnings} />
+          </div>
+          <div className="mt-4 max-h-72 overflow-y-auto rounded-xl border border-slate-200">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+                <tr>
+                  {['Dòng', 'Mức', 'Trường', 'Nội dung'].map(header => <th key={header} className="px-3 py-2 text-left font-black">{header}</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {result.issues.slice(0, 80).map((issue, index) => (
+                  <tr key={`${issue.rowNumber}-${issue.field}-${index}`}>
+                    <td className={TD}>{issue.rowNumber}</td>
+                    <td className={`${TD} font-black ${issue.level === 'error' ? 'text-red-600' : 'text-amber-600'}`}>{issue.level === 'error' ? 'Lỗi' : 'Cảnh báo'}</td>
+                    <td className={`${TD} font-mono`}>{issue.field}</td>
+                    <td className={TD}>{issue.message}</td>
+                  </tr>
+                ))}
+                {result.issues.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-3 py-6 text-center text-xs font-bold text-emerald-600">Không có lỗi hoặc cảnh báo.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <button onClick={() => setImportPreview(null)} className={BTN_SOFT}>Đóng</button>
+            <button onClick={confirmImportPreview} disabled={saving || result.hasErrors} className={BTN_PRIMARY}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Ghi {result.createRows} mới / {result.updateRows} cập nhật
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPermissionNotice = () => !canManage && (
+    <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+      <LockKeyhole size={15} className="mt-0.5 shrink-0" />
+      <span>Đơn giá nội bộ và định mức chỉ cho phép Admin hoặc quản trị module HD chỉnh sửa.</span>
+    </div>
+  );
+
+  const renderBuilder = () => (
+    <div className="grid grid-cols-1 xl:grid-cols-[460px_minmax(0,1fr)] gap-4">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-black text-slate-800 dark:text-white">Tạo dự toán nhanh</h2>
+          <span className="rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black text-indigo-600">Bước {builderStep}/4</span>
+        </div>
+        <div className="mb-4 grid grid-cols-4 gap-1">
+          {[
+            [1, 'Template'],
+            [2, 'Tham số'],
+            [3, 'Kết quả'],
+            [4, 'Review'],
+          ].map(([step, label]) => (
+            <button
+              key={String(step)}
+              onClick={() => setBuilderStep(step as BuilderStep)}
+              className={`rounded-xl px-2 py-2 text-[10px] font-black ${builderStep === step ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="space-y-3">
+          {builderStep === 1 && (
+            <>
+              <label className="block text-xs font-bold text-slate-500">Template</label>
+              <select value={selectedTemplateId} onChange={e => setSelectedTemplateId(e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                {(activeTemplates.length ? activeTemplates : templates).map(template => (
+                  <option key={template.id} value={template.id}>{template.code} - {template.name}</option>
+                ))}
+              </select>
+              <div className="grid grid-cols-2 gap-2">
+                <input value={draftName} onChange={e => setDraftName(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Tên phương án" />
+                <input value={draftCustomer} onChange={e => setDraftCustomer(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Khách hàng" />
+              </div>
+              {canSeeInternalCost && <input type="number" value={draftMargin} onChange={e => setDraftMargin(num(e.target.value))} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Biên lợi nhuận bổ sung (%)" />}
+            </>
+          )}
+
+          {builderStep === 2 && (
+            <>
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3">
+                <div className="mb-2 flex items-center gap-2 text-xs font-black text-indigo-700"><Wand2 size={14} /> AI gợi ý điền form</div>
+                <textarea value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} className="min-h-[84px] w-full rounded-xl border border-indigo-100 px-3 py-2 text-sm" placeholder="Ví dụ: Nhà xưởng 5.000m2, cao 9m, móng cọc, mái tôn cách nhiệt, miền Bắc..." />
+                <div className="mt-2 flex gap-2">
+                  <button type="button" onClick={runAiSuggestion} className={BTN_SOFT}><Wand2 size={14} /> Gợi ý</button>
+                  <button type="button" onClick={applyAiSuggestion} disabled={!aiSuggestion} className={BTN_PRIMARY}>Áp dụng vào form</button>
+                </div>
+                {aiSuggestion && (
+                  <div className="mt-2 text-xs font-bold text-indigo-700">
+                    {aiSuggestion.templateName && <div>Template: {aiSuggestion.templateName}</div>}
+                    <div>Confidence: {Math.round(aiSuggestion.confidenceScore * 100)}%</div>
+                    {aiSuggestion.missingParameters.length > 0 && <div>Còn thiếu: {aiSuggestion.missingParameters.join(', ')}</div>}
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {(selectedTemplate?.parameters || costTemplateService.defaultParameters).map(param => (
+                  <div key={param.code}>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">{param.label || estimateParameterLabels[param.code]}</label>
+                    {param.dataType === 'select' && Array.isArray(param.options) && param.options.length > 0 ? (
+                      <select
+                        value={String(draftInput[param.code] ?? param.defaultValue ?? '')}
+                        onChange={e => setDraftInput(prev => ({ ...prev, [param.code]: e.target.value }))}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                      >
+                        <option value="">-</option>
+                        {param.options.map(option => <option key={String(option)} value={String(option)}>{String(option)}</option>)}
+                      </select>
+                    ) : (
+                      <input
+                        type={param.dataType === 'number' ? 'number' : 'text'}
+                        value={String(draftInput[param.code] ?? param.defaultValue ?? '')}
+                        onChange={e => setDraftInput(prev => ({ ...prev, [param.code]: e.target.value }))}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                        placeholder={param.unit || ''}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {builderStep === 3 && (
+            <div className="space-y-2 text-xs">
+              <Metric label="Template" value={selectedTemplate?.name || 'Chưa chọn'} />
+              <Metric label="Tham số đã nhập" value={Object.values(draftInput).filter(value => value !== '' && value !== undefined).length} />
+              <Metric label="Hạng mục template" value={selectedTemplate?.items.length || 0} />
+              <Metric label="Đơn giá active" value={prices.filter(price => price.status === 'active').length} />
+            </div>
+          )}
+
+          {builderStep === 4 && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-bold text-slate-600">
+              Dự toán sinh ra sẽ ở trạng thái nháp. Người dùng phải rà soát/chốt trước khi export báo giá hoặc chuyển BOQ.
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setBuilderStep(Math.max(1, builderStep - 1) as BuilderStep)} className={BTN_SOFT}>Lùi</button>
+            <button type="button" onClick={() => setBuilderStep(Math.min(4, builderStep + 1) as BuilderStep)} className={BTN_SOFT}>Tiếp</button>
+          </div>
+          <button disabled={!canCreateEstimate || saving || !selectedTemplate} onClick={createDraft} className="w-full rounded-xl bg-indigo-600 px-4 py-2 text-sm font-black text-white disabled:opacity-50">
+            {saving ? <Loader2 size={15} className="inline animate-spin" /> : 'Sinh dự toán nháp'}
+          </button>
+        </div>
+      </div>
+      <EstimateDetail
+        estimate={estimateDetail}
+        canManage={canManage}
+        canSeeInternalCost={canSeeInternalCost}
+        lineEdits={lineEdits}
+        setLineEdits={setLineEdits}
+        onSaveLine={saveLineOverride}
+        onReview={() => updateEstimateStatus('reviewed')}
+        onFinalize={() => updateEstimateStatus('finalized')}
+        onExport={exportQuote}
+        convertType={convertType}
+        setConvertType={setConvertType}
+        convertContractId={convertContractId}
+        setConvertContractId={setConvertContractId}
+        convertContracts={convertContracts}
+        onPreviewConvert={previewConvert}
+        conversionPreview={conversionPreview}
+        conversionAudit={conversionAudit}
+        onConvert={convertEstimate}
+        onRollbackConvert={rollbackConversion}
+        finalizeOverrideReason={finalizeOverrideReason}
+        setFinalizeOverrideReason={setFinalizeOverrideReason}
+        saving={saving}
+      />
+    </div>
+  );
+
+  const renderTemplates = () => (
+    <div className="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-4">
+      <div className="space-y-3">
+        {renderSearch()}
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-black text-slate-800 dark:text-white">Template</h2>
+            {canManage && <button onClick={createFactoryTemplate} className="text-xs font-bold text-indigo-600">Tạo mẫu nhà xưởng</button>}
+          </div>
+          <div className="space-y-2 max-h-[420px] overflow-y-auto">
+            {filteredTemplates.map(template => (
+              <button
+                key={template.id}
+                onClick={() => {
+                  setSelectedTemplateId(template.id);
+                  setSectionForm(emptySection(template.id));
+                  setItemForm(emptyItem(template.id));
+                  setParameterForm(emptyParameter(template.id));
+                }}
+                className={`w-full text-left rounded-xl border px-3 py-2 ${template.id === selectedTemplateId ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[11px] font-black text-indigo-600">{template.code}</span>
+                  <span className="text-[10px] font-bold text-slate-400">{statusLabel[template.status]}</span>
+                </div>
+                <div className="text-sm font-black text-slate-800">{template.name}</div>
+                <div className="text-[11px] text-slate-400">v{template.versionNo} • {template.items.length} hạng mục</div>
+              </button>
+            ))}
+          </div>
+        </div>
+        {canManage && (
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+            <h3 className="text-xs font-black text-slate-700 mb-2">Thêm template</h3>
+            <div className="space-y-2">
+              <input value={templateForm.code} onChange={e => setTemplateForm(prev => ({ ...prev, code: e.target.value }))} className="w-full rounded-xl border px-3 py-2 text-sm" placeholder="Mã template" />
+              <input value={templateForm.name} onChange={e => setTemplateForm(prev => ({ ...prev, name: e.target.value }))} className="w-full rounded-xl border px-3 py-2 text-sm" placeholder="Tên template" />
+              <div className="grid grid-cols-2 gap-2">
+                <input value={templateForm.projectType} onChange={e => setTemplateForm(prev => ({ ...prev, projectType: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Loại công trình" />
+                <select value={templateForm.status} onChange={e => setTemplateForm(prev => ({ ...prev, status: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
+                  <option value="draft">Nháp</option>
+                  <option value="active">Hiệu lực</option>
+                  <option value="archived">Lưu trữ</option>
+                </select>
+              </div>
+              <button onClick={saveTemplate} disabled={saving} className="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm font-black text-white">Lưu template</button>
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="space-y-4">
+        {selectedTemplate ? (
+          <>
+            <TemplateChildren
+              template={selectedTemplate}
+              canManage={canManage}
+              sectionForm={sectionForm}
+              setSectionForm={setSectionForm}
+              parameterForm={parameterForm}
+              setParameterForm={setParameterForm}
+              itemForm={itemForm}
+              setItemForm={setItemForm}
+              onSaveSection={saveSection}
+              onSaveParameter={saveParameter}
+              onSaveItem={saveItem}
+              onDeleteChild={deleteChild}
+              onCreateVersion={createTemplateVersion}
+              onChangeStatus={changeTemplateStatus}
+              saving={saving}
+            />
+          </>
+        ) : (
+          <EmptyState title="Chưa có template" />
+        )}
+      </div>
+    </div>
+  );
+
+  const renderPrices = () => (
+    <div className="space-y-4">
+      {renderPermissionNotice()}
+      {canManage && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={downloadPriceTemplate} className={BTN_SOFT}>
+            <Download size={14} /> Tải file mẫu
+          </button>
+          <label className={BTN_SOFT}>
+            <Upload size={14} /> Preview import đơn giá
+            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => importPrices(e.target.files?.[0])} />
+          </label>
+        </div>
+      )}
+      <div className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-4">
+        {canManage && (
+          <CatalogForm title="Đơn giá nội bộ" onSave={savePrice} saving={saving}>
+            <input value={priceForm.itemCode} onChange={e => setPriceForm(prev => ({ ...prev, itemCode: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã" />
+            <input value={priceForm.itemName} onChange={e => setPriceForm(prev => ({ ...prev, itemName: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Tên vật tư/nguồn lực" />
+            <div className="grid grid-cols-2 gap-2">
+              <select value={priceForm.itemType} onChange={e => setPriceForm(prev => ({ ...prev, itemType: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
+                {['material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].map(type => <option key={type} value={type}>{type}</option>)}
+              </select>
+              <input value={priceForm.unit} onChange={e => setPriceForm(prev => ({ ...prev, unit: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="ĐVT" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <input value={priceForm.region} onChange={e => setPriceForm(prev => ({ ...prev, region: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Khu vực" />
+              <input type="number" value={priceForm.unitPrice} onChange={e => setPriceForm(prev => ({ ...prev, unitPrice: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Đơn giá" />
+            </div>
+            <select value={priceForm.status} onChange={e => setPriceForm(prev => ({ ...prev, status: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
+              <option value="draft">Nháp</option>
+              <option value="active">Hiệu lực</option>
+              <option value="archived">Lưu trữ</option>
+            </select>
+          </CatalogForm>
+        )}
+        <div className="space-y-3">
+          {renderSearch()}
+          <DataTable headers={['Mã', 'Tên', 'Loại', 'Khu vực', 'ĐVT', 'Version', 'Đơn giá', 'Trạng thái', '']}>
+            {filteredPrices.map(row => (
+              <tr key={row.id}>
+                <td className={`${TD} font-mono`}>{row.itemCode}</td>
+                <td className={`${TD} font-bold`}>{row.itemName}</td>
+                <td className={TD}>{row.itemType}</td>
+                <td className={TD}>{row.region}</td>
+                <td className={TD}>{row.unit}</td>
+                <td className={TD}>v{row.versionNo}</td>
+                <td className={`${TD} font-black`}>{canSeeInternalCost ? money(row.unitPrice) : 'Ẩn'}</td>
+                <td className={TD}>{statusLabel[row.status]}</td>
+                <td className={`${TD} text-right`}>
+                  {canManage && (
+                    <div className="flex justify-end gap-1">
+                      <button onClick={() => changePriceStatus(row, 'version')} className={BTN_MINI} title="Tạo version mới">v+</button>
+                      {row.status !== 'active' && <button onClick={() => changePriceStatus(row, 'activate')} className={BTN_MINI} title="Kích hoạt"><CheckCircle2 size={13} /></button>}
+                      {row.status !== 'archived' && <button onClick={() => changePriceStatus(row, 'archive')} className={BTN_MINI} title="Lưu trữ"><X size={13} /></button>}
+                      <IconButton onClick={() => deletePrice(row)} icon={<Trash2 size={13} />} title="Xoá" />
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </DataTable>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderNorms = () => (
+    <div className="space-y-4">
+      {renderPermissionNotice()}
+      {canManage && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={downloadNormTemplate} className={BTN_SOFT}>
+            <Download size={14} /> Tải file mẫu
+          </button>
+          <label className={BTN_SOFT}>
+            <Upload size={14} /> Preview import định mức
+            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => importNorms(e.target.files?.[0])} />
+          </label>
+        </div>
+      )}
+      <div className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-4">
+        {canManage && (
+          <CatalogForm title="Định mức nội bộ" onSave={saveNorm} saving={saving}>
+            <input value={normForm.normCode} onChange={e => setNormForm(prev => ({ ...prev, normCode: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã định mức" />
+            <input value={normForm.resourceName} onChange={e => setNormForm(prev => ({ ...prev, resourceName: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Nguồn lực/vật tư" />
+            <select value={normForm.templateItemId || ''} onChange={e => setNormForm(prev => ({ ...prev, templateItemId: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm">
+              <option value="">Không gắn item</option>
+              {templates.flatMap(template => template.items).map(item => <option key={item.id} value={item.id}>{item.code} - {item.name}</option>)}
+            </select>
+            <div className="grid grid-cols-2 gap-2">
+              <input value={normForm.resourceCode || ''} onChange={e => setNormForm(prev => ({ ...prev, resourceCode: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã đơn giá" />
+              <select value={normForm.resourceType} onChange={e => setNormForm(prev => ({ ...prev, resourceType: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
+                {['material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].map(type => <option key={type} value={type}>{type}</option>)}
+              </select>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <input value={normForm.unit} onChange={e => setNormForm(prev => ({ ...prev, unit: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="ĐVT" />
+              <input type="number" value={normForm.normQuantity} onChange={e => setNormForm(prev => ({ ...prev, normQuantity: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Định mức" />
+              <input type="number" value={normForm.wastePercent || 0} onChange={e => setNormForm(prev => ({ ...prev, wastePercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Hao hụt %" />
+            </div>
+            <select value={normForm.status} onChange={e => setNormForm(prev => ({ ...prev, status: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
+              <option value="draft">Nháp</option>
+              <option value="active">Hiệu lực</option>
+              <option value="archived">Lưu trữ</option>
+            </select>
+          </CatalogForm>
+        )}
+        <div className="space-y-3">
+          {renderSearch()}
+          <DataTable headers={['Mã', 'Nguồn lực', 'Loại', 'ĐVT', 'Định mức', 'Hao hụt', 'Version', 'Trạng thái', '']}>
+            {filteredNorms.map(row => (
+              <tr key={row.id}>
+                <td className={`${TD} font-mono`}>{row.normCode}</td>
+                <td className={`${TD} font-bold`}>{row.resourceName}</td>
+                <td className={TD}>{row.resourceType}</td>
+                <td className={TD}>{row.unit}</td>
+                <td className={TD}>{row.normQuantity}</td>
+                <td className={TD}>{row.wastePercent}%</td>
+                <td className={TD}>v{row.versionNo}</td>
+                <td className={TD}>{statusLabel[row.status]}</td>
+                <td className={`${TD} text-right`}>
+                  {canManage && (
+                    <div className="flex justify-end gap-1">
+                      <button onClick={() => changeNormStatus(row, 'version')} className={BTN_MINI} title="Tạo version mới">v+</button>
+                      {row.status !== 'active' && <button onClick={() => changeNormStatus(row, 'activate')} className={BTN_MINI} title="Kích hoạt"><CheckCircle2 size={13} /></button>}
+                      {row.status !== 'archived' && <button onClick={() => changeNormStatus(row, 'archive')} className={BTN_MINI} title="Lưu trữ"><X size={13} /></button>}
+                      <IconButton onClick={() => deleteNorm(row)} icon={<Trash2 size={13} />} title="Xoá" />
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </DataTable>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderEstimates = () => (
+    <div className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-4">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+        <h2 className="text-sm font-black text-slate-800 dark:text-white mb-3">Phương án dự toán</h2>
+        <div className="space-y-2 max-h-[620px] overflow-y-auto">
+          {renderSearch()}
+          <div className="flex items-center gap-2">
+            <button onClick={runCompare} className={BTN_SOFT}><GitCompare size={14} /> So sánh</button>
+            <span className="text-[10px] font-bold text-slate-400">Chọn 2-3 phương án</span>
+          </div>
+          {filteredEstimates.map(estimate => (
+            <div key={estimate.id} className={`rounded-xl border px-3 py-2 ${estimate.id === selectedEstimateId ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+              <div className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={compareIds.includes(estimate.id)}
+                  onChange={e => setCompareIds(prev => e.target.checked ? [...prev, estimate.id].slice(-3) : prev.filter(id => id !== estimate.id))}
+                  className="mt-1"
+                />
+                <button onClick={() => loadEstimateDetail(estimate.id)} className="min-w-0 flex-1 text-left">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-[11px] font-black text-indigo-600">{estimate.code}</span>
+                    <span className="text-[10px] font-bold text-slate-400">{statusLabel[estimate.status]}</span>
+                  </div>
+                  <div className="text-sm font-black text-slate-800">{estimate.name}</div>
+                  <div className="text-[11px] text-slate-400">{money(estimate.quoteAmount || estimate.totalAmount)}</div>
+                </button>
+              </div>
+            </div>
+          ))}
+          {filteredEstimates.length === 0 && <EmptyState title="Chưa có phương án" />}
+        </div>
+      </div>
+      <EstimateDetail
+        estimate={estimateDetail}
+        canManage={canManage}
+        canSeeInternalCost={canSeeInternalCost}
+        lineEdits={lineEdits}
+        setLineEdits={setLineEdits}
+        onSaveLine={saveLineOverride}
+        onReview={() => updateEstimateStatus('reviewed')}
+        onFinalize={() => updateEstimateStatus('finalized')}
+        onExport={exportQuote}
+        convertType={convertType}
+        setConvertType={setConvertType}
+        convertContractId={convertContractId}
+        setConvertContractId={setConvertContractId}
+        convertContracts={convertContracts}
+        onPreviewConvert={previewConvert}
+        conversionPreview={conversionPreview}
+        conversionAudit={conversionAudit}
+        onConvert={convertEstimate}
+        onRollbackConvert={rollbackConversion}
+        finalizeOverrideReason={finalizeOverrideReason}
+        setFinalizeOverrideReason={setFinalizeOverrideReason}
+        saving={saving}
+      />
+      {compareResult && (
+        <div className="xl:col-span-2 rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-black text-slate-800 dark:text-white">So sánh phương án</h2>
+            <button onClick={() => setCompareResult(null)} className={BTN_MINI}><X size={14} /></button>
+          </div>
+          <DataTable headers={['Mã', 'Hạng mục', ...compareResult.estimates.map(row => row.code || row.name), 'Chênh lệch']}>
+            {compareResult.rows.slice(0, 30).map(row => (
+              <tr key={row.code}>
+                <td className={`${TD} font-mono`}>{row.code}</td>
+                <td className={`${TD} font-bold`}>{row.name}</td>
+                {compareResult.estimates.map(estimate => <td key={estimate.id} className={TD}>{money(row.values[estimate.id]?.quoteAmount || 0)}</td>)}
+                <td className={`${TD} font-black text-amber-600`}>{money(row.spreadAmount)}</td>
+              </tr>
+            ))}
+          </DataTable>
+        </div>
+      )}
+    </div>
+  );
+
+  if (loading) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center">
+        <Loader2 size={24} className="animate-spin text-indigo-500" />
+      </div>
+    );
+  }
+
+  if (!canCreateEstimate) {
+    return (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm font-bold text-amber-700">
+        <LockKeyhole size={18} className="mb-2" />
+        Tài khoản hiện tại chưa được cấp quyền module HD để tạo/xem dự toán nhanh.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h1 className="text-xl font-black text-slate-800 dark:text-white">Đơn giá nội bộ & Dự toán nhanh</h1>
+          <p className="text-xs text-slate-500">Cost Library, định mức, price book và phương án chào thầu</p>
+        </div>
+        <button onClick={load} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">
+          <RefreshCw size={14} /> Tải lại
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Kpi label="Template active" value={templates.filter(t => t.status === 'active').length} />
+        <Kpi label="Đơn giá active" value={prices.filter(p => p.status === 'active').length} />
+        <Kpi label="Định mức active" value={norms.filter(n => n.status === 'active').length} />
+        <Kpi label="Estimate đã chốt" value={estimates.filter(e => e.status === 'finalized' || e.status === 'converted').length} />
+      </div>
+
+      <div className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 dark:bg-slate-900 dark:border-slate-800">
+        {tabs.map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`flex min-w-max items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition ${activeTab === tab.key ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}
+          >
+            {tab.icon} {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {renderImportPreview()}
+      {activeTab === 'builder' && renderBuilder()}
+      {activeTab === 'templates' && renderTemplates()}
+      {activeTab === 'prices' && renderPrices()}
+      {activeTab === 'norms' && renderNorms()}
+      {activeTab === 'estimates' && renderEstimates()}
+    </div>
+  );
+};
+
+const Kpi: React.FC<{ label: string; value: number }> = ({ label, value }) => (
+  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:bg-slate-900 dark:border-slate-800">
+    <div className="text-[10px] font-bold uppercase text-slate-400">{label}</div>
+    <div className="text-xl font-black text-slate-800 dark:text-white">{value.toLocaleString('vi-VN')}</div>
+  </div>
+);
+
+const EmptyState: React.FC<{ title: string }> = ({ title }) => (
+  <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-6 text-center text-sm font-bold text-slate-400 dark:bg-slate-900 dark:border-slate-800">
+    {title}
+  </div>
+);
+
+const IconButton: React.FC<{ icon: React.ReactNode; title: string; onClick: () => void }> = ({ icon, title, onClick }) => (
+  <button onClick={onClick} title={title} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600">
+    {icon}
+  </button>
+);
+
+const DataTable: React.FC<{ headers: string[]; children: React.ReactNode }> = ({ headers, children }) => (
+  <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
+    <table className="w-full min-w-[780px] text-sm">
+      <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+        <tr>{headers.map(header => <th key={header} className="px-3 py-2 text-left font-black">{header}</th>)}</tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">{children}</tbody>
+    </table>
+  </div>
+);
+
+const CatalogForm: React.FC<{ title: string; children: React.ReactNode; onSave: () => void; saving: boolean }> = ({ title, children, onSave, saving }) => (
+  <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+    <h2 className="mb-3 text-sm font-black text-slate-800 dark:text-white">{title}</h2>
+    <div className="space-y-2">{children}</div>
+    <button onClick={onSave} disabled={saving} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-black text-white disabled:opacity-50">
+      <Save size={14} /> Lưu
+    </button>
+  </div>
+);
+
+const TemplateChildren: React.FC<{
+  template: CostTemplateDetails;
+  canManage: boolean;
+  sectionForm: Partial<CostTemplateSection> & { templateId: string; code: string; name: string };
+  setSectionForm: React.Dispatch<React.SetStateAction<Partial<CostTemplateSection> & { templateId: string; code: string; name: string }>>;
+  parameterForm: Partial<CostTemplateParameter> & { templateId: string; code: string; label: string };
+  setParameterForm: React.Dispatch<React.SetStateAction<Partial<CostTemplateParameter> & { templateId: string; code: string; label: string }>>;
+  itemForm: Partial<CostTemplateItem> & { templateId: string; code: string; name: string };
+  setItemForm: React.Dispatch<React.SetStateAction<Partial<CostTemplateItem> & { templateId: string; code: string; name: string }>>;
+  onSaveSection: () => void;
+  onSaveParameter: () => void;
+  onSaveItem: () => void;
+  onDeleteChild: (table: 'sections' | 'items' | 'parameters', id: string, name: string) => void;
+  onCreateVersion: (template: CostTemplateDetails) => void;
+  onChangeStatus: (template: CostTemplateDetails, action: 'activate' | 'archive') => void;
+  saving: boolean;
+}> = ({
+  template,
+  canManage,
+  sectionForm,
+  setSectionForm,
+  parameterForm,
+  setParameterForm,
+  itemForm,
+  setItemForm,
+  onSaveSection,
+  onSaveParameter,
+  onSaveItem,
+  onDeleteChild,
+  onCreateVersion,
+  onChangeStatus,
+  saving,
+}) => (
+  <div className="space-y-4">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <div className="font-mono text-xs font-black text-indigo-600">{template.code}</div>
+          <h2 className="text-lg font-black text-slate-800 dark:text-white">{template.name}</h2>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black text-slate-500">v{template.versionNo} • {statusLabel[template.status]}</span>
+          {canManage && <button onClick={() => onCreateVersion(template)} className={BTN_SOFT}>Tạo version mới</button>}
+          {canManage && template.status !== 'active' && <button onClick={() => onChangeStatus(template, 'activate')} className={BTN_SOFT}>Kích hoạt</button>}
+          {canManage && template.status !== 'archived' && <button onClick={() => onChangeStatus(template, 'archive')} className={BTN_SOFT}>Lưu trữ</button>}
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-3 text-xs">
+        <Metric label="Nhóm" value={template.sections.length} />
+        <Metric label="Tham số" value={template.parameters.length} />
+        <Metric label="Hạng mục" value={template.items.length} />
+      </div>
+    </div>
+
+    <div className="grid grid-cols-1 2xl:grid-cols-3 gap-4">
+      <Panel title="Nhóm hạng mục" icon={<Layers size={14} />}>
+        <div className="space-y-2">
+          {template.sections.map(section => (
+            <Row key={section.id} title={`${section.code} - ${section.name}`} subtitle={section.calculationMethod || section.unit || ''} onDelete={canManage ? () => onDeleteChild('sections', section.id, section.name) : undefined} />
+          ))}
+          {canManage && (
+            <div className="grid gap-2 pt-2">
+              <input value={sectionForm.code} onChange={e => setSectionForm(prev => ({ ...prev, code: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã nhóm" />
+              <input value={sectionForm.name} onChange={e => setSectionForm(prev => ({ ...prev, name: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Tên nhóm" />
+              <input value={sectionForm.calculationMethod || ''} onChange={e => setSectionForm(prev => ({ ...prev, calculationMethod: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Phương pháp tính" />
+              <button onClick={onSaveSection} disabled={saving} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white"><Plus size={13} className="inline" /> Thêm nhóm</button>
+            </div>
+          )}
+        </div>
+      </Panel>
+
+      <Panel title="Tham số" icon={<Calculator size={14} />}>
+        <div className="space-y-2">
+          {template.parameters.map(param => (
+            <Row key={param.id} title={`${param.code} - ${param.label}`} subtitle={`${param.dataType}${param.unit ? ` • ${param.unit}` : ''}`} onDelete={canManage ? () => onDeleteChild('parameters', param.id, param.label) : undefined} />
+          ))}
+          {canManage && (
+            <div className="grid gap-2 pt-2">
+              <input value={parameterForm.code} onChange={e => setParameterForm(prev => ({ ...prev, code: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã tham số" />
+              <input value={parameterForm.label} onChange={e => setParameterForm(prev => ({ ...prev, label: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Tên tham số" />
+              <div className="grid grid-cols-2 gap-2">
+                <select value={parameterForm.dataType} onChange={e => setParameterForm(prev => ({ ...prev, dataType: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
+                  {['number', 'text', 'select', 'boolean', 'date'].map(type => <option key={type} value={type}>{type}</option>)}
+                </select>
+                <input value={parameterForm.unit || ''} onChange={e => setParameterForm(prev => ({ ...prev, unit: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="ĐVT" />
+              </div>
+              <button onClick={onSaveParameter} disabled={saving} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white"><Plus size={13} className="inline" /> Thêm tham số</button>
+            </div>
+          )}
+        </div>
+      </Panel>
+
+      <Panel title="Hạng mục" icon={<PackageSearch size={14} />}>
+        <div className="space-y-2">
+          {template.items.map(item => (
+            <Row key={item.id} title={`${item.code} - ${item.name}`} subtitle={`${item.itemType} • ${item.quantityFormula || item.baseQuantity || 'chưa có công thức'}`} onDelete={canManage ? () => onDeleteChild('items', item.id, item.name) : undefined} />
+          ))}
+          {canManage && (
+            <div className="grid gap-2 pt-2">
+              <div className="grid grid-cols-2 gap-2">
+                <input value={itemForm.code} onChange={e => setItemForm(prev => ({ ...prev, code: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã" />
+                <select value={itemForm.sectionId || ''} onChange={e => setItemForm(prev => ({ ...prev, sectionId: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm">
+                  <option value="">Không nhóm</option>
+                  {template.sections.map(section => <option key={section.id} value={section.id}>{section.code} - {section.name}</option>)}
+                </select>
+              </div>
+              <input value={itemForm.name} onChange={e => setItemForm(prev => ({ ...prev, name: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Tên hạng mục" />
+              <div className="grid grid-cols-2 gap-2">
+                <select value={itemForm.itemType} onChange={e => setItemForm(prev => ({ ...prev, itemType: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
+                  {['work', 'material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].map(type => <option key={type} value={type}>{type}</option>)}
+                </select>
+                <input value={itemForm.unit || ''} onChange={e => setItemForm(prev => ({ ...prev, unit: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="ĐVT" />
+              </div>
+              <input value={itemForm.quantityFormula || ''} onChange={e => setItemForm(prev => ({ ...prev, quantityFormula: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Công thức, ví dụ floor_area * 35" />
+              <div className="grid grid-cols-3 gap-2">
+                <input type="number" value={itemForm.overheadPercent || 0} onChange={e => setItemForm(prev => ({ ...prev, overheadPercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="CP chung %" />
+                <input type="number" value={itemForm.profitPercent || 0} onChange={e => setItemForm(prev => ({ ...prev, profitPercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="LN %" />
+                <input type="number" value={itemForm.riskBufferPercent || 0} onChange={e => setItemForm(prev => ({ ...prev, riskBufferPercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Risk %" />
+              </div>
+              <button onClick={onSaveItem} disabled={saving} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white"><Plus size={13} className="inline" /> Thêm hạng mục</button>
+            </div>
+          )}
+        </div>
+      </Panel>
+    </div>
+  </div>
+);
+
+const EstimateDetail: React.FC<{
+  estimate: EstimateScenarioDetails | null;
+  canManage: boolean;
+  canSeeInternalCost: boolean;
+  lineEdits: Record<string, { quantity: number; unitPrice: number; quoteUnitPrice: number; overrideReason: string }>;
+  setLineEdits: React.Dispatch<React.SetStateAction<Record<string, { quantity: number; unitPrice: number; quoteUnitPrice: number; overrideReason: string }>>>;
+  onSaveLine: (item: EstimateItem) => void;
+  onReview: () => void;
+  onFinalize: () => void;
+  onExport: (mode: EstimateExportMode) => void;
+  convertType: ContractItemType;
+  setConvertType: React.Dispatch<React.SetStateAction<ContractItemType>>;
+  convertContractId: string;
+  setConvertContractId: React.Dispatch<React.SetStateAction<string>>;
+  convertContracts: Array<CustomerContract | SubcontractorContract>;
+  onPreviewConvert: () => void;
+  conversionPreview: EstimateConversionPreview | null;
+  conversionAudit: EstimateConversionAudit | null;
+  onConvert: () => void;
+  onRollbackConvert: () => void;
+  finalizeOverrideReason: string;
+  setFinalizeOverrideReason: React.Dispatch<React.SetStateAction<string>>;
+  saving: boolean;
+}> = ({
+  estimate,
+  canManage,
+  canSeeInternalCost,
+  lineEdits,
+  setLineEdits,
+  onSaveLine,
+  onReview,
+  onFinalize,
+  onExport,
+  convertType,
+  setConvertType,
+  convertContractId,
+  setConvertContractId,
+  convertContracts,
+  onPreviewConvert,
+  conversionPreview,
+  conversionAudit,
+  onConvert,
+  onRollbackConvert,
+  finalizeOverrideReason,
+  setFinalizeOverrideReason,
+  saving,
+}) => {
+  if (!estimate) return <EmptyState title="Chọn hoặc tạo một phương án dự toán" />;
+  const setLine = (id: string, patch: Partial<{ quantity: number; unitPrice: number; quoteUnitPrice: number; overrideReason: string }>) =>
+    setLineEdits(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  const floorArea = num(estimate.inputParameters?.floor_area);
+  const quoteAmount = estimate.quoteAmount || estimate.totalAmount;
+  const missingPriceWarnings = (estimate.riskWarnings || []).filter(value => String(value).toLowerCase().includes('chưa có đơn giá'));
+  const formulaWarnings = (estimate.riskWarnings || []).filter(value => {
+    const text = String(value).toLowerCase();
+    return text.includes('thiếu tham số') || text.includes('chưa tính được khối lượng');
+  });
+  const materialItems = estimate.items.filter(item => item.itemType === 'material');
+  const grouped = estimate.items.reduce<Record<string, { count: number; quoteAmount: number }>>((acc, item) => {
+    const key = item.itemType;
+    acc[key] ||= { count: 0, quoteAmount: 0 };
+    acc[key].count += 1;
+    acc[key].quoteAmount += num(item.quoteAmount ?? item.amount);
+    return acc;
+  }, {});
+  const conversionBatch = conversionAudit?.batch || null;
+  const conversionItems = conversionAudit?.items || [];
+  const activeConversionBatch = conversionBatch && conversionBatch.status !== 'cancelled';
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="font-mono text-xs font-black text-indigo-600">{estimate.code}</div>
+            <h2 className="text-lg font-black text-slate-800 dark:text-white">{estimate.name}</h2>
+            <div className="text-xs font-bold text-slate-400">{statusLabel[estimate.status]} • confidence {Math.round(num(estimate.confidenceScore) * 100)}%</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {estimate.status === 'draft' && <button onClick={onReview} disabled={saving} className={BTN_SOFT}><CheckCircle2 size={14} /> Rà soát</button>}
+            {estimate.status !== 'finalized' && estimate.status !== 'converted' && <button onClick={onFinalize} disabled={saving || formulaWarnings.length > 0} className={BTN_PRIMARY}><ShieldCheck size={14} /> Chốt</button>}
+            <button onClick={() => onExport('external')} disabled={!['reviewed', 'finalized', 'converted'].includes(estimate.status)} className={BTN_SOFT}><Download size={14} /> Excel gửi khách</button>
+            {canSeeInternalCost && <button onClick={() => onExport('internal')} className={BTN_SOFT}><FileSpreadsheet size={14} /> Excel nội bộ</button>}
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <Metric label="Giá vốn nội bộ" value={canSeeInternalCost ? money(estimate.totalAmount) : 'Ẩn'} />
+          <Metric label="Giá chào" value={money(quoteAmount)} />
+          <Metric label="Lợi nhuận dự kiến" value={canSeeInternalCost ? money(estimate.profitAmount || 0) : 'Ẩn'} />
+          <Metric label="Số dòng" value={estimate.items.length} />
+          <Metric label="Đơn giá/m2" value={floorArea > 0 ? money(Math.round(quoteAmount / floorArea)) : '-'} />
+          <Metric label="Dòng vật tư" value={materialItems.length} />
+          <Metric label="Manual override" value={estimate.items.filter(item => item.manualOverride).length} />
+          <Metric label="Thiếu đơn giá" value={missingPriceWarnings.length} />
+          <Metric label="Lỗi công thức" value={formulaWarnings.length} />
+        </div>
+        {formulaWarnings.length > 0 && (
+          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">
+            <AlertTriangle size={14} className="inline mr-1" />
+            {formulaWarnings.slice(0, 4).join(' • ')}
+          </div>
+        )}
+        {missingPriceWarnings.length > 0 && canSeeInternalCost && estimate.status !== 'finalized' && estimate.status !== 'converted' && (
+          <div className="mt-3">
+            <input
+              value={finalizeOverrideReason}
+              onChange={e => setFinalizeOverrideReason(e.target.value)}
+              className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700"
+              placeholder="HD admin nhập lý do ngoại lệ nếu vẫn muốn chốt khi thiếu đơn giá active"
+            />
+          </div>
+        )}
+        {estimate.riskWarnings.length > 0 && (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-700">
+            <AlertTriangle size={14} className="inline mr-1" />
+            {estimate.riskWarnings.slice(0, 4).join(' • ')}
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Panel title="Khái toán nhanh" icon={<Calculator size={14} />}>
+          <div className="space-y-2">
+            <Metric label="Tổng giá chào" value={money(quoteAmount)} />
+            <Metric label="Đơn giá bình quân/m2" value={floorArea > 0 ? money(Math.round(quoteAmount / floorArea)) : '-'} />
+            <Metric label="Sai số dự kiến" value={missingPriceWarnings.length > 0 ? 'Cao' : 'Trung bình'} />
+          </div>
+        </Panel>
+        <Panel title="Theo hạng mục" icon={<Layers size={14} />}>
+          <div className="space-y-2">
+            {Object.entries(grouped).map(([type, value]) => <Metric key={type} label={`${type} • ${value.count} dòng`} value={money(value.quoteAmount)} />)}
+          </div>
+        </Panel>
+        <Panel title="BOQ vật tư sơ bộ" icon={<PackageSearch size={14} />}>
+          <div className="space-y-2">
+            {materialItems.slice(0, 5).map(item => <Row key={item.id} title={`${item.code || ''} ${item.name}`} subtitle={`${item.quantity} ${item.unit || ''}`} />)}
+            {materialItems.length === 0 && <div className="text-xs font-bold text-slate-400">Chưa có dòng vật tư</div>}
+          </div>
+        </Panel>
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
+        <table className="w-full min-w-[1080px] text-sm">
+          <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+            <tr>
+              {['Mã', 'Hạng mục', 'Loại', 'KL', 'Đơn giá vốn', 'Thành tiền vốn', 'Đơn giá chào', 'Thành tiền chào', 'Lý do chỉnh', ''].map(header => <th key={header} className="px-3 py-2 text-left font-black">{header}</th>)}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {estimate.items.map(item => {
+              const edit = lineEdits[item.id] || { quantity: item.quantity, unitPrice: item.unitPrice, quoteUnitPrice: item.quoteUnitPrice ?? item.unitPrice, overrideReason: item.overrideReason || '' };
+              return (
+                <tr key={item.id}>
+                  <td className={`${TD} font-mono`}>{item.code}</td>
+                  <td className={`${TD} font-bold`}>{item.name}</td>
+                  <td className={TD}>{item.itemType}</td>
+                  <td className={TD}><input type="number" value={edit.quantity} onChange={e => setLine(item.id, { quantity: num(e.target.value) })} className="w-24 rounded-lg border px-2 py-1 text-xs" /></td>
+                  <td className={TD}>{canSeeInternalCost ? <input type="number" value={edit.unitPrice} onChange={e => setLine(item.id, { unitPrice: num(e.target.value) })} className="w-28 rounded-lg border px-2 py-1 text-xs" /> : 'Ẩn'}</td>
+                  <td className={`${TD} font-bold`}>{canSeeInternalCost ? money(item.amount) : 'Ẩn'}</td>
+                  <td className={TD}><input type="number" value={edit.quoteUnitPrice} onChange={e => setLine(item.id, { quoteUnitPrice: num(e.target.value) })} className="w-28 rounded-lg border px-2 py-1 text-xs" /></td>
+                  <td className={`${TD} font-black`}>{money(item.quoteAmount ?? item.amount)}</td>
+                  <td className={TD}><input value={edit.overrideReason} onChange={e => setLine(item.id, { overrideReason: e.target.value })} className="w-44 rounded-lg border px-2 py-1 text-xs" placeholder="Bắt buộc nếu chỉnh" /></td>
+                  <td className={`${TD} text-right`}><button onClick={() => onSaveLine(item)} className={BTN_MINI}><Save size={13} /></button></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+        <h3 className="mb-3 text-sm font-black text-slate-800 dark:text-white">Tạo bản nháp BOQ dự án</h3>
+        {!canManage && (
+          <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
+            Chỉ ADMIN hoặc HD admin được chuyển estimate sang BOQ/Material Plan.
+          </div>
+        )}
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-[180px_minmax(0,1fr)_120px_120px]">
+          <select value={convertType} onChange={e => setConvertType(e.target.value as ContractItemType)} disabled={!canManage} className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50">
+            <option value="customer">HĐ nhận thầu</option>
+            <option value="subcontractor">HĐ thầu phụ</option>
+          </select>
+          <select value={convertContractId} onChange={e => setConvertContractId(e.target.value)} disabled={!canManage} className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50">
+            <option value="">Chọn hợp đồng</option>
+            {convertContracts.map(contract => <option key={contract.id} value={contract.id}>{contract.code} - {contract.name}</option>)}
+          </select>
+          <button onClick={onPreviewConvert} disabled={!canManage || saving || estimate.status !== 'finalized' || !convertContractId} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-black text-slate-600 disabled:opacity-50">
+            <Eye size={14} className="inline" /> Preview
+          </button>
+          <button onClick={onConvert} disabled={!canManage || saving || estimate.status !== 'finalized' || !convertContractId || !conversionPreview} className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-black text-white disabled:opacity-50">
+            Tạo nháp
+          </button>
+        </div>
+        {conversionPreview && (
+          <div className="mt-3 space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <Metric label="Contract BOQ" value={conversionPreview.contractItems.length} />
+              <Metric label="Work BOQ" value={conversionPreview.workBoqItems.length} />
+              <Metric label="Material Plan" value={conversionPreview.materialBudgetItems.length} />
+            </div>
+            <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-200">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+                  <tr>
+                    {['Target', 'Mã', 'Tên', 'KL/GT'].map(header => <th key={header} className="px-3 py-2 text-left font-black">{header}</th>)}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {[
+                    ...conversionPreview.contractItems.map(item => ({ target: 'Contract BOQ', code: item.code, name: item.name, value: `${item.quantity} ${item.unit} • ${money(item.totalPrice)}` })),
+                    ...conversionPreview.workBoqItems.map(item => ({ target: 'Work BOQ', code: item.wbsCode || '', name: item.name, value: `${item.plannedQty} ${item.unit}` })),
+                    ...conversionPreview.materialBudgetItems.map(item => ({ target: 'Material Plan', code: item.materialCode || '', name: item.itemName, value: `${item.budgetQty} ${item.unit}` })),
+                  ].slice(0, 12).map((row, index) => (
+                    <tr key={`${row.target}-${row.code}-${index}`}>
+                      <td className={TD}>{row.target}</td>
+                      <td className={`${TD} font-mono`}>{row.code}</td>
+                      <td className={`${TD} font-bold`}>{row.name}</td>
+                      <td className={TD}>{row.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+        {conversionBatch && (
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-xs font-black text-slate-700">Conversion batch: {conversionBatch.status}</div>
+                <div className="text-[10px] font-bold text-slate-400">{conversionBatch.id}</div>
+              </div>
+              {canManage && activeConversionBatch && estimate.status === 'converted' && (
+                <button onClick={onRollbackConvert} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-xs font-black text-white disabled:opacity-50">
+                  <Trash2 size={14} /> Rollback
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <Metric label="Contract BOQ" value={conversionItems.filter(item => item.targetTable === 'contract_items').length} />
+              <Metric label="Work BOQ" value={conversionItems.filter(item => item.targetTable === 'project_work_boq_items').length} />
+              <Metric label="Material Plan" value={conversionItems.filter(item => item.targetTable === 'material_budget_items').length} />
+            </div>
+            {conversionItems.length > 0 && (
+              <div className="mt-3 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+                    <tr>
+                      {['Bảng đích', 'Mã', 'Tên', 'Target ID'].map(header => <th key={header} className="px-3 py-2 text-left font-black">{header}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {conversionItems.slice(0, 12).map(item => (
+                      <tr key={item.id}>
+                        <td className={TD}>{item.targetTable}</td>
+                        <td className={`${TD} font-mono`}>{item.targetCode || '-'}</td>
+                        <td className={`${TD} font-bold`}>{item.targetName || '-'}</td>
+                        <td className={`${TD} font-mono text-[10px]`}>{item.targetId}</td>
+                      </tr>
+                    ))}
+                    {conversionItems.length > 12 && (
+                      <tr>
+                        <td colSpan={4} className="px-3 py-2 text-center text-xs font-bold text-slate-400">Còn {conversionItems.length - 12} dòng mapping khác</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const Panel: React.FC<{ title: string; icon: React.ReactNode; children: React.ReactNode }> = ({ title, icon, children }) => (
+  <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+    <h3 className="mb-3 flex items-center gap-2 text-sm font-black text-slate-800 dark:text-white">{icon} {title}</h3>
+    {children}
+  </div>
+);
+
+const Row: React.FC<{ title: string; subtitle?: string; onDelete?: () => void }> = ({ title, subtitle, onDelete }) => (
+  <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+    <div className="min-w-0">
+      <div className="truncate text-xs font-black text-slate-700">{title}</div>
+      {subtitle && <div className="truncate text-[10px] font-bold text-slate-400">{subtitle}</div>}
+    </div>
+    {onDelete && <IconButton icon={<Trash2 size={13} />} title="Xoá" onClick={onDelete} />}
+  </div>
+);
+
+const Metric: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
+  <div className="rounded-xl bg-slate-50 px-3 py-2">
+    <div className="text-[10px] font-bold uppercase text-slate-400">{label}</div>
+    <div className="text-sm font-black text-slate-800">{value}</div>
+  </div>
+);
+
+export default CostLibrary;

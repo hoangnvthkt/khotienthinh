@@ -1,12 +1,13 @@
 import React from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { FileSignature, Building2, Users, HardHat, Settings2, Handshake, Database } from 'lucide-react';
+import { FileSignature, Building2, Users, HardHat, Settings2, Handshake, Database, Calculator } from 'lucide-react';
 
 const HD_TABS = [
   { to: '/hd/overview', label: 'Tổng quan', icon: FileSignature, color: 'from-indigo-500 to-purple-600' },
   { to: '/hd/partners', label: 'Đối tác', icon: Handshake, color: 'from-sky-500 to-blue-600' },
   { to: '/hd/contract-types', label: 'Loại HĐ', icon: Settings2, color: 'from-violet-500 to-purple-600' },
   { to: '/hd/catalogs', label: 'Danh mục', icon: Database, color: 'from-emerald-500 to-green-600' },
+  { to: '/hd/cost-library', label: 'Dự toán', icon: Calculator, color: 'from-rose-500 to-pink-600' },
   { to: '/hd/customer', label: 'Nhận thầu', icon: Users, color: 'from-emerald-500 to-teal-600' },
   { to: '/hd/supplier', label: 'Nhà cung cấp', icon: Building2, color: 'from-blue-500 to-indigo-600' },
   { to: '/hd/subcontractor', label: 'Thầu phụ', icon: HardHat, color: 'from-amber-500 to-orange-600' },
