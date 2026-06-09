@@ -15,8 +15,9 @@ interface ChatMessage {
 }
 
 interface AssistantRequest {
-  action?: 'feedback';
+  action?: 'feedback' | 'estimate_suggestion';
   question?: string;
+  prompt?: string;
   conversationId?: string | null;
   userId?: string;
   mode?: AiMode;
@@ -24,6 +25,10 @@ interface AssistantRequest {
   messageId?: string;
   rating?: 1 | -1;
   model?: string;
+  templates?: any[];
+  currentInput?: Record<string, unknown>;
+  selectedTemplateId?: string;
+  canSeeInternalCost?: boolean;
 }
 
 interface AppUserContext {
@@ -216,6 +221,14 @@ function isAdminOrModuleAdmin(actor: AppUserContext | null, modules: string[]) {
   if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
   const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
   return modules.some(moduleCode => adminModules.includes(moduleCode.toUpperCase()));
+}
+
+function canUseEstimateAssistant(actor: AppUserContext | null) {
+  if (!actor || actor.isActive === false) return false;
+  if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
+  const allowedModules = normalizeStringArray(actor.allowedModules).map(m => m.toUpperCase());
+  const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
+  return ['HD', 'DA'].some(moduleCode => allowedModules.includes(moduleCode) || adminModules.includes(moduleCode));
 }
 
 function getBearerToken(request: Request) {
@@ -585,6 +598,96 @@ async function handleFeedback(req: AssistantRequest) {
   return { ok: true };
 }
 
+function normalizeEstimateSuggestionPayload(raw: any, req: AssistantRequest) {
+  const templates = Array.isArray(req.templates) ? req.templates : [];
+  const selectedTemplate = templates.find((template: any) => template.id === raw?.templateId)
+    || templates.find((template: any) => template.id === req.selectedTemplateId)
+    || templates[0]
+    || null;
+  const allowedParamCodes = new Set<string>((selectedTemplate?.parameters || []).map((param: any) => String(param.code)));
+  const currentInput = req.currentInput || {};
+  const rawInputs = raw?.suggestedInputs && typeof raw.suggestedInputs === 'object' ? raw.suggestedInputs : {};
+  const suggestedInputs = Object.fromEntries(
+    Object.entries({ ...currentInput, ...rawInputs })
+      .filter(([key]) => allowedParamCodes.size === 0 || allowedParamCodes.has(key)),
+  );
+  const missingParameters = (selectedTemplate?.parameters || [])
+    .filter((param: any) => param.isRequired && (suggestedInputs[param.code] === undefined || suggestedInputs[param.code] === ''))
+    .map((param: any) => String(param.code));
+  const confidenceScore = Math.max(0, Math.min(1, Number(raw?.confidenceScore ?? 0.5)));
+  return {
+    templateId: selectedTemplate?.id,
+    templateName: selectedTemplate?.name,
+    suggestedInputs,
+    missingParameters,
+    assumptions: Array.isArray(raw?.assumptions)
+      ? raw.assumptions.map(String)
+      : ['AI chỉ gợi ý điền form từ template đã có, không tạo/chốt estimate.'],
+    riskWarnings: Array.isArray(raw?.riskWarnings) ? raw.riskWarnings.map(String) : [],
+    dataGaps: Array.isArray(raw?.dataGaps) ? raw.dataGaps.map(String) : missingParameters.map((code: string) => `missing_parameter:${code}`),
+    confidenceScore,
+    source: 'remote',
+  };
+}
+
+async function handleEstimateSuggestion(req: AssistantRequest, actor: AppUserContext | null) {
+  if (!canUseEstimateAssistant(actor)) {
+    return jsonResponse({
+      error: 'Tài khoản hiện tại chưa có quyền HD/DA để dùng AI gợi ý dự toán trong builder.',
+    }, 403);
+  }
+  const promptText = String(req.prompt || req.question || '').trim();
+  if (!promptText) return jsonResponse({ error: 'Thiếu mô tả đầu vào để AI gợi ý.' }, 400);
+  const templates = Array.isArray(req.templates) ? req.templates : [];
+  const aiPrompt = `
+Bạn là AI Estimate Assistant trong ERP thi công nhà xưởng.
+Nhiệm vụ: gợi ý template và tham số form dự toán nhanh từ mô tả người dùng.
+
+Quy tắc bắt buộc:
+- Chỉ dùng template và parameter được cung cấp trong JSON dưới đây.
+- Không bịa đơn giá, định mức, giá vốn, margin hoặc profit.
+- Không tạo/chốt estimate. Chỉ trả gợi ý để user bấm "Áp dụng vào form".
+- Nếu thiếu tham số quan trọng, ghi vào missingParameters và dataGaps.
+- Trả về DUY NHẤT một JSON object, không markdown.
+
+Schema JSON:
+{
+  "templateId": "id template phù hợp",
+  "templateName": "tên template",
+  "suggestedInputs": { "parameter_code": "value hoặc number" },
+  "missingParameters": ["code"],
+  "assumptions": ["giả định"],
+  "riskWarnings": ["cảnh báo"],
+  "dataGaps": ["thiếu dữ liệu"],
+  "confidenceScore": 0.0
+}
+
+Mô tả người dùng:
+${promptText}
+
+Selected template id:
+${req.selectedTemplateId || ''}
+
+Current input:
+${compactJson(req.currentInput || {}, 5000)}
+
+Templates:
+${compactJson(templates, 18000)}
+`.trim();
+
+  const raw = await callGemini(aiPrompt, 0.05, req.model || GEMINI_FAST_MODEL, 'application/json');
+  const parsed = extractJsonObject(raw);
+  const suggestion = normalizeEstimateSuggestionPayload(parsed, req);
+  console.info('ai-assistant estimate_suggestion', JSON.stringify({
+    actorId: actor?.id || null,
+    templateId: suggestion.templateId || null,
+    missingParameters: suggestion.missingParameters,
+    confidenceScore: suggestion.confidenceScore,
+    at: new Date().toISOString(),
+  }));
+  return jsonResponse({ suggestion });
+}
+
 // ═══ Main Handler ═══════════════════════════════════════════
 
 Deno.serve(async (request: Request) => {
@@ -598,6 +701,10 @@ Deno.serve(async (request: Request) => {
 
     const req = await request.json() as AssistantRequest;
     if (req.action === 'feedback') return jsonResponse(await handleFeedback(req));
+    if (req.action === 'estimate_suggestion') {
+      const actor = await resolveActor(request, req.userId);
+      return handleEstimateSuggestion(req, actor);
+    }
 
     const question = (req.question || '').trim();
     if (!question) return jsonResponse({ error: 'Thiếu câu hỏi.' }, 400);

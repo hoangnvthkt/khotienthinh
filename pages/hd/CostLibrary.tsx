@@ -31,18 +31,26 @@ import {
   CostImportValidationResult,
   costTemplateService,
   estimateAiSuggestionService,
+  CatalogReadinessReport,
   EstimateComparisonResult,
   EstimateConversionAudit,
   EstimateConversionPreview,
+  EstimateAiSuggestion,
   estimateParameterLabels,
   estimatePermissionService,
   estimateScenarioService,
   EstimateScenarioDetails,
   EstimateExportMode,
+  CostTemplateReadinessReport,
+  CostTemplateNormalizationReport,
+  CostTemplateNormalizationStatus,
   InternalNormImportPayload,
   InternalPriceBookImportPayload,
   internalNormService,
   internalPriceBookService,
+  NormalizedTemplateMaterial,
+  ProjectTemplateImportPreview,
+  RawTemplateMaterialSnapshot,
 } from '../../lib/costEstimateService';
 import { customerContractService, subcontractorContractService } from '../../lib/hdService';
 import {
@@ -61,6 +69,14 @@ import {
 type PageTab = 'builder' | 'templates' | 'prices' | 'norms' | 'estimates';
 type BuilderStep = 1 | 2 | 3 | 4;
 type StatusFilter = 'all' | 'draft' | 'active' | 'archived' | 'reviewed' | 'finalized' | 'converted' | 'cancelled';
+type NormalizationFormState = {
+  status: CostTemplateNormalizationStatus;
+  standardUnit: string;
+  standardBaseQuantity: string;
+  standardWorkCode: string;
+  note: string;
+  normalizedMaterials: NormalizedTemplateMaterial[];
+};
 
 const money = (value: number) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(Number(value || 0));
@@ -75,6 +91,20 @@ const statusLabel: Record<string, string> = {
   finalized: 'Đã chốt',
   converted: 'Đã chuyển BOQ',
   cancelled: 'Huỷ',
+};
+
+const normalizationLabel: Record<CostTemplateNormalizationStatus, string> = {
+  raw: 'Thô',
+  reviewing: 'Đang rà soát',
+  normalized: 'Đã chuẩn hóa',
+  ignored: 'Bỏ qua',
+};
+
+const readinessLabel: Record<string, string> = {
+  draft: 'Draft',
+  needs_data: 'Needs data',
+  ready_to_estimate: 'Ready to estimate',
+  active: 'Active',
 };
 
 const TD = 'px-3 py-2 align-middle text-slate-600 dark:text-slate-300';
@@ -170,6 +200,33 @@ const emptyNorm = (): Partial<InternalNorm> & { normCode: string; resourceName: 
   confidenceScore: 0.7,
 });
 
+const getItemMetadata = (item: CostTemplateItem): Record<string, unknown> => item.metadata || {};
+const getRawMaterials = (item: CostTemplateItem): RawTemplateMaterialSnapshot[] => {
+  const value = getItemMetadata(item).rawMaterials;
+  return Array.isArray(value) ? value as RawTemplateMaterialSnapshot[] : [];
+};
+const getNormalizedMaterials = (item: CostTemplateItem): NormalizedTemplateMaterial[] => {
+  const value = getItemMetadata(item).normalizedMaterials;
+  return Array.isArray(value) ? value as NormalizedTemplateMaterial[] : [];
+};
+const getNormalizationStatus = (item: CostTemplateItem): CostTemplateNormalizationStatus => {
+  const value = getItemMetadata(item).normalizationStatus;
+  if (value === 'reviewing' || value === 'normalized' || value === 'ignored') return value;
+  return getRawMaterials(item).length > 0 || getItemMetadata(item).needsNormalization ? 'raw' : 'normalized';
+};
+const rawToNormalizedMaterial = (material: RawTemplateMaterialSnapshot, index: number): NormalizedTemplateMaterial => ({
+  sourceMaterialBudgetItemId: material.sourceMaterialBudgetItemId,
+  materialCode: material.materialCode || '',
+  itemName: material.itemName || '',
+  category: material.category || '',
+  unit: material.unit || '',
+  quantity: Number(material.budgetQty || 0),
+  conversionFactor: 1,
+  wastePercent: Number(material.wastePercent || 0),
+  note: material.notes || '',
+  sortOrder: material.sortOrder ?? index,
+});
+
 const factorySections = [
   { code: 'A', name: 'Móng', unit: 'gói', calculationMethod: 'Theo loại móng và diện tích', sortOrder: 10 },
   { code: 'B', name: 'Nền bê tông', unit: 'm2', calculationMethod: 'Diện tích nền x chiều dày', sortOrder: 20 },
@@ -221,12 +278,30 @@ const CostLibrary: React.FC = () => {
   const [convertType, setConvertType] = useState<ContractItemType>('customer');
   const [convertContractId, setConvertContractId] = useState('');
   const [aiPrompt, setAiPrompt] = useState('');
-  const [aiSuggestion, setAiSuggestion] = useState<ReturnType<typeof estimateAiSuggestionService.suggestInputs> | null>(null);
+  const [aiSuggestion, setAiSuggestion] = useState<EstimateAiSuggestion | null>(null);
+  const [aiSuggestionSource, setAiSuggestionSource] = useState<'remote' | 'local' | null>(null);
+  const [loadingAiSuggestion, setLoadingAiSuggestion] = useState(false);
   const [finalizeOverrideReason, setFinalizeOverrideReason] = useState('');
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [compareResult, setCompareResult] = useState<EstimateComparisonResult | null>(null);
   const [conversionPreview, setConversionPreview] = useState<EstimateConversionPreview | null>(null);
   const [conversionAudit, setConversionAudit] = useState<EstimateConversionAudit | null>(null);
+  const [smbImportPreview, setSmbImportPreview] = useState<ProjectTemplateImportPreview | null>(null);
+  const [loadingSmbPreview, setLoadingSmbPreview] = useState(false);
+  const [normalizingTemplateId, setNormalizingTemplateId] = useState('');
+  const [normalizationReport, setNormalizationReport] = useState<CostTemplateNormalizationReport | null>(null);
+  const [selectedTemplateReadiness, setSelectedTemplateReadiness] = useState<CostTemplateReadinessReport | null>(null);
+  const [priceReadiness, setPriceReadiness] = useState<CatalogReadinessReport | null>(null);
+  const [normReadiness, setNormReadiness] = useState<CatalogReadinessReport | null>(null);
+  const [normalizationItem, setNormalizationItem] = useState<CostTemplateItem | null>(null);
+  const [normalizationForm, setNormalizationForm] = useState<NormalizationFormState>({
+    status: 'raw',
+    standardUnit: '',
+    standardBaseQuantity: '',
+    standardWorkCode: '',
+    note: '',
+    normalizedMaterials: [],
+  });
   const [importPreview, setImportPreview] = useState<{
     kind: 'prices' | 'norms';
     file: File;
@@ -250,11 +325,16 @@ const CostLibrary: React.FC = () => {
       setEstimates(estimateRows);
       setCustomerContracts(customerRows);
       setSubcontractorContracts(subcontractorRows);
+      setPriceReadiness(await internalPriceBookService.getReadinessReport(priceRows));
+      setNormReadiness(await internalNormService.getReadinessReport(normRows));
       const firstTemplate = selectedTemplateId || templateRows[0]?.id || '';
       setSelectedTemplateId(firstTemplate);
       setSectionForm(emptySection(firstTemplate));
       setItemForm(emptyItem(firstTemplate));
       setParameterForm(emptyParameter(firstTemplate));
+      if (firstTemplate) {
+        setSelectedTemplateReadiness(await costTemplateService.getReadinessReport(firstTemplate).catch(() => null));
+      }
     } catch (error) {
       logApiError('cost-library.load', error);
       toast.error('Không thể tải dữ liệu dự toán', getApiErrorMessage(error));
@@ -269,6 +349,19 @@ const CostLibrary: React.FC = () => {
     () => templates.find(template => template.id === selectedTemplateId) || templates[0] || null,
     [selectedTemplateId, templates],
   );
+
+  useEffect(() => {
+    if (!selectedTemplate?.id) {
+      setSelectedTemplateReadiness(null);
+      return;
+    }
+    costTemplateService.getReadinessReport(selectedTemplate.id)
+      .then(setSelectedTemplateReadiness)
+      .catch(error => {
+        logApiError('cost-library.selectedTemplateReadiness', error);
+        setSelectedTemplateReadiness(null);
+      });
+  }, [selectedTemplate?.id]);
 
   const templateTypes = useMemo(() => Array.from(new Set(templates.map(row => row.projectType || '').filter(Boolean))).sort(), [templates]);
   const priceRegions = useMemo(() => Array.from(new Set([...prices.map(row => row.region), ...norms.map(row => row.region)].filter(Boolean))).sort(), [prices, norms]);
@@ -504,6 +597,101 @@ const CostLibrary: React.FC = () => {
     });
   };
 
+  const previewSmbFactoryTemplate = async () => {
+    if (!canManage) return;
+    setLoadingSmbPreview(true);
+    try {
+      const preview = await costTemplateService.previewSmbFactoryTemplateImport();
+      setSmbImportPreview(preview);
+    } catch (error) {
+      logApiError('cost-library.previewSmbFactoryTemplate', error);
+      toast.error('Không thể preview dữ liệu Sơn Miền Bắc', getApiErrorMessage(error));
+    } finally {
+      setLoadingSmbPreview(false);
+    }
+  };
+
+  const createSmbFactoryTemplate = async () => {
+    if (!canManage || !smbImportPreview) return;
+    const ok = await confirm({
+      title: 'Tạo template nháp từ Sơn Miền Bắc?',
+      targetName: `${smbImportPreview.templateCode} v${smbImportPreview.nextVersionNo}`,
+      subtitle: 'Hệ thống chỉ tạo đầu mục và lưu vật tư thô trong metadata. Không tạo đơn giá nội bộ và không tự chuẩn hóa định mức.',
+      actionLabel: 'Tạo template',
+      intent: 'warning',
+    });
+    if (!ok) return;
+    await runSave('Đã tạo template từ Sơn Miền Bắc', async () => {
+      const template = await costTemplateService.createSmbFactoryTemplate(user.id);
+      setSelectedTemplateId(template.id);
+      setSmbImportPreview(null);
+    });
+  };
+
+  const loadNormalizationReport = useCallback(async (templateId: string) => {
+    if (!templateId) return;
+    try {
+      const report = await costTemplateService.getNormalizationReport(templateId);
+      setNormalizationReport(report);
+    } catch (error) {
+      logApiError('cost-library.normalizationReport', error);
+      toast.error('Không thể tải báo cáo chuẩn hóa', getApiErrorMessage(error));
+    }
+  }, [toast]);
+
+  const openTemplateNormalization = async (template: CostTemplateDetails) => {
+    setNormalizingTemplateId(template.id);
+    await loadNormalizationReport(template.id);
+  };
+
+  const openItemNormalization = (item: CostTemplateItem) => {
+    const metadata = getItemMetadata(item);
+    const rawMaterials = getRawMaterials(item);
+    const normalizedMaterials = getNormalizedMaterials(item);
+    setNormalizationItem(item);
+    setNormalizationForm({
+      status: getNormalizationStatus(item),
+      standardUnit: String(metadata.standardUnit || item.unit || ''),
+      standardBaseQuantity: String(metadata.standardBaseQuantity ?? item.baseQuantity ?? ''),
+      standardWorkCode: String(metadata.standardWorkCode || item.workCode || item.code || ''),
+      note: String(metadata.normalizationNote || ''),
+      normalizedMaterials: normalizedMaterials.length > 0 ? normalizedMaterials : rawMaterials.map(rawToNormalizedMaterial),
+    });
+  };
+
+  const saveItemNormalization = async () => {
+    if (!canManage || !normalizationItem) return;
+    await runSave('Đã lưu chuẩn hóa hạng mục', async () => {
+      await costTemplateService.updateItemNormalization(normalizationItem.id, {
+        status: normalizationForm.status,
+        standardUnit: normalizationForm.standardUnit.trim(),
+        standardBaseQuantity: normalizationForm.standardBaseQuantity === '' ? null : Number(normalizationForm.standardBaseQuantity),
+        standardWorkCode: normalizationForm.standardWorkCode.trim(),
+        note: normalizationForm.note.trim(),
+        actorId: user.id,
+      });
+      await costTemplateService.updateItemRawMaterials(normalizationItem.id, normalizationForm.normalizedMaterials, user.id);
+      setNormalizationItem(null);
+    });
+    if (normalizingTemplateId) await loadNormalizationReport(normalizingTemplateId);
+  };
+
+  const createDraftNormsFromTemplate = async (template: CostTemplateDetails) => {
+    if (!canManage) return;
+    const ok = await confirm({
+      title: 'Tạo định mức nháp từ template?',
+      targetName: template.name,
+      subtitle: 'Chỉ sinh draft từ các hạng mục đã chuẩn hóa và vật tư chuẩn. Không tạo đơn giá nội bộ, không kích hoạt định mức.',
+      actionLabel: 'Tạo định mức nháp',
+      intent: 'warning',
+    });
+    if (!ok) return;
+    await runSave('Đã tạo định mức nháp', async () => {
+      const result = await costTemplateService.createDraftNormsFromTemplate(template.id, user.id);
+      toast.info('Kết quả tạo định mức', `Tạo mới ${result.created} dòng, bỏ qua ${result.skipped} dòng.`);
+    });
+  };
+
   const saveTemplate = async () => {
     if (!canManage) return;
     await runSave('Đã lưu template', async () => {
@@ -587,6 +775,34 @@ const CostLibrary: React.FC = () => {
     });
   };
 
+  const bulkActivatePrices = async () => {
+    if (!canManage) return;
+    const rows = filteredPrices.filter(row => row.status !== 'active');
+    if (rows.length === 0) {
+      toast.info('Không có đơn giá cần kích hoạt');
+      return;
+    }
+    await runSave('Đã xử lý kích hoạt đơn giá', async () => {
+      const result = await internalPriceBookService.bulkActivate(rows, user.id);
+      toast.info('Kết quả kích hoạt đơn giá', `Active ${result.activated} dòng, skip ${result.skipped} dòng.`);
+      if (result.blockers.length > 0) toast.warning('Một số dòng bị skip', result.blockers.slice(0, 3).join(' • '));
+    });
+  };
+
+  const bulkActivateNorms = async () => {
+    if (!canManage) return;
+    const rows = filteredNorms.filter(row => row.status !== 'active');
+    if (rows.length === 0) {
+      toast.info('Không có định mức cần kích hoạt');
+      return;
+    }
+    await runSave('Đã xử lý kích hoạt định mức', async () => {
+      const result = await internalNormService.bulkActivate(rows, user.id);
+      toast.info('Kết quả kích hoạt định mức', `Active ${result.activated} dòng, skip ${result.skipped} dòng.`);
+      if (result.blockers.length > 0) toast.warning('Một số dòng bị skip', result.blockers.slice(0, 3).join(' • '));
+    });
+  };
+
   const importPrices = async (file?: File | null) => {
     if (!canManage || !file) return;
     try {
@@ -629,15 +845,40 @@ const CostLibrary: React.FC = () => {
     });
   };
 
-  const runAiSuggestion = () => {
-    const suggestion = estimateAiSuggestionService.suggestInputs({
-      prompt: aiPrompt,
-      templates,
-      currentInput: draftInput,
-      selectedTemplateId,
-    });
-    setAiSuggestion(suggestion);
-    if (suggestion.templateId) setSelectedTemplateId(suggestion.templateId);
+  const runAiSuggestion = async () => {
+    if (!aiPrompt.trim()) {
+      toast.warning('Thiếu mô tả', 'Nhập mô tả công trình để AI gợi ý tham số.');
+      return;
+    }
+    setLoadingAiSuggestion(true);
+    try {
+      const suggestion = await estimateAiSuggestionService.suggestInputsRemote({
+        prompt: aiPrompt,
+        templates,
+        currentInput: draftInput,
+        selectedTemplateId,
+        canSeeInternalCost,
+      });
+      setAiSuggestion(suggestion);
+      setAiSuggestionSource('remote');
+      if (suggestion.templateId) setSelectedTemplateId(suggestion.templateId);
+      toast.success('AI remote đã gợi ý form', `Confidence ${Math.round(suggestion.confidenceScore * 100)}%.`);
+    } catch (error) {
+      logApiError('cost-library.aiSuggestionRemote', error);
+      const suggestion = estimateAiSuggestionService.suggestInputs({
+        prompt: aiPrompt,
+        templates,
+        currentInput: draftInput,
+        selectedTemplateId,
+        canSeeInternalCost,
+      });
+      setAiSuggestion(suggestion);
+      setAiSuggestionSource('local');
+      if (suggestion.templateId) setSelectedTemplateId(suggestion.templateId);
+      toast.warning('Đang dùng gợi ý offline', getApiErrorMessage(error));
+    } finally {
+      setLoadingAiSuggestion(false);
+    }
   };
 
   const applyAiSuggestion = () => {
@@ -886,12 +1127,151 @@ const CostLibrary: React.FC = () => {
     );
   };
 
+  const renderSmbImportPreview = () => {
+    if (!smbImportPreview) return null;
+    return (
+      <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-5xl rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-black text-slate-800 dark:text-white">Preview template Sơn Miền Bắc</h2>
+              <p className="text-xs font-bold text-slate-400">
+                {smbImportPreview.templateCode} v{smbImportPreview.nextVersionNo} • source {smbImportPreview.sourceProjectId}
+              </p>
+            </div>
+            <button onClick={() => setSmbImportPreview(null)} className={BTN_MINI}><X size={14} /></button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-6">
+            <Metric label="WBS cha" value={smbImportPreview.sectionCount} />
+            <Metric label="Item tạo" value={smbImportPreview.itemCount} />
+            <Metric label="Task source" value={smbImportPreview.sourceTaskCount} />
+            <Metric label="Work BOQ" value={`${smbImportPreview.linkedWorkBoqCount}/${smbImportPreview.workBoqCount}`} />
+            <Metric label="Vật tư raw" value={smbImportPreview.rawMaterialCount} />
+            <Metric label="Nhóm VT" value={smbImportPreview.materialCategoryCount} />
+            <Metric label="Thiếu đơn vị" value={smbImportPreview.missingTaskUnitCount} />
+            <Metric label="Thiếu KL" value={smbImportPreview.missingWorkBoqQuantityCount} />
+            <Metric label="Root placeholder" value={smbImportPreview.rootPlaceholderItemCount} />
+            <Metric label="Version cũ" value={smbImportPreview.existingVersionCount} />
+          </div>
+
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-700">
+            <AlertTriangle size={14} className="inline mr-1" />
+            Dữ liệu này chỉ tạo template nháp. Giá, công thức, định mức và các dòng thiếu đơn vị/khối lượng cần được chuẩn hóa thủ công sau.
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-200">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+                  <tr>
+                    {['WBS cha', 'Tên nhóm', 'Task', 'VT raw'].map(header => <th key={header} className="px-3 py-2 text-left font-black">{header}</th>)}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {smbImportPreview.sampleSections.map(section => (
+                    <tr key={section.code}>
+                      <td className={`${TD} font-mono`}>{section.code}</td>
+                      <td className={`${TD} font-bold`}>{section.name}</td>
+                      <td className={TD}>{section.taskCount}</td>
+                      <td className={TD}>{section.materialCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-200">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+                  <tr>
+                    {['WBS con', 'Hạng mục', 'ĐVT', 'KL', 'VT raw'].map(header => <th key={header} className="px-3 py-2 text-left font-black">{header}</th>)}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {smbImportPreview.sampleItems.map(item => (
+                    <tr key={item.code}>
+                      <td className={`${TD} font-mono`}>{item.code}</td>
+                      <td className={`${TD} font-bold`}>{item.name}</td>
+                      <td className={TD}>{item.unit || '-'}</td>
+                      <td className={TD}>{item.baseQuantity ?? '-'}</td>
+                      <td className={TD}>{item.rawMaterialCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="mt-4 flex justify-end gap-2">
+            <button onClick={() => setSmbImportPreview(null)} className={BTN_SOFT}>Đóng</button>
+            <button onClick={createSmbFactoryTemplate} disabled={saving} className={BTN_PRIMARY}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+              Tạo template nháp
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderPermissionNotice = () => !canManage && (
     <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
       <LockKeyhole size={15} className="mt-0.5 shrink-0" />
       <span>Đơn giá nội bộ và định mức chỉ cho phép Admin hoặc quản trị module HD chỉnh sửa.</span>
     </div>
   );
+
+  const renderReadinessPanel = () => {
+    const blockers = [
+      ...(selectedTemplateReadiness?.blockers || []),
+      ...(priceReadiness?.blockers || []),
+      ...(normReadiness?.blockers || []),
+    ];
+    const warnings = [
+      ...(selectedTemplateReadiness?.warnings || []),
+      ...(priceReadiness?.warnings || []),
+      ...(normReadiness?.warnings || []),
+    ];
+    if (!selectedTemplateReadiness && !priceReadiness && !normReadiness) return null;
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+        <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-sm font-black text-slate-800 dark:text-white">Dữ liệu còn thiếu để dùng thật</h2>
+            <p className="text-xs font-bold text-slate-400">Gate production cho template, định mức, đơn giá và estimate builder.</p>
+          </div>
+          <span className={`w-fit rounded-full px-3 py-1 text-[10px] font-black ${
+            selectedTemplateReadiness?.canEstimate ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+          }`}>
+            {readinessLabel[selectedTemplateReadiness?.status || 'needs_data']}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <Metric label="Active prices" value={priceReadiness?.activeRows || 0} />
+          <Metric label="Active norms" value={normReadiness?.activeRows || 0} />
+          <Metric label="Missing price match" value={selectedTemplateReadiness?.metrics.itemsMissingPrice || 0} />
+          <Metric label="Old price/norm" value={(priceReadiness?.staleRows || 0) + (normReadiness?.staleRows || 0)} />
+        </div>
+        {(blockers.length > 0 || warnings.length > 0) && (
+          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {blockers.length > 0 && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">
+                <AlertTriangle size={14} className="mr-1 inline" />
+                {blockers.slice(0, 6).join(' • ')}
+              </div>
+            )}
+            {warnings.length > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-700">
+                <AlertTriangle size={14} className="mr-1 inline" />
+                {warnings.slice(0, 6).join(' • ')}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderBuilder = () => (
     <div className="grid grid-cols-1 xl:grid-cols-[460px_minmax(0,1fr)] gap-4">
@@ -925,6 +1305,13 @@ const CostLibrary: React.FC = () => {
                   <option key={template.id} value={template.id}>{template.code} - {template.name}</option>
                 ))}
               </select>
+              {selectedTemplateReadiness && (
+                <div className={`rounded-xl border px-3 py-2 text-xs font-bold ${
+                  selectedTemplateReadiness.canEstimate ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'
+                }`}>
+                  {readinessLabel[selectedTemplateReadiness.status]} • {selectedTemplateReadiness.canEstimate ? 'Đủ điều kiện sinh dự toán' : selectedTemplateReadiness.blockers.slice(0, 2).join(' • ')}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <input value={draftName} onChange={e => setDraftName(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Tên phương án" />
                 <input value={draftCustomer} onChange={e => setDraftCustomer(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Khách hàng" />
@@ -939,14 +1326,18 @@ const CostLibrary: React.FC = () => {
                 <div className="mb-2 flex items-center gap-2 text-xs font-black text-indigo-700"><Wand2 size={14} /> AI gợi ý điền form</div>
                 <textarea value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} className="min-h-[84px] w-full rounded-xl border border-indigo-100 px-3 py-2 text-sm" placeholder="Ví dụ: Nhà xưởng 5.000m2, cao 9m, móng cọc, mái tôn cách nhiệt, miền Bắc..." />
                 <div className="mt-2 flex gap-2">
-                  <button type="button" onClick={runAiSuggestion} className={BTN_SOFT}><Wand2 size={14} /> Gợi ý</button>
+                  <button type="button" onClick={runAiSuggestion} disabled={loadingAiSuggestion} className={BTN_SOFT}>
+                    {loadingAiSuggestion ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                    Gợi ý
+                  </button>
                   <button type="button" onClick={applyAiSuggestion} disabled={!aiSuggestion} className={BTN_PRIMARY}>Áp dụng vào form</button>
                 </div>
                 {aiSuggestion && (
                   <div className="mt-2 text-xs font-bold text-indigo-700">
                     {aiSuggestion.templateName && <div>Template: {aiSuggestion.templateName}</div>}
-                    <div>Confidence: {Math.round(aiSuggestion.confidenceScore * 100)}%</div>
+                    <div>Confidence: {Math.round(aiSuggestion.confidenceScore * 100)}% • {aiSuggestionSource === 'remote' ? 'AI remote' : 'Gợi ý offline'}</div>
                     {aiSuggestion.missingParameters.length > 0 && <div>Còn thiếu: {aiSuggestion.missingParameters.join(', ')}</div>}
+                    {aiSuggestion.dataGaps && aiSuggestion.dataGaps.length > 0 && <div>Data gaps: {aiSuggestion.dataGaps.slice(0, 3).join(' • ')}</div>}
                   </div>
                 )}
               </div>
@@ -997,7 +1388,7 @@ const CostLibrary: React.FC = () => {
             <button type="button" onClick={() => setBuilderStep(Math.max(1, builderStep - 1) as BuilderStep)} className={BTN_SOFT}>Lùi</button>
             <button type="button" onClick={() => setBuilderStep(Math.min(4, builderStep + 1) as BuilderStep)} className={BTN_SOFT}>Tiếp</button>
           </div>
-          <button disabled={!canCreateEstimate || saving || !selectedTemplate} onClick={createDraft} className="w-full rounded-xl bg-indigo-600 px-4 py-2 text-sm font-black text-white disabled:opacity-50">
+          <button disabled={!canCreateEstimate || saving || !selectedTemplate || !selectedTemplateReadiness?.canEstimate} onClick={createDraft} className="w-full rounded-xl bg-indigo-600 px-4 py-2 text-sm font-black text-white disabled:opacity-50">
             {saving ? <Loader2 size={15} className="inline animate-spin" /> : 'Sinh dự toán nháp'}
           </button>
         </div>
@@ -1036,7 +1427,14 @@ const CostLibrary: React.FC = () => {
         <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-black text-slate-800 dark:text-white">Template</h2>
-            {canManage && <button onClick={createFactoryTemplate} className="text-xs font-bold text-indigo-600">Tạo mẫu nhà xưởng</button>}
+            {canManage && (
+              <div className="flex flex-wrap justify-end gap-2">
+                <button onClick={previewSmbFactoryTemplate} disabled={loadingSmbPreview} className="text-xs font-bold text-emerald-600 disabled:opacity-50">
+                  {loadingSmbPreview ? 'Đang đọc...' : 'Tạo từ Sơn Miền Bắc'}
+                </button>
+                <button onClick={createFactoryTemplate} className="text-xs font-bold text-indigo-600">Tạo mẫu nhà xưởng</button>
+              </div>
+            )}
           </div>
           <div className="space-y-2 max-h-[420px] overflow-y-auto">
             {filteredTemplates.map(template => (
@@ -1052,7 +1450,11 @@ const CostLibrary: React.FC = () => {
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-[11px] font-black text-indigo-600">{template.code}</span>
-                  <span className="text-[10px] font-bold text-slate-400">{statusLabel[template.status]}</span>
+                  <span className="text-[10px] font-bold text-slate-400">
+                    {template.id === selectedTemplateId && selectedTemplateReadiness
+                      ? readinessLabel[selectedTemplateReadiness.status]
+                      : statusLabel[template.status]}
+                  </span>
                 </div>
                 <div className="text-sm font-black text-slate-800">{template.name}</div>
                 <div className="text-[11px] text-slate-400">v{template.versionNo} • {template.items.length} hạng mục</div>
@@ -1097,8 +1499,30 @@ const CostLibrary: React.FC = () => {
               onDeleteChild={deleteChild}
               onCreateVersion={createTemplateVersion}
               onChangeStatus={changeTemplateStatus}
+              onNormalize={openTemplateNormalization}
               saving={saving}
             />
+            {normalizingTemplateId === selectedTemplate.id && (
+              <TemplateNormalizationPanel
+                template={selectedTemplate}
+                report={normalizationReport}
+                canManage={canManage}
+                saving={saving}
+                onOpenItem={openItemNormalization}
+                onCreateDraftNorms={createDraftNormsFromTemplate}
+                onRefresh={() => loadNormalizationReport(selectedTemplate.id)}
+              />
+            )}
+            {normalizationItem && (
+              <NormalizationItemModal
+                item={normalizationItem}
+                form={normalizationForm}
+                setForm={setNormalizationForm}
+                saving={saving}
+                onSave={saveItemNormalization}
+                onClose={() => setNormalizationItem(null)}
+              />
+            )}
           </>
         ) : (
           <EmptyState title="Chưa có template" />
@@ -1119,6 +1543,9 @@ const CostLibrary: React.FC = () => {
             <Upload size={14} /> Preview import đơn giá
             <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => importPrices(e.target.files?.[0])} />
           </label>
+          <button onClick={bulkActivatePrices} disabled={saving} className={BTN_PRIMARY}>
+            <CheckCircle2 size={14} /> Kích hoạt dòng đang lọc
+          </button>
         </div>
       )}
       <div className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-4">
@@ -1186,6 +1613,9 @@ const CostLibrary: React.FC = () => {
             <Upload size={14} /> Preview import định mức
             <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => importNorms(e.target.files?.[0])} />
           </label>
+          <button onClick={bulkActivateNorms} disabled={saving} className={BTN_PRIMARY}>
+            <CheckCircle2 size={14} /> Kích hoạt dòng đang lọc
+          </button>
         </div>
       )}
       <div className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-4">
@@ -1353,11 +1783,13 @@ const CostLibrary: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
         <Kpi label="Template active" value={templates.filter(t => t.status === 'active').length} />
         <Kpi label="Đơn giá active" value={prices.filter(p => p.status === 'active').length} />
         <Kpi label="Định mức active" value={norms.filter(n => n.status === 'active').length} />
         <Kpi label="Estimate đã chốt" value={estimates.filter(e => e.status === 'finalized' || e.status === 'converted').length} />
+        <Kpi label="Giá quá cũ" value={priceReadiness?.staleRows || 0} />
+        <Kpi label="Dữ liệu lỗi" value={(priceReadiness?.invalidRows || 0) + (normReadiness?.invalidRows || 0)} />
       </div>
 
       <div className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 dark:bg-slate-900 dark:border-slate-800">
@@ -1373,6 +1805,8 @@ const CostLibrary: React.FC = () => {
       </div>
 
       {renderImportPreview()}
+      {renderSmbImportPreview()}
+      {renderReadinessPanel()}
       {activeTab === 'builder' && renderBuilder()}
       {activeTab === 'templates' && renderTemplates()}
       {activeTab === 'prices' && renderPrices()}
@@ -1437,6 +1871,7 @@ const TemplateChildren: React.FC<{
   onDeleteChild: (table: 'sections' | 'items' | 'parameters', id: string, name: string) => void;
   onCreateVersion: (template: CostTemplateDetails) => void;
   onChangeStatus: (template: CostTemplateDetails, action: 'activate' | 'archive') => void;
+  onNormalize: (template: CostTemplateDetails) => void;
   saving: boolean;
 }> = ({
   template,
@@ -1453,8 +1888,11 @@ const TemplateChildren: React.FC<{
   onDeleteChild,
   onCreateVersion,
   onChangeStatus,
+  onNormalize,
   saving,
-}) => (
+}) => {
+  const canNormalize = template.metadata?.sourceKind === 'project_wbs_material_raw_template' || template.items.some(item => getRawMaterials(item).length > 0 || getItemMetadata(item).needsNormalization);
+  return (
   <div className="space-y-4">
     <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
       <div className="mb-3 flex items-center justify-between">
@@ -1464,6 +1902,7 @@ const TemplateChildren: React.FC<{
         </div>
         <div className="flex flex-wrap gap-2">
           <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black text-slate-500">v{template.versionNo} • {statusLabel[template.status]}</span>
+          {canManage && canNormalize && <button onClick={() => onNormalize(template)} className={BTN_SOFT}><ShieldCheck size={14} /> Chuẩn hóa</button>}
           {canManage && <button onClick={() => onCreateVersion(template)} className={BTN_SOFT}>Tạo version mới</button>}
           {canManage && template.status !== 'active' && <button onClick={() => onChangeStatus(template, 'activate')} className={BTN_SOFT}>Kích hoạt</button>}
           {canManage && template.status !== 'archived' && <button onClick={() => onChangeStatus(template, 'archive')} className={BTN_SOFT}>Lưu trữ</button>}
@@ -1548,7 +1987,206 @@ const TemplateChildren: React.FC<{
       </Panel>
     </div>
   </div>
-);
+  );
+};
+
+const TemplateNormalizationPanel: React.FC<{
+  template: CostTemplateDetails;
+  report: CostTemplateNormalizationReport | null;
+  canManage: boolean;
+  saving: boolean;
+  onOpenItem: (item: CostTemplateItem) => void;
+  onCreateDraftNorms: (template: CostTemplateDetails) => void;
+  onRefresh: () => void;
+}> = ({ template, report, canManage, saving, onOpenItem, onCreateDraftNorms, onRefresh }) => {
+  const sectionById = new Map(template.sections.map(section => [section.id, section]));
+  return (
+    <div className="space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900 dark:bg-emerald-950/20">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-[10px] font-black uppercase text-emerald-600">Chuẩn hóa template thô</div>
+          <h2 className="text-base font-black text-slate-800 dark:text-white">{template.name}</h2>
+          <p className="text-xs font-bold text-slate-500">Chuẩn hóa đơn vị, khối lượng mẫu, mã công việc và vật tư trước khi kích hoạt/sinh định mức.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={onRefresh} className={BTN_SOFT}><RefreshCw size={14} /> Cập nhật KPI</button>
+          {canManage && <button onClick={() => onCreateDraftNorms(template)} disabled={saving} className={BTN_PRIMARY}><PackageSearch size={14} /> Tạo định mức nháp</button>}
+        </div>
+      </div>
+
+      {report && (
+        <>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+            <Metric label="Tổng item" value={report.totalItems} />
+            <Metric label="Thô" value={report.rawItems} />
+            <Metric label="Đang rà" value={report.reviewingItems} />
+            <Metric label="Đã chuẩn" value={report.normalizedItems} />
+            <Metric label="Bỏ qua" value={report.ignoredItems} />
+            <Metric label="Thiếu ĐVT" value={report.missingUnitItems} />
+            <Metric label="Thiếu KL" value={report.missingQuantityItems} />
+            <Metric label="VT chuẩn" value={`${report.normalizedMaterialRows}/${report.rawMaterialRows}`} />
+          </div>
+          {!report.canActivate && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-700">
+              <AlertTriangle size={14} className="mr-1 inline" />
+              Chưa đủ điều kiện kích hoạt: {report.blockers.join(' • ')}
+            </div>
+          )}
+          {report.canActivate && (
+            <div className="rounded-xl border border-emerald-200 bg-white p-3 text-xs font-bold text-emerald-700">
+              <CheckCircle2 size={14} className="mr-1 inline" />
+              Template đã qua gate chuẩn hóa, có thể kích hoạt nếu nghiệp vụ đã duyệt.
+            </div>
+          )}
+        </>
+      )}
+
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
+        <table className="w-full min-w-[1080px] text-sm">
+          <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+            <tr>
+              {['WBS', 'Hạng mục', 'Nhóm', 'ĐVT chuẩn', 'KL mẫu', 'VT thô', 'VT chuẩn', 'Trạng thái', ''].map(header => (
+                <th key={header} className="px-3 py-2 text-left font-black">{header}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {template.items.map(item => {
+              const metadata = getItemMetadata(item);
+              const rawMaterials = getRawMaterials(item);
+              const normalizedMaterials = getNormalizedMaterials(item);
+              const status = getNormalizationStatus(item);
+              const section = item.sectionId ? sectionById.get(item.sectionId) : null;
+              return (
+                <tr key={item.id}>
+                  <td className={`${TD} font-mono`}>{metadata.sourceWbsCode ? String(metadata.sourceWbsCode) : item.code}</td>
+                  <td className={`${TD} font-bold`}>{item.name}</td>
+                  <td className={TD}>{section ? `${section.code} - ${section.name}` : '-'}</td>
+                  <td className={TD}>{String(metadata.standardUnit || item.unit || '-')}</td>
+                  <td className={TD}>{String(metadata.standardBaseQuantity ?? item.baseQuantity ?? '-')}</td>
+                  <td className={TD}>{rawMaterials.length}</td>
+                  <td className={TD}>{normalizedMaterials.length}</td>
+                  <td className={TD}>
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-black ${
+                      status === 'normalized' ? 'bg-emerald-100 text-emerald-700' :
+                      status === 'ignored' ? 'bg-slate-100 text-slate-500' :
+                      status === 'reviewing' ? 'bg-amber-100 text-amber-700' :
+                      'bg-red-100 text-red-700'
+                    }`}>
+                      {normalizationLabel[status]}
+                    </span>
+                  </td>
+                  <td className={`${TD} text-right`}>
+                    <button onClick={() => onOpenItem(item)} className={BTN_SOFT}>Chi tiết</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+const NormalizationItemModal: React.FC<{
+  item: CostTemplateItem;
+  form: NormalizationFormState;
+  setForm: React.Dispatch<React.SetStateAction<NormalizationFormState>>;
+  saving: boolean;
+  onSave: () => void;
+  onClose: () => void;
+}> = ({ item, form, setForm, saving, onSave, onClose }) => {
+  const rawMaterials = getRawMaterials(item);
+  const setMaterial = (index: number, patch: Partial<NormalizedTemplateMaterial>) =>
+    setForm(prev => ({
+      ...prev,
+      normalizedMaterials: prev.normalizedMaterials.map((material, idx) => idx === index ? { ...material, ...patch } : material),
+    }));
+  const addMaterial = () => setForm(prev => ({
+    ...prev,
+    normalizedMaterials: [...prev.normalizedMaterials, { itemName: '', category: '', unit: '', quantity: 0, conversionFactor: 1, note: '', sortOrder: prev.normalizedMaterials.length }],
+  }));
+  const removeMaterial = (index: number) => setForm(prev => ({
+    ...prev,
+    normalizedMaterials: prev.normalizedMaterials.filter((_, idx) => idx !== index),
+  }));
+
+  return (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/50 p-4">
+      <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <div className="font-mono text-xs font-black text-indigo-600">{item.code}</div>
+            <h2 className="text-lg font-black text-slate-800 dark:text-white">{item.name}</h2>
+            <p className="text-xs font-bold text-slate-400">Chuẩn hóa dữ liệu thô thành đầu mục và vật tư có thể sinh định mức draft.</p>
+          </div>
+          <button onClick={onClose} className={BTN_MINI}><X size={14} /></button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+          <label className="text-xs font-bold text-slate-500">
+            Trạng thái
+            <select value={form.status} onChange={e => setForm(prev => ({ ...prev, status: e.target.value as CostTemplateNormalizationStatus }))} className="mt-1 w-full rounded-xl border px-3 py-2 text-sm">
+              {(['raw', 'reviewing', 'normalized', 'ignored'] as CostTemplateNormalizationStatus[]).map(status => (
+                <option key={status} value={status}>{normalizationLabel[status]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-bold text-slate-500">
+            ĐVT chuẩn
+            <input value={form.standardUnit} onChange={e => setForm(prev => ({ ...prev, standardUnit: e.target.value }))} className="mt-1 w-full rounded-xl border px-3 py-2 text-sm" placeholder="m2, kg, bộ..." />
+          </label>
+          <label className="text-xs font-bold text-slate-500">
+            Khối lượng mẫu
+            <input type="number" value={form.standardBaseQuantity} onChange={e => setForm(prev => ({ ...prev, standardBaseQuantity: e.target.value }))} className="mt-1 w-full rounded-xl border px-3 py-2 text-sm" />
+          </label>
+          <label className="text-xs font-bold text-slate-500">
+            Mã công việc chuẩn
+            <input value={form.standardWorkCode} onChange={e => setForm(prev => ({ ...prev, standardWorkCode: e.target.value }))} className="mt-1 w-full rounded-xl border px-3 py-2 text-sm" />
+          </label>
+        </div>
+        <textarea value={form.note} onChange={e => setForm(prev => ({ ...prev, note: e.target.value }))} className="mt-3 min-h-[72px] w-full rounded-xl border px-3 py-2 text-sm" placeholder="Ghi chú chuẩn hóa, lý do bỏ qua, hoặc điểm cần bổ sung..." />
+
+        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <Panel title="Vật tư thô từ Sơn Miền Bắc" icon={<PackageSearch size={14} />}>
+            <div className="max-h-72 overflow-y-auto">
+              {rawMaterials.length === 0 && <div className="text-xs font-bold text-slate-400">Hạng mục này chưa có vật tư thô.</div>}
+              {rawMaterials.map((material, index) => (
+                <div key={`${material.sourceMaterialBudgetItemId || material.itemName}-${index}`} className="mb-2 rounded-xl border border-slate-100 p-2 text-xs">
+                  <div className="font-black text-slate-700">{material.itemName}</div>
+                  <div className="text-slate-400">{material.materialCode || '-'} • {material.category || '-'} • {String(material.budgetQty ?? '-')} {material.unit || ''}</div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+          <Panel title="Vật tư chuẩn để sinh định mức" icon={<ShieldCheck size={14} />}>
+            <div className="space-y-2">
+              {form.normalizedMaterials.map((material, index) => (
+                <div key={index} className="rounded-xl border border-slate-100 p-2">
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_120px_90px_100px_36px]">
+                    <input value={material.itemName} onChange={e => setMaterial(index, { itemName: e.target.value })} className="rounded-lg border px-2 py-1 text-xs" placeholder="Tên vật tư chuẩn" />
+                    <input value={material.materialCode || ''} onChange={e => setMaterial(index, { materialCode: e.target.value })} className="rounded-lg border px-2 py-1 text-xs" placeholder="Mã" />
+                    <input value={material.unit} onChange={e => setMaterial(index, { unit: e.target.value })} className="rounded-lg border px-2 py-1 text-xs" placeholder="ĐVT" />
+                    <input type="number" value={material.quantity} onChange={e => setMaterial(index, { quantity: num(e.target.value) })} className="rounded-lg border px-2 py-1 text-xs" placeholder="Định mức/KL" />
+                    <button onClick={() => removeMaterial(index)} className={BTN_MINI}><Trash2 size={13} /></button>
+                  </div>
+                  <input value={material.note || ''} onChange={e => setMaterial(index, { note: e.target.value })} className="mt-2 w-full rounded-lg border px-2 py-1 text-xs" placeholder="Ghi chú vật tư" />
+                </div>
+              ))}
+              <button onClick={addMaterial} className={BTN_SOFT}><Plus size={14} /> Thêm vật tư chuẩn</button>
+            </div>
+          </Panel>
+        </div>
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className={BTN_SOFT}>Đóng</button>
+          <button onClick={onSave} disabled={saving} className={BTN_PRIMARY}><Save size={14} /> Lưu chuẩn hóa</button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const EstimateDetail: React.FC<{
   estimate: EstimateScenarioDetails | null;
@@ -1631,7 +2269,7 @@ const EstimateDetail: React.FC<{
           <div className="flex flex-wrap gap-2">
             {estimate.status === 'draft' && <button onClick={onReview} disabled={saving} className={BTN_SOFT}><CheckCircle2 size={14} /> Rà soát</button>}
             {estimate.status !== 'finalized' && estimate.status !== 'converted' && <button onClick={onFinalize} disabled={saving || formulaWarnings.length > 0} className={BTN_PRIMARY}><ShieldCheck size={14} /> Chốt</button>}
-            <button onClick={() => onExport('external')} disabled={!['reviewed', 'finalized', 'converted'].includes(estimate.status)} className={BTN_SOFT}><Download size={14} /> Excel gửi khách</button>
+            <button onClick={() => onExport('external')} disabled={!['reviewed', 'finalized'].includes(estimate.status)} className={BTN_SOFT}><Download size={14} /> Excel gửi khách</button>
             {canSeeInternalCost && <button onClick={() => onExport('internal')} className={BTN_SOFT}><FileSpreadsheet size={14} /> Excel nội bộ</button>}
           </div>
         </div>
