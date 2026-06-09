@@ -254,8 +254,8 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
 
     return (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm px-3" onClick={e => e.target === e.currentTarget && onClose()}>
-            <div className="w-[96vw] h-[92vh] max-w-[1180px] rounded-3xl bg-card shadow-2xl border border-border flex flex-col overflow-hidden">
-                <div className="px-6 py-4 border-b border-border flex items-start justify-between gap-4">
+            <div className="w-[96vw] h-[92dvh] max-w-[1180px] rounded-3xl bg-card shadow-2xl border border-border flex flex-col overflow-hidden">
+                <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border flex items-start justify-between gap-4">
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2 mb-1">
                             <h3 className="text-lg font-black text-foreground">Nhật ký công trường</h3>
@@ -273,7 +273,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                     </button>
                 </div>
 
-                <div className="p-6 overflow-y-auto flex-1 space-y-5">
+                <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4 sm:space-y-5">
                     <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-4">
                         <div className="rounded-2xl border border-border p-4 space-y-4">
                             <div>
@@ -525,7 +525,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                     )}
                 </div>
 
-                <div className="px-6 py-4 border-t border-border flex flex-wrap items-center justify-end gap-2">
+                <div className="px-4 sm:px-6 py-3 sm:py-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] border-t border-border flex flex-wrap items-center justify-end gap-2">
                     {canReview && (
                         <>
                             <button onClick={onReject} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-destructive bg-destructive/10 hover:bg-destructive/20 disabled:opacity-50 flex items-center gap-1.5">
@@ -1805,7 +1805,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     key={l.id}
                                     ref={el => { logRefs.current[l.id] = el; }}
                                     onClick={() => openView(l)}
-                                    className={`relative pl-7 pr-5 py-4 bg-card hover:bg-muted/40 border-b border-border transition-all duration-200 cursor-pointer group flex items-start justify-between gap-3 overflow-hidden ${highlightLogId === l.id ? 'bg-amber-500/10 ring-2 ring-amber-500/40 ring-inset' : ''
+                                    className={`relative pl-5 sm:pl-7 pr-4 sm:pr-5 py-3.5 sm:py-4 bg-card hover:bg-muted/40 border-b border-border transition-all duration-200 cursor-pointer group flex items-start justify-between gap-3 overflow-hidden ${highlightLogId === l.id ? 'bg-amber-500/10 ring-2 ring-amber-500/40 ring-inset' : ''
                                         }`}
                                 >
                                     {/* Left Accent Status Border */}
@@ -1826,6 +1826,29 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                 <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${statusCfg.cls}`}>{statusCfg.label}</span>
                                             </div>
                                             <p className="text-xs text-slate-600 dark:text-slate-350 leading-relaxed line-clamp-2">{l.description}</p>
+                                            
+                                            {/* Summary details for mobile/desktop to show enough content */}
+                                            {((l.volumes && l.volumes.length > 0) || 
+                                              (l.materials && l.materials.length > 0) || 
+                                              (l.machines && l.machines.length > 0)) && (
+                                                <div className="mt-2 flex flex-wrap gap-x-2.5 gap-y-1 text-[10px] font-bold text-slate-500 dark:text-slate-400 border-t border-slate-100/60 dark:border-slate-800/80 pt-1.5">
+                                                    {l.volumes && l.volumes.length > 0 && (
+                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                                            <Layers size={10} /> {l.volumes.length} hạng mục
+                                                        </span>
+                                                    )}
+                                                    {l.materials && l.materials.length > 0 && (
+                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-600 dark:text-orange-400">
+                                                            <Package size={10} /> {l.materials.length} vật tư
+                                                        </span>
+                                                    )}
+                                                    {l.machines && l.machines.length > 0 && (
+                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                                                            <Wrench size={10} /> {l.machines.length} máy
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
                                             {status === 'submitted' && l.requestedVerifierName && (
                                                 <div className="mt-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
                                                     <UserCheck size={11} /> Chờ {l.requestedVerifierName} xác nhận
@@ -1839,7 +1862,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                             )}
                                         </div>
                                     </div>
-                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0 self-center transform translate-x-2 group-hover:translate-x-0">
+                                    <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-all shrink-0 self-center transform translate-x-0 md:translate-x-2 md:group-hover:translate-x-0">
                                         <div className="w-7 h-7 rounded-lg flex items-center justify-center text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 border border-teal-100 dark:border-teal-900/30 shadow-sm">
                                             <Eye size={13} />
                                         </div>
@@ -2020,14 +2043,14 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             {/* Form Modal */}
             {showForm && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/45 backdrop-blur-sm">
-                    <div className="bg-card border border-border rounded-3xl shadow-2xl w-[95vw] h-[90vh] sm:w-[80vw] sm:h-[80vh] max-w-[1280px] min-w-[320px] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700/60 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-t-3xl flex items-center justify-between shrink-0">
+                    <div className="bg-card border border-border rounded-3xl shadow-2xl w-[95vw] h-[90dvh] sm:w-[80vw] sm:h-[80dvh] max-w-[1280px] min-w-[320px] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 dark:border-slate-700/60 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-t-3xl flex items-center justify-between shrink-0">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editing ? <><Edit2 size={18} /> Sửa nhật ký</> : <><Plus size={18} /> Ghi nhật ký</>}
                             </span>
                             <button onClick={resetForm} disabled={savingLog} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center disabled:opacity-50 transition-colors"><X size={18} /></button>
                         </div>
-                        <div className="p-6 space-y-5 overflow-y-auto flex-1 bg-card">
+                        <div className="p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto flex-1 bg-card">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Ngày</label>
@@ -2192,7 +2215,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-700/60 pt-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-100 dark:border-slate-700/60 pt-4">
                                 {/* GPS */}
                                 <div>
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-2">Vị trí hiện trường</label>
@@ -2260,46 +2283,56 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     </label>
                                     <div className="space-y-2.5">
                                         {fDelayTasks.map((dt, i) => (
-                                            <div key={i} className="flex gap-2 items-start bg-amber-50/20 dark:bg-amber-950/10 p-2.5 rounded-xl border border-amber-100/50 dark:border-amber-900/30">
-                                                <select className="flex-1 text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-muted/30 text-foreground outline-none focus:ring-1 focus:ring-amber-400"
-                                                    value={dt.taskId} onChange={e => {
-                                                        const newDt = [...fDelayTasks];
-                                                        const t = tasks.find(x => x.id === e.target.value);
-                                                        newDt[i].taskId = e.target.value;
-                                                        if (t) newDt[i].taskName = t.name;
-                                                        setFDelayTasks(newDt);
-                                                    }}>
-                                                    <option value="" disabled className="dark:bg-slate-900">Chọn hạng mục...</option>
-                                                    {tasks.map(t => <option key={t.id} value={t.id} className="dark:bg-slate-900">{t.name}</option>)}
-                                                </select>
-                                                <div className="flex items-center gap-1 bg-muted/30 border border-border rounded-lg px-2 w-[80px]">
-                                                    <input type="number" className="w-full text-xs text-center py-1.5 outline-none bg-transparent text-slate-800 dark:text-slate-200" placeholder="Số" min="1"
-                                                        value={dt.delayDays || ''} onChange={e => {
+                                            <div key={i} className="grid grid-cols-12 gap-2 items-center bg-amber-50/20 dark:bg-amber-950/10 p-2.5 rounded-xl border border-amber-100/50 dark:border-amber-900/30">
+                                                <div className="col-span-12 sm:col-span-4">
+                                                    <select className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-muted/30 text-foreground outline-none focus:ring-1 focus:ring-amber-400"
+                                                        value={dt.taskId} onChange={e => {
                                                             const newDt = [...fDelayTasks];
-                                                            newDt[i].delayDays = Number(e.target.value);
+                                                            const t = tasks.find(x => x.id === e.target.value);
+                                                            newDt[i].taskId = e.target.value;
+                                                            if (t) newDt[i].taskName = t.name;
+                                                            setFDelayTasks(newDt);
+                                                        }}>
+                                                        <option value="" disabled className="dark:bg-slate-900">Chọn hạng mục...</option>
+                                                        {tasks.map(t => <option key={t.id} value={t.id} className="dark:bg-slate-900">{t.name}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="col-span-5 sm:col-span-2">
+                                                    <div className="flex items-center gap-1 bg-muted/30 border border-border rounded-lg px-2 w-full">
+                                                        <input type="number" className="w-full text-xs text-center py-1.5 outline-none bg-transparent text-slate-800 dark:text-slate-200" placeholder="Số" min="1"
+                                                            value={dt.delayDays || ''} onChange={e => {
+                                                                const newDt = [...fDelayTasks];
+                                                                newDt[i].delayDays = Number(e.target.value);
+                                                                setFDelayTasks(newDt);
+                                                            }} />
+                                                        <span className="text-[10px] text-muted-foreground">ngày</span>
+                                                    </div>
+                                                </div>
+                                                <div className="col-span-7 sm:col-span-3">
+                                                    <select className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-muted/30 text-foreground outline-none focus:ring-1 focus:ring-amber-400"
+                                                        value={dt.category} onChange={e => {
+                                                            const newDt = [...fDelayTasks];
+                                                            newDt[i].category = e.target.value as DelayCategory;
+                                                            setFDelayTasks(newDt);
+                                                        }}>
+                                                        <option value="material" className="dark:bg-slate-900">Vật tư</option>
+                                                        <option value="labor" className="dark:bg-slate-900">Nhân công</option>
+                                                        <option value="weather" className="dark:bg-slate-900">Thời tiết</option>
+                                                        <option value="drawing" className="dark:bg-slate-900">Bản vẽ</option>
+                                                        <option value="other" className="dark:bg-slate-900">Khác</option>
+                                                    </select>
+                                                </div>
+                                                <div className="col-span-10 sm:col-span-2">
+                                                    <input type="text" className="w-full text-xs border border-border dark:border-slate-700 rounded-lg px-2 py-1.5 bg-muted/30 text-foreground outline-none focus:ring-1 focus:ring-amber-400" placeholder="Ghi chú thêm..."
+                                                        value={dt.reason} onChange={e => {
+                                                            const newDt = [...fDelayTasks];
+                                                            newDt[i].reason = e.target.value;
                                                             setFDelayTasks(newDt);
                                                         }} />
-                                                    <span className="text-[10px] text-muted-foreground">ngày</span>
                                                 </div>
-                                                <select className="w-[110px] text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-muted/30 text-foreground outline-none focus:ring-1 focus:ring-amber-400"
-                                                    value={dt.category} onChange={e => {
-                                                        const newDt = [...fDelayTasks];
-                                                        newDt[i].category = e.target.value as DelayCategory;
-                                                        setFDelayTasks(newDt);
-                                                    }}>
-                                                    <option value="material" className="dark:bg-slate-900">Vật tư</option>
-                                                    <option value="labor" className="dark:bg-slate-900">Nhân công</option>
-                                                    <option value="weather" className="dark:bg-slate-900">Thời tiết</option>
-                                                    <option value="drawing" className="dark:bg-slate-900">Bản vẽ</option>
-                                                    <option value="other" className="dark:bg-slate-900">Khác</option>
-                                                </select>
-                                                <input type="text" className="flex-1 text-xs border border-border dark:border-slate-700 rounded-lg px-2 py-1.5 bg-muted/30 text-foreground outline-none focus:ring-1 focus:ring-amber-400" placeholder="Ghi chú thêm..."
-                                                    value={dt.reason} onChange={e => {
-                                                        const newDt = [...fDelayTasks];
-                                                        newDt[i].reason = e.target.value;
-                                                        setFDelayTasks(newDt);
-                                                    }} />
-                                                <button onClick={() => setFDelayTasks(fDelayTasks.filter((_, idx) => idx !== i))} className="w-7 h-7 flex items-center justify-center text-amber-400 dark:text-amber-500 hover:text-red-500 hover:bg-muted rounded-lg shrink-0 mt-0.5 transition-colors"><X size={14} /></button>
+                                                <div className="col-span-2 sm:col-span-1 flex justify-center">
+                                                    <button onClick={() => setFDelayTasks(fDelayTasks.filter((_, idx) => idx !== i))} className="w-7 h-7 flex items-center justify-center text-amber-400 dark:text-amber-500 hover:text-red-500 hover:bg-muted rounded-lg shrink-0 transition-colors"><X size={14} /></button>
+                                                </div>
                                             </div>
                                         ))}
                                         <button onClick={() => setFDelayTasks([...fDelayTasks, { taskId: '', taskName: '', delayDays: 1, reason: '', category: 'weather' }])}
@@ -2328,7 +2361,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 verifiedQuantityByWorkBoqItemId={verifiedQuantityByWorkBoqItemId}
                             />
                         </div>
-                        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/45 flex justify-end gap-3 shrink-0">
+                        <div className="px-4 sm:px-6 py-3 sm:py-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/45 flex justify-end gap-3 shrink-0">
                             <button onClick={resetForm} disabled={savingLog} className="px-5 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-700/60 disabled:opacity-50 transition-colors">Huỷ</button>
                             <button onClick={handleSave} disabled={savingLog || !fDate || !fDesc || (photoRequired && fPhotos.length === 0)}
                                 className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-teal-500 to-cyan-500 shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50 transition-all hover:-translate-y-0.5 active:translate-y-0">

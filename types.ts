@@ -3289,6 +3289,23 @@ export interface QualityInspectionAttempt {
   createdAt?: string;
 }
 
+export interface DrawingMarker {
+  id: string;
+  x: number; // percentage width (0 to 100)
+  y: number; // percentage height (0 to 100)
+  label: string;
+  status: 'pass' | 'fail' | 'pending';
+  note?: string;
+}
+
+export interface SignerData {
+  roleCode: 'inspector' | 'contractor' | 'supervisor' | 'completion';
+  roleName: string;
+  userName?: string;
+  signatureUrl?: string;
+  signedAt?: string;
+}
+
 // ---- Main Quality Checklist (hồ sơ chất lượng) ----
 
 export interface QualityChecklist extends ProjectSubmissionFields {
@@ -3358,6 +3375,13 @@ export interface QualityChecklist extends ProjectSubmissionFields {
   note?: string;
   createdBy?: string;
   createdAt: string;
+
+  // PDF layout enhancements
+  drawingUrl?: string;
+  drawingMarkers?: DrawingMarker[];
+  targetCompletionDate?: string;
+  signersData?: SignerData[];
+  standardReference?: string;
 }
 
 // ==================== TÀI SẢN CỐ ĐỊNH (ASSETS) ====================
