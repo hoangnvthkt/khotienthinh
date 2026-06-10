@@ -39,6 +39,7 @@ const MODULE_CONFIG = [
   { key: 'AI' as const, icon: Bot, label: 'Trợ lý AI', shortLabel: 'AI', gradient: 'from-fuchsia-500 to-purple-600', shadow: 'shadow-fuchsia-500/30', color: 'text-fuchsia-600 dark:text-fuchsia-400', bg: 'bg-fuchsia-50 dark:bg-fuchsia-900/30', border: 'border-fuchsia-200 dark:border-fuchsia-700', route: '/ai' },
   { key: 'EP' as const, icon: IdCard, label: 'Hồ sơ NV', shortLabel: 'EP', gradient: 'from-sky-500 to-blue-600', shadow: 'shadow-sky-500/30', color: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50 dark:bg-sky-900/30', border: 'border-sky-200 dark:border-sky-700', route: '/ep' },
   { key: 'HD' as const, icon: FileSignature, label: 'Hợp đồng', shortLabel: 'HĐ', gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/30', color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/30', border: 'border-blue-200 dark:border-blue-700', route: '/hd/partners' },
+  { key: 'TENDER_AI' as const, icon: Bot, label: 'Tender AI', shortLabel: 'TAI', gradient: 'from-fuchsia-500 to-purple-600', shadow: 'shadow-fuchsia-500/30', color: 'text-fuchsia-600 dark:text-fuchsia-400', bg: 'bg-fuchsia-50 dark:bg-fuchsia-900/30', border: 'border-fuchsia-200 dark:border-fuchsia-700', route: '/tender-ai/boq' },
 ] as const;
 
 type AppKey = typeof MODULE_CONFIG[number]['key'];
@@ -67,6 +68,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p.startsWith('/ai')) return 'AI';
     if (p.startsWith('/ep')) return 'EP';
     if (p.startsWith('/hd')) return 'HD';
+    if (p.startsWith('/tender-ai')) return 'TENDER_AI';
     if (['/dashboard', '/inventory', '/operations', '/audit', '/reports', '/requests', '/material-code-requests', '/misa-export'].includes(p)) return 'WMS';
     return null;
   };
@@ -247,10 +249,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/hd/overview', icon: FileSignature, label: 'Tổng quan HĐ' },
       { to: '/hd/partners', icon: Handshake, label: 'Đối tác' },
       { to: '/hd/contract-types', icon: Settings2, label: 'Loại HĐ & Mẫu' },
-      { to: '/hd/cost-library', icon: Calculator, label: 'Dự toán' },
       { to: '/hd/customer', icon: Users, label: 'HĐ Nhận thầu' },
       { to: '/hd/supplier', icon: Building2, label: 'HĐ Nhà cung cấp' },
       { to: '/hd/subcontractor', icon: HardHat, label: 'HĐ Thầu phụ' },
+    ],
+    TENDER_AI: [
+      { to: '/tender-ai/boq', icon: FileSpreadsheet, label: 'AI BOQ CĐT' },
+      { to: '/tender-ai/cost-library', icon: Calculator, label: 'Dự toán nội bộ' },
     ],
   };
 

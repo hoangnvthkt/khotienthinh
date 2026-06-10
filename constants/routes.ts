@@ -81,6 +81,11 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/hd/subcontractor': 'HD',
   '/hd/subcontractor/:id': 'HD',
 
+  // ── TENDER AI / CHÀO THẦU ────────────────────────────
+  '/tender-ai': 'TENDER_AI',
+  '/tender-ai/boq': 'TENDER_AI',
+  '/tender-ai/cost-library': 'TENDER_AI',
+
   // ── ROUTE NHẠY CẢM / MODULE BỔ SUNG ───────────────────
   '/settings': 'SETTINGS',
   '/users': 'SETTINGS',

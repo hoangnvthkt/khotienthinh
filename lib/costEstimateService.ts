@@ -2986,19 +2986,27 @@ export const estimatePermissionService = {
   canManageCostLibrary(user: User) {
     return user.role === 'ADMIN' ||
       (user.adminModules || []).includes('HD') ||
-      (user.adminSubModules?.HD || []).includes('/hd/cost-library');
+      (user.adminModules || []).includes('TENDER_AI') ||
+      (user.adminSubModules?.HD || []).includes('/hd/cost-library') ||
+      (user.adminSubModules?.TENDER_AI || []).includes('/tender-ai/cost-library');
   },
   canCreateEstimate(user: User) {
     return user.role === 'ADMIN' ||
       (user.allowedModules || []).includes('HD') ||
+      (user.allowedModules || []).includes('TENDER_AI') ||
       (user.allowedSubModules?.HD || []).includes('/hd/cost-library') ||
+      (user.allowedSubModules?.TENDER_AI || []).includes('/tender-ai/cost-library') ||
       (user.adminModules || []).includes('HD') ||
-      (user.adminSubModules?.HD || []).includes('/hd/cost-library');
+      (user.adminModules || []).includes('TENDER_AI') ||
+      (user.adminSubModules?.HD || []).includes('/hd/cost-library') ||
+      (user.adminSubModules?.TENDER_AI || []).includes('/tender-ai/cost-library');
   },
   canSeeInternalCost(user: User) {
     return user.role === 'ADMIN' ||
       (user.adminModules || []).includes('HD') ||
-      (user.adminSubModules?.HD || []).includes('/hd/cost-library');
+      (user.adminModules || []).includes('TENDER_AI') ||
+      (user.adminSubModules?.HD || []).includes('/hd/cost-library') ||
+      (user.adminSubModules?.TENDER_AI || []).includes('/tender-ai/cost-library');
   },
 };
 

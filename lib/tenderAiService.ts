@@ -23,6 +23,7 @@ export type TenderSource = 'ai' | 'user' | 'rule' | 'local';
 export type TenderPricingSource = 'system' | 'manual' | 'missing';
 export type TenderRiskSeverity = 'low' | 'medium' | 'high' | 'critical';
 export type TenderExportType = 'external_quote' | 'internal_workbook';
+export type TenderAllocationType = 'inherit_quantity' | 'percent' | 'fixed_quantity' | 'formula';
 
 export type TenderBoqColumnKey =
   | 'lineNo'
@@ -139,11 +140,35 @@ export interface TenderInternalMapping {
   updatedAt?: string;
 }
 
+export interface TenderInternalMappingLink {
+  id: string;
+  mappingId: string;
+  packageId: string;
+  externalLineId: string;
+  templateId?: string | null;
+  templateSectionId?: string | null;
+  templateItemId?: string | null;
+  workCode?: string | null;
+  normGroupCode?: string | null;
+  allocationType: TenderAllocationType;
+  allocationValue?: number | null;
+  quantityFormula?: string | null;
+  note?: string | null;
+  mappingSource: TenderSource;
+  confidenceScore?: number | null;
+  reason?: string | null;
+  metadata?: Record<string, unknown>;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface TenderPricingLine {
   id: string;
   packageId: string;
   externalLineId?: string | null;
   mappingId?: string | null;
+  mappingLinkId?: string | null;
   itemType: 'work' | 'material' | 'labor' | 'machine' | 'subcontract' | 'overhead' | 'risk' | 'other';
   costCode?: string | null;
   description: string;
@@ -201,6 +226,7 @@ export interface TenderPackageDetails extends TenderPackage {
   columnMappings: TenderColumnMappingRecord[];
   lines: TenderExternalBoqLine[];
   mappings: TenderInternalMapping[];
+  mappingLinks: TenderInternalMappingLink[];
   pricingLines: TenderPricingLine[];
   risks: TenderRisk[];
   exports: TenderExportAudit[];
@@ -265,6 +291,23 @@ export interface TenderMappingDraft {
   confidenceScore: number;
   reason: string;
   metadata?: Record<string, unknown>;
+  links?: TenderMappingLinkDraft[];
+}
+
+export interface TenderMappingLinkDraft {
+  templateId?: string | null;
+  templateSectionId?: string | null;
+  templateItemId?: string | null;
+  workCode?: string | null;
+  normGroupCode?: string | null;
+  allocationType?: TenderAllocationType;
+  allocationValue?: number | null;
+  quantityFormula?: string | null;
+  note?: string | null;
+  mappingSource?: TenderSource;
+  confidenceScore?: number | null;
+  reason?: string | null;
+  metadata?: Record<string, unknown>;
 }
 
 export interface TenderRiskDraft {
@@ -300,6 +343,7 @@ const DOCUMENT_TABLE = 'tender_documents';
 const COLUMN_MAPPING_TABLE = 'tender_column_mappings';
 const LINE_TABLE = 'tender_external_boq_lines';
 const INTERNAL_MAPPING_TABLE = 'tender_internal_mappings';
+const MAPPING_LINK_TABLE = 'tender_internal_mapping_links';
 const PRICING_TABLE = 'tender_pricing_lines';
 const RISK_TABLE = 'tender_risks';
 const EXPORT_TABLE = 'tender_exports';
@@ -315,6 +359,7 @@ const mapDocument = (row: any): TenderDocument => fromDb(row) as TenderDocument;
 const mapColumnMapping = (row: any): TenderColumnMappingRecord => fromDb(row) as TenderColumnMappingRecord;
 const mapLine = (row: any): TenderExternalBoqLine => fromDb(row) as TenderExternalBoqLine;
 const mapInternalMapping = (row: any): TenderInternalMapping => fromDb(row) as TenderInternalMapping;
+const mapInternalMappingLink = (row: any): TenderInternalMappingLink => fromDb(row) as TenderInternalMappingLink;
 const mapPricingLine = (row: any): TenderPricingLine => fromDb(row) as TenderPricingLine;
 const mapRisk = (row: any): TenderRisk => fromDb(row) as TenderRisk;
 const mapExport = (row: any): TenderExportAudit => fromDb(row) as TenderExportAudit;
@@ -460,6 +505,43 @@ const wordOverlapScore = (source: string, target: string) => {
   return matches / Math.max(sourceWords.size, targetWords.length);
 };
 
+const normalizeDraftLinks = (mapping: TenderMappingDraft): TenderMappingLinkDraft[] => {
+  const explicitLinks = Array.isArray(mapping.links) ? mapping.links : [];
+  const links = explicitLinks.length
+    ? explicitLinks
+    : mapping.templateItemId || mapping.workCode || mapping.normGroupCode
+      ? [{
+        templateId: mapping.templateId || null,
+        templateSectionId: mapping.templateSectionId || null,
+        templateItemId: mapping.templateItemId || null,
+        workCode: mapping.workCode || null,
+        normGroupCode: mapping.normGroupCode || null,
+        allocationType: 'inherit_quantity' as TenderAllocationType,
+        mappingSource: mapping.mappingSource,
+        confidenceScore: mapping.confidenceScore,
+        reason: mapping.reason,
+        metadata: mapping.metadata,
+      }]
+      : [];
+  return links.map(link => ({
+    templateId: link.templateId || null,
+    templateSectionId: link.templateSectionId || null,
+    templateItemId: link.templateItemId || null,
+    workCode: link.workCode || null,
+    normGroupCode: link.normGroupCode || null,
+    allocationType: link.allocationType || 'inherit_quantity',
+    allocationValue: link.allocationValue ?? null,
+    quantityFormula: link.quantityFormula || null,
+    note: link.note || null,
+    mappingSource: link.mappingSource || mapping.mappingSource,
+    confidenceScore: link.confidenceScore ?? mapping.confidenceScore,
+    reason: link.reason || mapping.reason,
+    metadata: link.metadata || {},
+  }));
+};
+
+const getPrimaryLink = (mapping: TenderMappingDraft): TenderMappingLinkDraft | null => normalizeDraftLinks(mapping)[0] || null;
+
 const chunked = async <T>(rows: T[], fn: (chunk: T[]) => Promise<void>, size = 500) => {
   for (let index = 0; index < rows.length; index += size) {
     await fn(rows.slice(index, index + size));
@@ -471,14 +553,20 @@ const toXlsxRows = (rows: unknown[][]) => rows.map(row => row.map(value => value
 export const tenderPermissionService = {
   canUseTenderAi(user: User) {
     return user.role === Role.ADMIN ||
+      (user.allowedModules || []).includes('TENDER_AI') ||
       (user.allowedModules || []).includes('HD') ||
+      (user.allowedSubModules?.TENDER_AI || []).some(route => ['/tender-ai', '/tender-ai/boq', '/tender-ai/cost-library'].includes(route)) ||
       (user.allowedSubModules?.HD || []).some(route => ['/hd/tender-ai', '/hd/cost-library', '/hd'].includes(route)) ||
+      (user.adminModules || []).includes('TENDER_AI') ||
       (user.adminModules || []).includes('HD') ||
+      (user.adminSubModules?.TENDER_AI || []).some(route => ['/tender-ai', '/tender-ai/boq', '/tender-ai/cost-library'].includes(route)) ||
       (user.adminSubModules?.HD || []).some(route => ['/hd/tender-ai', '/hd/cost-library', '/hd'].includes(route));
   },
   canManageTenderPricing(user: User) {
     return user.role === Role.ADMIN ||
+      (user.adminModules || []).includes('TENDER_AI') ||
       (user.adminModules || []).includes('HD') ||
+      (user.adminSubModules?.TENDER_AI || []).some(route => ['/tender-ai', '/tender-ai/boq', '/tender-ai/cost-library'].includes(route)) ||
       (user.adminSubModules?.HD || []).some(route => ['/hd/tender-ai', '/hd/cost-library', '/hd'].includes(route));
   },
 };
@@ -613,11 +701,11 @@ export const tenderPackageService = {
     const { data: pkg, error } = await supabase.from(PACKAGE_TABLE).select('*').eq('id', id).maybeSingle();
     if (error) throw error;
     if (!pkg) return null;
-    const [documents, columnMappings, lines, mappings, risks, exports] = await Promise.all([
+    const [documents, lines, mappings, mappingLinks, risks, exports] = await Promise.all([
       supabase.from(DOCUMENT_TABLE).select('*').eq('package_id', id).order('created_at', { ascending: true }),
-      supabase.from(COLUMN_MAPPING_TABLE).select('*').in('document_id', []),
       supabase.from(LINE_TABLE).select('*').eq('package_id', id).order('sheet_name').order('row_number'),
       supabase.from(INTERNAL_MAPPING_TABLE).select('*').eq('package_id', id).order('created_at'),
+      supabase.from(MAPPING_LINK_TABLE).select('*').eq('package_id', id).order('created_at'),
       supabase.from(RISK_TABLE).select('*').eq('package_id', id).order('severity', { ascending: false }).order('created_at'),
       supabase.from(EXPORT_TABLE).select('*').eq('package_id', id).order('created_at', { ascending: false }),
     ]);
@@ -630,6 +718,7 @@ export const tenderPackageService = {
     if (columnRows.error) throw columnRows.error;
     if (lines.error) throw lines.error;
     if (mappings.error) throw mappings.error;
+    if (mappingLinks.error) throw mappingLinks.error;
     if (risks.error) throw risks.error;
     if (exports.error) throw exports.error;
 
@@ -645,6 +734,7 @@ export const tenderPackageService = {
       columnMappings: (columnRows.data || []).map(mapColumnMapping),
       lines: (lines.data || []).map(mapLine),
       mappings: (mappings.data || []).map(mapInternalMapping),
+      mappingLinks: (mappingLinks.data || []).map(mapInternalMappingLink),
       pricingLines: pricingRows.map(mapPricingLine),
       risks: (risks.data || []).map(mapRisk),
       exports: (exports.data || []).map(mapExport),
@@ -770,6 +860,20 @@ export const externalBoqMappingService = {
             lineName: line.name,
             lineUnit: line.unit,
           },
+          links: best
+            ? [{
+              templateId: best.template.id,
+              templateSectionId: best.item.sectionId || null,
+              templateItemId: best.item.id,
+              workCode: best.item.workCode || null,
+              normGroupCode: best.item.normGroupCode || null,
+              allocationType: 'inherit_quantity',
+              mappingSource: 'local',
+              confidenceScore: Math.max(0.1, Math.round(score * 100) / 100),
+              reason: `So khớp với ${best.template.name} / ${best.item.name}`,
+              metadata: { lineName: line.name, lineUnit: line.unit },
+            }]
+            : [],
         } as TenderMappingDraft;
       });
   },
@@ -817,32 +921,126 @@ export const externalBoqMappingService = {
     if (error) throw error;
     const rawMappings = (data as any)?.mappings || [];
     if (!Array.isArray(rawMappings)) return [];
-    return rawMappings.map((row: any) => ({
-      externalLineId: String(row.externalLineId || row.lineId || ''),
-      templateId: row.templateId || null,
-      templateSectionId: row.templateSectionId || null,
-      templateItemId: row.templateItemId || null,
-      workCode: row.workCode || null,
-      normGroupCode: row.normGroupCode || null,
-      mappingStatus: ['matched', 'needs_review', 'unmatched', 'ignored'].includes(row.mappingStatus) ? row.mappingStatus : 'needs_review',
-      mappingSource: 'ai',
-      confidenceScore: Math.max(0, Math.min(1, Number(row.confidenceScore ?? 0.5))),
-      reason: String(row.reason || 'AI đề xuất mapping từ BOQ CĐT sang template nội bộ.'),
-      metadata: { assumptions: Array.isArray(row.assumptions) ? row.assumptions : [] },
-    })).filter((row: TenderMappingDraft) => row.externalLineId);
+    return rawMappings.map((row: any): TenderMappingDraft => {
+      const mappingStatus = (['matched', 'needs_review', 'unmatched', 'ignored'].includes(row.mappingStatus) ? row.mappingStatus : 'needs_review') as TenderMappingDraft['mappingStatus'];
+      const confidenceScore = Math.max(0, Math.min(1, Number(row.confidenceScore ?? 0.5)));
+      const reason = String(row.reason || 'AI đề xuất mapping từ BOQ CĐT sang template nội bộ.');
+      const rawLinks = Array.isArray(row.mappingLinks) ? row.mappingLinks : Array.isArray(row.links) ? row.links : [];
+      const links = rawLinks.length
+        ? rawLinks.map((link: any): TenderMappingLinkDraft => ({
+          templateId: link.templateId || row.templateId || null,
+          templateSectionId: link.templateSectionId || row.templateSectionId || null,
+          templateItemId: link.templateItemId || row.templateItemId || null,
+          workCode: link.workCode || row.workCode || null,
+          normGroupCode: link.normGroupCode || row.normGroupCode || null,
+          allocationType: ['inherit_quantity', 'percent', 'fixed_quantity', 'formula'].includes(link.allocationType) ? link.allocationType : 'inherit_quantity',
+          allocationValue: link.allocationValue ?? null,
+          quantityFormula: link.quantityFormula || null,
+          note: link.note || null,
+          mappingSource: 'ai',
+          confidenceScore: Math.max(0, Math.min(1, Number(link.confidenceScore ?? confidenceScore))),
+          reason: String(link.reason || reason),
+          metadata: { assumptions: Array.isArray(link.assumptions) ? link.assumptions : [] },
+        }))
+        : row.templateItemId || row.workCode || row.normGroupCode
+          ? [{
+            templateId: row.templateId || null,
+            templateSectionId: row.templateSectionId || null,
+            templateItemId: row.templateItemId || null,
+            workCode: row.workCode || null,
+            normGroupCode: row.normGroupCode || null,
+            allocationType: 'inherit_quantity',
+            mappingSource: 'ai',
+            confidenceScore,
+            reason,
+            metadata: { assumptions: Array.isArray(row.assumptions) ? row.assumptions : [] },
+          }]
+          : [];
+      return {
+        externalLineId: String(row.externalLineId || row.lineId || ''),
+        templateId: row.templateId || links[0]?.templateId || null,
+        templateSectionId: row.templateSectionId || links[0]?.templateSectionId || null,
+        templateItemId: row.templateItemId || links[0]?.templateItemId || null,
+        workCode: row.workCode || links[0]?.workCode || null,
+        normGroupCode: row.normGroupCode || links[0]?.normGroupCode || null,
+        mappingStatus,
+        mappingSource: 'ai',
+        confidenceScore,
+        reason,
+        metadata: { assumptions: Array.isArray(row.assumptions) ? row.assumptions : [], linkCount: links.length },
+        links,
+      };
+    }).filter(row => row.externalLineId);
   },
 
   async saveMappings(packageId: string, mappings: TenderMappingDraft[], actorId?: string): Promise<void> {
     if (!mappings.length) return;
-    const rows = mappings.map(mapping => cleanUndefined(toDb({
-      packageId,
-      ...mapping,
-      reviewedBy: actorId || null,
-      reviewedAt: mapping.mappingStatus === 'matched' || mapping.mappingStatus === 'ignored' ? nowIso() : null,
-      updatedAt: nowIso(),
-    })));
-    const { error } = await supabase.from(INTERNAL_MAPPING_TABLE).upsert(rows, { onConflict: 'external_line_id' });
+    const rows = mappings.map(mapping => {
+      const primaryLink = getPrimaryLink(mapping);
+      const header = {
+        externalLineId: mapping.externalLineId,
+        templateId: mapping.templateId,
+        templateSectionId: mapping.templateSectionId,
+        templateItemId: mapping.templateItemId,
+        workCode: mapping.workCode,
+        normGroupCode: mapping.normGroupCode,
+        mappingStatus: mapping.mappingStatus,
+        mappingSource: mapping.mappingSource,
+        confidenceScore: mapping.confidenceScore,
+        reason: mapping.reason,
+        metadata: mapping.metadata,
+      };
+      return cleanUndefined(toDb({
+        packageId,
+        ...header,
+        templateId: primaryLink?.templateId || header.templateId || null,
+        templateSectionId: primaryLink?.templateSectionId || header.templateSectionId || null,
+        templateItemId: primaryLink?.templateItemId || header.templateItemId || null,
+        workCode: primaryLink?.workCode || header.workCode || null,
+        normGroupCode: primaryLink?.normGroupCode || header.normGroupCode || null,
+        metadata: {
+          ...(header.metadata || {}),
+          linkCount: normalizeDraftLinks(mapping).length,
+        },
+        reviewedBy: actorId || null,
+        reviewedAt: mapping.mappingStatus === 'matched' || mapping.mappingStatus === 'ignored' ? nowIso() : null,
+        updatedAt: nowIso(),
+      }));
+    });
+    const { data: savedRows, error } = await supabase
+      .from(INTERNAL_MAPPING_TABLE)
+      .upsert(rows, { onConflict: 'external_line_id' })
+      .select('*');
     if (error) throw error;
+    const savedMappings = (savedRows || []).map(mapInternalMapping);
+    const mappingByLine = new Map(savedMappings.map(mapping => [mapping.externalLineId, mapping]));
+    const mappingIds = savedMappings.map(mapping => mapping.id);
+    if (mappingIds.length) {
+      const { error: deleteLinksError } = await supabase.from(MAPPING_LINK_TABLE).delete().in('mapping_id', mappingIds);
+      if (deleteLinksError) throw deleteLinksError;
+    }
+    const linkRows = mappings.flatMap(mapping => {
+      const savedMapping = mappingByLine.get(mapping.externalLineId);
+      if (!savedMapping) return [];
+      return normalizeDraftLinks(mapping)
+        .filter(link => link.templateItemId || link.workCode || link.normGroupCode)
+        .map(link => cleanUndefined(toDb({
+          mappingId: savedMapping.id,
+          packageId,
+          externalLineId: mapping.externalLineId,
+          ...link,
+          mappingSource: link.mappingSource || mapping.mappingSource,
+          confidenceScore: link.confidenceScore ?? mapping.confidenceScore,
+          reason: link.reason || mapping.reason,
+          createdBy: actorId || null,
+        })));
+    });
+    if (linkRows.length) {
+      await chunked(linkRows, async chunk => {
+        const { error: insertLinksError } = await supabase.from(MAPPING_LINK_TABLE).insert(chunk);
+        if (insertLinksError) throw insertLinksError;
+      });
+    }
     const lineUpdates = mappings.map(mapping =>
       supabase
         .from(LINE_TABLE)
@@ -857,8 +1055,12 @@ export const externalBoqMappingService = {
         .eq('id', mapping.externalLineId),
     );
     await Promise.all(lineUpdates);
-    const mappedLineCount = mappings.filter(row => row.mappingStatus === 'matched').length;
-    await tenderPackageService.updateStatus(packageId, 'mapping_review', { mappedLineCount });
+    const { count: mappedLineCount } = await supabase
+      .from(INTERNAL_MAPPING_TABLE)
+      .select('id', { count: 'exact', head: true })
+      .eq('package_id', packageId)
+      .eq('mapping_status', 'matched');
+    await tenderPackageService.updateStatus(packageId, 'mapping_review', { mappedLineCount: mappedLineCount || 0 });
   },
 };
 
@@ -881,11 +1083,19 @@ const getActivePrice = (prices: InternalPriceBookItem[], keyword?: string | null
 const getItemPercent = (item: CostTemplateItem | undefined, key: keyof Pick<CostTemplateItem, 'overheadPercent' | 'profitPercent' | 'riskBufferPercent'>, fallback: number) =>
   Number(item?.[key] ?? fallback) || 0;
 
+const getAllocatedQuantity = (line: TenderExternalBoqLine, link: TenderInternalMappingLink) => {
+  const sourceQty = Number(line.quantity || 0);
+  if (link.allocationType === 'percent') return sourceQty * Math.max(0, Number(link.allocationValue || 0)) / 100;
+  if (link.allocationType === 'fixed_quantity') return Math.max(0, Number(link.allocationValue || 0));
+  return sourceQty;
+};
+
 export const tenderPricingService = {
   buildPricingPreview(input: {
     packageId: string;
     lines: TenderExternalBoqLine[];
     mappings: TenderInternalMapping[];
+    mappingLinks?: TenderInternalMappingLink[];
     templates: CostTemplateDetails[];
     prices: InternalPriceBookItem[];
     norms: InternalNorm[];
@@ -893,23 +1103,47 @@ export const tenderPricingService = {
     actorId?: string;
   }): TenderPricingLine[] {
     const lineById = new Map(input.lines.map(line => [line.id, line]));
+    const mappingById = new Map(input.mappings.map(mapping => [mapping.id, mapping]));
     const itemById = new Map(input.templates.flatMap(template => template.items.map(item => [item.id, item])));
     const activeNorms = input.norms.filter(norm => norm.status === 'active');
+    const links = (input.mappingLinks || []).length
+      ? input.mappingLinks || []
+      : input.mappings
+        .filter(mapping => mapping.mappingStatus === 'matched' && (mapping.templateItemId || mapping.workCode || mapping.normGroupCode))
+        .map(mapping => ({
+          id: `legacy-${mapping.id}`,
+          mappingId: mapping.id,
+          packageId: mapping.packageId,
+          externalLineId: mapping.externalLineId,
+          templateId: mapping.templateId,
+          templateSectionId: mapping.templateSectionId,
+          templateItemId: mapping.templateItemId,
+          workCode: mapping.workCode,
+          normGroupCode: mapping.normGroupCode,
+          allocationType: 'inherit_quantity' as TenderAllocationType,
+          allocationValue: null,
+          quantityFormula: null,
+          note: null,
+          mappingSource: mapping.mappingSource,
+          confidenceScore: mapping.confidenceScore,
+          reason: mapping.reason,
+          metadata: { legacyMapping: true },
+        }));
     const rows: TenderPricingLine[] = [];
-    input.mappings
-      .filter(mapping => mapping.mappingStatus === 'matched')
-      .forEach(mapping => {
-        const line = lineById.get(mapping.externalLineId);
-        const item = mapping.templateItemId ? itemById.get(mapping.templateItemId) : undefined;
+    links.forEach(link => {
+        const mapping = mappingById.get(link.mappingId);
+        if (mapping && mapping.mappingStatus !== 'matched') return;
+        const line = lineById.get(link.externalLineId);
+        const item = link.templateItemId ? itemById.get(link.templateItemId) : undefined;
         if (!line) return;
-        const baseQty = Number(line.quantity || 0);
+        const baseQty = getAllocatedQuantity(line, link);
         const overhead = getItemPercent(item, 'overheadPercent', 8);
         const profit = getItemPercent(item, 'profitPercent', 10);
         const risk = getItemPercent(item, 'riskBufferPercent', 3);
         const matchedNorms = activeNorms.filter(norm =>
-          (mapping.templateItemId && norm.templateItemId === mapping.templateItemId)
-          || (mapping.workCode && norm.workCode === mapping.workCode)
-          || (mapping.normGroupCode && norm.normCode === mapping.normGroupCode)
+          (link.templateItemId && norm.templateItemId === link.templateItemId)
+          || (link.workCode && norm.workCode === link.workCode)
+          || (link.normGroupCode && norm.normCode === link.normGroupCode)
         );
 
         if (matchedNorms.length > 0) {
@@ -923,7 +1157,8 @@ export const tenderPricingService = {
               id: uid('tender-price'),
               packageId: input.packageId,
               externalLineId: line.id,
-              mappingId: mapping.id,
+              mappingId: link.mappingId,
+              mappingLinkId: link.id.startsWith('legacy-') ? null : link.id,
               itemType: norm.resourceType as TenderPricingLine['itemType'],
               costCode: norm.resourceCode || norm.normCode,
               description: norm.resourceName || line.name || 'Dòng định mức',
@@ -942,14 +1177,14 @@ export const tenderPricingService = {
               pricingSource: price ? 'system' : 'missing',
               missingReason: price ? null : `Thiếu đơn giá active cho ${norm.resourceCode || norm.resourceName}`,
               isInternalOnly: true,
-              metadata: { sourceLineName: line.name, ownerQuantity: line.quantity },
+              metadata: { sourceLineName: line.name, ownerQuantity: line.quantity, allocationType: link.allocationType, allocationValue: link.allocationValue },
               createdBy: input.actorId || null,
             });
           });
           return;
         }
 
-        const priceKeyword = item?.materialSku || item?.workCode || item?.name || line.name;
+        const priceKeyword = item?.materialSku || item?.workCode || link.workCode || link.normGroupCode || item?.name || line.name;
         const price = getActivePrice(input.prices, priceKeyword, item?.unit || line.unit, input.region || 'all');
         const unitCost = Number(price?.unitPrice || 0);
         const costAmount = baseQty * unitCost;
@@ -958,7 +1193,8 @@ export const tenderPricingService = {
           id: uid('tender-price'),
           packageId: input.packageId,
           externalLineId: line.id,
-          mappingId: mapping.id,
+          mappingId: link.mappingId,
+          mappingLinkId: link.id.startsWith('legacy-') ? null : link.id,
           itemType: (item?.itemType as TenderPricingLine['itemType']) || 'work',
           costCode: item?.materialSku || item?.workCode || item?.code || line.itemCode || '',
           description: item?.name || line.name || 'Dòng BOQ CĐT',
@@ -977,7 +1213,7 @@ export const tenderPricingService = {
           pricingSource: price ? 'system' : 'missing',
           missingReason: price ? null : `Thiếu định mức hoặc đơn giá active cho ${priceKeyword || line.name}`,
           isInternalOnly: true,
-          metadata: { sourceLineName: line.name, ownerQuantity: line.quantity, fallbackPricing: true },
+          metadata: { sourceLineName: line.name, ownerQuantity: line.quantity, fallbackPricing: true, allocationType: link.allocationType, allocationValue: link.allocationValue },
           createdBy: input.actorId || null,
         });
       });
@@ -1170,6 +1406,10 @@ export const tenderExportService = {
     const XLSX = await loadXlsx();
     const lineById = new Map(details.lines.map(line => [line.id, line]));
     const mappingByLine = new Map(details.mappings.map(mapping => [mapping.externalLineId, mapping]));
+    const linksByLine = new Map<string, TenderInternalMappingLink[]>();
+    details.mappingLinks.forEach(link => {
+      linksByLine.set(link.externalLineId, [...(linksByLine.get(link.externalLineId) || []), link]);
+    });
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(toXlsxRows([
       ['Mã hồ sơ', details.code],
@@ -1180,9 +1420,10 @@ export const tenderExportService = {
       ['Tổng giá chào', details.totalQuoteAmount],
     ])), 'Tong hop');
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(toXlsxRows([
-      ['Row', 'Mã CĐT', 'Dòng CĐT', 'Đơn vị', 'KL', 'Mapping', 'Confidence', 'Lý do'],
+      ['Row', 'Mã CĐT', 'Dòng CĐT', 'Đơn vị', 'KL', 'Mapping', 'Số item nội bộ', 'Item nội bộ', 'Confidence', 'Lý do'],
       ...details.lines.map(line => {
         const mapping = mappingByLine.get(line.id);
+        const links = linksByLine.get(line.id) || [];
         return [
           line.rowNumber,
           line.itemCode || '',
@@ -1190,6 +1431,8 @@ export const tenderExportService = {
           line.unit || '',
           line.quantity || '',
           mapping?.mappingStatus || '',
+          links.length,
+          links.map(link => [link.workCode, link.normGroupCode, link.templateItemId].filter(Boolean).join(' / ')).filter(Boolean).join('\n'),
           mapping?.confidenceScore || '',
           mapping?.reason || '',
         ];

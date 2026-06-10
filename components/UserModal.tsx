@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, Calculator } from 'lucide-react';
+import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, Calculator, Bot } from 'lucide-react';
 import { Role, User, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
@@ -108,10 +108,13 @@ const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }
     { to: '/hd/partners', icon: Users, label: 'Đối tác' },
     { to: '/hd/contract-types', icon: Shield, label: 'Loại HĐ & Mẫu' },
     { to: '/hd/catalogs', icon: FileSpreadsheet, label: 'Danh mục HĐ' },
-    { to: '/hd/cost-library', icon: Calculator, label: 'Dự toán' },
     { to: '/hd/supplier', icon: FileSignature, label: 'HĐ Nhà cung cấp' },
     { to: '/hd/customer', icon: Users, label: 'HĐ Khách hàng' },
     { to: '/hd/subcontractor', icon: FileSignature, label: 'HĐ Thầu phụ' },
+  ],
+  TENDER_AI: [
+    { to: '/tender-ai/boq', icon: FileSpreadsheet, label: 'AI BOQ CĐT' },
+    { to: '/tender-ai/cost-library', icon: Calculator, label: 'Dự toán nội bộ' },
   ],
 };
 
@@ -135,6 +138,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     { key: 'EX', label: 'CP - Chi phí', icon: BarChart3, color: 'text-indigo-600 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-700' },
     { key: 'EP', label: 'EP - Hồ sơ NV', icon: IdCard, color: 'text-sky-600 bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-700' },
     { key: 'HD', label: 'HĐ - Hợp đồng', icon: FileSignature, color: 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700' },
+    { key: 'TENDER_AI', label: 'Tender AI', icon: Bot, color: 'text-fuchsia-600 bg-fuchsia-50 border-fuchsia-200 dark:bg-fuchsia-900/30 dark:border-fuchsia-700' },
   ];
 
   const [formData, setFormData] = useState<Partial<User>>({

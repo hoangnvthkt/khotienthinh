@@ -196,22 +196,22 @@ const TOOL_SOURCES: Record<string, { title: string; fileName: string }> = {
 const TOOL_ACCESS: Record<string, { requiresJwt?: boolean; adminModules?: string[]; message: string }> = {
   ai_tool_cost_template_summary: {
     requiresJwt: true,
-    adminModules: ['HD', 'DA'],
+    adminModules: ['HD', 'DA', 'TENDER_AI'],
     message: 'Cost template là dữ liệu nghiệp vụ nội bộ. Anh/chị cần đăng nhập bằng tài khoản Admin hoặc quản trị module Hợp đồng/Dự án để AI tra cứu.',
   },
   ai_tool_internal_price_book_lookup: {
     requiresJwt: true,
-    adminModules: ['HD'],
+    adminModules: ['HD', 'TENDER_AI'],
     message: 'Đơn giá nội bộ là dữ liệu nhạy cảm. AI chỉ được tra cứu khi tài khoản là Admin hoặc quản trị module Hợp đồng.',
   },
   ai_tool_internal_norms_lookup: {
     requiresJwt: true,
-    adminModules: ['HD', 'DA'],
+    adminModules: ['HD', 'DA', 'TENDER_AI'],
     message: 'Định mức nội bộ là dữ liệu nhạy cảm. AI chỉ được tra cứu khi tài khoản là Admin hoặc quản trị module Hợp đồng/Dự án.',
   },
   ai_tool_estimate_scenario_summary: {
     requiresJwt: true,
-    adminModules: ['HD', 'DA'],
+    adminModules: ['HD', 'DA', 'TENDER_AI'],
     message: 'Phương án dự toán/chào thầu cần quyền nội bộ. Anh/chị cần đăng nhập bằng tài khoản Admin hoặc quản trị module Hợp đồng/Dự án.',
   },
 };
@@ -233,7 +233,7 @@ function canUseEstimateAssistant(actor: AppUserContext | null) {
   if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
   const allowedModules = normalizeStringArray(actor.allowedModules).map(m => m.toUpperCase());
   const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
-  return ['HD', 'DA'].some(moduleCode => allowedModules.includes(moduleCode) || adminModules.includes(moduleCode));
+  return ['HD', 'DA', 'TENDER_AI'].some(moduleCode => allowedModules.includes(moduleCode) || adminModules.includes(moduleCode));
 }
 
 function canUseTenderAssistant(actor: AppUserContext | null) {
@@ -241,7 +241,7 @@ function canUseTenderAssistant(actor: AppUserContext | null) {
   if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
   const allowedModules = normalizeStringArray(actor.allowedModules).map(m => m.toUpperCase());
   const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
-  return allowedModules.includes('HD') || adminModules.includes('HD');
+  return allowedModules.includes('TENDER_AI') || adminModules.includes('TENDER_AI') || allowedModules.includes('HD') || adminModules.includes('HD');
 }
 
 function getBearerToken(request: Request) {
@@ -795,6 +795,8 @@ Mục tiêu: đề xuất mapping từng dòng BOQ Chủ đầu tư sang cost_te
 
 Quy tắc bắt buộc:
 - Chỉ chọn templateId/templateSectionId/templateItemId có trong Templates JSON.
+- Một dòng BOQ CĐT có thể map sang nhiều item nội bộ. Khi cần tách nhiều đầu mục, trả trong mappingLinks.
+- Nếu một dòng chỉ map một item, vẫn trả mappingLinks có 1 phần tử.
 - Không tự tạo đơn giá, định mức, giá vốn hoặc margin.
 - Dòng chưa chắc phải để "needs_review"; dòng không khớp để "unmatched"; dòng tổng/ghi chú để "ignored".
 - Trả về DUY NHẤT JSON object.
@@ -809,6 +811,21 @@ Schema:
       "templateItemId": "id item hoặc null",
       "workCode": "work_code hoặc null",
       "normGroupCode": "norm_group_code hoặc null",
+      "mappingLinks": [
+        {
+          "templateId": "id template",
+          "templateSectionId": "id section hoặc null",
+          "templateItemId": "id item",
+          "workCode": "work_code hoặc null",
+          "normGroupCode": "norm_group_code hoặc null",
+          "allocationType": "inherit_quantity|percent|fixed_quantity|formula",
+          "allocationValue": null,
+          "quantityFormula": null,
+          "note": "ghi chú phân bổ nếu có",
+          "confidenceScore": 0.0,
+          "reason": "giải thích link"
+        }
+      ],
       "mappingStatus": "matched|needs_review|unmatched|ignored",
       "confidenceScore": 0.0,
       "reason": "giải thích ngắn",
@@ -832,17 +849,56 @@ ${compactJson(templates, 24000)}
   const sectionIds = new Set(templates.flatMap((template: any) => (template.sections || []).map((section: any) => String(section.id))));
   const mappings = Array.isArray(parsed.mappings) ? parsed.mappings.map((row: any) => {
     const status = ['matched', 'needs_review', 'unmatched', 'ignored'].includes(row.mappingStatus) ? row.mappingStatus : 'needs_review';
-    const templateId = row.templateId && templateIds.has(String(row.templateId)) ? String(row.templateId) : null;
-    const templateItemId = row.templateItemId && itemIds.has(String(row.templateItemId)) ? String(row.templateItemId) : null;
-    const templateSectionId = row.templateSectionId && sectionIds.has(String(row.templateSectionId)) ? String(row.templateSectionId) : null;
+    const rawLinks = Array.isArray(row.mappingLinks) ? row.mappingLinks : Array.isArray(row.links) ? row.links : [];
+    const normalizedLinks = rawLinks.map((link: any) => {
+      const linkTemplateId = link.templateId && templateIds.has(String(link.templateId)) ? String(link.templateId) : null;
+      const linkTemplateItemId = link.templateItemId && itemIds.has(String(link.templateItemId)) ? String(link.templateItemId) : null;
+      const linkTemplateSectionId = link.templateSectionId && sectionIds.has(String(link.templateSectionId)) ? String(link.templateSectionId) : null;
+      if (!linkTemplateItemId && !link.workCode && !link.normGroupCode) return null;
+      return {
+        templateId: linkTemplateId,
+        templateSectionId: linkTemplateSectionId,
+        templateItemId: linkTemplateItemId,
+        workCode: link.workCode ? String(link.workCode) : null,
+        normGroupCode: link.normGroupCode ? String(link.normGroupCode) : null,
+        allocationType: ['inherit_quantity', 'percent', 'fixed_quantity', 'formula'].includes(link.allocationType) ? link.allocationType : 'inherit_quantity',
+        allocationValue: link.allocationValue === null || link.allocationValue === undefined ? null : Number(link.allocationValue),
+        quantityFormula: link.quantityFormula ? String(link.quantityFormula) : null,
+        note: link.note ? String(link.note) : null,
+        confidenceScore: Math.max(0, Math.min(1, Number(link.confidenceScore ?? row.confidenceScore ?? 0.5))),
+        reason: String(link.reason || row.reason || 'AI đề xuất mapping link.'),
+      };
+    }).filter(Boolean);
+    const fallbackTemplateId = row.templateId && templateIds.has(String(row.templateId)) ? String(row.templateId) : null;
+    const fallbackTemplateItemId = row.templateItemId && itemIds.has(String(row.templateItemId)) ? String(row.templateItemId) : null;
+    const fallbackTemplateSectionId = row.templateSectionId && sectionIds.has(String(row.templateSectionId)) ? String(row.templateSectionId) : null;
+    const mappingLinks = normalizedLinks.length
+      ? normalizedLinks
+      : fallbackTemplateItemId || row.workCode || row.normGroupCode
+        ? [{
+          templateId: fallbackTemplateId,
+          templateSectionId: fallbackTemplateSectionId,
+          templateItemId: fallbackTemplateItemId,
+          workCode: row.workCode ? String(row.workCode) : null,
+          normGroupCode: row.normGroupCode ? String(row.normGroupCode) : null,
+          allocationType: 'inherit_quantity',
+          allocationValue: null,
+          quantityFormula: null,
+          note: null,
+          confidenceScore: Math.max(0, Math.min(1, Number(row.confidenceScore ?? 0.5))),
+          reason: String(row.reason || 'AI đề xuất mapping.'),
+        }]
+        : [];
+    const firstLink = mappingLinks[0] || {};
     return {
       externalLineId: String(row.externalLineId || row.lineId || ''),
-      templateId,
-      templateSectionId,
-      templateItemId,
-      workCode: row.workCode ? String(row.workCode) : null,
-      normGroupCode: row.normGroupCode ? String(row.normGroupCode) : null,
-      mappingStatus: templateItemId || status === 'ignored' ? status : (status === 'matched' ? 'needs_review' : status),
+      templateId: firstLink.templateId || fallbackTemplateId,
+      templateSectionId: firstLink.templateSectionId || fallbackTemplateSectionId,
+      templateItemId: firstLink.templateItemId || fallbackTemplateItemId,
+      workCode: firstLink.workCode || (row.workCode ? String(row.workCode) : null),
+      normGroupCode: firstLink.normGroupCode || (row.normGroupCode ? String(row.normGroupCode) : null),
+      mappingLinks,
+      mappingStatus: mappingLinks.length || status === 'ignored' ? status : (status === 'matched' ? 'needs_review' : status),
       confidenceScore: Math.max(0, Math.min(1, Number(row.confidenceScore ?? 0.5))),
       reason: String(row.reason || 'AI đề xuất mapping.'),
       assumptions: Array.isArray(row.assumptions) ? row.assumptions.map(String).slice(0, 5) : [],

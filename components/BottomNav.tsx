@@ -47,6 +47,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { key: 'STORAGE', to: '/storage', iconName: 'HardDrive', label: 'Kho dữ liệu', shortLabel: 'DL', matchPrefix: '/storage', color: 'text-violet-500' },
   { key: 'KB', to: '/knowledge-base', iconName: 'BookOpen', label: 'Kho Kiến Thức', shortLabel: 'KT', matchPrefix: '/knowledge-base', color: 'text-amber-500' },
   { key: 'AI', to: '/ai', iconName: 'Bot', label: 'Trợ lý AI', shortLabel: 'AI', matchPrefix: '/ai', color: 'text-fuchsia-500' },
+  { key: 'TENDER_AI', to: '/tender-ai/boq', iconName: 'Bot', label: 'Tender AI', shortLabel: 'TAI', matchPrefix: '/tender-ai', color: 'text-fuchsia-500' },
 ];
 
 const DEFAULT_KEYS = ['HOME', 'WMS', 'HRM', 'DA', 'CHAT'];
