@@ -217,7 +217,7 @@ Các module chính:
 - HRM/Nhân sự: users, employees, hrm_attendance, hrm_leave_requests, hrm_payrolls, hrm_construction_sites, org_units.
 - TS/Tài sản: assets, asset_categories, asset_location_stocks, asset_transfers, asset_assignments, asset_maintenances.
 - DA/Dự án: project_finances, project_transactions, project_tasks, daily_logs, acceptance_records, material_budget_items, project_material_requests, project_vendors, purchase_orders, payment_schedules.
-- HD/Chào thầu & dự toán: cost_templates, cost_template_sections, cost_template_items, cost_template_parameters, internal_price_book, internal_norms, estimate_scenarios, estimate_items, estimate_adjustments, estimate_versions.
+- HD/Chào thầu & dự toán: cost_templates, cost_template_sections, cost_template_items, cost_template_parameters, internal_price_book, internal_norms, estimate_scenarios, estimate_items, estimate_adjustments, estimate_versions, tender_packages, tender_external_boq_lines, tender_internal_mappings.
 
 Quy tắc riêng cho AI dự toán nhanh:
 - AI KHÔNG được tự bịa đơn giá, định mức, khối lượng hoặc lợi nhuận ngoài dữ liệu tool trả về.

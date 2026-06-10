@@ -15,7 +15,7 @@ interface ChatMessage {
 }
 
 interface AssistantRequest {
-  action?: 'feedback' | 'estimate_suggestion';
+  action?: 'feedback' | 'estimate_suggestion' | 'tender_detect_columns' | 'tender_suggest_mapping' | 'tender_risk_rfi';
   question?: string;
   prompt?: string;
   conversationId?: string | null;
@@ -29,6 +29,11 @@ interface AssistantRequest {
   currentInput?: Record<string, unknown>;
   selectedTemplateId?: string;
   canSeeInternalCost?: boolean;
+  workbook?: any;
+  packageId?: string;
+  lines?: any[];
+  mappings?: any[];
+  pricingGaps?: any[];
 }
 
 interface AppUserContext {
@@ -85,7 +90,7 @@ Các chủ đề ĐƯỢC PHÉP HỖ TRỢ (được coi là liên quan):
 - Hỏi về tài sản công ty, danh mục thiết bị, lịch bảo trì thiết bị.
 - Hỏi về tài chính của dự án, doanh thu, ngân sách dự toán, chi phí thực tế, lãi lỗ.
 - Hỏi về nhật ký thi công (daily logs), nghiệm thu chất lượng (quality checklists), biên bản nghiệm thu.
-- Hỏi về chào thầu, dự toán nhanh, đơn giá nội bộ, định mức nội bộ, template dự toán, estimate scenario, chuyển estimate thành BOQ.
+- Hỏi về chào thầu, BOQ Chủ đầu tư, AI Tender BOQ Analyzer, dự toán nhanh, đơn giá nội bộ, định mức nội bộ, template dự toán, estimate scenario, chuyển estimate thành BOQ.
 - Hỏi về các quy trình, tài liệu quy định nội bộ hoặc chính sách công ty có trong Kho Kiến Thức.
 - Hướng dẫn hoặc giải đáp thắc mắc về cách sử dụng phần mềm Vioo/Kho Tiến Thịnh.
 
@@ -229,6 +234,14 @@ function canUseEstimateAssistant(actor: AppUserContext | null) {
   const allowedModules = normalizeStringArray(actor.allowedModules).map(m => m.toUpperCase());
   const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
   return ['HD', 'DA'].some(moduleCode => allowedModules.includes(moduleCode) || adminModules.includes(moduleCode));
+}
+
+function canUseTenderAssistant(actor: AppUserContext | null) {
+  if (!actor || actor.isActive === false) return false;
+  if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
+  const allowedModules = normalizeStringArray(actor.allowedModules).map(m => m.toUpperCase());
+  const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
+  return allowedModules.includes('HD') || adminModules.includes('HD');
 }
 
 function getBearerToken(request: Request) {
@@ -688,6 +701,230 @@ ${compactJson(templates, 18000)}
   return jsonResponse({ suggestion });
 }
 
+function normalizeMappingObject(raw: any) {
+  const mapping = raw?.mapping && typeof raw.mapping === 'object' ? raw.mapping : {};
+  const allowedKeys = ['lineNo', 'itemCode', 'name', 'description', 'unit', 'quantity', 'ownerUnitPrice', 'ownerAmount', 'note'];
+  return Object.fromEntries(
+    allowedKeys
+      .filter(key => mapping[key] !== null && mapping[key] !== undefined && mapping[key] !== '')
+      .map(key => [key, Math.max(0, Number(mapping[key]))]),
+  );
+}
+
+async function writeTenderAiLog(req: AssistantRequest, actor: AppUserContext | null, action: string, response: any) {
+  try {
+    await admin.from('tender_ai_logs').insert({
+      package_id: req.packageId || null,
+      action,
+      request_summary: {
+        actorId: actor?.id || null,
+        lineCount: Array.isArray(req.lines) ? req.lines.length : null,
+        templateCount: Array.isArray(req.templates) ? req.templates.length : null,
+        hasWorkbook: Boolean(req.workbook),
+      },
+      response,
+      confidence_score: Number(response?.confidenceScore ?? response?.suggestion?.confidenceScore ?? 0.5),
+      created_by: actor?.id || null,
+    });
+  } catch (error) {
+    console.warn('tender_ai_logs insert failed:', (error as Error)?.message || error);
+  }
+}
+
+async function handleTenderDetectColumns(req: AssistantRequest, actor: AppUserContext | null) {
+  if (!canUseTenderAssistant(actor)) {
+    return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền HD để dùng Tender AI.' }, 403);
+  }
+  const workbook = req.workbook || {};
+  const prompt = `
+Bạn là Tender BOQ Analyzer cho công ty thi công nhà xưởng kết cấu thép.
+Nhiệm vụ: đọc mẫu Excel BOQ của Chủ đầu tư và gợi ý sheet/cột BOQ chính.
+
+Quy tắc:
+- Chỉ dùng sampleRows được cung cấp, không bịa thêm cột.
+- headerRow là index 0-based trong sampleRows.
+- mapping value là column index 0-based.
+- Nếu không chắc, giữ localSuggestion và ghi notes.
+- Trả về DUY NHẤT JSON object.
+
+Schema:
+{
+  "sheetName": "tên sheet",
+  "headerRow": 0,
+  "mapping": {
+    "lineNo": 0,
+    "itemCode": 1,
+    "name": 2,
+    "description": 3,
+    "unit": 4,
+    "quantity": 5,
+    "ownerUnitPrice": 6,
+    "ownerAmount": 7,
+    "note": 8
+  },
+  "confidenceScore": 0.0,
+  "notes": ["lý do"]
+}
+
+Workbook summary:
+${compactJson(workbook, 22000)}
+`.trim();
+
+  const raw = await callGemini(prompt, 0.02, req.model || GEMINI_FAST_MODEL, 'application/json');
+  const parsed = extractJsonObject(raw);
+  const suggestion = {
+    sheetName: String(parsed.sheetName || workbook?.localSuggestion?.sheetName || workbook?.sheets?.[0]?.name || ''),
+    headerRow: Math.max(0, Number(parsed.headerRow ?? workbook?.localSuggestion?.headerRow ?? 0)),
+    mapping: normalizeMappingObject(parsed),
+    confidenceScore: Math.max(0, Math.min(1, Number(parsed.confidenceScore ?? 0.5))),
+    notes: Array.isArray(parsed.notes) ? parsed.notes.map(String).slice(0, 8) : ['AI đã nhận diện cột BOQ.'],
+  };
+  await writeTenderAiLog(req, actor, 'tender_detect_columns', { suggestion });
+  return jsonResponse({ suggestion });
+}
+
+async function handleTenderSuggestMapping(req: AssistantRequest, actor: AppUserContext | null) {
+  if (!canUseTenderAssistant(actor)) {
+    return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền HD để dùng Tender AI.' }, 403);
+  }
+  const lines = Array.isArray(req.lines) ? req.lines.slice(0, 300) : [];
+  const templates = Array.isArray(req.templates) ? req.templates.slice(0, 15) : [];
+  const prompt = `
+Bạn là AI mapping BOQ CĐT sang template nội bộ của công ty thi công nhà xưởng.
+Mục tiêu: đề xuất mapping từng dòng BOQ Chủ đầu tư sang cost_template_item phù hợp.
+
+Quy tắc bắt buộc:
+- Chỉ chọn templateId/templateSectionId/templateItemId có trong Templates JSON.
+- Không tự tạo đơn giá, định mức, giá vốn hoặc margin.
+- Dòng chưa chắc phải để "needs_review"; dòng không khớp để "unmatched"; dòng tổng/ghi chú để "ignored".
+- Trả về DUY NHẤT JSON object.
+
+Schema:
+{
+  "mappings": [
+    {
+      "externalLineId": "id dòng BOQ",
+      "templateId": "id template hoặc null",
+      "templateSectionId": "id section hoặc null",
+      "templateItemId": "id item hoặc null",
+      "workCode": "work_code hoặc null",
+      "normGroupCode": "norm_group_code hoặc null",
+      "mappingStatus": "matched|needs_review|unmatched|ignored",
+      "confidenceScore": 0.0,
+      "reason": "giải thích ngắn",
+      "assumptions": ["giả định nếu có"]
+    }
+  ]
+}
+
+BOQ lines:
+${compactJson(lines, 16000)}
+
+Templates:
+${compactJson(templates, 24000)}
+`.trim();
+
+  const raw = await callGemini(prompt, 0.03, req.model || GEMINI_FAST_MODEL, 'application/json');
+  const parsed = extractJsonObject(raw);
+  const lineIds = new Set(lines.map((line: any) => String(line.id)));
+  const templateIds = new Set(templates.map((template: any) => String(template.id)));
+  const itemIds = new Set(templates.flatMap((template: any) => (template.items || []).map((item: any) => String(item.id))));
+  const sectionIds = new Set(templates.flatMap((template: any) => (template.sections || []).map((section: any) => String(section.id))));
+  const mappings = Array.isArray(parsed.mappings) ? parsed.mappings.map((row: any) => {
+    const status = ['matched', 'needs_review', 'unmatched', 'ignored'].includes(row.mappingStatus) ? row.mappingStatus : 'needs_review';
+    const templateId = row.templateId && templateIds.has(String(row.templateId)) ? String(row.templateId) : null;
+    const templateItemId = row.templateItemId && itemIds.has(String(row.templateItemId)) ? String(row.templateItemId) : null;
+    const templateSectionId = row.templateSectionId && sectionIds.has(String(row.templateSectionId)) ? String(row.templateSectionId) : null;
+    return {
+      externalLineId: String(row.externalLineId || row.lineId || ''),
+      templateId,
+      templateSectionId,
+      templateItemId,
+      workCode: row.workCode ? String(row.workCode) : null,
+      normGroupCode: row.normGroupCode ? String(row.normGroupCode) : null,
+      mappingStatus: templateItemId || status === 'ignored' ? status : (status === 'matched' ? 'needs_review' : status),
+      confidenceScore: Math.max(0, Math.min(1, Number(row.confidenceScore ?? 0.5))),
+      reason: String(row.reason || 'AI đề xuất mapping.'),
+      assumptions: Array.isArray(row.assumptions) ? row.assumptions.map(String).slice(0, 5) : [],
+    };
+  }).filter((row: any) => row.externalLineId && lineIds.has(row.externalLineId)) : [];
+
+  await writeTenderAiLog(req, actor, 'tender_suggest_mapping', {
+    mappings,
+    confidenceScore: mappings.length
+      ? mappings.reduce((sum: number, row: any) => sum + Number(row.confidenceScore || 0), 0) / mappings.length
+      : 0,
+  });
+  return jsonResponse({ mappings });
+}
+
+async function handleTenderRiskRfi(req: AssistantRequest, actor: AppUserContext | null) {
+  if (!canUseTenderAssistant(actor)) {
+    return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền HD để dùng Tender AI.' }, 403);
+  }
+  const prompt = `
+Bạn là AI Risk/RFI Assistant cho hồ sơ chào thầu nhà xưởng.
+Nhiệm vụ: rà BOQ CĐT, mapping và pricing gaps để đề xuất rủi ro/RFI trước khi gửi giá.
+
+Quy tắc:
+- Không bịa giá hoặc định mức.
+- Ưu tiên rủi ro scope/spec/đơn vị/khối lượng/mapping/thiếu giá.
+- suggestedRfi chỉ là câu hỏi đề xuất, user quyết định có gửi CĐT không.
+- Trả về DUY NHẤT JSON object.
+
+Schema:
+{
+  "risks": [
+    {
+      "externalLineId": "id dòng hoặc null",
+      "riskType": "scope|spec|unit|quantity|mapping|missing_price|commercial|other",
+      "severity": "low|medium|high|critical",
+      "title": "tiêu đề",
+      "description": "mô tả",
+      "suggestedRfi": "câu hỏi gửi CĐT hoặc null",
+      "confidenceScore": 0.0,
+      "assumptions": ["nếu có"]
+    }
+  ]
+}
+
+BOQ lines:
+${compactJson(req.lines || [], 14000)}
+
+Mappings:
+${compactJson(req.mappings || [], 10000)}
+
+Pricing gaps:
+${compactJson(req.pricingGaps || [], 10000)}
+`.trim();
+
+  const raw = await callGemini(prompt, 0.08, req.model || GEMINI_FAST_MODEL, 'application/json');
+  const parsed = extractJsonObject(raw);
+  const lineIds = new Set((Array.isArray(req.lines) ? req.lines : []).map((line: any) => String(line.id)));
+  const risks = Array.isArray(parsed.risks) ? parsed.risks.map((row: any) => {
+    const severity = ['low', 'medium', 'high', 'critical'].includes(row.severity) ? row.severity : 'medium';
+    const externalLineId = row.externalLineId && lineIds.has(String(row.externalLineId)) ? String(row.externalLineId) : null;
+    return {
+      externalLineId,
+      riskType: String(row.riskType || 'scope'),
+      severity,
+      title: String(row.title || 'Rủi ro hồ sơ thầu'),
+      description: row.description ? String(row.description) : null,
+      suggestedRfi: row.suggestedRfi ? String(row.suggestedRfi) : null,
+      confidenceScore: Math.max(0, Math.min(1, Number(row.confidenceScore ?? 0.5))),
+      assumptions: Array.isArray(row.assumptions) ? row.assumptions.map(String).slice(0, 5) : [],
+    };
+  }).filter((row: any) => row.title) : [];
+
+  await writeTenderAiLog(req, actor, 'tender_risk_rfi', {
+    risks,
+    confidenceScore: risks.length
+      ? risks.reduce((sum: number, row: any) => sum + Number(row.confidenceScore || 0), 0) / risks.length
+      : 0,
+  });
+  return jsonResponse({ risks });
+}
+
 // ═══ Main Handler ═══════════════════════════════════════════
 
 Deno.serve(async (request: Request) => {
@@ -704,6 +941,18 @@ Deno.serve(async (request: Request) => {
     if (req.action === 'estimate_suggestion') {
       const actor = await resolveActor(request, req.userId);
       return handleEstimateSuggestion(req, actor);
+    }
+    if (req.action === 'tender_detect_columns') {
+      const actor = await resolveActor(request, req.userId);
+      return handleTenderDetectColumns(req, actor);
+    }
+    if (req.action === 'tender_suggest_mapping') {
+      const actor = await resolveActor(request, req.userId);
+      return handleTenderSuggestMapping(req, actor);
+    }
+    if (req.action === 'tender_risk_rfi') {
+      const actor = await resolveActor(request, req.userId);
+      return handleTenderRiskRfi(req, actor);
     }
 
     const question = (req.question || '').trim();
