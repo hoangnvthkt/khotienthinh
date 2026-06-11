@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Clock,
   Package,
@@ -78,6 +79,8 @@ const priceSourceLabel: Record<MaterialForecastRow['planningUnitPriceSource'], s
   fallback: 'Chưa có giá',
 };
 
+const PAGE_SIZE = 10;
+
 const ruleSourceLabel: Record<MaterialForecastRow['ruleSource'], string> = {
   item: 'Theo vật tư',
   category: 'Theo nhóm',
@@ -122,6 +125,7 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [savingRuleKey, setSavingRuleKey] = useState<string | null>(null);
   const [creatingPoKey, setCreatingPoKey] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const forecast = useMemo(
     () => projectMaterialPlanningService.buildForecast({
@@ -151,6 +155,21 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
     () => forecast.rows.filter(row => row.forecastQty30d > 0).length,
     [forecast.rows],
   );
+  const pageCount = Math.max(1, Math.ceil(forecast.rows.length / PAGE_SIZE));
+  const pageRows = useMemo(
+    () => forecast.rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [forecast.rows, page],
+  );
+  const pageStart = forecast.rows.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const pageEnd = Math.min(forecast.rows.length, (page - 1) * PAGE_SIZE + pageRows.length);
+
+  useEffect(() => {
+    setPage(1);
+  }, [forecast.rows]);
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
 
   const toggleRow = (rowKey: string) => {
     setExpandedRows(prev => {
@@ -366,7 +385,7 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
-              {forecast.rows.map(row => {
+              {pageRows.map(row => {
                 const expanded = expandedRows.has(row.key);
                 const shortage = row.shortageQty['30d'] > 0;
                 const canCreatePo = canManage && shortage && !!row.inventoryItemId && !!siteWarehouseId;
@@ -557,6 +576,20 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
             </tbody>
           </table>
         </div>
+        {forecast.rows.length > 0 && (
+          <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs font-bold text-slate-500">Đang xem {pageStart}-{pageEnd} trên {forecast.rows.length} vật tư</div>
+            <div className="flex items-center justify-end gap-2">
+              <button type="button" onClick={() => setPage(prev => Math.max(1, prev - 1))} disabled={page <= 1} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+                <ChevronLeft size={14} /> Trước
+              </button>
+              <span className="min-w-[82px] text-center text-xs font-black text-slate-500">{page}/{pageCount}</span>
+              <button type="button" onClick={() => setPage(prev => Math.min(pageCount, prev + 1))} disabled={page >= pageCount} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
+                Sau <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

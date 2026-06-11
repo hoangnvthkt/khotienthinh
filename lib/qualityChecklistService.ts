@@ -362,6 +362,7 @@ export const qualityChecklistService = {
       templateCode: tpl.code,
       templateName: tpl.name,
       templateVersion: tpl.version,
+      standardReference: tpl.standardReference,
       code,
       title: params.title || `${tpl.name} — ${code}`,
       workDescription: params.workDescription,

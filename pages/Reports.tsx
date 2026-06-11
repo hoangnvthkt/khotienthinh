@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
@@ -7,6 +7,8 @@ import {
   ArrowUpRight,
   Building,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
   Download,
   ExternalLink,
   Eye,
@@ -78,6 +80,7 @@ const transactionTypeOptions: Array<{ value: InventoryLedgerTransactionType | 'a
 
 const fmt = (value: number) => Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
 const money = (value: number) => `${Math.round(Number(value || 0)).toLocaleString('vi-VN')} ₫`;
+const REPORT_PAGE_SIZE = 10;
 
 const startOfDay = (value: string) => {
   const date = new Date(value);
@@ -103,6 +106,60 @@ const sourceLabel = (sourceType: string) => {
   if (sourceType === 'material_request') return 'Yêu cầu vật tư';
   return sourceType || 'Chứng từ';
 };
+
+function useClientPagination<T>(rows: T[], resetKey: string, pageSize = REPORT_PAGE_SIZE) {
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pageRows = useMemo(
+    () => rows.slice((page - 1) * pageSize, page * pageSize),
+    [page, pageSize, rows],
+  );
+  const pageStart = rows.length === 0 ? 0 : (page - 1) * pageSize + 1;
+  const pageEnd = Math.min(rows.length, (page - 1) * pageSize + pageRows.length);
+
+  useEffect(() => {
+    setPage(1);
+  }, [resetKey]);
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
+
+  return { page, setPage, pageCount, pageRows, pageStart, pageEnd, total: rows.length };
+}
+
+const PaginationFooter: React.FC<{
+  page: number;
+  pageCount: number;
+  pageStart: number;
+  pageEnd: number;
+  total: number;
+  noun: string;
+  onPageChange: React.Dispatch<React.SetStateAction<number>>;
+}> = ({ page, pageCount, pageStart, pageEnd, total, noun, onPageChange }) => (
+  <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="text-xs font-bold text-slate-500">Đang xem {pageStart}-{pageEnd} trên {total} {noun}</div>
+    <div className="flex items-center justify-end gap-2">
+      <button
+        type="button"
+        onClick={() => onPageChange(prev => Math.max(1, prev - 1))}
+        disabled={page <= 1}
+        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <ChevronLeft size={14} /> Trước
+      </button>
+      <span className="min-w-[82px] text-center text-xs font-black text-slate-500">{page}/{pageCount}</span>
+      <button
+        type="button"
+        onClick={() => onPageChange(prev => Math.min(pageCount, prev + 1))}
+        disabled={page >= pageCount}
+        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Sau <ChevronRight size={14} />
+      </button>
+    </div>
+  </div>
+);
 
 const Reports: React.FC = () => {
   const navigate = useNavigate();
@@ -366,6 +423,18 @@ const Reports: React.FC = () => {
   }, [filteredLedgerEntries, itemById, ledgerAvailable, ledgerReport, warehouseById]);
 
   const selectedMaterial = selectedMaterialId !== 'ALL' ? itemById.get(selectedMaterialId) : null;
+  const paginationResetKey = [
+    activeView,
+    startDate,
+    endDate,
+    selectedWh,
+    selectedMaterialId,
+    selectedType,
+    searchTerm,
+    ledgerAvailable ? 'ledger' : 'fallback',
+  ].join('|');
+  const summaryPage = useClientPagination(reportData, paginationResetKey);
+  const warehousePage = useClientPagination(warehouseCardRows, paginationResetKey);
 
   const handleExportExcel = async () => {
     const XLSX = await loadXlsx();
@@ -578,7 +647,7 @@ const Reports: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
-                {reportData.map(row => (
+                {summaryPage.pageRows.map(row => (
                   <tr key={row.id} className="hover:bg-slate-50 group">
                     <td className="p-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100">
                       <button
@@ -612,6 +681,17 @@ const Reports: React.FC = () => {
                 <Package size={48} className="mx-auto" />
                 <p className="mt-4 text-sm font-bold">Không có dữ liệu cho bộ lọc hiện tại.</p>
               </div>
+            )}
+            {reportData.length > 0 && (
+              <PaginationFooter
+                page={summaryPage.page}
+                pageCount={summaryPage.pageCount}
+                pageStart={summaryPage.pageStart}
+                pageEnd={summaryPage.pageEnd}
+                total={summaryPage.total}
+                noun="vật tư"
+                onPageChange={summaryPage.setPage}
+              />
             )}
           </div>
         )}
@@ -654,7 +734,7 @@ const Reports: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
-                {warehouseCardRows.map(row => (
+                {warehousePage.pageRows.map(row => (
                   <tr key={row.key} className="hover:bg-slate-50">
                     <td className="p-3 font-black text-slate-800">{row.warehouseName}</td>
                     <td className="p-3">
@@ -674,6 +754,17 @@ const Reports: React.FC = () => {
                 <Warehouse size={46} className="mx-auto" />
                 <p className="mt-3 text-sm font-bold">Chưa có phát sinh kho theo bộ lọc.</p>
               </div>
+            )}
+            {warehouseCardRows.length > 0 && (
+              <PaginationFooter
+                page={warehousePage.page}
+                pageCount={warehousePage.pageCount}
+                pageStart={warehousePage.pageStart}
+                pageEnd={warehousePage.pageEnd}
+                total={warehousePage.total}
+                noun="dòng kho"
+                onPageChange={warehousePage.setPage}
+              />
             )}
           </div>
         )}
@@ -753,64 +844,80 @@ const LedgerEntryTable: React.FC<{
   userById: Map<string, any>;
   renderDocumentButton: (entry: InventoryLedgerEntry) => React.ReactNode;
   emptyText: string;
-}> = ({ entries, itemById, warehouseById, userById, renderDocumentButton, emptyText }) => (
-  <div className="overflow-x-auto rounded-2xl border border-slate-100">
-    <table className="w-full min-w-[1200px] text-left">
-      <thead className="bg-slate-50 text-[10px] uppercase font-black text-slate-400">
-        <tr>
-          <th className="p-3">Ngày</th>
-          <th className="p-3">Mã phiếu</th>
-          <th className="p-3">Loại giao dịch</th>
-          <th className="p-3">Kho / Vật tư</th>
-          <th className="p-3">Diễn giải</th>
-          <th className="p-3 text-right">Nhập</th>
-          <th className="p-3 text-right">Xuất</th>
-          <th className="p-3 text-right">Tồn sau GD</th>
-          <th className="p-3 text-right">Đơn giá</th>
-          <th className="p-3 text-right">Thành tiền</th>
-          <th className="p-3">Người tạo</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-slate-100 text-sm">
-        {entries.map(entry => {
-          const item = itemById.get(entry.materialId);
-          const warehouse = warehouseById.get(entry.warehouseId);
-          const creator = userById.get(entry.createdBy || '');
-          return (
-            <tr key={entry.id} className="hover:bg-slate-50">
-              <td className="p-3 text-xs font-bold text-slate-500 whitespace-nowrap">{new Date(entry.transactionDate).toLocaleString('vi-VN')}</td>
-              <td className="p-3 whitespace-nowrap">{renderDocumentButton(entry)}</td>
-              <td className="p-3">
-                <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${getLedgerTypeTone(entry)}`}>
-                  {transactionTypeLabels[entry.transactionType] || entry.transactionType}
-                </span>
-              </td>
-              <td className="p-3">
-                <div className="font-black text-slate-800">{item?.name || entry.materialId}</div>
-                <div className="text-[10px] font-mono text-slate-400">{item?.sku || entry.materialId} • {warehouse?.name || entry.warehouseId}</div>
-              </td>
-              <td className="p-3 max-w-[260px]">
-                <div className="text-xs font-bold text-slate-700 line-clamp-2">{entry.description || sourceLabel(entry.sourceType)}</div>
-                {entry.relatedRequestId && <div className="mt-1 text-[10px] font-mono text-slate-400">MR: {entry.relatedRequestId.slice(-8)}</div>}
-              </td>
-              <td className="p-3 text-right font-black text-emerald-600">{entry.quantityIn ? fmt(entry.quantityIn) : '-'}</td>
-              <td className="p-3 text-right font-black text-orange-600">{entry.quantityOut ? fmt(entry.quantityOut) : '-'}</td>
-              <td className="p-3 text-right font-black text-slate-900">{fmt(entry.balanceAfterQty)}</td>
-              <td className="p-3 text-right text-slate-500">{money(entry.unitPrice)}</td>
-              <td className="p-3 text-right font-bold text-slate-700">{money(Math.abs(entry.amount))}</td>
-              <td className="p-3 text-xs font-bold text-slate-500">{creator?.name || entry.createdBy || '-'}</td>
+}> = ({ entries, itemById, warehouseById, userById, renderDocumentButton, emptyText }) => {
+  const entryPage = useClientPagination(entries, entries.map(entry => entry.id).join('|'));
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-100">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1200px] text-left">
+          <thead className="bg-slate-50 text-[10px] uppercase font-black text-slate-400">
+            <tr>
+              <th className="p-3">Ngày</th>
+              <th className="p-3">Mã phiếu</th>
+              <th className="p-3">Loại giao dịch</th>
+              <th className="p-3">Kho / Vật tư</th>
+              <th className="p-3">Diễn giải</th>
+              <th className="p-3 text-right">Nhập</th>
+              <th className="p-3 text-right">Xuất</th>
+              <th className="p-3 text-right">Tồn sau GD</th>
+              <th className="p-3 text-right">Đơn giá</th>
+              <th className="p-3 text-right">Thành tiền</th>
+              <th className="p-3">Người tạo</th>
             </tr>
-          );
-        })}
-      </tbody>
-    </table>
-    {entries.length === 0 && (
-      <div className="p-16 text-center text-slate-300">
-        <Eye size={46} className="mx-auto" />
-        <p className="mt-3 text-sm font-bold">{emptyText}</p>
+          </thead>
+          <tbody className="divide-y divide-slate-100 text-sm">
+            {entryPage.pageRows.map(entry => {
+              const item = itemById.get(entry.materialId);
+              const warehouse = warehouseById.get(entry.warehouseId);
+              const creator = userById.get(entry.createdBy || '');
+              return (
+                <tr key={entry.id} className="hover:bg-slate-50">
+                  <td className="p-3 text-xs font-bold text-slate-500 whitespace-nowrap">{new Date(entry.transactionDate).toLocaleString('vi-VN')}</td>
+                  <td className="p-3 whitespace-nowrap">{renderDocumentButton(entry)}</td>
+                  <td className="p-3">
+                    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black uppercase ${getLedgerTypeTone(entry)}`}>
+                      {transactionTypeLabels[entry.transactionType] || entry.transactionType}
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    <div className="font-black text-slate-800">{item?.name || entry.materialId}</div>
+                    <div className="text-[10px] font-mono text-slate-400">{item?.sku || entry.materialId} • {warehouse?.name || entry.warehouseId}</div>
+                  </td>
+                  <td className="p-3 max-w-[260px]">
+                    <div className="text-xs font-bold text-slate-700 line-clamp-2">{entry.description || sourceLabel(entry.sourceType)}</div>
+                    {entry.relatedRequestId && <div className="mt-1 text-[10px] font-mono text-slate-400">MR: {entry.relatedRequestId.slice(-8)}</div>}
+                  </td>
+                  <td className="p-3 text-right font-black text-emerald-600">{entry.quantityIn ? fmt(entry.quantityIn) : '-'}</td>
+                  <td className="p-3 text-right font-black text-orange-600">{entry.quantityOut ? fmt(entry.quantityOut) : '-'}</td>
+                  <td className="p-3 text-right font-black text-slate-900">{fmt(entry.balanceAfterQty)}</td>
+                  <td className="p-3 text-right text-slate-500">{money(entry.unitPrice)}</td>
+                  <td className="p-3 text-right font-bold text-slate-700">{money(Math.abs(entry.amount))}</td>
+                  <td className="p-3 text-xs font-bold text-slate-500">{creator?.name || entry.createdBy || '-'}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
-    )}
-  </div>
-);
+      {entries.length === 0 ? (
+        <div className="p-16 text-center text-slate-300">
+          <Eye size={46} className="mx-auto" />
+          <p className="mt-3 text-sm font-bold">{emptyText}</p>
+        </div>
+      ) : (
+        <PaginationFooter
+          page={entryPage.page}
+          pageCount={entryPage.pageCount}
+          pageStart={entryPage.pageStart}
+          pageEnd={entryPage.pageEnd}
+          total={entryPage.total}
+          noun="giao dịch"
+          onPageChange={entryPage.setPage}
+        />
+      )}
+    </div>
+  );
+};
 
 export default Reports;

@@ -18,7 +18,7 @@ import {
 import {
     Plus, Edit2, Trash2, X, Save, Truck, Star, Phone, Mail, MapPin,
     FileText, CheckCircle2, Clock, Ban, Send, Package, ChevronDown,
-    ChevronUp, Users, DollarSign, ShoppingCart, AlertTriangle, FileSpreadsheet,
+    ChevronLeft, ChevronRight, ChevronUp, Users, DollarSign, ShoppingCart, AlertTriangle, FileSpreadsheet,
     Upload, Printer, QrCode, Loader2, RefreshCcw, PackageX
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -56,7 +56,6 @@ import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
 import InventoryItemCombobox from '../../components/InventoryItemCombobox';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
 import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
-import MaterialIssuePanel from '../../components/project/MaterialIssuePanel';
 import { projectSubmissionService } from '../../lib/projectSubmissionService';
 import SupplierCombobox from '../../components/SupplierCombobox';
 import { useReservedStock } from '../../hooks/useReservedStock';
@@ -124,6 +123,7 @@ const ACTIVE_REQUEST_BUDGET_STATUSES = new Set<RequestStatus | string>([
 
 const ACTIVE_PO_BUDGET_STATUSES = new Set<POStatus>(['draft', 'sent', 'confirmed', 'in_transit', 'partial', 'delivered']);
 const OPEN_PO_ORDER_STATUSES = new Set<POStatus>(['draft', 'sent', 'confirmed', 'in_transit']);
+const PO_PAGE_SIZE = 10;
 type PurchaseOrderPrintTemplateKey = 'purchase_order' | 'approval_request';
 
 const PO_PRINT_TEMPLATE_LABELS: Record<PurchaseOrderPrintTemplateKey, string> = {
@@ -244,6 +244,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const { getStockSummary } = useReservedStock();
     const effectiveId = projectId || constructionSiteId || '';
     const [subTab] = useState<'vendor' | 'po'>('po');
+    const [poPage, setPoPage] = useState(1);
 
     // Vendors
     const [vendors, setVendors] = useState<ProjectVendor[]>([]);
@@ -1925,6 +1926,25 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         if (po.procurementGroupId) acc[po.procurementGroupId] = (acc[po.procurementGroupId] || 0) + 1;
         return acc;
     }, {}), [pos]);
+    const sortedPos = useMemo(
+        () => [...pos].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        [pos],
+    );
+    const poPageCount = Math.max(1, Math.ceil(sortedPos.length / PO_PAGE_SIZE));
+    const pagedPos = useMemo(
+        () => sortedPos.slice((poPage - 1) * PO_PAGE_SIZE, poPage * PO_PAGE_SIZE),
+        [poPage, sortedPos],
+    );
+    const poPageStart = sortedPos.length === 0 ? 0 : (poPage - 1) * PO_PAGE_SIZE + 1;
+    const poPageEnd = Math.min(sortedPos.length, (poPage - 1) * PO_PAGE_SIZE + pagedPos.length);
+
+    useEffect(() => {
+        setPoPage(1);
+    }, [constructionSiteId, projectId, sortedPos.length]);
+
+    useEffect(() => {
+        if (poPage > poPageCount) setPoPage(poPageCount);
+    }, [poPage, poPageCount]);
 
     return (
         <div className="space-y-6">
@@ -1963,15 +1983,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     <div className="text-2xl font-black text-amber-600">{stats.pending}</div>
                 </div>
             </div>
-
-            {subTab === 'po' && (
-                <MaterialIssuePanel
-                    projectId={projectId || null}
-                    constructionSiteId={constructionSiteId || null}
-                    compact={compact}
-                    canCreate={!!canManageTab}
-                />
-            )}
 
             {/* Vendor Tab */}
             {subTab === 'vendor' && (
@@ -2090,7 +2101,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         </div>
                     ) : (
                         <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
-                            {pos.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(po => {
+                            {pagedPos.map(po => {
                                 const stCfg = PO_STATUS[po.status];
                                 const sourceCfg = PO_SOURCE_MODE[po.sourceMode || 'proactive_project'];
                                 const isExpanded = expandedPoId === po.id;
@@ -2500,6 +2511,32 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     </div>
                                 );
                             })}
+                            <div className="flex flex-col gap-3 bg-slate-50/60 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="text-xs font-bold text-slate-500">
+                                    Đang xem {poPageStart}-{poPageEnd} trên {sortedPos.length} PO
+                                </div>
+                                <div className="flex items-center justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPoPage(prev => Math.max(1, prev - 1))}
+                                        disabled={poPage <= 1}
+                                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        <ChevronLeft size={14} /> Trước
+                                    </button>
+                                    <span className="min-w-[82px] text-center text-xs font-black text-slate-500">
+                                        {poPage}/{poPageCount}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPoPage(prev => Math.min(poPageCount, prev + 1))}
+                                        disabled={poPage >= poPageCount}
+                                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        Sau <ChevronRight size={14} />
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>

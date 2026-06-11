@@ -26,6 +26,35 @@ type ProjectListOptions = {
   includeHidden?: boolean;
 };
 
+export type ProjectListSortKey = 'updatedAt' | 'code' | 'name' | 'startDate';
+
+export type ProjectListPageOptions = ProjectListOptions & {
+  page?: number;
+  pageSize?: number;
+  query?: string;
+  status?: Project['status'] | 'all';
+  groupId?: string;
+  typeId?: string;
+  sectorId?: string;
+  workflowId?: string;
+  siteLink?: 'all' | 'linked' | 'unlinked';
+  startFrom?: string;
+  startTo?: string;
+  endFrom?: string;
+  endTo?: string;
+  hidden?: 'active' | 'hidden' | 'all';
+  sort?: ProjectListSortKey;
+  ascending?: boolean;
+};
+
+export type ProjectListPage = {
+  rows: Project[];
+  page: number;
+  pageSize: number;
+  total: number;
+  hasNextPage: boolean;
+};
+
 type HideProjectInput = {
   reason: string;
   hiddenBy?: string;
@@ -71,6 +100,70 @@ const getRowAmount = (row: Record<string, any>, amountColumns?: string[]): numbe
     if (Number.isFinite(value) && value !== 0) return value;
   }
   return 0;
+};
+
+const normalizePage = (value?: number): number =>
+  Math.max(1, Math.floor(Number(value) || 1));
+
+const normalizePageSize = (value?: number): number =>
+  Math.max(1, Math.min(100, Math.floor(Number(value) || 10)));
+
+const escapeIlikeValue = (value: string): string =>
+  value.replace(/[%_]/g, match => `\\${match}`);
+
+const projectSortColumnByKey: Record<ProjectListSortKey, string> = {
+  updatedAt: 'updated_at',
+  code: 'code',
+  name: 'name',
+  startDate: 'start_date',
+};
+
+const applyProjectListFilters = (baseQuery: any, options: ProjectListPageOptions) => {
+  let query = baseQuery;
+  const hidden = options.hidden || (options.includeHidden ? 'all' : 'active');
+
+  if (hidden === 'active') query = query.eq('is_hidden', false);
+  if (hidden === 'hidden') query = query.eq('is_hidden', true);
+  if (options.status && options.status !== 'all') query = query.eq('status', options.status);
+  if (options.groupId && options.groupId !== 'all') query = query.eq('project_group_id', options.groupId);
+  if (options.typeId && options.typeId !== 'all') query = query.eq('project_type_id', options.typeId);
+  if (options.sectorId && options.sectorId !== 'all') query = query.eq('project_sector_id', options.sectorId);
+  if (options.workflowId && options.workflowId !== 'all') query = query.eq('workflow_template_id', options.workflowId);
+  if (options.siteLink === 'linked') query = query.not('construction_site_id', 'is', null);
+  if (options.siteLink === 'unlinked') query = query.is('construction_site_id', null);
+  if (options.startFrom) query = query.gte('start_date', options.startFrom);
+  if (options.startTo) query = query.lte('start_date', options.startTo);
+  if (options.endFrom) query = query.gte('end_date', options.endFrom);
+  if (options.endTo) query = query.lte('end_date', options.endTo);
+
+  const keyword = options.query?.trim();
+  if (keyword) {
+    const term = `%${escapeIlikeValue(keyword)}%`;
+    query = query.or([
+      `code.ilike.${term}`,
+      `name.ilike.${term}`,
+      `client_name.ilike.${term}`,
+      `description.ilike.${term}`,
+    ].join(','));
+  }
+
+  return query;
+};
+
+const applyProjectListOrder = (baseQuery: any, options: ProjectListPageOptions) => {
+  const sort = options.sort && projectSortColumnByKey[options.sort] ? options.sort : 'updatedAt';
+  const ascending = Boolean(options.ascending);
+  let query = baseQuery
+    .order('is_pinned', { ascending: false })
+    .order('pinned_at', { ascending: false, nullsFirst: false });
+
+  if (sort === 'updatedAt') {
+    return query.order('updated_at', { ascending });
+  }
+
+  return query
+    .order(projectSortColumnByKey[sort], { ascending, nullsFirst: false })
+    .order('updated_at', { ascending: false });
 };
 
 const runScopedImpactQuery = async (
@@ -134,6 +227,49 @@ const fetchImpactItem = async (
 };
 
 export const projectMasterService = {
+  async listPage(options: ProjectListPageOptions = {}): Promise<ProjectListPage> {
+    if (!isSupabaseConfigured) {
+      return {
+        rows: [],
+        page: normalizePage(options.page),
+        pageSize: normalizePageSize(options.pageSize),
+        total: 0,
+        hasNextPage: false,
+      };
+    }
+
+    const page = normalizePage(options.page);
+    const pageSize = normalizePageSize(options.pageSize);
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    const buildQuery = (includePinnedOrder: boolean) => {
+      let query = supabase.from(TABLE).select('*', { count: 'exact' });
+      query = applyProjectListFilters(query, options);
+      return includePinnedOrder
+        ? applyProjectListOrder(query, options).range(from, to)
+        : query.order('updated_at', { ascending: Boolean(options.ascending) }).range(from, to);
+    };
+
+    const { data, error, count } = await buildQuery(true);
+    let rowsData = data || [];
+    let total = count || 0;
+    if (error && !isMissingSchemaError(error)) throw error;
+    if (error) {
+      const fallback = await buildQuery(false);
+      if (fallback.error) throw fallback.error;
+      rowsData = fallback.data || [];
+      total = fallback.count || 0;
+    }
+
+    return {
+      rows: rowsData.map(mapProject),
+      page,
+      pageSize,
+      total,
+      hasNextPage: from + rowsData.length < total,
+    };
+  },
+
   async list(options: ProjectListOptions = {}): Promise<Project[]> {
     if (!isSupabaseConfigured) return [];
     const { data, error } = await supabase
@@ -151,6 +287,17 @@ export const projectMasterService = {
     }
     const rows = rowsData.map(mapProject);
     return options.includeHidden ? rows : rows.filter(project => !project.isHidden);
+  },
+
+  async getById(id: string): Promise<Project | null> {
+    if (!isSupabaseConfigured || !id) return null;
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? mapProject(data) : null;
   },
 
   async create(input: {

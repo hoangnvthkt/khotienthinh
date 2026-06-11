@@ -70,7 +70,7 @@ const SubcontractorContracts: React.FC = () => {
   const fetchContracts = async () => {
     setLoading(true);
     projectMasterService.list().then(setProjects).catch(console.error);
-    partnerService.list({ classification: 'contractor' }).then(setSubcontractors).catch(console.error);
+    partnerService.list().then(setSubcontractors).catch(console.error);
     if (!isSupabaseConfigured) { setContracts([]); setLoading(false); return; }
     const { data, error } = await supabase.from('subcontractor_contracts').select('*').order('created_at', { ascending: false });
     if (!error && data) {

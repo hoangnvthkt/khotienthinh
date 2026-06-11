@@ -1,13 +1,15 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Plus, Search, ChevronDown, ChevronRight, Save, X,
   CheckCircle2, AlertTriangle, XCircle, Clock, FileText, Camera,
   ClipboardCheck, Wrench, MapPin, User, Calendar, Upload,
   Trash2, Edit2, Send, RotateCcw, Eye, Layers, Compass, Sparkles,
-  ListFilter, ShieldCheck, CheckSquare, PlusCircle, AlertCircle
+  ListFilter, ShieldCheck, CheckSquare, PlusCircle, AlertCircle,
+  Printer
 } from 'lucide-react';
 import { qualityChecklistService } from '../../lib/qualityChecklistService';
 import { projectStaffService } from '../../lib/projectStaffService';
+import { supabase } from '../../lib/supabase';
 import {
   QualityChecklist,
   QualityChecklistStatus,
@@ -21,7 +23,9 @@ import {
   InspectionResult,
   Role,
   ProjectStaff,
-  ProjectSubmissionTarget
+  ProjectSubmissionTarget,
+  DrawingMarker,
+  SignerData
 } from '../../types';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { useApp } from '../../context/AppContext';
@@ -260,6 +264,27 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
   // Detail view
   const [viewingId, setViewingId] = useState<string | null>(null);
 
+  const [projectName, setProjectName] = useState<string>('');
+
+  useEffect(() => {
+    if (!projectId) return;
+    const fetchProjectName = async () => {
+      try {
+        const { data } = await supabase
+          .from('projects')
+          .select('name')
+          .eq('id', projectId)
+          .maybeSingle();
+        if (data?.name) {
+          setProjectName(data.name);
+        }
+      } catch (err) {
+        console.error('Failed to fetch project name:', err);
+      }
+    };
+    fetchProjectName();
+  }, [projectId]);
+
   const siteId = constructionSiteId || '';
 
   const loadData = useCallback(async () => {
@@ -296,6 +321,256 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
       setActiveAttemptTab('current');
     }
   }, [viewingId, loadChecklistAttempts]);
+
+  // Split-pane resizing states
+  const [leftWidth, setLeftWidth] = useState(60); // Default layout: Drawing takes 60%
+  const [isDragging, setIsDragging] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // PDF Layout & Drawing States
+  const [uploadingDrawing, setUploadingDrawing] = useState(false);
+  const [newMarkerCoords, setNewMarkerCoords] = useState<{ x: number; y: number } | null>(null);
+  const [newMarkerLabel, setNewMarkerLabel] = useState('');
+  const [newMarkerNote, setNewMarkerNote] = useState('');
+  const [newMarkerStatus, setNewMarkerStatus] = useState<'pass' | 'fail' | 'pending'>('pending');
+  const [showMarkerModal, setShowMarkerModal] = useState(false);
+  const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null);
+  const [markerFilter, setMarkerFilter] = useState<'all' | 'pass' | 'fail' | 'pending'>('all');
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      let percentage = ((e.clientX - rect.left) / rect.width) * 100;
+      if (percentage < 20) percentage = 20;
+      if (percentage > 80) percentage = 80;
+      setLeftWidth(percentage);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isDragging]);
+
+  const handleDrawingUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingDrawing(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `drawing-${Date.now()}.${fileExt}`;
+      const path = `quality/${editingChecklist?.id || viewingId}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('project-attachments')
+        .upload(path, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('project-attachments')
+        .getPublicUrl(path);
+
+      if (showForm) {
+        setForm(prev => ({ ...prev, drawingUrl: data.publicUrl }));
+      } else if (viewingId) {
+        await qualityChecklistService.update(viewingId, {
+          drawingUrl: data.publicUrl,
+        });
+        await loadData();
+      }
+      toast.success('Đã tải lên bản vẽ thành công!');
+    } catch (err: any) {
+      console.error('Failed to upload drawing:', err);
+      toast.error(`Lỗi tải bản vẽ: ${err.message || err}`);
+    } finally {
+      setUploadingDrawing(false);
+    }
+  };
+
+  const handleDrawingClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const checklist = showForm ? editingChecklist : viewingChecklist;
+    if (!checklist) return;
+    const readonly = checklist.status !== 'draft' && checklist.status !== 'returned';
+    if (readonly) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+
+    setNewMarkerCoords({ x, y });
+    setNewMarkerLabel(`Điểm ${((showForm ? form.drawingMarkers : viewingChecklist?.drawingMarkers) || []).length + 1}`);
+    setNewMarkerNote('');
+    setNewMarkerStatus('pending');
+    setEditingMarkerId(null);
+    setShowMarkerModal(true);
+  };
+
+  const handleEditMarker = (marker: DrawingMarker, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setNewMarkerCoords({ x: marker.x, y: marker.y });
+    setNewMarkerLabel(marker.label);
+    setNewMarkerNote(marker.note || '');
+    setNewMarkerStatus(marker.status);
+    setEditingMarkerId(marker.id);
+    setShowMarkerModal(true);
+  };
+
+  const handleSaveMarker = async () => {
+    if (!newMarkerLabel.trim()) {
+      toast.error('Vui lòng nhập tên điểm đánh dấu!');
+      return;
+    }
+
+    const currentMarkers = showForm
+      ? (form.drawingMarkers || [])
+      : (viewingChecklist?.drawingMarkers || []);
+
+    let updatedMarkers: DrawingMarker[];
+
+    if (editingMarkerId) {
+      updatedMarkers = currentMarkers.map(m =>
+        m.id === editingMarkerId
+          ? { ...m, label: newMarkerLabel, note: newMarkerNote, status: newMarkerStatus }
+          : m
+      );
+    } else {
+      const newMarker: DrawingMarker = {
+        id: `marker-${Date.now()}`,
+        x: newMarkerCoords?.x || 0,
+        y: newMarkerCoords?.y || 0,
+        label: newMarkerLabel,
+        status: newMarkerStatus,
+        note: newMarkerNote || undefined,
+      };
+      updatedMarkers = [...currentMarkers, newMarker];
+    }
+
+    if (showForm) {
+      setForm(prev => ({ ...prev, drawingMarkers: updatedMarkers }));
+    } else if (viewingId) {
+      await qualityChecklistService.update(viewingId, {
+        drawingMarkers: updatedMarkers,
+      });
+      await loadData();
+    }
+
+    setShowMarkerModal(false);
+    setEditingMarkerId(null);
+    toast.success('Đã lưu điểm đánh dấu!');
+  };
+
+  const handleDeleteMarker = async (markerId: string) => {
+    if (!confirm('Bạn có chắc chắn muốn xoá điểm đánh dấu này?')) return;
+
+    const currentMarkers = showForm
+      ? (form.drawingMarkers || [])
+      : (viewingChecklist?.drawingMarkers || []);
+
+    const updatedMarkers = currentMarkers.filter(m => m.id !== markerId);
+
+    if (showForm) {
+      setForm(prev => ({ ...prev, drawingMarkers: updatedMarkers }));
+    } else if (viewingId) {
+      await qualityChecklistService.update(viewingId, {
+        drawingMarkers: updatedMarkers,
+      });
+      await loadData();
+    }
+
+    setShowMarkerModal(false);
+    setEditingMarkerId(null);
+    toast.success('Đã xoá điểm đánh dấu!');
+  };
+
+  const handleSign = async (roleCode: 'inspector' | 'contractor' | 'supervisor' | 'completion', roleName: string) => {
+    if (!confirm(`Xác nhận ký tên với tư cách là ${roleName}?`)) return;
+
+    const currentSigners = showForm
+      ? (form.signersData || [])
+      : (viewingChecklist?.signersData || []);
+
+    const newSigner: SignerData = {
+      roleCode,
+      roleName,
+      userName: user?.name || user?.email || 'Người dùng',
+      signatureUrl: user?.signatureUrl || '',
+      signedAt: new Date().toISOString(),
+    };
+
+    const updatedSigners = [
+      ...currentSigners.filter(s => s.roleCode !== roleCode),
+      newSigner,
+    ];
+
+    if (showForm) {
+      setForm(prev => ({ ...prev, signersData: updatedSigners }));
+    } else if (viewingId) {
+      await qualityChecklistService.update(viewingId, {
+        signersData: updatedSigners,
+      });
+      await loadData();
+    }
+    toast.success(`Đã ký xác nhận thành công làm ${roleName}!`);
+  };
+
+  const handleClearSignature = async (roleCode: 'inspector' | 'contractor' | 'supervisor' | 'completion', roleName: string) => {
+    if (!confirm(`Bạn có chắc chắn muốn xoá chữ ký ${roleName}?`)) return;
+
+    const currentSigners = showForm
+      ? (form.signersData || [])
+      : (viewingChecklist?.signersData || []);
+
+    const updatedSigners = currentSigners.filter(s => s.roleCode !== roleCode);
+
+    if (showForm) {
+      setForm(prev => ({ ...prev, signersData: updatedSigners }));
+    } else if (viewingId) {
+      await qualityChecklistService.update(viewingId, {
+        signersData: updatedSigners,
+      });
+      await loadData();
+    }
+    toast.success(`Đã xoá chữ ký ${roleName}!`);
+  };
+
+  const updateDynamicItemResult = (secId: string, itemId: string, result: 'pass' | 'fail' | undefined) => {
+    setForm(prev => {
+      const data = prev.checklistData || [];
+      const updated = data.map(sec => {
+        if (sec.sectionId !== secId) return sec;
+        return {
+          ...sec,
+          items: sec.items.map(item => {
+            if (item.id !== itemId) return item;
+            return { ...item, result };
+          })
+        };
+      });
+      return { ...prev, checklistData: updated };
+    });
+  };
 
   const toggleSection = (secId: string) => {
     setExpandedSections(prev => {
@@ -571,18 +846,98 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
     const statusCfg = STATUS_CONFIG[vc.status];
     const resultBadge = vc.inspectionResult ? RESULT_BADGE[vc.inspectionResult] : null;
 
-    // Choose active data source (attempts vs current)
-    const activeSectionData = activeAttemptTab === 'current'
-      ? vc.checklistData
-      : attempts.find(a => String(a.attemptNumber) === activeAttemptTab)?.itemsData || [];
+    const getItemValueForAttempt = (secId: string, itemId: string, attemptNum: number) => {
+      if (vc.currentAttempt === attemptNum) {
+        const sec = vc.checklistData?.find(s => s.sectionId === secId);
+        const item = sec?.items?.find(i => i.id === itemId);
+        return item ? { actualValue: item.actualValue, result: item.result } : null;
+      } else {
+        const attempt = attempts.find(a => a.attemptNumber === attemptNum);
+        if (!attempt) return null;
+        const sec = attempt.itemsData?.find(s => s.sectionId === secId);
+        const item = sec?.items?.find(i => i.id === itemId);
+        return item ? { actualValue: item.actualValue, result: item.result } : null;
+      }
+    };
+
+    const isReadonly = vc.status !== 'draft' && vc.status !== 'returned';
 
     return (
-      <div className="space-y-4 animate-in fade-in-50 duration-200">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <button onClick={() => setViewingId(null)} className="text-xs font-black text-slate-500 hover:text-slate-700 flex items-center gap-1">← Quay lại</button>
+      <div className="space-y-6 animate-in fade-in-50 duration-200 print:p-0">
+        <style dangerouslySetInnerHTML={{
+          __html: `
+          @media print {
+            body {
+              background: white !important;
+              color: black !important;
+            }
+            .no-print {
+              display: none !important;
+            }
+            .print-full-width {
+              width: 100% !important;
+              max-width: 100% !important;
+              flex: none !important;
+              display: block !important;
+            }
+            #printable-quality-sheet {
+              display: block !important;
+              background: white !important;
+              padding: 0 !important;
+              margin: 0 !important;
+            }
+            .print-table {
+              border-collapse: collapse !important;
+              width: 100% !important;
+            }
+            .print-table th, .print-table td {
+              border: 1px solid #000 !important;
+              padding: 6px !important;
+              color: black !important;
+              font-size: 11px !important;
+            }
+            .print-signatures {
+              display: grid !important;
+              grid-template-cols: repeat(4, 1fr) !important;
+              gap: 15px !important;
+              margin-top: 30px !important;
+              page-break-inside: avoid;
+            }
+            .print-drawing-container {
+              page-break-inside: avoid;
+              text-align: center !important;
+              margin: 20px 0 !important;
+            }
+            .print-drawing-img {
+              max-width: 100% !important;
+              max-height: 400px !important;
+              object-fit: contain !important;
+              border: 1px solid #ddd !important;
+            }
+          }
+          @media (min-width: 1024px) {
+            .resizable-left-pane {
+              width: calc(var(--left-pane-width) - 12px) !important;
+              flex-shrink: 0 !important;
+            }
+            .resizable-right-pane {
+              width: calc(100% - var(--left-pane-width) - 12px) !important;
+              flex-shrink: 0 !important;
+            }
+          }
+        `}} />
+
+        <div className="flex items-center justify-between gap-3 flex-wrap no-print">
+          <button onClick={() => setViewingId(null)} className="text-xs font-black text-slate-500 hover:text-slate-700 flex items-center gap-1">← Quay lại danh sách</button>
 
           <div className="flex items-center gap-2">
-            {/* Trigger Re-inspection if Failed */}
+            <button
+              onClick={() => window.print()}
+              className="px-3 py-1.5 text-[10px] font-black bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 flex items-center gap-1 transition shadow-sm"
+            >
+              <Printer size={12} /> In biên bản
+            </button>
+
             {vc.inspectionResult === 'FAILED' && vc.status === 'draft' && canManageTab && (
               <button
                 onClick={handleCreateNewAttempt}
@@ -631,155 +986,339 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
           </div>
         </div>
 
-        {/* Audit / Attempt Tabs navigation */}
-        <div className="flex gap-1.5 overflow-x-auto pb-1.5 border-b border-slate-100">
-          <button
-            onClick={() => setActiveAttemptTab('current')}
-            className={`px-4 py-2 rounded-xl text-xs font-black shrink-0 transition ${activeAttemptTab === 'current'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'bg-white text-slate-500 hover:bg-slate-50 border border-slate-100'
-              }`}
-          >
-            Lần nghiệm thu {vc.currentAttempt} (Hiện tại)
-          </button>
-
-          {attempts.map(att => (
-            <button
-              key={att.id}
-              onClick={() => setActiveAttemptTab(String(att.attemptNumber))}
-              className={`px-4 py-2 rounded-xl text-xs font-black shrink-0 transition ${activeAttemptTab === String(att.attemptNumber)
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'bg-white text-slate-500 hover:bg-slate-50 border border-slate-100'
-                }`}
-            >
-              Lần {att.attemptNumber} ({att.result === 'PASSED' ? 'Đạt' : 'K.Đạt'})
-            </button>
-          ))}
-        </div>
-
-        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-          {/* Header Info */}
-          <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/20">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div>
-                <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded">
-                  {vc.code}
-                </span>
-                <h3 className="text-sm font-black text-slate-900 mt-1">{vc.title}</h3>
-                <p className="text-[10px] text-slate-400 mt-0.5 font-bold">
-                  Quy trình: <span className="text-indigo-600">{vc.templateName}</span> (v{vc.templateVersion}) · Lần kiểm tra: {activeAttemptTab === 'current' ? vc.currentAttempt : activeAttemptTab}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {resultBadge && (
-                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-black ${resultBadge.color} ${resultBadge.bg}`}>{resultBadge.label}</span>
+        <div
+          ref={containerRef}
+          id="printable-quality-sheet"
+          className="flex flex-col lg:flex-row gap-6 print:block relative"
+          style={{ '--left-pane-width': `${leftWidth}%` } as React.CSSProperties}
+        >
+          <div className="w-full resizable-left-pane space-y-4 print-full-width">
+            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                <div>
+                  <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <Compass size={14} className="text-indigo-600" /> Bản vẽ chi tiết & Điểm nghiệm thu
+                  </h4>
+                  <p className="text-[10px] text-slate-400 font-bold mt-0.5">Click vào bản vẽ để đánh dấu điểm kiểm soát</p>
+                </div>
+                {!isReadonly && (
+                  <div className="no-print">
+                    <input type="file" accept="image/*" onChange={handleDrawingUpload} className="hidden" id="drawing-upload-detail" />
+                    <label htmlFor="drawing-upload-detail" className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 text-slate-700 text-[10px] font-black cursor-pointer transition">
+                      <Upload size={10} /> {uploadingDrawing ? 'Tải...' : 'Đổi bản vẽ'}
+                    </label>
+                  </div>
                 )}
-                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border ${statusCfg.bg} ${statusCfg.color}`}>{statusCfg.icon} {statusCfg.label}</span>
+              </div>
+
+              <div className="relative border border-slate-100 rounded-2xl overflow-hidden bg-slate-900/5 flex items-center justify-center print-drawing-container w-full min-h-[400px] lg:min-h-[70vh] p-2">
+                {vc.drawingUrl ? (
+                  <div
+                    className="relative cursor-crosshair group inline-block"
+                    onClick={handleDrawingClick}
+                  >
+                    <img
+                      src={vc.drawingUrl}
+                      alt="Drawing Template"
+                      className="max-w-full max-h-[68vh] object-contain select-none print-drawing-img block rounded-xl shadow-sm"
+                    />
+                    {(vc.drawingMarkers || [])
+                      .filter(m => markerFilter === 'all' || m.status === markerFilter)
+                      .map(marker => {
+                        const statusColor = marker.status === 'pass' ? 'bg-emerald-500 ring-emerald-300' : marker.status === 'fail' ? 'bg-red-500 ring-red-300' : 'bg-slate-400 ring-slate-300';
+                        return (
+                          <div
+                            key={marker.id}
+                            style={{ left: `${marker.x}%`, top: `${marker.y}%` }}
+                            onClick={(e) => handleEditMarker(marker, e)}
+                            title={`${marker.label}${marker.note ? ` (${marker.note})` : ''}`}
+                            className={`absolute w-6 h-6 -ml-3 -mt-3 rounded-full ${statusColor} ring-4 ring-offset-0 text-[9px] text-white font-black flex items-center justify-center cursor-pointer shadow hover:scale-110 active:scale-95 transition-all select-none z-10`}
+                          >
+                            {marker.label.replace(/^\D+/g, '') || '•'}
+                          </div>
+                        );
+                      })}
+                  </div>
+                ) : (
+                  <div className="text-center py-10 flex flex-col items-center justify-center">
+                    <Compass size={36} className="text-slate-300 mb-2" />
+                    <p className="text-xs font-black text-slate-500">Chưa có bản vẽ được tải lên</p>
+                    <p className="text-[9px] text-slate-400 mt-1 max-w-[200px]">Hãy nhấn "Sửa" hoặc upload bản vẽ riêng biệt cho biên bản này.</p>
+
+                    {!isReadonly && (
+                      <div className="mt-4 no-print">
+                        <input type="file" accept="image/*" onChange={handleDrawingUpload} className="hidden" id="drawing-upload-empty-detail" />
+                        <label htmlFor="drawing-upload-empty-detail" className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black rounded-lg cursor-pointer transition shadow-md shadow-indigo-600/10">
+                          {uploadingDrawing ? 'Đang tải...' : 'Tải lên bản vẽ'}
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+               <div className="space-y-2.5">
+                <div className="flex items-center gap-3 text-[9px] font-bold text-slate-500 bg-slate-50 p-2 rounded-xl border border-slate-100 flex-wrap no-print">
+                  <span className="text-slate-400 font-extrabold mr-1">Lọc trạng thái:</span>
+                  {[
+                    { val: 'pass', label: 'Đạt', bg: 'bg-emerald-500', activeBg: 'bg-emerald-500 text-white border-emerald-500 shadow-sm shadow-emerald-500/10' },
+                    { val: 'fail', label: 'Không đạt', bg: 'bg-red-500', activeBg: 'bg-red-500 text-white border-red-500 shadow-sm shadow-red-500/10' },
+                    { val: 'pending', label: 'Chờ kiểm', bg: 'bg-slate-400', activeBg: 'bg-slate-500 text-white border-slate-500 shadow-sm shadow-slate-500/10' }
+                  ].map(opt => (
+                    <button
+                      key={opt.val}
+                      onClick={() => setMarkerFilter(prev => prev === opt.val ? 'all' : (opt.val as any))}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition duration-150 ${
+                        markerFilter === opt.val 
+                          ? opt.activeBg 
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      <span className={`w-2.5 h-2.5 rounded-full ${markerFilter === opt.val ? 'bg-white' : opt.bg} block`} />
+                      {opt.label}
+                    </button>
+                  ))}
+                  {markerFilter !== 'all' && (
+                    <button
+                      onClick={() => setMarkerFilter('all')}
+                      className="text-[8px] font-black text-indigo-600 hover:text-indigo-800 ml-auto uppercase tracking-wider transition"
+                    >
+                      Hiện tất cả
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
+                  <h5 className="text-[10px] font-black text-slate-600 tracking-wide">
+                    Danh sách các điểm kiểm tra {markerFilter !== 'all' && `(${markerFilter === 'pass' ? 'Đạt' : markerFilter === 'fail' ? 'Không đạt' : 'Chờ kiểm'}):`}
+                  </h5>
+                  {((vc.drawingMarkers || []).filter(m => markerFilter === 'all' || m.status === markerFilter)).length === 0 ? (
+                    <p className="text-[9px] text-slate-400 italic">Không có điểm nào phù hợp.</p>
+                  ) : (
+                    (vc.drawingMarkers || [])
+                      .filter(m => markerFilter === 'all' || m.status === markerFilter)
+                      .map(m => (
+                        <div key={m.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg text-[10px] font-bold text-slate-700 border border-slate-100/50">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${m.status === 'pass' ? 'bg-emerald-500' : m.status === 'fail' ? 'bg-red-500' : 'bg-slate-400'}`} />
+                            <span className="font-black text-indigo-700">{m.label}</span>
+                            {m.note && <span className="text-slate-400 font-medium">({m.note})</span>}
+                          </div>
+                          {!isReadonly && (
+                            <button
+                              onClick={(e) => handleEditMarker(m, e)}
+                              className="text-[9px] text-slate-400 hover:text-indigo-600 no-print"
+                            >
+                              Sửa
+                            </button>
+                          )}
+                        </div>
+                      ))
+                  )}
+                </div>
               </div>
             </div>
-
-            {/* Criteria Counters */}
-            {activeAttemptTab === 'current' && vc.totalCriteria !== undefined && vc.totalCriteria > 0 && (
-              <div className="flex items-center gap-4 mt-3 text-[10px] bg-white p-2 rounded-xl border border-slate-100 w-fit">
-                <span className="text-slate-500 font-bold">Tổng số: <b className="text-slate-800 font-black">{vc.totalCriteria}</b> tiêu chí</span>
-                <span className="text-emerald-600 font-bold">Đạt: <b className="font-black">{vc.passedCriteria}</b></span>
-                <span className="text-red-500 font-bold">Không đạt: <b className="font-black">{vc.failedCriteria}</b></span>
-              </div>
-            )}
           </div>
 
-          <div className="divide-y divide-slate-50">
-            {/* 1. General Work Description Info */}
-            <div className="px-5 py-4 bg-slate-50/10">
-              <h4 className="text-xs font-black text-indigo-700 mb-3 flex items-center gap-1.5"><Wrench size={14} /> 1. Thông tin công tác thi công</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs font-bold text-slate-700">
-                <div><span className="text-slate-400 block mb-0.5">Mô tả chi tiết:</span> <span>{vc.workDescription || '—'}</span></div>
-                <div><span className="text-slate-400 block mb-0.5">Vị trí trục cột:</span> <span>{vc.workLocation || '—'}</span></div>
-                <div><span className="text-slate-400 block mb-0.5">Ngày nghiệm thu:</span> <span>{vc.workDate || '—'}</span></div>
-                <div><span className="text-slate-400 block mb-0.5">Kỹ sư giám sát:</span> <span>{vc.workSupervisor || '—'}</span></div>
+          <div
+            onMouseDown={handleMouseDown}
+            className={`hidden lg:flex select-none w-1.5 hover:w-2 bg-slate-100 hover:bg-indigo-300 active:bg-indigo-500 cursor-col-resize transition-all duration-150 relative shrink-0 items-center justify-center rounded-full self-stretch ${isDragging ? 'bg-indigo-400 w-2' : ''
+              } no-print`}
+            title="Kéo để thay đổi kích thước bản vẽ"
+          >
+            <div className="absolute top-1/2 -translate-y-1/2 w-4 h-8 bg-white border border-slate-200 shadow-sm rounded-md flex flex-col gap-0.5 items-center justify-center cursor-col-resize hover:border-indigo-400 z-10">
+              <div className="w-0.5 h-3 bg-slate-300 rounded-full" />
+              <div className="w-0.5 h-3 bg-slate-300 rounded-full" />
+            </div>
+          </div>
+
+          <div className="w-full resizable-right-pane space-y-5 print-full-width">
+            <div className="bg-white border-2 border-slate-900 rounded-3xl overflow-hidden shadow-sm">
+              <table className="w-full text-xs text-left border-collapse print-table">
+                <tbody>
+                  <tr className="border-b border-slate-900">
+                    <td className="p-3 font-black bg-slate-50/50 border-r border-slate-900 w-[150px] text-center">
+                      <div className="text-[9px] tracking-wide text-slate-400 font-bold uppercase">Nhà thầu chính</div>
+                      <div className="text-sm tracking-wider font-extrabold text-slate-800">TIẾN THỊNH</div>
+                    </td>
+                    <td className="p-3 text-center border-r border-slate-900 bg-slate-50/10">
+                      <h2 className="text-xs font-black uppercase tracking-wider text-slate-900">Biên bản nghiệm thu nội bộ</h2>
+                      <div className="text-[9px] text-slate-400 font-bold mt-0.5">Hạng mục: <span className="text-indigo-700 font-black">{vc.templateName}</span></div>
+                      {projectName && <div className="text-[9px] text-indigo-900 font-bold mt-0.5">Dự án: <span className="font-extrabold">{projectName}</span></div>}
+                    </td>
+                    <td className="p-3 w-[150px] text-slate-800 font-bold bg-slate-50/50 text-[10px]">
+                      <div>Mã: <b className="font-mono">{vc.code}</b></div>
+                      <div>Lần NT: <b>{vc.currentAttempt}</b></div>
+                      <div>Trạng thái: <b className="uppercase">{vc.status}</b></div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="p-2 border-r border-slate-900 font-black bg-slate-50/20 text-[9px] uppercase text-slate-500 text-center">Mô tả công tác</td>
+                    <td colSpan={2} className="p-2 text-slate-900 font-bold">{vc.workDescription || '—'}</td>
+                  </tr>
+                  <tr className="border-t border-slate-900">
+                    <td className="p-2 border-r border-slate-900 font-black bg-slate-50/20 text-[9px] uppercase text-slate-500 text-center">Vị trí trục cột</td>
+                    <td className="p-2 border-r border-slate-900 text-slate-900 font-bold">{vc.workLocation || '—'}</td>
+                    <td className="p-2 text-slate-850 font-bold bg-slate-50/10">
+                      <div className="text-[9px] font-black text-slate-400 uppercase">Ngày nghiệm thu:</div>
+                      <div>{vc.workDate || '—'}</div>
+                    </td>
+                  </tr>
+                  <tr className="border-t border-slate-900">
+                    <td className="p-2 border-r border-slate-900 font-black bg-slate-50/20 text-[9px] uppercase text-slate-500 text-center">Kỹ sư giám sát</td>
+                    <td className="p-2 border-r border-slate-900 text-slate-900 font-bold">{vc.workSupervisor || '—'}</td>
+                    <td className="p-2 text-slate-850 font-bold bg-slate-50/10">
+                      <div className="text-[9px] font-black text-slate-400 uppercase">Hạn hoàn thành khắc phục:</div>
+                      <div className="text-red-600 font-extrabold">{vc.targetCompletionDate || '—'}</div>
+                    </td>
+                  </tr>
+                  <tr className="border-t border-slate-900">
+                    <td className="p-2 border-r border-slate-900 font-black bg-slate-50/20 text-[9px] uppercase text-slate-500 text-center">Tiêu chuẩn kỹ thuật</td>
+                    <td colSpan={2} className="p-2 text-slate-900 font-bold">{vc.standardReference || 'TCVN/Tiêu chuẩn dự án thiết kế.'}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 space-y-4">
+              <h4 className="text-xs font-black text-indigo-700 flex items-center gap-1.5"><CheckSquare size={14} /> Nội dung danh mục kiểm tra</h4>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left border-collapse print-table">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-400 font-black text-[10px]">
+                      <th className="py-2 pr-3 w-10">Stt</th>
+                      <th className="py-2 pr-3">Nội dung kiểm tra</th>
+                      <th className="py-2 pr-3">Yêu cầu chấp nhận / Phương pháp</th>
+                      <th className="py-2 text-center w-[100px]">Lần 1</th>
+                      <th className="py-2 text-center w-[100px]">Lần 2</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(vc.checklistData || []).flatMap((sec, secIdx) => {
+                      const secItems = sec.items || [];
+                      return [
+                        <tr key={sec.sectionId} className="bg-slate-50/50 font-bold border-b border-slate-100">
+                          <td colSpan={5} className="py-2 px-2 text-slate-800 font-extrabold uppercase tracking-wide text-[10px]">
+                            {secIdx + 1}. {sec.sectionName}
+                          </td>
+                        </tr>,
+                        ...secItems.map((item, itemIdx) => {
+                          const val1 = getItemValueForAttempt(sec.sectionId, item.id, 1);
+                          const val2 = getItemValueForAttempt(sec.sectionId, item.id, 2);
+
+                          const renderAttemptCell = (valObj: typeof val1, attemptNum: number) => {
+                            if (!valObj) {
+                              return <span className="text-slate-300 font-medium">—</span>;
+                            }
+                            const isPass = valObj.result === 'pass';
+                            const badgeColor = isPass ? 'text-emerald-600 bg-emerald-50' : 'text-red-500 bg-red-50';
+
+                            return (
+                              <div className="flex flex-col items-center justify-center gap-0.5">
+                                <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${badgeColor}`}>
+                                  {isPass ? 'ĐẠT' : 'K.ĐẠT'}
+                                </span>
+                                {valObj.actualValue && valObj.actualValue !== 'true' && valObj.actualValue !== 'false' && (
+                                  <span className="text-[9px] text-slate-500 font-semibold block truncate max-w-[90px]" title={valObj.actualValue}>
+                                    {valObj.actualValue}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          };
+
+                          return (
+                            <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
+                              <td className="py-2.5 px-2 text-slate-400 font-mono text-[10px]">{secIdx + 1}.{itemIdx + 1}</td>
+                              <td className="py-2.5 pr-3 text-slate-800 font-black">
+                                {item.itemName}
+                                {item.isCustom && <span className="text-[8px] ml-1 bg-amber-100 text-amber-700 px-1 py-0.5 rounded font-black">PHÁT SINH</span>}
+                                {item.note && <p className="text-[9px] text-slate-400 font-bold mt-0.5">Ghi chú: {item.note}</p>}
+                              </td>
+                              <td className="py-2.5 pr-3 text-slate-400 font-medium leading-relaxed">
+                                <div>Mức: {item.acceptanceCriteria || '—'}</div>
+                                <div className="text-[9px] font-mono text-slate-400 mt-0.5">Phương pháp: {item.inspectionMethod || '—'}</div>
+                              </td>
+                              <td className="py-2.5 text-center border-l border-slate-100">{renderAttemptCell(val1, 1)}</td>
+                              <td className="py-2.5 text-center border-l border-slate-100">{renderAttemptCell(val2, 2)}</td>
+                            </tr>
+                          );
+                        })
+                      ];
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            {/* Render Dynamic Cloned Sections */}
-            {activeSectionData.map((sec, secIdx) => {
-              const secItems = sec.items || [];
-              return (
-                <div key={sec.sectionId} className="px-5 py-4">
-                  <h4 className="text-xs font-black text-indigo-700 mb-3 flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center text-[10px] font-black">{secIdx + 2}</span>
-                    {sec.sectionName}
-                  </h4>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-slate-700 font-bold">
-                      <thead>
-                        <tr className="text-slate-400 font-black border-b border-slate-100 text-left">
-                          <th className="py-2 pr-3">Tiêu chí kiểm soát</th>
-                          <th className="py-2 pr-3">Mức chấp nhận</th>
-                          <th className="py-2 pr-3">Phương pháp</th>
-                          <th className="py-2 pr-3">Dữ liệu thực tế</th>
-                          <th className="py-2">Kết quả</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {secItems.map(item => (
-                          <tr key={item.id} className="border-b border-slate-50">
-                            <td className="py-2.5 pr-3 flex items-center gap-1.5">
-                              <span>{item.itemName}</span>
-                              {item.isCustom && <span className="text-[8px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 font-black">PHÁT SINH</span>}
-                            </td>
-                            <td className="py-2.5 pr-3 text-slate-400 italic font-semibold">{item.acceptanceCriteria || '—'}</td>
-                            <td className="py-2.5 pr-3 text-slate-400 font-mono font-medium">{item.inspectionMethod || '—'}</td>
-                            <td className="py-2.5 pr-3 text-slate-900 font-black">
-                              {item.dataType === 'checkbox' ? (
-                                item.actualValue === 'true' ? '☑️ Checked' : '❌ Unchecked'
-                              ) : item.dataType === 'photo' ? (
-                                item.actualValue ? (
-                                  <a href={item.actualValue} target="_blank" rel="noreferrer" className="text-indigo-600 underline flex items-center gap-1 text-[10px]">
-                                    <Camera size={11} /> Xem ảnh bằng chứng
-                                  </a>
-                                ) : 'Chưa chụp ảnh'
-                              ) : (
-                                item.actualValue ? `${item.actualValue} ${item.unit || ''}` : '—'
-                              )}
-                            </td>
-                            <td className="py-2.5">
-                              {item.result === 'pass' ? (
-                                <span className="text-emerald-600 font-black">✅ ĐẠT</span>
-                              ) : item.result === 'fail' ? (
-                                <span className="text-red-500 font-black">❌ KHÔNG ĐẠT</span>
-                              ) : (
-                                <span className="text-slate-300 font-medium">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* 6. Acceptance Conclusion */}
-            <div className="px-5 py-4 bg-slate-50/10">
-              <h4 className="text-xs font-black text-indigo-700 mb-3 flex items-center gap-1.5"><CheckCircle2 size={14} /> Kết luận nghiệm thu chung</h4>
+            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 space-y-3">
+              <h4 className="text-xs font-black text-indigo-700 flex items-center gap-1.5"><CheckCircle2 size={14} /> Kết luận nghiệm thu chung</h4>
               <div className="text-xs space-y-2 font-bold text-slate-700">
-                <div><span className="text-slate-400">Đánh giá kết luận:</span> <span>{vc.conclusion || 'Chưa lập kết luận nghiệm thu chính thức.'}</span></div>
+                <div><span className="text-slate-400">Đánh giá chung:</span> <span className="text-slate-900">{vc.conclusion || 'Chưa có kết luận.'}</span></div>
                 {vc.conclusionResult && (
                   <div>
                     <span className="text-slate-400">Quyết định:</span>
-                    <span className={`ml-1 px-2.5 py-0.5 rounded-full text-[10px] font-black ${vc.conclusionResult === 'accepted' ? 'bg-emerald-100 text-emerald-800' : vc.conclusionResult === 'conditional' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
+                    <span className={`ml-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${vc.conclusionResult === 'accepted' ? 'bg-emerald-50 text-emerald-600' : vc.conclusionResult === 'conditional' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-500'
                       }`}>
-                      {vc.conclusionResult === 'accepted' ? '✅ Đồng ý chấp nhận nghiệm thu' : vc.conclusionResult === 'conditional' ? '⚠️ Chấp nhận có điều kiện' : '❌ Từ chối nghiệm thu'}
+                      {vc.conclusionResult === 'accepted' ? 'ĐỒNG Ý CHẤP NHẬN' : vc.conclusionResult === 'conditional' ? 'CHẤP NHẬN CÓ ĐIỀU KIỆN' : 'TỪ CHỐI NGHIỆM THU'}
                     </span>
                   </div>
                 )}
-                {vc.conditions && <div><span className="text-slate-400">Điều kiện khắc phục:</span> <span className="text-amber-700">{vc.conditions}</span></div>}
+                {vc.conditions && <div><span className="text-slate-400 text-amber-600">Điều kiện sửa đổi khắc phục:</span> <span className="text-slate-900 font-extrabold">{vc.conditions}</span></div>}
               </div>
             </div>
+
+            <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-4">
+              <h4 className="text-xs font-black text-indigo-700 border-b border-slate-50 pb-2 flex items-center gap-1.5"><ShieldCheck size={14} /> Chữ ký & Phê duyệt điện tử</h4>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 print-signatures">
+                {[
+                  { code: 'inspector', name: 'Kỹ sư kiểm tra' },
+                  { code: 'contractor', name: 'Đại diện nhà thầu' },
+                  { code: 'supervisor', name: 'Kỹ sư giám sát' },
+                  { code: 'completion', name: 'Nghiệm thu hoàn thành' }
+                ].map(role => {
+                  const signature = (vc.signersData || []).find(s => s.roleCode === role.code);
+                  return (
+                    <div key={role.code} className="border border-slate-100 rounded-2xl p-4 flex flex-col justify-between items-center text-center bg-slate-50/30 min-h-[140px] hover:border-slate-200 transition">
+                      <div>
+                        <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{role.name}</h5>
+                        <p className="text-[9px] text-slate-500 mt-0.5 font-bold">Quy trình nghiệm thu</p>
+                      </div>
+
+                      {signature ? (
+                        <div className="space-y-1 my-2">
+                          {signature.signatureUrl ? (
+                            <img src={signature.signatureUrl} alt="Signature" className="h-10 object-contain mx-auto mix-blend-multiply select-none" />
+                          ) : (
+                            <span className="text-indigo-600 font-serif italic font-black text-sm tracking-wide block py-2">{signature.userName}</span>
+                          )}
+                          <span className="text-[9px] text-slate-700 block font-extrabold">{signature.userName}</span>
+                          <span className="text-[8px] text-slate-400 block font-mono">{new Date(signature.signedAt || '').toLocaleDateString('vi-VN')}</span>
+                        </div>
+                      ) : (
+                        <div className="text-[9px] text-slate-300 italic my-3 font-semibold">Chưa ký nhận</div>
+                      )}
+
+                      <div className="w-full pt-2 border-t border-slate-100/50 no-print flex gap-1 justify-center">
+                        {signature ? (
+                          (user?.role === Role.ADMIN || user?.name === signature.userName) && (
+                            <button onClick={() => handleClearSignature(role.code as any, role.name)} className="text-[8px] font-black text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 transition uppercase">Xoá ký</button>
+                          )
+                        ) : (
+                          <button onClick={() => handleSign(role.code as any, role.name)} className="text-[8px] font-black text-indigo-600 hover:text-indigo-800 px-2.5 py-1 rounded bg-indigo-50 hover:bg-indigo-100 transition uppercase shadow-sm">Ký duyệt</button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
           </div>
         </div>
+
         {submittingChecklist && (
           <ProjectSubmissionDialog
             title="Gửi duyệt hồ sơ chất lượng"
@@ -1188,6 +1727,123 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
           onCancel={() => setSubmittingChecklist(null)}
           onConfirm={handleConfirmSubmit}
         />
+      )}
+
+      {showMarkerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200 no-print">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-gradient-to-r from-indigo-50/50 to-violet-50/50">
+              <div>
+                <h3 className="text-sm font-black text-slate-900">
+                  {editingMarkerId ? 'Chỉnh sửa điểm kiểm soát' : 'Thêm điểm kiểm soát mới'}
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-0.5 font-bold">
+                  Định vị: X={newMarkerCoords?.x.toFixed(1)}%, Y={newMarkerCoords?.y.toFixed(1)}%
+                </p>
+              </div>
+              <button 
+                onClick={() => { setShowMarkerModal(false); setEditingMarkerId(null); }} 
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Form Content */}
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-500 block mb-1">Tên điểm đánh dấu *</label>
+                <input 
+                  type="text" 
+                  value={newMarkerLabel} 
+                  onChange={e => setNewMarkerLabel(e.target.value)} 
+                  placeholder="Ví dụ: Điểm A1, Cột B2..." 
+                  className="w-full text-xs font-bold text-slate-900 border border-slate-200 rounded-xl px-3.5 py-2.5 outline-none focus:ring-1 focus:ring-indigo-300"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-slate-500 block mb-1">Trạng thái kiểm tra</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { val: 'pass', label: 'Đạt' },
+                    { val: 'fail', label: 'Không Đạt' },
+                    { val: 'pending', label: 'Chờ kiểm' }
+                  ].map(opt => (
+                    <button
+                      key={opt.val}
+                      type="button"
+                      onClick={() => setNewMarkerStatus(opt.val as any)}
+                      className={`py-2 px-3 border rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                        newMarkerStatus === opt.val 
+                          ? opt.val === 'pass' 
+                            ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm shadow-emerald-500/20' 
+                            : opt.val === 'fail'
+                              ? 'bg-red-500 text-white border-red-500 shadow-sm shadow-red-500/20'
+                              : 'bg-slate-500 text-white border-slate-500 shadow-sm shadow-slate-500/20'
+                          : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${
+                        newMarkerStatus === opt.val 
+                          ? 'bg-white' 
+                          : opt.val === 'pass' 
+                            ? 'bg-emerald-500' 
+                            : opt.val === 'fail' 
+                              ? 'bg-red-500' 
+                              : 'bg-slate-400'
+                      }`} />
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-slate-500 block mb-1">Ghi chú (nếu có)</label>
+                <textarea 
+                  value={newMarkerNote} 
+                  onChange={e => setNewMarkerNote(e.target.value)} 
+                  placeholder="Ghi chú thêm về lỗi hoặc mô tả điểm..." 
+                  rows={3} 
+                  className="w-full text-xs border border-slate-200 rounded-xl px-3.5 py-2.5 outline-none resize-none font-medium text-slate-700 focus:ring-1 focus:ring-indigo-300"
+                />
+              </div>
+            </div>
+
+            {/* Footer actions */}
+            <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex justify-between gap-3">
+              <div>
+                {editingMarkerId && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteMarker(editingMarkerId)}
+                    className="px-4 py-2 text-xs font-bold bg-red-50 hover:bg-red-100 text-red-600 rounded-xl flex items-center gap-1 transition animate-in fade-in duration-150"
+                  >
+                    <Trash2 size={12} /> Xoá điểm
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowMarkerModal(false); setEditingMarkerId(null); }}
+                  className="px-4 py-2 text-xs font-bold bg-white border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition"
+                >
+                  Huỷ
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveMarker}
+                  className="px-5 py-2 text-xs font-black bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition shadow-md shadow-indigo-600/10"
+                >
+                  Lưu
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

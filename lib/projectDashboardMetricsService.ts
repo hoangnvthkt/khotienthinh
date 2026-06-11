@@ -140,7 +140,7 @@ export interface SevenDayForecastDashboardMetric {
 export type ExecutiveAlertSeverity = 'critical' | 'warning' | 'info' | 'success';
 export type ExecutiveHealthStatus = 'green' | 'amber' | 'red';
 export type ExecutivePaymentParty = 'owner' | 'subcontractor' | 'supplier';
-export type ExecutivePaymentBlockingStage = 'none' | 'production' | 'acceptance' | 'certificate' | 'cash';
+export type ExecutivePaymentBlockingStage = 'none' | 'dossier' | 'quality' | 'cash';
 
 export interface ExecutiveScheduleHealthMetric {
   status: ExecutiveHealthStatus;
@@ -681,57 +681,32 @@ const buildScheduleHealthMetric = (
   };
 };
 
-const paymentGroupKey = (schedule: PaymentSchedule): string =>
-  [schedule.type, schedule.contractType || '', schedule.contractId || ''].join('|');
-
 const getPartyMetric = (
   schedule: PaymentSchedule,
-  owner: PartyDashboardMetric,
-  subcontractor: PartyDashboardMetric,
-  supplier: SupplierDashboardMetric,
 ): {
   party: ExecutivePaymentParty;
   label: string;
-  performedValue: number;
-  acceptedValue: number;
-  certifiedValue: number;
-  paidValue: number;
 } => {
   if (schedule.type === 'receivable' || schedule.contractType === 'customer') {
     return {
       party: 'owner',
       label: 'Chủ đầu tư',
-      performedValue: owner.performedValue,
-      acceptedValue: owner.acceptedValue,
-      certifiedValue: owner.paymentRequested,
-      paidValue: owner.actualPaid,
     };
   }
   if (schedule.contractType === 'subcontractor') {
     return {
       party: 'subcontractor',
       label: 'Thầu phụ',
-      performedValue: subcontractor.performedValue,
-      acceptedValue: subcontractor.acceptedValue,
-      certifiedValue: subcontractor.paymentRequested,
-      paidValue: subcontractor.actualPaid,
     };
   }
   return {
     party: 'supplier',
     label: 'Nhà cung cấp',
-    performedValue: supplier.paymentRequested,
-    acceptedValue: supplier.paymentRequested,
-    certifiedValue: supplier.paymentRequested,
-    paidValue: supplier.actualPaid,
   };
 };
 
 const buildPaymentPeriodRisks = (
   paymentSchedules: PaymentSchedule[],
-  owner: PartyDashboardMetric,
-  subcontractor: PartyDashboardMetric,
-  supplier: SupplierDashboardMetric,
 ): ExecutivePaymentPeriodRisk[] => {
   const today = todayIso();
   const horizon = addDaysIso(today, 10);
@@ -741,27 +716,22 @@ const buildPaymentPeriodRisks = (
     .filter(schedule => schedule.type === 'receivable' || schedule.contractType === 'subcontractor' || schedule.type === 'payable');
 
   return openSchedules.map(schedule => {
-    const partyMetric = getPartyMetric(schedule, owner, subcontractor, supplier);
-    const key = paymentGroupKey(schedule);
-    const targetCumulative = sum(
-      paymentSchedules.filter(item => paymentGroupKey(item) === key && item.dueDate <= schedule.dueDate),
-      item => item.amount,
-    );
-
+    const partyMetric = getPartyMetric(schedule);
+    const targetCumulative = Number(schedule.amount || 0);
+    const paidValue = Number(schedule.paidAmount || 0);
+    const dossierReady = schedule.dossierStatus === 'approved';
+    const qualityReady = schedule.qualityStatus === 'not_applicable' || schedule.qualityStatus === 'passed';
     let blockingStage: ExecutivePaymentBlockingStage = 'none';
     let missingAmount = 0;
-    if (partyMetric.performedValue < targetCumulative) {
-      blockingStage = 'production';
-      missingAmount = targetCumulative - partyMetric.performedValue;
-    } else if (partyMetric.acceptedValue < targetCumulative) {
-      blockingStage = 'acceptance';
-      missingAmount = targetCumulative - partyMetric.acceptedValue;
-    } else if (partyMetric.certifiedValue < targetCumulative) {
-      blockingStage = 'certificate';
-      missingAmount = targetCumulative - partyMetric.certifiedValue;
-    } else if (partyMetric.paidValue < targetCumulative) {
+    if (!dossierReady) {
+      blockingStage = 'dossier';
+      missingAmount = targetCumulative;
+    } else if (!qualityReady) {
+      blockingStage = 'quality';
+      missingAmount = targetCumulative;
+    } else if (paidValue < targetCumulative) {
       blockingStage = 'cash';
-      missingAmount = targetCumulative - partyMetric.paidValue;
+      missingAmount = targetCumulative - paidValue;
     }
 
     const daysUntilDue = daysBetweenDates(today, schedule.dueDate);
@@ -772,15 +742,12 @@ const buildPaymentPeriodRisks = (
         ? 'critical'
         : 'warning';
     const recommendationByStage: Record<ExecutivePaymentBlockingStage, string> = {
-      none: 'Đủ điều kiện theo dữ liệu hiện có; theo dõi thu/chi đúng hạn.',
-      production: partyMetric.party === 'subcontractor'
-        ? 'Không thanh toán đủ kỳ; chỉ xem xét phần đã có khối lượng/tiến độ thực tế.'
-        : 'Cần đẩy sản lượng/khối lượng thi công trước kỳ thanh toán.',
-      acceptance: 'Cần hoàn tất nghiệm thu khối lượng trước khi lập/thực hiện thanh toán.',
-      certificate: 'Cần lập hoặc gửi chứng từ thanh toán cho phần đã nghiệm thu.',
+      none: 'Kế hoạch đã đủ trạng thái hồ sơ/chất lượng; theo dõi thu/chi đúng hạn.',
+      dossier: 'Cần chuẩn bị hoặc duyệt hồ sơ thanh toán cho đợt này.',
+      quality: 'Cần Chỉ huy trưởng xác nhận chất lượng Đạt/Không đạt ở mức tổng hợp.',
       cash: partyMetric.party === 'owner'
-        ? 'Cần theo dõi thu tiền từ CĐT theo chứng từ đã đủ điều kiện.'
-        : 'Cần chuẩn bị dòng tiền trả theo phần đã đủ hồ sơ.',
+        ? 'Cần theo dõi thu tiền từ CĐT theo ngày dự kiến.'
+        : 'Cần chuẩn bị dòng tiền trả theo kế hoạch hợp đồng.',
     };
 
     return {
@@ -791,10 +758,10 @@ const buildPaymentPeriodRisks = (
       dueDate: schedule.dueDate,
       daysUntilDue,
       targetCumulative,
-      performedValue: partyMetric.performedValue,
-      acceptedValue: partyMetric.acceptedValue,
-      certifiedValue: partyMetric.certifiedValue,
-      paidValue: partyMetric.paidValue,
+      performedValue: targetCumulative,
+      acceptedValue: dossierReady ? targetCumulative : 0,
+      certifiedValue: qualityReady ? targetCumulative : 0,
+      paidValue,
       blockingStage,
       missingAmount: clampMoney(missingAmount),
       severity,
@@ -866,8 +833,8 @@ const buildPriorityAlerts = (
         id: `payment-${risk.id}`,
         severity: risk.severity,
         title: `${risk.label}: ${risk.description}`,
-        message: `${risk.daysUntilDue < 0 ? `Quá hạn ${Math.abs(risk.daysUntilDue)} ngày` : `Còn ${risk.daysUntilDue} ngày`} · thiếu ${Math.round(risk.missingAmount).toLocaleString('vi-VN')} đ tại bước ${risk.blockingStage}. ${risk.recommendation}`,
-        targetTab: risk.party === 'owner' ? 'contract' : 'subcontract',
+        message: `${risk.daysUntilDue < 0 ? `Quá hạn ${Math.abs(risk.daysUntilDue)} ngày` : `Còn ${risk.daysUntilDue} ngày`} · ${risk.recommendation}`,
+        targetTab: 'payment',
         dueDate: risk.dueDate,
         amount: risk.missingAmount,
       });
@@ -914,7 +881,7 @@ const buildExecutiveMetric = (
   sourceWarnings: string[],
 ): ExecutiveDashboardMetric => {
   const scheduleHealth = buildScheduleHealthMetric(tasks, progress, delayEvents);
-  const paymentPeriodRisks = buildPaymentPeriodRisks(paymentSchedules, owner, subcontractor, supplier);
+  const paymentPeriodRisks = buildPaymentPeriodRisks(paymentSchedules);
   const approvalQueue = buildApprovalQueueMetric(tasks, logs, completionRequests, acceptances, certs, variations, reconciliationGroups);
   const priorityAlerts = buildPriorityAlerts(scheduleHealth, paymentPeriodRisks, approvalQueue, sourceWarnings);
   return {
@@ -1055,7 +1022,7 @@ export const projectDashboardMetricsService = {
       safeLoad('purchase_orders', warnings, () => poService.list(projectScopeId, constructionSite), [] as PurchaseOrder[]),
       safeLoad('material_request_fulfillment_batches', warnings, () => projectWeeklyProgressService.listFulfillmentBatchesByScope(projectScopeId, constructionSite), [] as MaterialRequestFulfillmentBatch[]),
       safeLoad('material_budget_items', warnings, () => boqService.list(projectScopeId, constructionSite), [] as MaterialBudgetItem[]),
-      safeLoad('payment_schedules', warnings, () => paymentService.list(projectScopeId, constructionSite), [] as PaymentSchedule[]),
+      safeLoad('payment_schedules', warnings, () => paymentService.listScoped(project?.id || params.projectId || null, constructionSite), [] as PaymentSchedule[]),
       safeLoad('project_delay_events', warnings, () => delayEventService.list(projectScopeId, constructionSite), [] as ProjectDelayEvent[]),
       safeLoad('contract_variations', warnings, () => listContractVariations(projectScopeId, constructionSite), [] as ContractVariation[]),
       safeLoad('boq_reconciliation submitted', warnings, () => boqReconciliationService.listByProject(projectScopeId, constructionSite), [] as BoqReconciliationGroup[]),
