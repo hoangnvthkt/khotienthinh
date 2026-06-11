@@ -15,8 +15,9 @@ interface ChatMessage {
 }
 
 interface AssistantRequest {
-  action?: 'feedback';
+  action?: 'feedback' | 'estimate_suggestion' | 'cost_norm_standardization' | 'tender_detect_columns' | 'tender_suggest_mapping' | 'tender_risk_rfi';
   question?: string;
+  prompt?: string;
   conversationId?: string | null;
   userId?: string;
   mode?: AiMode;
@@ -24,6 +25,31 @@ interface AssistantRequest {
   messageId?: string;
   rating?: 1 | -1;
   model?: string;
+  templates?: any[];
+  currentInput?: Record<string, unknown>;
+  selectedTemplateId?: string;
+  canSeeInternalCost?: boolean;
+  workbook?: any;
+  packageId?: string;
+  lines?: any[];
+  mappings?: any[];
+  pricingGaps?: any[];
+  item?: any;
+  targetItem?: any;
+  baseQuantity?: number | null;
+  rawMaterials?: any[];
+  normalizedRows?: any[];
+  priceBookSamples?: any[];
+}
+
+interface AppUserContext {
+  id: string;
+  role?: string | null;
+  email?: string | null;
+  isActive?: boolean | null;
+  allowedModules?: string[] | null;
+  adminModules?: string[] | null;
+  source: 'jwt' | 'body';
 }
 
 const corsHeaders = {
@@ -70,6 +96,7 @@ Các chủ đề ĐƯỢC PHÉP HỖ TRỢ (được coi là liên quan):
 - Hỏi về tài sản công ty, danh mục thiết bị, lịch bảo trì thiết bị.
 - Hỏi về tài chính của dự án, doanh thu, ngân sách dự toán, chi phí thực tế, lãi lỗ.
 - Hỏi về nhật ký thi công (daily logs), nghiệm thu chất lượng (quality checklists), biên bản nghiệm thu.
+- Hỏi về chào thầu, BOQ Chủ đầu tư, AI Tender BOQ Analyzer, dự toán nhanh, đơn giá nội bộ, định mức nội bộ, template dự toán, estimate scenario, chuyển estimate thành BOQ.
 - Hỏi về các quy trình, tài liệu quy định nội bộ hoặc chính sách công ty có trong Kho Kiến Thức.
 - Hướng dẫn hoặc giải đáp thắc mắc về cách sử dụng phần mềm Vioo/Kho Tiến Thịnh.
 
@@ -164,8 +191,186 @@ const TOOL_SOURCES: Record<string, { title: string; fileName: string }> = {
   ai_tool_employee_summary: { title: 'Hồ sơ nhân sự', fileName: 'Hệ thống Quản lý Nhân sự (HRM)' },
   ai_tool_employee_search: { title: 'Tìm kiếm nhân sự', fileName: 'Hệ thống Quản lý Nhân sự (HRM)' },
   ai_tool_attendance_report: { title: 'Báo cáo chấm công', fileName: 'Hệ thống Quản lý Nhân sự (HRM)' },
+  ai_tool_estimate_module_blueprint: { title: 'Blueprint AI dự toán nhanh', fileName: 'Module Đơn giá nội bộ & AI dự toán nhanh' },
+  ai_tool_cost_template_summary: { title: 'Cost templates', fileName: 'Module Đơn giá nội bộ & AI dự toán nhanh' },
+  ai_tool_internal_price_book_lookup: { title: 'Đơn giá nội bộ', fileName: 'Internal Price Book' },
+  ai_tool_internal_norms_lookup: { title: 'Định mức nội bộ', fileName: 'Internal Norms' },
+  ai_tool_estimate_scenario_summary: { title: 'Phương án dự toán', fileName: 'Estimate Scenarios' },
   ai_tool_executive_dashboard: { title: 'Dashboard tổng hợp', fileName: 'Hệ thống Quản lý Vioo ERP' },
 };
+
+const TOOL_ACCESS: Record<string, { requiresJwt?: boolean; adminModules?: string[]; message: string }> = {
+  ai_tool_cost_template_summary: {
+    requiresJwt: true,
+    adminModules: ['HD', 'DA', 'TENDER_AI'],
+    message: 'Cost template là dữ liệu nghiệp vụ nội bộ. Anh/chị cần đăng nhập bằng tài khoản Admin hoặc quản trị module Hợp đồng/Dự án để AI tra cứu.',
+  },
+  ai_tool_internal_price_book_lookup: {
+    requiresJwt: true,
+    adminModules: ['HD', 'TENDER_AI'],
+    message: 'Đơn giá nội bộ là dữ liệu nhạy cảm. AI chỉ được tra cứu khi tài khoản là Admin hoặc quản trị module Hợp đồng.',
+  },
+  ai_tool_internal_norms_lookup: {
+    requiresJwt: true,
+    adminModules: ['HD', 'DA', 'TENDER_AI'],
+    message: 'Định mức nội bộ là dữ liệu nhạy cảm. AI chỉ được tra cứu khi tài khoản là Admin hoặc quản trị module Hợp đồng/Dự án.',
+  },
+  ai_tool_estimate_scenario_summary: {
+    requiresJwt: true,
+    adminModules: ['HD', 'DA', 'TENDER_AI'],
+    message: 'Phương án dự toán/chào thầu cần quyền nội bộ. Anh/chị cần đăng nhập bằng tài khoản Admin hoặc quản trị module Hợp đồng/Dự án.',
+  },
+};
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(v => String(v).trim()).filter(Boolean);
+}
+
+function isAdminOrModuleAdmin(actor: AppUserContext | null, modules: string[]) {
+  if (!actor || actor.isActive === false) return false;
+  if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
+  const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
+  return modules.some(moduleCode => adminModules.includes(moduleCode.toUpperCase()));
+}
+
+function canUseEstimateAssistant(actor: AppUserContext | null) {
+  if (!actor || actor.isActive === false) return false;
+  if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
+  const allowedModules = normalizeStringArray(actor.allowedModules).map(m => m.toUpperCase());
+  const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
+  return ['HD', 'DA', 'TENDER_AI'].some(moduleCode => allowedModules.includes(moduleCode) || adminModules.includes(moduleCode));
+}
+
+function canUseTenderAssistant(actor: AppUserContext | null) {
+  if (!actor || actor.isActive === false) return false;
+  if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
+  const allowedModules = normalizeStringArray(actor.allowedModules).map(m => m.toUpperCase());
+  const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
+  return allowedModules.includes('TENDER_AI') || adminModules.includes('TENDER_AI') || allowedModules.includes('HD') || adminModules.includes('HD');
+}
+
+function canUseCostNormAssistant(actor: AppUserContext | null) {
+  return isAdminOrModuleAdmin(actor, ['HD', 'TENDER_AI']);
+}
+
+function getBearerToken(request: Request) {
+  const auth = request.headers.get('authorization') || request.headers.get('Authorization') || '';
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : null;
+}
+
+async function findAppUserByAuthUser(authUser: any): Promise<AppUserContext | null> {
+  if (!authUser?.id && !authUser?.email) return null;
+
+  if (authUser.id) {
+    const byAuthId = await admin
+      .from('users')
+      .select('id, role, email, is_active, allowed_modules, admin_modules')
+      .eq('auth_id', authUser.id)
+      .maybeSingle();
+
+    if (byAuthId.data) {
+      return {
+        id: byAuthId.data.id,
+        role: byAuthId.data.role,
+        email: byAuthId.data.email,
+        isActive: byAuthId.data.is_active,
+        allowedModules: byAuthId.data.allowed_modules,
+        adminModules: byAuthId.data.admin_modules,
+        source: 'jwt',
+      };
+    }
+  }
+
+  if (authUser.email) {
+    const byEmail = await admin
+      .from('users')
+      .select('id, role, email, is_active, allowed_modules, admin_modules')
+      .ilike('email', authUser.email)
+      .maybeSingle();
+
+    if (byEmail.data) {
+      return {
+        id: byEmail.data.id,
+        role: byEmail.data.role,
+        email: byEmail.data.email,
+        isActive: byEmail.data.is_active,
+        allowedModules: byEmail.data.allowed_modules,
+        adminModules: byEmail.data.admin_modules,
+        source: 'jwt',
+      };
+    }
+  }
+
+  return null;
+}
+
+async function resolveActor(request: Request, fallbackUserId?: string): Promise<AppUserContext | null> {
+  const token = getBearerToken(request);
+  if (token) {
+    const { data, error } = await admin.auth.getUser(token);
+    if (!error && data?.user) {
+      const appUser = await findAppUserByAuthUser(data.user);
+      if (appUser) return appUser;
+    } else {
+      console.warn('ai-assistant auth token validation failed:', error?.message);
+    }
+  }
+
+  if (fallbackUserId) {
+    const { data } = await admin
+      .from('users')
+      .select('id, role, email, is_active, allowed_modules, admin_modules')
+      .eq('id', fallbackUserId)
+      .maybeSingle();
+
+    if (data) {
+      return {
+        id: data.id,
+        role: data.role,
+        email: data.email,
+        isActive: data.is_active,
+        allowedModules: data.allowed_modules,
+        adminModules: data.admin_modules,
+        source: 'body',
+      };
+    }
+  }
+
+  return null;
+}
+
+function authorizeTool(toolName: string, actor: AppUserContext | null): { allowed: boolean; message?: string; suggestions?: string[] } {
+  const access = TOOL_ACCESS[toolName];
+  if (!access) return { allowed: true };
+
+  if (access.requiresJwt && actor?.source !== 'jwt') {
+    return {
+      allowed: false,
+      message: `${access.message}\n\nLưu ý: phiên hiện tại chưa gửi access token hợp lệ tới AI Assistant.`,
+      suggestions: [
+        'Thiết kế module AI dự toán nhanh như thế nào?',
+        'Các bảng dữ liệu của module dự toán gồm những gì?',
+        'Nguyên tắc bảo mật đơn giá nội bộ là gì?',
+      ],
+    };
+  }
+
+  if (!isAdminOrModuleAdmin(actor, access.adminModules || [])) {
+    return {
+      allowed: false,
+      message: access.message,
+      suggestions: [
+        'Thiết kế module AI dự toán nhanh như thế nào?',
+        'Các bảng dữ liệu của module dự toán gồm những gì?',
+        'Nguyên tắc snapshot dự toán cũ là gì?',
+      ],
+    };
+  }
+
+  return { allowed: true };
+}
 
 function extractJsonObject(text: string): any {
   const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
@@ -214,6 +419,16 @@ async function callGemini(
 // ═══ Tool Router — Replaces planSql() ════════════════════════
 
 const ALLOWED_TOOL_NAMES = AI_TOOL_DEFINITIONS.map(t => t.name);
+
+function getMissingRequiredParams(toolName: string, params: Record<string, any>) {
+  const definition = AI_TOOL_DEFINITIONS.find(tool => tool.name === toolName);
+  if (!definition?.parameters) return [];
+
+  return Object.entries(definition.parameters)
+    .filter(([, spec]: any) => spec?.required)
+    .map(([key]) => key)
+    .filter(key => params[key] === null || params[key] === undefined || String(params[key]).trim() === '');
+}
 
 async function routeToTool(question: string, history: ChatMessage[], selectedModel?: string | null) {
   const prompt = `
@@ -406,6 +621,506 @@ async function handleFeedback(req: AssistantRequest) {
   return { ok: true };
 }
 
+function normalizeEstimateSuggestionPayload(raw: any, req: AssistantRequest) {
+  const templates = Array.isArray(req.templates) ? req.templates : [];
+  const selectedTemplate = templates.find((template: any) => template.id === raw?.templateId)
+    || templates.find((template: any) => template.id === req.selectedTemplateId)
+    || templates[0]
+    || null;
+  const allowedParamCodes = new Set<string>((selectedTemplate?.parameters || []).map((param: any) => String(param.code)));
+  const currentInput = req.currentInput || {};
+  const rawInputs = raw?.suggestedInputs && typeof raw.suggestedInputs === 'object' ? raw.suggestedInputs : {};
+  const suggestedInputs = Object.fromEntries(
+    Object.entries({ ...currentInput, ...rawInputs })
+      .filter(([key]) => allowedParamCodes.size === 0 || allowedParamCodes.has(key)),
+  );
+  const missingParameters = (selectedTemplate?.parameters || [])
+    .filter((param: any) => param.isRequired && (suggestedInputs[param.code] === undefined || suggestedInputs[param.code] === ''))
+    .map((param: any) => String(param.code));
+  const confidenceScore = Math.max(0, Math.min(1, Number(raw?.confidenceScore ?? 0.5)));
+  return {
+    templateId: selectedTemplate?.id,
+    templateName: selectedTemplate?.name,
+    suggestedInputs,
+    missingParameters,
+    assumptions: Array.isArray(raw?.assumptions)
+      ? raw.assumptions.map(String)
+      : ['AI chỉ gợi ý điền form từ template đã có, không tạo/chốt estimate.'],
+    riskWarnings: Array.isArray(raw?.riskWarnings) ? raw.riskWarnings.map(String) : [],
+    dataGaps: Array.isArray(raw?.dataGaps) ? raw.dataGaps.map(String) : missingParameters.map((code: string) => `missing_parameter:${code}`),
+    confidenceScore,
+    source: 'remote',
+  };
+}
+
+async function handleEstimateSuggestion(req: AssistantRequest, actor: AppUserContext | null) {
+  if (!canUseEstimateAssistant(actor)) {
+    return jsonResponse({
+      error: 'Tài khoản hiện tại chưa có quyền HD/DA để dùng AI gợi ý dự toán trong builder.',
+    }, 403);
+  }
+  const promptText = String(req.prompt || req.question || '').trim();
+  if (!promptText) return jsonResponse({ error: 'Thiếu mô tả đầu vào để AI gợi ý.' }, 400);
+  const templates = Array.isArray(req.templates) ? req.templates : [];
+  const aiPrompt = `
+Bạn là AI Estimate Assistant trong ERP thi công nhà xưởng.
+Nhiệm vụ: gợi ý template và tham số form dự toán nhanh từ mô tả người dùng.
+
+Quy tắc bắt buộc:
+- Chỉ dùng template và parameter được cung cấp trong JSON dưới đây.
+- Không bịa đơn giá, định mức, giá vốn, margin hoặc profit.
+- Không tạo/chốt estimate. Chỉ trả gợi ý để user bấm "Áp dụng vào form".
+- Nếu thiếu tham số quan trọng, ghi vào missingParameters và dataGaps.
+- Trả về DUY NHẤT một JSON object, không markdown.
+
+Schema JSON:
+{
+  "templateId": "id template phù hợp",
+  "templateName": "tên template",
+  "suggestedInputs": { "parameter_code": "value hoặc number" },
+  "missingParameters": ["code"],
+  "assumptions": ["giả định"],
+  "riskWarnings": ["cảnh báo"],
+  "dataGaps": ["thiếu dữ liệu"],
+  "confidenceScore": 0.0
+}
+
+Mô tả người dùng:
+${promptText}
+
+Selected template id:
+${req.selectedTemplateId || ''}
+
+Current input:
+${compactJson(req.currentInput || {}, 5000)}
+
+Templates:
+${compactJson(templates, 18000)}
+`.trim();
+
+  const raw = await callGemini(aiPrompt, 0.05, req.model || GEMINI_FAST_MODEL, 'application/json');
+  const parsed = extractJsonObject(raw);
+  const suggestion = normalizeEstimateSuggestionPayload(parsed, req);
+  console.info('ai-assistant estimate_suggestion', JSON.stringify({
+    actorId: actor?.id || null,
+    templateId: suggestion.templateId || null,
+    missingParameters: suggestion.missingParameters,
+    confidenceScore: suggestion.confidenceScore,
+    at: new Date().toISOString(),
+  }));
+  return jsonResponse({ suggestion });
+}
+
+function normalizeNormResourceType(value: unknown) {
+  const text = String(value || 'material');
+  return ['material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].includes(text) ? text : 'material';
+}
+
+function normalizeNormSuggestionRows(raw: any, req: AssistantRequest) {
+  const rows = Array.isArray(raw?.suggestions) ? raw.suggestions : Array.isArray(raw?.rows) ? raw.rows : [];
+  const sourceIds = new Set((Array.isArray(req.rawMaterials) ? req.rawMaterials : []).map((row: any) => String(row.sourceMaterialBudgetItemId || '')).filter(Boolean));
+  const baseQuantity = Number(req.baseQuantity || req.item?.baseQuantity || 0);
+  return rows.map((row: any, index: number) => {
+    const sourceId = row.sourceMaterialBudgetItemId && sourceIds.has(String(row.sourceMaterialBudgetItemId))
+      ? String(row.sourceMaterialBudgetItemId)
+      : null;
+    const resourceName = String(row.resourceName || row.itemName || '').trim();
+    const resourceCode = row.resourceCode || row.materialCode ? String(row.resourceCode || row.materialCode) : '';
+    const normQuantity = Math.max(0, Number(row.normQuantity ?? row.quantity ?? 0));
+    const rawQuantity = row.rawQuantity === null || row.rawQuantity === undefined ? null : Number(row.rawQuantity);
+    const confidenceScore = Math.max(0, Math.min(1, Number(row.confidenceScore ?? 0.5)));
+    return {
+      id: String(row.id || sourceId || row.normCode || `${req.item?.id || 'item'}-ai-${index}`),
+      sourceMaterialBudgetItemId: sourceId,
+      normCode: row.normCode ? String(row.normCode).slice(0, 120) : '',
+      resourceCode,
+      resourceName,
+      resourceType: normalizeNormResourceType(row.resourceType),
+      category: row.category ? String(row.category) : '',
+      unit: String(row.unit || '').trim(),
+      rawQuantity: Number.isFinite(rawQuantity) ? rawQuantity : null,
+      baseQuantity: Number.isFinite(baseQuantity) && baseQuantity > 0 ? baseQuantity : null,
+      normQuantity,
+      suggestedNormQuantity: Math.max(0, Number(row.suggestedNormQuantity ?? normQuantity)),
+      wastePercent: Math.max(0, Number(row.wastePercent ?? 0)),
+      region: row.region ? String(row.region) : 'all',
+      versionNo: 1,
+      confidenceScore,
+      note: row.note ? String(row.note) : '',
+      reason: String(row.reason || 'AI gợi ý chuẩn hóa từ dữ liệu tham chiếu.'),
+      needsReview: row.needsReview !== false,
+      sortOrder: Number.isFinite(Number(row.sortOrder)) ? Number(row.sortOrder) : index,
+    };
+  }).filter((row: any) => row.resourceName && row.unit && row.normQuantity >= 0);
+}
+
+async function handleCostNormStandardization(req: AssistantRequest, actor: AppUserContext | null) {
+  if (!canUseCostNormAssistant(actor)) {
+    return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền Admin/HD admin/Tender AI admin để dùng AI chuẩn hóa định mức.' }, 403);
+  }
+  const item = req.item || {};
+  const targetItem = req.targetItem || {};
+  const rawMaterials = Array.isArray(req.rawMaterials) ? req.rawMaterials.slice(0, 120) : [];
+  const normalizedRows = Array.isArray(req.normalizedRows) ? req.normalizedRows.slice(0, 120) : [];
+  const priceBookSamples = Array.isArray(req.priceBookSamples) ? req.priceBookSamples.slice(0, 80) : [];
+  const baseQuantity = Number(req.baseQuantity || item.baseQuantity || 0);
+  const prompt = `
+Bạn là AI trợ lý chuẩn hóa định mức nội bộ cho công ty thi công nhà xưởng.
+Nhiệm vụ: gợi ý bảng định mức draft cho gói/hạng mục định mức đích, dựa trên hạng mục tham chiếu Sơn Miền Bắc.
+
+Quy tắc bắt buộc:
+- Hạng mục tham chiếu chỉ dùng để lấy rawMaterials và tính gợi ý ban đầu.
+- Gói định mức đích mới là nơi người dùng sẽ lưu thư viện định mức; mã/tên gói đích phải được ưu tiên khi gợi ý normCode.
+- Chỉ dùng dữ liệu hạng mục tham chiếu, gói đích, rawMaterials, normalizedRows và priceBookSamples được cung cấp.
+- Không bịa đơn giá, margin, profit, risk buffer.
+- Định mức normQuantity là hao phí trên 1 đơn vị gói/hạng mục định mức đích, ưu tiên công thức rawQuantity / baseQuantity tham chiếu khi có đủ dữ liệu.
+- Nếu baseQuantity thiếu hoặc <= 0, không tự tính normQuantity từ raw quantity; đặt needsReview=true và giải thích.
+- Không tự tạo nguồn lực mới nếu không có căn cứ. Nếu gợi ý nhân công/máy/thầu phụ thì needsReview=true và reason phải nêu rõ vì sao.
+- Không lưu DB, không activate; chỉ trả về dữ liệu để frontend fill draft.
+- Trả về DUY NHẤT JSON object.
+
+Schema:
+{
+  "suggestions": [
+    {
+      "sourceMaterialBudgetItemId": "id raw material hoặc null",
+      "normCode": "mã định mức draft nếu có",
+      "resourceCode": "mã nguồn lực/vật tư nếu có",
+      "resourceName": "tên nguồn lực/vật tư",
+      "resourceType": "material|labor|machine|subcontract|overhead|other",
+      "category": "nhóm nếu có",
+      "unit": "đơn vị",
+      "rawQuantity": 0,
+      "baseQuantity": 0,
+      "normQuantity": 0,
+      "suggestedNormQuantity": 0,
+      "wastePercent": 0,
+      "region": "all",
+      "confidenceScore": 0.0,
+      "note": "ghi chú ngắn",
+      "reason": "lý do gợi ý",
+      "needsReview": true,
+      "sortOrder": 0
+    }
+  ],
+  "warnings": ["cảnh báo dữ liệu thiếu hoặc bất thường"],
+  "confidenceScore": 0.0
+}
+
+Hạng mục tham chiếu:
+${compactJson(item, 6000)}
+
+Gói định mức đích:
+${compactJson(targetItem, 4000)}
+
+Base quantity:
+${Number.isFinite(baseQuantity) ? baseQuantity : null}
+
+Raw materials:
+${compactJson(rawMaterials, 14000)}
+
+Normalized rows hiện có:
+${compactJson(normalizedRows, 12000)}
+
+Price book samples không bao gồm đơn giá:
+${compactJson(priceBookSamples, 10000)}
+`.trim();
+
+  const raw = await callGemini(prompt, 0.04, req.model || GEMINI_FAST_MODEL, 'application/json');
+  const parsed = extractJsonObject(raw);
+  const suggestions = normalizeNormSuggestionRows(parsed, req);
+  const warnings = Array.isArray(parsed.warnings) ? parsed.warnings.map(String).slice(0, 10) : [];
+  const confidenceScore = Math.max(0, Math.min(1, Number(parsed.confidenceScore ?? (
+    suggestions.length ? suggestions.reduce((sum: number, row: any) => sum + Number(row.confidenceScore || 0), 0) / suggestions.length : 0.4
+  ))));
+  await writeTenderAiLog(req, actor, 'cost_norm_standardization', {
+    suggestions,
+    warnings,
+    confidenceScore,
+  });
+  return jsonResponse({ suggestions, warnings, confidenceScore });
+}
+
+function normalizeMappingObject(raw: any) {
+  const mapping = raw?.mapping && typeof raw.mapping === 'object' ? raw.mapping : {};
+  const allowedKeys = ['lineNo', 'itemCode', 'name', 'description', 'unit', 'quantity', 'ownerUnitPrice', 'ownerAmount', 'note'];
+  return Object.fromEntries(
+    allowedKeys
+      .filter(key => mapping[key] !== null && mapping[key] !== undefined && mapping[key] !== '')
+      .map(key => [key, Math.max(0, Number(mapping[key]))]),
+  );
+}
+
+async function writeTenderAiLog(req: AssistantRequest, actor: AppUserContext | null, action: string, response: any) {
+  try {
+    await admin.from('tender_ai_logs').insert({
+      package_id: req.packageId || null,
+      action,
+      request_summary: {
+        actorId: actor?.id || null,
+        lineCount: Array.isArray(req.lines) ? req.lines.length : null,
+        templateCount: Array.isArray(req.templates) ? req.templates.length : null,
+        hasWorkbook: Boolean(req.workbook),
+      },
+      response,
+      confidence_score: Number(response?.confidenceScore ?? response?.suggestion?.confidenceScore ?? 0.5),
+      created_by: actor?.id || null,
+    });
+  } catch (error) {
+    console.warn('tender_ai_logs insert failed:', (error as Error)?.message || error);
+  }
+}
+
+async function handleTenderDetectColumns(req: AssistantRequest, actor: AppUserContext | null) {
+  if (!canUseTenderAssistant(actor)) {
+    return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền HD để dùng Tender AI.' }, 403);
+  }
+  const workbook = req.workbook || {};
+  const prompt = `
+Bạn là Tender BOQ Analyzer cho công ty thi công nhà xưởng kết cấu thép.
+Nhiệm vụ: đọc mẫu Excel BOQ của Chủ đầu tư và gợi ý sheet/cột BOQ chính.
+
+Quy tắc:
+- Chỉ dùng sampleRows được cung cấp, không bịa thêm cột.
+- headerRow là index 0-based trong sampleRows.
+- mapping value là column index 0-based.
+- Nếu không chắc, giữ localSuggestion và ghi notes.
+- Trả về DUY NHẤT JSON object.
+
+Schema:
+{
+  "sheetName": "tên sheet",
+  "headerRow": 0,
+  "mapping": {
+    "lineNo": 0,
+    "itemCode": 1,
+    "name": 2,
+    "description": 3,
+    "unit": 4,
+    "quantity": 5,
+    "ownerUnitPrice": 6,
+    "ownerAmount": 7,
+    "note": 8
+  },
+  "confidenceScore": 0.0,
+  "notes": ["lý do"]
+}
+
+Workbook summary:
+${compactJson(workbook, 22000)}
+`.trim();
+
+  const raw = await callGemini(prompt, 0.02, req.model || GEMINI_FAST_MODEL, 'application/json');
+  const parsed = extractJsonObject(raw);
+  const suggestion = {
+    sheetName: String(parsed.sheetName || workbook?.localSuggestion?.sheetName || workbook?.sheets?.[0]?.name || ''),
+    headerRow: Math.max(0, Number(parsed.headerRow ?? workbook?.localSuggestion?.headerRow ?? 0)),
+    mapping: normalizeMappingObject(parsed),
+    confidenceScore: Math.max(0, Math.min(1, Number(parsed.confidenceScore ?? 0.5))),
+    notes: Array.isArray(parsed.notes) ? parsed.notes.map(String).slice(0, 8) : ['AI đã nhận diện cột BOQ.'],
+  };
+  await writeTenderAiLog(req, actor, 'tender_detect_columns', { suggestion });
+  return jsonResponse({ suggestion });
+}
+
+async function handleTenderSuggestMapping(req: AssistantRequest, actor: AppUserContext | null) {
+  if (!canUseTenderAssistant(actor)) {
+    return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền HD để dùng Tender AI.' }, 403);
+  }
+  const lines = Array.isArray(req.lines) ? req.lines.slice(0, 300) : [];
+  const templates = Array.isArray(req.templates) ? req.templates.slice(0, 15) : [];
+  const prompt = `
+Bạn là AI mapping BOQ CĐT sang template nội bộ của công ty thi công nhà xưởng.
+Mục tiêu: đề xuất mapping từng dòng BOQ Chủ đầu tư sang cost_template_item phù hợp.
+
+Quy tắc bắt buộc:
+- Chỉ chọn templateId/templateSectionId/templateItemId có trong Templates JSON.
+- Một dòng BOQ CĐT có thể map sang nhiều item nội bộ. Khi cần tách nhiều đầu mục, trả trong mappingLinks.
+- Nếu một dòng chỉ map một item, vẫn trả mappingLinks có 1 phần tử.
+- Không tự tạo đơn giá, định mức, giá vốn hoặc margin.
+- Dòng chưa chắc phải để "needs_review"; dòng không khớp để "unmatched"; dòng tổng/ghi chú để "ignored".
+- Trả về DUY NHẤT JSON object.
+
+Schema:
+{
+  "mappings": [
+    {
+      "externalLineId": "id dòng BOQ",
+      "templateId": "id template hoặc null",
+      "templateSectionId": "id section hoặc null",
+      "templateItemId": "id item hoặc null",
+      "workCode": "work_code hoặc null",
+      "normGroupCode": "norm_group_code hoặc null",
+      "mappingLinks": [
+        {
+          "templateId": "id template",
+          "templateSectionId": "id section hoặc null",
+          "templateItemId": "id item",
+          "workCode": "work_code hoặc null",
+          "normGroupCode": "norm_group_code hoặc null",
+          "allocationType": "inherit_quantity|percent|fixed_quantity|formula",
+          "allocationValue": null,
+          "quantityFormula": null,
+          "note": "ghi chú phân bổ nếu có",
+          "confidenceScore": 0.0,
+          "reason": "giải thích link"
+        }
+      ],
+      "mappingStatus": "matched|needs_review|unmatched|ignored",
+      "confidenceScore": 0.0,
+      "reason": "giải thích ngắn",
+      "assumptions": ["giả định nếu có"]
+    }
+  ]
+}
+
+BOQ lines:
+${compactJson(lines, 16000)}
+
+Templates:
+${compactJson(templates, 24000)}
+`.trim();
+
+  const raw = await callGemini(prompt, 0.03, req.model || GEMINI_FAST_MODEL, 'application/json');
+  const parsed = extractJsonObject(raw);
+  const lineIds = new Set(lines.map((line: any) => String(line.id)));
+  const templateIds = new Set(templates.map((template: any) => String(template.id)));
+  const itemIds = new Set(templates.flatMap((template: any) => (template.items || []).map((item: any) => String(item.id))));
+  const sectionIds = new Set(templates.flatMap((template: any) => (template.sections || []).map((section: any) => String(section.id))));
+  const mappings = Array.isArray(parsed.mappings) ? parsed.mappings.map((row: any) => {
+    const status = ['matched', 'needs_review', 'unmatched', 'ignored'].includes(row.mappingStatus) ? row.mappingStatus : 'needs_review';
+    const rawLinks = Array.isArray(row.mappingLinks) ? row.mappingLinks : Array.isArray(row.links) ? row.links : [];
+    const normalizedLinks = rawLinks.map((link: any) => {
+      const linkTemplateId = link.templateId && templateIds.has(String(link.templateId)) ? String(link.templateId) : null;
+      const linkTemplateItemId = link.templateItemId && itemIds.has(String(link.templateItemId)) ? String(link.templateItemId) : null;
+      const linkTemplateSectionId = link.templateSectionId && sectionIds.has(String(link.templateSectionId)) ? String(link.templateSectionId) : null;
+      if (!linkTemplateItemId && !link.workCode && !link.normGroupCode) return null;
+      return {
+        templateId: linkTemplateId,
+        templateSectionId: linkTemplateSectionId,
+        templateItemId: linkTemplateItemId,
+        workCode: link.workCode ? String(link.workCode) : null,
+        normGroupCode: link.normGroupCode ? String(link.normGroupCode) : null,
+        allocationType: ['inherit_quantity', 'percent', 'fixed_quantity', 'formula'].includes(link.allocationType) ? link.allocationType : 'inherit_quantity',
+        allocationValue: link.allocationValue === null || link.allocationValue === undefined ? null : Number(link.allocationValue),
+        quantityFormula: link.quantityFormula ? String(link.quantityFormula) : null,
+        note: link.note ? String(link.note) : null,
+        confidenceScore: Math.max(0, Math.min(1, Number(link.confidenceScore ?? row.confidenceScore ?? 0.5))),
+        reason: String(link.reason || row.reason || 'AI đề xuất mapping link.'),
+      };
+    }).filter(Boolean);
+    const fallbackTemplateId = row.templateId && templateIds.has(String(row.templateId)) ? String(row.templateId) : null;
+    const fallbackTemplateItemId = row.templateItemId && itemIds.has(String(row.templateItemId)) ? String(row.templateItemId) : null;
+    const fallbackTemplateSectionId = row.templateSectionId && sectionIds.has(String(row.templateSectionId)) ? String(row.templateSectionId) : null;
+    const mappingLinks = normalizedLinks.length
+      ? normalizedLinks
+      : fallbackTemplateItemId || row.workCode || row.normGroupCode
+        ? [{
+          templateId: fallbackTemplateId,
+          templateSectionId: fallbackTemplateSectionId,
+          templateItemId: fallbackTemplateItemId,
+          workCode: row.workCode ? String(row.workCode) : null,
+          normGroupCode: row.normGroupCode ? String(row.normGroupCode) : null,
+          allocationType: 'inherit_quantity',
+          allocationValue: null,
+          quantityFormula: null,
+          note: null,
+          confidenceScore: Math.max(0, Math.min(1, Number(row.confidenceScore ?? 0.5))),
+          reason: String(row.reason || 'AI đề xuất mapping.'),
+        }]
+        : [];
+    const firstLink = mappingLinks[0] || {};
+    return {
+      externalLineId: String(row.externalLineId || row.lineId || ''),
+      templateId: firstLink.templateId || fallbackTemplateId,
+      templateSectionId: firstLink.templateSectionId || fallbackTemplateSectionId,
+      templateItemId: firstLink.templateItemId || fallbackTemplateItemId,
+      workCode: firstLink.workCode || (row.workCode ? String(row.workCode) : null),
+      normGroupCode: firstLink.normGroupCode || (row.normGroupCode ? String(row.normGroupCode) : null),
+      mappingLinks,
+      mappingStatus: mappingLinks.length || status === 'ignored' ? status : (status === 'matched' ? 'needs_review' : status),
+      confidenceScore: Math.max(0, Math.min(1, Number(row.confidenceScore ?? 0.5))),
+      reason: String(row.reason || 'AI đề xuất mapping.'),
+      assumptions: Array.isArray(row.assumptions) ? row.assumptions.map(String).slice(0, 5) : [],
+    };
+  }).filter((row: any) => row.externalLineId && lineIds.has(row.externalLineId)) : [];
+
+  await writeTenderAiLog(req, actor, 'tender_suggest_mapping', {
+    mappings,
+    confidenceScore: mappings.length
+      ? mappings.reduce((sum: number, row: any) => sum + Number(row.confidenceScore || 0), 0) / mappings.length
+      : 0,
+  });
+  return jsonResponse({ mappings });
+}
+
+async function handleTenderRiskRfi(req: AssistantRequest, actor: AppUserContext | null) {
+  if (!canUseTenderAssistant(actor)) {
+    return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền HD để dùng Tender AI.' }, 403);
+  }
+  const prompt = `
+Bạn là AI Risk/RFI Assistant cho hồ sơ chào thầu nhà xưởng.
+Nhiệm vụ: rà BOQ CĐT, mapping và pricing gaps để đề xuất rủi ro/RFI trước khi gửi giá.
+
+Quy tắc:
+- Không bịa giá hoặc định mức.
+- Ưu tiên rủi ro scope/spec/đơn vị/khối lượng/mapping/thiếu giá.
+- suggestedRfi chỉ là câu hỏi đề xuất, user quyết định có gửi CĐT không.
+- Trả về DUY NHẤT JSON object.
+
+Schema:
+{
+  "risks": [
+    {
+      "externalLineId": "id dòng hoặc null",
+      "riskType": "scope|spec|unit|quantity|mapping|missing_price|commercial|other",
+      "severity": "low|medium|high|critical",
+      "title": "tiêu đề",
+      "description": "mô tả",
+      "suggestedRfi": "câu hỏi gửi CĐT hoặc null",
+      "confidenceScore": 0.0,
+      "assumptions": ["nếu có"]
+    }
+  ]
+}
+
+BOQ lines:
+${compactJson(req.lines || [], 14000)}
+
+Mappings:
+${compactJson(req.mappings || [], 10000)}
+
+Pricing gaps:
+${compactJson(req.pricingGaps || [], 10000)}
+`.trim();
+
+  const raw = await callGemini(prompt, 0.08, req.model || GEMINI_FAST_MODEL, 'application/json');
+  const parsed = extractJsonObject(raw);
+  const lineIds = new Set((Array.isArray(req.lines) ? req.lines : []).map((line: any) => String(line.id)));
+  const risks = Array.isArray(parsed.risks) ? parsed.risks.map((row: any) => {
+    const severity = ['low', 'medium', 'high', 'critical'].includes(row.severity) ? row.severity : 'medium';
+    const externalLineId = row.externalLineId && lineIds.has(String(row.externalLineId)) ? String(row.externalLineId) : null;
+    return {
+      externalLineId,
+      riskType: String(row.riskType || 'scope'),
+      severity,
+      title: String(row.title || 'Rủi ro hồ sơ thầu'),
+      description: row.description ? String(row.description) : null,
+      suggestedRfi: row.suggestedRfi ? String(row.suggestedRfi) : null,
+      confidenceScore: Math.max(0, Math.min(1, Number(row.confidenceScore ?? 0.5))),
+      assumptions: Array.isArray(row.assumptions) ? row.assumptions.map(String).slice(0, 5) : [],
+    };
+  }).filter((row: any) => row.title) : [];
+
+  await writeTenderAiLog(req, actor, 'tender_risk_rfi', {
+    risks,
+    confidenceScore: risks.length
+      ? risks.reduce((sum: number, row: any) => sum + Number(row.confidenceScore || 0), 0) / risks.length
+      : 0,
+  });
+  return jsonResponse({ risks });
+}
+
 // ═══ Main Handler ═══════════════════════════════════════════
 
 Deno.serve(async (request: Request) => {
@@ -419,6 +1134,26 @@ Deno.serve(async (request: Request) => {
 
     const req = await request.json() as AssistantRequest;
     if (req.action === 'feedback') return jsonResponse(await handleFeedback(req));
+    if (req.action === 'estimate_suggestion') {
+      const actor = await resolveActor(request, req.userId);
+      return handleEstimateSuggestion(req, actor);
+    }
+    if (req.action === 'cost_norm_standardization') {
+      const actor = await resolveActor(request, req.userId);
+      return handleCostNormStandardization(req, actor);
+    }
+    if (req.action === 'tender_detect_columns') {
+      const actor = await resolveActor(request, req.userId);
+      return handleTenderDetectColumns(req, actor);
+    }
+    if (req.action === 'tender_suggest_mapping') {
+      const actor = await resolveActor(request, req.userId);
+      return handleTenderSuggestMapping(req, actor);
+    }
+    if (req.action === 'tender_risk_rfi') {
+      const actor = await resolveActor(request, req.userId);
+      return handleTenderRiskRfi(req, actor);
+    }
 
     const question = (req.question || '').trim();
     if (!question) return jsonResponse({ error: 'Thiếu câu hỏi.' }, 400);
@@ -426,11 +1161,13 @@ Deno.serve(async (request: Request) => {
     const mode: AiMode = req.mode === 'knowledge' ? 'knowledge' : 'data';
     const history = (req.history || []).slice(-10);
     const selectedModel = req.model || null;
+    const actor = await resolveActor(request, req.userId);
+    const effectiveUserId = actor?.id || req.userId || null;
 
     // ── Off-topic classification ──
     const relation = await classifyQuestionRelation(question, history, selectedModel);
     if (!relation.isRelated) {
-      const conversationId = await ensureConversation({ ...req, mode }, question);
+      const conversationId = await ensureConversation({ ...req, userId: effectiveUserId || undefined, mode }, question);
       await saveMessage({ conversationId, role: 'user', content: question, mode });
 
       const friendlyRejection = relation.friendlyRejection || 'Xin chào! Em là Trợ lý AI của Kho Tiến Thịnh. Em chỉ có thể hỗ trợ giải đáp các thông tin liên quan đến dữ liệu phần mềm ERP (tồn kho, nhân sự, dự án, tài chính) hoặc tài liệu quy trình trong công ty. Anh/chị vui lòng hỏi đúng chủ đề nhé!';
@@ -451,7 +1188,7 @@ Deno.serve(async (request: Request) => {
       });
     }
 
-    const conversationId = await ensureConversation({ ...req, mode }, question);
+    const conversationId = await ensureConversation({ ...req, userId: effectiveUserId || undefined, mode }, question);
     await saveMessage({ conversationId, role: 'user', content: question, mode });
 
     // ── Knowledge Mode ──
@@ -510,8 +1247,48 @@ Deno.serve(async (request: Request) => {
 
     // Handle tool_call
     if (route.action === 'tool_call' && route.toolName) {
+      const missingParams = getMissingRequiredParams(route.toolName, route.parameters);
+      if (missingParams.length > 0) {
+        const msg = `Em cần thêm thông tin để tra cứu chính xác: ${missingParams.join(', ')}. Anh/chị cho em biết từ khóa hoặc mã hạng mục/vật tư cụ thể nhé.`;
+        await saveMessage({ conversationId, role: 'assistant', content: msg, mode: 'sql' });
+        return jsonResponse({
+          conversationId,
+          answer: msg,
+          mode: 'sql',
+          suggestions: route.suggestions || [
+            'Tra đơn giá nội bộ của thép D10',
+            'Tra định mức bê tông móng',
+            'Tra template dự toán nhà xưởng',
+          ],
+          hasMemory: false,
+        });
+      }
+
+      const toolAuthorization = authorizeTool(route.toolName, actor);
+      if (!toolAuthorization.allowed) {
+        const msg = toolAuthorization.message || 'Tài khoản hiện tại chưa đủ quyền để AI tra cứu dữ liệu này.';
+        await saveMessage({ conversationId, role: 'assistant', content: msg, mode: 'sql' });
+        return jsonResponse({
+          conversationId,
+          answer: msg,
+          mode: 'sql',
+          suggestions: toolAuthorization.suggestions || route.suggestions,
+          hasMemory: false,
+        });
+      }
+
       let toolResult: any = null;
       try {
+        console.info('ai-assistant tool_access', JSON.stringify({
+          actorId: actor?.id || null,
+          actorSource: actor?.source || null,
+          role: actor?.role || null,
+          toolName: route.toolName,
+          parameters: route.parameters,
+          mode,
+          conversationId,
+          at: new Date().toISOString(),
+        }));
         toolResult = await callToolRpc(route.toolName, route.parameters);
       } catch (rpcErr) {
         console.error(`ai-assistant RPC ${route.toolName} failed:`, rpcErr);

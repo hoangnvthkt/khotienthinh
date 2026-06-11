@@ -309,6 +309,14 @@ const ChibiBot: React.FC<ChibiBotProps> = ({ userName, userId }) => {
 
   const firstName = userName?.split(' ').pop() || 'bạn';
 
+  const buildFunctionHeaders = useCallback(async (): Promise<Record<string, string>> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return {
+      'Content-Type': 'application/json',
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    };
+  }, []);
+
   // ─── Persist chat history ───────────────────
   useEffect(() => {
     if (chatMessages.length > 0) {
@@ -550,7 +558,7 @@ const ChibiBot: React.FC<ChibiBotProps> = ({ userName, userId }) => {
     try {
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/ai-assistant`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await buildFunctionHeaders(),
         body: JSON.stringify({
           question,
           conversationId: chatConvId,
@@ -583,7 +591,7 @@ const ChibiBot: React.FC<ChibiBotProps> = ({ userName, userId }) => {
       setChatLoading(false);
       setBotState('idle');
     }
-  }, [chatInput, chatLoading, chatConvId, userId, chatMessages]);
+  }, [buildFunctionHeaders, chatInput, chatLoading, chatConvId, userId, chatMessages]);
 
   // ─── Dismiss ────────────────────────────────
   const handleDismiss = useCallback((e: React.MouseEvent) => {

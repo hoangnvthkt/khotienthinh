@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, Copy, ClipboardPaste } from 'lucide-react';
 import { Role, User, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
@@ -106,9 +106,16 @@ const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }
   ],
   HD: [
     { to: '/hd/overview', icon: FileSignature, label: 'Tổng quan HĐ' },
+    { to: '/hd/partners', icon: Users, label: 'Đối tác' },
+    { to: '/hd/contract-types', icon: Shield, label: 'Loại HĐ & Mẫu' },
+    { to: '/hd/catalogs', icon: FileSpreadsheet, label: 'Danh mục HĐ' },
     { to: '/hd/supplier', icon: FileSignature, label: 'HĐ Nhà cung cấp' },
     { to: '/hd/customer', icon: Users, label: 'HĐ Khách hàng' },
     { to: '/hd/subcontractor', icon: FileSignature, label: 'HĐ Thầu phụ' },
+  ],
+  TENDER_AI: [
+    { to: '/tender-ai/boq', icon: FileSpreadsheet, label: 'AI BOQ CĐT' },
+    { to: '/tender-ai/cost-library', icon: Calculator, label: 'Dự toán nội bộ' },
   ],
 };
 
@@ -118,9 +125,48 @@ interface UserModalProps {
   onSave: (user: User) => void | Promise<void>;
   userToEdit?: User | null;
   warehouses: Warehouse[];
+  users?: User[];
 }
 
-const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEdit, warehouses }) => {
+type UserPermissionClipboard = {
+  version: 1;
+  sourceUserId?: string;
+  sourceUserName?: string;
+  copiedAt: string;
+  role: Role;
+  assignedWarehouseId?: string;
+  allowedModules: string[];
+  allowedSubModules: Record<string, string[]>;
+  adminModules: string[];
+  adminSubModules: Record<string, string[]>;
+};
+
+const USER_PERMISSION_CLIPBOARD_KEY = 'vioo:user-permission-clipboard';
+
+const cloneStringArray = (value?: string[]) => [...new Set((value || []).filter(Boolean))];
+
+const cloneRouteMap = (value?: Record<string, string[]>) =>
+  Object.entries(value || {}).reduce<Record<string, string[]>>((acc, [moduleKey, routes]) => {
+    acc[moduleKey] = cloneStringArray(routes);
+    return acc;
+  }, {});
+
+const readPermissionClipboard = (): UserPermissionClipboard | null => {
+  try {
+    const raw = window.localStorage.getItem(USER_PERMISSION_CLIPBOARD_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as UserPermissionClipboard;
+    if (parsed?.version !== 1 || !parsed.role) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const countRoutePermissions = (value?: Record<string, string[]>) =>
+  Object.values(value || {}).reduce((sum, routes) => sum + routes.length, 0);
+
+const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEdit, warehouses, users = [] }) => {
   const toast = useToast();
   const ALL_MODULES = [
     { key: 'WMS', label: 'KHO - Vật tư', icon: Package, color: 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-700' },
@@ -132,6 +178,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     { key: 'EX', label: 'CP - Chi phí', icon: BarChart3, color: 'text-indigo-600 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-700' },
     { key: 'EP', label: 'EP - Hồ sơ NV', icon: IdCard, color: 'text-sky-600 bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-700' },
     { key: 'HD', label: 'HĐ - Hợp đồng', icon: FileSignature, color: 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700' },
+    { key: 'TENDER_AI', label: 'Tender AI', icon: Bot, color: 'text-fuchsia-600 bg-fuchsia-50 border-fuchsia-200 dark:bg-fuchsia-900/30 dark:border-fuchsia-700' },
   ];
 
   const [formData, setFormData] = useState<Partial<User>>({
@@ -150,6 +197,8 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [permissionClipboard, setPermissionClipboard] = useState<UserPermissionClipboard | null>(null);
+  const [selectedPermissionSourceUserId, setSelectedPermissionSourceUserId] = useState('');
 
   useEffect(() => {
     if (userToEdit) {
@@ -170,10 +219,94 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
       });
     }
     setErrors({});
+    setPermissionClipboard(readPermissionClipboard());
+    setSelectedPermissionSourceUserId('');
   }, [userToEdit, isOpen]);
 
-  if (!isOpen) return null;
   const hasWmsAccess = formData.role === Role.ADMIN || formData.role === Role.WAREHOUSE_KEEPER || (formData.allowedModules || []).includes('WMS');
+  const permissionSourceUsers = useMemo(
+    () => [...users].sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email, 'vi')),
+    [users]
+  );
+  const selectedPermissionSourceUser = permissionSourceUsers.find(u => u.id === selectedPermissionSourceUserId);
+  const permissionClipboardSummary = permissionClipboard
+    ? permissionClipboard.role === Role.ADMIN
+      ? 'Admin toàn quyền'
+      : `${permissionClipboard.allowedModules.length} module sử dụng, ${permissionClipboard.adminModules.length + countRoutePermissions(permissionClipboard.adminSubModules)} quyền quản trị`
+    : '';
+
+  const buildPermissionClipboard = (source: Partial<User>, sourceName?: string, sourceId?: string): UserPermissionClipboard => ({
+    version: 1,
+    sourceUserId: sourceId,
+    sourceUserName: sourceName,
+    copiedAt: new Date().toISOString(),
+    role: (source.role || Role.EMPLOYEE) as Role,
+    assignedWarehouseId: source.assignedWarehouseId || undefined,
+    allowedModules: cloneStringArray(source.allowedModules),
+    allowedSubModules: cloneRouteMap(source.allowedSubModules),
+    adminModules: cloneStringArray(source.adminModules),
+    adminSubModules: cloneRouteMap(source.adminSubModules),
+  });
+
+  const savePermissionClipboard = (payload: UserPermissionClipboard) => {
+    try {
+      window.localStorage.setItem(USER_PERMISSION_CLIPBOARD_KEY, JSON.stringify(payload));
+    } catch {
+      toast.error('Không thể sao chép quyền', 'Trình duyệt đang chặn bộ nhớ cục bộ. Vui lòng thử lại hoặc kiểm tra cài đặt trình duyệt.');
+      return;
+    }
+    setPermissionClipboard(payload);
+    if (payload.role === Role.ADMIN) {
+      toast.warning('Đã sao chép bộ quyền Admin', 'Khi dán bộ quyền này, tài khoản đích sẽ trở thành Admin toàn quyền.');
+    } else {
+      toast.success('Đã sao chép quyền', `Nguồn: ${payload.sourceUserName || 'Tài khoản đang mở'}.`);
+    }
+  };
+
+  const copyCurrentPermissions = () => {
+    const payload = buildPermissionClipboard(formData, formData.name || userToEdit?.name || 'Tài khoản đang mở', userToEdit?.id);
+    savePermissionClipboard(payload);
+  };
+
+  const copySelectedSourcePermissions = () => {
+    if (!selectedPermissionSourceUser) {
+      toast.warning('Chưa chọn tài khoản mẫu', 'Vui lòng chọn tài khoản nguồn để sao chép quyền.');
+      return;
+    }
+    const sourceWithLegacyDefaults: Partial<User> = {
+      ...selectedPermissionSourceUser,
+      allowedModules: selectedPermissionSourceUser.role === Role.ADMIN
+        ? ALL_MODULES.map(m => m.key)
+        : selectedPermissionSourceUser.allowedModules || ALL_MODULES.map(m => m.key),
+      allowedSubModules: selectedPermissionSourceUser.allowedSubModules || {},
+      adminModules: selectedPermissionSourceUser.adminModules || [],
+      adminSubModules: selectedPermissionSourceUser.adminSubModules || {},
+    };
+    savePermissionClipboard(buildPermissionClipboard(sourceWithLegacyDefaults, selectedPermissionSourceUser.name || selectedPermissionSourceUser.email, selectedPermissionSourceUser.id));
+  };
+
+  const pastePermissionClipboard = () => {
+    const payload = permissionClipboard || readPermissionClipboard();
+    if (!payload) {
+      toast.warning('Chưa có quyền đã sao chép', 'Hãy sao chép quyền từ tài khoản mẫu trước khi dán.');
+      return;
+    }
+    setFormData(prev => ({
+      ...prev,
+      role: payload.role,
+      assignedWarehouseId: payload.assignedWarehouseId || '',
+      allowedModules: payload.role === Role.ADMIN ? ALL_MODULES.map(m => m.key) : cloneStringArray(payload.allowedModules),
+      allowedSubModules: payload.role === Role.ADMIN ? {} : cloneRouteMap(payload.allowedSubModules),
+      adminModules: payload.role === Role.ADMIN ? [] : cloneStringArray(payload.adminModules),
+      adminSubModules: payload.role === Role.ADMIN ? {} : cloneRouteMap(payload.adminSubModules),
+    }));
+    setPermissionClipboard(payload);
+    if (payload.role === Role.ADMIN) {
+      toast.warning('Đã dán bộ quyền Admin', 'Tài khoản này sẽ được lưu với quyền Admin toàn quyền.');
+    } else {
+      toast.success('Đã dán quyền', `Đã áp dụng quyền từ ${payload.sourceUserName || 'clipboard quyền'}.`);
+    }
+  };
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -296,6 +429,8 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
       setSaving(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -444,6 +579,71 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
           <p className="text-[10px] text-slate-400 italic">
             (*) Tài khoản hệ thống dùng để đăng nhập phần mềm. Hồ sơ HRM được tạo riêng trong module Nhân sự và có thể liên kết với tài khoản này.
           </p>
+
+          {/* Permission copy / paste */}
+          <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-3 space-y-3">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-blue-700">
+                  <ClipboardPaste size={13} /> Sao chép / dán quyền
+                </div>
+                <p className="mt-1 text-[10px] font-medium leading-relaxed text-slate-500">
+                  Sao chép vai trò, kho phụ trách, quyền sử dụng module/sub-module và quyền quản trị. Không sao chép họ tên, email, mật khẩu, chữ ký.
+                </p>
+              </div>
+              {permissionClipboard && (
+                <div className="shrink-0 rounded-xl border border-blue-100 bg-white px-3 py-2 text-right">
+                  <div className="text-[9px] font-black uppercase text-slate-400">Đã chép</div>
+                  <div className="max-w-[180px] truncate text-[11px] font-black text-slate-700">
+                    {permissionClipboard.sourceUserName || 'Tài khoản đang mở'}
+                  </div>
+                  <div className="text-[9px] font-bold text-blue-600">{permissionClipboardSummary}</div>
+                </div>
+              )}
+            </div>
+
+            {permissionSourceUsers.length > 0 && (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+                <select
+                  value={selectedPermissionSourceUserId}
+                  onChange={e => setSelectedPermissionSourceUserId(e.target.value)}
+                  className="w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-blue-200"
+                >
+                  <option value="">Chọn tài khoản mẫu để sao chép quyền...</option>
+                  {permissionSourceUsers.map(sourceUser => (
+                    <option key={sourceUser.id} value={sourceUser.id}>
+                      {sourceUser.name || sourceUser.email} - {sourceUser.email}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={copySelectedSourcePermissions}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs font-black text-blue-700 transition hover:bg-blue-100"
+                >
+                  <Copy size={14} /> Sao chép quyền
+                </button>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={copyCurrentPermissions}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 transition hover:bg-slate-50"
+              >
+                <Copy size={14} /> Chép quyền đang khai báo
+              </button>
+              <button
+                type="button"
+                onClick={pastePermissionClipboard}
+                disabled={!permissionClipboard}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <ClipboardPaste size={14} /> Dán quyền đã chép
+              </button>
+            </div>
+          </div>
 
           {/* Module Permissions */}
           <div className="space-y-2">

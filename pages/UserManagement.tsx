@@ -91,6 +91,7 @@ const UserManagement: React.FC = () => {
         onSave={handleSaveUser}
         userToEdit={editingUser}
         warehouses={warehouses}
+        users={users}
       />
 
       <DeleteUserModal 

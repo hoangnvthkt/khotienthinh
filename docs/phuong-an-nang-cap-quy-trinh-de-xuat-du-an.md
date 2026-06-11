@@ -635,3 +635,363 @@ Khuyến nghị của em:
 - Khi gửi lại, mặc định gán lại người đã trả; cho phép Admin/người tạo chọn lại nếu cần.
 - Template cho phép override theo dự án/công trường.
 - Giai đoạn đầu dùng permission `approve` để nhanh, sau đó thêm permission riêng nếu cần quản trị chặt hơn.
+
+
+# Handoff Phiên Làm Việc ERP / Tender AI / Dự Toán
+
+## 1. Quy tắc làm việc đã chốt
+- Luôn đọc file SKILL.md nằm trong .agent/workflows trước khi làm việc với database
+- Ưu tiên phân tích nghiệp vụ trước khi code nếu bài toán lớn/chưa rõ.
+- Với Supabase cloud, khi cần apply SQL thì dùng:
+  `supabase db query --linked -f <migration_file>`
+  Không dùng `db push` nếu anh yêu cầu query trực tiếp.
+- AI không được tự bịa số liệu: đơn giá, định mức, khối lượng, margin phải lấy từ dữ liệu nội bộ.
+- Dữ liệu giá vốn, margin, profit, risk buffer là dữ liệu nhạy cảm:
+  chỉ Admin / HD admin / Tender AI admin được xem.
+- AI chỉ đóng vai trò trợ lý:
+  gợi ý, nhận diện, mapping, cảnh báo rủi ro; không tự ghi DB, không tự duyệt, không tự chốt.
+- Các dữ liệu lịch sử đã chốt/finalized phải snapshot, không bị thay đổi khi đơn giá/định mức/template cập nhật sau này.
+- Với các nghiệp vụ lớn, triển khai theo phase từ dễ đến khó, ưu tiên dùng được thật trước, AI nâng cao sau.
+
+---
+
+## 2. Module Nghiệm thu & Thanh toán
+
+### Hướng ban đầu
+Ban đầu có ý tưởng tạo `Payment Eligibility Workbench` tính tự động theo:
+
+- BOQ.
+- Nhật ký công trường.
+- Nghiệm thu nội bộ.
+- Nghiệm thu CĐT.
+- Chứng chỉ thanh toán.
+- Đã thanh toán.
+- Còn được thanh toán.
+
+Sau khi phân tích nghiệp vụ thực tế, hướng này được đơn giản hóa.
+
+### Quyết định cuối
+V1 chuyển sang mô hình:
+
+- Kế hoạch nghiệm thu/thanh toán nhập tay theo hợp đồng.
+- Không còn bắt buộc tính theo % BOQ, % tiến độ hay nhật ký.
+- Bảng tiến độ chỉ dùng để chọn hạng mục/WBS thanh toán dự kiến.
+- Chất lượng chỉ là trạng thái tổng hợp:
+  `Không áp dụng`, `Chưa xác nhận`, `Đạt`, `Không đạt`.
+- Người xác nhận chất lượng là user có quyền `confirm`, ví dụ chỉ huy trưởng.
+
+### Tính năng đã triển khai
+- Bổ sung/cập nhật dữ liệu `payment_schedules`.
+- Tab cấp dự án: `Nghiệm thu & Thanh toán`.
+- Tab trong hợp đồng: `Lịch thanh toán`.
+- Có các thông tin:
+  - Tổng giá trị hợp đồng.
+  - Tạm ứng.
+  - Thanh toán lần 2, 3...
+  - Quyết toán.
+  - Ngày thanh toán dự kiến.
+  - Giá trị thanh toán dự kiến.
+  - Hạng mục/WBS dự kiến.
+  - Hồ sơ.
+  - Chất lượng.
+  - Đã thanh toán.
+- Hạng mục WBS dự kiến đã được định hướng dùng dạng gõ tìm kiếm + checkbox chọn nhiều, có thể không chọn mục nào.
+
+---
+
+## 3. Module Dự toán nội bộ / Cost Library
+
+### Mục tiêu
+Tạo module phục vụ chào thầu nhà xưởng công nghiệp:
+
+- Có template công trình.
+- Có định mức nội bộ.
+- Có đơn giá nội bộ.
+- Sinh estimate/dự toán nhanh.
+- Export báo giá.
+- Nếu trúng thầu thì convert sang BOQ/material plan dự án.
+
+### Bảng dữ liệu lõi
+Đã thiết kế/triển khai nền:
+
+- `cost_templates`
+- `cost_template_sections`
+- `cost_template_items`
+- `cost_template_parameters`
+- `internal_price_book`
+- `internal_norms`
+- `estimate_scenarios`
+- `estimate_items`
+- `estimate_adjustments`
+- `estimate_versions`
+- mapping conversion estimate sang dự án
+
+### Template Sơn Miền Bắc
+Đã lấy dự án Sơn Miền Bắc làm baseline template nháp:
+
+- Tạo template: `Nhà xưởng công nghiệp - Sơn Miền Bắc baseline`
+- Code: `SMB_FACTORY_BASELINE`
+- Source project/site: `240ac280-756d-4955-b612-41661e7aedaf`
+- Lấy dữ liệu từ:
+  - WBS/task.
+  - Work BOQ.
+  - Material budget.
+- Chỉ tạo đầu mục trước, để trống phần thiếu:
+  - Giá.
+  - Công thức.
+  - Định mức chuẩn.
+  - Một số đơn vị/khối lượng chưa chuẩn.
+- Vật tư raw được lưu trong metadata để sau này chuẩn hóa.
+
+### Vấn đề UX mới phát hiện
+Phần `Định mức nội bộ` hiện đang khó dùng vì bắt người dùng thêm từng món.
+
+Hướng đúng hơn:
+- Người dùng chọn một hạng mục tham chiếu từ Sơn Miền Bắc.
+- Hệ thống hiện toàn bộ vật tư/khối lượng hiện tại của hạng mục đó.
+- Người dùng sửa thành định mức chuẩn công ty.
+- Có thể thêm vật tư, nhân công, máy, thầu phụ nếu cần.
+- Sau khi review thì activate thành định mức nội bộ.
+
+Đây là phase cần triển khai tiếp.
+
+---
+
+## 4. Module lớn Tender AI
+
+### Quyết định kiến trúc
+Tạo module ứng dụng lớn riêng tên **Tender AI**, tương tự module Hợp đồng/Vật tư.
+
+Tender AI gom 2 nhánh:
+
+1. **HĐ dự toán / Cost Library**
+   - Quản lý template.
+   - Định mức.
+   - Đơn giá nội bộ.
+   - Estimate nội bộ.
+
+2. **AI BOQ CĐT**
+   - Upload BOQ Chủ đầu tư.
+   - AI nhận diện cột.
+   - AI chuẩn hóa dòng.
+   - AI map sang mẫu nội bộ.
+   - Tính lại giá nội bộ.
+   - Export báo giá theo mẫu CĐT.
+
+Route chính đã dùng:
+- `/tender-ai/boq`
+- `/tender-ai/cost-library`
+
+---
+
+## 5. AI BOQ CĐT
+
+### Mục tiêu nghiệp vụ
+BOQ Sơn Miền Bắc thực chất được bóc/map từ BOQ Chủ đầu tư. Nhân viên đang mất nhiều công sức map thủ công từng dòng CĐT sang mẫu công ty.
+
+Mục tiêu của AI BOQ CĐT:
+- Nhận file BOQ Excel của CĐT.
+- AI đọc cấu trúc file.
+- AI nhận diện cột.
+- AI phân loại dòng.
+- AI map dòng CĐT sang template/item nội bộ.
+- Tính lại giá theo định mức/đơn giá nội bộ.
+- Cảnh báo rủi ro/RFI.
+- Xuất báo giá ngược lại theo mẫu CĐT.
+
+### Đã triển khai
+- Module UI riêng cho Tender AI.
+- Upload Excel BOQ CĐT.
+- Chọn sheet.
+- Chọn dòng header.
+- Mapping cột:
+  - STT
+  - Mã
+  - Nội dung
+  - Mô tả
+  - Đơn vị
+  - Khối lượng
+  - Đơn giá CĐT
+  - Thành tiền CĐT
+  - Ghi chú
+- AI nhận diện cột qua Edge Function `ai-assistant`.
+- Preview BOQ đã có phân trang để không bị chỉ hiện 24 dòng dù file có 60 dòng.
+- Lưu hồ sơ BOQ CĐT.
+- AI map BOQ CĐT sang item nội bộ.
+- Tính giá nội bộ.
+- Risk/RFI.
+- Export:
+  - External Quote gửi CĐT.
+  - Internal Workbook nội bộ.
+
+### Mô hình AI
+Đang dùng Edge Function `ai-assistant`, gọi model cấu hình trong `.env`.
+
+AI action đã có:
+- `tender_detect_columns`
+- `tender_suggest_mapping`
+- `tender_risk_rfi`
+
+Frontend không gọi trực tiếp secret AI. Secret nằm ở backend/Edge Function.
+
+---
+
+## 6. Mapping BOQ CĐT sang nội bộ
+
+### Vấn đề nghiệp vụ
+Một dòng BOQ CĐT có thể tương ứng:
+
+- 1 item nội bộ.
+- Nhiều item nội bộ.
+- Hoặc nhiều dòng CĐT cùng map về một item/nhóm item nội bộ.
+
+Dropdown dài không dùng được.
+
+### Đã triển khai
+Thêm bảng link nhiều-nhiều:
+
+- `tender_internal_mapping_links`
+
+Giữ bảng cũ:
+
+- `tender_internal_mappings`
+
+Vai trò:
+- `tender_internal_mappings`: trạng thái tổng của dòng CĐT.
+- `tender_internal_mapping_links`: các item nội bộ được gắn vào dòng đó.
+
+Bổ sung:
+- `mapping_link_id` vào `tender_pricing_lines`.
+
+Đã apply cloud bằng:
+- `supabase db query --linked -f supabase/migrations/20260610034848_add_tender_mapping_links.sql`
+
+Đã deploy lại:
+- `supabase functions deploy ai-assistant`
+
+### UI đã đổi
+Thay dropdown bằng:
+
+- Checkbox chọn dòng BOQ CĐT.
+- Nút map hàng loạt.
+- Panel search item nội bộ.
+- Checkbox chọn nhiều item.
+- Có thể không chọn item nào.
+- Có allocation:
+  - Theo KL CĐT.
+  - Theo %
+  - KL cố định.
+  - Công thức.
+
+Lưu ý:
+- `formula` hiện mới lưu cấu hình, chưa evaluate tự động.
+- Batch mapping hiện apply cùng bộ item cho nhiều dòng CĐT.
+- Nếu cần ma trận 2 chiều từng dòng-item có tỷ lệ riêng, dùng tiếp nền `tender_internal_mapping_links` để nâng cấp.
+
+---
+
+## 7. Export và bảo mật
+
+### External Quote
+File gửi CĐT không được chứa:
+
+- Giá vốn.
+- Margin.
+- Profit.
+- Risk buffer nội bộ.
+- Ghi chú nội bộ.
+- Đơn giá nhạy cảm.
+
+### Internal Workbook
+Chỉ Admin/HD admin/Tender AI admin được export/xem.
+
+Có thể chứa:
+
+- Giá vốn.
+- Giá chào.
+- Margin.
+- Risk.
+- Warning.
+- Mapping.
+- Dòng thiếu dữ liệu.
+
+---
+
+## 8. Các phase đã thống nhất cho Tender AI
+
+### Phase 0
+Audit dữ liệu và nền hiện có.
+
+### Phase 1
+Import BOQ CĐT dạng Excel.
+
+### Phase 2
+AI đọc cấu trúc BOQ và chuẩn hóa dòng.
+
+### Phase 3
+AI map BOQ CĐT sang template nội bộ.
+
+### Phase 4
+Repricing bằng định mức và đơn giá nội bộ.
+
+### Phase 5
+Risk/RFI assistant.
+
+### Phase 6
+Export báo giá theo mẫu CĐT.
+
+### Phase 7
+Workflow, phân quyền, kiểm duyệt chào thầu.
+
+### Phase 8
+Historical learning:
+so sánh estimate, BOQ, vật tư, chi phí thực tế để đề xuất cập nhật template/định mức/đơn giá.
+
+---
+
+## 9. Trạng thái hiện tại
+
+### Đã làm được
+- Có module lớn Tender AI.
+- Có UI AI BOQ CĐT.
+- Có upload Excel, preview, detect columns.
+- Có phân trang preview/BOQ.
+- Có AI mapping.
+- Có mapping nhiều-nhiều bằng checkbox/search.
+- Có pricing nội bộ theo mapping.
+- Có export External/Internal.
+- Có Supabase migration cloud cho mapping links.
+- Có Edge Function AI đã deploy lại.
+
+### Đang cần làm tiếp
+Ưu tiên tiếp theo nên là cải thiện UX **Định mức nội bộ**:
+
+Thay vì thêm từng dòng định mức thủ công:
+- Chọn hạng mục tham chiếu Sơn Miền Bắc.
+- Hiện toàn bộ vật tư raw của hạng mục.
+- Cho sửa thành định mức chuẩn.
+- Cho thêm vật tư/nhân công/máy/thầu phụ.
+- Lưu thành draft norm.
+- Review/activate hàng loạt.
+
+### Để V sau
+- Evaluate công thức allocation.
+- Ma trận mapping 2 chiều chi tiết.
+- OCR/PDF/Word BOQ.
+- Export giữ nguyên layout Excel gốc của CĐT.
+- Workflow duyệt báo giá đầy đủ.
+- Convert estimate/BOQ sang dự án có transaction rollback.
+- Historical learning từ chi phí thực tế.
+
+---
+
+## 10. Lưu ý cho AI phiên mới
+
+Khi tiếp tục làm việc:
+- Không quay lại thiết kế eligibility thanh toán tự động theo BOQ nếu anh không yêu cầu.
+- Với dự toán, trọng tâm hiện tại là làm dữ liệu nội bộ dễ nhập/dễ chuẩn hóa.
+- Định mức nên đi từ hạng mục tham chiếu thực tế Sơn Miền Bắc, không bắt nhập từng món từ trắng.
+- Với BOQ CĐT, luôn giữ nguyên trace file gốc, sheet, row number, raw values.
+- Mapping phải hỗ trợ nhiều-nhiều.
+- AI chỉ gợi ý, user là người xác nhận.
+- Không để lộ internal cost/margin ra file gửi khách.

@@ -101,6 +101,48 @@ export const AI_TOOL_DEFINITIONS = [
     },
   },
 
+  // ── Tendering / Internal Cost Estimation Domain ──
+  {
+    name: 'ai_tool_estimate_module_blueprint',
+    description: 'Trả về blueprint nghiệp vụ/kỹ thuật cho module "Đơn giá nội bộ & AI dự toán nhanh": architecture, data model, versioning, snapshot, AI rules, UI, API, convert estimate sang BOQ, edge cases, acceptance criteria. Dùng khi hỏi thiết kế module dự toán, cách triển khai AI dự toán nhanh, hoặc nguyên tắc hệ thống chào thầu.',
+    parameters: {},
+  },
+  {
+    name: 'ai_tool_cost_template_summary',
+    description: 'Tra cứu/tóm tắt cost templates đang có: loại công trình, tham số bắt buộc, sections, sample items và công thức khối lượng. Dùng khi hỏi template nhà xưởng, hạng mục dự toán, tham số floor_area/height/span/foundation_type/roof_type/wall_type/crane_capacity/finish_level/region.',
+    parameters: {
+      p_project_type: { type: 'string', required: false, description: 'Loại công trình/template cần lọc, ví dụ: nha_xuong, warehouse, factory.' },
+      p_keyword: { type: 'string', required: false, description: 'Từ khóa tìm template hoặc hạng mục.' },
+    },
+  },
+  {
+    name: 'ai_tool_internal_price_book_lookup',
+    description: 'Tra cứu đơn giá nội bộ theo mã/tên vật tư/nhân công/máy/thầu phụ. Đây là dữ liệu nhạy cảm, chỉ dùng khi người dùng hỏi rõ về đơn giá nội bộ, giá vật tư nội bộ, price book, hoặc cần số liệu để dự toán nhanh.',
+    parameters: {
+      p_keyword: { type: 'string', required: true, description: 'Từ khóa mã/tên vật tư, nhân công, máy hoặc nhóm chi phí.' },
+      p_region: { type: 'string', required: false, description: 'Khu vực áp dụng, ví dụ: mien_bac, mien_nam, hanoi, hcm.' },
+      p_limit: { type: 'number', required: false, description: 'Số dòng tối đa, mặc định 20.' },
+    },
+  },
+  {
+    name: 'ai_tool_internal_norms_lookup',
+    description: 'Tra cứu định mức nội bộ theo mã công việc, mã định mức, tên nguồn lực hoặc vật tư. Dùng khi hỏi định mức vật tư, hao hụt, công thức định mức, norm cho hạng mục.',
+    parameters: {
+      p_keyword: { type: 'string', required: true, description: 'Từ khóa mã định mức, mã công việc, tên vật tư/nhân công/máy.' },
+      p_region: { type: 'string', required: false, description: 'Khu vực áp dụng.' },
+      p_limit: { type: 'number', required: false, description: 'Số dòng tối đa, mặc định 20.' },
+    },
+  },
+  {
+    name: 'ai_tool_estimate_scenario_summary',
+    description: 'Tổng hợp các phương án estimate/dự toán nhanh: trạng thái draft/reviewed/finalized/converted, tổng giá trị, tham số thiếu, giả định, cảnh báo rủi ro, confidence score. Không trả profit/margin nhạy cảm.',
+    parameters: {
+      p_project_id: { type: 'string', required: false, description: 'Lọc theo project_id hoặc construction_site_id.' },
+      p_status: { type: 'string', required: false, description: 'draft, reviewed, finalized, converted, cancelled.' },
+      p_keyword: { type: 'string', required: false, description: 'Tìm theo mã/tên estimate, khách hàng, loại công trình.' },
+    },
+  },
+
   // ── Cross-domain ──
   {
     name: 'ai_tool_executive_dashboard',
@@ -135,6 +177,12 @@ QUY TẮC BẮT BUỘC (theo thứ tự ưu tiên):
    - Nếu hỏi về nhân viên/nhân sự → ai_tool_employee_summary
    - Nếu hỏi về dự án mà KHÔNG chỉ rõ dự án nào → ai_tool_project_list
    - Nếu hỏi chi tiết 1 dự án cụ thể → ai_tool_project_summary (cần project_id)
+   - Nếu hỏi thiết kế/kiến trúc/plan module "Đơn giá nội bộ & AI dự toán nhanh" → ai_tool_estimate_module_blueprint
+   - Nếu hỏi template dự toán, tham số công trình, công thức hạng mục → ai_tool_cost_template_summary
+   - Nếu hỏi đơn giá nội bộ/price book/giá nội bộ của vật tư/nhân công/máy → ai_tool_internal_price_book_lookup (cần keyword)
+   - Nếu hỏi định mức nội bộ/norm/hao hụt vật tư theo hạng mục → ai_tool_internal_norms_lookup (cần keyword)
+   - Nếu hỏi danh sách hoặc tổng hợp phương án dự toán/estimate/chào thầu → ai_tool_estimate_scenario_summary
+   - Nếu người dùng muốn AI "tạo", "chốt", "convert", "export" estimate/BOQ/báo giá → rejection hoặc clarification: AI chat chỉ đọc và tư vấn; thao tác ghi phải qua màn hình nghiệp vụ.
 
 DANH SÁCH KHO THAM CHIẾU:
 - wh-1: Kho RICO
@@ -169,6 +217,14 @@ Các module chính:
 - HRM/Nhân sự: users, employees, hrm_attendance, hrm_leave_requests, hrm_payrolls, hrm_construction_sites, org_units.
 - TS/Tài sản: assets, asset_categories, asset_location_stocks, asset_transfers, asset_assignments, asset_maintenances.
 - DA/Dự án: project_finances, project_transactions, project_tasks, daily_logs, acceptance_records, material_budget_items, project_material_requests, project_vendors, purchase_orders, payment_schedules.
+- HD/Chào thầu & dự toán: cost_templates, cost_template_sections, cost_template_items, cost_template_parameters, internal_price_book, internal_norms, estimate_scenarios, estimate_items, estimate_adjustments, estimate_versions, tender_packages, tender_external_boq_lines, tender_internal_mappings.
+
+Quy tắc riêng cho AI dự toán nhanh:
+- AI KHÔNG được tự bịa đơn giá, định mức, khối lượng hoặc lợi nhuận ngoài dữ liệu tool trả về.
+- Nếu thiếu template, định mức, đơn giá, tham số hoặc công thức không tính được: nói rõ thiếu gì và đề xuất bước nhập/bổ sung dữ liệu.
+- Mọi dự toán AI sinh ra chỉ là bản draft để người dùng review/chốt; không khẳng định là báo giá cuối cùng.
+- Luôn nêu giả định, rủi ro và confidence score khi trả lời về dự toán/chào thầu.
+- Đơn giá nội bộ, margin và profit là dữ liệu nhạy cảm; chỉ trình bày khi tool có trả về và không suy luận thêm.
 
 Style trả lời:
 - Mở đầu bằng kết luận ngắn gọn.
@@ -218,5 +274,25 @@ export const FALLBACK_DATABASE_CATALOG = [
     table: 'employees',
     purpose: 'Hồ sơ nhân viên',
     columns: ['id uuid', 'employee_code character varying', 'full_name character varying', 'status character varying', 'department_id uuid', 'position_id uuid', 'construction_site_id uuid', 'user_id uuid', 'org_unit_id uuid'],
+  },
+  {
+    table: 'cost_templates',
+    purpose: 'Template dự toán nội bộ theo loại công trình/hạng mục',
+    columns: ['id text', 'code text', 'name text', 'project_type text', 'status text', 'version_no integer', 'effective_from date', 'effective_to date', 'assumptions jsonb'],
+  },
+  {
+    table: 'internal_price_book',
+    purpose: 'Đơn giá nội bộ nhạy cảm dùng cho dự toán nhanh',
+    columns: ['id text', 'item_code text', 'item_name text', 'item_type text', 'unit text', 'region text', 'unit_price numeric', 'version_no integer', 'effective_from date', 'effective_to date', 'status text'],
+  },
+  {
+    table: 'internal_norms',
+    purpose: 'Định mức vật tư/nhân công/máy nội bộ theo hạng mục',
+    columns: ['id text', 'norm_code text', 'work_code text', 'resource_name text', 'resource_type text', 'unit text', 'norm_quantity numeric', 'waste_percent numeric', 'formula text', 'version_no integer', 'confidence_score numeric'],
+  },
+  {
+    table: 'estimate_scenarios',
+    purpose: 'Phương án dự toán/chào thầu có snapshot template/định mức/đơn giá',
+    columns: ['id text', 'code text', 'name text', 'status text', 'project_type text', 'input_parameters jsonb', 'missing_parameters text[]', 'assumptions jsonb', 'risk_warnings jsonb', 'confidence_score numeric', 'total_amount numeric'],
   },
 ];

@@ -1265,9 +1265,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateUser = async (u: User) => {
-    const syncOk = await syncToSupabase('users', u);
-    if (!syncOk) {
-      throw new Error('Không thể cập nhật người dùng trên Supabase. Dữ liệu local chưa được thay đổi.');
+    if (isSupabaseConfigured) {
+      try {
+        const { id, ...payload } = userToDbPayload(u);
+        const { data, error } = await supabase
+          .from('users')
+          .update(payload)
+          .eq('id', id)
+          .select('id')
+          .maybeSingle();
+
+        if (error) throw error;
+        if (!data) throw new Error('Không có bản ghi người dùng nào được cập nhật trên Supabase.');
+      } catch (error) {
+        console.error('Error updating user in Supabase:', error);
+        throw new Error('Không thể cập nhật người dùng trên Supabase. Dữ liệu local chưa được thay đổi.');
+      }
     }
     setUsers(prev => prev.map(item => item.id === u.id ? u : item));
     if (user.id === u.id) setUser(u);

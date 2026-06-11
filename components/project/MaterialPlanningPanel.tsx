@@ -250,6 +250,34 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
 
   return (
     <div className="space-y-4">
+      <style dangerouslySetInnerHTML={{
+        __html: `
+        /* Spacing and layout for Material Planning tables */
+        .planning-table th {
+          padding: 12px 16px !important;
+          font-weight: 950 !important;
+          font-size: 10px !important;
+          white-space: nowrap !important;
+        }
+        .planning-table td {
+          padding: 12px 16px !important;
+          vertical-align: middle !important;
+          white-space: nowrap !important;
+        }
+        .planning-table td.wrap-cell {
+          white-space: normal !important;
+          min-width: 260px !important;
+        }
+        .planning-table tbody tr {
+          transition: background-color 0.15s ease-in-out;
+        }
+        .planning-table tbody tr:hover {
+          background-color: rgba(99, 102, 241, 0.05) !important;
+        }
+        .dark .planning-table tbody tr:hover {
+          background-color: rgba(99, 102, 241, 0.1) !important;
+        }
+      `}} />
       <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm dark:border-slate-700/60 dark:bg-slate-800">
         <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -327,8 +355,8 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
             <h4 className="text-xs font-black uppercase tracking-wide text-red-700">Top 10 vật tư thiếu hụt giá trị lớn nhất trong 30 ngày</h4>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-xs">
-              <thead className="bg-slate-50 text-[9px] font-black uppercase text-slate-400">
+            <table className="w-full min-w-[760px] text-xs planning-table">
+              <thead className="bg-indigo-50/80 border-b border-indigo-100/80 dark:bg-slate-700/50 dark:border-slate-600/50 text-[10px] font-black uppercase text-indigo-950 dark:text-slate-200">
                 <tr>
                   <th className="px-4 py-2 text-left">Vật tư</th>
                   <th className="px-4 py-2 text-right">Nhu cầu 30d</th>
@@ -338,20 +366,20 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
                   <th className="px-4 py-2 text-right">Giá kế hoạch</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50">
+              <tbody className="divide-y divide-slate-50 dark:divide-slate-700/40">
                 {topShortageRows.map(row => (
                   <tr key={`top-${row.key}`} className="hover:bg-red-50/40">
-                    <td className="px-4 py-2">
-                      <div className="font-black text-slate-800">{row.itemName}</div>
+                    <td className="wrap-cell font-black text-slate-800 dark:text-slate-100">
+                      <div>{row.itemName}</div>
                       <div className="font-mono text-[10px] font-bold text-slate-400">{row.sku || '-'}</div>
                     </td>
-                    <td className="px-4 py-2 text-right font-bold text-slate-700">{fmtQty(row.forecastQty30d)} {row.unit}</td>
-                    <td className="px-4 py-2 text-right font-bold text-slate-700">{fmtMoney(row.forecastValue30d)}</td>
-                    <td className="px-4 py-2 text-right font-black text-red-600">{fmtQty(row.shortageQty30d)} {row.unit}</td>
-                    <td className="px-4 py-2 text-right font-black text-red-600">{fmtMoney(row.shortageValue30d)}</td>
+                    <td className="px-4 py-2 text-right font-bold text-slate-700 dark:text-slate-300">{fmtQty(row.forecastQty30d)} {row.unit}</td>
+                    <td className="px-4 py-2 text-right font-bold text-slate-700 dark:text-slate-300">{fmtMoney(row.forecastValue30d)}</td>
+                    <td className="px-4 py-2 text-right font-black text-red-600 dark:text-red-400">{fmtQty(row.shortageQty30d)} {row.unit}</td>
+                    <td className="px-4 py-2 text-right font-black text-red-600 dark:text-red-400">{fmtMoney(row.shortageValue30d)}</td>
                     <td className="px-4 py-2 text-right">
-                      <div className="font-bold text-slate-700">{fmtMoney(row.planningUnitPrice)}</div>
-                      <div className="text-[9px] font-black uppercase text-slate-300">{priceSourceLabel[row.planningUnitPriceSource]}</div>
+                      <div className="font-bold text-slate-700 dark:text-slate-300">{fmtMoney(row.planningUnitPrice)}</div>
+                      <div className="text-[9px] font-black uppercase text-slate-400">{priceSourceLabel[row.planningUnitPriceSource]}</div>
                     </td>
                   </tr>
                 ))}
@@ -363,8 +391,8 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
 
       <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm dark:border-slate-700/60 dark:bg-slate-800">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1780px] text-xs">
-            <thead className="bg-slate-50 text-[9px] font-black uppercase tracking-wide text-slate-500">
+          <table className="w-full min-w-[1780px] text-xs planning-table">
+            <thead className="bg-indigo-50/80 border-b border-indigo-100/80 dark:bg-slate-700/50 dark:border-slate-600/50 text-[10px] font-black uppercase tracking-wide text-indigo-950 dark:text-slate-200">
               <tr>
                 <th className="px-3 py-3 text-left">Vật tư</th>
                 <th className="px-3 py-3 text-left">Nhóm</th>
@@ -391,17 +419,17 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
                 const canCreatePo = canManage && shortage && !!row.inventoryItemId && !!siteWarehouseId;
                 return (
                   <React.Fragment key={row.key}>
-                    <tr className={`${row.shortageQty['7d'] > 0 ? 'bg-red-50/40' : shortage ? 'bg-amber-50/30' : ''} hover:bg-slate-50/80`}>
-                      <td className="px-3 py-3">
+                    <tr className={`${row.shortageQty['7d'] > 0 ? 'bg-red-50/40 dark:bg-red-950/20' : shortage ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''} hover:bg-slate-50/80 dark:hover:bg-slate-700/30`}>
+                      <td className="wrap-cell text-slate-800 dark:text-slate-100">
                         <div className="flex items-start gap-2">
                           <button
                             onClick={() => toggleRow(row.key)}
-                            className="mt-0.5 rounded p-0.5 text-slate-400 hover:bg-slate-100"
+                            className="mt-0.5 rounded p-0.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
                           >
                             {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                           </button>
                           <div>
-                            <div className="font-black text-slate-800">{row.itemName}</div>
+                            <div className="font-black text-slate-800 dark:text-slate-100">{row.itemName}</div>
                             <div className="mt-0.5 flex items-center gap-2 text-[10px] font-bold text-slate-400">
                               <span className="font-mono">{row.sku || 'Chưa có SKU'}</span>
                               <span>{row.unit}</span>
@@ -409,11 +437,11 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
                           </div>
                         </div>
                       </td>
-                      <td className="px-3 py-3">
-                        <div className="font-bold text-slate-600">{row.category}</div>
-                        <div className="mt-0.5 text-[9px] font-black uppercase text-slate-300">{ruleSourceLabel[row.ruleSource]}</div>
+                      <td className="font-bold text-slate-600 dark:text-slate-300">
+                        <div>{row.category}</div>
+                        <div className="mt-0.5 text-[9px] font-black uppercase text-slate-400">{ruleSourceLabel[row.ruleSource]}</div>
                       </td>
-                      <td className="px-3 py-3 text-center">
+                      <td className="text-center">
                         <input
                           type="number"
                           min={0}
@@ -424,10 +452,10 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
                             const next = Number(event.currentTarget.value || 0);
                             if (next !== row.leadTimeDays) void saveRule(row, { leadTimeDays: next });
                           }}
-                          className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-center text-xs font-bold text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
+                          className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-center text-xs font-bold text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
                         />
                       </td>
-                      <td className="px-3 py-3 text-center">
+                      <td className="text-center">
                         <select
                           value={row.distributionMethod}
                           disabled={!canManage || savingRuleKey === row.key}
@@ -440,21 +468,21 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
                                 : null,
                             });
                           }}
-                          className="w-36 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
+                          className="w-36 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
                         >
                           <option value="pre_start">Trước khi thi công</option>
                           <option value="linear">Rải đều theo ngày</option>
                           <option value="custom_curve">Theo curve</option>
                         </select>
                       </td>
-                      <td className="px-3 py-3 text-center">
+                      <td className="text-center">
                         {row.distributionMethod === 'custom_curve' ? (
                           <div className="space-y-1">
                             <select
                               value={row.curveTemplateId || ''}
                               disabled={!canManage || savingRuleKey === row.key || curveTemplates.length === 0}
                               onChange={event => void saveRule(row, { distributionMethod: 'custom_curve', curveTemplateId: event.target.value || null })}
-                              className="w-40 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
+                              className="w-40 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
                             >
                               <option value="">Chọn curve</option>
                               {curveTemplates.map(curve => (
@@ -464,7 +492,7 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
                             {(() => {
                               const curve = curveTemplates.find(item => item.id === row.curveTemplateId);
                               return curve ? (
-                                <div className="mx-auto flex h-5 w-40 overflow-hidden rounded bg-slate-100" title={`Tổng ${getCurveTotal(curve).toFixed(0)}%`}>
+                                <div className="mx-auto flex h-5 w-40 overflow-hidden rounded bg-slate-100 dark:bg-slate-700" title={`Tổng ${getCurveTotal(curve).toFixed(0)}%`}>
                                   {curve.points.map(point => (
                                     <div
                                       key={`${curve.id}-${point.sequence}`}
@@ -473,37 +501,37 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
                                     />
                                   ))}
                                 </div>
-                              ) : <div className="text-[9px] font-bold text-amber-600">Chưa chọn curve</div>;
+                              ) : <div className="text-[9px] font-bold text-amber-600 dark:text-amber-400">Chưa chọn curve</div>;
                             })()}
                           </div>
                         ) : (
-                          <span className="text-[10px] font-bold text-slate-300">-</span>
+                          <span className="text-[10px] font-bold text-slate-300 dark:text-slate-600">-</span>
                         )}
                       </td>
-                      <td className="px-3 py-3 text-right font-bold text-slate-700">{fmtQty(row.forecastQty7d)}</td>
-                      <td className="px-3 py-3 text-right font-bold text-slate-700">{fmtQty(row.forecastQty30d)}</td>
-                      <td className="px-3 py-3 text-right font-bold text-slate-700">{fmtMoney(row.forecastValue30d)}</td>
-                      <td className="px-3 py-3 text-right font-bold text-slate-700">{fmtQty(row.forecastQty90d)}</td>
-                      <td className="px-3 py-3 text-right font-bold text-emerald-700">{fmtQty(row.siteAvailableQty)}</td>
-                      <td className="px-3 py-3 text-right font-bold text-blue-700">{fmtQty(row.incomingQty['30d'])}</td>
-                      <td className={`px-3 py-3 text-right font-black ${shortage ? 'text-red-600' : 'text-emerald-600'}`}>
+                      <td className="text-right font-bold text-slate-700 dark:text-slate-300">{fmtQty(row.forecastQty7d)}</td>
+                      <td className="text-right font-bold text-slate-700 dark:text-slate-300">{fmtQty(row.forecastQty30d)}</td>
+                      <td className="text-right font-bold text-slate-700 dark:text-slate-300">{fmtMoney(row.forecastValue30d)}</td>
+                      <td className="text-right font-bold text-slate-700 dark:text-slate-300">{fmtQty(row.forecastQty90d)}</td>
+                      <td className="text-right font-bold text-emerald-700 dark:text-emerald-400">{fmtQty(row.siteAvailableQty)}</td>
+                      <td className="text-right font-bold text-blue-700 dark:text-blue-400">{fmtQty(row.incomingQty['30d'])}</td>
+                      <td className={`text-right font-black ${shortage ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                         {fmtQty(row.shortageQty['30d'])}
                       </td>
-                      <td className={`px-3 py-3 text-right font-black ${shortage ? 'text-red-600' : 'text-slate-500'}`}>
+                      <td className={`text-right font-black ${shortage ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
                         {fmtMoney(row.shortageValue['30d'])}
                       </td>
-                      <td className="px-3 py-3 text-right">
-                        <div className="font-bold text-slate-700">{fmtMoney(row.planningUnitPrice)}</div>
-                        <div className="text-[9px] font-black uppercase text-slate-300">{priceSourceLabel[row.planningUnitPriceSource]}</div>
+                      <td className="text-right">
+                        <div className="font-bold text-slate-700 dark:text-slate-300">{fmtMoney(row.planningUnitPrice)}</div>
+                        <div className="text-[9px] font-black uppercase text-slate-400">{priceSourceLabel[row.planningUnitPriceSource]}</div>
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="">
                         <div className="flex max-w-[220px] flex-wrap gap-1">
                           {row.warnings.slice(0, 3).map(warning => (
-                            <span key={warning} className="rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-black text-amber-700">
+                            <span key={warning} className="rounded-full bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 text-[9px] font-black text-amber-700 dark:text-amber-300">
                               {warning}
                             </span>
                           ))}
-                          {row.warnings.length === 0 && <span className="text-[10px] font-bold text-emerald-600">OK</span>}
+                          {row.warnings.length === 0 && <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-450">OK</span>}
                         </div>
                       </td>
                       <td className="px-3 py-3 text-center">
@@ -511,7 +539,7 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
                           onClick={() => void createPoFromRow(row)}
                           disabled={!canCreatePo || creatingPoKey === row.key}
                           title={!row.inventoryItemId ? 'Cần liên kết mã kho trước khi tạo PO' : undefined}
-                          className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-[10px] font-black text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-[10px] font-black text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-900/50 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {creatingPoKey === row.key ? <Save size={11} className="animate-pulse" /> : <ShoppingCart size={11} />}
                           Tạo PO
@@ -519,11 +547,11 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
                       </td>
                     </tr>
                     {expanded && (
-                      <tr className="bg-slate-50/60">
+                      <tr className="bg-slate-50/60 dark:bg-slate-800/40">
                         <td colSpan={16} className="px-10 py-3">
-                          <div className="overflow-hidden rounded-xl border border-slate-100 bg-white">
-                            <table className="w-full text-[11px]">
-                              <thead className="bg-slate-50 text-[9px] font-black uppercase text-slate-400">
+                          <div className="overflow-hidden rounded-xl border border-slate-100 bg-white dark:bg-slate-900 dark:border-slate-800">
+                            <table className="w-full text-[11px] planning-table">
+                              <thead className="bg-indigo-50/80 border-b border-indigo-100/80 dark:bg-slate-700/50 dark:border-slate-600/50 text-[10px] font-black uppercase text-indigo-950 dark:text-slate-200">
                                 <tr>
                                   <th className="px-3 py-2 text-left">WBS / đầu mục</th>
                                   <th className="px-3 py-2 text-center">Ngày thi công</th>
@@ -535,22 +563,22 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
                                   <th className="px-3 py-2 text-left">Ghi chú</th>
                                 </tr>
                               </thead>
-                              <tbody className="divide-y divide-slate-50">
+                              <tbody className="divide-y divide-slate-50 dark:divide-slate-800/40">
                                 {row.details.map(detail => (
                                   <tr key={detail.id}>
-                                    <td className="px-3 py-2">
-                                      <div className="font-bold text-slate-700">{detail.taskName}</div>
-                                      <div className="font-mono text-[9px] font-bold text-indigo-500">{detail.wbsCode || '-'}</div>
+                                    <td className="wrap-cell text-slate-750 dark:text-slate-250">
+                                      <div className="font-bold text-slate-700 dark:text-slate-300">{detail.taskName}</div>
+                                      <div className="font-mono text-[9px] font-bold text-indigo-500 dark:text-indigo-400">{detail.wbsCode || '-'}</div>
                                     </td>
-                                    <td className="px-3 py-2 text-center text-slate-500">
+                                    <td className="text-center text-slate-500 dark:text-slate-400">
                                       {detail.startDate?.slice(0, 10) || '-'} - {detail.endDate?.slice(0, 10) || '-'}
                                     </td>
-                                    <td className="px-3 py-2 text-center font-bold text-slate-700">{detail.needDate || '-'}</td>
-                                    <td className="px-3 py-2 text-right font-bold text-slate-700">{fmtQty(detail.remainingDemandQty)}</td>
-                                    <td className="px-3 py-2 text-right text-slate-600">{fmtQty(detail.demandQty['7d'])}</td>
-                                    <td className="px-3 py-2 text-right text-slate-600">{fmtQty(detail.demandQty['30d'])}</td>
-                                    <td className="px-3 py-2 text-right text-slate-600">{fmtQty(detail.demandQty['90d'])}</td>
-                                    <td className="px-3 py-2 text-slate-500">
+                                    <td className="text-center font-bold text-slate-700 dark:text-slate-300">{detail.needDate || '-'}</td>
+                                    <td className="text-right font-bold text-slate-700 dark:text-slate-300">{fmtQty(detail.remainingDemandQty)}</td>
+                                    <td className="text-right text-slate-600 dark:text-slate-450">{fmtQty(detail.demandQty['7d'])}</td>
+                                    <td className="text-right text-slate-600 dark:text-slate-450">{fmtQty(detail.demandQty['30d'])}</td>
+                                    <td className="text-right text-slate-600 dark:text-slate-450">{fmtQty(detail.demandQty['90d'])}</td>
+                                    <td className="wrap-cell text-slate-500 dark:text-slate-450">
                                       {detail.warnings.length > 0 ? detail.warnings.join(', ') : distributionLabel[detail.distributionMethod]}
                                     </td>
                                   </tr>

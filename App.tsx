@@ -107,10 +107,13 @@ const ContractOverview = React.lazy(() => import('./pages/hd/ContractOverview'))
 const BusinessPartners = React.lazy(() => import('./pages/hd/BusinessPartners'));
 const ContractTypes = React.lazy(() => import('./pages/hd/ContractTypes'));
 const ContractCatalogs = React.lazy(() => import('./pages/hd/ContractCatalogs'));
+const CostLibrary = React.lazy(() => import('./pages/hd/CostLibrary'));
 const SupplierContracts = React.lazy(() => import('./pages/hd/SupplierContracts'));
 const CustomerContracts = React.lazy(() => import('./pages/hd/CustomerContracts'));
 const SubcontractorContracts = React.lazy(() => import('./pages/hd/SubcontractorContracts'));
 const ContractWorkspacePage = React.lazy(() => import('./pages/hd/ContractWorkspacePage'));
+const TenderAiLayout = React.lazy(() => import('./pages/tender-ai/TenderAiLayout'));
+const TenderBoqAnalyzer = React.lazy(() => import('./pages/tender-ai/TenderBoqAnalyzer'));
 
 // ── T1: ProtectedRoute — verify Supabase session thực sự ─────────────────────
 // Khi Supabase được cấu hình: check session JWT từ Supabase Auth.
@@ -262,11 +265,17 @@ const AppRoutes: React.FC = () => {
             <Route path="partners" element={<BusinessPartners />} />
             <Route path="contract-types" element={<ContractTypes />} />
             <Route path="catalogs" element={<ContractCatalogs />} />
+            <Route path="cost-library" element={<CostLibrary />} />
             <Route path="supplier" element={<SupplierContracts />} />
             <Route path="customer" element={<CustomerContracts />} />
             <Route path="customer/:id" element={<ContractWorkspacePage contractType="customer" />} />
             <Route path="subcontractor" element={<SubcontractorContracts />} />
             <Route path="subcontractor/:id" element={<ContractWorkspacePage contractType="subcontractor" />} />
+          </Route>
+          <Route path="tender-ai" element={<TenderAiLayout />}>
+            <Route index element={<Navigate to="boq" replace />} />
+            <Route path="boq" element={<TenderBoqAnalyzer />} />
+            <Route path="cost-library" element={<CostLibrary />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Route>
@@ -314,6 +323,15 @@ const RouteErrorBoundary: React.FC<{ children: React.ReactNode }> = ({ children 
 
   return <ErrorBoundary resetKey={resetKey}>{children}</ErrorBoundary>;
 };
+
+const normalizeDirectHashRoute = () => {
+  if (typeof window === 'undefined') return;
+  const { pathname, search, hash } = window.location;
+  if (hash || pathname === '/' || pathname === '') return;
+  window.history.replaceState(null, '', `/#${pathname}${search}`);
+};
+
+normalizeDirectHashRoute();
 
 const App: React.FC = () => {
   return (
