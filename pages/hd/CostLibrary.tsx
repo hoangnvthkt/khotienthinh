@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
   AlertTriangle,
   Calculator,
@@ -44,6 +44,9 @@ import {
   CostTemplateReadinessReport,
   CostTemplateNormalizationReport,
   CostTemplateNormalizationStatus,
+  CostNormWorkbenchLine,
+  costNormStandardizationAiService,
+  costNormWorkbenchService,
   InternalNormImportPayload,
   InternalPriceBookImportPayload,
   internalNormService,
@@ -107,7 +110,7 @@ const readinessLabel: Record<string, string> = {
   active: 'Active',
 };
 
-const TD = 'px-3 py-2 align-middle text-slate-600 dark:text-slate-300';
+const TD = 'px-4 py-3 align-middle text-slate-800 dark:text-slate-200 whitespace-nowrap text-xs font-semibold border-b border-slate-100 dark:border-slate-800';
 const BTN_SOFT = 'inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:opacity-50';
 const BTN_PRIMARY = 'inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50';
 const BTN_MINI = 'inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600';
@@ -214,6 +217,29 @@ const getNormalizationStatus = (item: CostTemplateItem): CostTemplateNormalizati
   if (value === 'reviewing' || value === 'normalized' || value === 'ignored') return value;
   return getRawMaterials(item).length > 0 || getItemMetadata(item).needsNormalization ? 'raw' : 'normalized';
 };
+const normalizePackageCode = (value: unknown, fallback = 'GOI_DINH_MUC') => {
+  const normalized = String(value || fallback)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+  return normalized || fallback;
+};
+const isNormPackageItem = (item: CostTemplateItem, norms: InternalNorm[] = []) => {
+  const metadata = getItemMetadata(item);
+  return metadata.sourceKind === 'internal_norm_package'
+    || item.costCategory === 'norm_package'
+    || Boolean(item.normGroupCode)
+    || norms.some(norm => norm.templateItemId === item.id);
+};
+const defaultNormPackageForm = (referenceItem?: CostTemplateItem | null) => ({
+  code: referenceItem ? normalizePackageCode(getItemMetadata(referenceItem).standardWorkCode || referenceItem.workCode || referenceItem.code || referenceItem.name) : '',
+  name: referenceItem?.name || '',
+  unit: String(referenceItem ? getItemMetadata(referenceItem).standardUnit || referenceItem.unit || '' : ''),
+  baseQuantity: '1',
+});
 const rawToNormalizedMaterial = (material: RawTemplateMaterialSnapshot, index: number): NormalizedTemplateMaterial => ({
   sourceMaterialBudgetItemId: material.sourceMaterialBudgetItemId,
   materialCode: material.materialCode || '',
@@ -270,6 +296,55 @@ const CostLibrary: React.FC = () => {
   const [parameterForm, setParameterForm] = useState(emptyParameter());
   const [priceForm, setPriceForm] = useState(emptyPrice());
   const [normForm, setNormForm] = useState(emptyNorm());
+  const [normWorkbenchTemplateId, setNormWorkbenchTemplateId] = useState('');
+  const [normWorkbenchItemId, setNormWorkbenchItemId] = useState('');
+  const [normWorkbenchQuery, setNormWorkbenchQuery] = useState('');
+  const [normWorkbenchStatusFilter, setNormWorkbenchStatusFilter] = useState<CostTemplateNormalizationStatus | 'all'>('all');
+  const [normWorkbenchLines, setNormWorkbenchLines] = useState<CostNormWorkbenchLine[]>([]);
+  const [normWorkbenchAiWarnings, setNormWorkbenchAiWarnings] = useState<string[]>([]);
+  const [loadingNormAi, setLoadingNormAi] = useState(false);
+  const [normPackageTemplateId, setNormPackageTemplateId] = useState('');
+  const [normPackageItemId, setNormPackageItemId] = useState('');
+  const [normPackageForm, setNormPackageForm] = useState(defaultNormPackageForm());
+  const [leftWidth, setLeftWidth] = useState(30); // Default layout: left pane takes 30%
+  const [isDragging, setIsDragging] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      let percentage = ((e.clientX - rect.left) / rect.width) * 100;
+      if (percentage < 15) percentage = 15;
+      if (percentage > 50) percentage = 50;
+      setLeftWidth(percentage);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isDragging]);
+
   const [draftInput, setDraftInput] = useState<Record<string, unknown>>({});
   const [draftName, setDraftName] = useState('Phương án tiêu chuẩn');
   const [draftCustomer, setDraftCustomer] = useState('');
@@ -349,6 +424,121 @@ const CostLibrary: React.FC = () => {
     () => templates.find(template => template.id === selectedTemplateId) || templates[0] || null,
     [selectedTemplateId, templates],
   );
+
+  const normSourceTemplates = useMemo(
+    () => templates.filter(template =>
+      template.metadata?.sourceKind === 'project_wbs_material_raw_template'
+      || template.code === costTemplateService.smbFactoryTemplateCode
+      || template.items.some(item => getRawMaterials(item).length > 0 || getNormalizedMaterials(item).length > 0),
+    ),
+    [templates],
+  );
+  const selectedNormTemplate = useMemo(
+    () => templates.find(template => template.id === normWorkbenchTemplateId)
+      || normSourceTemplates[0]
+      || selectedTemplate
+      || null,
+    [normSourceTemplates, normWorkbenchTemplateId, selectedTemplate, templates],
+  );
+  const normWorkbenchItems = useMemo(() => {
+    const keyword = normWorkbenchQuery.trim().toLowerCase();
+    return (selectedNormTemplate?.items || []).filter(item => {
+      const status = getNormalizationStatus(item);
+      const matchesStatus = normWorkbenchStatusFilter === 'all' || status === normWorkbenchStatusFilter;
+      const matchesKeyword = !keyword || [
+        item.code,
+        item.name,
+        item.workCode,
+        String(getItemMetadata(item).sourceWbsCode || ''),
+      ].some(value => (value || '').toLowerCase().includes(keyword));
+      return matchesStatus && matchesKeyword;
+    });
+  }, [normWorkbenchQuery, normWorkbenchStatusFilter, selectedNormTemplate]);
+  const selectedNormItem = useMemo(
+    () => selectedNormTemplate?.items.find(item => item.id === normWorkbenchItemId)
+      || normWorkbenchItems[0]
+      || selectedNormTemplate?.items[0]
+      || null,
+    [normWorkbenchItemId, normWorkbenchItems, selectedNormTemplate],
+  );
+  const normPackageTemplates = useMemo(
+    () => templates.filter(template => template.status !== 'archived' && template.metadata?.sourceKind !== 'project_wbs_material_raw_template'),
+    [templates],
+  );
+  const selectedNormPackageTemplate = useMemo(
+    () => templates.find(template => template.id === normPackageTemplateId)
+      || normPackageTemplates[0]
+      || selectedTemplate
+      || null,
+    [normPackageTemplateId, normPackageTemplates, selectedTemplate, templates],
+  );
+  const normPackageItems = useMemo(
+    () => (selectedNormPackageTemplate?.items || [])
+      .filter(item => isNormPackageItem(item, norms))
+      .sort((a, b) => a.code.localeCompare(b.code, 'vi')),
+    [norms, selectedNormPackageTemplate],
+  );
+  const selectedNormPackageItem = useMemo(
+    () => selectedNormPackageTemplate?.items.find(item => item.id === normPackageItemId) || null,
+    [normPackageItemId, selectedNormPackageTemplate],
+  );
+  const selectedNormPackageDrafts = useMemo(
+    () => selectedNormPackageItem ? norms.filter(norm => norm.templateItemId === selectedNormPackageItem.id && norm.status === 'draft') : [],
+    [norms, selectedNormPackageItem],
+  );
+
+  useEffect(() => {
+    if (!normWorkbenchTemplateId && normSourceTemplates[0]) {
+      setNormWorkbenchTemplateId(normSourceTemplates[0].id);
+    }
+  }, [normSourceTemplates, normWorkbenchTemplateId]);
+
+  useEffect(() => {
+    if (!selectedNormTemplate) return;
+    if (!normWorkbenchItemId || !selectedNormTemplate.items.some(item => item.id === normWorkbenchItemId)) {
+      setNormWorkbenchItemId(normWorkbenchItems[0]?.id || selectedNormTemplate.items[0]?.id || '');
+    }
+  }, [normWorkbenchItemId, normWorkbenchItems, selectedNormTemplate]);
+
+  useEffect(() => {
+    if (!selectedNormItem) {
+      setNormWorkbenchLines([]);
+      return;
+    }
+    if (!selectedNormPackageItem) {
+      setNormWorkbenchLines([]);
+      setNormWorkbenchAiWarnings([]);
+      return;
+    }
+    setNormWorkbenchLines(costNormWorkbenchService.buildLinesForPackage(selectedNormItem, selectedNormPackageItem, norms, { includeReferenceFallback: false }));
+    setNormWorkbenchAiWarnings([]);
+  }, [norms, selectedNormItem, selectedNormPackageItem]);
+
+  useEffect(() => {
+    if (!normPackageTemplateId && (normPackageTemplates[0] || selectedTemplate)) {
+      setNormPackageTemplateId((normPackageTemplates[0] || selectedTemplate)?.id || '');
+    }
+  }, [normPackageTemplateId, normPackageTemplates, selectedTemplate]);
+
+  useEffect(() => {
+    if (!selectedNormPackageTemplate) return;
+    if (normPackageItemId && !selectedNormPackageTemplate.items.some(item => item.id === normPackageItemId)) {
+      setNormPackageItemId('');
+    }
+  }, [normPackageItemId, selectedNormPackageTemplate]);
+
+  useEffect(() => {
+    if (selectedNormPackageItem) {
+      setNormPackageForm({
+        code: selectedNormPackageItem.code,
+        name: selectedNormPackageItem.name,
+        unit: selectedNormPackageItem.unit || '',
+        baseQuantity: String(selectedNormPackageItem.baseQuantity || 1),
+      });
+      return;
+    }
+    setNormPackageForm(defaultNormPackageForm(selectedNormItem));
+  }, [selectedNormItem, selectedNormPackageItem]);
 
   useEffect(() => {
     if (!selectedTemplate?.id) {
@@ -803,6 +993,187 @@ const CostLibrary: React.FC = () => {
     });
   };
 
+  const setNormWorkbenchLine = (id: string, patch: Partial<CostNormWorkbenchLine>) => {
+    setNormWorkbenchLines(prev => prev.map(line => line.id === id ? { ...line, ...patch } : line));
+  };
+
+  const saveNormPackageItem = async () => {
+    if (!canManage || !selectedNormItem || !selectedNormPackageTemplate) return;
+    const code = normalizePackageCode(normPackageForm.code || normPackageForm.name);
+    const name = normPackageForm.name.trim();
+    if (!code || !name) {
+      toast.warning('Thiếu mã hoặc tên gói định mức', 'Ví dụ mã LAT_SAN, tên LÁT SÀN.');
+      return;
+    }
+    const unit = normPackageForm.unit.trim() || String(getItemMetadata(selectedNormItem).standardUnit || selectedNormItem.unit || '');
+    const baseQuantity = num(normPackageForm.baseQuantity) > 0 ? num(normPackageForm.baseQuantity) : 1;
+    await runSave(selectedNormPackageItem ? 'Đã cập nhật gói định mức' : 'Đã tạo gói định mức', async () => {
+      const metadata = selectedNormPackageItem ? getItemMetadata(selectedNormPackageItem) : {};
+      const referenceMetadata = getItemMetadata(selectedNormItem);
+      const saved = await costTemplateService.upsertItem({
+        id: selectedNormPackageItem?.id,
+        templateId: selectedNormPackageTemplate.id,
+        sectionId: selectedNormPackageItem?.sectionId || null,
+        code,
+        name,
+        itemType: 'work',
+        unit,
+        quantityFormula: selectedNormPackageItem?.quantityFormula || '',
+        baseQuantity,
+        defaultWastePercent: selectedNormPackageItem?.defaultWastePercent ?? 0,
+        laborRate: selectedNormPackageItem?.laborRate ?? 0,
+        machineRate: selectedNormPackageItem?.machineRate ?? 0,
+        overheadPercent: selectedNormPackageItem?.overheadPercent ?? 0,
+        profitPercent: selectedNormPackageItem?.profitPercent ?? 0,
+        riskBufferPercent: selectedNormPackageItem?.riskBufferPercent ?? 0,
+        costCategory: 'norm_package',
+        workCode: code,
+        materialSku: selectedNormPackageItem?.materialSku || '',
+        normGroupCode: code,
+        sortOrder: selectedNormPackageItem?.sortOrder ?? (selectedNormPackageTemplate.items.length + 1) * 10,
+        assumptions: selectedNormPackageItem?.assumptions || ['Gói định mức chuẩn được tạo từ workbench định mức.'],
+        metadata: {
+          ...metadata,
+          sourceKind: 'internal_norm_package',
+          referenceSourceTemplateId: selectedNormItem.templateId,
+          referenceSourceItemId: selectedNormItem.id,
+          referenceSourceWbsCode: String(referenceMetadata.sourceWbsCode || selectedNormItem.code || ''),
+          referenceSourceName: selectedNormItem.name,
+          createdFrom: metadata.createdFrom || 'cost_norm_workbench',
+          updatedFrom: 'cost_norm_workbench',
+        },
+      });
+      setNormPackageTemplateId(saved.templateId);
+      setNormPackageItemId(saved.id);
+      setNormPackageForm({ code: saved.code, name: saved.name, unit: saved.unit || '', baseQuantity: String(saved.baseQuantity || 1) });
+      await load();
+    });
+  };
+
+  const addNormWorkbenchLine = () => {
+    if (!selectedNormPackageItem) {
+      toast.warning('Chưa có gói định mức đích', 'Hãy tạo hoặc chọn gói như LÁT SÀN trước.');
+      return;
+    }
+    setNormWorkbenchLines(prev => [...prev, costNormWorkbenchService.buildEmptyLine(selectedNormPackageItem, prev.length)]);
+  };
+
+  const removeNormWorkbenchLine = (id: string) => {
+    setNormWorkbenchLines(prev => prev.filter(line => line.id !== id));
+  };
+
+  const isReferenceMaterialSelected = (material: RawTemplateMaterialSnapshot, index: number) => {
+    if (!selectedNormItem) return false;
+    const fallbackId = `${selectedNormItem.id}-raw-${index}`;
+    return normWorkbenchLines.some(line =>
+      (material.sourceMaterialBudgetItemId && line.sourceMaterialBudgetItemId === material.sourceMaterialBudgetItemId)
+      || line.id === fallbackId
+      || (!material.sourceMaterialBudgetItemId && line.resourceName === material.itemName && line.rawQuantity === num(material.budgetQty)),
+    );
+  };
+
+  const toggleReferenceMaterial = (material: RawTemplateMaterialSnapshot, index: number, checked: boolean) => {
+    if (!selectedNormItem || !selectedNormPackageItem) {
+      toast.warning('Chưa có gói định mức đích', 'Hãy tạo hoặc chọn gói trước khi tích vật tư tham chiếu.');
+      return;
+    }
+    const fallbackId = `${selectedNormItem.id}-raw-${index}`;
+    setNormWorkbenchLines(prev => {
+      const exists = prev.some(line =>
+        (material.sourceMaterialBudgetItemId && line.sourceMaterialBudgetItemId === material.sourceMaterialBudgetItemId)
+        || line.id === fallbackId
+        || (!material.sourceMaterialBudgetItemId && line.resourceName === material.itemName && line.rawQuantity === num(material.budgetQty)),
+      );
+      if (checked) {
+        if (exists) return prev;
+        return [...prev, costNormWorkbenchService.buildLineFromRawMaterial(selectedNormItem, selectedNormPackageItem, material, prev.length)];
+      }
+      return prev.filter(line =>
+        !(
+          (material.sourceMaterialBudgetItemId && line.sourceMaterialBudgetItemId === material.sourceMaterialBudgetItemId)
+          || line.id === fallbackId
+          || (!material.sourceMaterialBudgetItemId && line.resourceName === material.itemName && line.rawQuantity === num(material.budgetQty))
+        ),
+      );
+    });
+  };
+
+  const runNormAiSuggestion = async () => {
+    if (!selectedNormItem || !selectedNormPackageItem) {
+      toast.warning('Chưa có gói định mức đích', 'AI sẽ gợi ý vào gói như LÁT SÀN, không lưu vào hạng mục tham chiếu.');
+      return;
+    }
+    setLoadingNormAi(true);
+    try {
+      const result = await costNormStandardizationAiService.suggestRemote({
+        referenceItem: selectedNormItem,
+        targetItem: selectedNormPackageItem,
+        currentLines: normWorkbenchLines,
+        priceBookSamples: prices,
+      });
+      setNormWorkbenchLines(result.suggestions);
+      setNormWorkbenchAiWarnings(result.warnings);
+      toast.success('AI đã gợi ý định mức draft', `Confidence ${Math.round(result.confidenceScore * 100)}%.`);
+    } catch (error) {
+      logApiError('cost-library.normAiSuggestion', error);
+      const fallback = costNormStandardizationAiService.suggestLocal({
+        referenceItem: selectedNormItem,
+        targetItem: selectedNormPackageItem,
+        currentLines: normWorkbenchLines,
+        priceBookSamples: prices,
+      });
+      setNormWorkbenchLines(fallback.suggestions);
+      setNormWorkbenchAiWarnings(fallback.warnings);
+      toast.warning('Đang dùng gợi ý local', getApiErrorMessage(error));
+    } finally {
+      setLoadingNormAi(false);
+    }
+  };
+
+  const saveNormWorkbenchDraft = async (markNormalized = false) => {
+    if (!canManage || !selectedNormItem || !selectedNormPackageItem) {
+      toast.warning('Chưa có gói định mức đích', 'Hãy tạo hoặc chọn gói như LÁT SÀN trước khi lưu draft.');
+      return;
+    }
+    const validRows = normWorkbenchLines.filter(line => line.resourceName.trim() && line.unit.trim() && num(line.normQuantity) > 0);
+    if (validRows.length === 0) {
+      toast.warning('Chưa có dòng định mức hợp lệ', 'Cần tên nguồn lực, đơn vị và định mức lớn hơn 0.');
+      return;
+    }
+    await runSave(markNormalized ? 'Đã lưu và đánh dấu chuẩn hóa' : 'Đã lưu định mức draft', async () => {
+      const result = await costNormWorkbenchService.saveDraft({
+        targetItemId: selectedNormPackageItem.id,
+        referenceItemId: selectedNormItem.id,
+        lines: normWorkbenchLines,
+        markNormalized,
+        actorId: user.id,
+      });
+      toast.info('Kết quả workbench', `Lưu ${result.savedNorms.length} dòng draft, archive ${result.archivedDrafts} draft bị xoá.`);
+      if (normalizingTemplateId) await loadNormalizationReport(normalizingTemplateId);
+    });
+  };
+
+  const activateSelectedNormDrafts = async () => {
+    if (!canManage || !selectedNormPackageItem) return;
+    if (selectedNormPackageDrafts.length === 0) {
+      toast.info('Chưa có draft để kích hoạt', 'Hãy lưu draft trước khi activate.');
+      return;
+    }
+    const ok = await confirm({
+      title: 'Kích hoạt định mức draft của gói?',
+      targetName: selectedNormPackageItem.name,
+      subtitle: 'Các active norm cũ cùng mã/khu vực sẽ được archive theo logic version hiện có.',
+      actionLabel: 'Kích hoạt',
+      intent: 'warning',
+    });
+    if (!ok) return;
+    await runSave('Đã kích hoạt định mức của gói', async () => {
+      const result = await internalNormService.bulkActivate(selectedNormPackageDrafts, user.id);
+      toast.info('Kết quả kích hoạt', `Active ${result.activated} dòng, skip ${result.skipped} dòng.`);
+      if (result.blockers.length > 0) toast.warning('Một số dòng bị skip', result.blockers.slice(0, 3).join(' • '));
+    });
+  };
+
   const importPrices = async (file?: File | null) => {
     if (!canManage || !file) return;
     try {
@@ -1092,11 +1463,11 @@ const CostLibrary: React.FC = () => {
             <Metric label="Quá cũ" value={result.staleRows} />
             <Metric label="Cảnh báo" value={warnings} />
           </div>
-          <div className="mt-4 max-h-72 overflow-y-auto rounded-xl border border-slate-200">
+          <div className="mt-4 max-h-72 overflow-auto rounded-xl border border-slate-200">
             <table className="w-full text-xs">
-              <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+              <thead className="bg-indigo-50/80 border-b border-indigo-100/80 dark:bg-slate-800 dark:border-slate-700 text-xs font-black text-indigo-950 dark:text-slate-200 uppercase whitespace-nowrap">
                 <tr>
-                  {['Dòng', 'Mức', 'Trường', 'Nội dung'].map(header => <th key={header} className="px-3 py-2 text-left font-black">{header}</th>)}
+                  {['Dòng', 'Mức', 'Trường', 'Nội dung'].map(header => <th key={header} className="px-4 py-3 text-left font-black tracking-wider whitespace-nowrap">{header}</th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1161,11 +1532,11 @@ const CostLibrary: React.FC = () => {
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-200">
+            <div className="max-h-72 overflow-auto rounded-xl border border-slate-200">
               <table className="w-full text-xs">
-                <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+                <thead className="bg-indigo-50/80 border-b border-indigo-100/80 dark:bg-slate-800 dark:border-slate-700 text-xs font-black text-indigo-950 dark:text-slate-200 uppercase whitespace-nowrap">
                   <tr>
-                    {['WBS cha', 'Tên nhóm', 'Task', 'VT raw'].map(header => <th key={header} className="px-3 py-2 text-left font-black">{header}</th>)}
+                    {['WBS cha', 'Tên nhóm', 'Task', 'VT raw'].map(header => <th key={header} className="px-4 py-3 text-left font-black tracking-wider whitespace-nowrap">{header}</th>)}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1181,11 +1552,11 @@ const CostLibrary: React.FC = () => {
               </table>
             </div>
 
-            <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-200">
+            <div className="max-h-72 overflow-auto rounded-xl border border-slate-200">
               <table className="w-full text-xs">
-                <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+                <thead className="bg-indigo-50/80 border-b border-indigo-100/80 dark:bg-slate-800 dark:border-slate-700 text-xs font-black text-indigo-950 dark:text-slate-200 uppercase whitespace-nowrap">
                   <tr>
-                    {['WBS con', 'Hạng mục', 'ĐVT', 'KL', 'VT raw'].map(header => <th key={header} className="px-3 py-2 text-left font-black">{header}</th>)}
+                    {['WBS con', 'Hạng mục', 'ĐVT', 'KL', 'VT raw'].map(header => <th key={header} className="px-4 py-3 text-left font-black tracking-wider whitespace-nowrap">{header}</th>)}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1241,9 +1612,8 @@ const CostLibrary: React.FC = () => {
             <h2 className="text-sm font-black text-slate-800 dark:text-white">Dữ liệu còn thiếu để dùng thật</h2>
             <p className="text-xs font-bold text-slate-400">Gate production cho template, định mức, đơn giá và estimate builder.</p>
           </div>
-          <span className={`w-fit rounded-full px-3 py-1 text-[10px] font-black ${
-            selectedTemplateReadiness?.canEstimate ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-          }`}>
+          <span className={`w-fit rounded-full px-3 py-1 text-[10px] font-black ${selectedTemplateReadiness?.canEstimate ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+            }`}>
             {readinessLabel[selectedTemplateReadiness?.status || 'needs_data']}
           </span>
         </div>
@@ -1274,8 +1644,12 @@ const CostLibrary: React.FC = () => {
   };
 
   const renderBuilder = () => (
-    <div className="grid grid-cols-1 xl:grid-cols-[460px_minmax(0,1fr)] gap-4">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+    <div
+      ref={containerRef}
+      className="flex flex-col xl:flex-row gap-4 relative w-full"
+      style={{ '--left-pane-width': `${leftWidth}%` } as React.CSSProperties}
+    >
+      <div className="w-full resizable-left-pane rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
         <div className="mb-4 flex items-center justify-between gap-2">
           <h2 className="text-sm font-black text-slate-800 dark:text-white">Tạo dự toán nhanh</h2>
           <span className="rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black text-indigo-600">Bước {builderStep}/4</span>
@@ -1306,9 +1680,8 @@ const CostLibrary: React.FC = () => {
                 ))}
               </select>
               {selectedTemplateReadiness && (
-                <div className={`rounded-xl border px-3 py-2 text-xs font-bold ${
-                  selectedTemplateReadiness.canEstimate ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'
-                }`}>
+                <div className={`rounded-xl border px-3 py-2 text-xs font-bold ${selectedTemplateReadiness.canEstimate ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'
+                  }`}>
                   {readinessLabel[selectedTemplateReadiness.status]} • {selectedTemplateReadiness.canEstimate ? 'Đủ điều kiện sinh dự toán' : selectedTemplateReadiness.blockers.slice(0, 2).join(' • ')}
                 </div>
               )}
@@ -1393,36 +1766,54 @@ const CostLibrary: React.FC = () => {
           </button>
         </div>
       </div>
-      <EstimateDetail
-        estimate={estimateDetail}
-        canManage={canManage}
-        canSeeInternalCost={canSeeInternalCost}
-        lineEdits={lineEdits}
-        setLineEdits={setLineEdits}
-        onSaveLine={saveLineOverride}
-        onReview={() => updateEstimateStatus('reviewed')}
-        onFinalize={() => updateEstimateStatus('finalized')}
-        onExport={exportQuote}
-        convertType={convertType}
-        setConvertType={setConvertType}
-        convertContractId={convertContractId}
-        setConvertContractId={setConvertContractId}
-        convertContracts={convertContracts}
-        onPreviewConvert={previewConvert}
-        conversionPreview={conversionPreview}
-        conversionAudit={conversionAudit}
-        onConvert={convertEstimate}
-        onRollbackConvert={rollbackConversion}
-        finalizeOverrideReason={finalizeOverrideReason}
-        setFinalizeOverrideReason={setFinalizeOverrideReason}
-        saving={saving}
-      />
+
+      <div
+        onMouseDown={handleMouseDown}
+        className={`hidden xl:flex select-none w-1.5 hover:w-2 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-300 dark:hover:bg-indigo-700 active:bg-indigo-500 cursor-col-resize transition-all duration-150 relative shrink-0 items-center justify-center rounded-full self-stretch ${isDragging ? 'bg-indigo-400 w-2' : ''}`}
+        title="Kéo để thay đổi kích thước các cột"
+      >
+        <div className="absolute top-1/2 -translate-y-1/2 w-4 h-8 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 shadow-sm rounded-md flex flex-col gap-0.5 items-center justify-center cursor-col-resize hover:border-indigo-400 z-10">
+          <div className="w-0.5 h-3 bg-slate-300 dark:bg-slate-500 rounded-full" />
+          <div className="w-0.5 h-3 bg-slate-300 dark:bg-slate-500 rounded-full" />
+        </div>
+      </div>
+
+      <div className="w-full resizable-right-pane">
+        <EstimateDetail
+          estimate={estimateDetail}
+          canManage={canManage}
+          canSeeInternalCost={canSeeInternalCost}
+          lineEdits={lineEdits}
+          setLineEdits={setLineEdits}
+          onSaveLine={saveLineOverride}
+          onReview={() => updateEstimateStatus('reviewed')}
+          onFinalize={() => updateEstimateStatus('finalized')}
+          onExport={exportQuote}
+          convertType={convertType}
+          setConvertType={setConvertType}
+          convertContractId={convertContractId}
+          setConvertContractId={setConvertContractId}
+          convertContracts={convertContracts}
+          onPreviewConvert={previewConvert}
+          conversionPreview={conversionPreview}
+          conversionAudit={conversionAudit}
+          onConvert={convertEstimate}
+          onRollbackConvert={rollbackConversion}
+          finalizeOverrideReason={finalizeOverrideReason}
+          setFinalizeOverrideReason={setFinalizeOverrideReason}
+          saving={saving}
+        />
+      </div>
     </div>
   );
 
   const renderTemplates = () => (
-    <div className="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] gap-4">
-      <div className="space-y-3">
+    <div
+      ref={containerRef}
+      className="flex flex-col xl:flex-row gap-4 relative w-full"
+      style={{ '--left-pane-width': `${leftWidth}%` } as React.CSSProperties}
+    >
+      <div className="w-full resizable-left-pane space-y-3">
         {renderSearch()}
         <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
           <div className="flex items-center justify-between mb-3">
@@ -1481,7 +1872,19 @@ const CostLibrary: React.FC = () => {
           </div>
         )}
       </div>
-      <div className="space-y-4">
+
+      <div
+        onMouseDown={handleMouseDown}
+        className={`hidden xl:flex select-none w-1.5 hover:w-2 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-300 dark:hover:bg-indigo-700 active:bg-indigo-500 cursor-col-resize transition-all duration-150 relative shrink-0 items-center justify-center rounded-full self-stretch ${isDragging ? 'bg-indigo-400 w-2' : ''}`}
+        title="Kéo để thay đổi kích thước các cột"
+      >
+        <div className="absolute top-1/2 -translate-y-1/2 w-4 h-8 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 shadow-sm rounded-md flex flex-col gap-0.5 items-center justify-center cursor-col-resize hover:border-indigo-400 z-10">
+          <div className="w-0.5 h-3 bg-slate-300 dark:bg-slate-500 rounded-full" />
+          <div className="w-0.5 h-3 bg-slate-300 dark:bg-slate-500 rounded-full" />
+        </div>
+      </div>
+
+      <div className="w-full resizable-right-pane space-y-4">
         {selectedTemplate ? (
           <>
             <TemplateChildren
@@ -1532,7 +1935,7 @@ const CostLibrary: React.FC = () => {
   );
 
   const renderPrices = () => (
-    <div className="space-y-4">
+    <div className="space-y-4 w-full">
       {renderPermissionNotice()}
       {canManage && (
         <div className="flex flex-wrap items-center gap-2">
@@ -1548,28 +1951,74 @@ const CostLibrary: React.FC = () => {
           </button>
         </div>
       )}
-      <div className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-4">
-        {canManage && (
-          <CatalogForm title="Đơn giá nội bộ" onSave={savePrice} saving={saving}>
-            <input value={priceForm.itemCode} onChange={e => setPriceForm(prev => ({ ...prev, itemCode: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã" />
-            <input value={priceForm.itemName} onChange={e => setPriceForm(prev => ({ ...prev, itemName: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Tên vật tư/nguồn lực" />
-            <div className="grid grid-cols-2 gap-2">
-              <select value={priceForm.itemType} onChange={e => setPriceForm(prev => ({ ...prev, itemType: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
-                {['material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].map(type => <option key={type} value={type}>{type}</option>)}
+      {canManage ? (
+        <div
+          ref={containerRef}
+          className="flex flex-col xl:flex-row gap-4 relative w-full"
+          style={{ '--left-pane-width': `${leftWidth}%` } as React.CSSProperties}
+        >
+          <div className="w-full resizable-left-pane">
+            <CatalogForm title="Đơn giá nội bộ" onSave={savePrice} saving={saving}>
+              <input value={priceForm.itemCode} onChange={e => setPriceForm(prev => ({ ...prev, itemCode: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã" />
+              <input value={priceForm.itemName} onChange={e => setPriceForm(prev => ({ ...prev, itemName: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Tên vật tư/nguồn lực" />
+              <div className="grid grid-cols-2 gap-2">
+                <select value={priceForm.itemType} onChange={e => setPriceForm(prev => ({ ...prev, itemType: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
+                  {['material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].map(type => <option key={type} value={type}>{type}</option>)}
+                </select>
+                <input value={priceForm.unit} onChange={e => setPriceForm(prev => ({ ...prev, unit: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="ĐVT" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input value={priceForm.region} onChange={e => setPriceForm(prev => ({ ...prev, region: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Khu vực" />
+                <input type="number" value={priceForm.unitPrice} onChange={e => setPriceForm(prev => ({ ...prev, unitPrice: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Đơn giá" />
+              </div>
+              <select value={priceForm.status} onChange={e => setPriceForm(prev => ({ ...prev, status: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
+                <option value="draft">Nháp</option>
+                <option value="active">Hiệu lực</option>
+                <option value="archived">Lưu trữ</option>
               </select>
-              <input value={priceForm.unit} onChange={e => setPriceForm(prev => ({ ...prev, unit: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="ĐVT" />
+            </CatalogForm>
+          </div>
+
+          <div
+            onMouseDown={handleMouseDown}
+            className={`hidden xl:flex select-none w-1.5 hover:w-2 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-300 dark:hover:bg-indigo-700 active:bg-indigo-500 cursor-col-resize transition-all duration-150 relative shrink-0 items-center justify-center rounded-full self-stretch ${isDragging ? 'bg-indigo-400 w-2' : ''}`}
+            title="Kéo để thay đổi kích thước các cột"
+          >
+            <div className="absolute top-1/2 -translate-y-1/2 w-4 h-8 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 shadow-sm rounded-md flex flex-col gap-0.5 items-center justify-center cursor-col-resize hover:border-indigo-400 z-10">
+              <div className="w-0.5 h-3 bg-slate-300 dark:bg-slate-500 rounded-full" />
+              <div className="w-0.5 h-3 bg-slate-300 dark:bg-slate-500 rounded-full" />
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <input value={priceForm.region} onChange={e => setPriceForm(prev => ({ ...prev, region: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Khu vực" />
-              <input type="number" value={priceForm.unitPrice} onChange={e => setPriceForm(prev => ({ ...prev, unitPrice: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Đơn giá" />
-            </div>
-            <select value={priceForm.status} onChange={e => setPriceForm(prev => ({ ...prev, status: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
-              <option value="draft">Nháp</option>
-              <option value="active">Hiệu lực</option>
-              <option value="archived">Lưu trữ</option>
-            </select>
-          </CatalogForm>
-        )}
+          </div>
+
+          <div className="w-full resizable-right-pane space-y-3">
+            {renderSearch()}
+            <DataTable headers={['Mã', 'Tên', 'Loại', 'Khu vực', 'ĐVT', 'Version', 'Đơn giá', 'Trạng thái', '']}>
+              {filteredPrices.map(row => (
+                <tr key={row.id}>
+                  <td className={`${TD} font-mono`}>{row.itemCode}</td>
+                  <td className={`${TD} font-bold`}>{row.itemName}</td>
+                  <td className={TD}>{row.itemType}</td>
+                  <td className={TD}>{row.region}</td>
+                  <td className={TD}>{row.unit}</td>
+                  <td className={TD}>v{row.versionNo}</td>
+                  <td className={`${TD} font-black`}>{canSeeInternalCost ? money(row.unitPrice) : 'Ẩn'}</td>
+                  <td className={TD}>{statusLabel[row.status]}</td>
+                  <td className={`${TD} text-right`}>
+                    {canManage && (
+                      <div className="flex justify-end gap-1">
+                        <button onClick={() => changePriceStatus(row, 'version')} className={BTN_MINI} title="Tạo version mới">v+</button>
+                        {row.status !== 'active' && <button onClick={() => changePriceStatus(row, 'activate')} className={BTN_MINI} title="Kích hoạt"><CheckCircle2 size={13} /></button>}
+                        {row.status !== 'archived' && <button onClick={() => changePriceStatus(row, 'archive')} className={BTN_MINI} title="Lưu trữ"><X size={13} /></button>}
+                        <IconButton onClick={() => deletePrice(row)} icon={<Trash2 size={13} />} title="Xoá" />
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </DataTable>
+          </div>
+        </div>
+      ) : (
         <div className="space-y-3">
           {renderSearch()}
           <DataTable headers={['Mã', 'Tên', 'Loại', 'Khu vực', 'ĐVT', 'Version', 'Đơn giá', 'Trạng thái', '']}>
@@ -1597,55 +2046,367 @@ const CostLibrary: React.FC = () => {
             ))}
           </DataTable>
         </div>
-      </div>
+      )}
     </div>
   );
 
-  const renderNorms = () => (
-    <div className="space-y-4">
-      {renderPermissionNotice()}
-      {canManage && (
-        <div className="flex flex-wrap items-center gap-2">
-          <button onClick={downloadNormTemplate} className={BTN_SOFT}>
-            <Download size={14} /> Tải file mẫu
-          </button>
-          <label className={BTN_SOFT}>
-            <Upload size={14} /> Preview import định mức
-            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => importNorms(e.target.files?.[0])} />
-          </label>
-          <button onClick={bulkActivateNorms} disabled={saving} className={BTN_PRIMARY}>
-            <CheckCircle2 size={14} /> Kích hoạt dòng đang lọc
-          </button>
+  const renderNorms = () => {
+    const rawMaterials = selectedNormItem ? getRawMaterials(selectedNormItem) : [];
+    const baseQuantity = selectedNormItem ? costNormWorkbenchService.getBaseQuantity(selectedNormItem) : null;
+    const selectedStatus = selectedNormItem ? getNormalizationStatus(selectedNormItem) : 'raw';
+    const packageStatusValue = selectedNormPackageItem ? getItemMetadata(selectedNormPackageItem).normalizationStatus : null;
+    const packageStatus = packageStatusValue === 'reviewing' || packageStatusValue === 'normalized' || packageStatusValue === 'ignored'
+      ? packageStatusValue
+      : selectedNormPackageDrafts.length > 0 ? 'reviewing' : null;
+    return (
+      <div className="space-y-4">
+        {renderPermissionNotice()}
+
+        <div
+          ref={containerRef}
+          className="flex flex-col xl:flex-row gap-4 relative w-full"
+          style={{ '--left-pane-width': `${leftWidth}%` } as React.CSSProperties}
+        >
+          <div className="w-full resizable-left-pane space-y-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+              <div className="mb-3">
+                <div className="text-[10px] font-black uppercase text-indigo-500">Workbench định mức</div>
+                <h2 className="text-sm font-black text-slate-800 dark:text-white">Chọn hạng mục tham chiếu</h2>
+              </div>
+              <div className="space-y-2">
+                <select
+                  value={selectedNormTemplate?.id || ''}
+                  onChange={e => {
+                    setNormWorkbenchTemplateId(e.target.value);
+                    setNormWorkbenchItemId('');
+                  }}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                >
+                  {(normSourceTemplates.length ? normSourceTemplates : templates).map(template => (
+                    <option key={template.id} value={template.id}>{template.code} - {template.name}</option>
+                  ))}
+                </select>
+                <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800">
+                  <Search size={15} className="text-slate-400" />
+                  <input
+                    value={normWorkbenchQuery}
+                    onChange={e => setNormWorkbenchQuery(e.target.value)}
+                    placeholder="Tìm WBS/hạng mục..."
+                    className="w-full bg-transparent text-sm text-slate-700 outline-none dark:text-slate-200"
+                  />
+                </div>
+                <select value={normWorkbenchStatusFilter} onChange={e => setNormWorkbenchStatusFilter(e.target.value as any)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold">
+                  <option value="all">Mọi trạng thái chuẩn hóa</option>
+                  {(['raw', 'reviewing', 'normalized', 'ignored'] as CostTemplateNormalizationStatus[]).map(status => (
+                    <option key={status} value={status}>{normalizationLabel[status]}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="max-h-[620px] space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 dark:bg-slate-900 dark:border-slate-800">
+              {normWorkbenchItems.map(item => {
+                const status = getNormalizationStatus(item);
+                const metadata = getItemMetadata(item);
+                const rawCount = getRawMaterials(item).length;
+                const draftCount = norms.filter(norm => norm.templateItemId === item.id && norm.status === 'draft').length;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setNormWorkbenchItemId(item.id)}
+                    className={`w-full rounded-xl border px-3 py-2 text-left ${selectedNormItem?.id === item.id ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-[11px] font-black text-indigo-600">{String(metadata.sourceWbsCode || item.code)}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${status === 'normalized' ? 'bg-emerald-100 text-emerald-700' :
+                        status === 'ignored' ? 'bg-slate-100 text-slate-500' :
+                          status === 'reviewing' ? 'bg-amber-100 text-amber-700' :
+                            'bg-red-100 text-red-700'
+                        }`}>
+                        {normalizationLabel[status]}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-sm font-black text-slate-800">{item.name}</div>
+                    <div className="mt-1 text-[11px] font-bold text-slate-400">
+                      Raw {rawCount} • Draft {draftCount} • KL {String(metadata.standardBaseQuantity ?? item.baseQuantity ?? metadata.sourcePlannedQty ?? '-')} {String(metadata.standardUnit || item.unit || '')}
+                    </div>
+                  </button>
+                );
+              })}
+              {normWorkbenchItems.length === 0 && <EmptyState title="Không có hạng mục phù hợp" />}
+            </div>
+          </div>
+
+          <div
+            onMouseDown={handleMouseDown}
+            className={`hidden xl:flex select-none w-1.5 hover:w-2 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-300 dark:hover:bg-indigo-700 active:bg-indigo-500 cursor-col-resize transition-all duration-150 relative shrink-0 items-center justify-center rounded-full self-stretch ${isDragging ? 'bg-indigo-400 w-2' : ''}`}
+            title="Kéo để thay đổi kích thước các cột"
+          >
+            <div className="absolute top-1/2 -translate-y-1/2 w-4 h-8 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 shadow-sm rounded-md flex flex-col gap-0.5 items-center justify-center cursor-col-resize hover:border-indigo-400 z-10">
+              <div className="w-0.5 h-3 bg-slate-300 dark:bg-slate-500 rounded-full" />
+              <div className="w-0.5 h-3 bg-slate-300 dark:bg-slate-500 rounded-full" />
+            </div>
+          </div>
+
+          <div className="w-full resizable-right-pane space-y-4">
+            {selectedNormItem ? (
+              <>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+                  <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="text-[10px] font-black uppercase text-emerald-600">Gói định mức đích</div>
+                      <h2 className="text-sm font-black text-slate-800 dark:text-white">Tạo hoặc chọn hạng mục thư viện để lưu định mức</h2>
+                      <div className="mt-1 text-xs font-bold text-slate-400">
+                        Tham chiếu: {String(getItemMetadata(selectedNormItem).sourceWbsCode || selectedNormItem.code)} - {selectedNormItem.name}
+                      </div>
+                    </div>
+                    {selectedNormPackageItem && (
+                      <div className="flex flex-wrap gap-2">
+                        <span className="rounded-full bg-emerald-100 px-3 py-1 text-[10px] font-black text-emerald-700">
+                          {selectedNormPackageItem.code}
+                        </span>
+                        {packageStatus && (
+                          <span className={`rounded-full px-3 py-1 text-[10px] font-black ${packageStatus === 'normalized' ? 'bg-emerald-100 text-emerald-700' :
+                            packageStatus === 'reviewing' ? 'bg-amber-100 text-amber-700' :
+                              packageStatus === 'ignored' ? 'bg-slate-100 text-slate-500' :
+                                'bg-red-100 text-red-700'
+                          }`}>
+                            {normalizationLabel[packageStatus]}
+                          </span>
+                        )}
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black text-slate-500">
+                          Draft {selectedNormPackageDrafts.length}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2 xl:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_120px_120px_auto]">
+                    <select
+                      value={selectedNormPackageTemplate?.id || ''}
+                      onChange={e => {
+                        setNormPackageTemplateId(e.target.value);
+                        setNormPackageItemId('');
+                      }}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    >
+                      {(normPackageTemplates.length ? normPackageTemplates : templates).map(template => (
+                        <option key={template.id} value={template.id}>{template.code} - {template.name}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={selectedNormPackageItem?.id || ''}
+                      onChange={e => setNormPackageItemId(e.target.value)}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    >
+                      <option value="">Tạo gói mới từ tham chiếu</option>
+                      {normPackageItems.map(item => (
+                        <option key={item.id} value={item.id}>{item.code} - {item.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      value={normPackageForm.code}
+                      onChange={e => setNormPackageForm(prev => ({ ...prev, code: normalizePackageCode(e.target.value) }))}
+                      placeholder="Mã gói"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono font-bold"
+                    />
+                    <input
+                      value={normPackageForm.unit}
+                      onChange={e => setNormPackageForm(prev => ({ ...prev, unit: e.target.value }))}
+                      placeholder="ĐVT gói"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    />
+                    {canManage && (
+                      <button onClick={saveNormPackageItem} disabled={saving || !selectedNormPackageTemplate} className={BTN_PRIMARY}>
+                        <Save size={14} /> {selectedNormPackageItem ? 'Cập nhật gói' : 'Tạo gói'}
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_160px]">
+                    <input
+                      value={normPackageForm.name}
+                      onChange={e => setNormPackageForm(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="Tên gói/hạng mục định mức, ví dụ LÁT SÀN"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold"
+                    />
+                    <input
+                      type="number"
+                      value={normPackageForm.baseQuantity}
+                      onChange={e => setNormPackageForm(prev => ({ ...prev, baseQuantity: e.target.value }))}
+                      placeholder="KL gói"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  {!selectedNormPackageItem && (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-700">
+                      <AlertTriangle size={14} className="mr-1 inline" />
+                      Chưa có gói đích. Hãy tạo gói như LÁT SÀN trước, rồi tích vật tư tham chiếu hoặc bấm AI gợi ý.
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="font-mono text-xs font-black text-indigo-600">{String(getItemMetadata(selectedNormItem).sourceWbsCode || selectedNormItem.code)}</div>
+                      <h2 className="text-lg font-black text-slate-800 dark:text-white">{selectedNormPackageItem?.name || 'Chưa chọn gói định mức'}</h2>
+                      <div className="mt-1 text-xs font-bold text-slate-400">
+                        Nguồn tham chiếu {selectedNormItem.name} • ĐVT tham chiếu {String(getItemMetadata(selectedNormItem).standardUnit || selectedNormItem.unit || '-')} • KL tham chiếu {baseQuantity ?? '-'} • Raw {rawMaterials.length} dòng
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className={`rounded-full px-3 py-1 text-[10px] font-black ${selectedStatus === 'normalized' ? 'bg-emerald-100 text-emerald-700' :
+                        selectedStatus === 'reviewing' ? 'bg-amber-100 text-amber-700' :
+                          selectedStatus === 'ignored' ? 'bg-slate-100 text-slate-500' :
+                            'bg-red-100 text-red-700'
+                        }`}>
+                        {normalizationLabel[selectedStatus]}
+                      </span>
+                      {canManage && <button onClick={runNormAiSuggestion} disabled={loadingNormAi || !selectedNormPackageItem} className={BTN_SOFT}>{loadingNormAi ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />} AI gợi ý</button>}
+                      {canManage && <button onClick={() => saveNormWorkbenchDraft(false)} disabled={saving || !selectedNormPackageItem} className={BTN_SOFT}><Save size={14} /> Lưu draft</button>}
+                      {canManage && <button onClick={() => saveNormWorkbenchDraft(true)} disabled={saving || !selectedNormPackageItem} className={BTN_PRIMARY}><ShieldCheck size={14} /> Lưu & đã chuẩn hóa</button>}
+                      {canManage && <button onClick={activateSelectedNormDrafts} disabled={saving || !selectedNormPackageItem || selectedNormPackageDrafts.length === 0} className={BTN_SOFT}><CheckCircle2 size={14} /> Kích hoạt draft</button>}
+                    </div>
+                  </div>
+                  {(!baseQuantity || baseQuantity <= 0) && (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-700">
+                      <AlertTriangle size={14} className="mr-1 inline" />
+                      Hạng mục chưa có KL chuẩn, hệ thống không tự tính định mức từ KL vật tư raw.
+                    </div>
+                  )}
+                  {normWorkbenchAiWarnings.length > 0 && (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-700">
+                      <AlertTriangle size={14} className="mr-1 inline" />
+                      {normWorkbenchAiWarnings.slice(0, 4).join(' • ')}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
+                  <Panel title="Vật tư raw Sơn Miền Bắc" icon={<PackageSearch size={14} />}>
+                    <div className="max-h-[460px] overflow-y-auto">
+                      {rawMaterials.length === 0 && <div className="text-xs font-bold text-slate-400">Hạng mục này chưa có vật tư raw.</div>}
+                      {rawMaterials.map((material, index) => {
+                        const checked = isReferenceMaterialSelected(material, index);
+                        return (
+                          <label key={`${material.sourceMaterialBudgetItemId || material.itemName}-${index}`} className={`mb-2 flex cursor-pointer gap-2 rounded-xl border p-2 text-xs ${checked ? 'border-emerald-200 bg-emerald-50' : 'border-slate-100'}`}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={!canManage || !selectedNormPackageItem}
+                              onChange={e => toggleReferenceMaterial(material, index, e.target.checked)}
+                              className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block font-black text-slate-700">{material.itemName}</span>
+                              <span className="block text-slate-400">{material.materialCode || '-'} • {material.category || '-'} • {String(material.budgetQty ?? '-')} {material.unit || ''}</span>
+                              {baseQuantity && material.budgetQty !== null && material.budgetQty !== undefined && (
+                                <span className="mt-1 block font-bold text-emerald-600">Gợi ý: {Math.round((Number(material.budgetQty || 0) / baseQuantity) * 1_000_000) / 1_000_000} / {selectedNormItem.unit || 'đơn vị'}</span>
+                              )}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </Panel>
+
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
+                    <table className="w-full min-w-[1180px] text-sm">
+                      <thead className="bg-indigo-50/80 border-b border-indigo-100/80 dark:bg-slate-800 dark:border-slate-700 text-xs font-black text-indigo-950 dark:text-slate-200 uppercase whitespace-nowrap">
+                        <tr>
+                          {['Mã Định Mức', 'Nguồn lực chuẩn', 'Loại', 'Mã Vật Tư', 'ĐVT', 'Raw KL', 'Định mức', 'Hao hụt %', 'Review', 'Ghi chú', ''].map(header => (
+                            <th key={header} className="px-4 py-3 text-left font-black tracking-wider whitespace-nowrap">{header}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {normWorkbenchLines.map(line => (
+                          <tr key={line.id}>
+                            <td className={TD}><input value={line.normCode} onChange={e => setNormWorkbenchLine(line.id, { normCode: e.target.value })} className="w-36 rounded-lg border px-2 py-1 font-mono text-xs" /></td>
+                            <td className={TD}><input value={line.resourceName} onChange={e => setNormWorkbenchLine(line.id, { resourceName: e.target.value })} className="w-56 rounded-lg border px-2 py-1 text-xs font-bold" /></td>
+                            <td className={TD}>
+                              <select value={line.resourceType} onChange={e => setNormWorkbenchLine(line.id, { resourceType: e.target.value as InternalNorm['resourceType'] })} className="w-32 rounded-lg border px-2 py-1 text-xs">
+                                {['material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].map(type => <option key={type} value={type}>{type}</option>)}
+                              </select>
+                            </td>
+                            <td className={TD}><input value={line.resourceCode || ''} onChange={e => setNormWorkbenchLine(line.id, { resourceCode: e.target.value })} className="w-32 rounded-lg border px-2 py-1 text-xs" /></td>
+                            <td className={TD}><input value={line.unit} onChange={e => setNormWorkbenchLine(line.id, { unit: e.target.value })} className="w-20 rounded-lg border px-2 py-1 text-xs" /></td>
+                            <td className={TD}>{line.rawQuantity ?? '-'}</td>
+                            <td className={TD}><input type="number" value={line.normQuantity} onChange={e => setNormWorkbenchLine(line.id, { normQuantity: num(e.target.value), needsReview: true })} className="w-28 rounded-lg border px-2 py-1 text-xs" /></td>
+                            <td className={TD}><input type="number" value={line.wastePercent} onChange={e => setNormWorkbenchLine(line.id, { wastePercent: num(e.target.value) })} className="w-24 rounded-lg border px-2 py-1 text-xs" /></td>
+                            <td className={TD}><input type="checkbox" checked={Boolean(line.needsReview)} onChange={e => setNormWorkbenchLine(line.id, { needsReview: e.target.checked })} /></td>
+                            <td className={TD}><input value={line.note || line.reason || ''} onChange={e => setNormWorkbenchLine(line.id, { note: e.target.value })} className="w-56 rounded-lg border px-2 py-1 text-xs" /></td>
+                            <td className={`${TD} text-right`}>
+                              {canManage && <button onClick={() => removeNormWorkbenchLine(line.id)} className={BTN_MINI}><Trash2 size={13} /></button>}
+                            </td>
+                          </tr>
+                        ))}
+                        {normWorkbenchLines.length === 0 && (
+                          <tr>
+                            <td colSpan={11} className="px-3 py-8 text-center text-xs font-bold text-slate-400">Chưa có dòng định mức draft cho gói này.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                    {canManage && (
+                      <div className="border-t border-slate-100 p-3">
+                        <button onClick={addNormWorkbenchLine} disabled={!selectedNormPackageItem} className={BTN_SOFT}><Plus size={14} /> Thêm vật tư / nhân công / máy / thầu phụ</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <EmptyState title="Chọn hạng mục để chuẩn hóa định mức" />
+            )}
+          </div>
         </div>
-      )}
-      <div className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-4">
+
         {canManage && (
-          <CatalogForm title="Định mức nội bộ" onSave={saveNorm} saving={saving}>
-            <input value={normForm.normCode} onChange={e => setNormForm(prev => ({ ...prev, normCode: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã định mức" />
-            <input value={normForm.resourceName} onChange={e => setNormForm(prev => ({ ...prev, resourceName: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Nguồn lực/vật tư" />
-            <select value={normForm.templateItemId || ''} onChange={e => setNormForm(prev => ({ ...prev, templateItemId: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm">
-              <option value="">Không gắn item</option>
-              {templates.flatMap(template => template.items).map(item => <option key={item.id} value={item.id}>{item.code} - {item.name}</option>)}
-            </select>
-            <div className="grid grid-cols-2 gap-2">
-              <input value={normForm.resourceCode || ''} onChange={e => setNormForm(prev => ({ ...prev, resourceCode: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã đơn giá" />
-              <select value={normForm.resourceType} onChange={e => setNormForm(prev => ({ ...prev, resourceType: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
-                {['material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].map(type => <option key={type} value={type}>{type}</option>)}
-              </select>
+          <details className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+            <summary className="cursor-pointer text-sm font-black text-slate-800 dark:text-white">Thêm thủ công một dòng định mức</summary>
+            <div className="mt-3 max-w-xl">
+              <CatalogForm title="Định mức nội bộ" onSave={saveNorm} saving={saving}>
+                <input value={normForm.normCode} onChange={e => setNormForm(prev => ({ ...prev, normCode: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã định mức" />
+                <input value={normForm.resourceName} onChange={e => setNormForm(prev => ({ ...prev, resourceName: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Nguồn lực/vật tư" />
+                <select value={normForm.templateItemId || ''} onChange={e => setNormForm(prev => ({ ...prev, templateItemId: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm">
+                  <option value="">Không gắn item</option>
+                  {templates.flatMap(template => template.items).map(item => <option key={item.id} value={item.id}>{item.code} - {item.name}</option>)}
+                </select>
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={normForm.resourceCode || ''} onChange={e => setNormForm(prev => ({ ...prev, resourceCode: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã đơn giá" />
+                  <select value={normForm.resourceType} onChange={e => setNormForm(prev => ({ ...prev, resourceType: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
+                    {['material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].map(type => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <input value={normForm.unit} onChange={e => setNormForm(prev => ({ ...prev, unit: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="ĐVT" />
+                  <input type="number" value={normForm.normQuantity} onChange={e => setNormForm(prev => ({ ...prev, normQuantity: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Định mức" />
+                  <input type="number" value={normForm.wastePercent || 0} onChange={e => setNormForm(prev => ({ ...prev, wastePercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Hao hụt %" />
+                </div>
+                <select value={normForm.status} onChange={e => setNormForm(prev => ({ ...prev, status: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
+                  <option value="draft">Nháp</option>
+                  <option value="active">Hiệu lực</option>
+                  <option value="archived">Lưu trữ</option>
+                </select>
+              </CatalogForm>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              <input value={normForm.unit} onChange={e => setNormForm(prev => ({ ...prev, unit: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="ĐVT" />
-              <input type="number" value={normForm.normQuantity} onChange={e => setNormForm(prev => ({ ...prev, normQuantity: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Định mức" />
-              <input type="number" value={normForm.wastePercent || 0} onChange={e => setNormForm(prev => ({ ...prev, wastePercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Hao hụt %" />
-            </div>
-            <select value={normForm.status} onChange={e => setNormForm(prev => ({ ...prev, status: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
-              <option value="draft">Nháp</option>
-              <option value="active">Hiệu lực</option>
-              <option value="archived">Lưu trữ</option>
-            </select>
-          </CatalogForm>
+          </details>
         )}
+
         <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {canManage && (
+              <>
+                <button onClick={downloadNormTemplate} className={BTN_SOFT}><Download size={14} /> Tải file mẫu</button>
+                <label className={BTN_SOFT}>
+                  <Upload size={14} /> Preview import định mức
+                  <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => importNorms(e.target.files?.[0])} />
+                </label>
+                <button onClick={bulkActivateNorms} disabled={saving} className={BTN_PRIMARY}><CheckCircle2 size={14} /> Kích hoạt dòng đang lọc</button>
+              </>
+            )}
+          </div>
           {renderSearch()}
           <DataTable headers={['Mã', 'Nguồn lực', 'Loại', 'ĐVT', 'Định mức', 'Hao hụt', 'Version', 'Trạng thái', '']}>
             {filteredNorms.map(row => (
@@ -1673,68 +2434,89 @@ const CostLibrary: React.FC = () => {
           </DataTable>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderEstimates = () => (
-    <div className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-4">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
-        <h2 className="text-sm font-black text-slate-800 dark:text-white mb-3">Phương án dự toán</h2>
-        <div className="space-y-2 max-h-[620px] overflow-y-auto">
-          {renderSearch()}
-          <div className="flex items-center gap-2">
-            <button onClick={runCompare} className={BTN_SOFT}><GitCompare size={14} /> So sánh</button>
-            <span className="text-[10px] font-bold text-slate-400">Chọn 2-3 phương án</span>
-          </div>
-          {filteredEstimates.map(estimate => (
-            <div key={estimate.id} className={`rounded-xl border px-3 py-2 ${estimate.id === selectedEstimateId ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'}`}>
-              <div className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  checked={compareIds.includes(estimate.id)}
-                  onChange={e => setCompareIds(prev => e.target.checked ? [...prev, estimate.id].slice(-3) : prev.filter(id => id !== estimate.id))}
-                  className="mt-1"
-                />
-                <button onClick={() => loadEstimateDetail(estimate.id)} className="min-w-0 flex-1 text-left">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-[11px] font-black text-indigo-600">{estimate.code}</span>
-                    <span className="text-[10px] font-bold text-slate-400">{statusLabel[estimate.status]}</span>
-                  </div>
-                  <div className="text-sm font-black text-slate-800">{estimate.name}</div>
-                  <div className="text-[11px] text-slate-400">{money(estimate.quoteAmount || estimate.totalAmount)}</div>
-                </button>
-              </div>
+    <div className="space-y-4 w-full">
+      <div
+        ref={containerRef}
+        className="flex flex-col xl:flex-row gap-4 relative w-full"
+        style={{ '--left-pane-width': `${leftWidth}%` } as React.CSSProperties}
+      >
+        <div className="w-full resizable-left-pane rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+          <h2 className="text-sm font-black text-slate-800 dark:text-white mb-3">Phương án dự toán</h2>
+          <div className="space-y-2 max-h-[620px] overflow-y-auto">
+            {renderSearch()}
+            <div className="flex items-center gap-2">
+              <button onClick={runCompare} className={BTN_SOFT}><GitCompare size={14} /> So sánh</button>
+              <span className="text-[10px] font-bold text-slate-400">Chọn 2-3 phương án</span>
             </div>
-          ))}
-          {filteredEstimates.length === 0 && <EmptyState title="Chưa có phương án" />}
+            {filteredEstimates.map(estimate => (
+              <div key={estimate.id} className={`rounded-xl border px-3 py-2 ${estimate.id === selectedEstimateId ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={compareIds.includes(estimate.id)}
+                    onChange={e => setCompareIds(prev => e.target.checked ? [...prev, estimate.id].slice(-3) : prev.filter(id => id !== estimate.id))}
+                    className="mt-1"
+                  />
+                  <button onClick={() => loadEstimateDetail(estimate.id)} className="min-w-0 flex-1 text-left">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-[11px] font-black text-indigo-600">{estimate.code}</span>
+                      <span className="text-[10px] font-bold text-slate-400">{statusLabel[estimate.status]}</span>
+                    </div>
+                    <div className="text-sm font-black text-slate-800">{estimate.name}</div>
+                    <div className="text-[11px] text-slate-400">{money(estimate.quoteAmount || estimate.totalAmount)}</div>
+                  </button>
+                </div>
+              </div>
+            ))}
+            {filteredEstimates.length === 0 && <EmptyState title="Chưa có phương án" />}
+          </div>
+        </div>
+
+        <div
+          onMouseDown={handleMouseDown}
+          className={`hidden xl:flex select-none w-1.5 hover:w-2 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-300 dark:hover:bg-indigo-700 active:bg-indigo-500 cursor-col-resize transition-all duration-150 relative shrink-0 items-center justify-center rounded-full self-stretch ${isDragging ? 'bg-indigo-400 w-2' : ''}`}
+          title="Kéo để thay đổi kích thước các cột"
+        >
+          <div className="absolute top-1/2 -translate-y-1/2 w-4 h-8 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 shadow-sm rounded-md flex flex-col gap-0.5 items-center justify-center cursor-col-resize hover:border-indigo-400 z-10">
+            <div className="w-0.5 h-3 bg-slate-300 dark:bg-slate-500 rounded-full" />
+            <div className="w-0.5 h-3 bg-slate-300 dark:bg-slate-500 rounded-full" />
+          </div>
+        </div>
+
+        <div className="w-full resizable-right-pane">
+          <EstimateDetail
+            estimate={estimateDetail}
+            canManage={canManage}
+            canSeeInternalCost={canSeeInternalCost}
+            lineEdits={lineEdits}
+            setLineEdits={setLineEdits}
+            onSaveLine={saveLineOverride}
+            onReview={() => updateEstimateStatus('reviewed')}
+            onFinalize={() => updateEstimateStatus('finalized')}
+            onExport={exportQuote}
+            convertType={convertType}
+            setConvertType={setConvertType}
+            convertContractId={convertContractId}
+            setConvertContractId={setConvertContractId}
+            convertContracts={convertContracts}
+            onPreviewConvert={previewConvert}
+            conversionPreview={conversionPreview}
+            conversionAudit={conversionAudit}
+            onConvert={convertEstimate}
+            onRollbackConvert={rollbackConversion}
+            finalizeOverrideReason={finalizeOverrideReason}
+            setFinalizeOverrideReason={setFinalizeOverrideReason}
+            saving={saving}
+          />
         </div>
       </div>
-      <EstimateDetail
-        estimate={estimateDetail}
-        canManage={canManage}
-        canSeeInternalCost={canSeeInternalCost}
-        lineEdits={lineEdits}
-        setLineEdits={setLineEdits}
-        onSaveLine={saveLineOverride}
-        onReview={() => updateEstimateStatus('reviewed')}
-        onFinalize={() => updateEstimateStatus('finalized')}
-        onExport={exportQuote}
-        convertType={convertType}
-        setConvertType={setConvertType}
-        convertContractId={convertContractId}
-        setConvertContractId={setConvertContractId}
-        convertContracts={convertContracts}
-        onPreviewConvert={previewConvert}
-        conversionPreview={conversionPreview}
-        conversionAudit={conversionAudit}
-        onConvert={convertEstimate}
-        onRollbackConvert={rollbackConversion}
-        finalizeOverrideReason={finalizeOverrideReason}
-        setFinalizeOverrideReason={setFinalizeOverrideReason}
-        saving={saving}
-      />
+
       {compareResult && (
-        <div className="xl:col-span-2 rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+        <div className="w-full rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-black text-slate-800 dark:text-white">So sánh phương án</h2>
             <button onClick={() => setCompareResult(null)} className={BTN_MINI}><X size={14} /></button>
@@ -1773,6 +2555,61 @@ const CostLibrary: React.FC = () => {
 
   return (
     <div className="space-y-5">
+      <style dangerouslySetInnerHTML={{
+        __html: `
+        @media (min-width: 1280px) {
+          .resizable-left-pane {
+            width: calc(var(--left-pane-width) - 8px) !important;
+            flex-shrink: 0 !important;
+          }
+          .resizable-right-pane {
+            width: calc(100% - var(--left-pane-width) - 8px) !important;
+            flex-shrink: 0 !important;
+          }
+        }
+        tbody tr {
+          transition: background-color 0.15s ease-in-out;
+        }
+        tbody tr:hover {
+          background-color: rgba(99, 102, 241, 0.05) !important;
+        }
+        .dark tbody tr:hover {
+          background-color: rgba(99, 102, 241, 0.1) !important;
+        }
+        /* Custom scrollbar styling */
+        .overflow-auto::-webkit-scrollbar, 
+        .overflow-x-auto::-webkit-scrollbar,
+        .overflow-y-auto::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+        .overflow-auto::-webkit-scrollbar-track, 
+        .overflow-x-auto::-webkit-scrollbar-track,
+        .overflow-y-auto::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .overflow-auto::-webkit-scrollbar-thumb, 
+        .overflow-x-auto::-webkit-scrollbar-thumb,
+        .overflow-y-auto::-webkit-scrollbar-thumb {
+          background: #cbd5e1;
+          border-radius: 3px;
+        }
+        .dark .overflow-auto::-webkit-scrollbar-thumb, 
+        .dark .overflow-x-auto::-webkit-scrollbar-thumb,
+        .dark .overflow-y-auto::-webkit-scrollbar-thumb {
+          background: #475569;
+        }
+        .overflow-auto::-webkit-scrollbar-thumb:hover, 
+        .overflow-x-auto::-webkit-scrollbar-thumb:hover,
+        .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+          background: #94a3b8;
+        }
+        .dark .overflow-auto::-webkit-scrollbar-thumb:hover, 
+        .dark .overflow-x-auto::-webkit-scrollbar-thumb:hover,
+        .dark .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+          background: #64748b;
+        }
+      `}} />
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-xl font-black text-slate-800 dark:text-white">Đơn giá nội bộ & Dự toán nhanh</h1>
@@ -1838,8 +2675,8 @@ const IconButton: React.FC<{ icon: React.ReactNode; title: string; onClick: () =
 const DataTable: React.FC<{ headers: string[]; children: React.ReactNode }> = ({ headers, children }) => (
   <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
     <table className="w-full min-w-[780px] text-sm">
-      <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
-        <tr>{headers.map(header => <th key={header} className="px-3 py-2 text-left font-black">{header}</th>)}</tr>
+      <thead className="bg-indigo-50/80 border-b border-indigo-100/80 dark:bg-slate-800 dark:border-slate-700 text-xs font-black text-indigo-950 dark:text-slate-200 uppercase whitespace-nowrap">
+        <tr>{headers.map(header => <th key={header} className="px-4 py-3 text-left font-black tracking-wider whitespace-nowrap">{header}</th>)}</tr>
       </thead>
       <tbody className="divide-y divide-slate-100">{children}</tbody>
     </table>
@@ -1891,104 +2728,104 @@ const TemplateChildren: React.FC<{
   onNormalize,
   saving,
 }) => {
-  const canNormalize = template.metadata?.sourceKind === 'project_wbs_material_raw_template' || template.items.some(item => getRawMaterials(item).length > 0 || getItemMetadata(item).needsNormalization);
-  return (
-  <div className="space-y-4">
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <div className="font-mono text-xs font-black text-indigo-600">{template.code}</div>
-          <h2 className="text-lg font-black text-slate-800 dark:text-white">{template.name}</h2>
+    const canNormalize = template.metadata?.sourceKind === 'project_wbs_material_raw_template' || template.items.some(item => getRawMaterials(item).length > 0 || getItemMetadata(item).needsNormalization);
+    return (
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <div className="font-mono text-xs font-black text-indigo-600">{template.code}</div>
+              <h2 className="text-lg font-black text-slate-800 dark:text-white">{template.name}</h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black text-slate-500">v{template.versionNo} • {statusLabel[template.status]}</span>
+              {canManage && canNormalize && <button onClick={() => onNormalize(template)} className={BTN_SOFT}><ShieldCheck size={14} /> Chuẩn hóa</button>}
+              {canManage && <button onClick={() => onCreateVersion(template)} className={BTN_SOFT}>Tạo version mới</button>}
+              {canManage && template.status !== 'active' && <button onClick={() => onChangeStatus(template, 'activate')} className={BTN_SOFT}>Kích hoạt</button>}
+              {canManage && template.status !== 'archived' && <button onClick={() => onChangeStatus(template, 'archive')} className={BTN_SOFT}>Lưu trữ</button>}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-xs">
+            <Metric label="Nhóm" value={template.sections.length} />
+            <Metric label="Tham số" value={template.parameters.length} />
+            <Metric label="Hạng mục" value={template.items.length} />
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black text-slate-500">v{template.versionNo} • {statusLabel[template.status]}</span>
-          {canManage && canNormalize && <button onClick={() => onNormalize(template)} className={BTN_SOFT}><ShieldCheck size={14} /> Chuẩn hóa</button>}
-          {canManage && <button onClick={() => onCreateVersion(template)} className={BTN_SOFT}>Tạo version mới</button>}
-          {canManage && template.status !== 'active' && <button onClick={() => onChangeStatus(template, 'activate')} className={BTN_SOFT}>Kích hoạt</button>}
-          {canManage && template.status !== 'archived' && <button onClick={() => onChangeStatus(template, 'archive')} className={BTN_SOFT}>Lưu trữ</button>}
+
+        <div className="grid grid-cols-1 2xl:grid-cols-3 gap-4">
+          <Panel title="Nhóm hạng mục" icon={<Layers size={14} />}>
+            <div className="space-y-2">
+              {template.sections.map(section => (
+                <Row key={section.id} title={`${section.code} - ${section.name}`} subtitle={section.calculationMethod || section.unit || ''} onDelete={canManage ? () => onDeleteChild('sections', section.id, section.name) : undefined} />
+              ))}
+              {canManage && (
+                <div className="grid gap-2 pt-2">
+                  <input value={sectionForm.code} onChange={e => setSectionForm(prev => ({ ...prev, code: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã nhóm" />
+                  <input value={sectionForm.name} onChange={e => setSectionForm(prev => ({ ...prev, name: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Tên nhóm" />
+                  <input value={sectionForm.calculationMethod || ''} onChange={e => setSectionForm(prev => ({ ...prev, calculationMethod: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Phương pháp tính" />
+                  <button onClick={onSaveSection} disabled={saving} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white"><Plus size={13} className="inline" /> Thêm nhóm</button>
+                </div>
+              )}
+            </div>
+          </Panel>
+
+          <Panel title="Tham số" icon={<Calculator size={14} />}>
+            <div className="space-y-2">
+              {template.parameters.map(param => (
+                <Row key={param.id} title={`${param.code} - ${param.label}`} subtitle={`${param.dataType}${param.unit ? ` • ${param.unit}` : ''}`} onDelete={canManage ? () => onDeleteChild('parameters', param.id, param.label) : undefined} />
+              ))}
+              {canManage && (
+                <div className="grid gap-2 pt-2">
+                  <input value={parameterForm.code} onChange={e => setParameterForm(prev => ({ ...prev, code: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã tham số" />
+                  <input value={parameterForm.label} onChange={e => setParameterForm(prev => ({ ...prev, label: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Tên tham số" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={parameterForm.dataType} onChange={e => setParameterForm(prev => ({ ...prev, dataType: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
+                      {['number', 'text', 'select', 'boolean', 'date'].map(type => <option key={type} value={type}>{type}</option>)}
+                    </select>
+                    <input value={parameterForm.unit || ''} onChange={e => setParameterForm(prev => ({ ...prev, unit: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="ĐVT" />
+                  </div>
+                  <button onClick={onSaveParameter} disabled={saving} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white"><Plus size={13} className="inline" /> Thêm tham số</button>
+                </div>
+              )}
+            </div>
+          </Panel>
+
+          <Panel title="Hạng mục" icon={<PackageSearch size={14} />}>
+            <div className="space-y-2">
+              {template.items.map(item => (
+                <Row key={item.id} title={`${item.code} - ${item.name}`} subtitle={`${item.itemType} • ${item.quantityFormula || item.baseQuantity || 'chưa có công thức'}`} onDelete={canManage ? () => onDeleteChild('items', item.id, item.name) : undefined} />
+              ))}
+              {canManage && (
+                <div className="grid gap-2 pt-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={itemForm.code} onChange={e => setItemForm(prev => ({ ...prev, code: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã" />
+                    <select value={itemForm.sectionId || ''} onChange={e => setItemForm(prev => ({ ...prev, sectionId: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm">
+                      <option value="">Không nhóm</option>
+                      {template.sections.map(section => <option key={section.id} value={section.id}>{section.code} - {section.name}</option>)}
+                    </select>
+                  </div>
+                  <input value={itemForm.name} onChange={e => setItemForm(prev => ({ ...prev, name: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Tên hạng mục" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={itemForm.itemType} onChange={e => setItemForm(prev => ({ ...prev, itemType: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
+                      {['work', 'material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].map(type => <option key={type} value={type}>{type}</option>)}
+                    </select>
+                    <input value={itemForm.unit || ''} onChange={e => setItemForm(prev => ({ ...prev, unit: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="ĐVT" />
+                  </div>
+                  <input value={itemForm.quantityFormula || ''} onChange={e => setItemForm(prev => ({ ...prev, quantityFormula: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Công thức, ví dụ floor_area * 35" />
+                  <div className="grid grid-cols-3 gap-2">
+                    <input type="number" value={itemForm.overheadPercent || 0} onChange={e => setItemForm(prev => ({ ...prev, overheadPercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="CP chung %" />
+                    <input type="number" value={itemForm.profitPercent || 0} onChange={e => setItemForm(prev => ({ ...prev, profitPercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="LN %" />
+                    <input type="number" value={itemForm.riskBufferPercent || 0} onChange={e => setItemForm(prev => ({ ...prev, riskBufferPercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Risk %" />
+                  </div>
+                  <button onClick={onSaveItem} disabled={saving} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white"><Plus size={13} className="inline" /> Thêm hạng mục</button>
+                </div>
+              )}
+            </div>
+          </Panel>
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-3 text-xs">
-        <Metric label="Nhóm" value={template.sections.length} />
-        <Metric label="Tham số" value={template.parameters.length} />
-        <Metric label="Hạng mục" value={template.items.length} />
-      </div>
-    </div>
-
-    <div className="grid grid-cols-1 2xl:grid-cols-3 gap-4">
-      <Panel title="Nhóm hạng mục" icon={<Layers size={14} />}>
-        <div className="space-y-2">
-          {template.sections.map(section => (
-            <Row key={section.id} title={`${section.code} - ${section.name}`} subtitle={section.calculationMethod || section.unit || ''} onDelete={canManage ? () => onDeleteChild('sections', section.id, section.name) : undefined} />
-          ))}
-          {canManage && (
-            <div className="grid gap-2 pt-2">
-              <input value={sectionForm.code} onChange={e => setSectionForm(prev => ({ ...prev, code: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã nhóm" />
-              <input value={sectionForm.name} onChange={e => setSectionForm(prev => ({ ...prev, name: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Tên nhóm" />
-              <input value={sectionForm.calculationMethod || ''} onChange={e => setSectionForm(prev => ({ ...prev, calculationMethod: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Phương pháp tính" />
-              <button onClick={onSaveSection} disabled={saving} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white"><Plus size={13} className="inline" /> Thêm nhóm</button>
-            </div>
-          )}
-        </div>
-      </Panel>
-
-      <Panel title="Tham số" icon={<Calculator size={14} />}>
-        <div className="space-y-2">
-          {template.parameters.map(param => (
-            <Row key={param.id} title={`${param.code} - ${param.label}`} subtitle={`${param.dataType}${param.unit ? ` • ${param.unit}` : ''}`} onDelete={canManage ? () => onDeleteChild('parameters', param.id, param.label) : undefined} />
-          ))}
-          {canManage && (
-            <div className="grid gap-2 pt-2">
-              <input value={parameterForm.code} onChange={e => setParameterForm(prev => ({ ...prev, code: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã tham số" />
-              <input value={parameterForm.label} onChange={e => setParameterForm(prev => ({ ...prev, label: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Tên tham số" />
-              <div className="grid grid-cols-2 gap-2">
-                <select value={parameterForm.dataType} onChange={e => setParameterForm(prev => ({ ...prev, dataType: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
-                  {['number', 'text', 'select', 'boolean', 'date'].map(type => <option key={type} value={type}>{type}</option>)}
-                </select>
-                <input value={parameterForm.unit || ''} onChange={e => setParameterForm(prev => ({ ...prev, unit: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="ĐVT" />
-              </div>
-              <button onClick={onSaveParameter} disabled={saving} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white"><Plus size={13} className="inline" /> Thêm tham số</button>
-            </div>
-          )}
-        </div>
-      </Panel>
-
-      <Panel title="Hạng mục" icon={<PackageSearch size={14} />}>
-        <div className="space-y-2">
-          {template.items.map(item => (
-            <Row key={item.id} title={`${item.code} - ${item.name}`} subtitle={`${item.itemType} • ${item.quantityFormula || item.baseQuantity || 'chưa có công thức'}`} onDelete={canManage ? () => onDeleteChild('items', item.id, item.name) : undefined} />
-          ))}
-          {canManage && (
-            <div className="grid gap-2 pt-2">
-              <div className="grid grid-cols-2 gap-2">
-                <input value={itemForm.code} onChange={e => setItemForm(prev => ({ ...prev, code: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Mã" />
-                <select value={itemForm.sectionId || ''} onChange={e => setItemForm(prev => ({ ...prev, sectionId: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm">
-                  <option value="">Không nhóm</option>
-                  {template.sections.map(section => <option key={section.id} value={section.id}>{section.code} - {section.name}</option>)}
-                </select>
-              </div>
-              <input value={itemForm.name} onChange={e => setItemForm(prev => ({ ...prev, name: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Tên hạng mục" />
-              <div className="grid grid-cols-2 gap-2">
-                <select value={itemForm.itemType} onChange={e => setItemForm(prev => ({ ...prev, itemType: e.target.value as any }))} className="rounded-xl border px-3 py-2 text-sm">
-                  {['work', 'material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].map(type => <option key={type} value={type}>{type}</option>)}
-                </select>
-                <input value={itemForm.unit || ''} onChange={e => setItemForm(prev => ({ ...prev, unit: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="ĐVT" />
-              </div>
-              <input value={itemForm.quantityFormula || ''} onChange={e => setItemForm(prev => ({ ...prev, quantityFormula: e.target.value }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Công thức, ví dụ floor_area * 35" />
-              <div className="grid grid-cols-3 gap-2">
-                <input type="number" value={itemForm.overheadPercent || 0} onChange={e => setItemForm(prev => ({ ...prev, overheadPercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="CP chung %" />
-                <input type="number" value={itemForm.profitPercent || 0} onChange={e => setItemForm(prev => ({ ...prev, profitPercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="LN %" />
-                <input type="number" value={itemForm.riskBufferPercent || 0} onChange={e => setItemForm(prev => ({ ...prev, riskBufferPercent: num(e.target.value) }))} className="rounded-xl border px-3 py-2 text-sm" placeholder="Risk %" />
-              </div>
-              <button onClick={onSaveItem} disabled={saving} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white"><Plus size={13} className="inline" /> Thêm hạng mục</button>
-            </div>
-          )}
-        </div>
-      </Panel>
-    </div>
-  </div>
-  );
-};
+    );
+  };
 
 const TemplateNormalizationPanel: React.FC<{
   template: CostTemplateDetails;
@@ -2043,10 +2880,10 @@ const TemplateNormalizationPanel: React.FC<{
 
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
         <table className="w-full min-w-[1080px] text-sm">
-          <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+          <thead className="bg-indigo-50/80 border-b border-indigo-100/80 dark:bg-slate-800 dark:border-slate-700 text-xs font-black text-indigo-950 dark:text-slate-200 uppercase whitespace-nowrap">
             <tr>
               {['WBS', 'Hạng mục', 'Nhóm', 'ĐVT chuẩn', 'KL mẫu', 'VT thô', 'VT chuẩn', 'Trạng thái', ''].map(header => (
-                <th key={header} className="px-3 py-2 text-left font-black">{header}</th>
+                <th key={header} className="px-4 py-3 text-left font-black tracking-wider whitespace-nowrap">{header}</th>
               ))}
             </tr>
           </thead>
@@ -2067,12 +2904,11 @@ const TemplateNormalizationPanel: React.FC<{
                   <td className={TD}>{rawMaterials.length}</td>
                   <td className={TD}>{normalizedMaterials.length}</td>
                   <td className={TD}>
-                    <span className={`rounded-full px-2 py-1 text-[10px] font-black ${
-                      status === 'normalized' ? 'bg-emerald-100 text-emerald-700' :
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-black ${status === 'normalized' ? 'bg-emerald-100 text-emerald-700' :
                       status === 'ignored' ? 'bg-slate-100 text-slate-500' :
-                      status === 'reviewing' ? 'bg-amber-100 text-amber-700' :
-                      'bg-red-100 text-red-700'
-                    }`}>
+                        status === 'reviewing' ? 'bg-amber-100 text-amber-700' :
+                          'bg-red-100 text-red-700'
+                      }`}>
                       {normalizationLabel[status]}
                     </span>
                   </td>
@@ -2235,234 +3071,234 @@ const EstimateDetail: React.FC<{
   setFinalizeOverrideReason,
   saving,
 }) => {
-  if (!estimate) return <EmptyState title="Chọn hoặc tạo một phương án dự toán" />;
-  const setLine = (id: string, patch: Partial<{ quantity: number; unitPrice: number; quoteUnitPrice: number; overrideReason: string }>) =>
-    setLineEdits(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
-  const floorArea = num(estimate.inputParameters?.floor_area);
-  const quoteAmount = estimate.quoteAmount || estimate.totalAmount;
-  const missingPriceWarnings = (estimate.riskWarnings || []).filter(value => String(value).toLowerCase().includes('chưa có đơn giá'));
-  const formulaWarnings = (estimate.riskWarnings || []).filter(value => {
-    const text = String(value).toLowerCase();
-    return text.includes('thiếu tham số') || text.includes('chưa tính được khối lượng');
-  });
-  const materialItems = estimate.items.filter(item => item.itemType === 'material');
-  const grouped = estimate.items.reduce<Record<string, { count: number; quoteAmount: number }>>((acc, item) => {
-    const key = item.itemType;
-    acc[key] ||= { count: 0, quoteAmount: 0 };
-    acc[key].count += 1;
-    acc[key].quoteAmount += num(item.quoteAmount ?? item.amount);
-    return acc;
-  }, {});
-  const conversionBatch = conversionAudit?.batch || null;
-  const conversionItems = conversionAudit?.items || [];
-  const activeConversionBatch = conversionBatch && conversionBatch.status !== 'cancelled';
+    if (!estimate) return <EmptyState title="Chọn hoặc tạo một phương án dự toán" />;
+    const setLine = (id: string, patch: Partial<{ quantity: number; unitPrice: number; quoteUnitPrice: number; overrideReason: string }>) =>
+      setLineEdits(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+    const floorArea = num(estimate.inputParameters?.floor_area);
+    const quoteAmount = estimate.quoteAmount || estimate.totalAmount;
+    const missingPriceWarnings = (estimate.riskWarnings || []).filter(value => String(value).toLowerCase().includes('chưa có đơn giá'));
+    const formulaWarnings = (estimate.riskWarnings || []).filter(value => {
+      const text = String(value).toLowerCase();
+      return text.includes('thiếu tham số') || text.includes('chưa tính được khối lượng');
+    });
+    const materialItems = estimate.items.filter(item => item.itemType === 'material');
+    const grouped = estimate.items.reduce<Record<string, { count: number; quoteAmount: number }>>((acc, item) => {
+      const key = item.itemType;
+      acc[key] ||= { count: 0, quoteAmount: 0 };
+      acc[key].count += 1;
+      acc[key].quoteAmount += num(item.quoteAmount ?? item.amount);
+      return acc;
+    }, {});
+    const conversionBatch = conversionAudit?.batch || null;
+    const conversionItems = conversionAudit?.items || [];
+    const activeConversionBatch = conversionBatch && conversionBatch.status !== 'cancelled';
 
-  return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="font-mono text-xs font-black text-indigo-600">{estimate.code}</div>
-            <h2 className="text-lg font-black text-slate-800 dark:text-white">{estimate.name}</h2>
-            <div className="text-xs font-bold text-slate-400">{statusLabel[estimate.status]} • confidence {Math.round(num(estimate.confidenceScore) * 100)}%</div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {estimate.status === 'draft' && <button onClick={onReview} disabled={saving} className={BTN_SOFT}><CheckCircle2 size={14} /> Rà soát</button>}
-            {estimate.status !== 'finalized' && estimate.status !== 'converted' && <button onClick={onFinalize} disabled={saving || formulaWarnings.length > 0} className={BTN_PRIMARY}><ShieldCheck size={14} /> Chốt</button>}
-            <button onClick={() => onExport('external')} disabled={!['reviewed', 'finalized'].includes(estimate.status)} className={BTN_SOFT}><Download size={14} /> Excel gửi khách</button>
-            {canSeeInternalCost && <button onClick={() => onExport('internal')} className={BTN_SOFT}><FileSpreadsheet size={14} /> Excel nội bộ</button>}
-          </div>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Metric label="Giá vốn nội bộ" value={canSeeInternalCost ? money(estimate.totalAmount) : 'Ẩn'} />
-          <Metric label="Giá chào" value={money(quoteAmount)} />
-          <Metric label="Lợi nhuận dự kiến" value={canSeeInternalCost ? money(estimate.profitAmount || 0) : 'Ẩn'} />
-          <Metric label="Số dòng" value={estimate.items.length} />
-          <Metric label="Đơn giá/m2" value={floorArea > 0 ? money(Math.round(quoteAmount / floorArea)) : '-'} />
-          <Metric label="Dòng vật tư" value={materialItems.length} />
-          <Metric label="Manual override" value={estimate.items.filter(item => item.manualOverride).length} />
-          <Metric label="Thiếu đơn giá" value={missingPriceWarnings.length} />
-          <Metric label="Lỗi công thức" value={formulaWarnings.length} />
-        </div>
-        {formulaWarnings.length > 0 && (
-          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">
-            <AlertTriangle size={14} className="inline mr-1" />
-            {formulaWarnings.slice(0, 4).join(' • ')}
-          </div>
-        )}
-        {missingPriceWarnings.length > 0 && canSeeInternalCost && estimate.status !== 'finalized' && estimate.status !== 'converted' && (
-          <div className="mt-3">
-            <input
-              value={finalizeOverrideReason}
-              onChange={e => setFinalizeOverrideReason(e.target.value)}
-              className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700"
-              placeholder="HD admin nhập lý do ngoại lệ nếu vẫn muốn chốt khi thiếu đơn giá active"
-            />
-          </div>
-        )}
-        {estimate.riskWarnings.length > 0 && (
-          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-700">
-            <AlertTriangle size={14} className="inline mr-1" />
-            {estimate.riskWarnings.slice(0, 4).join(' • ')}
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Panel title="Khái toán nhanh" icon={<Calculator size={14} />}>
-          <div className="space-y-2">
-            <Metric label="Tổng giá chào" value={money(quoteAmount)} />
-            <Metric label="Đơn giá bình quân/m2" value={floorArea > 0 ? money(Math.round(quoteAmount / floorArea)) : '-'} />
-            <Metric label="Sai số dự kiến" value={missingPriceWarnings.length > 0 ? 'Cao' : 'Trung bình'} />
-          </div>
-        </Panel>
-        <Panel title="Theo hạng mục" icon={<Layers size={14} />}>
-          <div className="space-y-2">
-            {Object.entries(grouped).map(([type, value]) => <Metric key={type} label={`${type} • ${value.count} dòng`} value={money(value.quoteAmount)} />)}
-          </div>
-        </Panel>
-        <Panel title="BOQ vật tư sơ bộ" icon={<PackageSearch size={14} />}>
-          <div className="space-y-2">
-            {materialItems.slice(0, 5).map(item => <Row key={item.id} title={`${item.code || ''} ${item.name}`} subtitle={`${item.quantity} ${item.unit || ''}`} />)}
-            {materialItems.length === 0 && <div className="text-xs font-bold text-slate-400">Chưa có dòng vật tư</div>}
-          </div>
-        </Panel>
-      </div>
-
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
-        <table className="w-full min-w-[1080px] text-sm">
-          <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
-            <tr>
-              {['Mã', 'Hạng mục', 'Loại', 'KL', 'Đơn giá vốn', 'Thành tiền vốn', 'Đơn giá chào', 'Thành tiền chào', 'Lý do chỉnh', ''].map(header => <th key={header} className="px-3 py-2 text-left font-black">{header}</th>)}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {estimate.items.map(item => {
-              const edit = lineEdits[item.id] || { quantity: item.quantity, unitPrice: item.unitPrice, quoteUnitPrice: item.quoteUnitPrice ?? item.unitPrice, overrideReason: item.overrideReason || '' };
-              return (
-                <tr key={item.id}>
-                  <td className={`${TD} font-mono`}>{item.code}</td>
-                  <td className={`${TD} font-bold`}>{item.name}</td>
-                  <td className={TD}>{item.itemType}</td>
-                  <td className={TD}><input type="number" value={edit.quantity} onChange={e => setLine(item.id, { quantity: num(e.target.value) })} className="w-24 rounded-lg border px-2 py-1 text-xs" /></td>
-                  <td className={TD}>{canSeeInternalCost ? <input type="number" value={edit.unitPrice} onChange={e => setLine(item.id, { unitPrice: num(e.target.value) })} className="w-28 rounded-lg border px-2 py-1 text-xs" /> : 'Ẩn'}</td>
-                  <td className={`${TD} font-bold`}>{canSeeInternalCost ? money(item.amount) : 'Ẩn'}</td>
-                  <td className={TD}><input type="number" value={edit.quoteUnitPrice} onChange={e => setLine(item.id, { quoteUnitPrice: num(e.target.value) })} className="w-28 rounded-lg border px-2 py-1 text-xs" /></td>
-                  <td className={`${TD} font-black`}>{money(item.quoteAmount ?? item.amount)}</td>
-                  <td className={TD}><input value={edit.overrideReason} onChange={e => setLine(item.id, { overrideReason: e.target.value })} className="w-44 rounded-lg border px-2 py-1 text-xs" placeholder="Bắt buộc nếu chỉnh" /></td>
-                  <td className={`${TD} text-right`}><button onClick={() => onSaveLine(item)} className={BTN_MINI}><Save size={13} /></button></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
-        <h3 className="mb-3 text-sm font-black text-slate-800 dark:text-white">Tạo bản nháp BOQ dự án</h3>
-        {!canManage && (
-          <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
-            Chỉ ADMIN hoặc HD admin được chuyển estimate sang BOQ/Material Plan.
-          </div>
-        )}
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-[180px_minmax(0,1fr)_120px_120px]">
-          <select value={convertType} onChange={e => setConvertType(e.target.value as ContractItemType)} disabled={!canManage} className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50">
-            <option value="customer">HĐ nhận thầu</option>
-            <option value="subcontractor">HĐ thầu phụ</option>
-          </select>
-          <select value={convertContractId} onChange={e => setConvertContractId(e.target.value)} disabled={!canManage} className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50">
-            <option value="">Chọn hợp đồng</option>
-            {convertContracts.map(contract => <option key={contract.id} value={contract.id}>{contract.code} - {contract.name}</option>)}
-          </select>
-          <button onClick={onPreviewConvert} disabled={!canManage || saving || estimate.status !== 'finalized' || !convertContractId} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-black text-slate-600 disabled:opacity-50">
-            <Eye size={14} className="inline" /> Preview
-          </button>
-          <button onClick={onConvert} disabled={!canManage || saving || estimate.status !== 'finalized' || !convertContractId || !conversionPreview} className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-black text-white disabled:opacity-50">
-            Tạo nháp
-          </button>
-        </div>
-        {conversionPreview && (
-          <div className="mt-3 space-y-3">
-            <div className="grid grid-cols-3 gap-2">
-              <Metric label="Contract BOQ" value={conversionPreview.contractItems.length} />
-              <Metric label="Work BOQ" value={conversionPreview.workBoqItems.length} />
-              <Metric label="Material Plan" value={conversionPreview.materialBudgetItems.length} />
+    return (
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="font-mono text-xs font-black text-indigo-600">{estimate.code}</div>
+              <h2 className="text-lg font-black text-slate-800 dark:text-white">{estimate.name}</h2>
+              <div className="text-xs font-bold text-slate-400">{statusLabel[estimate.status]} • confidence {Math.round(num(estimate.confidenceScore) * 100)}%</div>
             </div>
-            <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-200">
-              <table className="w-full text-xs">
-                <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
-                  <tr>
-                    {['Target', 'Mã', 'Tên', 'KL/GT'].map(header => <th key={header} className="px-3 py-2 text-left font-black">{header}</th>)}
+            <div className="flex flex-wrap gap-2">
+              {estimate.status === 'draft' && <button onClick={onReview} disabled={saving} className={BTN_SOFT}><CheckCircle2 size={14} /> Rà soát</button>}
+              {estimate.status !== 'finalized' && estimate.status !== 'converted' && <button onClick={onFinalize} disabled={saving || formulaWarnings.length > 0} className={BTN_PRIMARY}><ShieldCheck size={14} /> Chốt</button>}
+              <button onClick={() => onExport('external')} disabled={!['reviewed', 'finalized'].includes(estimate.status)} className={BTN_SOFT}><Download size={14} /> Excel gửi khách</button>
+              {canSeeInternalCost && <button onClick={() => onExport('internal')} className={BTN_SOFT}><FileSpreadsheet size={14} /> Excel nội bộ</button>}
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Metric label="Giá vốn nội bộ" value={canSeeInternalCost ? money(estimate.totalAmount) : 'Ẩn'} />
+            <Metric label="Giá chào" value={money(quoteAmount)} />
+            <Metric label="Lợi nhuận dự kiến" value={canSeeInternalCost ? money(estimate.profitAmount || 0) : 'Ẩn'} />
+            <Metric label="Số dòng" value={estimate.items.length} />
+            <Metric label="Đơn giá/m2" value={floorArea > 0 ? money(Math.round(quoteAmount / floorArea)) : '-'} />
+            <Metric label="Dòng vật tư" value={materialItems.length} />
+            <Metric label="Manual override" value={estimate.items.filter(item => item.manualOverride).length} />
+            <Metric label="Thiếu đơn giá" value={missingPriceWarnings.length} />
+            <Metric label="Lỗi công thức" value={formulaWarnings.length} />
+          </div>
+          {formulaWarnings.length > 0 && (
+            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">
+              <AlertTriangle size={14} className="inline mr-1" />
+              {formulaWarnings.slice(0, 4).join(' • ')}
+            </div>
+          )}
+          {missingPriceWarnings.length > 0 && canSeeInternalCost && estimate.status !== 'finalized' && estimate.status !== 'converted' && (
+            <div className="mt-3">
+              <input
+                value={finalizeOverrideReason}
+                onChange={e => setFinalizeOverrideReason(e.target.value)}
+                className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700"
+                placeholder="HD admin nhập lý do ngoại lệ nếu vẫn muốn chốt khi thiếu đơn giá active"
+              />
+            </div>
+          )}
+          {estimate.riskWarnings.length > 0 && (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-700">
+              <AlertTriangle size={14} className="inline mr-1" />
+              {estimate.riskWarnings.slice(0, 4).join(' • ')}
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <Panel title="Khái toán nhanh" icon={<Calculator size={14} />}>
+            <div className="space-y-2">
+              <Metric label="Tổng giá chào" value={money(quoteAmount)} />
+              <Metric label="Đơn giá bình quân/m2" value={floorArea > 0 ? money(Math.round(quoteAmount / floorArea)) : '-'} />
+              <Metric label="Sai số dự kiến" value={missingPriceWarnings.length > 0 ? 'Cao' : 'Trung bình'} />
+            </div>
+          </Panel>
+          <Panel title="Theo hạng mục" icon={<Layers size={14} />}>
+            <div className="space-y-2">
+              {Object.entries(grouped).map(([type, value]) => <Metric key={type} label={`${type} • ${value.count} dòng`} value={money(value.quoteAmount)} />)}
+            </div>
+          </Panel>
+          <Panel title="BOQ vật tư sơ bộ" icon={<PackageSearch size={14} />}>
+            <div className="space-y-2">
+              {materialItems.slice(0, 5).map(item => <Row key={item.id} title={`${item.code || ''} ${item.name}`} subtitle={`${item.quantity} ${item.unit || ''}`} />)}
+              {materialItems.length === 0 && <div className="text-xs font-bold text-slate-400">Chưa có dòng vật tư</div>}
+            </div>
+          </Panel>
+        </div>
+
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
+          <table className="w-full min-w-[1080px] text-sm">
+            <thead className="bg-indigo-50/80 border-b border-indigo-100/80 dark:bg-slate-800 dark:border-slate-700 text-xs font-black text-indigo-950 dark:text-slate-200 uppercase whitespace-nowrap">
+              <tr>
+                {['Mã', 'Hạng mục', 'Loại', 'KL', 'Đơn giá vốn', 'Thành tiền vốn', 'Đơn giá chào', 'Thành tiền chào', 'Lý do chỉnh', ''].map(header => <th key={header} className="px-4 py-3 text-left font-black tracking-wider whitespace-nowrap">{header}</th>)}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {estimate.items.map(item => {
+                const edit = lineEdits[item.id] || { quantity: item.quantity, unitPrice: item.unitPrice, quoteUnitPrice: item.quoteUnitPrice ?? item.unitPrice, overrideReason: item.overrideReason || '' };
+                return (
+                  <tr key={item.id}>
+                    <td className={`${TD} font-mono`}>{item.code}</td>
+                    <td className={`${TD} font-bold`}>{item.name}</td>
+                    <td className={TD}>{item.itemType}</td>
+                    <td className={TD}><input type="number" value={edit.quantity} onChange={e => setLine(item.id, { quantity: num(e.target.value) })} className="w-24 rounded-lg border px-2 py-1 text-xs" /></td>
+                    <td className={TD}>{canSeeInternalCost ? <input type="number" value={edit.unitPrice} onChange={e => setLine(item.id, { unitPrice: num(e.target.value) })} className="w-28 rounded-lg border px-2 py-1 text-xs" /> : 'Ẩn'}</td>
+                    <td className={`${TD} font-bold`}>{canSeeInternalCost ? money(item.amount) : 'Ẩn'}</td>
+                    <td className={TD}><input type="number" value={edit.quoteUnitPrice} onChange={e => setLine(item.id, { quoteUnitPrice: num(e.target.value) })} className="w-28 rounded-lg border px-2 py-1 text-xs" /></td>
+                    <td className={`${TD} font-black`}>{money(item.quoteAmount ?? item.amount)}</td>
+                    <td className={TD}><input value={edit.overrideReason} onChange={e => setLine(item.id, { overrideReason: e.target.value })} className="w-44 rounded-lg border px-2 py-1 text-xs" placeholder="Bắt buộc nếu chỉnh" /></td>
+                    <td className={`${TD} text-right`}><button onClick={() => onSaveLine(item)} className={BTN_MINI}><Save size={13} /></button></td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {[
-                    ...conversionPreview.contractItems.map(item => ({ target: 'Contract BOQ', code: item.code, name: item.name, value: `${item.quantity} ${item.unit} • ${money(item.totalPrice)}` })),
-                    ...conversionPreview.workBoqItems.map(item => ({ target: 'Work BOQ', code: item.wbsCode || '', name: item.name, value: `${item.plannedQty} ${item.unit}` })),
-                    ...conversionPreview.materialBudgetItems.map(item => ({ target: 'Material Plan', code: item.materialCode || '', name: item.itemName, value: `${item.budgetQty} ${item.unit}` })),
-                  ].slice(0, 12).map((row, index) => (
-                    <tr key={`${row.target}-${row.code}-${index}`}>
-                      <td className={TD}>{row.target}</td>
-                      <td className={`${TD} font-mono`}>{row.code}</td>
-                      <td className={`${TD} font-bold`}>{row.name}</td>
-                      <td className={TD}>{row.value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+          <h3 className="mb-3 text-sm font-black text-slate-800 dark:text-white">Tạo bản nháp BOQ dự án</h3>
+          {!canManage && (
+            <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
+              Chỉ ADMIN hoặc HD admin được chuyển estimate sang BOQ/Material Plan.
             </div>
+          )}
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-[180px_minmax(0,1fr)_120px_120px]">
+            <select value={convertType} onChange={e => setConvertType(e.target.value as ContractItemType)} disabled={!canManage} className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50">
+              <option value="customer">HĐ nhận thầu</option>
+              <option value="subcontractor">HĐ thầu phụ</option>
+            </select>
+            <select value={convertContractId} onChange={e => setConvertContractId(e.target.value)} disabled={!canManage} className="rounded-xl border px-3 py-2 text-sm disabled:opacity-50">
+              <option value="">Chọn hợp đồng</option>
+              {convertContracts.map(contract => <option key={contract.id} value={contract.id}>{contract.code} - {contract.name}</option>)}
+            </select>
+            <button onClick={onPreviewConvert} disabled={!canManage || saving || estimate.status !== 'finalized' || !convertContractId} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-black text-slate-600 disabled:opacity-50">
+              <Eye size={14} className="inline" /> Preview
+            </button>
+            <button onClick={onConvert} disabled={!canManage || saving || estimate.status !== 'finalized' || !convertContractId || !conversionPreview} className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-black text-white disabled:opacity-50">
+              Tạo nháp
+            </button>
           </div>
-        )}
-        {conversionBatch && (
-          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="text-xs font-black text-slate-700">Conversion batch: {conversionBatch.status}</div>
-                <div className="text-[10px] font-bold text-slate-400">{conversionBatch.id}</div>
+          {conversionPreview && (
+            <div className="mt-3 space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                <Metric label="Contract BOQ" value={conversionPreview.contractItems.length} />
+                <Metric label="Work BOQ" value={conversionPreview.workBoqItems.length} />
+                <Metric label="Material Plan" value={conversionPreview.materialBudgetItems.length} />
               </div>
-              {canManage && activeConversionBatch && estimate.status === 'converted' && (
-                <button onClick={onRollbackConvert} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-xs font-black text-white disabled:opacity-50">
-                  <Trash2 size={14} /> Rollback
-                </button>
-              )}
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <Metric label="Contract BOQ" value={conversionItems.filter(item => item.targetTable === 'contract_items').length} />
-              <Metric label="Work BOQ" value={conversionItems.filter(item => item.targetTable === 'project_work_boq_items').length} />
-              <Metric label="Material Plan" value={conversionItems.filter(item => item.targetTable === 'material_budget_items').length} />
-            </div>
-            {conversionItems.length > 0 && (
-              <div className="mt-3 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+              <div className="max-h-48 overflow-auto rounded-xl border border-slate-200">
                 <table className="w-full text-xs">
-                  <thead className="bg-slate-50 text-[10px] uppercase text-slate-400">
+                  <thead className="bg-indigo-50/80 border-b border-indigo-100/80 dark:bg-slate-800 dark:border-slate-700 text-xs font-black text-indigo-950 dark:text-slate-200 uppercase whitespace-nowrap">
                     <tr>
-                      {['Bảng đích', 'Mã', 'Tên', 'Target ID'].map(header => <th key={header} className="px-3 py-2 text-left font-black">{header}</th>)}
+                      {['Target', 'Mã', 'Tên', 'KL/GT'].map(header => <th key={header} className="px-4 py-3 text-left font-black tracking-wider whitespace-nowrap">{header}</th>)}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {conversionItems.slice(0, 12).map(item => (
-                      <tr key={item.id}>
-                        <td className={TD}>{item.targetTable}</td>
-                        <td className={`${TD} font-mono`}>{item.targetCode || '-'}</td>
-                        <td className={`${TD} font-bold`}>{item.targetName || '-'}</td>
-                        <td className={`${TD} font-mono text-[10px]`}>{item.targetId}</td>
+                    {[
+                      ...conversionPreview.contractItems.map(item => ({ target: 'Contract BOQ', code: item.code, name: item.name, value: `${item.quantity} ${item.unit} • ${money(item.totalPrice)}` })),
+                      ...conversionPreview.workBoqItems.map(item => ({ target: 'Work BOQ', code: item.wbsCode || '', name: item.name, value: `${item.plannedQty} ${item.unit}` })),
+                      ...conversionPreview.materialBudgetItems.map(item => ({ target: 'Material Plan', code: item.materialCode || '', name: item.itemName, value: `${item.budgetQty} ${item.unit}` })),
+                    ].slice(0, 12).map((row, index) => (
+                      <tr key={`${row.target}-${row.code}-${index}`}>
+                        <td className={TD}>{row.target}</td>
+                        <td className={`${TD} font-mono`}>{row.code}</td>
+                        <td className={`${TD} font-bold`}>{row.name}</td>
+                        <td className={TD}>{row.value}</td>
                       </tr>
                     ))}
-                    {conversionItems.length > 12 && (
-                      <tr>
-                        <td colSpan={4} className="px-3 py-2 text-center text-xs font-bold text-slate-400">Còn {conversionItems.length - 12} dòng mapping khác</td>
-                      </tr>
-                    )}
                   </tbody>
                 </table>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+          {conversionBatch && (
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-xs font-black text-slate-700">Conversion batch: {conversionBatch.status}</div>
+                  <div className="text-[10px] font-bold text-slate-400">{conversionBatch.id}</div>
+                </div>
+                {canManage && activeConversionBatch && estimate.status === 'converted' && (
+                  <button onClick={onRollbackConvert} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-xs font-black text-white disabled:opacity-50">
+                    <Trash2 size={14} /> Rollback
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <Metric label="Contract BOQ" value={conversionItems.filter(item => item.targetTable === 'contract_items').length} />
+                <Metric label="Work BOQ" value={conversionItems.filter(item => item.targetTable === 'project_work_boq_items').length} />
+                <Metric label="Material Plan" value={conversionItems.filter(item => item.targetTable === 'material_budget_items').length} />
+              </div>
+              {conversionItems.length > 0 && (
+                <div className="mt-3 max-h-56 overflow-auto rounded-xl border border-slate-200 bg-white">
+                  <table className="w-full text-xs">
+                    <thead className="bg-indigo-50/80 border-b border-indigo-100/80 dark:bg-slate-800 dark:border-slate-700 text-xs font-black text-indigo-950 dark:text-slate-200 uppercase whitespace-nowrap">
+                      <tr>
+                        {['Bảng đích', 'Mã', 'Tên', 'Target ID'].map(header => <th key={header} className="px-4 py-3 text-left font-black tracking-wider whitespace-nowrap">{header}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {conversionItems.slice(0, 12).map(item => (
+                        <tr key={item.id}>
+                          <td className={TD}>{item.targetTable}</td>
+                          <td className={`${TD} font-mono`}>{item.targetCode || '-'}</td>
+                          <td className={`${TD} font-bold`}>{item.targetName || '-'}</td>
+                          <td className={`${TD} font-mono text-[10px]`}>{item.targetId}</td>
+                        </tr>
+                      ))}
+                      {conversionItems.length > 12 && (
+                        <tr>
+                          <td colSpan={4} className="px-3 py-2 text-center text-xs font-bold text-slate-400">Còn {conversionItems.length - 12} dòng mapping khác</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
 const Panel: React.FC<{ title: string; icon: React.ReactNode; children: React.ReactNode }> = ({ title, icon, children }) => (
   <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">

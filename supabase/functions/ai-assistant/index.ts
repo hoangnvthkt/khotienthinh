@@ -15,7 +15,7 @@ interface ChatMessage {
 }
 
 interface AssistantRequest {
-  action?: 'feedback' | 'estimate_suggestion' | 'tender_detect_columns' | 'tender_suggest_mapping' | 'tender_risk_rfi';
+  action?: 'feedback' | 'estimate_suggestion' | 'cost_norm_standardization' | 'tender_detect_columns' | 'tender_suggest_mapping' | 'tender_risk_rfi';
   question?: string;
   prompt?: string;
   conversationId?: string | null;
@@ -34,6 +34,12 @@ interface AssistantRequest {
   lines?: any[];
   mappings?: any[];
   pricingGaps?: any[];
+  item?: any;
+  targetItem?: any;
+  baseQuantity?: number | null;
+  rawMaterials?: any[];
+  normalizedRows?: any[];
+  priceBookSamples?: any[];
 }
 
 interface AppUserContext {
@@ -242,6 +248,10 @@ function canUseTenderAssistant(actor: AppUserContext | null) {
   const allowedModules = normalizeStringArray(actor.allowedModules).map(m => m.toUpperCase());
   const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
   return allowedModules.includes('TENDER_AI') || adminModules.includes('TENDER_AI') || allowedModules.includes('HD') || adminModules.includes('HD');
+}
+
+function canUseCostNormAssistant(actor: AppUserContext | null) {
+  return isAdminOrModuleAdmin(actor, ['HD', 'TENDER_AI']);
 }
 
 function getBearerToken(request: Request) {
@@ -701,6 +711,136 @@ ${compactJson(templates, 18000)}
   return jsonResponse({ suggestion });
 }
 
+function normalizeNormResourceType(value: unknown) {
+  const text = String(value || 'material');
+  return ['material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].includes(text) ? text : 'material';
+}
+
+function normalizeNormSuggestionRows(raw: any, req: AssistantRequest) {
+  const rows = Array.isArray(raw?.suggestions) ? raw.suggestions : Array.isArray(raw?.rows) ? raw.rows : [];
+  const sourceIds = new Set((Array.isArray(req.rawMaterials) ? req.rawMaterials : []).map((row: any) => String(row.sourceMaterialBudgetItemId || '')).filter(Boolean));
+  const baseQuantity = Number(req.baseQuantity || req.item?.baseQuantity || 0);
+  return rows.map((row: any, index: number) => {
+    const sourceId = row.sourceMaterialBudgetItemId && sourceIds.has(String(row.sourceMaterialBudgetItemId))
+      ? String(row.sourceMaterialBudgetItemId)
+      : null;
+    const resourceName = String(row.resourceName || row.itemName || '').trim();
+    const resourceCode = row.resourceCode || row.materialCode ? String(row.resourceCode || row.materialCode) : '';
+    const normQuantity = Math.max(0, Number(row.normQuantity ?? row.quantity ?? 0));
+    const rawQuantity = row.rawQuantity === null || row.rawQuantity === undefined ? null : Number(row.rawQuantity);
+    const confidenceScore = Math.max(0, Math.min(1, Number(row.confidenceScore ?? 0.5)));
+    return {
+      id: String(row.id || sourceId || row.normCode || `${req.item?.id || 'item'}-ai-${index}`),
+      sourceMaterialBudgetItemId: sourceId,
+      normCode: row.normCode ? String(row.normCode).slice(0, 120) : '',
+      resourceCode,
+      resourceName,
+      resourceType: normalizeNormResourceType(row.resourceType),
+      category: row.category ? String(row.category) : '',
+      unit: String(row.unit || '').trim(),
+      rawQuantity: Number.isFinite(rawQuantity) ? rawQuantity : null,
+      baseQuantity: Number.isFinite(baseQuantity) && baseQuantity > 0 ? baseQuantity : null,
+      normQuantity,
+      suggestedNormQuantity: Math.max(0, Number(row.suggestedNormQuantity ?? normQuantity)),
+      wastePercent: Math.max(0, Number(row.wastePercent ?? 0)),
+      region: row.region ? String(row.region) : 'all',
+      versionNo: 1,
+      confidenceScore,
+      note: row.note ? String(row.note) : '',
+      reason: String(row.reason || 'AI gợi ý chuẩn hóa từ dữ liệu tham chiếu.'),
+      needsReview: row.needsReview !== false,
+      sortOrder: Number.isFinite(Number(row.sortOrder)) ? Number(row.sortOrder) : index,
+    };
+  }).filter((row: any) => row.resourceName && row.unit && row.normQuantity >= 0);
+}
+
+async function handleCostNormStandardization(req: AssistantRequest, actor: AppUserContext | null) {
+  if (!canUseCostNormAssistant(actor)) {
+    return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền Admin/HD admin/Tender AI admin để dùng AI chuẩn hóa định mức.' }, 403);
+  }
+  const item = req.item || {};
+  const targetItem = req.targetItem || {};
+  const rawMaterials = Array.isArray(req.rawMaterials) ? req.rawMaterials.slice(0, 120) : [];
+  const normalizedRows = Array.isArray(req.normalizedRows) ? req.normalizedRows.slice(0, 120) : [];
+  const priceBookSamples = Array.isArray(req.priceBookSamples) ? req.priceBookSamples.slice(0, 80) : [];
+  const baseQuantity = Number(req.baseQuantity || item.baseQuantity || 0);
+  const prompt = `
+Bạn là AI trợ lý chuẩn hóa định mức nội bộ cho công ty thi công nhà xưởng.
+Nhiệm vụ: gợi ý bảng định mức draft cho gói/hạng mục định mức đích, dựa trên hạng mục tham chiếu Sơn Miền Bắc.
+
+Quy tắc bắt buộc:
+- Hạng mục tham chiếu chỉ dùng để lấy rawMaterials và tính gợi ý ban đầu.
+- Gói định mức đích mới là nơi người dùng sẽ lưu thư viện định mức; mã/tên gói đích phải được ưu tiên khi gợi ý normCode.
+- Chỉ dùng dữ liệu hạng mục tham chiếu, gói đích, rawMaterials, normalizedRows và priceBookSamples được cung cấp.
+- Không bịa đơn giá, margin, profit, risk buffer.
+- Định mức normQuantity là hao phí trên 1 đơn vị gói/hạng mục định mức đích, ưu tiên công thức rawQuantity / baseQuantity tham chiếu khi có đủ dữ liệu.
+- Nếu baseQuantity thiếu hoặc <= 0, không tự tính normQuantity từ raw quantity; đặt needsReview=true và giải thích.
+- Không tự tạo nguồn lực mới nếu không có căn cứ. Nếu gợi ý nhân công/máy/thầu phụ thì needsReview=true và reason phải nêu rõ vì sao.
+- Không lưu DB, không activate; chỉ trả về dữ liệu để frontend fill draft.
+- Trả về DUY NHẤT JSON object.
+
+Schema:
+{
+  "suggestions": [
+    {
+      "sourceMaterialBudgetItemId": "id raw material hoặc null",
+      "normCode": "mã định mức draft nếu có",
+      "resourceCode": "mã nguồn lực/vật tư nếu có",
+      "resourceName": "tên nguồn lực/vật tư",
+      "resourceType": "material|labor|machine|subcontract|overhead|other",
+      "category": "nhóm nếu có",
+      "unit": "đơn vị",
+      "rawQuantity": 0,
+      "baseQuantity": 0,
+      "normQuantity": 0,
+      "suggestedNormQuantity": 0,
+      "wastePercent": 0,
+      "region": "all",
+      "confidenceScore": 0.0,
+      "note": "ghi chú ngắn",
+      "reason": "lý do gợi ý",
+      "needsReview": true,
+      "sortOrder": 0
+    }
+  ],
+  "warnings": ["cảnh báo dữ liệu thiếu hoặc bất thường"],
+  "confidenceScore": 0.0
+}
+
+Hạng mục tham chiếu:
+${compactJson(item, 6000)}
+
+Gói định mức đích:
+${compactJson(targetItem, 4000)}
+
+Base quantity:
+${Number.isFinite(baseQuantity) ? baseQuantity : null}
+
+Raw materials:
+${compactJson(rawMaterials, 14000)}
+
+Normalized rows hiện có:
+${compactJson(normalizedRows, 12000)}
+
+Price book samples không bao gồm đơn giá:
+${compactJson(priceBookSamples, 10000)}
+`.trim();
+
+  const raw = await callGemini(prompt, 0.04, req.model || GEMINI_FAST_MODEL, 'application/json');
+  const parsed = extractJsonObject(raw);
+  const suggestions = normalizeNormSuggestionRows(parsed, req);
+  const warnings = Array.isArray(parsed.warnings) ? parsed.warnings.map(String).slice(0, 10) : [];
+  const confidenceScore = Math.max(0, Math.min(1, Number(parsed.confidenceScore ?? (
+    suggestions.length ? suggestions.reduce((sum: number, row: any) => sum + Number(row.confidenceScore || 0), 0) / suggestions.length : 0.4
+  ))));
+  await writeTenderAiLog(req, actor, 'cost_norm_standardization', {
+    suggestions,
+    warnings,
+    confidenceScore,
+  });
+  return jsonResponse({ suggestions, warnings, confidenceScore });
+}
+
 function normalizeMappingObject(raw: any) {
   const mapping = raw?.mapping && typeof raw.mapping === 'object' ? raw.mapping : {};
   const allowedKeys = ['lineNo', 'itemCode', 'name', 'description', 'unit', 'quantity', 'ownerUnitPrice', 'ownerAmount', 'note'];
@@ -997,6 +1137,10 @@ Deno.serve(async (request: Request) => {
     if (req.action === 'estimate_suggestion') {
       const actor = await resolveActor(request, req.userId);
       return handleEstimateSuggestion(req, actor);
+    }
+    if (req.action === 'cost_norm_standardization') {
+      const actor = await resolveActor(request, req.userId);
+      return handleCostNormStandardization(req, actor);
     }
     if (req.action === 'tender_detect_columns') {
       const actor = await resolveActor(request, req.userId);

@@ -267,13 +267,20 @@ export interface RawTemplateMaterialSnapshot {
 export interface NormalizedTemplateMaterial {
   sourceMaterialBudgetItemId?: string;
   materialCode?: string;
+  resourceType?: InternalNorm['resourceType'];
+  normCode?: string;
   itemName: string;
   category?: string;
   unit: string;
   quantity: number;
+  rawQuantity?: number | null;
+  baseQuantity?: number | null;
+  suggestedNormQuantity?: number | null;
   conversionFactor?: number;
   wastePercent?: number;
   note?: string;
+  reason?: string;
+  needsReview?: boolean;
   sortOrder?: number;
 }
 
@@ -305,6 +312,51 @@ export interface CostTemplateNormalizationReport {
 export interface DraftNormCreationResult {
   created: number;
   skipped: number;
+}
+
+export interface CostNormWorkbenchLine {
+  id: string;
+  normId?: string | null;
+  sourceMaterialBudgetItemId?: string;
+  normCode: string;
+  resourceCode?: string;
+  resourceName: string;
+  resourceType: InternalNorm['resourceType'];
+  category?: string;
+  unit: string;
+  rawQuantity?: number | null;
+  baseQuantity?: number | null;
+  normQuantity: number;
+  suggestedNormQuantity?: number | null;
+  wastePercent: number;
+  region: string;
+  versionNo: number;
+  status?: InternalNorm['status'];
+  confidenceScore?: number | null;
+  note?: string;
+  reason?: string;
+  needsReview?: boolean;
+  sortOrder: number;
+}
+
+export interface CostNormWorkbenchSaveResult {
+  item: CostTemplateItem;
+  savedNorms: InternalNorm[];
+  archivedDrafts: number;
+}
+
+export interface CostNormStandardizationSuggestionInput {
+  referenceItem: CostTemplateItem;
+  targetItem?: CostTemplateItem | null;
+  currentLines: CostNormWorkbenchLine[];
+  priceBookSamples?: InternalPriceBookItem[];
+}
+
+export interface CostNormStandardizationSuggestionResult {
+  suggestions: CostNormWorkbenchLine[];
+  warnings: string[];
+  confidenceScore: number;
+  source: 'remote' | 'local';
 }
 
 const cleanUndefined = <T extends Record<string, any>>(value: T): T =>
@@ -397,22 +449,155 @@ const itemNormalizationStatus = (item: CostTemplateItem): CostTemplateNormalizat
 };
 const standardUnitOf = (item: CostTemplateItem) => String(itemMetadata(item).standardUnit || item.unit || '').trim();
 const standardBaseQuantityOf = (item: CostTemplateItem) => optionalPositiveNum(itemMetadata(item).standardBaseQuantity) ?? optionalPositiveNum(item.baseQuantity);
+const sourcePlannedQuantityOf = (item: CostTemplateItem) => optionalPositiveNum(itemMetadata(item).sourcePlannedQty);
+const normBaseQuantityOf = (item: CostTemplateItem) => standardBaseQuantityOf(item) ?? sourcePlannedQuantityOf(item);
+const standardWorkCodeOf = (item: CostTemplateItem) => String(itemMetadata(item).standardWorkCode || item.workCode || item.code || '').trim();
 const normalizeCode = (value: unknown, fallback = 'ITEM') => normalizeHeader(value || fallback).toUpperCase() || fallback;
+const roundedNormQty = (value: number) => Math.round(value * 1_000_000) / 1_000_000;
+const buildNormCode = (item: CostTemplateItem, resourceCodeOrName: unknown) =>
+  `${normalizeCode(standardWorkCodeOf(item) || item.code)}_${normalizeCode(resourceCodeOrName, 'RESOURCE')}`.slice(0, 120);
+const safeResourceType = (value: unknown): InternalNorm['resourceType'] =>
+  validPriceTypes.has(String(value || '')) ? String(value) as InternalNorm['resourceType'] : 'material';
 const sanitizedNormalizedMaterials = (materials: NormalizedTemplateMaterial[]) =>
   materials
     .map((material, index) => ({
       sourceMaterialBudgetItemId: material.sourceMaterialBudgetItemId || undefined,
       materialCode: material.materialCode || '',
+      resourceType: safeResourceType(material.resourceType),
+      normCode: material.normCode || '',
       itemName: String(material.itemName || '').trim(),
       category: material.category || '',
       unit: String(material.unit || '').trim(),
       quantity: num(material.quantity),
+      rawQuantity: material.rawQuantity ?? null,
+      baseQuantity: material.baseQuantity ?? null,
+      suggestedNormQuantity: material.suggestedNormQuantity ?? null,
       conversionFactor: material.conversionFactor ? num(material.conversionFactor) : undefined,
       wastePercent: material.wastePercent ? num(material.wastePercent) : undefined,
       note: material.note || '',
+      reason: material.reason || '',
+      needsReview: Boolean(material.needsReview),
       sortOrder: material.sortOrder ?? index,
     }))
     .filter(material => material.itemName && material.unit && material.quantity > 0);
+
+const normalizedMaterialToWorkbenchLine = (
+  item: CostTemplateItem,
+  material: NormalizedTemplateMaterial,
+  index: number,
+  existingNorms: InternalNorm[] = [],
+): CostNormWorkbenchLine => {
+  const resourceCode = material.materialCode || '';
+  const normCode = material.normCode || buildNormCode(item, resourceCode || material.itemName);
+  const norm = existingNorms
+    .filter(row => row.templateItemId === item.id || (!!row.workCode && row.workCode === standardWorkCodeOf(item)))
+    .find(row => row.normCode === normCode && row.region === 'all');
+  return {
+    id: material.sourceMaterialBudgetItemId || material.normCode || `${item.id}-normalized-${index}`,
+    normId: norm?.id || null,
+    sourceMaterialBudgetItemId: material.sourceMaterialBudgetItemId,
+    normCode,
+    resourceCode,
+    resourceName: material.itemName,
+    resourceType: safeResourceType(material.resourceType),
+    category: material.category || '',
+    unit: material.unit,
+    rawQuantity: material.rawQuantity ?? null,
+    baseQuantity: material.baseQuantity ?? normBaseQuantityOf(item) ?? null,
+    normQuantity: num(material.quantity),
+    suggestedNormQuantity: material.suggestedNormQuantity ?? num(material.quantity),
+    wastePercent: num(material.wastePercent),
+    region: norm?.region || 'all',
+    versionNo: norm?.versionNo || 1,
+    status: norm?.status || 'draft',
+    confidenceScore: norm?.confidenceScore ?? null,
+    note: material.note || norm?.sourceNote || '',
+    reason: material.reason || '',
+    needsReview: Boolean(material.needsReview),
+    sortOrder: material.sortOrder ?? index,
+  };
+};
+
+const rawMaterialToWorkbenchLine = (
+  referenceItem: CostTemplateItem,
+  material: RawTemplateMaterialSnapshot,
+  index: number,
+  targetItem?: CostTemplateItem | null,
+): CostNormWorkbenchLine => {
+  const item = targetItem || referenceItem;
+  const baseQuantity = normBaseQuantityOf(referenceItem);
+  const rawQuantity = optionalNum(material.budgetQty);
+  const suggested = baseQuantity && rawQuantity !== null ? roundedNormQty(rawQuantity / baseQuantity) : null;
+  const resourceCode = material.materialCode || '';
+  return {
+    id: material.sourceMaterialBudgetItemId || `${referenceItem.id}-raw-${index}`,
+    normId: null,
+    sourceMaterialBudgetItemId: material.sourceMaterialBudgetItemId,
+    normCode: buildNormCode(item, resourceCode || material.itemName),
+    resourceCode,
+    resourceName: material.itemName || '',
+    resourceType: 'material',
+    category: material.category || '',
+    unit: material.unit || '',
+    rawQuantity,
+    baseQuantity: baseQuantity ?? null,
+    normQuantity: suggested ?? 0,
+    suggestedNormQuantity: suggested,
+    wastePercent: num(material.wastePercent),
+    region: 'all',
+    versionNo: 1,
+    status: 'draft',
+    confidenceScore: suggested ? 0.55 : 0.3,
+    note: material.notes || '',
+    reason: suggested
+      ? `Gợi ý từ KL vật tư / KL hạng mục: ${rawQuantity} / ${baseQuantity}`
+      : 'Thiếu khối lượng hạng mục nên cần nhập định mức thủ công.',
+    needsReview: !suggested,
+    sortOrder: material.sortOrder ?? index,
+  };
+};
+
+const normToWorkbenchLine = (item: CostTemplateItem, norm: InternalNorm, index: number): CostNormWorkbenchLine => ({
+  id: norm.id,
+  normId: norm.id,
+  normCode: norm.normCode,
+  resourceCode: norm.resourceCode || '',
+  resourceName: norm.resourceName,
+  resourceType: norm.resourceType,
+  unit: norm.unit,
+  rawQuantity: null,
+  baseQuantity: normBaseQuantityOf(item) ?? null,
+  normQuantity: num(norm.normQuantity),
+  suggestedNormQuantity: num(norm.normQuantity),
+  wastePercent: num(norm.wastePercent),
+  region: norm.region || 'all',
+  versionNo: norm.versionNo || 1,
+  status: norm.status,
+  confidenceScore: norm.confidenceScore ?? null,
+  note: norm.sourceNote || '',
+  reason: '',
+  needsReview: norm.status !== 'active',
+  sortOrder: index,
+});
+
+const workbenchLineToNormalizedMaterial = (line: CostNormWorkbenchLine, index: number): NormalizedTemplateMaterial => ({
+  sourceMaterialBudgetItemId: line.sourceMaterialBudgetItemId || undefined,
+  materialCode: line.resourceCode || '',
+  resourceType: line.resourceType,
+  normCode: line.normCode,
+  itemName: line.resourceName,
+  category: line.category || '',
+  unit: line.unit,
+  quantity: num(line.normQuantity),
+  rawQuantity: line.rawQuantity ?? null,
+  baseQuantity: line.baseQuantity ?? null,
+  suggestedNormQuantity: line.suggestedNormQuantity ?? null,
+  wastePercent: num(line.wastePercent),
+  note: line.note || '',
+  reason: line.reason || '',
+  needsReview: Boolean(line.needsReview),
+  sortOrder: line.sortOrder ?? index,
+});
 
 const isActiveToday = (row: { status: string; effectiveFrom?: string; effectiveTo?: string | null }) => {
   const date = today();
@@ -1648,7 +1833,7 @@ export const costTemplateService = {
           workCode: String(itemMetadata(item).standardWorkCode || item.workCode || item.code || ''),
           resourceCode: material.materialCode || '',
           resourceName: material.itemName,
-          resourceType: 'material',
+          resourceType: safeResourceType(material.resourceType),
           unit: material.unit,
           normQuantity: num(material.quantity),
           wastePercent: num(material.wastePercent),
@@ -1784,6 +1969,223 @@ export const costTemplateService = {
     const tableName = table === 'sections' ? SECTION_TABLE : table === 'items' ? ITEM_TABLE : PARAMETER_TABLE;
     const { error } = await supabase.from(tableName).delete().eq('id', id);
     if (error) throw error;
+  },
+};
+
+export const costNormWorkbenchService = {
+  buildLinesFromItem(item: CostTemplateItem, existingNorms: InternalNorm[] = []): CostNormWorkbenchLine[] {
+    const normalizedMaterials = normalizedMaterialsFromItem(item);
+    if (normalizedMaterials.length > 0) {
+      return normalizedMaterials
+        .map((material, index) => normalizedMaterialToWorkbenchLine(item, material, index, existingNorms))
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+    }
+
+    const linkedNorms = existingNorms
+      .filter(norm =>
+        norm.status !== 'archived'
+        && (
+          norm.templateItemId === item.id
+          || (!!norm.workCode && norm.workCode === standardWorkCodeOf(item))
+        ),
+      )
+      .sort((a, b) => a.normCode.localeCompare(b.normCode, 'vi'));
+    if (linkedNorms.length > 0) {
+      return linkedNorms.map((norm, index) => normToWorkbenchLine(item, norm, index));
+    }
+
+    return rawMaterialsFromItem(item)
+      .map((material, index) => rawMaterialToWorkbenchLine(item, material, index))
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  },
+
+  buildLinesForPackage(
+    referenceItem: CostTemplateItem,
+    targetItem: CostTemplateItem,
+    existingNorms: InternalNorm[] = [],
+    options: { includeReferenceFallback?: boolean } = {},
+  ): CostNormWorkbenchLine[] {
+    const normalizedMaterials = normalizedMaterialsFromItem(targetItem);
+    if (normalizedMaterials.length > 0) {
+      return normalizedMaterials
+        .map((material, index) => normalizedMaterialToWorkbenchLine(targetItem, material, index, existingNorms))
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+    }
+
+    const linkedNorms = existingNorms
+      .filter(norm => norm.status !== 'archived' && norm.templateItemId === targetItem.id)
+      .sort((a, b) => a.normCode.localeCompare(b.normCode, 'vi'));
+    if (linkedNorms.length > 0) {
+      return linkedNorms.map((norm, index) => normToWorkbenchLine(targetItem, norm, index));
+    }
+
+    if (options.includeReferenceFallback === false) return [];
+
+    return rawMaterialsFromItem(referenceItem)
+      .map((material, index) => rawMaterialToWorkbenchLine(referenceItem, material, index, targetItem))
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  },
+
+  buildLineFromRawMaterial(
+    referenceItem: CostTemplateItem,
+    targetItem: CostTemplateItem,
+    material: RawTemplateMaterialSnapshot,
+    index: number,
+  ): CostNormWorkbenchLine {
+    return rawMaterialToWorkbenchLine(referenceItem, material, index, targetItem);
+  },
+
+  buildEmptyLine(item: CostTemplateItem, index: number): CostNormWorkbenchLine {
+    return {
+      id: newId(),
+      normId: null,
+      normCode: buildNormCode(item, `RESOURCE_${index + 1}`),
+      resourceCode: '',
+      resourceName: '',
+      resourceType: 'material',
+      category: '',
+      unit: '',
+      rawQuantity: null,
+      baseQuantity: normBaseQuantityOf(item) ?? null,
+      normQuantity: 0,
+      suggestedNormQuantity: null,
+      wastePercent: 0,
+      region: 'all',
+      versionNo: 1,
+      status: 'draft',
+      confidenceScore: null,
+      note: '',
+      reason: '',
+      needsReview: true,
+      sortOrder: index,
+    };
+  },
+
+  getBaseQuantity(item: CostTemplateItem): number | null {
+    return normBaseQuantityOf(item) ?? null;
+  },
+
+  getReferenceBaseQuantity(item: CostTemplateItem): number | null {
+    return normBaseQuantityOf(item) ?? null;
+  },
+
+  async saveDraft(input: {
+    itemId?: string;
+    targetItemId?: string;
+    referenceItemId?: string;
+    lines: CostNormWorkbenchLine[];
+    markNormalized?: boolean;
+    actorId?: string;
+  }): Promise<CostNormWorkbenchSaveResult> {
+    if (!isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
+    const targetItemId = input.targetItemId || input.itemId;
+    if (!targetItemId) throw new Error('Chưa chọn gói định mức chuẩn để lưu.');
+    const { data: currentRow, error: currentError } = await supabase.from(ITEM_TABLE).select('*').eq('id', targetItemId).single();
+    if (currentError) throw currentError;
+    const targetItem = mapItem(currentRow);
+    let referenceItem: CostTemplateItem | null = null;
+    if (input.referenceItemId) {
+      const { data: referenceRow, error: referenceError } = await supabase.from(ITEM_TABLE).select('*').eq('id', input.referenceItemId).single();
+      if (referenceError) throw referenceError;
+      referenceItem = mapItem(referenceRow);
+    }
+    const targetTemplate = await costTemplateService.get(targetItem.templateId);
+    const referenceTemplate = referenceItem ? await costTemplateService.get(referenceItem.templateId) : null;
+    const sourceProjectId = referenceTemplate?.metadata?.sourceProjectId
+      ? String(referenceTemplate.metadata.sourceProjectId)
+      : targetTemplate?.metadata?.sourceProjectId ? String(targetTemplate.metadata.sourceProjectId) : null;
+    const standardWorkCode = standardWorkCodeOf(targetItem);
+    const baseQuantity = normBaseQuantityOf(targetItem) ?? (referenceItem ? normBaseQuantityOf(referenceItem) : null);
+    const validLines = input.lines
+      .map((line, index) => ({
+        ...line,
+        id: line.id || newId(),
+        normCode: (line.normCode || buildNormCode(targetItem, line.resourceCode || line.resourceName || `RESOURCE_${index + 1}`)).slice(0, 120),
+        resourceName: line.resourceName.trim(),
+        resourceType: safeResourceType(line.resourceType),
+        unit: line.unit.trim(),
+        normQuantity: num(line.normQuantity),
+        wastePercent: num(line.wastePercent),
+        region: line.region || 'all',
+        versionNo: line.versionNo || 1,
+        sortOrder: line.sortOrder ?? index,
+        baseQuantity: line.baseQuantity ?? baseQuantity ?? null,
+      }))
+      .filter(line => line.resourceName && line.unit && line.normQuantity > 0);
+
+    await costTemplateService.updateItemNormalization(targetItem.id, {
+      status: input.markNormalized ? 'normalized' : 'reviewing',
+      standardUnit: standardUnitOf(targetItem) || targetItem.unit || '',
+      standardBaseQuantity: baseQuantity ?? null,
+      standardWorkCode,
+      note: input.markNormalized ? 'Đã chuẩn hóa từ workbench định mức.' : 'Đang rà soát từ workbench định mức.',
+      actorId: input.actorId,
+    });
+    const updatedItem = await costTemplateService.updateItemRawMaterials(
+      targetItem.id,
+      validLines.map(workbenchLineToNormalizedMaterial),
+      input.actorId,
+    );
+
+    const existingNorms = await internalNormService.list(true);
+    const currentDrafts = existingNorms.filter(norm => norm.templateItemId === targetItem.id && norm.status === 'draft');
+    const savedNorms: InternalNorm[] = [];
+    const savedKeys = new Set<string>();
+
+    for (const line of validLines) {
+      const normCode = line.normCode || buildNormCode(targetItem, line.resourceCode || line.resourceName);
+      const region = line.region || 'all';
+      const peers = existingNorms.filter(norm => norm.normCode === normCode && norm.region === region);
+      const draftById = line.normId ? peers.find(norm => norm.id === line.normId && norm.status === 'draft') : null;
+      const draftByKey = peers.find(norm => norm.status === 'draft' && norm.templateItemId === targetItem.id);
+      const existingDraft = draftById || draftByKey || null;
+      const nextVersion = existingDraft?.versionNo || Math.max(1, ...peers.map(norm => norm.versionNo + 1));
+      const saved = await internalNormService.upsert({
+        id: existingDraft?.id,
+        normCode,
+        templateItemId: targetItem.id,
+        workCode: standardWorkCode,
+        resourceCode: line.resourceCode || '',
+        resourceName: line.resourceName,
+        resourceType: line.resourceType,
+        unit: line.unit,
+        normQuantity: line.normQuantity,
+        wastePercent: line.wastePercent,
+        formula: '',
+        applicableParameters: {
+          source: 'cost_norm_workbench',
+          baseQuantity: line.baseQuantity ?? baseQuantity ?? null,
+          rawQuantity: line.rawQuantity ?? null,
+          suggestedNormQuantity: line.suggestedNormQuantity ?? null,
+          needsReview: Boolean(line.needsReview),
+          referenceItemId: referenceItem?.id || null,
+          referenceTemplateId: referenceItem?.templateId || null,
+          referenceWbsCode: referenceItem ? String(itemMetadata(referenceItem).sourceWbsCode || referenceItem.code || '') : null,
+          targetPackageItemId: targetItem.id,
+        },
+        region,
+        versionNo: nextVersion,
+        effectiveFrom: today(),
+        effectiveTo: null,
+        status: 'draft',
+        sourceProjectId,
+        sourceNote: line.note || line.reason || `Workbench định mức ${targetItem.code}${referenceItem ? ` từ tham chiếu ${referenceItem.code}` : ''}`,
+        confidenceScore: line.confidenceScore ?? (line.needsReview ? 0.45 : 0.65),
+        createdBy: input.actorId,
+        updatedBy: input.actorId,
+      });
+      savedNorms.push(saved);
+      savedKeys.add(saved.id);
+    }
+
+    let archivedDrafts = 0;
+    for (const draft of currentDrafts) {
+      if (savedKeys.has(draft.id)) continue;
+      await internalNormService.archive(draft, input.actorId);
+      archivedDrafts += 1;
+    }
+
+    return { item: updatedItem, savedNorms, archivedDrafts };
   },
 };
 
@@ -2915,6 +3317,109 @@ export const estimateAiSuggestionService = {
       riskWarnings: Array.isArray(suggestion.riskWarnings) ? suggestion.riskWarnings.map(String) : [],
       dataGaps: Array.isArray(suggestion.dataGaps) ? suggestion.dataGaps.map(String) : [],
       confidenceScore: Number.isFinite(Number(suggestion.confidenceScore)) ? Number(suggestion.confidenceScore) : 0.5,
+      source: 'remote',
+    };
+  },
+};
+
+export const costNormStandardizationAiService = {
+  suggestLocal(input: CostNormStandardizationSuggestionInput): CostNormStandardizationSuggestionResult {
+    const targetItem = input.targetItem || input.referenceItem;
+    const baseQuantity = normBaseQuantityOf(input.referenceItem);
+    const suggestions = input.currentLines.length > 0
+      ? input.currentLines
+      : input.targetItem
+        ? costNormWorkbenchService.buildLinesForPackage(input.referenceItem, input.targetItem)
+        : rawMaterialsFromItem(input.referenceItem).map((material, index) => rawMaterialToWorkbenchLine(input.referenceItem, material, index, targetItem));
+    return {
+      suggestions: suggestions.map(line => ({
+        ...line,
+        needsReview: line.needsReview || !baseQuantity || line.normQuantity <= 0,
+        reason: line.reason || (baseQuantity ? 'Gợi ý local từ dữ liệu vật tư thô.' : 'Thiếu KL hạng mục, cần người dùng nhập định mức.'),
+      })),
+      warnings: baseQuantity ? [] : ['Thiếu KL hạng mục nên không tự tính được định mức từ vật tư raw.'],
+      confidenceScore: baseQuantity ? 0.55 : 0.35,
+      source: 'local',
+    };
+  },
+
+  async suggestRemote(input: CostNormStandardizationSuggestionInput, accessToken?: string): Promise<CostNormStandardizationSuggestionResult> {
+    if (!isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = accessToken || sessionData.session?.access_token || '';
+    const targetItem = input.targetItem || input.referenceItem;
+    const baseQuantity = normBaseQuantityOf(input.referenceItem);
+    const { data, error } = await supabase.functions.invoke('ai-assistant', {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: {
+        action: 'cost_norm_standardization',
+        item: {
+          id: input.referenceItem.id,
+          code: input.referenceItem.code,
+          name: input.referenceItem.name,
+          unit: input.referenceItem.unit,
+          workCode: standardWorkCodeOf(input.referenceItem),
+          baseQuantity,
+          rawMaterials: rawMaterialsFromItem(input.referenceItem),
+        },
+        targetItem: {
+          id: targetItem.id,
+          code: targetItem.code,
+          name: targetItem.name,
+          unit: targetItem.unit,
+          workCode: standardWorkCodeOf(targetItem),
+        },
+        baseQuantity,
+        rawMaterials: rawMaterialsFromItem(input.referenceItem),
+        normalizedRows: input.currentLines,
+        priceBookSamples: (input.priceBookSamples || []).slice(0, 80).map(price => ({
+          itemCode: price.itemCode,
+          itemName: price.itemName,
+          itemType: price.itemType,
+          category: price.category,
+          spec: price.spec,
+          unit: price.unit,
+          region: price.region,
+          status: price.status,
+        })),
+      },
+    });
+    if (error) throw error;
+    const raw = data as any;
+    const rawSuggestions = Array.isArray(raw?.suggestions) ? raw.suggestions : [];
+    const suggestions = rawSuggestions.map((row: any, index: number) => {
+      const resourceName = String(row.resourceName || row.itemName || '').trim();
+      const resourceCode = String(row.resourceCode || row.materialCode || '').trim();
+      const normQuantity = num(row.normQuantity ?? row.quantity);
+      return {
+        id: String(row.id || row.sourceMaterialBudgetItemId || row.normCode || `${targetItem.id}-ai-${index}`),
+        normId: row.normId || null,
+        sourceMaterialBudgetItemId: row.sourceMaterialBudgetItemId || undefined,
+        normCode: String(row.normCode || buildNormCode(targetItem, resourceCode || resourceName || `AI_${index + 1}`)).slice(0, 120),
+        resourceCode,
+        resourceName,
+        resourceType: safeResourceType(row.resourceType),
+        category: String(row.category || ''),
+        unit: String(row.unit || '').trim(),
+        rawQuantity: row.rawQuantity === null || row.rawQuantity === undefined ? null : num(row.rawQuantity),
+        baseQuantity: row.baseQuantity === null || row.baseQuantity === undefined ? baseQuantity ?? null : num(row.baseQuantity),
+        normQuantity,
+        suggestedNormQuantity: row.suggestedNormQuantity === null || row.suggestedNormQuantity === undefined ? normQuantity : num(row.suggestedNormQuantity),
+        wastePercent: num(row.wastePercent),
+        region: String(row.region || 'all'),
+        versionNo: num(row.versionNo) || 1,
+        status: 'draft' as const,
+        confidenceScore: row.confidenceScore === null || row.confidenceScore === undefined ? null : num(row.confidenceScore),
+        note: String(row.note || ''),
+        reason: String(row.reason || 'AI gợi ý chuẩn hóa dòng định mức.'),
+        needsReview: row.needsReview !== false,
+        sortOrder: row.sortOrder ?? index,
+      } satisfies CostNormWorkbenchLine;
+    }).filter((line: CostNormWorkbenchLine) => line.resourceName && line.unit);
+    return {
+      suggestions: suggestions.length > 0 ? suggestions : this.suggestLocal(input).suggestions,
+      warnings: Array.isArray(raw?.warnings) ? raw.warnings.map(String) : [],
+      confidenceScore: Number.isFinite(Number(raw?.confidenceScore)) ? Number(raw.confidenceScore) : 0.5,
       source: 'remote',
     };
   },
