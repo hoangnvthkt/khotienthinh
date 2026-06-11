@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import {
   History, Search, Filter, ChevronDown, ChevronRight,
   Plus, Edit3, Trash2, Eye, Clock, User, Database,
-  ArrowRight, RefreshCw, Download, Calendar
+  ArrowRight, RefreshCw, Download, Calendar, ShieldAlert, Globe2, Hash
 } from 'lucide-react';
 import { auditService, AuditEntry, TABLE_LABELS, getFieldLabel } from '../lib/auditService';
 
@@ -26,11 +26,23 @@ const ACTION_STYLES: Record<string, { icon: React.ReactNode; color: string; labe
   DELETE: { icon: <Trash2 size={12} />, color: 'text-red-600 bg-red-50 dark:bg-red-950/30', label: 'Xóa' },
 };
 
+const IMPACT_STYLES: Record<string, { label: string; color: string }> = {
+  low: { label: 'Thấp', color: 'text-slate-600 bg-slate-100 dark:text-slate-300 dark:bg-slate-700' },
+  normal: { label: 'Bình thường', color: 'text-blue-600 bg-blue-50 dark:text-blue-300 dark:bg-blue-950/30' },
+  high: { label: 'Cao', color: 'text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/30' },
+  critical: { label: 'Nghiêm trọng', color: 'text-red-700 bg-red-50 dark:text-red-300 dark:bg-red-950/30' },
+};
+
 const formatValue = (val: any): string => {
   if (val === null || val === undefined) return '(trống)';
   if (typeof val === 'boolean') return val ? 'Có' : 'Không';
-  if (typeof val === 'object') return JSON.stringify(val).slice(0, 80);
+  if (typeof val === 'object') return JSON.stringify(val);
   return String(val);
+};
+
+const formatCompactValue = (val: any): string => {
+  const raw = formatValue(val);
+  return raw.length > 140 ? `${raw.slice(0, 140)}...` : raw;
 };
 
 const timeAgo = (date: string): string => {
@@ -59,6 +71,7 @@ const AuditTrail: React.FC = () => {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [showJsonId, setShowJsonId] = useState<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -83,6 +96,8 @@ const AuditTrail: React.FC = () => {
       e.description.toLowerCase().includes(term) ||
       e.userName.toLowerCase().includes(term) ||
       e.recordId.toLowerCase().includes(term) ||
+      e.recordLabel.toLowerCase().includes(term) ||
+      e.changedFields.some(field => getFieldLabel(field).toLowerCase().includes(term) || field.toLowerCase().includes(term)) ||
       (TABLE_LABELS[e.tableName] || e.tableName).toLowerCase().includes(term)
     );
   }, [entries, searchTerm]);
@@ -99,7 +114,36 @@ const AuditTrail: React.FC = () => {
     inserts: filteredEntries.filter(e => e.action === 'INSERT').length,
     updates: filteredEntries.filter(e => e.action === 'UPDATE').length,
     deletes: filteredEntries.filter(e => e.action === 'DELETE').length,
+    highImpact: filteredEntries.filter(e => e.impactLevel === 'high' || e.impactLevel === 'critical').length,
+    fieldsChanged: filteredEntries.reduce((sum, entry) => sum + (entry.changeCount || 0), 0),
   }), [filteredEntries]);
+
+  const exportCsv = () => {
+    const rows = [
+      ['Thời gian', 'Module', 'Bảng', 'Bản ghi', 'Hành động', 'Tác động', 'Người thực hiện', 'Số trường đổi', 'Trường đổi', 'Mô tả', 'URL'],
+      ...filteredEntries.map(entry => [
+        new Date(entry.createdAt).toLocaleString('vi-VN'),
+        entry.module,
+        TABLE_LABELS[entry.tableName] || entry.tableName,
+        entry.recordLabel || entry.recordId,
+        ACTION_STYLES[entry.action]?.label || entry.action,
+        IMPACT_STYLES[entry.impactLevel]?.label || entry.impactLevel,
+        entry.userName,
+        String(entry.changeCount || 0),
+        entry.changedFields.map(getFieldLabel).join('; '),
+        entry.description,
+        entry.context?.url || '',
+      ]),
+    ];
+    const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `audit-trail-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-6">
@@ -114,6 +158,10 @@ const AuditTrail: React.FC = () => {
           </p>
         </div>
         <div className="flex gap-2">
+          <button onClick={exportCsv} disabled={loading || filteredEntries.length === 0}
+            className="px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-1.5 disabled:opacity-50">
+            <Download size={14} /> Xuất CSV
+          </button>
           <button onClick={() => setShowFilters(!showFilters)}
             className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${showFilters ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200'}`}>
             <Filter size={14} /> Bộ lọc
@@ -126,7 +174,7 @@ const AuditTrail: React.FC = () => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <div className="glass-card p-4 rounded-2xl">
           <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Tổng</p>
           <p className="text-2xl font-black text-slate-800 dark:text-white mt-1">{stats.total}</p>
@@ -142,6 +190,14 @@ const AuditTrail: React.FC = () => {
         <div className="glass-card p-4 rounded-2xl">
           <p className="text-[10px] font-black text-red-500 uppercase tracking-widest">Xóa</p>
           <p className="text-2xl font-black text-red-600 mt-1">{stats.deletes}</p>
+        </div>
+        <div className="glass-card p-4 rounded-2xl">
+          <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest">Tác động cao</p>
+          <p className="text-2xl font-black text-amber-600 mt-1">{stats.highImpact}</p>
+        </div>
+        <div className="glass-card p-4 rounded-2xl">
+          <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Trường đổi</p>
+          <p className="text-2xl font-black text-indigo-600 mt-1">{stats.fieldsChanged}</p>
         </div>
       </div>
 
@@ -202,7 +258,7 @@ const AuditTrail: React.FC = () => {
       {/* Search */}
       <div className="relative">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-        <input type="text" placeholder="Tìm kiếm theo mô tả, người thực hiện, mã bản ghi..."
+        <input type="text" placeholder="Tìm kiếm theo mô tả, người thực hiện, bản ghi, trường thay đổi..."
           value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
           className="w-full pl-12 pr-4 py-3.5 text-sm font-medium border border-slate-200 dark:border-slate-600 rounded-2xl bg-white dark:bg-slate-800 outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 transition" />
       </div>
@@ -225,7 +281,8 @@ const AuditTrail: React.FC = () => {
             const isExpanded = expandedId === entry.id;
             const actionStyle = ACTION_STYLES[entry.action] || ACTION_STYLES.UPDATE;
             const moduleColor = MODULE_COLORS[entry.module] || MODULE_COLORS.SYSTEM;
-            const changesCount = Object.keys(entry.changes).length;
+            const impactStyle = IMPACT_STYLES[entry.impactLevel] || IMPACT_STYLES.normal;
+            const changesCount = entry.changeCount ?? Object.keys(entry.changes).length;
 
             return (
               <div key={entry.id}
@@ -254,6 +311,9 @@ const AuditTrail: React.FC = () => {
                       <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium flex items-center gap-1">
                         <Clock size={10} /> {timeAgo(entry.createdAt)}
                       </span>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${impactStyle.color}`}>
+                        <ShieldAlert size={10} className="mr-1" /> {impactStyle.label}
+                      </span>
                     </div>
                   </div>
 
@@ -280,7 +340,7 @@ const AuditTrail: React.FC = () => {
                   <div className="border-t border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 p-5 space-y-4"
                     style={{ animation: 'fadeSlideIn 0.2s ease-out' }}>
                     {/* Meta info */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-xs">
                       <div>
                         <span className="text-slate-400 font-bold">Hành động</span>
                         <p className={`font-black mt-0.5 ${actionStyle.color.split(' ')[0]}`}>{actionStyle.label}</p>
@@ -294,10 +354,36 @@ const AuditTrail: React.FC = () => {
                         <p className="font-mono text-[10px] text-slate-600 dark:text-slate-300 mt-0.5 truncate">{entry.recordId}</p>
                       </div>
                       <div>
+                        <span className="text-slate-400 font-bold">Tên bản ghi</span>
+                        <p className="font-black text-slate-800 dark:text-white mt-0.5 truncate">{entry.recordLabel || '-'}</p>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 font-bold">Mức tác động</span>
+                        <p className={`inline-flex px-2 py-0.5 rounded-md font-black mt-0.5 ${impactStyle.color}`}>{impactStyle.label}</p>
+                      </div>
+                      <div>
                         <span className="text-slate-400 font-bold">Thời gian</span>
                         <p className="font-bold text-slate-700 dark:text-slate-200 mt-0.5">
                           {new Date(entry.createdAt).toLocaleString('vi-VN')}
                         </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                      <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-3">
+                        <span className="text-slate-400 font-bold flex items-center gap-1"><User size={12} /> Người thực hiện</span>
+                        <p className="font-black text-slate-800 dark:text-white mt-1">{entry.userName || '-'}</p>
+                        <p className="font-mono text-[10px] text-slate-400 mt-0.5 truncate">{entry.userId || '-'}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-3">
+                        <span className="text-slate-400 font-bold flex items-center gap-1"><Globe2 size={12} /> Ngữ cảnh</span>
+                        <p className="font-bold text-slate-700 dark:text-slate-200 mt-1 truncate">{entry.context?.path || '-'}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">{entry.context?.timezone || entry.context?.language || '-'}</p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-3">
+                        <span className="text-slate-400 font-bold flex items-center gap-1"><Hash size={12} /> Trace</span>
+                        <p className="font-mono text-[10px] text-slate-600 dark:text-slate-300 mt-1 truncate">{entry.id}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">{entry.userAgent || '-'}</p>
                       </div>
                     </div>
 
@@ -324,11 +410,11 @@ const AuditTrail: React.FC = () => {
                                     {getFieldLabel(field)}
                                   </td>
                                   <td className="px-4 py-2.5 text-red-500 dark:text-red-400 font-medium line-through opacity-60">
-                                    {formatValue((change as any).from)}
+                                    {formatCompactValue((change as any).from)}
                                   </td>
                                   <td className="text-center text-slate-300">→</td>
                                   <td className="px-4 py-2.5 text-emerald-600 dark:text-emerald-400 font-bold">
-                                    {formatValue((change as any).to)}
+                                    {formatCompactValue((change as any).to)}
                                   </td>
                                 </tr>
                               ))}
@@ -348,12 +434,50 @@ const AuditTrail: React.FC = () => {
                           {Object.entries(entry.newData).slice(0, 12).map(([k, v]) => (
                             <div key={k}>
                               <span className="text-[10px] font-bold text-slate-400">{getFieldLabel(k)}</span>
-                              <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{formatValue(v)}</p>
+                              <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{formatCompactValue(v)}</p>
                             </div>
                           ))}
                         </div>
                       </div>
                     )}
+
+                    {/* DELETE data display */}
+                    {entry.action === 'DELETE' && Object.keys(entry.oldData).length > 0 && (
+                      <div>
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                          Dữ liệu trước khi xóa
+                        </h4>
+                        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 p-4 grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {Object.entries(entry.oldData).slice(0, 12).map(([k, v]) => (
+                            <div key={k}>
+                              <span className="text-[10px] font-bold text-slate-400">{getFieldLabel(k)}</span>
+                              <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{formatCompactValue(v)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <button onClick={() => setShowJsonId(showJsonId === entry.id ? null : entry.id)}
+                        className="text-xs font-black text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 inline-flex items-center gap-1">
+                        <Eye size={13} /> {showJsonId === entry.id ? 'Ẩn snapshot JSON' : 'Xem snapshot JSON'}
+                      </button>
+                      {showJsonId === entry.id && (
+                        <pre className="mt-3 max-h-80 overflow-auto rounded-xl bg-slate-950 text-slate-100 p-4 text-[11px] leading-relaxed">
+                          {JSON.stringify({
+                            id: entry.id,
+                            tableName: entry.tableName,
+                            recordId: entry.recordId,
+                            recordLabel: entry.recordLabel,
+                            changedFields: entry.changedFields,
+                            oldData: entry.oldData,
+                            newData: entry.newData,
+                            context: entry.context,
+                          }, null, 2)}
+                        </pre>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

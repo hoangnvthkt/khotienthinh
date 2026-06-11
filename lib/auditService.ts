@@ -9,14 +9,22 @@ export interface AuditEntry {
   id: string;
   tableName: string;
   recordId: string;
+  recordLabel: string;
+  entityType: string;
   action: 'INSERT' | 'UPDATE' | 'DELETE';
   changes: Record<string, { from: any; to: any }>;
+  changedFields: string[];
+  changeCount: number;
+  impactLevel: 'low' | 'normal' | 'high' | 'critical';
   oldData: Record<string, any>;
   newData: Record<string, any>;
   userId: string;
   userName: string;
+  ipAddress: string;
+  userAgent: string;
   module: string;
   description: string;
+  context: Record<string, any>;
   createdAt: string;
 }
 
@@ -24,14 +32,22 @@ const toCamel = (row: any): AuditEntry => ({
   id: row.id,
   tableName: row.table_name,
   recordId: row.record_id,
+  recordLabel: row.record_label || '',
+  entityType: row.entity_type || row.table_name,
   action: row.action,
   changes: row.changes || {},
+  changedFields: row.changed_fields || Object.keys(row.changes || {}),
+  changeCount: row.change_count ?? Object.keys(row.changes || {}).length,
+  impactLevel: row.impact_level || 'normal',
   oldData: row.old_data || {},
   newData: row.new_data || {},
   userId: row.user_id || '',
   userName: row.user_name || '',
+  ipAddress: row.ip_address || '',
+  userAgent: row.user_agent || '',
   module: row.module || '',
   description: row.description || '',
+  context: row.context || {},
   createdAt: row.created_at,
 });
 
@@ -160,10 +176,127 @@ const FIELD_LABELS: Record<string, string> = {
   serial_number: 'Số serial',
   purchase_date: 'Ngày mua',
   purchase_price: 'Giá mua',
+  avatar: 'Ảnh đại diện',
+  auth_id: 'Auth ID',
+  username: 'Tên đăng nhập',
+  assigned_warehouse_id: 'Kho được phân công',
+  allowed_modules: 'Module được phép',
+  admin_modules: 'Module quản trị',
+  allowed_sub_modules: 'Phân hệ được phép',
+  admin_sub_modules: 'Phân hệ quản trị',
+  is_active: 'Đang hoạt động',
+  payment_status: 'Trạng thái thanh toán',
+  approval_status: 'Trạng thái duyệt',
+  approved_by: 'Người duyệt',
+  approved_at: 'Thời gian duyệt',
+  submitted_by: 'Người trình',
+  submitted_at: 'Thời gian trình',
+  requester_id: 'Người yêu cầu',
+  project_id: 'Dự án',
+  warehouse_id: 'Kho',
+  supplier_id: 'Nhà cung cấp',
 };
 
 export const getFieldLabel = (field: string): string =>
   FIELD_LABELS[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+const SENSITIVE_FIELD_PATTERNS = [
+  /password/i,
+  /token/i,
+  /secret/i,
+  /api[_-]?key/i,
+  /refresh/i,
+  /access[_-]?key/i,
+];
+
+const HIGH_IMPACT_FIELD_PATTERNS = [
+  /role/i,
+  /permission/i,
+  /admin/i,
+  /status/i,
+  /approved/i,
+  /submitted/i,
+  /amount/i,
+  /price/i,
+  /cost/i,
+  /budget/i,
+  /quantity/i,
+  /qty/i,
+  /contract/i,
+  /payment/i,
+  /salary/i,
+  /stock/i,
+];
+
+const isSensitiveField = (field: string): boolean =>
+  SENSITIVE_FIELD_PATTERNS.some(pattern => pattern.test(field));
+
+const maskValue = (field: string, value: any): any =>
+  isSensitiveField(field) && value != null ? '[đã ẩn]' : value;
+
+const sanitizeAuditData = (obj: Record<string, any> = {}): Record<string, any> => {
+  const sanitized: Record<string, any> = {};
+  Object.entries(obj || {}).forEach(([key, value]) => {
+    sanitized[key] = maskValue(key, value);
+  });
+  return sanitized;
+};
+
+const getRecordLabel = (
+  tableName: string,
+  recordId: string,
+  oldData?: Record<string, any>,
+  newData?: Record<string, any>
+): string => {
+  const data = newData || oldData || {};
+  return String(
+    data.name ||
+    data.full_name ||
+    data.fullName ||
+    data.title ||
+    data.code ||
+    data.sku ||
+    data.email ||
+    data.username ||
+    recordId ||
+    tableName
+  );
+};
+
+const getBrowserContext = (): Record<string, any> => {
+  if (typeof window === 'undefined') return {};
+  return {
+    path: window.location?.pathname || '',
+    url: window.location?.href || '',
+    origin: window.location?.origin || '',
+    referrer: document.referrer || '',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+    language: navigator.language || '',
+    viewport: {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    },
+  };
+};
+
+const getUserAgent = (): string => {
+  if (typeof navigator === 'undefined') return '';
+  return navigator.userAgent || '';
+};
+
+const getImpactLevel = (
+  action: 'INSERT' | 'UPDATE' | 'DELETE',
+  changedFields: string[],
+  tableName: string
+): AuditEntry['impactLevel'] => {
+  if (action === 'DELETE') return 'critical';
+  if (tableName === 'users' && changedFields.some(field => /role|admin|is_active|auth_id/i.test(field))) return 'critical';
+  if (changedFields.length >= 15) return 'critical';
+  if (changedFields.length >= 8) return 'high';
+  if (changedFields.some(field => HIGH_IMPACT_FIELD_PATTERNS.some(pattern => pattern.test(field)))) return 'high';
+  if (action === 'INSERT') return 'normal';
+  return changedFields.length <= 1 ? 'low' : 'normal';
+};
 
 // Compute diff between old and new objects (only changed fields)
 export function computeChanges(oldObj: Record<string, any>, newObj: Record<string, any>): Record<string, { from: any; to: any }> {
@@ -186,7 +319,7 @@ export function computeChanges(oldObj: Record<string, any>, newObj: Record<strin
     const newStr = typeof newVal === 'object' ? JSON.stringify(newVal) : String(newVal ?? '');
 
     if (oldStr !== newStr) {
-      changes[key] = { from: oldVal, to: newVal };
+      changes[key] = { from: maskValue(key, oldVal), to: maskValue(key, newVal) };
     }
   }
   return changes;
@@ -203,29 +336,43 @@ export const auditService = {
     userId: string;
     userName: string;
     description?: string;
+    context?: Record<string, any>;
+    userAgent?: string;
+    ipAddress?: string;
   }): Promise<void> {
     const { tableName, recordId, action, oldData, newData, userId, userName, description } = params;
     const module = TABLE_MODULE_MAP[tableName] || 'OTHER';
     const changes = action === 'UPDATE' ? computeChanges(oldData || {}, newData || {}) : {};
+    const changedFields = Object.keys(changes);
+    const changeCount = changedFields.length;
+    const recordLabel = getRecordLabel(tableName, recordId, oldData, newData);
+    const impactLevel = getImpactLevel(action, changedFields, tableName);
+    const context = {
+      ...getBrowserContext(),
+      ...(params.context || {}),
+      tableLabel: TABLE_LABELS[tableName] || tableName,
+      actionLabel: action,
+    };
+    const safeOldData = sanitizeAuditData(oldData || {});
+    const safeNewData = sanitizeAuditData(newData || {});
 
     // Skip if UPDATE but no actual changes
-    if (action === 'UPDATE' && Object.keys(changes).length === 0) return;
+    if (action === 'UPDATE' && changeCount === 0) return;
 
     // Generate description if not provided
     let desc = description || '';
     if (!desc) {
       const tableLabel = TABLE_LABELS[tableName] || tableName;
-      const recordName = newData?.name || newData?.full_name || newData?.title || newData?.sku || recordId;
       switch (action) {
         case 'INSERT':
-          desc = `Thêm ${tableLabel}: ${recordName}`;
+          desc = `Thêm ${tableLabel}: ${recordLabel}`;
           break;
         case 'UPDATE':
           const changedFields = Object.keys(changes).map(k => getFieldLabel(k)).join(', ');
-          desc = `Sửa ${tableLabel} "${recordName}": ${changedFields}`;
+          desc = `Sửa ${tableLabel} "${recordLabel}": ${changedFields}`;
           break;
         case 'DELETE':
-          desc = `Xóa ${tableLabel}: ${recordName}`;
+          desc = `Xóa ${tableLabel}: ${recordLabel}`;
           break;
       }
     }
@@ -234,14 +381,22 @@ export const auditService = {
       await supabase.from('audit_trail').insert({
         table_name: tableName,
         record_id: recordId,
+        record_label: recordLabel,
+        entity_type: TABLE_LABELS[tableName] || tableName,
         action,
         changes,
-        old_data: oldData || {},
-        new_data: newData || {},
+        changed_fields: changedFields,
+        change_count: changeCount,
+        impact_level: impactLevel,
+        old_data: safeOldData,
+        new_data: safeNewData,
         user_id: userId,
         user_name: userName,
+        ip_address: params.ipAddress || null,
+        user_agent: params.userAgent ?? getUserAgent(),
         module,
         description: desc,
+        context,
       });
     } catch (err) {
       console.error('Audit trail log error:', err);
