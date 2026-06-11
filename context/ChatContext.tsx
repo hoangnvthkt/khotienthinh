@@ -27,10 +27,11 @@ interface ChatContextType {
     deleteWorkspace: (workspaceId: string) => Promise<void>;
     addWorkspaceMember: (workspaceId: string, userId: string) => Promise<void>;
     removeWorkspaceMember: (workspaceId: string, userId: string) => Promise<void>;
-    createChannel: (workspaceId: string, name: string, kind: ChatChannelKind) => Promise<string>;
+    createChannel: (workspaceId: string, name: string, kind: ChatChannelKind, memberIds?: string[]) => Promise<string>;
     updateChannel: (conversationId: string, name: string) => Promise<void>;
     addMember: (conversationId: string, userId: string) => Promise<void>;
     removeMember: (conversationId: string, userId: string) => Promise<void>;
+    updateMemberRole: (conversationId: string, userId: string, role: 'admin' | 'member') => Promise<void>;
     updateGroupName: (conversationId: string, name: string) => Promise<void>;
     deleteConversation: (conversationId: string) => Promise<void>;
     leaveGroup: (conversationId: string) => Promise<void>;
@@ -38,6 +39,7 @@ interface ChatContextType {
     loadMessages: (conversationId: string) => Promise<void>;
     setTyping: (conversationId: string, isTyping: boolean) => void;
     toggleReaction: (messageId: string, conversationId: string, emoji: string) => Promise<void>;
+    recallMessage: (conversationId: string, messageId: string) => Promise<void>;
     pinnedMessages: Record<string, ChatMessage>;
     pinMessage: (conversationId: string, messageId: string) => Promise<void>;
     unpinMessage: (conversationId: string) => Promise<void>;
@@ -59,6 +61,8 @@ const mapMessage = (m: any): ChatMessage => ({
     id: m.id,
     conversationId: m.conversation_id,
     senderId: m.sender_id,
+    senderName: m.sender_name || null,
+    senderAvatarUrl: m.sender_avatar_url || null,
     content: m.content || '',
     type: m.type,
     attachments: m.attachments || [],
@@ -66,6 +70,8 @@ const mapMessage = (m: any): ChatMessage => ({
     createdAt: m.created_at,
     updatedAt: m.updated_at,
     deletedAt: m.deleted_at || null,
+    recalledAt: m.recalled_at || null,
+    recalledBy: m.recalled_by || null,
     replyToId: m.reply_to_id,
     replyToPreview: m.reply_to_preview,
     fileUrls: m.file_urls || [],
@@ -340,11 +346,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { error } = await supabase.from('chat_messages').insert({
             conversation_id: conversationId,
             sender_id: user.id,
+            sender_name: user.name || null,
+            sender_avatar_url: user.avatar || null,
             content: content.trim(),
             type: 'system',
         });
         if (error) console.error('Error inserting chat system message:', error);
-    }, [user?.id]);
+    }, [user?.avatar, user?.id, user?.name]);
 
     const getActiveMembers = useCallback(async (conversationId: string): Promise<ChatMember[]> => {
         const cached = conversationsRef.current.find(c => c.id === conversationId)?.members?.filter(m => !m.leftAt);
@@ -368,8 +376,20 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const members = await getActiveMembers(conversationId);
         const currentMember = members.find(m => m.userId === user.id);
-        if (currentMember?.role !== 'admin') {
+        if (!currentMember || !['owner', 'admin'].includes(currentMember.role)) {
             throw new Error(`Chỉ quản trị viên kênh/nhóm mới được ${actionLabel}.`);
+        }
+    }, [getActiveMembers, isAppAdmin, user?.id]);
+
+    const ensureConversationOwner = useCallback(async (conversationId: string, actionLabel: string) => {
+        if (!user?.id || isAppAdmin) return;
+        const conv = conversationsRef.current.find(c => c.id === conversationId);
+        if (conv?.createdBy === user.id) return;
+
+        const members = await getActiveMembers(conversationId);
+        const currentMember = members.find(m => m.userId === user.id);
+        if (currentMember?.role !== 'owner') {
+            throw new Error(`Chỉ chủ kênh/nhóm mới được ${actionLabel}.`);
         }
     }, [getActiveMembers, isAppAdmin, user?.id]);
 
@@ -453,6 +473,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const payload = {
             conversation_id: conversationId,
             sender_id: user.id,
+            sender_name: user.name || null,
+            sender_avatar_url: user.avatar || null,
             content: content.trim(),
             type,
             attachments: attachments || [],
@@ -480,7 +502,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const bTime = b.lastMessage?.createdAt || b.createdAt;
             return bTime.localeCompare(aTime);
         }));
-    }, [user?.id]);
+    }, [user?.avatar, user?.id, user?.name]);
 
     const createDirectConversation = useCallback(async (targetUserId: string): Promise<string> => {
         if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
@@ -545,7 +567,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             allMembers.map((uid, index) => ({
                 conversation_id: conv.id,
                 user_id: uid,
-                role: index === 0 ? 'admin' : 'member',
+                role: index === 0 ? 'owner' : 'member',
             }))
         );
 
@@ -562,7 +584,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return conv.id;
     }, [insertSystemMessage, loadConversations, user?.id]);
 
-    const createChannel = useCallback(async (workspaceId: string, name: string, kind: ChatChannelKind): Promise<string> => {
+    const createChannel = useCallback(async (workspaceId: string, name: string, kind: ChatChannelKind, memberIds: string[] = []): Promise<string> => {
         if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
         const cleanWorkspaceId = workspaceId.trim();
         const cleanName = name.trim();
@@ -571,11 +593,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await ensureWorkspaceAdmin(cleanWorkspaceId, 'tạo phòng trong kênh');
 
         const workspaceMembers = await getActiveWorkspaceMembers(cleanWorkspaceId);
-        const memberIds = Array.from(new Set(
-            (workspaceMembers.length > 0 ? workspaceMembers.map(member => member.userId) : users.filter(u => u.isActive !== false).map(u => u.id))
-                .concat(user.id)
-                .filter(Boolean)
-        ));
+        const workspaceMemberIdSet = new Set(workspaceMembers.map(member => member.userId));
+        const selectedMemberIds = memberIds.filter(uid => uid && uid !== user.id);
+        const allowedSelectedMemberIds = selectedMemberIds.filter(uid => workspaceMemberIdSet.size === 0 || workspaceMemberIdSet.has(uid));
+        const channelMemberIds = Array.from(new Set([user.id, ...allowedSelectedMemberIds]));
         const type = kind === 'voice' ? 'channel_voice' : 'channel_text';
 
         const { data: conv, error: convError } = await supabase
@@ -593,10 +614,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (convError || !conv) throw new Error(errorMessage(convError, 'Không thể tạo kênh chat.'));
 
         const { error: memberError } = await supabase.from('chat_members').insert(
-            memberIds.map(uid => ({
+            channelMemberIds.map(uid => ({
                 conversation_id: conv.id,
                 user_id: uid,
-                role: uid === user.id ? 'admin' : 'member',
+                role: uid === user.id ? 'owner' : 'member',
             }))
         );
 
@@ -608,10 +629,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             throw new Error(errorMessage(memberError, 'Không thể cấp thành viên cho kênh chat.'));
         }
 
-        await insertSystemMessage(conv.id, `Kênh ${kind === 'voice' ? 'âm thanh' : 'văn bản'} "${cleanName}" đã được tạo`);
+        await insertSystemMessage(conv.id, `Kênh ${kind === 'voice' ? 'âm thanh' : 'văn bản'} "${cleanName}" đã được tạo với ${channelMemberIds.length} thành viên`);
         await loadConversations();
         return conv.id;
-    }, [ensureWorkspaceAdmin, getActiveWorkspaceMembers, insertSystemMessage, loadConversations, user?.id, users]);
+    }, [ensureWorkspaceAdmin, getActiveWorkspaceMembers, insertSystemMessage, loadConversations, user?.id]);
 
     const createWorkspace = useCallback(async (name: string, description?: string): Promise<string> => {
         if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
@@ -743,49 +764,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (result.error) throw new Error(errorMessage(result.error, 'Không thể thêm thành viên kênh chat.'));
 
-        const { data: roomRows } = await supabase
-            .from('chat_conversations')
-            .select('id')
-            .eq('workspace_id', workspaceId)
-            .in('type', ['channel_text', 'channel_voice'])
-            .is('deleted_at', null);
-
-        if (roomRows && roomRows.length > 0) {
-            const roomIds = roomRows.map(room => room.id);
-            const { data: existingChatMembers } = await supabase
-                .from('chat_members')
-                .select('id, conversation_id')
-                .in('conversation_id', roomIds)
-                .eq('user_id', userId);
-
-            const existingRoomIds = new Set((existingChatMembers || []).map(row => row.conversation_id));
-            if (existingChatMembers && existingChatMembers.length > 0) {
-                await supabase
-                    .from('chat_members')
-                    .update({
-                        role: 'member',
-                        left_at: null,
-                        removed_at: null,
-                        removed_by: null,
-                        joined_at: now,
-                        last_read_at: now,
-                    })
-                    .in('id', existingChatMembers.map(row => row.id));
-            }
-
-            const missingRows = roomRows
-                .filter(room => !existingRoomIds.has(room.id))
-                .map(room => ({
-                    conversation_id: room.id,
-                    user_id: userId,
-                    role: 'member',
-                    last_read_at: now,
-                    joined_at: now,
-                }));
-
-            if (missingRows.length > 0) await supabase.from('chat_members').insert(missingRows);
-        }
-
         await loadWorkspaces();
         await loadConversations();
     }, [ensureWorkspaceAdmin, loadConversations, loadWorkspaces, user?.id]);
@@ -847,6 +825,36 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const addMember = useCallback(async (conversationId: string, userId: string) => {
         if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
         await ensureGroupAdmin(conversationId, 'thêm thành viên');
+        const conv = conversationsRef.current.find(c => c.id === conversationId);
+        const now = new Date().toISOString();
+
+        if (conv?.workspaceId) {
+            const { data: workspaceMemberRows, error: workspaceMemberError } = await supabase
+                .from('chat_workspace_members')
+                .select('*')
+                .eq('workspace_id', conv.workspaceId)
+                .eq('user_id', userId)
+                .limit(1);
+
+            if (workspaceMemberError) throw new Error(errorMessage(workspaceMemberError, 'Không thể kiểm tra thành viên workspace.'));
+            const workspaceMember = workspaceMemberRows?.[0];
+            const workspaceResult = workspaceMember
+                ? await supabase.from('chat_workspace_members').update({
+                    role: workspaceMember.role === 'owner' || workspaceMember.role === 'admin' ? workspaceMember.role : 'member',
+                    left_at: null,
+                    removed_at: null,
+                    removed_by: null,
+                    joined_at: now,
+                }).eq('id', workspaceMember.id)
+                : await supabase.from('chat_workspace_members').insert({
+                    workspace_id: conv.workspaceId,
+                    user_id: userId,
+                    role: 'member',
+                    joined_at: now,
+                });
+
+            if (workspaceResult.error) throw new Error(errorMessage(workspaceResult.error, 'Không thể thêm thành viên vào workspace của kênh.'));
+        }
 
         const { data: existingRows, error: existingError } = await supabase
             .from('chat_members')
@@ -861,7 +869,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const existing = existingRows?.[0];
         if (existing && !existing.left_at) return;
 
-        const now = new Date().toISOString();
         const result = existing
             ? await supabase.from('chat_members').update({
                 role: 'member',
@@ -875,23 +882,32 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 conversation_id: conversationId,
                 user_id: userId,
                 role: 'member',
+                joined_at: now,
+                last_read_at: now,
             });
 
         if (result.error) throw new Error(errorMessage(result.error, 'Không thể thêm thành viên.'));
 
         const addedUser = users.find(u => u.id === userId);
-        await insertSystemMessage(conversationId, `${addedUser?.name || 'Người dùng'} đã được thêm vào nhóm`);
+        await insertSystemMessage(conversationId, `${addedUser?.name || 'Người dùng'} đã được thêm vào ${conv?.type === 'channel_text' || conv?.type === 'channel_voice' ? 'kênh' : 'nhóm'}`);
+        if (conv?.workspaceId) await loadWorkspaces();
         await loadConversations();
         if (activeConversationId === conversationId) await loadMessages(conversationId);
-    }, [activeConversationId, ensureGroupAdmin, insertSystemMessage, loadConversations, loadMessages, user?.id, users]);
+    }, [activeConversationId, ensureGroupAdmin, insertSystemMessage, loadConversations, loadMessages, loadWorkspaces, user?.id, users]);
 
     const removeMember = useCallback(async (conversationId: string, userId: string) => {
         if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
         if (userId === user.id) throw new Error('Dùng chức năng rời nhóm để rời cuộc trò chuyện.');
         await ensureGroupAdmin(conversationId, 'xóa thành viên');
+        const conv = conversationsRef.current.find(c => c.id === conversationId);
+        const members = await getActiveMembers(conversationId);
+        const targetMember = members.find(m => m.userId === userId);
+        if (targetMember?.role === 'owner' && !isAppAdmin && conv?.createdBy !== user.id) {
+            throw new Error('Chỉ chủ kênh/nhóm hoặc Admin hệ thống mới được loại chủ kênh.');
+        }
 
         const removedUser = users.find(u => u.id === userId);
-        await insertSystemMessage(conversationId, `${removedUser?.name || 'Người dùng'} đã bị xóa khỏi nhóm`);
+        await insertSystemMessage(conversationId, `${removedUser?.name || 'Người dùng'} đã bị loại khỏi ${conv?.type === 'channel_text' || conv?.type === 'channel_voice' ? 'kênh' : 'nhóm'}`);
 
         const { error } = await supabase.from('chat_members')
             .update({
@@ -906,7 +922,33 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (error) throw new Error(errorMessage(error, 'Không thể xóa thành viên khỏi nhóm.'));
         await loadConversations();
         if (activeConversationId === conversationId) await loadMessages(conversationId);
-    }, [activeConversationId, ensureGroupAdmin, insertSystemMessage, loadConversations, loadMessages, user?.id, users]);
+    }, [activeConversationId, ensureGroupAdmin, getActiveMembers, insertSystemMessage, isAppAdmin, loadConversations, loadMessages, user?.id, users]);
+
+    const updateMemberRole = useCallback(async (conversationId: string, userId: string, role: 'admin' | 'member') => {
+        if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
+        if (userId === user.id) throw new Error('Không thể tự thay đổi quyền của chính mình.');
+        await ensureConversationOwner(conversationId, role === 'admin' ? 'cấp quyền quản trị' : 'hạ quyền quản trị');
+
+        const members = await getActiveMembers(conversationId);
+        const targetMember = members.find(m => m.userId === userId);
+        if (!targetMember || targetMember.leftAt) throw new Error('Không tìm thấy thành viên đang hoạt động.');
+        if (targetMember.role === 'owner') throw new Error('Không thể thay đổi quyền chủ kênh/nhóm.');
+        if (targetMember.role === role) return;
+
+        const { error } = await supabase
+            .from('chat_members')
+            .update({ role })
+            .eq('id', targetMember.id);
+
+        if (error) throw new Error(errorMessage(error, 'Không thể cập nhật quyền thành viên.'));
+        const targetUser = users.find(u => u.id === userId);
+        await insertSystemMessage(
+            conversationId,
+            `${targetUser?.name || 'Người dùng'} đã được ${role === 'admin' ? 'cấp quyền quản trị' : 'hạ xuống thành viên'}`
+        );
+        await loadConversations();
+        if (activeConversationId === conversationId) await loadMessages(conversationId);
+    }, [activeConversationId, ensureConversationOwner, getActiveMembers, insertSystemMessage, loadConversations, loadMessages, user?.id, users]);
 
     const updateGroupName = useCallback(async (conversationId: string, name: string) => {
         if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
@@ -974,16 +1016,16 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!currentMember) return;
 
         const otherMembers = members.filter(m => m.userId !== user.id);
-        const otherAdmins = otherMembers.filter(m => m.role === 'admin');
+        const otherManagers = otherMembers.filter(m => ['owner', 'admin'].includes(m.role));
 
-        if (currentMember.role === 'admin' && otherMembers.length > 0 && otherAdmins.length === 0) {
+        if (['owner', 'admin'].includes(currentMember.role) && otherMembers.length > 0 && otherManagers.length === 0) {
             const promoted = otherMembers[0];
             const { error: promoteError } = await supabase.from('chat_members')
-                .update({ role: 'admin' })
+                .update({ role: currentMember.role === 'owner' ? 'owner' : 'admin' })
                 .eq('id', promoted.id);
             if (promoteError) throw new Error(errorMessage(promoteError, 'Không thể chuyển quyền trưởng nhóm trước khi rời nhóm.'));
             const promotedUser = users.find(u => u.id === promoted.userId);
-            await insertSystemMessage(conversationId, `${promotedUser?.name || 'Một thành viên'} đã được chuyển quyền trưởng nhóm`);
+            await insertSystemMessage(conversationId, `${promotedUser?.name || 'Một thành viên'} đã được chuyển quyền quản trị`);
         }
 
         await insertSystemMessage(conversationId, `${user.name || 'Người dùng'} đã rời nhóm`);
@@ -1038,6 +1080,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const convMessages = messages[conversationId] || [];
         const msg = convMessages.find(m => m.id === messageId);
+        if (msg?.recalledAt) throw new Error('Tin nhắn đã thu hồi không thể thả cảm xúc.');
         const previousReactions = { ...(msg?.reactions || {}) };
         const nextReactions = { ...previousReactions };
         const usersForEmoji = nextReactions[emoji] || [];
@@ -1073,6 +1116,45 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             throw new Error(errorMessage(error, 'Không thể cập nhật cảm xúc.'));
         }
     }, [messages, user?.id]);
+
+    const recallMessage = useCallback(async (conversationId: string, messageId: string) => {
+        if (!isSupabaseConfigured || !user?.id) throw new Error('Supabase chưa được cấu hình hoặc người dùng chưa đăng nhập.');
+        const conv = conversationsRef.current.find(c => c.id === conversationId);
+        const convMessages = messages[conversationId] || [];
+        const msg = convMessages.find(m => m.id === messageId);
+        if (msg?.recalledAt) return;
+
+        const canModerate = isAppAdmin
+            || conv?.createdBy === user.id
+            || conv?.members?.some(member => member.userId === user.id && ['owner', 'admin'].includes(member.role) && !member.leftAt);
+        if (msg && msg.senderId !== user.id && !canModerate) {
+            throw new Error('Bạn chỉ có thể thu hồi tin nhắn của mình.');
+        }
+
+        const now = new Date().toISOString();
+        const { data, error } = await supabase
+            .from('chat_messages')
+            .update({
+                recalled_at: now,
+                recalled_by: user.id,
+                reactions: {},
+            })
+            .eq('id', messageId)
+            .eq('conversation_id', conversationId)
+            .is('deleted_at', null)
+            .select()
+            .single();
+
+        if (error || !data) throw new Error(errorMessage(error, 'Không thể thu hồi tin nhắn.'));
+        const recalled = mapMessage(data);
+        setMessages(prev => ({
+            ...prev,
+            [conversationId]: (prev[conversationId] || []).map(item => item.id === messageId ? recalled : item),
+        }));
+        setConversations(prev => prev.map(item => (
+            item.id === conversationId && item.lastMessage?.id === messageId ? { ...item, lastMessage: recalled } : item
+        )));
+    }, [isAppAdmin, messages, user?.id]);
 
     const loadPinnedMessages = useCallback(async () => {
         if (!isSupabaseConfigured || !user?.id) return;
@@ -1276,6 +1358,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }, (payload: any) => {
                 const m = payload.new;
                 if (!m || !conversationsRef.current.some(c => c.id === m.conversation_id)) return;
+                const mapped = mapMessage(m);
                 setMessages(prev => {
                     const convMsgs = prev[m.conversation_id];
                     if (!convMsgs) return prev;
@@ -1284,9 +1367,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     }
                     return {
                         ...prev,
-                        [m.conversation_id]: convMsgs.map(msg => msg.id === m.id ? mapMessage(m) : msg),
+                        [m.conversation_id]: convMsgs.map(msg => msg.id === m.id ? mapped : msg),
                     };
                 });
+                setConversations(prev => prev.map(c => (
+                    c.id === m.conversation_id && c.lastMessage?.id === m.id ? { ...c, lastMessage: mapped } : c
+                )));
             })
             .on('postgres_changes', {
                 event: '*',
@@ -1392,6 +1478,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             updateChannel,
             addMember,
             removeMember,
+            updateMemberRole,
             updateGroupName,
             deleteConversation,
             leaveGroup,
@@ -1399,6 +1486,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             loadMessages,
             setTyping,
             toggleReaction,
+            recallMessage,
             pinnedMessages,
             pinMessage,
             unpinMessage,

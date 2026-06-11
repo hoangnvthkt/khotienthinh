@@ -2954,7 +2954,7 @@ export interface ChatMember {
   id: string;
   conversationId: string;
   userId: string;
-  role: 'admin' | 'member';
+  role: 'owner' | 'admin' | 'member';
   lastReadAt: string;
   joinedAt: string;
   leftAt?: string | null;
@@ -2964,6 +2964,8 @@ export interface ChatMessage {
   id: string;
   conversationId: string;
   senderId: string;
+  senderName?: string | null;
+  senderAvatarUrl?: string | null;
   content?: string;
   type: 'text' | 'image' | 'file' | 'system';
   attachments?: { url: string; name: string; type: string; size?: number }[];
@@ -2971,6 +2973,8 @@ export interface ChatMessage {
   createdAt: string;
   updatedAt?: string;
   deletedAt?: string | null;
+  recalledAt?: string | null;
+  recalledBy?: string | null;
   replyToId?: string;
   replyToPreview?: { senderId: string; senderName: string; content: string } | null;
   fileUrls?: string[];

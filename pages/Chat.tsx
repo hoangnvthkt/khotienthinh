@@ -9,7 +9,7 @@ import {
     Edit3, Trash2, LogOut, UserPlus, UserMinus, Crown, Shield, Volume2, Mic, MicOff,
     Headphones, VolumeX, Pin, Phone, Video, ChevronDown, ChevronRight, Compass,
     Sparkles, Settings, Info, Share2, HelpCircle, CheckCircle, FileText, CornerUpLeft,
-    Palette
+    Palette, RotateCcw
 } from 'lucide-react';
 import { matchesSearchQueryMultiple } from '../lib/searchUtils';
 
@@ -246,9 +246,9 @@ const Chat: React.FC = () => {
         onlineUsers, typingUsers, sendMessage, createDirectConversation,
         createGroupConversation, createWorkspace, updateWorkspace, deleteWorkspace,
         addWorkspaceMember, removeWorkspaceMember,
-        createChannel, updateChannel, addMember, removeMember, updateGroupName,
+        createChannel, updateChannel, addMember, removeMember, updateMemberRole, updateGroupName,
         deleteConversation, leaveGroup, markAsRead, loadMessages, setTyping, toggleReaction,
-        pinnedMessages, pinMessage, unpinMessage, startCallSession, endCallSession, totalUnread,
+        recallMessage, pinnedMessages, pinMessage, unpinMessage, startCallSession, endCallSession, totalUnread,
     } = useChat();
 
     // Theme switching configurations
@@ -291,6 +291,7 @@ const Chat: React.FC = () => {
     const [workspaceMemberActionId, setWorkspaceMemberActionId] = useState<string | null>(null);
     const [showNewChannel, setShowNewChannel] = useState<'text' | 'voice' | null>(null);
     const [newChannelName, setNewChannelName] = useState('');
+    const [selectedChannelMembers, setSelectedChannelMembers] = useState<string[]>([]);
     const [renamingChannelId, setRenamingChannelId] = useState<string | null>(null);
     const [renameChannelName, setRenameChannelName] = useState('');
     const [confirmDeleteChannelId, setConfirmDeleteChannelId] = useState<string | null>(null);
@@ -614,6 +615,10 @@ const Chat: React.FC = () => {
     ), [employees]);
     const activeWorkspaceMembers = (activeWorkspace?.members || []).filter(member => !member.leftAt);
     const activeWorkspaceMemberIds = new Set(activeWorkspaceMembers.map(member => member.userId));
+    const channelMemberCandidates = activeWorkspaceMembers
+        .filter(member => member.userId !== user.id)
+        .map(member => users.find(candidate => candidate.id === member.userId))
+        .filter((candidate): candidate is typeof users[number] => Boolean(candidate && candidate.isActive !== false));
     const activeWorkspaceChannels = activeWorkspace
         ? conversations.filter(conv => conv.workspaceId === activeWorkspace.id && (conv.type === 'channel_text' || conv.type === 'channel_voice'))
         : [];
@@ -676,6 +681,7 @@ const Chat: React.FC = () => {
     useEffect(() => {
         setShowNewChannel(null);
         setNewChannelName('');
+        setSelectedChannelMembers([]);
         setRenamingChannelId(null);
         setRenameChannelName('');
         setConfirmDeleteChannelId(null);
@@ -739,10 +745,18 @@ const Chat: React.FC = () => {
         if (!conv) return false;
         if (String(user.role) === 'ADMIN') return true;
         if (conv.createdBy === user.id) return true;
-        return !!conv.members?.some(m => m.userId === user.id && m.role === 'admin' && !m.leftAt);
+        return !!conv.members?.some(m => m.userId === user.id && ['owner', 'admin'].includes(m.role) && !m.leftAt);
     };
 
     const formatChannelName = (name: string) => name.trim().toLowerCase().replace(/\s+/g, '-');
+
+    const getMessagePreview = (message?: typeof activeMessages[number] | null) => {
+        if (!message) return 'Chưa có tin nhắn';
+        if (message.recalledAt) return 'Tin nhắn đã được thu hồi';
+        if (message.type === 'image') return 'Ảnh đính kèm';
+        if (message.type === 'file') return 'Tệp đính kèm';
+        return message.content || 'Tin nhắn';
+    };
 
     // Filter conversations depending on active server workspace
     const filteredConversations = useMemo(() => {
@@ -937,9 +951,10 @@ const Chat: React.FC = () => {
     const handleCreateChannel = async () => {
         if (!showNewChannel || activeServer === 'dm' || !activeWorkspace || !newChannelName.trim()) return;
         try {
-            const convId = await createChannel(activeServer, newChannelName.trim(), showNewChannel);
+            const convId = await createChannel(activeServer, newChannelName.trim(), showNewChannel, selectedChannelMembers);
             setShowNewChannel(null);
             setNewChannelName('');
+            setSelectedChannelMembers([]);
             setActiveConversationId(convId);
             if (showNewChannel === 'voice') setVoiceConnected(convId);
             setMobileShowChat(showNewChannel === 'text');
@@ -1320,6 +1335,27 @@ const Chat: React.FC = () => {
         }
     };
 
+    const handleUpdateMemberRole = async (userId: string, role: 'admin' | 'member') => {
+        if (!activeConv) return;
+        try {
+            await updateMemberRole(activeConv.id, userId, role);
+        } catch (err) {
+            alert(getErrorMessage(err, 'Không thể cập nhật quyền thành viên.'));
+        }
+    };
+
+    const handleRecallMessage = async (messageId: string) => {
+        if (!activeConv) return;
+        try {
+            await recallMessage(activeConv.id, messageId);
+            setReactionPickerMsgId(null);
+            setHoveredMsgId(null);
+            playSound('disconnect');
+        } catch (err) {
+            alert(getErrorMessage(err, 'Không thể thu hồi tin nhắn.'));
+        }
+    };
+
     const handleLeaveGroup = async () => {
         if (!activeConv) return;
         try {
@@ -1421,16 +1457,20 @@ const Chat: React.FC = () => {
                                         <Settings size={13} />
                                     </button>
                                 )}
-                                <button onClick={(e) => { e.stopPropagation(); setShowNewChannel('text'); setNewChannelName(''); playSound('click'); }}
-                                    className="w-6 h-6 rounded-md flex items-center justify-center text-current opacity-60 hover:opacity-100 hover:bg-current/10"
-                                    title="Tạo kênh văn bản">
-                                    <Hash size={13} />
-                                </button>
-                                <button onClick={(e) => { e.stopPropagation(); setShowNewChannel('voice'); setNewChannelName(''); playSound('click'); }}
-                                    className="w-6 h-6 rounded-md flex items-center justify-center text-current opacity-60 hover:opacity-100 hover:bg-current/10"
-                                    title="Tạo kênh âm thanh">
-                                    <Volume2 size={13} />
-                                </button>
+                                {canManageActiveWorkspace && (
+                                    <>
+                                        <button onClick={(e) => { e.stopPropagation(); setShowNewChannel('text'); setNewChannelName(''); setSelectedChannelMembers([]); playSound('click'); }}
+                                            className="w-6 h-6 rounded-md flex items-center justify-center text-current opacity-60 hover:opacity-100 hover:bg-current/10"
+                                            title="Tạo kênh văn bản">
+                                            <Hash size={13} />
+                                        </button>
+                                        <button onClick={(e) => { e.stopPropagation(); setShowNewChannel('voice'); setNewChannelName(''); setSelectedChannelMembers([]); playSound('click'); }}
+                                            className="w-6 h-6 rounded-md flex items-center justify-center text-current opacity-60 hover:opacity-100 hover:bg-current/10"
+                                            title="Tạo kênh âm thanh">
+                                            <Volume2 size={13} />
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         </div>
                     )}
@@ -1701,13 +1741,13 @@ const Chat: React.FC = () => {
                     </div>
                 )}
 
-                {showNewChannel && activeServer !== 'dm' && (
+                {showNewChannel && activeServer !== 'dm' && canManageActiveWorkspace && (
                     <div className="p-3 border-b bg-current/5 border-current/10 animate-in slide-in-from-top duration-200">
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-[10px] font-black text-emerald-500 uppercase tracking-wider">
                                 Tạo kênh {showNewChannel === 'voice' ? 'âm thanh' : 'văn bản'}
                             </span>
-                            <button onClick={() => { setShowNewChannel(null); setNewChannelName(''); }} className="text-current opacity-60 hover:opacity-100"><X size={12} /></button>
+                            <button onClick={() => { setShowNewChannel(null); setNewChannelName(''); setSelectedChannelMembers([]); }} className="text-current opacity-60 hover:opacity-100"><X size={12} /></button>
                         </div>
                         <div className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 border border-transparent mb-2 ${currentTheme.sidebarSearch}`}>
                             {showNewChannel === 'voice' ? <Volume2 size={13} className="opacity-60 shrink-0" /> : <Hash size={13} className="opacity-60 shrink-0" />}
@@ -1720,10 +1760,51 @@ const Chat: React.FC = () => {
                                 autoFocus
                             />
                         </div>
+                        <div className="mb-2 rounded-xl border border-current/10 bg-black/5 p-2">
+                            <div className="mb-1.5 flex items-center justify-between">
+                                <span className="text-[9px] font-black uppercase tracking-wider opacity-60">Tag thành viên được xem kênh</span>
+                                <span className="text-[9px] font-bold opacity-50">{selectedChannelMembers.length + 1} người</span>
+                            </div>
+                            <div className="mb-1.5 flex items-center gap-2 rounded-lg bg-emerald-500/10 px-2 py-1.5 text-[10px] font-bold text-emerald-500">
+                                <Crown size={11} />
+                                <span className="truncate">{user.name} là chủ kênh</span>
+                            </div>
+                            <div className="space-y-1 max-h-[132px] overflow-y-auto pr-1">
+                                {channelMemberCandidates.map(candidate => {
+                                    const employee = companyEmployeeByUserId.get(candidate.id);
+                                    const selected = selectedChannelMembers.includes(candidate.id);
+                                    return (
+                                        <button
+                                            key={candidate.id}
+                                            onClick={() => {
+                                                setSelectedChannelMembers(prev => selected
+                                                    ? prev.filter(id => id !== candidate.id)
+                                                    : [...prev, candidate.id]);
+                                            }}
+                                            className={`w-full flex items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition ${
+                                                selected ? 'bg-emerald-500/10 ring-1 ring-emerald-500/35 text-emerald-500' : 'hover:bg-current/5'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-white text-[8px] font-black overflow-hidden shrink-0">
+                                                {employee?.avatarUrl || candidate.avatar ? <img src={employee?.avatarUrl || candidate.avatar} className="w-full h-full object-cover" /> : (employee?.fullName || candidate.name)?.charAt(0)?.toUpperCase()}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-[10px] font-bold truncate">{employee?.fullName || candidate.name}</div>
+                                                <div className="text-[8px] opacity-60 truncate">{employee?.employeeCode || 'Nhân viên'}{employee?.title ? ` • ${employee.title}` : ''}</div>
+                                            </div>
+                                            {selected && <Check size={12} className="shrink-0" />}
+                                        </button>
+                                    );
+                                })}
+                                {channelMemberCandidates.length === 0 && (
+                                    <div className="text-center text-[9px] opacity-50 font-semibold py-1.5">Workspace chưa có thành viên khác để tag</div>
+                                )}
+                            </div>
+                        </div>
                         <button onClick={() => { void handleCreateChannel(); }}
                             disabled={!newChannelName.trim()}
                             className="w-full py-2 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]">
-                            <Plus size={12} className="inline mr-1.5" />Tạo kênh
+                            <Plus size={12} className="inline mr-1.5" />Tạo kênh ({selectedChannelMembers.length + 1})
                         </button>
                     </div>
                 )}
@@ -1768,7 +1849,7 @@ const Chat: React.FC = () => {
                                                     )}
                                                 </div>
                                                 <p className="text-[10px] opacity-60 truncate mt-0.5">
-                                                    {lastMsg ? lastMsg.content : 'Chưa có tin nhắn'}
+                                                    {getMessagePreview(lastMsg)}
                                                 </p>
                                             </div>
                                         </button>
@@ -1788,11 +1869,13 @@ const Chat: React.FC = () => {
                                         {showCategoryText ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
                                         <span>Kênh văn bản</span>
                                     </button>
-                                    <button onClick={() => { setShowNewChannel('text'); setNewChannelName(''); }}
-                                        className="w-5 h-5 rounded flex items-center justify-center hover:bg-current/10"
-                                        title="Tạo kênh văn bản">
-                                        <Plus size={11} />
-                                    </button>
+                                    {canManageActiveWorkspace && (
+                                        <button onClick={() => { setShowNewChannel('text'); setNewChannelName(''); setSelectedChannelMembers([]); }}
+                                            className="w-5 h-5 rounded flex items-center justify-center hover:bg-current/10"
+                                            title="Tạo kênh văn bản">
+                                            <Plus size={11} />
+                                        </button>
+                                    )}
                                 </div>
                                 
                                 {showCategoryText && (
@@ -1875,11 +1958,13 @@ const Chat: React.FC = () => {
                                         {showCategoryVoice ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
                                         <span>Kênh âm thanh</span>
                                     </button>
-                                    <button onClick={() => { setShowNewChannel('voice'); setNewChannelName(''); }}
-                                        className="w-5 h-5 rounded flex items-center justify-center hover:bg-current/10"
-                                        title="Tạo kênh âm thanh">
-                                        <Plus size={11} />
-                                    </button>
+                                    {canManageActiveWorkspace && (
+                                        <button onClick={() => { setShowNewChannel('voice'); setNewChannelName(''); setSelectedChannelMembers([]); }}
+                                            className="w-5 h-5 rounded flex items-center justify-center hover:bg-current/10"
+                                            title="Tạo kênh âm thanh">
+                                            <Plus size={11} />
+                                        </button>
+                                    )}
                                 </div>
                                 
                                 {showCategoryVoice && (
@@ -2173,7 +2258,7 @@ const Chat: React.FC = () => {
                                 <Pin size={12} className="text-amber-500 shrink-0" />
                                 <div className="min-w-0 flex-1 text-current">
                                     <div className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Tin nhắn đã ghim</div>
-                                    <div className="text-[11px] opacity-80 truncate mt-0.5">{pinnedMessages[activeConv.id].content}</div>
+                                    <div className="text-[11px] opacity-80 truncate mt-0.5">{getMessagePreview(pinnedMessages[activeConv.id])}</div>
                                 </div>
                                 <button onClick={() => {
                                     unpinMessage(activeConv.id)
@@ -2202,14 +2287,18 @@ const Chat: React.FC = () => {
                                             {group.messages.map((msg, mi) => {
                                                 const isMe = msg.senderId === user.id;
                                                 const sender = users.find(u => u.id === msg.senderId);
+                                                const senderName = msg.senderName || sender?.name || (isMe ? user.name : 'Người dùng');
+                                                const senderAvatar = msg.senderAvatarUrl || sender?.avatar || (isMe ? user.avatar : undefined);
                                                 const isSystem = msg.type === 'system';
                                                 const prevMsg = mi > 0 ? group.messages[mi - 1] : null;
                                                 const showAvatar = !prevMsg || prevMsg.senderId !== msg.senderId;
                                                 const showName = showAvatar;
                                                 const reactions = msg.reactions || {};
-                                                const hasReactions = Object.keys(reactions).length > 0;
+                                                const isRecalled = Boolean(msg.recalledAt);
+                                                const hasReactions = !isRecalled && Object.keys(reactions).length > 0;
                                                 const isHovered = hoveredMsgId === msg.id;
                                                 const showReactionPicker = reactionPickerMsgId === msg.id;
+                                                const canRecallMessage = !isRecalled && (isMe || canManageConversation(activeConv));
                                                 
                                                 const parsed = parseMessageContent(msg);
 
@@ -2230,7 +2319,7 @@ const Chat: React.FC = () => {
                                                             <div className="w-8 shrink-0 self-start mt-0.5">
                                                                 {showAvatar ? (
                                                                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-650 flex items-center justify-center text-white text-xs font-black overflow-hidden shadow animate-in fade-in zoom-in duration-200">
-                                                                        {sender?.avatar ? <img src={sender.avatar} className="w-full h-full object-cover" /> : sender?.name?.charAt(0)?.toUpperCase() || '?'}
+                                                                        {senderAvatar ? <img src={senderAvatar} className="w-full h-full object-cover" /> : senderName?.charAt(0)?.toUpperCase() || '?'}
                                                                     </div>
                                                                 ) : (
                                                                     <div className="w-8" />
@@ -2243,7 +2332,7 @@ const Chat: React.FC = () => {
                                                             <div className="w-8 shrink-0 self-start mt-0.5 order-last">
                                                                 {showAvatar ? (
                                                                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-650 flex items-center justify-center text-white text-xs font-black overflow-hidden shadow animate-in fade-in zoom-in duration-200">
-                                                                        {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : user.name?.charAt(0)?.toUpperCase() || '?'}
+                                                                        {senderAvatar ? <img src={senderAvatar} className="w-full h-full object-cover" /> : senderName?.charAt(0)?.toUpperCase() || '?'}
                                                                     </div>
                                                                 ) : (
                                                                     <div className="w-8" />
@@ -2254,7 +2343,7 @@ const Chat: React.FC = () => {
                                                         <div className={`max-w-[70%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                                                             {showName && (
                                                                 <span className={`text-[10px] font-black opacity-60 mb-0.5 flex items-center gap-1.5 ${isMe ? 'mr-1' : 'ml-1'} animate-in fade-in slide-in-from-bottom-1 duration-200`}>
-                                                                    {isMe ? user.name : sender?.name}
+                                                                    {senderName}
                                                                     {((isMe ? user.role : sender?.role) as any) === 'admin' && <Shield size={10} className="text-amber-500" />}
                                                                 </span>
                                                             )}
@@ -2264,17 +2353,19 @@ const Chat: React.FC = () => {
                                                                 <div className={`px-3 py-2 text-xs leading-relaxed shadow-sm rounded-2xl relative transition-all duration-300 ${
                                                                     isMe ? currentTheme.messageMe : currentTheme.messageOther
                                                                 }`}>
-                                                                    {parsed.isReply && (
+                                                                    {isRecalled ? (
+                                                                        <p className="italic opacity-70">Tin nhắn đã được thu hồi</p>
+                                                                    ) : parsed.isReply && (
                                                                         <div className={`border-l-2 pl-2 py-0.5 pr-1 mb-1.5 rounded text-[10px] select-none max-w-full ${isMe ? currentTheme.replyQuoteMe : currentTheme.replyQuoteOther}`}>
                                                                             <div className="font-extrabold text-[9px]">{parsed.replyToName}</div>
                                                                             <div className="truncate text-[9px]">{parsed.replyToText}</div>
                                                                         </div>
                                                                     )}
                                                                     
-                                                                    {parsed.actualText && <p className="whitespace-pre-wrap break-words">{parsed.actualText}</p>}
+                                                                    {!isRecalled && parsed.actualText && <p className="whitespace-pre-wrap break-words">{parsed.actualText}</p>}
                                                                     
                                                                     {/* File attachments */}
-                                                                    {msg.attachments && msg.attachments.length > 0 && (
+                                                                    {!isRecalled && msg.attachments && msg.attachments.length > 0 && (
                                                                         <div className="mt-1.5 space-y-1">
                                                                             {msg.attachments.map((att, ai) => (
                                                                                 <a key={ai} href={att.url} target="_blank" rel="noopener noreferrer"
@@ -2293,32 +2384,45 @@ const Chat: React.FC = () => {
                                                                 {isHovered && (
                                                                     <div className={`absolute top-1/2 -translate-y-1/2 flex items-center gap-1 z-35 ${isMe ? '-left-20' : '-right-20'}`}>
                                                                         {/* Reaction smiles */}
-                                                                        <button onClick={() => setReactionPickerMsgId(showReactionPicker ? null : msg.id)}
-                                                                            className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-lg hover:scale-105 hover:bg-slate-50 text-slate-400 hover:text-slate-700 dark:hover:text-white"
-                                                                            title="Thêm cảm xúc">
-                                                                            <Smile size={13} />
-                                                                        </button>
+                                                                        {!isRecalled && (
+                                                                            <button onClick={() => setReactionPickerMsgId(showReactionPicker ? null : msg.id)}
+                                                                                className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-lg hover:scale-105 hover:bg-slate-50 text-slate-400 hover:text-slate-700 dark:hover:text-white"
+                                                                                title="Thêm cảm xúc">
+                                                                                <Smile size={13} />
+                                                                            </button>
+                                                                        )}
                                                                         {/* Reply shortcut */}
-                                                                        <button onClick={() => { setReplyingTo({ id: msg.id, senderId: msg.senderId, senderName: sender?.name || 'Bạn', content: parsed.actualText }); playSound('click'); }}
-                                                                            className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-lg hover:scale-105 hover:bg-slate-50 text-slate-400 hover:text-slate-700 dark:hover:text-white"
-                                                                            title="Trả lời tin nhắn">
-                                                                            <CornerUpLeft size={13} />
-                                                                        </button>
+                                                                        {!isRecalled && (
+                                                                            <button onClick={() => { setReplyingTo({ id: msg.id, senderId: msg.senderId, senderName, content: parsed.actualText }); playSound('click'); }}
+                                                                                className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-lg hover:scale-105 hover:bg-slate-50 text-slate-400 hover:text-slate-700 dark:hover:text-white"
+                                                                                title="Trả lời tin nhắn">
+                                                                                <CornerUpLeft size={13} />
+                                                                            </button>
+                                                                        )}
                                                                         {/* Pin shortcut */}
-                                                                        <button onClick={() => {
-                                                                            pinMessage(activeConv.id, msg.id)
-                                                                                .then(() => playSound('connect'))
-                                                                                .catch(err => alert(getErrorMessage(err, 'Không thể ghim tin nhắn.')));
-                                                                        }}
-                                                                            className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-lg hover:scale-105 hover:bg-slate-50 text-slate-400 hover:text-slate-700 dark:hover:text-white"
-                                                                            title="Ghim tin nhắn">
-                                                                            <Pin size={13} />
-                                                                        </button>
+                                                                        {!isRecalled && (
+                                                                            <button onClick={() => {
+                                                                                pinMessage(activeConv.id, msg.id)
+                                                                                    .then(() => playSound('connect'))
+                                                                                    .catch(err => alert(getErrorMessage(err, 'Không thể ghim tin nhắn.')));
+                                                                            }}
+                                                                                className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-lg hover:scale-105 hover:bg-slate-50 text-slate-400 hover:text-slate-700 dark:hover:text-white"
+                                                                                title="Ghim tin nhắn">
+                                                                                <Pin size={13} />
+                                                                            </button>
+                                                                        )}
+                                                                        {canRecallMessage && (
+                                                                            <button onClick={() => { void handleRecallMessage(msg.id); }}
+                                                                                className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 border border-red-200 dark:border-red-900/60 flex items-center justify-center shadow-lg hover:scale-105 hover:bg-red-50 text-red-500"
+                                                                                title="Thu hồi tin nhắn">
+                                                                                <RotateCcw size={13} />
+                                                                            </button>
+                                                                        )}
                                                                     </div>
                                                                 )}
 
                                                                 {/* Emoji Reactions Picker */}
-                                                                {showReactionPicker && (
+                                                                {!isRecalled && showReactionPicker && (
                                                                     <div className={`reaction-picker absolute z-50 ${isMe ? 'right-0' : 'left-0'} -top-12 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 px-2 py-1 flex items-center gap-0.5 animate-in zoom-in-95 duration-100 text-slate-800 dark:text-slate-100`}>
                                                                         {REACTION_EMOJIS.map(emoji => {
                                                                             const myReacted = (reactions[emoji] as string[] | undefined)?.includes(user.id);
@@ -2578,20 +2682,27 @@ const Chat: React.FC = () => {
                                         </button>
                                     </div>
 
-                                    {/* Members list if group */}
-                                    {activeConv.type === 'group' && (
+                                    {/* Members list if group/channel */}
+                                    {(activeConv.type === 'group' || isChannelConversation(activeConv)) && (
                                         <div className="p-4 border-b border-current/10">
                                             <div className="flex items-center justify-between mb-3">
                                                 <span className="text-[10px] font-black opacity-60 uppercase tracking-wider">Thành viên ({activeConv.members?.length || 0})</span>
-                                                <button onClick={() => setShowAddMember(!showAddMember)}
-                                                    className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${showAddMember ? 'bg-indigo-500/10 text-indigo-500' : 'hover:bg-current/5 text-current opacity-70'}`}>
-                                                    <UserPlus size={13} />
-                                                </button>
+                                                {canManageConversation(activeConv) && (
+                                                    <button onClick={() => setShowAddMember(!showAddMember)}
+                                                        className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${showAddMember ? 'bg-indigo-500/10 text-indigo-500' : 'hover:bg-current/5 text-current opacity-70'}`}>
+                                                        <UserPlus size={13} />
+                                                    </button>
+                                                )}
                                             </div>
 
                                             {showAddMember && (() => {
                                                 const memberIds = activeConv.members?.map(m => m.userId) || [];
-                                                const addableUsers = users.filter(u => u.id !== user.id && !memberIds.includes(u.id));
+                                                const activeConvWorkspace = activeConv.workspaceId ? workspaces.find(item => item.id === activeConv.workspaceId) : null;
+                                                const workspaceUserIds = activeConvWorkspace?.members?.filter(member => !member.leftAt).map(member => member.userId) || [];
+                                                const sourceUsers = isChannelConversation(activeConv)
+                                                    ? users.filter(u => workspaceUserIds.includes(u.id))
+                                                    : users;
+                                                const addableUsers = sourceUsers.filter(u => u.id !== user.id && u.isActive !== false && !memberIds.includes(u.id));
                                                 return addableUsers.length > 0 ? (
                                                     <div className="mb-3 p-2 bg-black/10 rounded-xl space-y-1 max-h-[140px] overflow-y-auto">
                                                         {addableUsers.map(u => {
@@ -2616,16 +2727,18 @@ const Chat: React.FC = () => {
                                                         })}
                                                     </div>
                                                 ) : (
-                                                    <p className="text-[9px] opacity-55 text-center mb-3 italic">Tất cả mọi người đã trong nhóm</p>
+                                                    <p className="text-[9px] opacity-55 text-center mb-3 italic">Không còn thành viên phù hợp để thêm</p>
                                                 );
                                             })()}
 
                                             <div className="space-y-1 max-h-[220px] overflow-y-auto pr-1">
                                                 {(activeConv.members || []).map(member => {
                                                     const memberUser = users.find(u => u.id === member.userId);
+                                                    const isOwner = member.role === 'owner' || activeConv.createdBy === member.userId;
                                                     const isAdmin = member.role === 'admin';
                                                     const isCurrentUser = member.userId === user.id;
-                                                    const currentUserIsAdmin = String(user.role) === 'ADMIN' || activeConv.members?.some(m => m.userId === user.id && m.role === 'admin');
+                                                    const currentUserCanManage = canManageConversation(activeConv);
+                                                    const currentUserIsOwner = String(user.role) === 'ADMIN' || activeConv.createdBy === user.id || activeConv.members?.some(m => m.userId === user.id && m.role === 'owner');
                                                     return (
                                                         <div key={member.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-current/5 group">
                                                             <div className="relative shrink-0">
@@ -2639,15 +2752,25 @@ const Chat: React.FC = () => {
                                                                     <span className="text-[11px] font-bold opacity-85 truncate">
                                                                         {memberUser?.name || 'Người dùng'}{isCurrentUser ? ' (Bạn)' : ''}
                                                                     </span>
-                                                                    {isAdmin && (
-                                                                        <span title="Trưởng nhóm"><Crown size={9} className="text-amber-500 shrink-0" /></span>
-                                                                    )}
+                                                                    {isOwner ? (
+                                                                        <span title="Chủ kênh/nhóm"><Crown size={9} className="text-amber-500 shrink-0" /></span>
+                                                                    ) : isAdmin ? (
+                                                                        <span title="Quản trị viên"><Shield size={9} className="text-indigo-400 shrink-0" /></span>
+                                                                    ) : null}
                                                                 </div>
+                                                                <div className="text-[8px] opacity-45 uppercase font-bold">{isOwner ? 'Chủ kênh' : isAdmin ? 'Quản trị' : 'Thành viên'}</div>
                                                             </div>
-                                                            {currentUserIsAdmin && !isCurrentUser && (
+                                                            {currentUserIsOwner && !isCurrentUser && !isOwner && (
+                                                                <button onClick={() => { void handleUpdateMemberRole(member.userId, isAdmin ? 'member' : 'admin'); }}
+                                                                    className="shrink-0 w-5 h-5 rounded flex items-center justify-center text-current opacity-0 group-hover:opacity-100 hover:text-indigo-500 hover:bg-indigo-500/10 transition-all"
+                                                                    title={isAdmin ? 'Hạ quyền thành viên' : 'Cấp quyền quản trị'}>
+                                                                    <Shield size={11} />
+                                                                </button>
+                                                            )}
+                                                            {currentUserCanManage && !isCurrentUser && !isOwner && (
                                                                 <button onClick={() => { void handleRemoveMember(member.userId); }}
                                                                     className="shrink-0 w-5 h-5 rounded flex items-center justify-center text-current opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-500/10 transition-all"
-                                                                    title="Mời ra khỏi nhóm">
+                                                                    title="Loại khỏi nhóm/kênh">
                                                                     <UserMinus size={11} />
                                                                 </button>
                                                             )}
