@@ -35,6 +35,7 @@ import {
   getLocalInventoryItemDeleteBlockers,
   getRemoteInventoryItemDeleteBlockers,
 } from '../lib/inventoryItemDeleteGuard';
+import { createPerformanceTrace } from '../lib/performanceTrace';
 
 interface AppSettings {
   name: string;
@@ -417,6 +418,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const fetchData = async () => {
+      const trace = createPerformanceTrace('app-bootstrap', {
+        hasSavedUser: !!localStorage.getItem('vioo_user'),
+        currentUserEmail: user.email,
+      });
+      let success = false;
       try {
         setIsLoading(true);
 
@@ -434,16 +440,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         };
 
-        const [settingsData, usersData] = await Promise.all([
-          fetchTable('app_settings', supabase.from('app_settings').select('*').maybeSingle()),
-          fetchTable('users')
-        ]);
+        const [settingsData, usersData] = await trace.step(
+          'fetch app_settings + users',
+          () => Promise.all([
+            fetchTable('app_settings', supabase.from('app_settings').select('*').maybeSingle()),
+            fetchTable('users')
+          ])
+        );
 
+        trace.startStep('map settings/users');
         if (settingsData) setAppSettings(settingsData);
         if (usersData && usersData.length > 0) {
           const mappedUsers = usersData.map(mapUserFromDb);
+          trace.endStep('map settings/users', { userCount: mappedUsers.length });
           // Fetch signatures and merge
-          const { data: sigData } = await supabase.from('user_signatures').select('*');
+          const { data: sigData } = await trace.step(
+            'fetch user_signatures',
+            () => supabase.from('user_signatures').select('*')
+          );
+          trace.startStep('map signatures');
           if (sigData && sigData.length > 0) {
             const sigMap = new Map<string, string>();
             for (const sig of sigData) {
@@ -452,17 +467,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
             mappedUsers.forEach((u: any) => { if (sigMap.has(u.id)) u.signatureUrl = sigMap.get(u.id); });
           }
+          trace.endStep('map signatures', { signatureCount: sigData?.length || 0 });
+          trace.startStep('set app bootstrap state');
           setUsers(mappedUsers);
           const currentInList = mappedUsers.find((u: any) => (user.authId && u.authId === user.authId) || u.email === user.email);
           if (currentInList) setUser(currentInList);
+          trace.endStep('set app bootstrap state', { matchedCurrentUser: !!currentInList });
+        } else {
+          trace.endStep('map settings/users', { userCount: 0 });
         }
 
         // Module-specific data is loaded lazily via loadModuleData()
+        success = true;
       } catch (error: any) {
         console.error('Error fetching data from Supabase:', error);
         setConnectionError(error.message);
       } finally {
         setIsLoading(false);
+        trace.finish({ success });
       }
     };
 
@@ -1175,6 +1197,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const login = async (username: string, password: string): Promise<User | null> => {
     if (isSupabaseConfigured) {
+      const trace = createPerformanceTrace('supabase-login', {
+        usernameMode: username.includes('@') ? 'email' : 'username',
+      });
+      let success = false;
       try {
         // Here we map username to an email format for supabase auth if no actual email string was provided
         // Since Supabase requires an email for signInWithPassword by default, we'll try querying the user first, or logging in by email.
@@ -1183,43 +1209,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         let loginEmail = username;
         if (!username.includes('@')) {
-          const { data: rpcEmail, error: rpcError } = await supabase.rpc('lookup_login_email', { p_username: username });
+          const { data: rpcEmail, error: rpcError } = await trace.step(
+            'lookup_login_email rpc',
+            () => supabase.rpc('lookup_login_email', { p_username: username })
+          );
           if (!rpcError && rpcEmail) {
             loginEmail = rpcEmail;
           } else {
-            const { data, error } = await supabase.from('users').select('email').eq('username', username).single();
+            const { data, error } = await trace.step(
+              'lookup user email fallback',
+              () => supabase.from('users').select('email').eq('username', username).single()
+            );
             if (error || !data) throw new Error('Không tìm thấy tài khoản');
             loginEmail = data.email;
           }
         }
 
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email: loginEmail,
-          password
-        });
+        const { data: authData, error: authError } = await trace.step(
+          'supabase.auth.signInWithPassword',
+          () => supabase.auth.signInWithPassword({
+            email: loginEmail,
+            password
+          })
+        );
 
         if (authError) throw authError;
 
         // Fetch user profile
-        const byAuth = await supabase
-          .from('users')
-          .select('*')
-          .eq('auth_id', authData.user.id)
-          .maybeSingle();
+        const byAuth = await trace.step(
+          'fetch profile by auth_id',
+          () => supabase
+            .from('users')
+            .select('*')
+            .eq('auth_id', authData.user.id)
+            .maybeSingle()
+        );
         const { data: userData, error: userError } = byAuth.data
           ? byAuth
-          : await supabase.from('users').select('*').eq('email', loginEmail).single();
+          : await trace.step(
+            'fetch profile by email fallback',
+            () => supabase.from('users').select('*').eq('email', loginEmail).single()
+          );
         if (userError || !userData) throw new Error('Lỗi lấy thông tin người dùng');
 
+        trace.startStep('map user + localStorage');
         const mappedUser = mapUserFromDb(userData);
         setUser(mappedUser);
         const { avatar, ...userForStorage } = mappedUser;
         localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
+        trace.endStep('map user + localStorage');
+        success = true;
         return mappedUser;
 
       } catch (err: any) {
         console.error('Login error:', err);
         throw err;
+      } finally {
+        trace.finish({ success });
       }
     } else {
       // Fallback to local mock auth

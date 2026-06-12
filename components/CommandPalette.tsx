@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useWorkflow } from '../context/WorkflowContext';
 import { useRequest } from '../context/RequestContext';
+import { canAccessRoute, getRouteModuleKey } from '../lib/routeAccess';
 import {
   Search, X, Users, Package, ArrowLeftRight, ClipboardCheck, Briefcase,
   FileText, Hash, ArrowRight, Command, CornerDownLeft, ChevronUp, User,
-  Warehouse, DollarSign, Calendar, Settings, HardHat, Box, GitBranch
+  Warehouse, DollarSign, Calendar, Settings, HardHat, Box, GitBranch,
+  ShoppingCart, Truck, BarChart3, Bot, Database, ShieldCheck, Landmark,
+  Building2
 } from 'lucide-react';
 
 interface SearchResult {
@@ -29,6 +32,12 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string; icon: React.Re
   'Dự án': { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-600 dark:text-orange-400', icon: <HardHat size={12} /> },
   'Tài sản': { bg: 'bg-pink-100 dark:bg-pink-900/30', text: 'text-pink-600 dark:text-pink-400', icon: <Box size={12} /> },
   'Quy trình': { bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-600 dark:text-indigo-400', icon: <GitBranch size={12} /> },
+  'Đơn hàng PO': { bg: 'bg-cyan-100 dark:bg-cyan-900/30', text: 'text-cyan-600 dark:text-cyan-400', icon: <ShoppingCart size={12} /> },
+  'Nhà cung cấp': { bg: 'bg-lime-100 dark:bg-lime-900/30', text: 'text-lime-700 dark:text-lime-400', icon: <Truck size={12} /> },
+  'Báo cáo': { bg: 'bg-fuchsia-100 dark:bg-fuchsia-900/30', text: 'text-fuchsia-600 dark:text-fuchsia-400', icon: <BarChart3 size={12} /> },
+  'Hợp đồng': { bg: 'bg-sky-100 dark:bg-sky-900/30', text: 'text-sky-600 dark:text-sky-400', icon: <FileText size={12} /> },
+  'AI': { bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-600 dark:text-purple-400', icon: <Bot size={12} /> },
+  'Hệ thống': { bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-600 dark:text-slate-400', icon: <ShieldCheck size={12} /> },
   'Trang': { bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-600 dark:text-slate-400', icon: <FileText size={12} /> },
 };
 
@@ -37,6 +46,8 @@ const PAGES: SearchResult[] = [
   { id: 'p-dash', title: 'Dashboard Kho', subtitle: 'Tổng quan kho vật tư', category: 'Trang', icon: <Settings size={16} />, route: '/dashboard', keywords: 'dashboard tong quan kho' },
   { id: 'p-inv', title: 'Tồn kho', subtitle: 'Danh sách vật tư', category: 'Trang', icon: <Package size={16} />, route: '/inventory', keywords: 'ton kho vat tu san pham' },
   { id: 'p-ops', title: 'Phiếu kho', subtitle: 'Nhập xuất chuyển kho', category: 'Trang', icon: <ArrowLeftRight size={16} />, route: '/operations', keywords: 'phieu kho nhap xuat chuyen' },
+  { id: 'p-reports', title: 'Báo cáo kho', subtitle: 'Tổng hợp nhập xuất tồn', category: 'Báo cáo', icon: <BarChart3 size={16} />, route: '/reports', keywords: 'bao cao kho nhap xuat ton vat tu' },
+  { id: 'p-audit', title: 'Nhật ký kho', subtitle: 'Audit phiếu kho và vật tư', category: 'Hệ thống', icon: <ShieldCheck size={16} />, route: '/audit', keywords: 'audit nhat ky kho lich su phieu vat tu' },
   { id: 'p-emp', title: 'Hồ sơ nhân sự', subtitle: 'Danh sách nhân viên', category: 'Trang', icon: <Users size={16} />, route: '/hrm/employees', keywords: 'nhan su nhan vien ho so' },
   { id: 'p-att', title: 'Chấm công', subtitle: 'Bảng chấm công', category: 'Trang', icon: <Calendar size={16} />, route: '/hrm/attendance', keywords: 'cham cong ngay lam' },
   { id: 'p-pay', title: 'Bảng lương', subtitle: 'Tính lương hàng tháng', category: 'Trang', icon: <DollarSign size={16} />, route: '/hrm/payroll', keywords: 'bang luong tinh luong thang' },
@@ -45,6 +56,19 @@ const PAGES: SearchResult[] = [
   { id: 'p-req', title: 'Yêu cầu vật tư', subtitle: 'Phiếu yêu cầu', category: 'Trang', icon: <ClipboardCheck size={16} />, route: '/requests', keywords: 'yeu cau vat tu phieu' },
   { id: 'p-mcr', title: 'Đề xuất cấp mã vật tư', subtitle: 'Cấp mã vật tư/vật liệu mới', category: 'Trang', icon: <Hash size={16} />, route: '/material-code-requests', keywords: 'de xuat cap ma vat tu vat lieu sku' },
   { id: 'p-wf', title: 'Quy trình', subtitle: 'Workflow instances', category: 'Trang', icon: <Briefcase size={16} />, route: '/wf', keywords: 'quy trinh workflow' },
+  { id: 'p-project', title: 'Dự án', subtitle: 'Điều hành và danh mục dự án', category: 'Dự án', icon: <HardHat size={16} />, route: '/da', keywords: 'du an cong trinh dieu hanh portfolio' },
+  { id: 'p-project-material', title: 'Vật tư dự án', subtitle: 'Tổng hợp vật tư dự án', category: 'Dự án', icon: <Package size={16} />, route: '/da/tabs/material', keywords: 'vat tu du an tong hop cung ung' },
+  { id: 'p-project-material-request', title: 'Đề xuất vật tư dự án', subtitle: 'Yêu cầu vật tư theo công trình', category: 'Yêu cầu', icon: <ClipboardCheck size={16} />, route: '/da/tabs/material/request', keywords: 'de xuat yeu cau vat tu du an cong trinh material request' },
+  { id: 'p-project-material-po', title: 'Đơn hàng PO', subtitle: 'Mua hàng và cung ứng vật tư', category: 'Đơn hàng PO', icon: <ShoppingCart size={16} />, route: '/da/tabs/material/po', keywords: 'po don hang mua hang nha cung cap vat tu cung ung purchase order' },
+  { id: 'p-project-material-planning', title: 'Kế hoạch vật tư', subtitle: 'Kế hoạch vật tư theo tiến độ', category: 'Dự án', icon: <Calendar size={16} />, route: '/da/tabs/material/planning', keywords: 'ke hoach vat tu tien do lead time curve phan bo' },
+  { id: 'p-project-material-boq', title: 'BOQ vật tư', subtitle: 'Khối lượng và ngân sách vật tư', category: 'Dự án', icon: <FileText size={16} />, route: '/da/tabs/material/boq', keywords: 'boq vat tu khoi luong ngan sach du toan' },
+  { id: 'p-project-contract', title: 'Hợp đồng dự án', subtitle: 'Hợp đồng, phụ lục, nghiệm thu', category: 'Hợp đồng', icon: <FileText size={16} />, route: '/da/tabs/contract', keywords: 'hop dong du an phu luc nghiem thu thanh toan' },
+  { id: 'p-hd', title: 'Quản lý hợp đồng', subtitle: 'Đối tác, loại hợp đồng, thư viện giá', category: 'Hợp đồng', icon: <FileText size={16} />, route: '/hd/overview', keywords: 'hop dong doi tac loai hop dong thu vien gia' },
+  { id: 'p-cost-library', title: 'Thư viện đơn giá', subtitle: 'Danh mục chi phí và đơn giá', category: 'Hợp đồng', icon: <Landmark size={16} />, route: '/hd/cost-library', keywords: 'thu vien don gia cost library chi phi vat tu nhan cong may' },
+  { id: 'p-tender-boq', title: 'Tender AI BOQ', subtitle: 'Phân tích chào thầu bằng AI', category: 'AI', icon: <Bot size={16} />, route: '/tender-ai/boq', keywords: 'tender ai chao thau boq phan tich ho so moi thau' },
+  { id: 'p-ai', title: 'AI Assistant', subtitle: 'Trợ lý dữ liệu nội bộ', category: 'AI', icon: <Bot size={16} />, route: '/ai', keywords: 'ai assistant tro ly hoi dap du lieu' },
+  { id: 'p-audit-trail', title: 'Nhật ký thay đổi', subtitle: 'Lưu vết thao tác hệ thống', category: 'Hệ thống', icon: <ShieldCheck size={16} />, route: '/audit-trail', keywords: 'nhat ky thay doi audit trail lich su thao tac' },
+  { id: 'p-storage', title: 'Kho dữ liệu', subtitle: 'Data storage và đồng bộ', category: 'Hệ thống', icon: <Database size={16} />, route: '/storage', keywords: 'kho du lieu storage database dong bo' },
   { id: 'p-settings', title: 'Cài đặt', subtitle: 'Cấu hình hệ thống', category: 'Trang', icon: <Settings size={16} />, route: '/settings', keywords: 'cai dat he thong settings' },
 ];
 
@@ -59,18 +83,28 @@ const CommandPalette: React.FC = () => {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const { employees, items, transactions, requests: appRequests, users, warehouses, suppliers, hrmConstructionSites, assets } = useApp();
+  const { user, employees, items, transactions, requests: appRequests, users, warehouses, suppliers, hrmConstructionSites, assets } = useApp();
   const { instances: wfInstances } = useWorkflow();
   const { requests: rqRequests, categories: rqCategories } = useRequest();
 
   // Build search index
   const allResults = useMemo<SearchResult[]>(() => {
-    const results: SearchResult[] = [...PAGES];
+    const results: SearchResult[] = [];
+    const pushResult = (result: SearchResult) => {
+      if (canAccessRoute(user, result.route)) results.push(result);
+    };
+    PAGES.forEach(pushResult);
+    const canSearchRoute = (route: string) => canAccessRoute(user, route);
+    const warehouseNameById = new Map(warehouses.map((w: any) => [w.id, w.name]));
+    const itemNameById = new Map(items.map((item: any) => [item.id, `${item.name} ${item.sku || ''}`]));
+    const assignedWarehouseId = user?.assignedWarehouseId;
+    const isScopedWarehouseUser = Boolean(assignedWarehouseId);
 
     // Employees
-    employees.forEach((e: any) => {
-      results.push({
+    if (canSearchRoute('/hrm/employees')) employees.forEach((e: any) => {
+      pushResult({
         id: `emp-${e.id}`,
         title: e.fullName || 'N/A',
         subtitle: `${e.employeeCode || ''} • ${e.title || 'Nhân viên'}`,
@@ -82,48 +116,73 @@ const CommandPalette: React.FC = () => {
     });
 
     // Items
-    items.forEach((item: any) => {
-      results.push({
+    if (canSearchRoute('/inventory')) items.forEach((item: any) => {
+      const stockByWarehouse = item.stockByWarehouse || {};
+      if (isScopedWarehouseUser && Number(stockByWarehouse[assignedWarehouseId || ''] || 0) <= 0) return;
+      const warehouseKeywords = Object.keys(stockByWarehouse)
+        .filter(warehouseId => Number(stockByWarehouse[warehouseId] || 0) > 0)
+        .map(warehouseId => warehouseNameById.get(warehouseId))
+        .filter(Boolean)
+        .join(' ');
+      pushResult({
         id: `item-${item.id}`,
         title: item.name,
-        subtitle: `${item.sku} • ${item.unit}`,
+        subtitle: `${item.sku} • ${item.unit} • Tồn ${isScopedWarehouseUser ? stockByWarehouse[assignedWarehouseId || ''] || 0 : item.stock}`,
         category: 'Vật tư',
         icon: <Package size={16} />,
         route: '/inventory',
-        keywords: `${item.name} ${item.sku} ${item.category} ${item.unit}`,
+        keywords: `${item.name} ${item.sku} ${item.category} ${item.unit} ${item.description || ''} ${warehouseKeywords}`,
       });
     });
 
     // Transactions
-    transactions.forEach((tx: any) => {
+    if (canSearchRoute('/operations')) transactions.forEach((tx: any) => {
+      if (isScopedWarehouseUser) {
+        const touchedWarehouse = [tx.sourceWarehouseId, tx.targetWarehouseId, tx.warehouseId, tx.requesterWarehouseId]
+          .filter(Boolean)
+          .includes(assignedWarehouseId);
+        if (!touchedWarehouse) return;
+      }
       const typeLabels: Record<string, string> = { 'IN': 'Nhập kho', 'OUT': 'Xuất kho', 'TRANSFER': 'Chuyển kho' };
-      results.push({
+      const txItemKeywords = (tx.items || [])
+        .map((line: any) => `${line.itemName || ''} ${line.sku || ''} ${itemNameById.get(line.itemId) || ''}`)
+        .join(' ');
+      pushResult({
         id: `tx-${tx.id}`,
         title: `${typeLabels[tx.type] || tx.type} — ${tx.date}`,
-        subtitle: `${tx.status} • ${(tx.items || []).length} mặt hàng`,
+        subtitle: `${tx.status} • ${(tx.items || []).length} mặt hàng • ${warehouseNameById.get(tx.sourceWarehouseId) || warehouseNameById.get(tx.targetWarehouseId) || 'Kho'}`,
         category: 'Phiếu kho',
         icon: <ArrowLeftRight size={16} />,
         route: '/operations',
-        keywords: `${tx.type} ${tx.date} ${tx.status} ${tx.note || ''} phieu`,
+        keywords: `${tx.type} ${tx.date} ${tx.status} ${tx.note || ''} ${tx.code || ''} ${txItemKeywords} phieu nhap xuat chuyen kho`,
       });
     });
 
     // Requests
-    appRequests.forEach((req: any) => {
-      results.push({
+    if (canSearchRoute('/requests')) appRequests.forEach((req: any) => {
+      if (isScopedWarehouseUser) {
+        const touchedWarehouse = [req.sourceWarehouseId, req.targetWarehouseId, req.requesterWarehouseId, req.warehouseId]
+          .filter(Boolean)
+          .includes(assignedWarehouseId);
+        if (!touchedWarehouse) return;
+      }
+      const requestItems = (req.items || [])
+        .map((line: any) => `${line.itemName || ''} ${line.sku || ''} ${itemNameById.get(line.itemId) || ''}`)
+        .join(' ');
+      pushResult({
         id: `req-${req.id}`,
         title: `Yêu cầu ${req.code}`,
         subtitle: `${req.status} • ${req.createdDate || ''}`,
         category: 'Yêu cầu',
         icon: <ClipboardCheck size={16} />,
         route: '/requests',
-        keywords: `${req.code} ${req.status} ${req.note || ''} yeu cau`,
+        keywords: `${req.code} ${req.status} ${req.note || ''} ${requestItems} yeu cau vat tu cap phat de xuat`,
       });
     });
 
     // Users
-    users.forEach((u: any) => {
-      results.push({
+    if (canSearchRoute('/settings')) users.forEach((u: any) => {
+      pushResult({
         id: `user-${u.id}`,
         title: u.name,
         subtitle: `${u.role} • ${u.email || u.username}`,
@@ -134,9 +193,23 @@ const CommandPalette: React.FC = () => {
       });
     });
 
+    // Suppliers
+    if (canSearchRoute('/hd/partners') || canSearchRoute('/da/tabs/material/po')) suppliers.forEach((supplier: any) => {
+      pushResult({
+        id: `supplier-${supplier.id}`,
+        title: supplier.name,
+        subtitle: `${supplier.contactPerson || 'Nhà cung cấp'} • ${supplier.phone || supplier.email || ''}`,
+        category: 'Nhà cung cấp',
+        icon: <Truck size={16} />,
+        route: canSearchRoute('/hd/partners') ? '/hd/partners' : '/da/tabs/material/po',
+        keywords: `${supplier.name} ${supplier.contactPerson || ''} ${supplier.phone || ''} ${supplier.email || ''} ${supplier.taxCode || ''} ${(supplier.categories || []).join(' ')} nha cung cap vendor supplier po mua hang`,
+      });
+    });
+
     // Warehouses
-    warehouses.forEach((w: any) => {
-      results.push({
+    if (canSearchRoute('/dashboard')) warehouses.forEach((w: any) => {
+      if (isScopedWarehouseUser && w.id !== assignedWarehouseId) return;
+      pushResult({
         id: `wh-${w.id}`,
         title: w.name,
         subtitle: `${w.address || 'Kho'} • ${w.type || ''}`,
@@ -148,8 +221,8 @@ const CommandPalette: React.FC = () => {
     });
 
     // Construction Sites (Dự án)
-    hrmConstructionSites.forEach((site: any) => {
-      results.push({
+    if (canSearchRoute('/da')) hrmConstructionSites.forEach((site: any) => {
+      pushResult({
         id: `site-${site.id}`,
         title: site.name,
         subtitle: `${site.address || 'Công trình'} • ${site.status || ''}`,
@@ -161,8 +234,8 @@ const CommandPalette: React.FC = () => {
     });
 
     // Assets (Tài sản)
-    assets.forEach((asset: any) => {
-      results.push({
+    if (canSearchRoute('/ts/catalog')) assets.forEach((asset: any) => {
+      pushResult({
         id: `asset-${asset.id}`,
         title: asset.name,
         subtitle: `${asset.code || asset.serialNumber || ''} • ${asset.status || ''}`,
@@ -174,9 +247,9 @@ const CommandPalette: React.FC = () => {
     });
 
     // Workflow Instances
-    wfInstances.forEach((wf: any) => {
+    if (canSearchRoute('/wf')) wfInstances.forEach((wf: any) => {
       const statusMap: Record<string, string> = { RUNNING: 'Đang xử lý', COMPLETED: 'Hoàn thành', REJECTED: 'Từ chối', CANCELLED: 'Đã hủy' };
-      results.push({
+      pushResult({
         id: `wf-${wf.id}`,
         title: `${wf.code} — ${wf.title}`,
         subtitle: statusMap[wf.status] || wf.status,
@@ -188,9 +261,9 @@ const CommandPalette: React.FC = () => {
     });
 
     // Request Instances
-    rqRequests.forEach((rq: any) => {
+    if (canSearchRoute('/rq')) rqRequests.forEach((rq: any) => {
       const cat = rqCategories.find(c => c.id === rq.categoryId);
-      results.push({
+      pushResult({
         id: `rq-${rq.id}`,
         title: `${rq.code} — ${rq.title}`,
         subtitle: `${cat?.name || 'Yêu cầu'} • ${rq.status}`,
@@ -202,24 +275,45 @@ const CommandPalette: React.FC = () => {
     });
 
     return results;
-  }, [employees, items, transactions, appRequests, users, warehouses, hrmConstructionSites, assets, wfInstances, rqRequests, rqCategories]);
+  }, [user, employees, items, transactions, appRequests, users, warehouses, suppliers, hrmConstructionSites, assets, wfInstances, rqRequests, rqCategories]);
 
   // Filter results
   const filteredResults = useMemo(() => {
+    const currentModule = getRouteModuleKey(location.pathname);
     if (!query.trim()) {
-      // Show pages when no query
-      return PAGES.slice(0, 8);
+      return PAGES
+        .filter(r => canAccessRoute(user, r.route))
+        .sort((a, b) => {
+          const aSameModule = getRouteModuleKey(a.route) === currentModule ? 1 : 0;
+          const bSameModule = getRouteModuleKey(b.route) === currentModule ? 1 : 0;
+          return bSameModule - aSameModule;
+        })
+        .slice(0, 10);
     }
     const q = removeDiacritics(query.trim());
     const words = q.split(/\s+/);
 
     return allResults
-      .filter(r => {
+      .map(r => {
         const target = removeDiacritics(r.keywords + ' ' + r.title + ' ' + r.subtitle);
-        return words.every(w => target.includes(w));
+        if (!words.every(w => target.includes(w))) return null;
+        const title = removeDiacritics(r.title);
+        const category = removeDiacritics(r.category);
+        const routeModule = getRouteModuleKey(r.route);
+        let score = 0;
+        if (title === q) score += 80;
+        if (title.startsWith(q)) score += 50;
+        if (title.includes(q)) score += 35;
+        if (category.includes(q)) score += 15;
+        if (routeModule && routeModule === currentModule) score += 12;
+        score += words.reduce((sum, word) => sum + (target.includes(word) ? 3 : 0), 0);
+        return { result: r, score };
       })
+      .filter(Boolean)
+      .sort((a, b) => (b?.score || 0) - (a?.score || 0))
+      .map(item => item!.result)
       .slice(0, 20);
-  }, [query, allResults]);
+  }, [query, allResults, location.pathname, user]);
 
   // Group results by category
   const groupedResults = useMemo(() => {

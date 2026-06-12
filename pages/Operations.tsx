@@ -335,13 +335,13 @@ const Operations: React.FC = () => {
   };
 
   // Xác định filterWarehouseId cho ItemSelectionModal
-  // Thủ kho: Nhập kho → chọn từ toàn bộ vật tư (tìm theo mã, không cần tồn)
-  //          Xuất/Chuyển/Hủy → chọn từ vật tư có trong kho mình (để biết tồn)
+  // Nhập kho → chọn từ toàn bộ vật tư (tìm theo mã, không cần tồn)
+  // Xuất/Chuyển/Hủy → luôn xem tồn theo kho xuất đang chọn.
+  // Trước đây Admin không truyền filterWarehouseId nên modal hiển thị tổng tồn toàn bộ kho.
   const itemSelectFilterWarehouseId = useMemo(() => {
-    if (!hasAssignedWh) return undefined; // Admin: tất cả vật tư
     if (activeTab === TransactionType.IMPORT) return undefined;
-    return selectedWarehouseId;
-  }, [hasAssignedWh, activeTab, selectedWarehouseId]);
+    return selectedWarehouseId || undefined;
+  }, [activeTab, selectedWarehouseId]);
 
   // Label cho kho chính
   const warehouseLabel = useMemo(() => {

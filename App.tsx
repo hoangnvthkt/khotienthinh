@@ -17,6 +17,7 @@ import { Role } from './types';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { ROUTE_TO_MODULE } from './constants/routes';
 import { getProjectAllowedSubModuleRedirect, hasProjectTabPermissionRoute } from './lib/projectTabPermissions';
+import { createPerformanceTrace } from './lib/performanceTrace';
 
 // Lazy load all page components for code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -128,8 +129,16 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     if (!isSupabaseConfigured) return; // Mock mode — đã xử lý ở initialState
 
     // Kiểm tra session hiện tại ngay khi mount
+    const trace = createPerformanceTrace('protected-route-session-check', {
+      path: window.location.hash || window.location.pathname,
+      hasSavedUser: !!localStorage.getItem('vioo_user'),
+    });
     supabase.auth.getSession().then(({ data: { session } }) => {
+      trace.finish({ hasSession: !!session });
       setAuthState(session ? 'ok' : 'no');
+    }).catch(error => {
+      trace.finish({ hasSession: false, error: error?.message || 'getSession failed' });
+      setAuthState('no');
     });
 
     // Lắng nghe thay đổi: logout từ tab khác, token hết hạn
