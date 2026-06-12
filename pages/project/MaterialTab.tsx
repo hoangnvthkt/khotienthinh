@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useLocation } from 'react-router-dom';
 import {
     Plus, Edit2, Trash2, X, Package,
-    ChevronDown, ChevronLeft, ChevronUp, ChevronRight,
+    ChevronDown, ChevronRight,
     RefreshCcw, Download, Upload,
     FileSpreadsheet, GitBranch, ListTree, Loader2
 } from 'lucide-react';
@@ -73,8 +73,6 @@ const LazyPanelFallback = ({ label = 'Đang tải dữ liệu...' }: { label?: s
         <Loader2 size={14} className="mr-2 animate-spin text-indigo-500" /> {label}
     </div>
 );
-
-const MATERIAL_PAGE_SIZE = 10;
 
 interface MaterialTabProps {
     constructionSiteId?: string;
@@ -199,7 +197,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     const [expandedWorkBoqMaterialIds, setExpandedWorkBoqMaterialIds] = useState<Set<string>>(() => new Set());
     const [expandedWorkBoqNodeIds, setExpandedWorkBoqNodeIds] = useState<Set<string>>(() => new Set());
-    const [boqTreePage, setBoqTreePage] = useState(1);
 
     const workBoqDescendantIdsByParent = useMemo(() => {
         const childrenByParent = new Map<string, ProjectWorkBoqItem[]>();
@@ -1713,21 +1710,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             return false;
         });
     }, [workBoqTree, expandedWorkBoqNodeIds]);
-    const boqTreePageCount = Math.max(1, Math.ceil(visibleWorkBoqTree.length / MATERIAL_PAGE_SIZE));
-    const pagedVisibleWorkBoqTree = useMemo(
-        () => visibleWorkBoqTree.slice((boqTreePage - 1) * MATERIAL_PAGE_SIZE, boqTreePage * MATERIAL_PAGE_SIZE),
-        [boqTreePage, visibleWorkBoqTree],
-    );
-    const boqTreePageStart = visibleWorkBoqTree.length === 0 ? 0 : (boqTreePage - 1) * MATERIAL_PAGE_SIZE + 1;
-    const boqTreePageEnd = Math.min(visibleWorkBoqTree.length, (boqTreePage - 1) * MATERIAL_PAGE_SIZE + pagedVisibleWorkBoqTree.length);
-
-    useEffect(() => {
-        setBoqTreePage(1);
-    }, [activeSubTab, constructionSiteId, effectiveId, workBoqItems.length]);
-
-    useEffect(() => {
-        if (boqTreePage > boqTreePageCount) setBoqTreePage(boqTreePageCount);
-    }, [boqTreePage, boqTreePageCount]);
 
     const unassignedBoqItems = useMemo(
         () => computedBoqItems.filter(item => !item.workBoqItemId),
@@ -2560,7 +2542,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                         </div>
                                     )}
                                 </div>
-                                {pagedVisibleWorkBoqTree.map(({ item, level }) => {
+                                {visibleWorkBoqTree.map(({ item, level }) => {
                                     const comparison = getWorkComparison(item);
                                     const childMaterials = boqItemsByWork.get(item.id) || [];
                                     const showChildMaterials = expandedWorkBoqMaterialIds.has(item.id);
@@ -2767,34 +2749,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                         </section>
                                     );
                                 })}
-                                {visibleWorkBoqTree.length > 0 && (
-                                    <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-bold text-[#0F172A] dark:border-slate-700 dark:bg-slate-900/40 dark:text-white sm:flex-row sm:items-center sm:justify-between">
-                                        <div className="text-slate-500">
-                                            Đang xem {boqTreePageStart}-{boqTreePageEnd} trên {visibleWorkBoqTree.length} đầu mục BOQ
-                                        </div>
-                                        <div className="flex items-center justify-end gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => setBoqTreePage(prev => Math.max(1, prev - 1))}
-                                                disabled={boqTreePage <= 1}
-                                                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800"
-                                            >
-                                                <ChevronLeft size={14} /> Trước
-                                            </button>
-                                            <span className="min-w-[82px] text-center text-xs font-black text-slate-500">
-                                                {boqTreePage}/{boqTreePageCount}
-                                            </span>
-                                            <button
-                                                type="button"
-                                                onClick={() => setBoqTreePage(prev => Math.min(boqTreePageCount, prev + 1))}
-                                                disabled={boqTreePage >= boqTreePageCount}
-                                                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800"
-                                            >
-                                                Sau <ChevronRight size={14} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
                                 {unassignedBoqItems.length > 0 && (
                                     <section className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 dark:border-amber-900/40 dark:bg-amber-950/10">
                                         <div className="mb-3 flex items-center justify-between gap-2">
