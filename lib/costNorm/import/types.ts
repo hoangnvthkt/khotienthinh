@@ -18,6 +18,18 @@ export interface G8RawRow {
   text: string;
 }
 
+export interface G8ClassifiedRawRow extends G8RawRow {
+  rowType: G8RowClassification;
+  itemCode?: string;
+  parentItemCode?: string;
+  resourceCode?: string;
+  resourceType?: CostNormResourceType;
+  groupType?: CostNormResourceType;
+  coefficient?: number | null;
+  parsedData: Record<string, unknown>;
+  warnings: string[];
+}
+
 export interface G8SheetPreview {
   name: string;
   rowCount: number;
@@ -80,6 +92,7 @@ export interface G8ParseResult {
   sheetName: string;
   sheets: G8SheetPreview[];
   rows: G8RawRow[];
+  classifiedRows: G8ClassifiedRawRow[];
   detectedHeaderRow: number | null;
   columnMapping: G8ColumnMapping;
   parserVersion: string;

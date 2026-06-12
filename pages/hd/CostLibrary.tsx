@@ -25,7 +25,6 @@ import {
 import { useApp } from '../../context/AppContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
-import CostNormImportWizard from '../../components/costNorm/CostNormImportWizard';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import {
   CostTemplateDetails,
@@ -2279,7 +2278,6 @@ const CostLibrary: React.FC = () => {
     return (
       <div className="space-y-4">
         {renderPermissionNotice()}
-        <CostNormImportWizard canManage={canManage} actorId={user.id} />
         {renderNormExcelImport()}
 
         <div

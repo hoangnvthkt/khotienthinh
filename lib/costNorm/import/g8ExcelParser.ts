@@ -11,6 +11,7 @@ import {
 import {
   CostNormResourceType,
   DEFAULT_G8_COLUMN_MAPPING,
+  G8ClassifiedRawRow,
   G8ColumnMapping,
   G8ImportIssue,
   G8_PARSER_VERSION,
@@ -167,17 +168,43 @@ export const parseG8Rows = (
   const mapping = mergeMapping(inputMapping);
   const issues: G8ImportIssue[] = [];
   const items: ParsedNormItem[] = [];
+  const classifiedRows: G8ClassifiedRawRow[] = [];
   const itemsByCode = new Map<string, ParsedNormItem>();
   let currentItem: ParsedNormItem | null = null;
   let currentGroup: CostNormResourceType | null = null;
   let ignoredRows = 0;
 
+  const addClassifiedRow = (
+    row: G8RawRow,
+    rowType: G8ClassifiedRawRow['rowType'],
+    patch: Partial<Omit<G8ClassifiedRawRow, keyof G8RawRow | 'rowType'>> = {},
+  ) => {
+    classifiedRows.push({
+      ...row,
+      rowType,
+      parsedData: patch.parsedData || {},
+      warnings: patch.warnings || [],
+      itemCode: patch.itemCode,
+      parentItemCode: patch.parentItemCode,
+      resourceCode: patch.resourceCode,
+      resourceType: patch.resourceType,
+      groupType: patch.groupType,
+      coefficient: patch.coefficient,
+    });
+  };
+
   rows.forEach(row => {
     if (headerRowNumber && row.rowNumber <= headerRowNumber) {
+      addClassifiedRow(row, 'ignored', {
+        parsedData: { reason: 'header' },
+      });
       ignoredRows += 1;
       return;
     }
     if (!row.text.trim()) {
+      addClassifiedRow(row, 'ignored', {
+        parsedData: { reason: 'blank' },
+      });
       ignoredRows += 1;
       return;
     }
@@ -190,6 +217,10 @@ export const parseG8Rows = (
       : null;
     if (group) {
       currentGroup = group;
+      addClassifiedRow(row, 'group', {
+        groupType: group,
+        parsedData: { groupType: group },
+      });
       return;
     }
 
@@ -199,6 +230,11 @@ export const parseG8Rows = (
         duplicate.sourceRowEnd = Math.max(duplicate.sourceRowEnd, row.rowNumber);
         duplicate.warnings = Array.from(new Set([...duplicate.warnings, `Trùng mã công tác ${workCode} trong file.`]));
         issues.push(makeIssue(row, 'warning', 'duplicate_item_code', `Mã công tác ${workCode} đã xuất hiện trước đó; các dòng sau sẽ gộp vào công tác đầu tiên.`));
+        addClassifiedRow(row, 'work_item', {
+          itemCode: workCode,
+          parsedData: { duplicateOf: duplicate.id },
+          warnings: [`Trùng mã công tác ${workCode} trong file.`],
+        });
         currentItem = duplicate;
         currentGroup = null;
         return;
@@ -226,6 +262,11 @@ export const parseG8Rows = (
       };
       item.confidenceScore = itemConfidence(item);
       warnings.forEach(message => issues.push(makeIssue(row, 'warning', 'work_item_incomplete', `${workCode}: ${message}`)));
+      addClassifiedRow(row, 'work_item', {
+        itemCode: workCode,
+        parsedData: { name, unit, confidenceScore: item.confidenceScore },
+        warnings,
+      });
       items.push(item);
       itemsByCode.set(workCode, item);
       currentItem = item;
@@ -235,12 +276,22 @@ export const parseG8Rows = (
 
     const hasComponentSignal = Boolean(resourceCode || coefficient !== null || currentGroup);
     if (!hasComponentSignal) {
+      addClassifiedRow(row, 'ignored', {
+        parsedData: { reason: 'no_component_signal' },
+      });
       ignoredRows += 1;
       return;
     }
 
     if (!currentItem) {
       issues.push(makeIssue(row, 'warning', 'component_without_parent', 'Dòng hao phí không có công tác cha phía trước.'));
+      addClassifiedRow(row, 'warning', {
+        resourceCode,
+        resourceType: currentGroup || detectResourceTypeFromCode(resourceCode) || 'other',
+        coefficient,
+        parsedData: { reason: 'component_without_parent' },
+        warnings: ['Dòng hao phí không có công tác cha phía trước.'],
+      });
       ignoredRows += 1;
       return;
     }
@@ -273,6 +324,19 @@ export const parseG8Rows = (
     component.confidenceScore = componentConfidence(component, currentGroup);
     currentItem.components.push(component);
     currentItem.sourceRowEnd = Math.max(currentItem.sourceRowEnd, row.rowNumber);
+    addClassifiedRow(row, 'component', {
+      parentItemCode: currentItem.code,
+      resourceCode,
+      resourceType,
+      coefficient,
+      parsedData: {
+        resourceName: component.resourceName,
+        unit,
+        lineIndex: component.lineIndex,
+        confidenceScore: component.confidenceScore,
+      },
+      warnings,
+    });
     warnings.forEach(message => issues.push(makeIssue(row, 'warning', 'component_incomplete', `${currentItem?.code || ''}/${resourceCode || resourceName || row.rowNumber}: ${message}`)));
   });
 
@@ -287,6 +351,7 @@ export const parseG8Rows = (
   return {
     sheetName: rows[0]?.sheetName || '',
     rows,
+    classifiedRows,
     detectedHeaderRow: headerRowNumber || null,
     columnMapping: mapping,
     parserVersion,

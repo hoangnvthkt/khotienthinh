@@ -62,6 +62,30 @@ describe('G8 Excel parser', () => {
     expect(item.components.find(row => row.resourceCode === 'M112.4002_TT11')?.coefficient).toBe(0.23);
   });
 
+  it('classifies raw rows for import trace persistence', () => {
+    const rows = sampleRows();
+    const detected = detectG8HeaderRow(rows);
+    const result = parseG8Rows(rows, detected.mapping, detected.rowNumber);
+
+    expect(result.classifiedRows).toHaveLength(rows.length);
+    expect(result.classifiedRows[0].rowType).toBe('ignored');
+    expect(result.classifiedRows[1]).toMatchObject({
+      rowType: 'work_item',
+      itemCode: 'AA.22111',
+    });
+    expect(result.classifiedRows[2]).toMatchObject({
+      rowType: 'group',
+      groupType: 'material',
+    });
+    expect(result.classifiedRows[3]).toMatchObject({
+      rowType: 'component',
+      parentItemCode: 'AA.22111',
+      resourceCode: 'V00515',
+      resourceType: 'material',
+      coefficient: 0.96,
+    });
+  });
+
   it('warns about duplicate work item codes', () => {
     const rows = makeRows([
       ['STT', 'Mã hiệu đơn giá', 'Tên công tác', 'Đơn vị', 'Định mức'],

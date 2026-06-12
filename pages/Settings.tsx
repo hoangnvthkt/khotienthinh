@@ -23,6 +23,7 @@ import SettingsChibiBot from './settings/SettingsChibiBot';
 import SettingsProjectMasterData from './settings/SettingsProjectMasterData';
 import SettingsWorkGroups from './settings/SettingsWorkGroups';
 import SettingsInspectionTemplates from './settings/SettingsInspectionTemplates';
+import SettingsG8CostNormLibrary from './settings/SettingsG8CostNormLibrary';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -821,6 +822,7 @@ const Settings: React.FC = () => {
     { id: 'general', label: 'Chung', icon: SettingsIcon, roles: [Role.ADMIN] },
     { id: 'warehouses', label: 'Kho bãi', icon: Building, roles: [Role.ADMIN] },
     { id: 'master-data', label: 'Dữ liệu gốc', icon: Database, roles: [Role.ADMIN] },
+    { id: 'g8-cost-norms', label: 'Định mức G8', icon: FileSpreadsheet, roles: [Role.ADMIN] },
     { id: 'project-master-data', label: 'Danh mục DA', icon: FolderKanban, roles: [Role.ADMIN] },
     { id: 'inspection-templates', label: 'Mẫu nghiệm thu', icon: ClipboardCheck, roles: [Role.ADMIN] },
     { id: 'work-groups', label: 'Nhóm làm việc', icon: Users, roles: [Role.ADMIN] },
@@ -1445,6 +1447,10 @@ const Settings: React.FC = () => {
 
           {activeTab === 'project-master-data' && (
             <SettingsProjectMasterData />
+          )}
+
+          {activeTab === 'g8-cost-norms' && (
+            <SettingsG8CostNormLibrary actorId={currentUser.id} />
           )}
 
           {activeTab === 'inspection-templates' && (
