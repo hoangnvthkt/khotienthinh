@@ -15,7 +15,7 @@ interface ChatMessage {
 }
 
 interface AssistantRequest {
-  action?: 'feedback' | 'estimate_suggestion' | 'cost_norm_standardization' | 'tender_detect_columns' | 'tender_suggest_mapping' | 'tender_risk_rfi';
+  action?: 'feedback' | 'estimate_suggestion' | 'cost_norm_standardization' | 'cost_norm_import_excel' | 'tender_detect_columns' | 'tender_suggest_mapping' | 'tender_risk_rfi';
   question?: string;
   prompt?: string;
   conversationId?: string | null;
@@ -40,6 +40,11 @@ interface AssistantRequest {
   rawMaterials?: any[];
   normalizedRows?: any[];
   priceBookSamples?: any[];
+  fileName?: string;
+  sheetName?: string;
+  rows?: any[];
+  mergedRanges?: any[];
+  localPackages?: any[];
 }
 
 interface AppUserContext {
@@ -58,7 +63,8 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const GEMINI_FAST_MODEL = Deno.env.get('GEMINI_FAST_MODEL') || 'gemini-2.5-flash';
+const GEMINI_FAST_MODEL = Deno.env.get('GEMINI_FAST_MODEL') || 'gemini-3.5-flash';
+const GEMINI_FAST_FALLBACK_MODEL = Deno.env.get('GEMINI_FAST_FALLBACK_MODEL') || 'gemini-2.5-flash';
 const GEMINI_REASONING_MODEL = Deno.env.get('GEMINI_REASONING_MODEL') || 'gemini-2.5-pro';
 const MAX_RESULT_CHARS = 26000;
 
@@ -402,8 +408,8 @@ async function callGemini(
     body.generationConfig.responseMimeType = responseMimeType;
   }
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+  const requestModel = async (modelName: string) => fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -411,7 +417,15 @@ async function callGemini(
     },
   );
 
+  let res = await requestModel(model);
   const data = await res.json();
+  if (!res.ok && model === GEMINI_FAST_MODEL && GEMINI_FAST_FALLBACK_MODEL && GEMINI_FAST_FALLBACK_MODEL !== model) {
+    console.warn(`Gemini model ${model} failed, retrying ${GEMINI_FAST_FALLBACK_MODEL}:`, data?.error?.message || res.status);
+    res = await requestModel(GEMINI_FAST_FALLBACK_MODEL);
+    const fallbackData = await res.json();
+    if (!res.ok) throw new Error(fallbackData?.error?.message || 'Gemini request failed.');
+    return fallbackData?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join('') || '';
+  }
   if (!res.ok) throw new Error(data?.error?.message || 'Gemini request failed.');
   return data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join('') || '';
 }
@@ -841,6 +855,138 @@ ${compactJson(priceBookSamples, 10000)}
   return jsonResponse({ suggestions, warnings, confidenceScore });
 }
 
+function normalizeCostNormImportPayload(raw: any) {
+  const packages = Array.isArray(raw?.packages) ? raw.packages : [];
+  return packages.map((pkg: any, packageIndex: number) => {
+    const lines = Array.isArray(pkg.lines) ? pkg.lines : [];
+    return {
+      id: String(pkg.id || `ai-package-${packageIndex + 1}`),
+      sourceRowStart: Math.max(1, Number(pkg.sourceRowStart || pkg.rowNumber || 1)),
+      sourceRowEnd: Math.max(1, Number(pkg.sourceRowEnd || pkg.sourceRowStart || pkg.rowNumber || 1)),
+      workCode: String(pkg.workCode || pkg.code || '').trim().slice(0, 120),
+      workName: String(pkg.workName || pkg.name || '').trim(),
+      unit: String(pkg.unit || pkg.standardUnit || '').trim(),
+      baseQuantity: pkg.baseQuantity === null || pkg.baseQuantity === undefined ? null : Math.max(0, Number(pkg.baseQuantity)),
+      baseUnitRaw: String(pkg.baseUnitRaw || '').trim(),
+      standardUnit: String(pkg.standardUnit || pkg.unit || '').trim(),
+      confidenceScore: Math.max(0, Math.min(1, Number(pkg.confidenceScore ?? 0.5))),
+      warnings: Array.isArray(pkg.warnings) ? pkg.warnings.map(String).slice(0, 10) : [],
+      needsReview: pkg.needsReview !== false || !pkg.workCode || !pkg.workName,
+      lines: lines.map((line: any, lineIndex: number) => {
+        const type = normalizeNormResourceType(line.resourceType || line.resourceSection);
+        const normQuantity = Math.max(0, Number(line.normQuantity ?? line.quantity ?? 0));
+        return {
+          id: String(line.id || `${pkg.id || `ai-package-${packageIndex + 1}`}-line-${lineIndex + 1}`),
+          sourceRowNumber: Math.max(1, Number(line.sourceRowNumber || line.rowNumber || pkg.sourceRowStart || 1)),
+          resourceSection: normalizeNormResourceType(line.resourceSection || type),
+          resourceType: type,
+          resourceCode: String(line.resourceCode || line.materialCode || '').trim(),
+          resourceName: String(line.resourceName || line.itemName || '').trim(),
+          unit: String(line.unit || '').trim(),
+          normQuantity,
+          wastePercent: Math.max(0, Number(line.wastePercent ?? 0)),
+          confidenceScore: Math.max(0, Math.min(1, Number(line.confidenceScore ?? 0.5))),
+          warnings: Array.isArray(line.warnings) ? line.warnings.map(String).slice(0, 10) : [],
+          needsReview: line.needsReview !== false || !line.resourceName || !line.unit || normQuantity <= 0,
+          reason: String(line.reason || 'AI tách từ bảng định mức Excel.'),
+        };
+      }).filter((line: any) => line.resourceName || line.resourceCode),
+    };
+  }).filter((pkg: any) => pkg.workName && pkg.lines.length > 0);
+}
+
+async function handleCostNormImportExcel(req: AssistantRequest, actor: AppUserContext | null) {
+  if (!canUseCostNormAssistant(actor)) {
+    return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền Admin/HD admin/Tender AI admin để dùng AI import định mức.' }, 403);
+  }
+  const rows = Array.isArray(req.rows) ? req.rows.slice(0, 600) : [];
+  if (rows.length === 0) return jsonResponse({ error: 'Thiếu dữ liệu dòng Excel để AI tách định mức.' }, 400);
+
+  const prompt = `
+Bạn là AI bóc bảng định mức xây dựng từ Excel cho thư viện định mức nội bộ.
+Nhiệm vụ: tách các dòng Excel raw thành các gói/hạng mục định mức và dòng hao phí nguồn lực.
+
+Quy tắc bắt buộc:
+- Chỉ dùng dữ liệu rows, mergedRanges và localPackages được cung cấp.
+- Không bịa đơn giá, giá vốn, margin, profit hoặc risk buffer.
+- Không tự tạo số định mức nếu ô Excel không có số; đặt normQuantity=0, needsReview=true và ghi warning.
+- Dòng nhóm như "Vật liệu", "Nhân công", "Máy thi công" chỉ dùng để phân loại, không tạo thành nguồn lực.
+- Mỗi hạng mục/công tác cha là một package riêng. Ví dụ "Đổ bê tông lót M100" là package; xi măng/cát/đá/nhân công/máy là lines.
+- Nếu đơn vị hạng mục là "100m2" hoặc "100m3", baseQuantity là 100 và standardUnit là "m2"/"m3".
+- Nếu không chắc phân loại, dùng resourceType="other", needsReview=true.
+- Không lưu DB, không activate; chỉ trả JSON để frontend review.
+- Trả về DUY NHẤT JSON object.
+
+Schema:
+{
+  "packages": [
+    {
+      "id": "id tạm",
+      "sourceRowStart": 1,
+      "sourceRowEnd": 5,
+      "workCode": "mã công tác/gói",
+      "workName": "tên công tác/gói",
+      "unit": "đơn vị chuẩn",
+      "baseQuantity": 1,
+      "baseUnitRaw": "100m2",
+      "standardUnit": "m2",
+      "confidenceScore": 0.0,
+      "warnings": ["cảnh báo"],
+      "needsReview": false,
+      "lines": [
+        {
+          "id": "id tạm",
+          "sourceRowNumber": 1,
+          "resourceSection": "material|labor|machine|subcontract|overhead|other",
+          "resourceType": "material|labor|machine|subcontract|overhead|other",
+          "resourceCode": "mã VL/NC/M nếu có",
+          "resourceName": "tên nguồn lực",
+          "unit": "đơn vị",
+          "normQuantity": 0,
+          "wastePercent": 0,
+          "confidenceScore": 0.0,
+          "warnings": ["cảnh báo"],
+          "needsReview": true,
+          "reason": "lý do"
+        }
+      ]
+    }
+  ],
+  "warnings": ["cảnh báo chung"],
+  "confidenceScore": 0.0
+}
+
+File: ${String(req.fileName || '')}
+Sheet: ${String(req.sheetName || '')}
+
+Merged ranges:
+${compactJson(Array.isArray(req.mergedRanges) ? req.mergedRanges.slice(0, 200) : [], 8000)}
+
+Rows:
+${compactJson(rows, 22000)}
+
+Local parser draft:
+${compactJson(Array.isArray(req.localPackages) ? req.localPackages.slice(0, 80) : [], 18000)}
+`.trim();
+
+  const raw = await callGemini(prompt, 0.02, req.model || GEMINI_FAST_MODEL, 'application/json');
+  const parsed = extractJsonObject(raw);
+  const packages = normalizeCostNormImportPayload(parsed);
+  const warnings = Array.isArray(parsed.warnings) ? parsed.warnings.map(String).slice(0, 20) : [];
+  const confidenceScore = Math.max(0, Math.min(1, Number(parsed.confidenceScore ?? (
+    packages.length ? packages.reduce((sum: number, pkg: any) => sum + Number(pkg.confidenceScore || 0), 0) / packages.length : 0.35
+  ))));
+  await writeTenderAiLog(req, actor, 'cost_norm_import_excel', {
+    fileName: req.fileName || null,
+    sheetName: req.sheetName || null,
+    packageCount: packages.length,
+    lineCount: packages.reduce((sum: number, pkg: any) => sum + pkg.lines.length, 0),
+    warnings,
+    confidenceScore,
+  });
+  return jsonResponse({ packages, warnings, confidenceScore });
+}
+
 function normalizeMappingObject(raw: any) {
   const mapping = raw?.mapping && typeof raw.mapping === 'object' ? raw.mapping : {};
   const allowedKeys = ['lineNo', 'itemCode', 'name', 'description', 'unit', 'quantity', 'ownerUnitPrice', 'ownerAmount', 'note'];
@@ -1141,6 +1287,10 @@ Deno.serve(async (request: Request) => {
     if (req.action === 'cost_norm_standardization') {
       const actor = await resolveActor(request, req.userId);
       return handleCostNormStandardization(req, actor);
+    }
+    if (req.action === 'cost_norm_import_excel') {
+      const actor = await resolveActor(request, req.userId);
+      return handleCostNormImportExcel(req, actor);
     }
     if (req.action === 'tender_detect_columns') {
       const actor = await resolveActor(request, req.userId);
