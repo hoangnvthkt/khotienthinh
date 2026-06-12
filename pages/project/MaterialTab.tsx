@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useLocation } from 'react-router-dom';
 import {
     Plus, Edit2, Trash2, X, Package,
-    ChevronDown,
+    ChevronDown, ChevronRight,
     RefreshCcw, Download, Upload,
     FileSpreadsheet, GitBranch, ListTree, Loader2
 } from 'lucide-react';
@@ -196,6 +196,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const needsRequestEvents = activeSubTab === 'request' || isReqModalOpen || Boolean(activeMaterialRequestDeepLinkId);
 
     const [expandedWorkBoqMaterialIds, setExpandedWorkBoqMaterialIds] = useState<Set<string>>(() => new Set());
+    const [expandedWorkBoqNodeIds, setExpandedWorkBoqNodeIds] = useState<Set<string>>(() => new Set());
 
     const workBoqDescendantIdsByParent = useMemo(() => {
         const childrenByParent = new Map<string, ProjectWorkBoqItem[]>();
@@ -231,13 +232,36 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         });
     }, [workBoqDescendantIdsByParent]);
 
-    const collapseAllWorkBoqMaterials = useCallback(() => {
-        setExpandedWorkBoqMaterialIds(new Set());
+    const toggleWorkBoqNode = useCallback((id: string) => {
+        setExpandedWorkBoqNodeIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+    }, []);
+
+    const expandAllWorkBoqNodes = useCallback(() => {
+        const parentIds = workBoqItems
+            .filter(item => (workBoqDescendantIdsByParent.get(item.id) || []).length > 0)
+            .map(item => item.id);
+        setExpandedWorkBoqNodeIds(new Set(parentIds));
+    }, [workBoqItems, workBoqDescendantIdsByParent]);
+
+    const collapseAllWorkBoqNodes = useCallback(() => {
+        setExpandedWorkBoqNodeIds(new Set());
     }, []);
 
     useEffect(() => {
         const existingWorkBoqIds = new Set(workBoqItems.map(item => item.id));
         setExpandedWorkBoqMaterialIds(prev => {
+            const next = new Set([...prev].filter(id => existingWorkBoqIds.has(id)));
+            return next.size === prev.size ? prev : next;
+        });
+        setExpandedWorkBoqNodeIds(prev => {
             const next = new Set([...prev].filter(id => existingWorkBoqIds.has(id)));
             return next.size === prev.size ? prev : next;
         });
@@ -505,7 +529,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         () => new Map(workBoqItems.map(item => [item.id, item])),
         [workBoqItems],
     );
-
     const contractItemById = useMemo(
         () => new Map(contractItems.map(item => [item.id, item])),
         [contractItems],
@@ -1673,6 +1696,21 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         return rows;
     }, [workBoqItems]);
 
+    const visibleWorkBoqTree = useMemo(() => {
+        const visibleIds = new Set<string>();
+        return workBoqTree.filter(({ item }) => {
+            if (!item.parentId) {
+                visibleIds.add(item.id);
+                return true;
+            }
+            if (visibleIds.has(item.parentId) && expandedWorkBoqNodeIds.has(item.parentId)) {
+                visibleIds.add(item.id);
+                return true;
+            }
+            return false;
+        });
+    }, [workBoqTree, expandedWorkBoqNodeIds]);
+
     const unassignedBoqItems = useMemo(
         () => computedBoqItems.filter(item => !item.workBoqItemId),
         [computedBoqItems]
@@ -2416,9 +2454,13 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                         <RefreshCcw size={12} className={syncingBoq ? 'animate-spin' : ''} /> Đồng bộ với tiến độ
                                     </button>
                                 )}
-                                <button onClick={collapseAllWorkBoqMaterials} disabled={expandedWorkBoqMaterialIds.size === 0}
-                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-slate-700 bg-slate-50 border border-slate-200 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50">
-                                    Thu gọn chi tiết
+                                <button onClick={expandAllWorkBoqNodes}
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-[#2563EB] bg-blue-50 border border-blue-200 hover:bg-blue-100">
+                                    Mở rộng cây
+                                </button>
+                                <button onClick={collapseAllWorkBoqNodes}
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-slate-700 bg-slate-50 border border-slate-200 hover:bg-slate-100">
+                                    Thu gọn cây
                                 </button>
                                 <button onClick={handleDownloadWorkBoqTemplate}
                                     className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100">
@@ -2500,10 +2542,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                         </div>
                                     )}
                                 </div>
-                                {workBoqTree.map(({ item, level }) => {
+                                {visibleWorkBoqTree.map(({ item, level }) => {
                                     const comparison = getWorkComparison(item);
                                     const childMaterials = boqItemsByWork.get(item.id) || [];
                                     const showChildMaterials = expandedWorkBoqMaterialIds.has(item.id);
+                                    const isNodeExpanded = expandedWorkBoqNodeIds.has(item.id);
+                                    const hasChildren = (workBoqDescendantIdsByParent.get(item.id) || []).length > 0;
                                     const supplyStatus = getWorkSupplyStatus(childMaterials);
                                     const isOrphan = item.syncStatus === 'orphaned';
                                     const isLevel0 = level === 0;
@@ -2549,6 +2593,18 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                                 aria-label={`Hiển thị vật tư của ${item.name}`}
                                                                 className="h-4 w-4 shrink-0 rounded border-slate-300 text-[#2563EB] focus:ring-blue-200 dark:border-slate-600 dark:bg-slate-800"
                                                             />
+                                                            {hasChildren ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => toggleWorkBoqNode(item.id)}
+                                                                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-white hover:bg-slate-100 border border-slate-200 text-slate-500 hover:text-slate-700 shadow-sm dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700 transition-colors"
+                                                                    title={isNodeExpanded ? 'Thu gọn hạng mục con' : 'Mở rộng hạng mục con'}
+                                                                >
+                                                                    {isNodeExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                                                </button>
+                                                            ) : (
+                                                                <div className="w-5 h-5 shrink-0" />
+                                                            )}
                                                             <span className="rounded-lg bg-white px-2 py-1 font-mono text-[11px] font-black text-[#2563EB] shadow-sm dark:bg-slate-800">{item.wbsCode || '-'}</span>
                                                             {isOrphan && <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-black text-amber-700">ORPHAN</span>}
                                                             <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${supplyStatus.className}`}>{supplyStatus.label}</span>
