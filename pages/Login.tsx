@@ -6,6 +6,7 @@ import { Lock, User as UserIcon, AlertCircle, Info, Eye, EyeOff, Zap } from 'luc
 import { xpService } from '../lib/xpService';
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
+import { createPerformanceTrace } from '../lib/performanceTrace';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -25,15 +26,26 @@ const Login: React.FC = () => {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    const trace = createPerformanceTrace('login-submit', {
+      firstLoginInTab: !sessionStorage.getItem('vioo:login:seen-in-tab'),
+      hasSavedUser: !!localStorage.getItem('vioo_user'),
+    });
     setError('');
     setIsLoading(true);
+    let success = false;
 
     try {
-      const loggedUser = await login(username, password);
+      const loggedUser = await trace.step('appContext.login()', () => login(username, password), {
+        usernameMode: username.includes('@') ? 'email' : 'username',
+      });
       if (loggedUser) {
+        success = true;
         // Award daily login XP (fire-and-forget)
         xpService.awardXP(loggedUser.id, 'daily_login').catch(() => { });
+        trace.startStep('navigate:/');
         navigate('/');
+        trace.endStep('navigate:/');
+        sessionStorage.setItem('vioo:login:seen-in-tab', '1');
       } else {
         const message = 'Tên đăng nhập hoặc mật khẩu không chính xác.';
         setError(message);
@@ -45,6 +57,7 @@ const Login: React.FC = () => {
       setError(message);
       toast.error('Đăng nhập thất bại', message);
     } finally {
+      trace.finish({ success });
       setIsLoading(false);
     }
   };

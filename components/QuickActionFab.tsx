@@ -1,11 +1,14 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useApp } from '../context/AppContext';
+import { canAccessRoute } from '../lib/routeAccess';
 import {
   Plus, Package, Users, ArrowLeftRight, ClipboardCheck,
   Search, Briefcase, DollarSign, Settings, GripVertical,
   Eye, EyeOff, RotateCcw, BarChart3, Calendar, Landmark,
   FileText, Inbox, GitBranch, CalendarOff, MapPin, HardDrive,
-  CheckCircle
+  CheckCircle, ShoppingCart, Truck, ClipboardList, Bot, ShieldCheck,
+  Database, Building2
 } from 'lucide-react';
 
 // === All available actions (master catalog) ===
@@ -37,25 +40,46 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   MapPin: <MapPin size={18} />,
   HardDrive: <HardDrive size={18} />,
   Settings: <Settings size={18} />,
+  ShoppingCart: <ShoppingCart size={18} />,
+  Truck: <Truck size={18} />,
+  ClipboardList: <ClipboardList size={18} />,
+  Bot: <Bot size={18} />,
+  ShieldCheck: <ShieldCheck size={18} />,
+  Database: <Database size={18} />,
+  Building2: <Building2 size={18} />,
 };
 
 const ALL_ACTIONS: ActionDef[] = [
   { id: 'search', label: 'Tìm kiếm nhanh', iconName: 'Search', color: 'bg-slate-600', shadow: 'shadow-slate-600/30', isSpecial: true },
   { id: 'new-transaction', label: 'Tạo phiếu kho', iconName: 'ArrowLeftRight', color: 'bg-blue-500', shadow: 'shadow-blue-500/30', route: '/operations' },
-  { id: 'new-employee', label: 'Thêm nhân viên', iconName: 'Users', color: 'bg-teal-500', shadow: 'shadow-teal-500/30', route: '/hrm/employees' },
   { id: 'new-request', label: 'Tạo yêu cầu vật tư', iconName: 'ClipboardCheck', color: 'bg-amber-500', shadow: 'shadow-amber-500/30', route: '/requests' },
+  { id: 'material-code-request', label: 'Đề xuất mã vật tư', iconName: 'ClipboardList', color: 'bg-yellow-600', shadow: 'shadow-yellow-600/30', route: '/material-code-requests' },
+  { id: 'project-material-request', label: 'Đề xuất vật tư DA', iconName: 'ClipboardCheck', color: 'bg-orange-500', shadow: 'shadow-orange-500/30', route: '/da/tabs/material/request' },
+  { id: 'project-po', label: 'Đơn hàng PO', iconName: 'ShoppingCart', color: 'bg-cyan-600', shadow: 'shadow-cyan-600/30', route: '/da/tabs/material/po' },
+  { id: 'material-planning', label: 'Kế hoạch vật tư', iconName: 'Calendar', color: 'bg-indigo-600', shadow: 'shadow-indigo-600/30', route: '/da/tabs/material/planning' },
+  { id: 'material-boq', label: 'BOQ vật tư', iconName: 'FileText', color: 'bg-sky-600', shadow: 'shadow-sky-600/30', route: '/da/tabs/material/boq' },
   { id: 'new-workflow', label: 'Tạo quy trình mới', iconName: 'Briefcase', color: 'bg-violet-500', shadow: 'shadow-violet-500/30', route: '/wf' },
-  { id: 'payroll', label: 'Bảng lương', iconName: 'DollarSign', color: 'bg-emerald-500', shadow: 'shadow-emerald-500/30', route: '/hrm/payroll' },
   { id: 'inventory', label: 'Tồn kho', iconName: 'Package', color: 'bg-green-500', shadow: 'shadow-green-500/30', route: '/inventory' },
   { id: 'dashboard', label: 'Dashboard Kho', iconName: 'BarChart3', color: 'bg-indigo-500', shadow: 'shadow-indigo-500/30', route: '/dashboard' },
+  { id: 'reports', label: 'Báo cáo kho', iconName: 'BarChart3', color: 'bg-fuchsia-600', shadow: 'shadow-fuchsia-600/30', route: '/reports' },
+  { id: 'audit-trail', label: 'Nhật ký thay đổi', iconName: 'ShieldCheck', color: 'bg-slate-700', shadow: 'shadow-slate-700/30', route: '/audit-trail' },
+  { id: 'new-employee', label: 'Thêm nhân viên', iconName: 'Users', color: 'bg-teal-500', shadow: 'shadow-teal-500/30', route: '/hrm/employees' },
   { id: 'attendance', label: 'Chấm công', iconName: 'Calendar', color: 'bg-cyan-500', shadow: 'shadow-cyan-500/30', route: '/hrm/attendance' },
   { id: 'leave', label: 'Nghỉ phép', iconName: 'CalendarOff', color: 'bg-pink-500', shadow: 'shadow-pink-500/30', route: '/hrm/leave' },
+  { id: 'payroll', label: 'Bảng lương', iconName: 'DollarSign', color: 'bg-emerald-500', shadow: 'shadow-emerald-500/30', route: '/hrm/payroll' },
   { id: 'asset', label: 'Tài sản', iconName: 'Landmark', color: 'bg-rose-500', shadow: 'shadow-rose-500/30', route: '/ts/dashboard' },
   { id: 'project', label: 'Dự án', iconName: 'GitBranch', color: 'bg-orange-500', shadow: 'shadow-orange-500/30', route: '/da' },
+  { id: 'project-contract', label: 'Hợp đồng dự án', iconName: 'FileText', color: 'bg-blue-700', shadow: 'shadow-blue-700/30', route: '/da/tabs/contract' },
   { id: 'expense', label: 'Chi phí', iconName: 'BarChart3', color: 'bg-red-500', shadow: 'shadow-red-500/30', route: '/expense' },
-  { id: 'settings', label: 'Cài đặt', iconName: 'Settings', color: 'bg-gray-500', shadow: 'shadow-gray-500/30', route: '/settings' },
   { id: 'contract', label: 'Hợp đồng LĐ', iconName: 'FileText', color: 'bg-sky-500', shadow: 'shadow-sky-500/30', route: '/hrm/contracts' },
+  { id: 'hd-overview', label: 'Quản lý hợp đồng', iconName: 'Building2', color: 'bg-blue-600', shadow: 'shadow-blue-600/30', route: '/hd/overview' },
+  { id: 'cost-library', label: 'Thư viện đơn giá', iconName: 'Landmark', color: 'bg-lime-700', shadow: 'shadow-lime-700/30', route: '/hd/cost-library' },
+  { id: 'suppliers', label: 'Đối tác/NCC', iconName: 'Truck', color: 'bg-emerald-700', shadow: 'shadow-emerald-700/30', route: '/hd/partners' },
   { id: 'rq-dashboard', label: 'Yêu cầu nội bộ', iconName: 'Inbox', color: 'bg-lime-600', shadow: 'shadow-lime-600/30', route: '/rq' },
+  { id: 'tender-ai', label: 'Tender AI', iconName: 'Bot', color: 'bg-purple-600', shadow: 'shadow-purple-600/30', route: '/tender-ai/boq' },
+  { id: 'ai-assistant', label: 'AI Assistant', iconName: 'Bot', color: 'bg-violet-700', shadow: 'shadow-violet-700/30', route: '/ai' },
+  { id: 'storage', label: 'Kho dữ liệu', iconName: 'Database', color: 'bg-slate-500', shadow: 'shadow-slate-500/30', route: '/storage' },
+  { id: 'settings', label: 'Cài đặt', iconName: 'Settings', color: 'bg-gray-500', shadow: 'shadow-gray-500/30', route: '/settings' },
 ];
 
 const DEFAULT_ENABLED = ['search', 'new-transaction', 'new-employee', 'new-request', 'new-workflow', 'payroll'];
@@ -73,6 +97,10 @@ const QuickActionFab: React.FC = () => {
 
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useApp();
+  const visibleActions = useMemo(() => (
+    ALL_ACTIONS.filter(action => action.isSpecial || canAccessRoute(user, action.route))
+  ), [user]);
 
   // Detect if we're on the AI chat page to shrink the FAB
   const isAiPage = location.pathname.startsWith('/ai');
@@ -113,9 +141,9 @@ const QuickActionFab: React.FC = () => {
   // Build active actions from enabledIds
   const activeActions = useMemo(() => {
     return enabledIds
-      .map(id => ALL_ACTIONS.find(a => a.id === id))
+      .map(id => visibleActions.find(a => a.id === id))
       .filter(Boolean) as ActionDef[];
-  }, [enabledIds]);
+  }, [enabledIds, visibleActions]);
 
   const openSearch = () => {
     setIsOpen(false);
@@ -157,7 +185,7 @@ const QuickActionFab: React.FC = () => {
 
   // Reset to defaults
   const resetDefaults = () => {
-    setEnabledIds([...DEFAULT_ENABLED]);
+    setEnabledIds(DEFAULT_ENABLED.filter(id => visibleActions.some(action => action.id === id)));
   };
 
   return (
@@ -195,7 +223,7 @@ const QuickActionFab: React.FC = () => {
                 Đang hiển thị ({enabledIds.length})
               </p>
               {enabledIds.map((id, idx) => {
-                const action = ALL_ACTIONS.find(a => a.id === id);
+                const action = visibleActions.find(a => a.id === id);
                 if (!action) return null;
                 return (
                   <div key={id} className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 group">
@@ -240,7 +268,7 @@ const QuickActionFab: React.FC = () => {
             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2 mb-1.5">
               Có thể thêm
             </p>
-            {ALL_ACTIONS.filter(a => !enabledIds.includes(a.id)).map(action => (
+            {visibleActions.filter(a => !enabledIds.includes(a.id)).map(action => (
               <button
                 key={action.id}
                 onClick={() => toggleAction(action.id)}
@@ -253,7 +281,7 @@ const QuickActionFab: React.FC = () => {
                 <Plus size={13} className="text-slate-300 group-hover:text-emerald-500 transition" />
               </button>
             ))}
-            {ALL_ACTIONS.filter(a => !enabledIds.includes(a.id)).length === 0 && (
+            {visibleActions.filter(a => !enabledIds.includes(a.id)).length === 0 && (
               <p className="text-[10px] text-slate-300 dark:text-slate-600 text-center py-3 italic">Đã thêm tất cả</p>
             )}
           </div>
