@@ -8,7 +8,7 @@ import {
   Eye, EyeOff, RotateCcw, BarChart3, Calendar, Landmark,
   FileText, Inbox, GitBranch, CalendarOff, MapPin, HardDrive,
   CheckCircle, ShoppingCart, Truck, ClipboardList, Bot, ShieldCheck,
-  Database, Building2
+  Database, Building2, MessageSquarePlus
 } from 'lucide-react';
 
 // === All available actions (master catalog) ===
@@ -47,6 +47,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   ShieldCheck: <ShieldCheck size={18} />,
   Database: <Database size={18} />,
   Building2: <Building2 size={18} />,
+  MessageSquarePlus: <MessageSquarePlus size={18} />,
 };
 
 const ALL_ACTIONS: ActionDef[] = [
@@ -78,6 +79,7 @@ const ALL_ACTIONS: ActionDef[] = [
   { id: 'rq-dashboard', label: 'Yêu cầu nội bộ', iconName: 'Inbox', color: 'bg-lime-600', shadow: 'shadow-lime-600/30', route: '/rq' },
   { id: 'tender-ai', label: 'Tender AI', iconName: 'Bot', color: 'bg-purple-600', shadow: 'shadow-purple-600/30', route: '/tender-ai/boq' },
   { id: 'ai-assistant', label: 'AI Assistant', iconName: 'Bot', color: 'bg-violet-700', shadow: 'shadow-violet-700/30', route: '/ai' },
+  { id: 'feedback', label: 'Gửi góp ý', iconName: 'MessageSquarePlus', color: 'bg-blue-600', shadow: 'shadow-blue-600/30', route: '/feedback' },
   { id: 'storage', label: 'Kho dữ liệu', iconName: 'Database', color: 'bg-slate-500', shadow: 'shadow-slate-500/30', route: '/storage' },
   { id: 'settings', label: 'Cài đặt', iconName: 'Settings', color: 'bg-gray-500', shadow: 'shadow-gray-500/30', route: '/settings' },
 ];

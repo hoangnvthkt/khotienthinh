@@ -6,7 +6,7 @@ import {
   GitBranch, Inbox, MoreHorizontal, Settings, Plus, X,
   GripVertical, EyeOff, RotateCcw, Users, DollarSign,
   ArrowLeftRight, Calendar, FileText, MessageCircle, Bot,
-  CheckCircle, HardDrive, BookOpen, MapPin
+  CheckCircle, HardDrive, BookOpen, MapPin, MessageSquarePlus
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Role } from '../types';
@@ -28,6 +28,7 @@ const ICON_MAP: Record<string, React.FC<{ size?: number; strokeWidth?: number }>
   GitBranch, Inbox, MoreHorizontal, Users, DollarSign,
   ArrowLeftRight, Calendar, FileText, MessageCircle, Bot, Settings,
   HardDrive, BookOpen, MapPin,
+  MessageSquarePlus,
 };
 
 const ALL_NAV_ITEMS: NavItem[] = [
@@ -43,6 +44,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { key: 'PAY', to: '/hrm/payroll', iconName: 'DollarSign', label: 'Bảng lương', shortLabel: 'BL', matchPrefix: '/hrm/payroll', color: 'text-green-500' },
   { key: 'CHECKIN', to: '/hrm/checkin', iconName: 'MapPin', label: 'Chấm công', shortLabel: 'CC', matchPrefix: '/hrm/checkin', color: 'text-emerald-500' },
   { key: 'CHAT', to: '/chat', iconName: 'MessageCircle', label: 'Tin nhắn', shortLabel: 'Chat', matchPrefix: '/chat', color: 'text-pink-500' },
+  { key: 'FEEDBACK', to: '/feedback', iconName: 'MessageSquarePlus', label: 'Góp ý', shortLabel: 'GY', matchPrefix: '/feedback', color: 'text-blue-500' },
   { key: 'SET', to: '/settings', iconName: 'Settings', label: 'Cài đặt', shortLabel: 'CĐ', matchPrefix: '/settings', color: 'text-slate-500' },
   { key: 'STORAGE', to: '/storage', iconName: 'HardDrive', label: 'Kho dữ liệu', shortLabel: 'DL', matchPrefix: '/storage', color: 'text-violet-500' },
   { key: 'KB', to: '/knowledge-base', iconName: 'BookOpen', label: 'Kho Kiến Thức', shortLabel: 'KT', matchPrefix: '/knowledge-base', color: 'text-amber-500' },

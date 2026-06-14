@@ -50,6 +50,7 @@ export const NOTIFICATION_CATEGORIES = {
   inventory: { label: 'Tồn kho', icon: '📋', color: 'text-cyan-600 bg-cyan-50' },
   contract: { label: 'Hợp đồng', icon: '📝', color: 'text-violet-600 bg-violet-50' },
   hrm: { label: 'Nhân sự', icon: '👤', color: 'text-indigo-600 bg-indigo-50' },
+  feedback: { label: 'Góp ý', icon: '💬', color: 'text-blue-600 bg-blue-50' },
   system: { label: 'Hệ thống', icon: '⚙️', color: 'text-slate-600 bg-slate-50' },
 } as const;
 
