@@ -56,7 +56,7 @@ export const NOTIFICATION_CATEGORIES = {
 
 // ── Throttle: only allow alert checks once per 15min across all tabs ──
 const ALERT_CHECK_KEY = 'vioo_last_alert_check';
-const ALERT_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes (match attendance reminder window)
+const ALERT_CHECK_INTERVAL = 15 * 60 * 1000;
 
 function shouldRunAlertCheck(): boolean {
   const last = localStorage.getItem(ALERT_CHECK_KEY);
@@ -134,27 +134,52 @@ async function notifyProjectUsers(input: NotifyProjectUsersInput): Promise<strin
 export const notificationService = {
   /** List notifications (recent first) */
   async list(userId?: string, limit = 50): Promise<AppNotification[]> {
-    let query = supabase
+    const baseQuery = () => supabase
       .from('notifications')
       .select('*')
       .eq('is_dismissed', false)
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(limit);
-    if (userId) query = query.or(`user_id.eq.${userId},user_id.is.null`);
-    const { data } = await query;
-    return (data || []).map(toCamel);
+
+    if (!userId) {
+      const { data } = await baseQuery().is('user_id', null);
+      return (data || []).map(toCamel);
+    }
+
+    const [userResult, globalResult] = await Promise.all([
+      baseQuery().eq('user_id', userId),
+      baseQuery().is('user_id', null),
+    ]);
+
+    return [...(userResult.data || []), ...(globalResult.data || [])]
+      .sort((a: any, b: any) => {
+        const byDate = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        if (byDate !== 0) return byDate;
+        return String(b.id).localeCompare(String(a.id));
+      })
+      .slice(0, limit)
+      .map(toCamel);
   },
 
   /** Count unread */
   async countUnread(userId?: string): Promise<number> {
-    let query = supabase
+    const baseQuery = () => supabase
       .from('notifications')
       .select('id', { count: 'exact', head: true })
       .eq('is_read', false)
       .eq('is_dismissed', false);
-    if (userId) query = query.or(`user_id.eq.${userId},user_id.is.null`);
-    const { count } = await query;
-    return count || 0;
+
+    if (!userId) {
+      const { count } = await baseQuery().is('user_id', null);
+      return count || 0;
+    }
+
+    const [userResult, globalResult] = await Promise.all([
+      baseQuery().eq('user_id', userId),
+      baseQuery().is('user_id', null),
+    ]);
+    return (userResult.count || 0) + (globalResult.count || 0);
   },
 
   /** Mark as read */
@@ -647,9 +672,13 @@ export const notificationService = {
 
   /** Subscribe to realtime notifications */
   subscribe(callback: (n: AppNotification) => void, userId?: string): RealtimeChannel {
-    return supabase
-      .channel(`notifications:${userId || 'global'}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
+    const channel = supabase.channel(`notifications:${userId || 'global'}`);
+    const options = userId
+      ? { event: 'INSERT' as const, schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }
+      : { event: 'INSERT' as const, schema: 'public', table: 'notifications' };
+
+    return channel
+      .on('postgres_changes', options, (payload) => {
         const notification = toCamel(payload.new);
         if (notification.userId && notification.userId !== userId) return;
         callback(notification);

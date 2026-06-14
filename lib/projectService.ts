@@ -252,7 +252,8 @@ export const taskService = {
             .from('project_tasks')
             .select('*')
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-            .order('sort_order', { ascending: true });
+            .order('sort_order', { ascending: true })
+            .order('id', { ascending: true });
         if (error) throw error;
         return dedupeRowsById(data || []).map(taskFromDb);
     },
@@ -263,7 +264,8 @@ export const taskService = {
             .select('*')
             .in('construction_site_id', siteIds)
             .order('construction_site_id', { ascending: true })
-            .order('sort_order', { ascending: true });
+            .order('sort_order', { ascending: true })
+            .order('id', { ascending: true });
         if (error) throw error;
         return (data || []).map(taskFromDb);
     },
@@ -449,7 +451,8 @@ export const boqService = {
             .from('material_budget_items')
             .select('*')
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-            .order('category', { ascending: true });
+            .order('category', { ascending: true })
+            .order('id', { ascending: true });
         if (error) throw error;
         return dedupeRowsById(data || []).map(fromDb);
     },
@@ -573,7 +576,8 @@ export const workBoqService = {
             .from('project_work_boq_items')
             .select('*')
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-            .order('sort_order', { ascending: true });
+            .order('sort_order', { ascending: true })
+            .order('id', { ascending: true });
         if (error) throw error;
         return dedupeRowsById(data || []).map(fromDb);
     },

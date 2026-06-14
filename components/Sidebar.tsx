@@ -328,8 +328,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
               >
                 {isDark ? <Sun size={15} /> : <Moon size={15} />}
               </button>
-              <div className={`flex-none flex items-center justify-center w-9 h-9 rounded-lg border transition-all ${isDark ? 'bg-slate-800/50 border-white/10 hover:bg-slate-700/50' : 'bg-white/50 border-white/60 hover:bg-white'}`}>
-                <NotificationCenter userId={user?.id} />
+              <div className={`hidden lg:flex flex-none items-center justify-center w-9 h-9 rounded-lg border transition-all ${isDark ? 'bg-slate-800/50 border-white/10 hover:bg-slate-700/50' : 'bg-white/50 border-white/60 hover:bg-white'}`}>
+                <NotificationCenter userId={user?.id} mode="desktop" />
               </div>
               <button
                 onClick={() => { logout(); navigate('/login'); }}
@@ -348,8 +348,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
               title={isDark ? 'Light Mode' : 'Dark Mode'}>
               {isDark ? <Sun size={14} /> : <Moon size={14} />}
             </button>
-            <div className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-all ${isDark ? 'bg-slate-800/50 border-white/10' : 'bg-white/50 border-white/60'}`}>
-              <NotificationCenter userId={user?.id} />
+            <div className={`hidden lg:flex items-center justify-center w-9 h-9 rounded-lg border transition-all ${isDark ? 'bg-slate-800/50 border-white/10' : 'bg-white/50 border-white/60'}`}>
+              <NotificationCenter userId={user?.id} mode="desktop" />
             </div>
             <button onClick={() => { logout(); navigate('/login'); }}
               className="flex items-center justify-center w-9 h-9 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500 hover:text-white transition-all" title="Đăng xuất">

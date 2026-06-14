@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, isTransientSupabaseError } from '../lib/supabase';
 import {
   InventoryItem, Transaction, User, Warehouse, Supplier,
   Role, TransactionStatus, TransactionType, MaterialRequest,
@@ -85,7 +85,16 @@ const userToDbPayload = (data: User) => {
   return payload;
 };
 
-export type AppModule = 'wms' | 'wms-core' | 'hrm' | 'da' | 'ts' | 'ex';
+export type AppModule = 'wms' | 'wms-core' | 'hrm' | 'da' | 'ts' | 'ex' | 'admin';
+
+const BASE_REALTIME_TABLES = ['app_settings'] as const;
+
+const REALTIME_TABLES_BY_MODULE: Partial<Record<AppModule, string[]>> = {
+  admin: ['app_settings', 'users'],
+  'wms-core': ['items', 'warehouses', 'requests'],
+  wms: ['items', 'transactions', 'warehouses', 'requests', 'suppliers', 'activities', 'categories', 'units'],
+  hrm: ['employees', 'org_units'],
+};
 
 interface AppContextType {
   user: User;
@@ -230,6 +239,7 @@ interface AppContextType {
   isLoading: boolean;
   isRefreshing: boolean;
   connectionError: string | null;
+  systemSlowMessage: string | null;
   realtimeStatus: RealtimeStatus;
   lastRealtimeEvent: number;
 }
@@ -253,20 +263,24 @@ const INVENTORY_FETCH_PAGE_SIZE = 1000;
 
 const fetchAllInventoryItemRows = async (): Promise<any[] | null> => {
   const rows: any[] = [];
-  let from = 0;
+  let lastId: string | null = null;
 
   try {
     while (true) {
-      const { data, error } = await supabase
+      let query = supabase
         .from('items')
         .select('*')
         .order('id', { ascending: true })
-        .range(from, from + INVENTORY_FETCH_PAGE_SIZE - 1);
+        .limit(INVENTORY_FETCH_PAGE_SIZE);
+      if (lastId) query = query.gt('id', lastId);
+
+      const { data, error } = await query;
       if (error) throw error;
       if (!data || data.length === 0) return rows;
 
       rows.push(...data);
-      from += data.length;
+      lastId = data[data.length - 1]?.id || lastId;
+      if (data.length < INVENTORY_FETCH_PAGE_SIZE) return rows;
     }
   } catch (error) {
     console.warn('Error fetching all items:', error);
@@ -341,7 +355,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const saved = localStorage.getItem('vioo_user');
     return saved ? JSON.parse(saved) : MOCK_USERS[0];
   });
-  const [users, setUsers] = useState<User[]>(() => isSupabaseConfigured ? [] : MOCK_USERS);
+  const [users, setUsers] = useState<User[]>(() => {
+    if (!isSupabaseConfigured) return MOCK_USERS;
+    const saved = localStorage.getItem('vioo_user');
+    return saved ? [JSON.parse(saved)] : [];
+  });
   const [appSettings, setAppSettings] = useState<AppSettings>({ name: 'Vioo', logo: '' });
   const [items, setItems] = useState<InventoryItem[]>(() => isSupabaseConfigured ? [] : MOCK_ITEMS);
   const [warehouses, setWarehouses] = useState<Warehouse[]>(() => isSupabaseConfigured ? [] : MOCK_WAREHOUSES);
@@ -407,9 +425,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isLoading, setIsLoading] = useState(isSupabaseConfigured);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [systemSlowMessage, setSystemSlowMessage] = useState<string | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('disconnected');
   const [lastRealtimeEvent, setLastRealtimeEvent] = useState<number>(0);
   const loadedModulesRef = useRef<Set<string>>(new Set());
+  const realtimeTablesRef = useRef<Set<string>>(new Set());
+
+  const activateRealtimeTables = useCallback((tables: readonly string[]) => {
+    if (!isSupabaseConfigured || tables.length === 0) return;
+
+    let changed = false;
+    tables.forEach(table => {
+      if (!realtimeTablesRef.current.has(table)) {
+        realtimeTablesRef.current.add(table);
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      realtimeService.connect([...realtimeTablesRef.current]);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleRetry = () => {
+      setSystemSlowMessage('Hệ thống đang chậm, đang thử kết nối lại...');
+    };
+    const handleRecovered = () => {
+      window.setTimeout(() => setSystemSlowMessage(null), 1200);
+    };
+
+    window.addEventListener('vioo:supabase-retry', handleRetry);
+    window.addEventListener('vioo:supabase-recovered', handleRecovered);
+    return () => {
+      window.removeEventListener('vioo:supabase-retry', handleRetry);
+      window.removeEventListener('vioo:supabase-recovered', handleRecovered);
+    };
+  }, []);
 
   // Load data from Supabase on mount
   useEffect(() => {
@@ -431,58 +483,75 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           try {
             const { data, error } = await query;
             if (error) {
+              if (isTransientSupabaseError(error)) setSystemSlowMessage('Hệ thống đang chậm, đang thử kết nối lại...');
               console.warn(`Error fetching ${table}:`, error.message);
               return null;
             }
             return data;
           } catch (e) {
+            if (isTransientSupabaseError(e)) setSystemSlowMessage('Hệ thống đang chậm, đang thử kết nối lại...');
             console.warn(`Exception fetching ${table}:`, e);
             return null;
           }
         };
 
-        const [settingsData, usersData] = await trace.step(
-          'fetch app_settings + users',
+        const [settingsData, authResult] = await trace.step(
+          'fetch app_settings + auth user',
           () => Promise.all([
             fetchTable('app_settings', supabase.from('app_settings').select('*').maybeSingle()),
-            fetchTable('users')
+            supabase.auth.getUser(),
           ])
         );
 
-        trace.startStep('map settings/users');
+        trace.startStep('map settings/current user');
         if (settingsData) setAppSettings(settingsData);
-        if (usersData && usersData.length > 0) {
-          const mappedUsers = usersData.map(mapUserFromDb);
-          trace.endStep('map settings/users', { userCount: mappedUsers.length });
-          // Fetch signatures and merge
-          const { data: sigData } = await trace.step(
-            'fetch user_signatures',
-            () => supabase.from('user_signatures').select('*')
-          );
-          trace.startStep('map signatures');
-          if (sigData && sigData.length > 0) {
-            const sigMap = new Map<string, string>();
-            for (const sig of sigData) {
-              const { data: urlData } = supabase.storage.from('workflow-templates').getPublicUrl(sig.image_path);
-              if (urlData?.publicUrl) sigMap.set(sig.user_id, urlData.publicUrl);
-            }
-            mappedUsers.forEach((u: any) => { if (sigMap.has(u.id)) u.signatureUrl = sigMap.get(u.id); });
-          }
-          trace.endStep('map signatures', { signatureCount: sigData?.length || 0 });
-          trace.startStep('set app bootstrap state');
-          setUsers(mappedUsers);
-          const currentInList = mappedUsers.find((u: any) => (user.authId && u.authId === user.authId) || u.email === user.email);
-          if (currentInList) setUser(currentInList);
-          trace.endStep('set app bootstrap state', { matchedCurrentUser: !!currentInList });
-        } else {
-          trace.endStep('map settings/users', { userCount: 0 });
+
+        const authUserId = authResult.data?.user?.id || user.authId;
+        let currentProfile: any = null;
+
+        if (authUserId) {
+          const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('auth_id', authUserId)
+            .maybeSingle();
+          if (error && !isTransientSupabaseError(error)) console.warn('Error fetching current user by auth_id:', error.message);
+          currentProfile = data;
         }
 
-        // Module-specific data is loaded lazily via loadModuleData()
+        if (!currentProfile && user.email) {
+          const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', user.email)
+            .maybeSingle();
+          if (error && !isTransientSupabaseError(error)) console.warn('Error fetching current user by email:', error.message);
+          currentProfile = data;
+        }
+
+        if (currentProfile) {
+          const mappedUser = mapUserFromDb(currentProfile);
+          setUser(mappedUser);
+          setUsers(prev => {
+            const exists = prev.some(u => u.id === mappedUser.id);
+            return exists ? prev.map(u => u.id === mappedUser.id ? mappedUser : u) : [mappedUser, ...prev];
+          });
+          const { avatar, ...userForStorage } = mappedUser;
+          localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
+          setConnectionError(null);
+        }
+
+        // Module-specific data is loaded lazily via loadModuleData().
+        // Bootstrap intentionally keeps only profile/permissions + app settings.
+        trace.endStep('map settings/current user', { matchedCurrentUser: !!currentProfile });
         success = true;
       } catch (error: any) {
         console.error('Error fetching data from Supabase:', error);
-        setConnectionError(error.message);
+        if (isTransientSupabaseError(error)) {
+          setSystemSlowMessage('Hệ thống đang chậm, đang thử kết nối lại...');
+        } else {
+          setConnectionError(error.message);
+        }
       } finally {
         setIsLoading(false);
         trace.finish({ success });
@@ -490,14 +559,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     fetchData();
-
-    // Set up Realtime via centralized service
-    const CRITICAL_TABLES = [
-      'items', 'transactions', 'warehouses', 'requests',
-      'users', 'app_settings',
-      'suppliers', 'activities', 'employees', 'categories',
-      'units', 'org_units', 'notifications',
-    ];
 
     // Status tracking
     const unsubStatus = realtimeService.onStatusChange((status) => {
@@ -690,8 +751,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
-    // Connect to all critical tables
-    realtimeService.connect(CRITICAL_TABLES);
+    // Keep bootstrap realtime deliberately small. Module tables are enabled
+    // lazily from loadModuleData() to reduce realtime.list_changes pressure.
+    activateRealtimeTables(BASE_REALTIME_TABLES);
 
     return () => {
       unsubStatus();
@@ -699,17 +761,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubItems(); unsubTx(); unsubWh(); unsubSup(); unsubReq();
       unsubAct(); unsubUsers(); unsubEmp(); unsubCat(); unsubUnits();
       unsubSettings(); unsubOrg();
+      realtimeTablesRef.current.clear();
       realtimeService.disconnect();
     };
-  }, []);
+  }, [activateRealtimeTables]);
 
   // ==================== LAZY MODULE DATA LOADING ====================
   const fetchTableHelper = async (table: string, query: any = supabase.from(table).select('*')) => {
     try {
       const { data, error } = await query;
-      if (error) { console.warn(`Error fetching ${table}:`, error.message); return null; }
+      if (error) {
+        if (isTransientSupabaseError(error)) setSystemSlowMessage('Hệ thống đang chậm, đang thử kết nối lại...');
+        console.warn(`Error fetching ${table}:`, error.message);
+        return null;
+      }
       return data;
-    } catch (e) { console.warn(`Exception fetching ${table}:`, e); return null; }
+    } catch (e) {
+      if (isTransientSupabaseError(e)) setSystemSlowMessage('Hệ thống đang chậm, đang thử kết nối lại...');
+      console.warn(`Exception fetching ${table}:`, e);
+      return null;
+    }
   };
 
   const normalizeProjectTransaction = (row: any): ProjectTransaction => ({
@@ -751,6 +822,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!isSupabaseConfigured) return;
     if (!force && (loadedModulesRef.current.has(module) || (module === 'wms-core' && loadedModulesRef.current.has('wms')))) return;
     loadedModulesRef.current.add(module);
+    activateRealtimeTables(REALTIME_TABLES_BY_MODULE[module] || []);
 
     try {
       const loadWmsCoreData = async () => {
@@ -764,7 +836,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (reqData) setRequests(reqData.map(mapMaterialRequestFromDb));
       };
 
-      if (module === 'wms-core') {
+      if (module === 'admin') {
+        const [settingsData, usersData, sigData] = await Promise.all([
+          fetchTableHelper('app_settings', supabase.from('app_settings').select('*').maybeSingle()),
+          fetchTableHelper('users'),
+          fetchTableHelper('user_signatures'),
+        ]);
+        if (settingsData) setAppSettings(settingsData);
+        if (usersData && usersData.length > 0) {
+          const mappedUsers = usersData.map(mapUserFromDb);
+          if (sigData && sigData.length > 0) {
+            const sigMap = new Map<string, string>();
+            for (const sig of sigData) {
+              const { data: urlData } = supabase.storage.from('workflow-templates').getPublicUrl(sig.image_path);
+              if (urlData?.publicUrl) sigMap.set(sig.user_id, urlData.publicUrl);
+            }
+            mappedUsers.forEach((u: any) => { if (sigMap.has(u.id)) u.signatureUrl = sigMap.get(u.id); });
+          }
+          setUsers(mappedUsers);
+          const currentInList = mappedUsers.find((u: any) => (user.authId && u.authId === user.authId) || u.email === user.email);
+          if (currentInList) setUser(currentInList);
+        }
+      } else if (module === 'wms-core') {
         await loadWmsCoreData();
       } else if (module === 'wms') {
         const [itemsData, whData, supData, txData, reqData, actData, catData, unitData, lossNormsData, auditSessionsData] = await Promise.all([
@@ -773,7 +866,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTableHelper('suppliers'),
           fetchTableHelper('transactions', supabase.from('transactions').select('*').order('date', { ascending: false })),
           fetchTableHelper('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
-          fetchTableHelper('activities', supabase.from('activities').select('*').order('timestamp', { ascending: false }).limit(50)),
+          fetchTableHelper(
+            'activities',
+            supabase
+              .from('activities')
+              .select('id,type,action,description,status,timestamp,user_id,user_name,user_avatar,warehouse_id')
+              .order('timestamp', { ascending: false })
+              .order('id', { ascending: false })
+              .limit(50)
+          ),
           fetchTableHelper('categories'),
           fetchTableHelper('units'),
           fetchTableHelper('loss_norms'),
@@ -1017,7 +1118,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error(`Error lazy-loading module "${module}":`, error);
       loadedModulesRef.current.delete(module); // Allow retry on error
     }
-  }, []);
+  }, [activateRealtimeTables, user.authId, user.email]);
 
   // Helper to sync a single table to Supabase
   const syncToSupabase = async (table: string, data: any, throwOnError = false): Promise<boolean> => {
@@ -1217,10 +1318,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (!rpcError && rpcEmail) {
             loginEmail = rpcEmail;
           } else {
+            if (rpcError && isTransientSupabaseError(rpcError)) {
+              throw new Error('Hệ thống đang chậm, đang thử kết nối lại. Anh thử đăng nhập lại sau vài giây.');
+            }
             const { data, error } = await trace.step(
               'lookup user email fallback',
               () => supabase.from('users').select('email').eq('username', username).single()
             );
+            if (error && isTransientSupabaseError(error)) {
+              throw new Error('Hệ thống đang chậm, đang thử kết nối lại. Anh thử đăng nhập lại sau vài giây.');
+            }
             if (error || !data) throw new Error('Không tìm thấy tài khoản');
             loginEmail = data.email;
           }
@@ -1251,13 +1358,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             'fetch profile by email fallback',
             () => supabase.from('users').select('*').eq('email', loginEmail).single()
           );
+        if (userError && isTransientSupabaseError(userError)) {
+          throw new Error('Đăng nhập đã xác thực, nhưng hệ thống đang chậm khi tải hồ sơ. Anh thử lại sau vài giây.');
+        }
         if (userError || !userData) throw new Error('Lỗi lấy thông tin người dùng');
 
         trace.startStep('map user + localStorage');
         const mappedUser = mapUserFromDb(userData);
         setUser(mappedUser);
+        setUsers(prev => {
+          const exists = prev.some(u => u.id === mappedUser.id);
+          return exists ? prev.map(u => u.id === mappedUser.id ? mappedUser : u) : [mappedUser, ...prev];
+        });
         const { avatar, ...userForStorage } = mappedUser;
         localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
+        localStorage.removeItem('vioo_explicit_logout_at');
         trace.endStep('map user + localStorage');
         success = true;
         return mappedUser;
@@ -1282,8 +1397,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logout = () => {
+    localStorage.setItem('vioo_explicit_logout_at', String(Date.now()));
     localStorage.removeItem('vioo_user');
-    supabase.auth.signOut();
+    supabase.auth.signOut().catch(err => console.warn('Supabase signOut failed:', err));
     // We don't set user to null because the app expects a user object. 
     // We'll handle redirection in App.tsx
   };
@@ -3095,7 +3211,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addAssetAssignment, addAssetMaintenance, updateAssetMaintenance, addAssetTransfer, transferAssetStock,
       isModuleAdmin, loadModuleData, refreshWmsRecords,
       saveSignature, deleteSignature,
-      login, logout, isLoading, isRefreshing, connectionError, realtimeStatus, lastRealtimeEvent
+      login, logout, isLoading, isRefreshing, connectionError, systemSlowMessage, realtimeStatus, lastRealtimeEvent
     }}>
       {children}
     </AppContext.Provider>

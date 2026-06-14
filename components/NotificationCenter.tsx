@@ -10,6 +10,8 @@ import { webPushService } from '../lib/webPushService';
 
 interface NotificationCenterProps {
     userId?: string;
+    enabled?: boolean;
+    mode?: 'always' | 'mobile' | 'desktop';
 }
 
 const SEVERITY_STYLES = {
@@ -25,12 +27,16 @@ const TYPE_ICONS = {
     error: <XCircle size={14} className="text-red-500" />,
 };
 
-const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
+const getIsMobileViewport = () =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches;
+
+const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled = true, mode = 'always' }) => {
     const navigate = useNavigate();
     const [notifications, setNotifications] = useState<AppNotification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [isOpen, setIsOpen] = useState(false);
     const [checking, setChecking] = useState(false);
+    const [isMobileViewport, setIsMobileViewport] = useState(getIsMobileViewport);
     const [filterCategory, setFilterCategory] = useState<string>('all');
     const [browserPermission, setBrowserPermission] = useState<NotificationPermission>(
         typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied'
@@ -38,21 +44,48 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
     const bellRef = useRef<HTMLButtonElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
     const [panelPos, setPanelPos] = useState({ top: 0, left: 0 });
+    const isViewportEnabled =
+        mode === 'always' ||
+        (mode === 'mobile' && isMobileViewport) ||
+        (mode === 'desktop' && !isMobileViewport);
+    const isActive = enabled && isViewportEnabled;
 
-    // Load notifications
-    const load = useCallback(async () => {
-        const [list, count] = await Promise.all([
-            notificationService.list(userId),
-            notificationService.countUnread(userId),
-        ]);
+    useEffect(() => {
+        if (mode === 'always') return;
+        const media = window.matchMedia('(max-width: 1023px)');
+        const handleChange = () => setIsMobileViewport(media.matches);
+        handleChange();
+        media.addEventListener?.('change', handleChange);
+        return () => media.removeEventListener?.('change', handleChange);
+    }, [mode]);
+
+    useEffect(() => {
+        if (!isActive && isOpen) setIsOpen(false);
+    }, [isActive, isOpen]);
+
+    const loadList = useCallback(async () => {
+        const list = await notificationService.list(userId);
         setNotifications(list);
+    }, [userId]);
+
+    const loadCount = useCallback(async () => {
+        const count = await notificationService.countUnread(userId);
         setUnreadCount(count);
     }, [userId]);
 
-    useEffect(() => { load(); }, [load]);
+    useEffect(() => {
+        if (!isActive) return;
+        loadCount();
+    }, [isActive, loadCount]);
+
+    useEffect(() => {
+        if (!isActive || !isOpen) return;
+        loadList();
+    }, [isActive, isOpen, loadList]);
 
     // Realtime subscription
     useEffect(() => {
+        if (!isActive) return;
         const channel = notificationService.subscribe((n) => {
             setNotifications(prev => [n, ...prev]);
             if (!n.isRead) setUnreadCount(c => c + 1);
@@ -96,27 +129,35 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
             }
         }, userId);
         return () => { notificationService.unsubscribe(channel); };
-    }, [userId]);
+    }, [isActive, userId]);
 
     useEffect(() => {
+        if (!isActive) return;
         if ('Notification' in window) setBrowserPermission(Notification.permission);
         if (userId && webPushService.isSupported() && Notification.permission === 'granted') {
             webPushService.ensureSubscription(userId).catch(err => console.error('Web push subscription error:', err));
         }
-    }, [userId]);
+    }, [isActive, userId]);
 
-    // Auto-check alerts on mount + every 5 minutes
+    // Auto-check alerts on mount + every 15 minutes
     useEffect(() => {
+        if (!isActive) return;
         notificationService.runAlertChecks().then((count) => {
-            if (count > 0) load();
+            if (count > 0) {
+                loadCount();
+                if (isOpen) loadList();
+            }
         });
         const interval = setInterval(() => {
             notificationService.runAlertChecks().then((count) => {
-                if (count > 0) load();
+                if (count > 0) {
+                    loadCount();
+                    if (isOpen) loadList();
+                }
             });
-        }, 5 * 60 * 1000);
+        }, 15 * 60 * 1000);
         return () => clearInterval(interval);
-    }, [load]);
+    }, [isActive, isOpen, loadCount, loadList]);
 
     // Click outside to close
     useEffect(() => {
@@ -134,6 +175,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
 
     // Calculate panel position from bell button
     const toggleOpen = () => {
+        if (!isActive) return;
         if (!isOpen && bellRef.current) {
             const rect = bellRef.current.getBoundingClientRect();
             // Position panel below bell, aligned to bell's left edge
@@ -190,7 +232,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
     const handleRunChecks = async () => {
         setChecking(true);
         const count = await notificationService.runAlertChecks();
-        await load();
+        await Promise.all([loadCount(), loadList()]);
         setChecking(false);
     };
 

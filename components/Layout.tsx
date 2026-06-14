@@ -28,7 +28,7 @@ const Layout: React.FC = () => {
   const [sessionWarning, setSessionWarning] = useState(false);
   const [countdown, setCountdown] = useState(300); // 5 minutes in seconds
 
-  const { isRefreshing, appSettings, isLoading, connectionError, logout, items, user, employees } = useApp();
+  const { isRefreshing, appSettings, isLoading, connectionError, systemSlowMessage, logout, items, user, employees } = useApp();
   const { isDark, toggleTheme } = useTheme();
   const { isOnline, isSyncing, pendingCount, syncNow } = useOfflineSync();
   const navigate = useNavigate();
@@ -140,6 +140,14 @@ const Layout: React.FC = () => {
   return (
     <div className={`flex h-[100dvh] min-h-[100dvh] w-full overflow-hidden relative transparent`}>
       <CommandPalette />
+      {(systemSlowMessage || connectionError) && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[120] max-w-[calc(100vw-1.5rem)]">
+          <div className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50/95 px-4 py-2 text-xs font-bold text-amber-800 shadow-xl backdrop-blur dark:border-amber-900/50 dark:bg-amber-950/90 dark:text-amber-200">
+            <RefreshCw size={14} className="animate-spin shrink-0" />
+            <span className="truncate">{systemSlowMessage || connectionError}</span>
+          </div>
+        </div>
+      )}
       {/* Session Warning Modal */}
       {sessionWarning && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -194,7 +202,7 @@ const Layout: React.FC = () => {
               {isDark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
             {/* Notification Center */}
-            <NotificationCenter userId={user?.id} />
+            <NotificationCenter userId={user?.id} mode="mobile" />
             <button
               data-sidebar-toggle
               onClick={() => setSidebarOpen(true)}

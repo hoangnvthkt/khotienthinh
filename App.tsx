@@ -123,28 +123,46 @@ const TenderBoqAnalyzer = React.lazy(() => import('./pages/tender-ai/TenderBoqAn
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [authState, setAuthState] = useState<'loading' | 'ok' | 'no'>(
     // Khởi tạo ngay từ localStorage để tránh flash redirect khi đã login
-    isSupabaseConfigured ? 'loading' : (!!localStorage.getItem('vioo_user') ? 'ok' : 'no')
+    !!localStorage.getItem('vioo_user') ? 'ok' : (isSupabaseConfigured ? 'loading' : 'no')
   );
 
   useEffect(() => {
     if (!isSupabaseConfigured) return; // Mock mode — đã xử lý ở initialState
+    const hasCachedUser = () => Boolean(localStorage.getItem('vioo_user'));
+    const isExplicitLogout = () => {
+      const logoutAt = Number(localStorage.getItem('vioo_explicit_logout_at') || 0);
+      return logoutAt > 0 && Date.now() - logoutAt < 15000;
+    };
 
     // Kiểm tra session hiện tại ngay khi mount
     const trace = createPerformanceTrace('protected-route-session-check', {
       path: window.location.hash || window.location.pathname,
       hasSavedUser: !!localStorage.getItem('vioo_user'),
     });
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      trace.finish({ hasSession: !!session });
-      setAuthState(session ? 'ok' : 'no');
-    }).catch(error => {
-      trace.finish({ hasSession: false, error: error?.message || 'getSession failed' });
-      setAuthState('no');
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        const useCachedUser = !session && hasCachedUser();
+        trace.finish({ hasSession: !!session, useCachedUser });
+        setAuthState(session || hasCachedUser() ? 'ok' : 'no');
+      })
+      .catch(error => {
+        console.warn('Supabase session check failed, keeping cached user if present:', error);
+        const useCachedUser = hasCachedUser();
+        trace.finish({ hasSession: false, useCachedUser, error: error?.message || 'getSession failed' });
+        setAuthState(hasCachedUser() ? 'ok' : 'no');
+      });
 
     // Lắng nghe thay đổi: logout từ tab khác, token hết hạn
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAuthState(session ? 'ok' : 'no');
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        setAuthState('ok');
+        return;
+      }
+      if (event === 'SIGNED_OUT' && isExplicitLogout()) {
+        setAuthState('no');
+        return;
+      }
+      setAuthState(hasCachedUser() ? 'ok' : 'no');
     });
 
     return () => subscription.unsubscribe();
@@ -297,9 +315,44 @@ const AppRoutes: React.FC = () => {
 
 const AppDataWarmup: React.FC = () => {
   const { pathname } = useLocation();
+  const { loadModuleData } = useApp();
   const { refreshData: refreshWorkflowData } = useWorkflow();
   const { refreshData: refreshRequestData } = useRequest();
   const { loadChatData } = useChat();
+
+  useEffect(() => {
+    if (pathname === '/login' || pathname === '/' || pathname === '/my-profile') return;
+
+    const wmsRoutes = ['/dashboard', '/inventory', '/operations', '/requests', '/material-code-requests', '/reports', '/audit', '/misa-export'];
+    if (wmsRoutes.some(route => pathname === route || pathname.startsWith(`${route}/`))) {
+      loadModuleData('wms').catch(err => console.warn('WMS lazy load failed:', err));
+      return;
+    }
+
+    if (pathname.startsWith('/hrm') || pathname.startsWith('/employee-dashboard') || pathname.startsWith('/org-map')) {
+      loadModuleData('hrm').catch(err => console.warn('HRM lazy load failed:', err));
+      return;
+    }
+
+    if (pathname.startsWith('/da')) {
+      loadModuleData('da').catch(err => console.warn('Project lazy load failed:', err));
+      return;
+    }
+
+    if (pathname.startsWith('/ts')) {
+      loadModuleData('ts').catch(err => console.warn('Asset lazy load failed:', err));
+      return;
+    }
+
+    if (pathname.startsWith('/expense')) {
+      loadModuleData('ex').catch(err => console.warn('Expense lazy load failed:', err));
+      return;
+    }
+
+    if (pathname.startsWith('/settings') || pathname.startsWith('/users')) {
+      loadModuleData('admin').catch(err => console.warn('Admin lazy load failed:', err));
+    }
+  }, [pathname, loadModuleData]);
 
   useEffect(() => {
     const needsWorkflowData = pathname.startsWith('/wf') || pathname === '/employee-dashboard' || pathname === '/custom-dashboard';
@@ -314,15 +367,9 @@ const AppDataWarmup: React.FC = () => {
   }, [pathname, refreshRequestData]);
 
   useEffect(() => {
-    if (pathname === '/login') return;
     if (pathname === '/chat') {
       loadChatData().catch(err => console.warn('Chat warmup failed:', err));
-      return;
     }
-    const timer = window.setTimeout(() => {
-      loadChatData().catch(err => console.warn('Chat idle warmup failed:', err));
-    }, 6000);
-    return () => window.clearTimeout(timer);
   }, [pathname, loadChatData]);
 
   return null;
