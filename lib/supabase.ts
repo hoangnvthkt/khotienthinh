@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 const REQUEST_TIMEOUT_MS = 15000;
+const REFRESH_LOCK_TIMEOUT_MS = REQUEST_TIMEOUT_MS + 2500;
 const MAX_ATTEMPTS = 3;
 const BASE_BACKOFF_MS = 450;
 const TRANSIENT_STATUS_CODES = new Set([500, 502, 503, 504, 522, 524]);
@@ -104,8 +105,8 @@ const fetchWithRetry = async (input: FetchInput, init?: FetchInit): Promise<Resp
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
         try {
             const response = await fetchWithTimeout(input, init);
+            if (response.ok) notifyRecovered();
             if (!shouldRetryResponse(response) || attempt === MAX_ATTEMPTS - 1) {
-                if (attempt > 0 && response.ok) notifyRecovered();
                 return response;
             }
 
@@ -128,7 +129,22 @@ const fetchWithRetry = async (input: FetchInput, init?: FetchInit): Promise<Resp
 const withRefreshLock = async <T,>(task: () => Promise<T>): Promise<T> => {
     const locks = typeof navigator !== 'undefined' ? (navigator as any).locks : undefined;
     if (!locks?.request) return task();
-    return locks.request(REFRESH_LOCK_NAME, { mode: 'exclusive' }, task);
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<T>((_, reject) => {
+        timeoutId = globalThis.setTimeout(() => {
+            notifyRetry({ url: 'supabase-auth-refresh-lock', error: 'refresh_lock_timeout', delay: 0 });
+            reject(new Error('supabase refresh lock timeout'));
+        }, REFRESH_LOCK_TIMEOUT_MS);
+    });
+
+    try {
+        return await Promise.race([
+            locks.request(REFRESH_LOCK_NAME, { mode: 'exclusive' }, task),
+            timeoutPromise,
+        ]);
+    } finally {
+        if (timeoutId) globalThis.clearTimeout(timeoutId);
+    }
 };
 
 const resilientFetch: typeof fetch = async (input, init) => {

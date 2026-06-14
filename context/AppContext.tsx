@@ -428,6 +428,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [lastRealtimeEvent, setLastRealtimeEvent] = useState<number>(0);
   const loadedModulesRef = useRef<Set<string>>(new Set());
   const realtimeTablesRef = useRef<Set<string>>(new Set());
+  const slowMessageTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const clearSystemSlowMessageSoon = useCallback((delay = 1200) => {
+    if (slowMessageTimeoutRef.current) clearTimeout(slowMessageTimeoutRef.current);
+    slowMessageTimeoutRef.current = setTimeout(() => {
+      setSystemSlowMessage(null);
+      slowMessageTimeoutRef.current = undefined;
+    }, delay);
+  }, []);
+
+  const showSystemSlowMessage = useCallback(() => {
+    setSystemSlowMessage('Hệ thống đang chậm, đang thử kết nối lại...');
+    if (slowMessageTimeoutRef.current) clearTimeout(slowMessageTimeoutRef.current);
+    slowMessageTimeoutRef.current = setTimeout(() => {
+      setSystemSlowMessage(null);
+      slowMessageTimeoutRef.current = undefined;
+    }, 20000);
+  }, []);
 
   const activateRealtimeTables = useCallback((tables: readonly string[]) => {
     if (!isSupabaseConfigured || tables.length === 0) return;
@@ -447,10 +465,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     const handleRetry = () => {
-      setSystemSlowMessage('Hệ thống đang chậm, đang thử kết nối lại...');
+      showSystemSlowMessage();
     };
     const handleRecovered = () => {
-      window.setTimeout(() => setSystemSlowMessage(null), 1200);
+      clearSystemSlowMessageSoon();
     };
 
     window.addEventListener('vioo:supabase-retry', handleRetry);
@@ -458,8 +476,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       window.removeEventListener('vioo:supabase-retry', handleRetry);
       window.removeEventListener('vioo:supabase-recovered', handleRecovered);
+      if (slowMessageTimeoutRef.current) clearTimeout(slowMessageTimeoutRef.current);
     };
-  }, []);
+  }, [clearSystemSlowMessageSoon, showSystemSlowMessage]);
 
   // Load data from Supabase on mount
   useEffect(() => {
@@ -476,13 +495,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           try {
             const { data, error } = await query;
             if (error) {
-              if (isTransientSupabaseError(error)) setSystemSlowMessage('Hệ thống đang chậm, đang thử kết nối lại...');
+              if (isTransientSupabaseError(error)) showSystemSlowMessage();
               console.warn(`Error fetching ${table}:`, error.message);
               return null;
             }
             return data;
           } catch (e) {
-            if (isTransientSupabaseError(e)) setSystemSlowMessage('Hệ thống đang chậm, đang thử kết nối lại...');
+            if (isTransientSupabaseError(e)) showSystemSlowMessage();
             console.warn(`Exception fetching ${table}:`, e);
             return null;
           }
@@ -529,13 +548,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
           setConnectionError(null);
         }
+        if (settingsData || currentProfile) clearSystemSlowMessageSoon();
 
         // Module-specific data is loaded lazily via loadModuleData().
         // Bootstrap intentionally keeps only profile/permissions + app settings.
       } catch (error: any) {
         console.error('Error fetching data from Supabase:', error);
         if (isTransientSupabaseError(error)) {
-          setSystemSlowMessage('Hệ thống đang chậm, đang thử kết nối lại...');
+          showSystemSlowMessage();
         } else {
           setConnectionError(error.message);
         }
@@ -757,13 +777,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const { data, error } = await query;
       if (error) {
-        if (isTransientSupabaseError(error)) setSystemSlowMessage('Hệ thống đang chậm, đang thử kết nối lại...');
+        if (isTransientSupabaseError(error)) showSystemSlowMessage();
         console.warn(`Error fetching ${table}:`, error.message);
         return null;
       }
       return data;
     } catch (e) {
-      if (isTransientSupabaseError(e)) setSystemSlowMessage('Hệ thống đang chậm, đang thử kết nối lại...');
+      if (isTransientSupabaseError(e)) showSystemSlowMessage();
       console.warn(`Exception fetching ${table}:`, e);
       return null;
     }
