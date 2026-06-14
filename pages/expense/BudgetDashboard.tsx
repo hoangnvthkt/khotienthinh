@@ -2,6 +2,8 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
+import { useConfirm } from '../../context/ConfirmContext';
+import { useToast } from '../../context/ToastContext';
 import { loadXlsx } from '../../lib/loadXlsx';
 import {
   BarChart3, Plus, ChevronDown, ChevronRight, Download,
@@ -31,6 +33,8 @@ const BudgetDashboard: React.FC = () => {
   useModuleData('hrm');
   useModuleData('wms');
   const { theme } = useTheme();
+  const confirm = useConfirm();
+  const toast = useToast();
 
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
@@ -254,8 +258,16 @@ const BudgetDashboard: React.FC = () => {
     setShowExpenseForm(false);
   };
 
-  const handleDeleteExpense = (id: string) => {
-    if (!confirm('Xoá phiếu chi này?')) return;
+  const handleDeleteExpense = async (id: string) => {
+    const expense = expenseRecords.find(row => row.id === id);
+    const ok = await confirm({
+      title: 'Xóa phiếu chi',
+      targetName: expense?.description || `${(expense?.amount || 0).toLocaleString('vi-VN')} đ`,
+      subtitle: 'Dữ liệu chi phí thực tế của mục ngân sách sẽ được cập nhật lại.',
+      actionLabel: 'Xóa phiếu',
+      intent: 'danger',
+    });
+    if (!ok) return;
     removeHrmItem('expense_records', id);
   };
 
@@ -286,8 +298,15 @@ const BudgetDashboard: React.FC = () => {
     setShowAddModal(false);
   };
 
-  const handleDeleteCategory = (cat: BudgetCategory) => {
-    if (!confirm(`Xoá mục "${cat.code} ${cat.name}"?`)) return;
+  const handleDeleteCategory = async (cat: BudgetCategory) => {
+    const ok = await confirm({
+      title: 'Xóa mục ngân sách',
+      targetName: `${cat.code} ${cat.name}`,
+      warningText: 'Các dòng kế hoạch/chi phí đang gắn với mục này có thể không còn nhóm để đối chiếu.',
+      actionLabel: 'Xóa mục',
+      intent: 'danger',
+    });
+    if (!ok) return;
     removeHrmItem('budget_categories', cat.id);
   };
 
@@ -310,11 +329,18 @@ const BudgetDashboard: React.FC = () => {
     const prevYear = selectedYear - 1;
     const prevCats = budgetCategories.filter(c => c.year === prevYear);
     if (prevCats.length === 0) {
-      alert(`Không tìm thấy dữ liệu kế hoạch năm ${prevYear}`);
+      toast.warning('Không có dữ liệu để sao chép', `Không tìm thấy kế hoạch ngân sách năm ${prevYear}.`);
       return;
     }
     if (yearCategories.length > 0) {
-      if (!confirm(`Năm ${selectedYear} đã có ${yearCategories.length} mục. Tiếp tục sẽ THÊM các mục từ năm ${prevYear}. Bạn có chắc?`)) return;
+      const ok = await confirm({
+        title: 'Sao chép ngân sách năm trước',
+        targetName: `Năm ${selectedYear}`,
+        warningText: `Năm ${selectedYear} đã có ${yearCategories.length} mục. Thao tác này sẽ thêm các mục từ năm ${prevYear}, không ghi đè dữ liệu hiện có.`,
+        actionLabel: 'Tiếp tục sao chép',
+        intent: 'warning',
+      });
+      if (!ok) return;
     }
     setCopying(true);
     try {
@@ -351,9 +377,9 @@ const BudgetDashboard: React.FC = () => {
           actual: 0,
         });
       }
-      alert(`✅ Đã sao chép ${prevCats.length} mục + ${prevEntries.length} dòng DK từ năm ${prevYear} sang ${selectedYear}`);
+      toast.success('Đã sao chép ngân sách', `${prevCats.length} mục và ${prevEntries.length} dòng dự kiến từ năm ${prevYear} sang ${selectedYear}.`);
     } catch (err: any) {
-      alert('❌ Lỗi: ' + (err.message || 'Không thể sao chép'));
+      toast.error('Không thể sao chép ngân sách', err.message || 'Có lỗi khi sao chép dữ liệu năm trước.');
     } finally {
       setCopying(false);
     }

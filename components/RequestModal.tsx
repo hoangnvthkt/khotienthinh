@@ -42,6 +42,7 @@ import { getMaterialRequestWorkflowPatch } from '../lib/materialRequestService';
 import { materialRequestFulfillmentService, getCommittedQty, getRequestLineId } from '../lib/materialRequestFulfillmentService';
 import { buildFulfillmentBatchReceiveUrl } from '../lib/fulfillmentBatchQr';
 import { formatReservationSourceList } from '../lib/inventoryStockGuard';
+import { BoqSummaryStrip } from './erp';
 
 const ScannerModal = React.lazy(() => import('./ScannerModal'));
 
@@ -2220,12 +2221,16 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     Thêm
                                 </button>
                                 {draftBudgetReservation && (
-                                    <div className={`md:col-span-12 rounded-xl border px-3 py-2 text-[10px] ${draftBudgetReservation.availableQty < 0 ? 'border-orange-205/50 bg-orange-50/10 text-orange-700 dark:text-orange-400' : 'border-amber-250/40 dark:border-amber-800/40 bg-card text-muted-foreground'}`}>
-                                        <div className="flex flex-wrap gap-x-4 gap-y-1 font-bold">
-                                            <span>Dự toán: {draftBudgetReservation.budgetQty.toLocaleString('vi-VN')} {draftBudgetReservation.budget?.unit || ''}</span>
-                                            <span>Đã giữ/nhận: {draftBudgetReservation.reservedQty.toLocaleString('vi-VN')} {draftBudgetReservation.budget?.unit || ''}</span>
-                                            <span>Khả dụng: {Math.max(0, draftBudgetReservation.availableQty).toLocaleString('vi-VN')} {draftBudgetReservation.budget?.unit || ''}</span>
-                                        </div>
+                                    <div className="md:col-span-12 space-y-2 rounded-xl border border-amber-200/40 bg-card p-2 text-[10px] text-muted-foreground dark:border-amber-800/40">
+                                        <BoqSummaryStrip
+                                            budgetQty={draftBudgetReservation.budgetQty}
+                                            reservedQty={draftBudgetReservation.reservedQty}
+                                            currentQty={Number(draftQty || 0)}
+                                            availableQty={draftBudgetReservation.availableQty}
+                                            overBudgetQty={Math.max(0, -draftBudgetReservation.availableQty)}
+                                            unit={draftBudgetReservation.budget?.unit}
+                                            pendingCount={draftBudgetReservation.pendingSources.length}
+                                        />
                                         {draftBudgetReservation.pendingSources.length > 0 && (
                                             <div className="mt-1.5 space-y-0.5">
                                                 <div className="font-black uppercase text-amber-600">Phiếu đang chiếm chỗ/chờ xử lý</div>
@@ -2317,6 +2322,18 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                                 )}
                                                                 {budgetSnapshot.overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-950/40 text-orange-650 dark:text-orange-400 border border-orange-200/40 dark:border-orange-900/40 text-[9px] font-bold">Vượt {budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}</span>}
                                                             </div>
+                                                            {isEditable && row.materialBudgetItemId && (
+                                                                <BoqSummaryStrip
+                                                                    budgetQty={budgetSnapshot.budgetQty}
+                                                                    reservedQty={budgetSnapshot.reservedBeforeQty}
+                                                                    currentQty={Number((row as RequestLineDraft).qty || 0)}
+                                                                    availableQty={budgetSnapshot.availableQty}
+                                                                    overBudgetQty={budgetSnapshot.overBudgetQty}
+                                                                    unit={budgetSnapshot.budget?.unit}
+                                                                    pendingCount={budgetSnapshot.pendingSources.length}
+                                                                    compact
+                                                                />
+                                                            )}
                                                             {needsReason && (
                                                                 <input
                                                                     value={(row as RequestLineDraft).overBudgetReason || ''}
@@ -2432,6 +2449,20 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                         </span>
                                                     )}
                                                     {budgetSnapshot.overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-950/40 text-orange-650 dark:text-orange-400 border border-orange-200/40 dark:border-orange-900/40 text-[9px] font-bold">Vượt {budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}</span>}
+                                                </div>
+                                            )}
+                                            {isProjectRequest && isEditable && row.materialBudgetItemId && (
+                                                <div className="mt-2">
+                                                    <BoqSummaryStrip
+                                                        budgetQty={budgetSnapshot.budgetQty}
+                                                        reservedQty={budgetSnapshot.reservedBeforeQty}
+                                                        currentQty={Number((row as RequestLineDraft).qty || 0)}
+                                                        availableQty={budgetSnapshot.availableQty}
+                                                        overBudgetQty={budgetSnapshot.overBudgetQty}
+                                                        unit={budgetSnapshot.budget?.unit}
+                                                        pendingCount={budgetSnapshot.pendingSources.length}
+                                                        compact
+                                                    />
                                                 </div>
                                             )}
                                         </div>

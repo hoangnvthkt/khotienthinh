@@ -23,6 +23,7 @@ import ProjectSubmissionDialog from './ProjectSubmissionDialog';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
 import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
 import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
+import { EmptyState, StatusBadge } from '../erp';
 
 interface Props {
   projectId?: string | null;
@@ -44,6 +45,13 @@ const statusClass: Record<BoqReconciliationGroup['status'], string> = {
   submitted: 'bg-amber-50 text-amber-700',
   reviewed: 'bg-emerald-50 text-emerald-700',
   locked: 'bg-indigo-50 text-indigo-700',
+};
+
+const statusTone: Record<BoqReconciliationGroup['status'], 'neutral' | 'info' | 'success' | 'warning'> = {
+  draft: 'neutral',
+  submitted: 'warning',
+  reviewed: 'success',
+  locked: 'info',
 };
 
 const statusOrder: Record<BoqReconciliationGroup['status'], number> = {
@@ -429,7 +437,13 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
             {loading ? (
               <div className="p-5 text-center text-xs font-bold text-slate-400"><Loader2 size={14} className="inline animate-spin mr-2" />Đang tải...</div>
             ) : groups.length === 0 ? (
-              <div className="p-5 text-center text-xs font-bold text-slate-400">Chưa có nhóm đối chiếu.</div>
+              <div className="p-3">
+                <EmptyState
+                  icon={<FileSearch size={18} />}
+                  title="Chưa có nhóm đối chiếu"
+                  message="Tạo nhóm công tác để ghép BOQ hợp đồng với BOQ thi công."
+                />
+              </div>
             ) : groups.map(group => (
               <button
                 key={group.id}
@@ -438,7 +452,7 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-black text-slate-700 truncate">{group.code || 'DQ'} - {group.name}</span>
-                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${statusClass[group.status]}`}>{statusLabel[group.status]}</span>
+                  <StatusBadge status={group.status} label={statusLabel[group.status]} tone={statusTone[group.status]} />
                 </div>
                 <div className="text-[10px] text-slate-400 font-bold mt-0.5">{group.contractLines?.length || 0} dòng HĐ • {group.workLines?.length || 0} đầu mục thi công</div>
               </button>
@@ -447,12 +461,19 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
         </div>
 
         {!activeGroup ? (
-          <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-xs font-bold text-slate-400">Tạo hoặc chọn một nhóm công tác để bắt đầu đối chiếu.</div>
+          <EmptyState
+            icon={<FileSearch size={18} />}
+            title="Tạo hoặc chọn một nhóm công tác"
+            message="Sau khi chọn nhóm, bạn có thể thêm dòng BOQ hợp đồng và đầu mục BOQ thi công để đối chiếu."
+          />
         ) : (
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
-                <div className="text-sm font-black text-slate-800">{activeGroup.name}</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-black text-slate-800">{activeGroup.name}</div>
+                  <StatusBadge status={activeGroup.status} label={statusLabel[activeGroup.status]} tone={statusTone[activeGroup.status]} />
+                </div>
                 <div className="text-[10px] text-slate-400 font-bold">Quy đổi KL HĐ: {fmt(summary.contractConverted)} • KL thi công: {fmt(summary.workConverted)} • Chênh GT: {money(summary.workAmount - summary.contractAmount)} đ</div>
               </div>
               <div className="flex gap-1.5">
@@ -464,6 +485,20 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
                 {isAdminUser && activeGroup.status === 'locked' && <button onClick={() => setStatus('reviewed')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-red-700 bg-red-50 flex items-center gap-1"><Undo2 size={11} /> Mở khóa</button>}
                 {activeGroup.status !== 'locked' && <button onClick={removeGroup} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-red-600 bg-red-50"><Trash2 size={11} /></button>}
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {[
+                { label: 'GT HĐ tham chiếu', value: `${money(summary.contractAmount)} đ` },
+                { label: 'GT thi công', value: `${money(summary.workAmount)} đ` },
+                { label: 'Chênh giá trị', value: `${money(summary.workAmount - summary.contractAmount)} đ` },
+                { label: 'Dòng đối chiếu', value: `${activeGroup.contractLines?.length || 0} HĐ / ${activeGroup.workLines?.length || 0} TC` },
+              ].map(item => (
+                <div key={item.label} className="rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="text-[10px] font-black uppercase text-slate-400">{item.label}</div>
+                  <div className="mt-1 text-sm font-black text-slate-800">{item.value}</div>
+                </div>
+              ))}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">

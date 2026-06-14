@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
 import { usePermission } from '../../hooks/usePermission';
+import { useReasonConfirm } from '../../context/ConfirmContext';
 import {
   CalendarOff, Plus, CheckCircle, XCircle, Clock, Search, Timer,
   Calendar, AlertTriangle, RotateCcw, LayoutGrid, List as ListIcon,
@@ -80,6 +81,7 @@ const LeaveManagement: React.FC = () => {
   useModuleData('hrm');
   const { theme } = useTheme();
   const { isAdmin } = usePermission();
+  const reasonConfirm = useReasonConfirm();
 
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
   const [showModal, setShowModal] = useState(false);
@@ -256,8 +258,17 @@ const LeaveManagement: React.FC = () => {
     setApproveComment('');
   };
 
-  const handleReject = (req: LeaveRequest) => {
-    const reason = prompt('Lý do từ chối:');
+  const handleReject = async (req: LeaveRequest) => {
+    const emp = employeeMap.get(req.employeeId);
+    const reason = await reasonConfirm({
+      title: 'Từ chối đơn nghỉ phép',
+      targetName: `${req.code || 'Đơn nghỉ phép'} - ${emp?.fullName || 'Nhân viên'}`,
+      subtitle: 'Lý do từ chối sẽ được lưu vào lịch sử duyệt.',
+      reasonLabel: 'Lý do từ chối',
+      reasonPlaceholder: 'Nhập lý do để nhân sự/người tạo đơn nắm rõ...',
+      actionLabel: 'Từ chối',
+      intent: 'danger',
+    });
     if (reason === null) return;
     if (req.approvers && req.approvers.length > 0) {
       rejectLeave(req.id, user.id, reason);

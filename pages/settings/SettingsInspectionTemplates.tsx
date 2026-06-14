@@ -6,6 +6,7 @@ import {
   BookOpen, Eye, FolderKanban, ShieldCheck, AlertCircle, FilePlus
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { qualityChecklistService } from '../../lib/qualityChecklistService';
 import {
@@ -50,6 +51,7 @@ const emptyItem = (sectionId: string): Partial<InspectionTemplateItem> => ({
 
 const SettingsInspectionTemplates: React.FC = () => {
   const toast = useToast();
+  const confirm = useConfirm();
   
   // Dynamic Categories & Work Types States
   const [categories, setCategories] = useState<InspectionCategory[]>([]);
@@ -147,7 +149,15 @@ const SettingsInspectionTemplates: React.FC = () => {
 
   const handleDeleteCategory = async (cat: InspectionCategory, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm(`Xác nhận Xóa Hạng mục chuẩn "${cat.name}" (${cat.code})?\n\nCẢNH BÁO NGUY HIỂM: Do cấu trúc cascade, việc này sẽ xóa TOÀN BỘ Loại công tác, Mẫu nghiệm thu, Sections và Tiêu chí kiểm tra thuộc Hạng mục này khỏi hệ thống!`)) return;
+    const ok = await confirm({
+      title: 'Xóa hạng mục chuẩn',
+      targetName: `${cat.name} (${cat.code})`,
+      warningText: 'Việc này sẽ xóa toàn bộ loại công tác, mẫu nghiệm thu, section và tiêu chí kiểm tra thuộc hạng mục này.',
+      actionLabel: 'Xóa hạng mục',
+      intent: 'danger',
+      countdownSeconds: 3,
+    });
+    if (!ok) return;
     try {
       await qualityChecklistService.removeCategory(cat.id);
       toast.success('Đã xóa Hạng mục chuẩn thành công');
@@ -239,7 +249,15 @@ const SettingsInspectionTemplates: React.FC = () => {
 
   const handleDeleteWorkType = async (wt: InspectionWorkType, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm(`Xác nhận Xóa Loại công tác "${wt.name}" (${wt.code})?\n\nCẢNH BÁO: Việc này sẽ xóa toàn bộ Mẫu nghiệm thu, Sections và Tiêu chí thuộc công tác này!`)) return;
+    const ok = await confirm({
+      title: 'Xóa loại công tác',
+      targetName: `${wt.name} (${wt.code})`,
+      warningText: 'Việc này sẽ xóa toàn bộ mẫu nghiệm thu, section và tiêu chí thuộc loại công tác này.',
+      actionLabel: 'Xóa loại công tác',
+      intent: 'danger',
+      countdownSeconds: 3,
+    });
+    if (!ok) return;
     try {
       await qualityChecklistService.removeWorkType(wt.id);
       toast.success('Đã xóa Loại công tác thành công');
@@ -410,7 +428,14 @@ const SettingsInspectionTemplates: React.FC = () => {
   };
 
   const handleDeleteTemplate = async (tpl: InspectionTemplate) => {
-    if (!confirm(`Xóa mẫu nghiệm thu "${tpl.name}" (${tpl.code})? Hành động này sẽ xóa toàn bộ sections và tiêu chí con.`)) return;
+    const ok = await confirm({
+      title: 'Xóa mẫu nghiệm thu',
+      targetName: `${tpl.name} (${tpl.code})`,
+      warningText: 'Hành động này sẽ xóa toàn bộ section và tiêu chí con trong mẫu.',
+      actionLabel: 'Xóa mẫu',
+      intent: 'danger',
+    });
+    if (!ok) return;
     try {
       await qualityChecklistService.removeTemplate(tpl.id);
       if (selectedTemplate?.id === tpl.id) {
@@ -482,7 +507,15 @@ const SettingsInspectionTemplates: React.FC = () => {
   };
 
   const handleDeleteSection = async (secId: string) => {
-    if (!confirm('Xóa Section này sẽ xóa toàn bộ các tiêu chí con nằm bên trong. Xác nhận xóa?')) return;
+    const section = selectedTemplate?.sections?.find(sec => sec.id === secId);
+    const ok = await confirm({
+      title: 'Xóa section',
+      targetName: section?.name || 'Section nghiệm thu',
+      warningText: 'Section bị xóa sẽ kéo theo toàn bộ tiêu chí con nằm bên trong.',
+      actionLabel: 'Xóa section',
+      intent: 'danger',
+    });
+    if (!ok) return;
     try {
       await qualityChecklistService.removeSection(secId);
       toast.success('Đã xóa Section');
@@ -569,7 +602,17 @@ const SettingsInspectionTemplates: React.FC = () => {
   };
 
   const handleDeleteItem = async (itemId: string) => {
-    if (!confirm('Xóa tiêu chí này khỏi mẫu?')) return;
+    const item = selectedTemplate?.sections
+      ?.flatMap(sec => sec.items || [])
+      .find(row => row.id === itemId);
+    const ok = await confirm({
+      title: 'Xóa tiêu chí kiểm tra',
+      targetName: item?.itemName || 'Tiêu chí kiểm tra',
+      subtitle: 'Tiêu chí này sẽ không còn xuất hiện trong mẫu nghiệm thu.',
+      actionLabel: 'Xóa tiêu chí',
+      intent: 'danger',
+    });
+    if (!ok) return;
     try {
       await qualityChecklistService.removeTemplateItem(itemId);
       toast.success('Đã xóa tiêu chí');

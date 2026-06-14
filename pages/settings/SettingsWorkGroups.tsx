@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { WorkGroup, WorkGroupMember, WorkGroupMemberRole, WorkGroupWithMembers } from '../../types';
 import { workGroupService } from '../../lib/workGroupService';
 import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 
 const emptyGroup = (): WorkGroup => ({
@@ -18,6 +19,7 @@ const emptyGroup = (): WorkGroup => ({
 const SettingsWorkGroups: React.FC = () => {
   const { users } = useApp();
   const toast = useToast();
+  const confirm = useConfirm();
   const [groups, setGroups] = useState<WorkGroupWithMembers[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [draft, setDraft] = useState<WorkGroup>(emptyGroup);
@@ -93,7 +95,14 @@ const SettingsWorkGroups: React.FC = () => {
   };
 
   const removeGroup = async (group: WorkGroupWithMembers) => {
-    if (!confirm(`Xóa nhóm làm việc "${group.name}"? Thành viên trong nhóm cũng sẽ bị xóa khỏi danh mục nhóm.`)) return;
+    const ok = await confirm({
+      title: 'Xóa nhóm làm việc',
+      targetName: group.name,
+      warningText: 'Thành viên trong nhóm cũng sẽ bị xóa khỏi danh mục nhóm.',
+      actionLabel: 'Xóa nhóm',
+      intent: 'danger',
+    });
+    if (!ok) return;
     try {
       await workGroupService.removeGroup(group.id);
       if (editingId === group.id) resetDraft();
@@ -132,7 +141,14 @@ const SettingsWorkGroups: React.FC = () => {
 
   const removeMember = async (member: WorkGroupMember) => {
     const targetUser = userMap.get(member.userId);
-    if (!confirm(`Xóa ${targetUser?.name || targetUser?.email || member.userId} khỏi nhóm?`)) return;
+    const ok = await confirm({
+      title: 'Xóa thành viên khỏi nhóm',
+      targetName: targetUser?.name || targetUser?.email || member.userId,
+      subtitle: activeGroup ? `Nhóm: ${activeGroup.name}` : undefined,
+      actionLabel: 'Xóa thành viên',
+      intent: 'danger',
+    });
+    if (!ok) return;
     try {
       await workGroupService.removeMember(member.id);
       await load();

@@ -44,7 +44,9 @@ import {
 } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
+import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
+import { EmptyState, MobileCardList, StatusBadge as ErpStatusBadge } from '../../components/erp';
 
 interface QualityTabProps {
   constructionSiteId?: string;
@@ -129,14 +131,12 @@ const countByStatus = (items: QualityChecklist[]): StatusCounts => {
   return counts;
 };
 
-const StatusBadge: React.FC<{ status: QualityChecklistStatus }> = ({ status }) => {
-  const config = STATUS_CONFIG[status] || STATUS_CONFIG.draft;
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black ${config.chipClass}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${config.dotClass}`} />
-      {config.label}
-    </span>
-  );
+const getQualityStatusTone = (status?: QualityChecklistStatus) => {
+  if (status === 'approved') return 'success';
+  if (status === 'submitted') return 'warning';
+  if (status === 'returned') return 'danger';
+  if (status === 'cancelled') return 'neutral';
+  return 'neutral';
 };
 
 const MiniStat: React.FC<{
@@ -255,6 +255,8 @@ const FileIcon: React.FC<{ type?: string }> = ({ type }) => {
 const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
   const { user } = useApp();
   const toast = useToast();
+  const confirm = useConfirm();
+  const reasonConfirm = useReasonConfirm();
   const siteId = constructionSiteId || '';
 
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
@@ -685,8 +687,29 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
   const handleStatusChange = async (checklist: QualityChecklist, status: QualityChecklistStatus) => {
     let reason = '';
     if (status === 'returned' || status === 'cancelled') {
-      reason = prompt(`Lý do ${status === 'returned' ? 'trả lại' : 'huỷ'} hồ sơ:`) || '';
-      if (!reason.trim()) return;
+      const result = await reasonConfirm({
+        title: status === 'returned' ? 'Trả lại hồ sơ nghiệm thu' : 'Huỷ hồ sơ nghiệm thu',
+        targetName: checklist.title,
+        warningText: status === 'returned'
+          ? 'Người lập hồ sơ sẽ cần bổ sung thông tin trước khi gửi duyệt lại.'
+          : 'Hồ sơ sẽ chuyển sang trạng thái đã huỷ.',
+        reasonPlaceholder: status === 'returned' ? 'Nhập lý do trả lại...' : 'Nhập lý do huỷ...',
+        actionLabel: status === 'returned' ? 'Trả lại' : 'Huỷ hồ sơ',
+        intent: 'danger',
+        countdownSeconds: 1,
+      });
+      if (!result?.trim()) return;
+      reason = result.trim();
+    } else if (status === 'approved') {
+      const ok = await confirm({
+        title: 'Phê duyệt hồ sơ nghiệm thu',
+        targetName: checklist.title,
+        warningText: 'Hồ sơ sẽ được đánh dấu đã duyệt trong module Chất lượng.',
+        actionLabel: 'Phê duyệt',
+        intent: 'success',
+        countdownSeconds: 1,
+      });
+      if (!ok) return;
     }
 
     try {
@@ -699,7 +722,15 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
   };
 
   const handleDelete = async (checklist: QualityChecklist) => {
-    if (!confirm(`Xóa hồ sơ "${checklist.title}"?`)) return;
+    const ok = await confirm({
+      title: 'Xoá hồ sơ nghiệm thu',
+      targetName: checklist.title,
+      warningText: 'Chỉ nên xoá hồ sơ nháp hoặc hồ sơ nhập sai. Thao tác này không thể hoàn tác.',
+      actionLabel: 'Xoá hồ sơ',
+      intent: 'danger',
+      countdownSeconds: 1,
+    });
+    if (!ok) return;
     try {
       await qualityChecklistService.remove(checklist.id);
       toast.success('Đã xoá hồ sơ nghiệm thu');
@@ -712,16 +743,68 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
   const renderChecklistTable = (rows: QualityChecklist[], options?: { showTaskColumn?: boolean }) => {
     if (rows.length === 0) {
       return (
-        <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-10 text-center">
-          <ClipboardCheck size={30} className="mx-auto text-slate-300" />
-          <p className="mt-2 text-sm font-black text-slate-500">Chưa có hồ sơ nghiệm thu</p>
-        </div>
+        <EmptyState
+          icon={<ClipboardCheck size={18} />}
+          title="Chưa có hồ sơ nghiệm thu"
+          message="Tạo hồ sơ nghiệm thu cho hạng mục đang chọn để lưu ảnh, file và gửi duyệt."
+        />
       );
     }
 
     return (
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <div className="overflow-x-auto">
+        <MobileCardList
+          items={rows}
+          getKey={item => item.id}
+          renderItem={item => {
+            const linkedTask = item.taskId ? taskMap.get(item.taskId) : null;
+            const firstPhoto = (item.sitePhotos || [])[0];
+            const photoCount = (item.sitePhotos || []).length;
+            const attachmentCount = (item.attachments || []).length;
+            const canEdit = canEditChecklist(item);
+            const canApprove = canApproveChecklist(item);
+            return (
+              <div className="space-y-3">
+                <div className="flex items-start gap-3">
+                  {firstPhoto ? (
+                    <img src={firstPhoto.url} alt={firstPhoto.caption || item.title} className="h-16 w-20 shrink-0 rounded-lg object-cover ring-1 ring-slate-200" />
+                  ) : (
+                    <div className="flex h-16 w-20 shrink-0 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 text-slate-300">
+                      <ImageIcon size={20} />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-[10px] font-black text-slate-400">{item.code}</span>
+                      <ErpStatusBadge status={item.status || 'draft'} label={STATUS_CONFIG[item.status || 'draft']?.label} tone={getQualityStatusTone(item.status || 'draft')} />
+                    </div>
+                    <button onClick={() => openChecklist(item, true)} className="mt-1 line-clamp-2 text-left text-sm font-black text-slate-800">
+                      {item.title}
+                    </button>
+                    {options?.showTaskColumn && (
+                      <p className="mt-1 line-clamp-1 text-[10px] font-bold text-slate-400">{taskLabel(linkedTask)}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-[10px] font-bold text-slate-500">
+                  <div className="rounded bg-slate-50 p-2"><span className="block text-slate-400">Ảnh</span>{photoCount}</div>
+                  <div className="rounded bg-slate-50 p-2"><span className="block text-slate-400">File</span>{attachmentCount}</div>
+                  <div className="rounded bg-slate-50 p-2"><span className="block text-slate-400">Ngày</span>{formatDate(item.workDate || item.createdAt)}</div>
+                </div>
+
+                <div className="flex flex-wrap justify-end gap-1">
+                  <button onClick={() => openChecklist(item, true)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-black text-slate-600">Xem</button>
+                  {canEdit && <button onClick={() => openChecklist(item)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-black text-slate-600">Sửa</button>}
+                  {canEdit && <button onClick={() => setSubmittingChecklist(item)} className="rounded-lg bg-amber-500 px-2.5 py-1.5 text-[10px] font-black text-white">Gửi duyệt</button>}
+                  {canApprove && <button onClick={() => handleStatusChange(item, 'returned')} className="rounded-lg border border-red-200 px-2.5 py-1.5 text-[10px] font-black text-red-600">Trả lại</button>}
+                  {canApprove && <button onClick={() => handleStatusChange(item, 'approved')} className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[10px] font-black text-white">Duyệt</button>}
+                </div>
+              </div>
+            );
+          }}
+        />
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[860px] text-left text-xs">
             <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400">
               <tr>
@@ -787,7 +870,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
                     </td>
                     <td className="px-3 py-3 align-top font-bold text-slate-500">{formatDate(item.workDate || item.createdAt)}</td>
                     <td className="px-3 py-3 align-top">
-                      <StatusBadge status={item.status || 'draft'} />
+                      <ErpStatusBadge status={item.status || 'draft'} label={STATUS_CONFIG[item.status || 'draft']?.label} tone={getQualityStatusTone(item.status || 'draft')} />
                     </td>
                     <td className="px-3 py-3 align-top">
                       <div className="flex justify-end gap-1">

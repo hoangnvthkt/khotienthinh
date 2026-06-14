@@ -57,6 +57,7 @@ import {
 
 import PremiumMemberSelect, { MemberOption } from '../components/common/PremiumMemberSelect';
 import PremiumEntitySelect, { EntityOption } from '../components/common/PremiumEntitySelect';
+import { StatusBadge } from '../components/erp';
 
 const CashFlowTab = React.lazy(() => import('./project/CashFlowTab'));
 const ContractTab = React.lazy(() => import('./project/ContractTab'));
@@ -2895,6 +2896,45 @@ const ProjectDashboard: React.FC = () => {
         const statusKey = financeForRender?.status || selectedProject.status || 'planning';
         const displayProgress = financeForRender ? getDisplayProgress(financeForRender) : 0;
         const metaChips = getProjectMetaChips(selectedProject);
+        const endDateTime = selectedProject.endDate ? new Date(selectedProject.endDate).getTime() : 0;
+        const isScheduleLate = Boolean(endDateTime && endDateTime < Date.now() && displayProgress < 100);
+        const attentionItems = [
+            !hasSiteLink ? {
+                id: 'site',
+                title: 'Chưa liên kết công trường HRM',
+                message: 'Một số tab vận hành sẽ chưa tải đủ dữ liệu cho tới khi dự án có công trường.',
+                tone: 'warning' as const,
+                tab: 'org' as ProjectOverviewTabKey,
+            } : null,
+            isScheduleLate ? {
+                id: 'schedule',
+                title: 'Dự án có dấu hiệu trễ tiến độ',
+                message: `Ngày kết thúc đã qua nhưng tiến độ mới đạt ${displayProgress}%.`,
+                tone: 'attention' as const,
+                tab: 'gantt' as ProjectOverviewTabKey,
+            } : null,
+            budgetUsed > 90 ? {
+                id: 'budget',
+                title: 'Chi phí đã dùng gần/vượt ngân sách',
+                message: `Chi phí đạt ${budgetUsed.toFixed(1)}% ngân sách khai báo.`,
+                tone: budgetUsed > 100 ? 'danger' as const : 'attention' as const,
+                tab: 'cashflow' as ProjectOverviewTabKey,
+            } : null,
+            contractValue > 0 && estimatedMarginPct < 0 ? {
+                id: 'margin',
+                title: 'Biên lợi nhuận đang âm',
+                message: `Tạm tính ${estimatedMarginPct.toFixed(1)}% theo chi phí đã ghi nhận.`,
+                tone: 'danger' as const,
+                tab: 'cashflow' as ProjectOverviewTabKey,
+            } : null,
+            contractValue > 0 && aggForRender.totalExpense / contractValue * 100 > displayProgress + 20 ? {
+                id: 'cost-progress',
+                title: 'Chi phí đi nhanh hơn tiến độ',
+                message: 'Tỷ lệ chi phí trên hợp đồng cao hơn tiến độ thực hiện trên 20 điểm phần trăm.',
+                tone: 'attention' as const,
+                tab: 'material' as ProjectOverviewTabKey,
+            } : null,
+        ].filter(Boolean) as Array<{ id: string; title: string; message: string; tone: 'warning' | 'attention' | 'danger'; tab: ProjectOverviewTabKey }>;
 
         // Chart max value
         const maxVal = Math.max(...BUDGET_CATS.map(c =>
@@ -2948,7 +2988,7 @@ const ProjectDashboard: React.FC = () => {
                 </div>
 
                 {/* Header Banner */}
-                <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-3xl p-6 text-white shadow-xl">
+	                <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-3xl p-6 text-white shadow-xl">
                     <div className="flex items-center justify-between flex-wrap gap-4">
                         <div className="flex items-center gap-3">
                             <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center"><HardHat size={24} /></div>
@@ -2976,9 +3016,35 @@ const ProjectDashboard: React.FC = () => {
                     <div className="mt-4 h-3 bg-white/20 rounded-full overflow-hidden">
                         <div className="h-full bg-white rounded-full transition-all duration-700" style={{ width: `${displayProgress}%` }} />
                     </div>
-                </div>
+	                </div>
 
-                {/* Overview Sub-tabs */}
+	                {attentionItems.length > 0 && (
+	                    <section className="rounded-2xl border border-orange-100 bg-orange-50/60 p-4 dark:border-orange-900/40 dark:bg-orange-950/20">
+	                        <div className="mb-3 flex items-center justify-between gap-3">
+	                            <div>
+	                                <h3 className="text-sm font-black text-slate-800 dark:text-white">Cần chú ý</h3>
+	                                <p className="mt-0.5 text-[11px] font-bold text-slate-500 dark:text-slate-400">Các tín hiệu vận hành được suy ra từ dữ liệu hiện có của dự án.</p>
+	                            </div>
+	                            <StatusBadge status="warning" label={`${attentionItems.length} cảnh báo`} tone="attention" />
+	                        </div>
+	                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+	                            {attentionItems.map(item => (
+	                                <button
+	                                    key={item.id}
+	                                    type="button"
+	                                    onClick={() => goToProjectTab(item.tab)}
+	                                    className="rounded-lg border border-white/70 bg-white p-3 text-left shadow-sm transition hover:border-orange-200 hover:shadow-md dark:border-slate-700 dark:bg-slate-900"
+	                                >
+	                                    <StatusBadge status={item.id} label={item.tone === 'danger' ? 'Rủi ro cao' : 'Cần kiểm tra'} tone={item.tone} />
+	                                    <div className="mt-2 text-sm font-black text-slate-800 dark:text-white">{item.title}</div>
+	                                    <p className="mt-1 text-[11px] font-bold leading-5 text-slate-500 dark:text-slate-400">{item.message}</p>
+	                                </button>
+	                            ))}
+	                        </div>
+	                    </section>
+	                )}
+
+	                {/* Overview Sub-tabs */}
                 <div className="flex gap-1 bg-white dark:bg-slate-800 rounded-2xl p-1.5 border border-slate-100 dark:border-slate-700/50 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
                     {visibleOverviewTabs.map(tab => (
                         <button key={tab.key} onClick={() => goToProjectTab(tab.key)}

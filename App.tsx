@@ -20,6 +20,9 @@ import { getProjectAllowedSubModuleRedirect, hasProjectTabPermissionRoute } from
 
 // Lazy load all page components for code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const Home = React.lazy(() => import('./pages/Home'));
+const Notifications = React.lazy(() => import('./pages/Notifications'));
+const FeedbackHub = React.lazy(() => import('./pages/FeedbackHub'));
 const Inventory = React.lazy(() => import('./pages/Inventory'));
 const Operations = React.lazy(() => import('./pages/Operations'));
 const Settings = React.lazy(() => import('./pages/Settings'));
@@ -209,9 +212,9 @@ const SubModuleGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
-// Landing page: Always show EmployeeDashboard after login
+// Landing page wrapper kept for compatibility with older references.
 const LandingPage: React.FC = () => {
-  return <EmployeeDashboard />;
+  return <Home />;
 };
 
 const AppRoutes: React.FC = () => {
@@ -220,7 +223,9 @@ const AppRoutes: React.FC = () => {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<ProtectedRoute><SubModuleGuard><Layout /></SubModuleGuard></ProtectedRoute>}>
-          <Route index element={<MyProfile />} />
+          <Route index element={<Home />} />
+          <Route path="notifications" element={<Notifications />} />
+          <Route path="feedback" element={<FeedbackHub />} />
           <Route path="my-profile" element={<MyProfile />} />
           <Route path="employee-dashboard" element={<EmployeeDashboard />} />
           <Route path="custom-dashboard" element={<CustomDashboard />} />

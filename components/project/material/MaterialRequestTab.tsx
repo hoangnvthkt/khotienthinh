@@ -1,5 +1,5 @@
-import React from 'react';
-import { Loader2, Package, Plus, Search } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { AlertTriangle, LayoutGrid, ListChecks, Loader2, Package, Plus, Search } from 'lucide-react';
 import {
     InventoryItem,
     MaterialRequest,
@@ -16,6 +16,10 @@ import {
     WorkflowNode,
     WorkflowRuntimeNode,
 } from '../../../types';
+import { EmptyState, NextActionCard, StatusBadge } from '../../erp';
+import { getMaterialRequestNextAction, getMaterialRequestStatusView } from '../../../lib/erpWorkflow';
+import { getMaterialRequestSlaState } from '../../../lib/materialRequestService';
+import { matchesSearchQueryMultiple } from '../../../lib/searchUtils';
 
 const MaterialRequestKanbanBoard = React.lazy(() => import('../MaterialRequestKanbanBoard'));
 const ProjectWorkflowAnalyticsPanel = React.lazy(() => import('../ProjectWorkflowAnalyticsPanel'));
@@ -95,25 +99,165 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
     onMoveMaterialRequest,
     onOpenRequest,
 }) => {
+    const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
     const workflowTemplateNodes = workflowConfiguration?.binding
         ? workflowNodes.filter(node => node.templateId === workflowConfiguration.binding?.workflowTemplateId)
         : [];
+    const currentUser = userById.get(currentUserId) || users.find(item => item.id === currentUserId);
+
+    const filteredListRequests = useMemo(() => {
+        return sortedRequests.filter(request => {
+            const subject = requestWorkflowSubjects[request.id];
+            const assigneeIds = subject?.currentAssigneeUserIds?.length
+                ? subject.currentAssigneeUserIds
+                : subject?.currentAssigneeUserId
+                    ? [subject.currentAssigneeUserId]
+                    : request.submittedToUserId
+                        ? [request.submittedToUserId]
+                        : [];
+            const requester = userById.get(request.requesterId);
+            const handlerNames = assigneeIds.map(id => userById.get(id)?.name || id).join(' ');
+            if (workflowBoardSearch.trim()) {
+                const matched = matchesSearchQueryMultiple([
+                    request.code,
+                    request.id,
+                    requester?.name,
+                    request.submittedToName,
+                    handlerNames,
+                    request.note,
+                ], workflowBoardSearch);
+                if (!matched) return false;
+            }
+            if (workflowBoardFilter === 'mine') {
+                return Boolean(currentUserId && (assigneeIds.includes(currentUserId) || request.requesterId === currentUserId));
+            }
+            if (workflowBoardFilter === 'overdue') return getMaterialRequestSlaState(request) === 'overdue';
+            if (workflowBoardFilter === 'returned') return subject?.status === 'RETURNED' || request.workflowStep === 'returned_to_creator';
+            if (workflowBoardFilter === 'watching') {
+                return Boolean(currentUserId && subject?.participants?.some(participant =>
+                    participant.isActive && participant.role === 'WATCHER' && participant.userId === currentUserId
+                ));
+            }
+            return true;
+        });
+    }, [currentUserId, requestWorkflowSubjects, sortedRequests, userById, workflowBoardFilter, workflowBoardSearch]);
+
+    const actionCount = useMemo(() => (
+        filteredListRequests.filter(request => {
+            if (!currentUser) return false;
+            return getMaterialRequestNextAction(request, currentUser).isActionable;
+        }).length
+    ), [currentUser, filteredListRequests]);
+
+    const renderListMode = () => {
+        if (filteredListRequests.length === 0) {
+            return (
+                <EmptyState
+                    icon={<Package size={18} />}
+                    title="Không có đề xuất vật tư phù hợp"
+                    message="Thử xoá bộ lọc hoặc tìm theo mã phiếu, người yêu cầu, người xử lý."
+                />
+            );
+        }
+
+        return (
+            <div className="grid grid-cols-1 gap-3 p-4 lg:grid-cols-2">
+                {filteredListRequests.map(request => {
+                    const subject = requestWorkflowSubjects[request.id];
+                    const requester = userById.get(request.requesterId);
+                    const assigneeIds = subject?.currentAssigneeUserIds?.length
+                        ? subject.currentAssigneeUserIds
+                        : subject?.currentAssigneeUserId
+                            ? [subject.currentAssigneeUserId]
+                            : request.submittedToUserId
+                                ? [request.submittedToUserId]
+                                : [];
+                    const handlerNames = assigneeIds.map(id => userById.get(id)?.name || id).filter(Boolean);
+                    const handlerLabel = handlerNames.length > 1
+                        ? `${handlerNames[0]} + ${handlerNames.length - 1} người`
+                        : handlerNames[0] || request.submittedToName || undefined;
+                    const statusView = currentUser
+                        ? getMaterialRequestNextAction(request, currentUser)
+                        : {
+                            ...getMaterialRequestStatusView(request.status),
+                            nextAction: subject?.currentRuntimeNode?.label || subject?.currentNode?.label || 'Mở phiếu để xem bước xử lý hiện tại.',
+                            actionLabel: 'Mở phiếu',
+                            isActionable: false,
+                        };
+                    const summary = requestFulfillmentSummaries[request.id];
+                    const overLines = (request.items || []).filter(line =>
+                        !line.materialBudgetItemId ||
+                        line.isOverBoq ||
+                        Number(line.overQty || 0) > 0 ||
+                        Number(line.overBudgetQtySnapshot || 0) > 0
+                    );
+                    const slaState = getMaterialRequestSlaState(request);
+
+                    return (
+                        <div key={request.id} className="relative">
+                            <NextActionCard
+                                title={`${request.items?.length || 0} dòng vật tư${summary ? ` • nhận ${summary.receivedQty.toLocaleString('vi-VN')}/${summary.committedQty.toLocaleString('vi-VN')}` : ''}`}
+                                code={request.code}
+                                status={request.status}
+                                statusLabel={statusView.label}
+                                tone={statusView.tone}
+                                nextAction={statusView.nextAction}
+                                actorName={handlerLabel || requester?.name}
+                                dueAt={request.workflowStepDueAt || request.expectedDate || request.createdDate}
+                                actionLabel={statusView.actionLabel}
+                                onClick={() => onOpenRequest(request)}
+                            />
+                            <div className="pointer-events-none absolute bottom-4 left-4 right-4 flex flex-wrap gap-1.5">
+                                {slaState === 'overdue' && <StatusBadge status="overdue" label="Quá hạn SLA" tone="attention" />}
+                                {overLines.length > 0 && (
+                                    <StatusBadge
+                                        status="warning"
+                                        label={`${overLines.length} dòng vượt/ngoài BOQ`}
+                                        tone="attention"
+                                    />
+                                )}
+                                {request.overrideReason && <StatusBadge status="warning" label="Có lý do override" tone="warning" />}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    };
 
     return (
         <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm dark:border-slate-700/60 dark:bg-slate-800">
             <div className="flex items-center justify-between border-b border-slate-100 p-5">
                 <div>
                     <h3 className="flex items-center gap-2 text-sm font-black text-slate-700"><Package size={16} className="text-purple-500" /> Đề xuất vật tư ({requests.length})</h3>
-                    <p className="mt-1 text-[10px] font-bold text-slate-400">Kanban SLA theo luồng công trường - phòng vật tư - kho công trường</p>
+                    <p className="mt-1 text-[10px] font-bold text-slate-400">Danh sách vận hành nhanh và Kanban SLA theo luồng công trường - phòng vật tư - kho công trường</p>
                 </div>
-                {canCreateMaterialRequest && (
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+                      <button
+                          type="button"
+                          onClick={() => setViewMode('list')}
+                          className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[10px] font-black ${viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                      >
+                          <ListChecks size={12} /> Danh sách
+                      </button>
+                      <button
+                          type="button"
+                          onClick={() => setViewMode('kanban')}
+                          className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[10px] font-black ${viewMode === 'kanban' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+                      >
+                          <LayoutGrid size={12} /> Kanban
+                      </button>
+                  </div>
+                  {canCreateMaterialRequest && (
                     <button
                         onClick={onCreateRequest}
                         className="flex items-center gap-1 rounded-xl border border-purple-200 bg-purple-50 px-3 py-1.5 text-[10px] font-bold text-purple-600 hover:bg-purple-100"
                     >
                         <Plus size={12} /> Tạo đề xuất
                     </button>
-                )}
+                  )}
+                </div>
             </div>
 
             <React.Suspense fallback={<LazyPanelFallback label="Đang tải cấu hình workflow..." />}>
@@ -172,6 +316,9 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                             ))}
                         </div>
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <div className="inline-flex items-center gap-1 rounded-lg border border-orange-100 bg-orange-50 px-2.5 py-2 text-[10px] font-black text-orange-700">
+                                <AlertTriangle size={12} /> {actionCount} cần xử lý
+                            </div>
                             <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500">
                                 <input
                                     type="checkbox"
@@ -201,6 +348,8 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                     <p className="text-sm font-bold text-slate-400">Chưa có phiếu đề xuất vật tư</p>
                     <p className="mt-1 text-[10px] text-slate-300">Tạo đề xuất mới để yêu cầu vật tư từ Kho Tổng</p>
                 </div>
+            ) : viewMode === 'list' ? (
+                renderListMode()
             ) : (
                 <React.Suspense fallback={<LazyPanelFallback label="Đang tải kanban đề xuất..." />}>
                     <MaterialRequestKanbanBoard

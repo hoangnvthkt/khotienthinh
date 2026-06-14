@@ -3,7 +3,7 @@ import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Package, BarChart3, Landmark, Briefcase,
-  GitBranch, Inbox, MoreHorizontal, Settings, Plus, X,
+  GitBranch, Inbox, Bell, MoreHorizontal, Settings, Plus, X,
   GripVertical, EyeOff, RotateCcw, Users, DollarSign,
   ArrowLeftRight, Calendar, FileText, MessageCircle, Bot,
   CheckCircle, HardDrive, BookOpen, MapPin
@@ -25,13 +25,14 @@ interface NavItem {
 
 const ICON_MAP: Record<string, React.FC<{ size?: number; strokeWidth?: number }>> = {
   LayoutDashboard, Package, BarChart3, Landmark, Briefcase,
-  GitBranch, Inbox, MoreHorizontal, Users, DollarSign,
+  GitBranch, Inbox, Bell, MoreHorizontal, Users, DollarSign,
   ArrowLeftRight, Calendar, FileText, MessageCircle, Bot, Settings,
   HardDrive, BookOpen, MapPin,
 };
 
 const ALL_NAV_ITEMS: NavItem[] = [
-  { key: 'HOME', to: '/dashboard', iconName: 'LayoutDashboard', label: 'Tổng quan', shortLabel: 'Home', matchPrefix: '/dashboard', color: 'text-indigo-500' },
+  { key: 'HOME', to: '/', iconName: 'LayoutDashboard', label: 'Hôm nay', shortLabel: 'Home', matchPrefix: '/', color: 'text-indigo-500' },
+  { key: 'NOTIFICATIONS', to: '/notifications', iconName: 'Bell', label: 'Thông báo', shortLabel: 'TB', matchPrefix: '/notifications', color: 'text-blue-500' },
   { key: 'WMS', to: '/inventory', iconName: 'Package', label: 'Vật tư', shortLabel: 'VT', matchPrefix: '/inventory|/operations|/audit|/requests|/material-code-requests|/misa-export', color: 'text-emerald-500' },
   { key: 'HRM', to: '/hrm/employees', iconName: 'Users', label: 'Nhân sự', shortLabel: 'NS', matchPrefix: '/hrm', color: 'text-teal-500' },
   { key: 'DA', to: '/da', iconName: 'BarChart3', label: 'Dự án', shortLabel: 'DA', matchPrefix: '/da|/portfolio', color: 'text-orange-500' },
@@ -43,6 +44,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { key: 'PAY', to: '/hrm/payroll', iconName: 'DollarSign', label: 'Bảng lương', shortLabel: 'BL', matchPrefix: '/hrm/payroll', color: 'text-green-500' },
   { key: 'CHECKIN', to: '/hrm/checkin', iconName: 'MapPin', label: 'Chấm công', shortLabel: 'CC', matchPrefix: '/hrm/checkin', color: 'text-emerald-500' },
   { key: 'CHAT', to: '/chat', iconName: 'MessageCircle', label: 'Tin nhắn', shortLabel: 'Chat', matchPrefix: '/chat', color: 'text-pink-500' },
+  { key: 'FEEDBACK', to: '/feedback', iconName: 'MessageCircle', label: 'Góp ý', shortLabel: 'GY', matchPrefix: '/feedback', color: 'text-blue-500' },
   { key: 'SET', to: '/settings', iconName: 'Settings', label: 'Cài đặt', shortLabel: 'CĐ', matchPrefix: '/settings', color: 'text-slate-500' },
   { key: 'STORAGE', to: '/storage', iconName: 'HardDrive', label: 'Kho dữ liệu', shortLabel: 'DL', matchPrefix: '/storage', color: 'text-violet-500' },
   { key: 'KB', to: '/knowledge-base', iconName: 'BookOpen', label: 'Kho Kiến Thức', shortLabel: 'KT', matchPrefix: '/knowledge-base', color: 'text-amber-500' },

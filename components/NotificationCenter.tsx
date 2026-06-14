@@ -406,6 +406,19 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                             </div>
                         )}
                     </div>
+
+                    <div className="border-t border-slate-100 p-3 dark:border-slate-700">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setIsOpen(false);
+                                navigate('/notifications');
+                            }}
+                            className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-black text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+                        >
+                            Xem tất cả thông báo <ExternalLink size={12} />
+                        </button>
+                    </div>
                 </div>
             )}
         </>

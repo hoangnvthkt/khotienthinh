@@ -4,6 +4,7 @@ import { Project, ProjectGroup, ProjectMasterCategory, ProjectSector, ProjectTyp
 import { projectMasterDataService } from '../../lib/projectMasterDataService';
 import { projectMasterService } from '../../lib/projectMasterService';
 import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 
 type CategoryKind = 'groups' | 'types' | 'sectors';
@@ -56,6 +57,7 @@ const colorClasses: Record<string, { icon: string; button: string; ring: string 
 
 const SettingsProjectMasterData: React.FC = () => {
   const toast = useToast();
+  const confirm = useConfirm();
   const [activeKind, setActiveKind] = useState<CategoryKind | null>(null);
   const [groups, setGroups] = useState<ProjectGroup[]>([]);
   const [types, setTypes] = useState<ProjectTypeMaster[]>([]);
@@ -152,7 +154,15 @@ const SettingsProjectMasterData: React.FC = () => {
   const removeOrArchive = async (kind: CategoryKind, item: CategoryItem) => {
     const used = getUsageCount(kind, item.id);
     const actionLabel = used > 0 ? 'ẩn' : 'xoá';
-    if (!confirm(`Bạn muốn ${actionLabel} "${item.name}"?${used > 0 ? ` Danh mục này đang được ${used} dự án sử dụng.` : ''}`)) return;
+    const ok = await confirm({
+      title: used > 0 ? 'Ẩn danh mục dự án' : 'Xóa danh mục dự án',
+      targetName: item.name,
+      subtitle: `${KIND_CONFIG[kind].label}${used > 0 ? ` đang được ${used} dự án sử dụng.` : ''}`,
+      warningText: used > 0 ? 'Danh mục đang có dữ liệu sử dụng nên hệ thống sẽ ẩn thay vì xóa hẳn.' : undefined,
+      actionLabel: used > 0 ? 'Ẩn danh mục' : 'Xóa danh mục',
+      intent: used > 0 ? 'warning' : 'danger',
+    });
+    if (!ok) return;
     try {
       if (used > 0) {
         if (kind === 'groups') await projectMasterDataService.archiveGroup(item.id);

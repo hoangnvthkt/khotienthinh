@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { Search, Filter, Plus, QrCode, Upload, FileSpreadsheet, Trash2, MoreHorizontal, ShieldAlert, AlertTriangle, Loader2, Download, RefreshCcw } from 'lucide-react';
+import { Plus, QrCode, Upload, FileSpreadsheet, Trash2, MoreHorizontal, ShieldAlert, AlertTriangle, Loader2, Download, RefreshCcw, PackageSearch } from 'lucide-react';
 import AddInventoryModal from '../components/AddInventoryModal';
 import InventoryDetailModal from '../components/InventoryDetailModal';
 import DeleteInventoryModal from '../components/DeleteInventoryModal';
@@ -30,6 +30,7 @@ import {
   getExcelCell,
   parseExcelRows,
 } from '../lib/excelImport';
+import { EmptyState, FilterBar, PageHeader, StatusBadge } from '../components/erp';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
@@ -146,6 +147,12 @@ const Inventory: React.FC = () => {
     }
     return item.stockByWarehouse[filterWarehouse] || 0;
   };
+
+  const stockStats = useMemo(() => {
+    const lowCount = filteredItems.filter(item => getDisplayStock(item) <= item.minStock).length;
+    const totalStock = filteredItems.reduce((sum, item) => sum + getDisplayStock(item), 0);
+    return { lowCount, totalStock };
+  }, [filteredItems, filterWarehouse]);
 
   const loadDocumentFromQr = async (raw: string) => {
     const fulfillmentToken = extractFulfillmentBatchToken(raw);
@@ -673,105 +680,92 @@ const Inventory: React.FC = () => {
         }}
       />
 
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
-        <div>
-          <h1 className="text-2xl font-black text-foreground tracking-tight">Kho & Vật tư</h1>
-          {hasAssignedWh && (
-            <div className="flex items-center gap-2 mt-1 text-accent font-black uppercase text-[10px] tracking-widest bg-blue-500/10 px-2 py-1 rounded-lg border border-blue-500/20 text-blue-450">
-              <ShieldAlert size={12} />
-              Kho quản lý: {warehouses.find(w => w.id === user.assignedWarehouseId)?.name}
-            </div>
-          )}
-        </div>
-
-        <div className="flex flex-wrap gap-2 w-full xl:w-auto">
-          {canCRUD && (
-            <div className="flex flex-wrap gap-2 w-full xl:w-auto">
-              <button
-                onClick={handleDownloadTemplate}
-                disabled={importing}
-                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-card border border-border text-foreground rounded-xl hover:bg-muted transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60"
-              >
-                <FileSpreadsheet className="w-4 h-4 mr-2 text-green-600" /> Tải mẫu
-              </button>
-              <button
-                onClick={handleExportExcel}
-                disabled={importing}
-                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl hover:bg-emerald-500/20 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60"
-              >
-                <Download className="w-4 h-4 mr-2" /> Xuất Excel
-              </button>
-              <button
-                onClick={() => openInventoryImport('create')}
-                disabled={importing}
-                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-blue-500/10 border border-blue-500/20 text-blue-450 rounded-xl hover:bg-blue-500/20 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60 disabled:cursor-wait"
-              >
-                {importing && importMode === 'create'
-                  ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  : <Upload className="w-4 h-4 mr-2" />}
-                Nhập mới
-              </button>
-              <button
-                onClick={() => openInventoryImport('update')}
-                disabled={importing}
-                className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-xl hover:bg-amber-500/20 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60 disabled:cursor-wait"
-              >
-                {importing && importMode === 'update'
-                  ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  : <RefreshCcw className="w-4 h-4 mr-2" />}
-                Cập nhật
-              </button>
-            </div>
-          )}
-          <div className="flex gap-2 w-full sm:w-auto">
-            <button
-              onClick={() => setScannerOpen(true)}
-              disabled={loadingQr}
-              className="flex-1 sm:flex-none flex items-center justify-center px-6 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition text-[10px] font-black uppercase tracking-widest disabled:opacity-60 disabled:cursor-wait"
-            >
-              {loadingQr ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <QrCode className="w-4 h-4 mr-2" />}
-              {loadingQr ? 'Đang tải phiếu...' : 'Quét QR phiếu'}
-            </button>
-
-            {(canCRUD || hasAssignedWh) && (
-              <button onClick={() => setAddModalOpen(true)} className="flex-1 sm:flex-none flex items-center justify-center px-6 py-2 bg-accent text-white rounded-xl hover:bg-blue-700 transition text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20">
-                <Plus className="w-4 h-4 mr-2" /> Thêm mới
-              </button>
+      <PageHeader
+        eyebrow="WMS"
+        title="Kho & Vật tư"
+        description="Tra cứu vật tư, kiểm soát tồn kho, nhận QR và nhập/cập nhật dữ liệu Excel."
+        meta={
+          <>
+            <StatusBadge status="completed" label={`${filteredItems.length} vật tư`} tone="neutral" size="md" />
+            <StatusBadge status="warning" label={`${stockStats.lowCount} cảnh báo tồn`} tone={stockStats.lowCount > 0 ? 'attention' : 'success'} size="md" />
+            <StatusBadge status="info" label={`${stockStats.totalStock.toLocaleString('vi-VN')} tồn hiển thị`} tone="info" size="md" />
+            {hasAssignedWh && (
+              <StatusBadge
+                status="scope"
+                label={`Kho quản lý: ${warehouses.find(w => w.id === user.assignedWarehouseId)?.name || 'N/A'}`}
+                tone="info"
+                size="md"
+              />
             )}
-          </div>
-        </div>
-      </div>
+          </>
+        }
+        primaryAction={(canCRUD || hasAssignedWh) ? {
+          label: 'Thêm mới',
+          icon: <Plus size={16} />,
+          onClick: () => setAddModalOpen(true),
+        } : undefined}
+        secondaryActions={[
+          ...(canCRUD ? [
+            { label: 'Tải mẫu', icon: <FileSpreadsheet size={15} />, onClick: handleDownloadTemplate, disabled: importing },
+            { label: 'Xuất Excel', icon: <Download size={15} />, onClick: handleExportExcel, disabled: importing },
+            {
+              label: importing && importMode === 'create' ? 'Đang nhập' : 'Nhập mới',
+              icon: importing && importMode === 'create' ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />,
+              onClick: () => openInventoryImport('create'),
+              disabled: importing,
+            },
+            {
+              label: importing && importMode === 'update' ? 'Đang cập nhật' : 'Cập nhật',
+              icon: importing && importMode === 'update' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCcw size={15} />,
+              onClick: () => openInventoryImport('update'),
+              disabled: importing,
+            },
+          ] : []),
+          {
+            label: loadingQr ? 'Đang tải phiếu' : 'Quét QR phiếu',
+            icon: loadingQr ? <Loader2 size={15} className="animate-spin" /> : <QrCode size={15} />,
+            onClick: () => setScannerOpen(true),
+            disabled: loadingQr,
+          },
+        ]}
+      />
 
-      <div className="bg-card p-4 rounded-2xl shadow-sm border border-border flex flex-col md:flex-row gap-4">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-5 h-5" />
-          <input
-            type="text" placeholder="Tìm theo tên, mã SKU..."
-            className="w-full pl-10 pr-4 py-3 text-sm border border-border rounded-xl outline-none focus:ring-2 focus:ring-accent font-medium bg-muted/30 text-foreground"
-            value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="w-full md:w-64 relative">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+      <FilterBar
+        searchValue={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Tìm theo tên, mã SKU..."
+        canClear={!!searchTerm || showLowStockOnly || (!hasAssignedWh && filterWarehouse !== 'all')}
+        onClear={() => {
+          setSearchTerm('');
+          setShowLowStockOnly(false);
+          if (!hasAssignedWh) setFilterWarehouse('all');
+        }}
+        filters={
+          <>
             <select
-              disabled={hasAssignedWh} // Khóa nếu có kho phân công
-              className="w-full pl-9 pr-8 py-3 text-sm border border-border rounded-xl appearance-none bg-muted/30 outline-none focus:ring-2 focus:ring-accent disabled:opacity-70 font-black uppercase tracking-tighter text-foreground"
-              value={filterWarehouse} onChange={(e) => setFilterWarehouse(e.target.value)}
+              disabled={hasAssignedWh}
+              className="min-h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none disabled:opacity-70 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+              value={filterWarehouse}
+              onChange={(e) => setFilterWarehouse(e.target.value)}
             >
               {!hasAssignedWh && <option value="all">Tất cả kho hệ thống</option>}
               {warehouses.map(wh => <option key={wh.id} value={wh.id}>{wh.name}</option>)}
             </select>
-          </div>
-          <button
-            onClick={() => setShowLowStockOnly(!showLowStockOnly)}
-            className={`flex items-center justify-center px-4 py-3 rounded-xl border transition-all text-[10px] font-black uppercase tracking-widest ${showLowStockOnly ? 'bg-destructive/10 border-destructive/20 text-destructive' : 'bg-card border-border text-muted-foreground'}`}
-          >
-            <AlertTriangle className={`w-4 h-4 mr-2 ${showLowStockOnly ? 'text-red-600' : 'text-muted-foreground'}`} />
-            Cảnh báo tồn
-          </button>
-        </div>
-      </div>
+            <button
+              type="button"
+              onClick={() => setShowLowStockOnly(!showLowStockOnly)}
+              className={`inline-flex min-h-9 items-center justify-center rounded-lg border px-3 text-xs font-black transition ${
+                showLowStockOnly
+                  ? 'border-orange-200 bg-orange-50 text-orange-700'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300'
+              }`}
+            >
+              <AlertTriangle className="mr-2 h-4 w-4" />
+              Cảnh báo tồn
+            </button>
+          </>
+        }
+      />
 
       <div className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden">
         {/* Desktop Table View */}
@@ -803,11 +797,7 @@ const Inventory: React.FC = () => {
                       <span className="text-[10px] text-muted-foreground ml-1 uppercase font-bold">{item.unit}</span>
                     </td>
                     <td className="p-4 text-center">
-                      {isLow ? (
-                        <span className="bg-destructive/10 text-destructive px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase border border-destructive/20">Sắp hết</span>
-                      ) : (
-                        <span className="bg-emerald-500/10 text-emerald-450 px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase border border-emerald-500/20">An toàn</span>
-                      )}
+                      <StatusBadge status={isLow ? 'warning' : 'completed'} label={isLow ? 'Sắp hết' : 'An toàn'} tone={isLow ? 'attention' : 'success'} />
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -844,11 +834,7 @@ const Inventory: React.FC = () => {
                     <div className="text-[10px] font-mono text-muted-foreground font-bold uppercase mb-0.5">{item.sku}</div>
                     <h4 className="font-black text-foreground text-sm truncate pr-4">{item.name}</h4>
                   </div>
-                  {isLow ? (
-                    <span className="bg-destructive/10 text-destructive px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase border border-destructive/20 shrink-0">Sắp hết</span>
-                  ) : (
-                    <span className="bg-emerald-500/10 text-emerald-450 px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase border border-emerald-500/20 shrink-0">An toàn</span>
-                  )}
+                  <StatusBadge status={isLow ? 'warning' : 'completed'} label={isLow ? 'Sắp hết' : 'An toàn'} tone={isLow ? 'attention' : 'success'} />
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-muted-foreground font-medium">{item.category}</span>
@@ -863,7 +849,13 @@ const Inventory: React.FC = () => {
         </div>
 
         {filteredItems.length === 0 && (
-          <div className="p-20 text-center text-muted-foreground/30 font-black uppercase tracking-widest italic text-sm">Không có dữ liệu vật tư phù hợp.</div>
+          <div className="p-4">
+            <EmptyState
+              icon={<PackageSearch size={18} />}
+              title="Không có dữ liệu vật tư phù hợp"
+              message="Thử xoá bộ lọc, đổi kho hoặc kiểm tra lại mã SKU."
+            />
+          </div>
         )}
       </div>
     </div>

@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Package, ArrowLeftRight, ClipboardCheck,
+  LayoutDashboard, Bell, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon,
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
@@ -357,6 +357,30 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
           <div className="lg:hidden">
             {view === 'home' || view === 'apps' ? (
               <>
+                <NavLink to="/" end onClick={toggle}
+                  className={({ isActive }) => `mb-2 flex items-center px-4 py-2.5 rounded-xl transition-all group ${isActive
+                    ? 'bg-accent/90 text-white shadow-lg shadow-blue-500/20 border border-white/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                  <LayoutDashboard className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                  <span className="font-bold text-sm">Hôm nay</span>
+                </NavLink>
+
+                <NavLink to="/notifications" onClick={toggle}
+                  className={({ isActive }) => `mb-2 flex items-center px-4 py-2.5 rounded-xl transition-all group ${isActive
+                    ? 'bg-accent/90 text-white shadow-lg shadow-blue-500/20 border border-white/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                  <Bell className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                  <span className="font-bold text-sm">Thông báo</span>
+                </NavLink>
+
+                <NavLink to="/feedback" onClick={toggle}
+                  className={({ isActive }) => `mb-2 flex items-center px-4 py-2.5 rounded-xl transition-all group ${isActive
+                    ? 'bg-accent/90 text-white shadow-lg shadow-blue-500/20 border border-white/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                  <MessageCircle className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                  <span className="font-bold text-sm">Góp ý</span>
+                </NavLink>
+
                 {/* Module Grid on mobile */}
                 <div className="px-2 pb-2">
                   <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 px-1">Ứng dụng <span className="text-slate-300 dark:text-slate-600 normal-case">(giữ kéo để sắp xếp)</span></p>
@@ -470,6 +494,30 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
           {/* ====== VIEW: HOME (default) ====== */}
           {view === 'home' && (
             <>
+              <NavLink to="/" end title={collapsed ? 'Hôm nay' : undefined}
+                className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                  ? 'bg-accent/90 text-white shadow-lg shadow-blue-500/20 border border-white/20'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                <LayoutDashboard className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                {!collapsed && <span className="font-bold text-sm">Hôm nay</span>}
+              </NavLink>
+
+              <NavLink to="/notifications" title={collapsed ? 'Thông báo' : undefined}
+                className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                  ? 'bg-accent/90 text-white shadow-lg shadow-blue-500/20 border border-white/20'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                <Bell className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                {!collapsed && <span className="font-bold text-sm">Thông báo</span>}
+              </NavLink>
+
+              <NavLink to="/feedback" title={collapsed ? 'Góp ý' : undefined}
+                className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                  ? 'bg-accent/90 text-white shadow-lg shadow-blue-500/20 border border-white/20'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                <MessageCircle className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                {!collapsed && <span className="font-bold text-sm">Góp ý</span>}
+              </NavLink>
+
               {/* Ứng dụng — folder entry */}
               <button
                 onClick={() => setView('apps')}

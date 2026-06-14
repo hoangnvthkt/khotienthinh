@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { MaterialBudgetItem } from '../../../types';
+import { BoqSummaryStrip, StatusBadge } from '../../erp';
 
 const PAGE_SIZE = 10;
 
@@ -42,7 +43,46 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
                     <p className="text-[10px] text-slate-400">Hiển thị 10 dòng/trang — liên kết BOQ↔YC↔PO↔Kho</p>
                 </div>
             </div>
-            <div className="overflow-x-auto">
+            <div className="grid gap-3 p-3 md:hidden">
+                {pageItems.map(item => {
+                    const overBudget = (item.budgetOverPercent || 0) > 0;
+                    const overWaste = (item.wasteQty || 0) > 0;
+                    const negStock = (item.stockBalance || 0) < 0;
+                    return (
+                        <div key={item.id} className={`rounded-lg border p-3 ${overWaste ? 'border-red-200 bg-red-50/50' : overBudget ? 'border-orange-200 bg-orange-50/50' : 'border-slate-200 bg-white'}`}>
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="font-mono text-[10px] font-black text-indigo-500">{item.materialCode || '—'}</div>
+                                    <h5 className="mt-1 line-clamp-2 text-sm font-black text-slate-800">{item.itemName}</h5>
+                                    <p className="mt-0.5 text-[10px] font-bold text-slate-400">{item.unit || '-'}</p>
+                                </div>
+                                <StatusBadge
+                                    status={overWaste || overBudget || negStock ? 'warning' : 'completed'}
+                                    label={overWaste ? 'Vượt hao hụt' : overBudget ? 'Vượt BOQ' : negStock ? 'Âm kho' : 'OK'}
+                                    tone={overWaste || overBudget || negStock ? 'attention' : 'success'}
+                                />
+                            </div>
+                            <div className="mt-3">
+                                <BoqSummaryStrip
+                                    budgetQty={item.budgetQty}
+                                    reservedQty={item.cumulativeRequested || 0}
+                                    currentQty={0}
+                                    availableQty={Number(item.budgetQty || 0) - Number(item.cumulativeRequested || 0)}
+                                    overBudgetQty={Math.max(0, Number(item.cumulativeRequested || 0) - Number(item.budgetQty || 0))}
+                                    unit={item.unit}
+                                    compact
+                                />
+                            </div>
+                            <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] font-bold text-slate-500">
+                                <div className="rounded bg-slate-50 p-2"><span className="block text-slate-400">Nhập</span>{formatQuantity(item.cumulativeImported || 0)}</div>
+                                <div className="rounded bg-slate-50 p-2"><span className="block text-slate-400">Xuất</span>{formatQuantity(item.cumulativeExported || 0)}</div>
+                                <div className="rounded bg-slate-50 p-2"><span className="block text-slate-400">Tồn</span>{formatQuantity(item.stockBalance || 0)}</div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
                 <table className="w-full min-w-[1200px] text-left">
                     <thead>
                         <tr className="bg-slate-50 text-[9px] font-black uppercase tracking-wider text-slate-500">
@@ -87,7 +127,7 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
                                         <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold ${item.autoAlert.includes('Vượt') ? 'bg-red-100 text-red-700' : item.autoAlert.includes('Cận') ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
                                             <AlertTriangle size={9} /> {item.autoAlert}
                                         </span>
-                                    ) : <span className="text-[9px] font-bold text-emerald-500">✓ OK</span>}
+                                    ) : <StatusBadge status="completed" label="OK" tone="success" />}
                                 </td>
                             </tr>
                         );

@@ -3,6 +3,7 @@ import { CheckCircle, Clock, Hash, Loader2, PackagePlus, Search, ShieldCheck, X,
 import { InventoryItem, MaterialCodeRequest, Role } from '../types';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
+import { useReasonConfirm } from '../context/ConfirmContext';
 import { useModuleData } from '../hooks/useModuleData';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { materialCodeRequestService } from '../lib/materialCodeRequestService';
@@ -26,6 +27,7 @@ const MaterialCodeRequests: React.FC = () => {
   useModuleData('wms');
   const { user, items, categories, units, suppliers, addItem } = useApp();
   const toast = useToast();
+  const reasonConfirm = useReasonConfirm();
   const canApprove = user.role === Role.ADMIN || isGlobalWarehouseKeeper(user);
 
   const [requests, setRequests] = useState<MaterialCodeRequest[]>([]);
@@ -195,7 +197,15 @@ const MaterialCodeRequests: React.FC = () => {
       toast.error('Không có quyền', 'Chỉ Admin hoặc thủ kho tổng/phòng vật tư được từ chối đề xuất cấp mã.');
       return;
     }
-    const reason = window.prompt(`Nhập lý do từ chối ${req.code}`);
+    const reason = await reasonConfirm({
+      title: 'Từ chối đề xuất cấp mã',
+      targetName: `${req.code} - ${req.proposedName}`,
+      subtitle: 'Lý do sẽ được lưu vào đề xuất để công trường biết cần bổ sung gì.',
+      reasonLabel: 'Lý do từ chối',
+      reasonPlaceholder: 'Ví dụ: Vật tư đã có mã tương đương, cần dùng SKU ...',
+      actionLabel: 'Từ chối',
+      intent: 'danger',
+    });
     if (!reason?.trim()) return;
 
     setSaving(true);
