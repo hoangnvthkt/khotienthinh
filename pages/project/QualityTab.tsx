@@ -1,33 +1,47 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Plus, Search, ChevronDown, ChevronRight, Save, X,
-  CheckCircle2, AlertTriangle, XCircle, Clock, FileText, Camera,
-  ClipboardCheck, Wrench, MapPin, User, Calendar, Upload,
-  Trash2, Edit2, Send, RotateCcw, Eye, Layers, Compass, Sparkles,
-  ListFilter, ShieldCheck, CheckSquare, PlusCircle, AlertCircle,
-  Printer
+  AlertCircle,
+  ArrowLeft,
+  Calendar,
+  CheckCircle2,
+  ChevronRight,
+  ClipboardCheck,
+  Clock,
+  Edit2,
+  Eye,
+  FileText,
+  Folder,
+  FolderOpen,
+  Image as ImageIcon,
+  Loader2,
+  MapPin,
+  Paperclip,
+  Plus,
+  RotateCcw,
+  Save,
+  Search,
+  Send,
+  ShieldCheck,
+  Trash2,
+  Upload,
+  User,
+  X,
 } from 'lucide-react';
 import { qualityChecklistService } from '../../lib/qualityChecklistService';
 import { projectStaffService } from '../../lib/projectStaffService';
+import { taskService } from '../../lib/projectService';
 import { supabase } from '../../lib/supabase';
+import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import {
-  QualityChecklist,
-  QualityChecklistStatus,
-  QualityConclusionResult,
-  QualityChecklistClonedSection,
-  QualityChecklistClonedItem,
-  InspectionCategory,
-  InspectionWorkType,
-  InspectionTemplate,
-  QualityInspectionAttempt,
-  InspectionResult,
-  Role,
+  Attachment,
   ProjectStaff,
   ProjectSubmissionTarget,
-  DrawingMarker,
-  SignerData
+  ProjectTask,
+  QualityChecklist,
+  QualityChecklistStatus,
+  QualitySitePhoto,
+  Role,
 } from '../../types';
-import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import ProjectSubmissionDialog from '../../components/project/ProjectSubmissionDialog';
@@ -38,663 +52,616 @@ interface QualityTabProps {
   canManageTab?: boolean;
 }
 
-const STATUS_CONFIG: Record<QualityChecklistStatus, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
-  draft: { label: 'Nháp', color: 'text-slate-500', bg: 'bg-slate-50 border-slate-200', icon: <Clock size={12} /> },
-  submitted: { label: 'Chờ duyệt', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', icon: <Send size={12} /> },
-  approved: { label: 'Đã duyệt', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', icon: <CheckCircle2 size={12} /> },
-  returned: { label: 'Trả lại', color: 'text-red-600', bg: 'bg-red-50 border-red-200', icon: <RotateCcw size={12} /> },
-  cancelled: { label: 'Đã huỷ', color: 'text-slate-400', bg: 'bg-slate-50 border-slate-200', icon: <XCircle size={12} /> },
+type StatusCounts = Record<QualityChecklistStatus, number>;
+
+const ROOT_KEY = '__root__';
+
+const STATUS_CONFIG: Record<QualityChecklistStatus, {
+  label: string;
+  chipClass: string;
+  dotClass: string;
+}> = {
+  draft: {
+    label: 'Nháp',
+    chipClass: 'border-slate-200 bg-slate-50 text-slate-600',
+    dotClass: 'bg-slate-400',
+  },
+  submitted: {
+    label: 'Chờ duyệt',
+    chipClass: 'border-amber-200 bg-amber-50 text-amber-700',
+    dotClass: 'bg-amber-500',
+  },
+  approved: {
+    label: 'Đã duyệt',
+    chipClass: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    dotClass: 'bg-emerald-500',
+  },
+  returned: {
+    label: 'Trả lại',
+    chipClass: 'border-red-200 bg-red-50 text-red-700',
+    dotClass: 'bg-red-500',
+  },
+  cancelled: {
+    label: 'Đã huỷ',
+    chipClass: 'border-slate-200 bg-slate-100 text-slate-400',
+    dotClass: 'bg-slate-300',
+  },
 };
 
-const RESULT_BADGE: Record<InspectionResult, { label: string; color: string; bg: string }> = {
-  PASSED: { label: '✅ ĐẠT', color: 'text-emerald-700', bg: 'bg-emerald-100' },
-  FAILED: { label: '❌ KHÔNG ĐẠT', color: 'text-red-700', bg: 'bg-red-100' },
+const emptyCounts = (): StatusCounts => ({
+  draft: 0,
+  submitted: 0,
+  approved: 0,
+  returned: 0,
+  cancelled: 0,
+});
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+const formatDate = (value?: string | null) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('vi-VN');
 };
 
-const CATEGORY_ICONS: Record<string, string> = {
-  'CAT-MONG': '🏗️',
-  'CAT-THEP': '⚙️',
+const clampPercent = (value?: number) => {
+  if (!Number.isFinite(value || 0)) return 0;
+  return Math.max(0, Math.min(100, Number(value || 0)));
 };
 
-// ==================== HIERARCHICAL TEMPLATE SELECTOR ====================
+const safeStorageFileName = (name: string): string => {
+  const safe = name.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return safe || 'quality-file';
+};
 
-interface TemplateSelectorProps {
-  onSelect: (template: InspectionTemplate) => void;
-  onClose: () => void;
-}
+const taskLabel = (task?: ProjectTask | null) =>
+  task ? `${task.wbsCode ? `${task.wbsCode} - ` : ''}${task.name}` : '-';
 
-const TemplateSelector: React.FC<TemplateSelectorProps> = ({ onSelect, onClose }) => {
-  const [categories, setCategories] = useState<InspectionCategory[]>([]);
-  const [workTypes, setWorkTypes] = useState<InspectionWorkType[]>([]);
-  const [templates, setTemplates] = useState<InspectionTemplate[]>([]);
-  const [loading, setLoading] = useState(true);
+const countByStatus = (items: QualityChecklist[]): StatusCounts => {
+  const counts = emptyCounts();
+  items.forEach(item => {
+    counts[item.status || 'draft'] += 1;
+  });
+  return counts;
+};
 
-  const [activeCatId, setActiveCatId] = useState<string>('');
-  const [activeWtId, setActiveWtId] = useState<string>('');
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const cats = await qualityChecklistService.listCategories();
-      setCategories(cats);
-      if (cats.length > 0) {
-        setActiveCatId(cats[0].id);
-        const wts = await qualityChecklistService.listWorkTypes(cats[0].id);
-        setWorkTypes(wts);
-        if (wts.length > 0) {
-          setActiveWtId(wts[0].id);
-          const tpls = await qualityChecklistService.listTemplates(wts[0].id);
-          setTemplates(tpls);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load selector categories:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  const handleCatSelect = async (catId: string) => {
-    setActiveCatId(catId);
-    setActiveWtId('');
-    setTemplates([]);
-    try {
-      const wts = await qualityChecklistService.listWorkTypes(catId);
-      setWorkTypes(wts);
-      if (wts.length > 0) {
-        setActiveWtId(wts[0].id);
-        const tpls = await qualityChecklistService.listTemplates(wts[0].id);
-        setTemplates(tpls);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleWtSelect = async (wtId: string) => {
-    setActiveWtId(wtId);
-    try {
-      const tpls = await qualityChecklistService.listTemplates(wtId);
-      setTemplates(tpls);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
+const StatusBadge: React.FC<{ status: QualityChecklistStatus }> = ({ status }) => {
+  const config = STATUS_CONFIG[status] || STATUS_CONFIG.draft;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-200">
-        {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-gradient-to-r from-indigo-50/50 to-violet-50/50">
-          <div>
-            <h3 className="text-sm font-black text-slate-900">Chọn mẫu hồ sơ nghiệm thu</h3>
-            <p className="text-[10px] text-slate-400 mt-0.5 font-bold">Lựa chọn Hạng mục → Công tác → Mẫu nghiệm thu chuẩn để tự động sinh form</p>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
-        </div>
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black ${config.chipClass}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${config.dotClass}`} />
+      {config.label}
+    </span>
+  );
+};
 
-        {loading ? (
-          <div className="flex-1 flex items-center justify-center py-20">
-            <div className="animate-spin w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full" />
-          </div>
-        ) : (
-          /* Multi-tiered Split Panes */
-          <div className="flex-1 grid grid-cols-1 md:grid-cols-[220px_220px_1fr] overflow-hidden">
-            {/* Tier 1: Categories */}
-            <div className="border-r border-slate-100 bg-slate-50/30 p-3 space-y-1 overflow-y-auto">
-              <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2 mb-2">1. Hạng mục chính</h4>
-              {categories.map(cat => {
-                const isSelected = activeCatId === cat.id;
-                const icon = CATEGORY_ICONS[cat.code] || '📋';
-                return (
-                  <button
-                    key={cat.id}
-                    onClick={() => handleCatSelect(cat.id)}
-                    className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-left text-xs font-bold transition ${isSelected ? 'bg-indigo-50 text-indigo-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'
-                      }`}
-                  >
-                    <span>{icon}</span>
-                    <span className="truncate">{cat.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Tier 2: Work Types */}
-            <div className="border-r border-slate-100 bg-slate-50/10 p-3 space-y-1 overflow-y-auto">
-              <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2 mb-2">2. Loại công tác</h4>
-              {workTypes.length === 0 ? (
-                <p className="text-[10px] text-slate-400 italic px-2 font-bold">Chưa có công tác nào.</p>
-              ) : (
-                workTypes.map(wt => {
-                  const isSelected = activeWtId === wt.id;
-                  return (
-                    <button
-                      key={wt.id}
-                      onClick={() => handleWtSelect(wt.id)}
-                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left text-xs font-bold transition ${isSelected ? 'bg-indigo-50 text-indigo-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50'
-                        }`}
-                    >
-                      <span className="truncate">{wt.name}</span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Tier 3: Templates */}
-            <div className="p-5 overflow-y-auto space-y-3">
-              <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">3. Mẫu biên bản nghiệm thu</h4>
-              {templates.length === 0 ? (
-                <div className="py-12 text-center text-slate-400">
-                  <Sparkles size={28} className="mx-auto text-slate-200 mb-2" />
-                  <p className="text-xs font-bold">Không tìm thấy template nào phù hợp.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-2.5">
-                  {templates.map(tpl => (
-                    <button
-                      key={tpl.id}
-                      onClick={() => onSelect(tpl)}
-                      className="w-full text-left p-4 rounded-2xl border border-slate-100 hover:border-indigo-300 hover:bg-indigo-50/50 transition duration-300 flex flex-col justify-between group"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <span className="text-[9px] font-mono font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded">
-                            {tpl.code} (v{tpl.version})
-                          </span>
-                          <h5 className="text-xs font-black text-slate-800 mt-1.5 group-hover:text-indigo-700">{tpl.name}</h5>
-                          {tpl.description && <p className="text-[10px] text-slate-400 mt-1">{tpl.description}</p>}
-                        </div>
-                      </div>
-                      <div className="mt-3 pt-2 border-t border-slate-100/50 flex gap-2">
-                        <span className="text-[9px] font-black bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100">
-                          RISK: {tpl.riskLevel === 'high' ? 'CAO' : tpl.riskLevel === 'medium' ? 'T.BÌNH' : 'THẤP'}
-                        </span>
-                        {tpl.standardReference && (
-                          <span className="text-[9px] font-mono font-bold text-slate-400 flex items-center">
-                            Tiêu chuẩn: {tpl.standardReference}
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+const MiniStat: React.FC<{
+  label: string;
+  value: number | string;
+  icon: React.ReactNode;
+  tone?: 'slate' | 'amber' | 'emerald' | 'red' | 'sky';
+}> = ({ label, value, icon, tone = 'slate' }) => {
+  const tones = {
+    slate: 'border-slate-200 bg-white text-slate-700',
+    amber: 'border-amber-200 bg-amber-50 text-amber-700',
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    red: 'border-red-200 bg-red-50 text-red-700',
+    sky: 'border-sky-200 bg-sky-50 text-sky-700',
+  };
+  return (
+    <div className={`rounded-lg border p-3 ${tones[tone]}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-black uppercase text-slate-400">{label}</span>
+        <span className="text-slate-400">{icon}</span>
       </div>
+      <div className="mt-1 text-xl font-black">{value}</div>
     </div>
   );
 };
 
-// ==================== MAIN QUALITY TAB COMPONENT ====================
+const ProgressBar: React.FC<{ value?: number }> = ({ value }) => {
+  const width = clampPercent(value);
+  return (
+    <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+      <div
+        className={`h-full rounded-full ${width >= 100 ? 'bg-emerald-500' : width > 0 ? 'bg-amber-500' : 'bg-slate-300'}`}
+        style={{ width: `${width}%` }}
+      />
+    </div>
+  );
+};
+
+const FolderCard: React.FC<{
+  task: ProjectTask;
+  childCount: number;
+  checklists: QualityChecklist[];
+  parentPath?: string;
+  onOpen: () => void;
+}> = ({ task, childCount, checklists, parentPath, onOpen }) => {
+  const counts = countByStatus(checklists);
+  return (
+    <button
+      onClick={onOpen}
+      className="group rounded-lg border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-amber-300 hover:shadow-md"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-amber-100 bg-amber-50 text-amber-600">
+            {childCount > 0 ? <FolderOpen size={20} /> : <Folder size={20} />}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              {task.wbsCode && (
+                <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-black text-slate-500">
+                  {task.wbsCode}
+                </span>
+              )}
+              <span className="text-[10px] font-black uppercase text-slate-400">
+                {childCount} thư mục con
+              </span>
+            </div>
+            <h4 className="mt-1 truncate text-sm font-black text-slate-800 group-hover:text-amber-700" title={task.name}>
+              {task.name}
+            </h4>
+            {parentPath && (
+              <p className="mt-1 truncate text-[10px] font-bold text-slate-400" title={parentPath}>
+                {parentPath}
+              </p>
+            )}
+          </div>
+        </div>
+        <ChevronRight size={16} className="mt-1 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-amber-500" />
+      </div>
+
+      <div className="mt-4 space-y-2">
+        <div className="flex items-center justify-between text-[10px] font-black text-slate-500">
+          <span>Tiến độ</span>
+          <span>{Math.round(Number(task.progress || 0))}%</span>
+        </div>
+        <ProgressBar value={task.progress} />
+      </div>
+
+      <div className="mt-4 grid grid-cols-4 gap-2 text-center">
+        <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5">
+          <div className="text-sm font-black text-slate-700">{checklists.length}</div>
+          <div className="text-[8px] font-black uppercase text-slate-400">Hồ sơ</div>
+        </div>
+        <div className="rounded border border-amber-100 bg-amber-50 px-2 py-1.5">
+          <div className="text-sm font-black text-amber-700">{counts.submitted}</div>
+          <div className="text-[8px] font-black uppercase text-amber-600">Chờ</div>
+        </div>
+        <div className="rounded border border-emerald-100 bg-emerald-50 px-2 py-1.5">
+          <div className="text-sm font-black text-emerald-700">{counts.approved}</div>
+          <div className="text-[8px] font-black uppercase text-emerald-600">Duyệt</div>
+        </div>
+        <div className="rounded border border-red-100 bg-red-50 px-2 py-1.5">
+          <div className="text-sm font-black text-red-700">{counts.returned}</div>
+          <div className="text-[8px] font-black uppercase text-red-600">Trả</div>
+        </div>
+      </div>
+    </button>
+  );
+};
+
+const FileIcon: React.FC<{ type?: string }> = ({ type }) => {
+  if (type?.startsWith('image/')) return <ImageIcon size={14} />;
+  return <FileText size={14} />;
+};
 
 const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
   const { user } = useApp();
   const toast = useToast();
+  const siteId = constructionSiteId || '';
 
-  // Data States
+  const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [checklists, setChecklists] = useState<QualityChecklist[]>([]);
   const [projectStaff, setProjectStaff] = useState<ProjectStaff[]>([]);
+  const [projectName, setProjectName] = useState('');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<QualityChecklistStatus | ''>('');
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+  const [showOrphans, setShowOrphans] = useState(false);
 
-  // Submission target state
-  const [submittingChecklist, setSubmittingChecklist] = useState<QualityChecklist | null>(null);
-
-  // Attempts States
-  const [attempts, setAttempts] = useState<QualityInspectionAttempt[]>([]);
-  const [activeAttemptTab, setActiveAttemptTab] = useState<'current' | string>('current');
-
-  // Modals / Forms States
-  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [formTask, setFormTask] = useState<ProjectTask | null>(null);
   const [editingChecklist, setEditingChecklist] = useState<QualityChecklist | null>(null);
+  const [readonlyForm, setReadonlyForm] = useState(false);
   const [form, setForm] = useState<Partial<QualityChecklist>>({});
   const [saving, setSaving] = useState(false);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
 
-  // Detail view
-  const [viewingId, setViewingId] = useState<string | null>(null);
-
-  const [projectName, setProjectName] = useState<string>('');
+  const [submittingChecklist, setSubmittingChecklist] = useState<QualityChecklist | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
-    const fetchProjectName = async () => {
+    let alive = true;
+    const loadProjectName = async () => {
       try {
         const { data } = await supabase
           .from('projects')
           .select('name')
           .eq('id', projectId)
           .maybeSingle();
-        if (data?.name) {
-          setProjectName(data.name);
-        }
-      } catch (err) {
-        console.error('Failed to fetch project name:', err);
+        if (alive && data?.name) setProjectName(data.name);
+      } catch (error) {
+        console.error('Failed to load project name:', error);
       }
     };
-    fetchProjectName();
+    loadProjectName();
+    return () => { alive = false; };
   }, [projectId]);
-
-  const siteId = constructionSiteId || '';
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [list, staff] = await Promise.all([
-        qualityChecklistService.list(projectId, siteId),
+      const [taskRows, checklistRows, staffRows] = await Promise.all([
+        taskService.list(projectId, siteId || undefined),
+        qualityChecklistService.list(projectId, siteId || undefined),
         projectStaffService.listByProject(projectId, siteId || undefined),
       ]);
-      setChecklists(list);
-      setProjectStaff(staff);
-    } catch (err) {
-      console.error('Failed to load quality checklists & staff:', err);
+      setTasks(taskRows);
+      setChecklists(checklistRows);
+      setProjectStaff(staffRows);
+    } catch (error: any) {
+      console.error('Failed to load quality module data:', error);
+      toast.error('Không tải được dữ liệu chất lượng', error?.message);
     } finally {
       setLoading(false);
     }
-  }, [projectId, siteId]);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
-  // Load attempts when viewing a checklist
-  const loadChecklistAttempts = useCallback(async (checklistId: string) => {
-    try {
-      const history = await qualityChecklistService.listAttempts(checklistId);
-      setAttempts(history);
-    } catch (err) {
-      console.error('Failed to load attempts history:', err);
-    }
-  }, []);
+  }, [projectId, siteId, toast]);
 
   useEffect(() => {
-    if (viewingId) {
-      loadChecklistAttempts(viewingId);
-      setActiveAttemptTab('current');
-    }
-  }, [viewingId, loadChecklistAttempts]);
+    loadData();
+  }, [loadData]);
 
-  // Split-pane resizing states
-  const [leftWidth, setLeftWidth] = useState(60); // Default layout: Drawing takes 60%
-  const [isDragging, setIsDragging] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const taskMap = useMemo(() => new Map(tasks.map(task => [task.id, task])), [tasks]);
 
-  // PDF Layout & Drawing States
-  const [uploadingDrawing, setUploadingDrawing] = useState(false);
-  const [newMarkerCoords, setNewMarkerCoords] = useState<{ x: number; y: number } | null>(null);
-  const [newMarkerLabel, setNewMarkerLabel] = useState('');
-  const [newMarkerNote, setNewMarkerNote] = useState('');
-  const [newMarkerStatus, setNewMarkerStatus] = useState<'pass' | 'fail' | 'pending'>('pending');
-  const [showMarkerModal, setShowMarkerModal] = useState(false);
-  const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null);
-  const [markerFilter, setMarkerFilter] = useState<'all' | 'pass' | 'fail' | 'pending'>('all');
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string, ProjectTask[]>();
+    tasks.forEach(task => {
+      const key = task.parentId || ROOT_KEY;
+      map.set(key, [...(map.get(key) || []), task]);
+    });
+    map.forEach(items => items.sort((a, b) => (a.order || 0) - (b.order || 0) || (a.wbsCode || '').localeCompare(b.wbsCode || '')));
+    return map;
+  }, [tasks]);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
+  const taskScopeIdsById = useMemo(() => {
+    const cache = new Map<string, Set<string>>();
+    const collect = (taskId: string, trail = new Set<string>()): Set<string> => {
+      if (cache.has(taskId)) return cache.get(taskId)!;
+      if (trail.has(taskId)) return new Set([taskId]);
+      const nextTrail = new Set(trail).add(taskId);
+      const ids = new Set<string>([taskId]);
+      (childrenByParent.get(taskId) || []).forEach(child => {
+        collect(child.id, nextTrail).forEach(id => ids.add(id));
+      });
+      cache.set(taskId, ids);
+      return ids;
+    };
+    tasks.forEach(task => collect(task.id));
+    return cache;
+  }, [childrenByParent, tasks]);
+
+  const checklistsByTaskId = useMemo(() => {
+    const map = new Map<string, QualityChecklist[]>();
+    checklists.forEach(item => {
+      if (!item.taskId) return;
+      map.set(item.taskId, [...(map.get(item.taskId) || []), item]);
+    });
+    return map;
+  }, [checklists]);
+
+  const orphanChecklists = useMemo(
+    () => checklists.filter(item => !item.taskId || !taskMap.has(item.taskId)),
+    [checklists, taskMap],
+  );
+
+  const currentTask = currentTaskId ? taskMap.get(currentTaskId) || null : null;
 
   useEffect(() => {
-    if (!isDragging) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      let percentage = ((e.clientX - rect.left) / rect.width) * 100;
-      if (percentage < 20) percentage = 20;
-      if (percentage > 80) percentage = 80;
-      setLeftWidth(percentage);
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-  }, [isDragging]);
-
-  const handleDrawingUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploadingDrawing(true);
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `drawing-${Date.now()}.${fileExt}`;
-      const path = `quality/${editingChecklist?.id || viewingId}/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('project-attachments')
-        .upload(path, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data } = supabase.storage
-        .from('project-attachments')
-        .getPublicUrl(path);
-
-      if (showForm) {
-        setForm(prev => ({ ...prev, drawingUrl: data.publicUrl }));
-      } else if (viewingId) {
-        await qualityChecklistService.update(viewingId, {
-          drawingUrl: data.publicUrl,
-        });
-        await loadData();
-      }
-      toast.success('Đã tải lên bản vẽ thành công!');
-    } catch (err: any) {
-      console.error('Failed to upload drawing:', err);
-      toast.error(`Lỗi tải bản vẽ: ${err.message || err}`);
-    } finally {
-      setUploadingDrawing(false);
+    if (currentTaskId && !taskMap.has(currentTaskId)) {
+      setCurrentTaskId(null);
+      setShowOrphans(false);
     }
+  }, [currentTaskId, taskMap]);
+
+  const breadcrumbTasks = useMemo(() => {
+    if (!currentTask) return [];
+    const path: ProjectTask[] = [];
+    const seen = new Set<string>();
+    let cursor: ProjectTask | undefined = currentTask;
+    while (cursor && !seen.has(cursor.id)) {
+      seen.add(cursor.id);
+      path.unshift(cursor);
+      cursor = cursor.parentId ? taskMap.get(cursor.parentId) : undefined;
+    }
+    return path;
+  }, [currentTask, taskMap]);
+
+  const getParentPath = useCallback((task: ProjectTask) => {
+    const names: string[] = [];
+    const seen = new Set<string>();
+    let cursor = task.parentId ? taskMap.get(task.parentId) : undefined;
+    while (cursor && !seen.has(cursor.id)) {
+      seen.add(cursor.id);
+      names.unshift(cursor.wbsCode ? `${cursor.wbsCode} ${cursor.name}` : cursor.name);
+      cursor = cursor.parentId ? taskMap.get(cursor.parentId) : undefined;
+    }
+    return names.join(' / ');
+  }, [taskMap]);
+
+  const getAggregateChecklists = useCallback((taskId: string) => {
+    const ids = taskScopeIdsById.get(taskId) || new Set([taskId]);
+    return checklists.filter(item => item.taskId && ids.has(item.taskId));
+  }, [checklists, taskScopeIdsById]);
+
+  const currentChildren = useMemo(() => (
+    childrenByParent.get(currentTaskId || ROOT_KEY) || []
+  ), [childrenByParent, currentTaskId]);
+
+  const visibleTasks = useMemo(() => {
+    const query = search.trim();
+    const source = query ? tasks : currentChildren;
+    if (!query) return source;
+    return source
+      .filter(task => matchesSearchQueryMultiple([
+        task.wbsCode,
+        task.name,
+        task.assignee,
+        task.notes,
+        getParentPath(task),
+      ], query))
+      .sort((a, b) => (a.wbsCode || '').localeCompare(b.wbsCode || '') || (a.order || 0) - (b.order || 0));
+  }, [currentChildren, getParentPath, search, tasks]);
+
+  const filterChecklistRows = useCallback((items: QualityChecklist[]) => {
+    const query = search.trim();
+    return items.filter(item => {
+      if (statusFilter && item.status !== statusFilter) return false;
+      if (!query) return true;
+      const task = item.taskId ? taskMap.get(item.taskId) : null;
+      return matchesSearchQueryMultiple([
+        item.code,
+        item.title,
+        item.workLocation,
+        item.workSupervisor,
+        item.note,
+        task?.wbsCode,
+        task?.name,
+      ], query);
+    });
+  }, [search, statusFilter, taskMap]);
+
+  const directTaskChecklists = useMemo(
+    () => currentTaskId ? (checklistsByTaskId.get(currentTaskId) || []) : [],
+    [checklistsByTaskId, currentTaskId],
+  );
+
+  const tableRows = useMemo(() => {
+    if (showOrphans) return filterChecklistRows(orphanChecklists);
+    if (currentTaskId) return filterChecklistRows(directTaskChecklists);
+    return [];
+  }, [currentTaskId, directTaskChecklists, filterChecklistRows, orphanChecklists, showOrphans]);
+
+  const globalCounts = useMemo(() => countByStatus(checklists), [checklists]);
+  const currentCounts = useMemo(() => countByStatus(directTaskChecklists), [directTaskChecklists]);
+
+  const canEditChecklist = useCallback((checklist: QualityChecklist) => {
+    if (!canManageTab) return false;
+    if (checklist.status !== 'draft' && checklist.status !== 'returned') return false;
+    if (user?.role === Role.ADMIN) return true;
+    if (!checklist.createdBy) return true;
+    return checklist.createdBy === user?.id || checklist.createdBy === user?.name;
+  }, [canManageTab, user?.id, user?.name, user?.role]);
+
+  const canApproveChecklist = useCallback((checklist: QualityChecklist) => {
+    if (!canManageTab || checklist.status !== 'submitted') return false;
+    return user?.role === Role.ADMIN || checklist.submittedToUserId === user?.id;
+  }, [canManageTab, user?.id, user?.role]);
+
+  const openTask = (taskId: string) => {
+    setCurrentTaskId(taskId);
+    setShowOrphans(false);
+    setSearch('');
   };
 
-  const handleDrawingClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const checklist = showForm ? editingChecklist : viewingChecklist;
-    if (!checklist) return;
-    const readonly = checklist.status !== 'draft' && checklist.status !== 'returned';
-    if (readonly) return;
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-
-    setNewMarkerCoords({ x, y });
-    setNewMarkerLabel(`Điểm ${((showForm ? form.drawingMarkers : viewingChecklist?.drawingMarkers) || []).length + 1}`);
-    setNewMarkerNote('');
-    setNewMarkerStatus('pending');
-    setEditingMarkerId(null);
-    setShowMarkerModal(true);
+  const openRoot = () => {
+    setCurrentTaskId(null);
+    setShowOrphans(false);
+    setSearch('');
   };
 
-  const handleEditMarker = (marker: DrawingMarker, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setNewMarkerCoords({ x: marker.x, y: marker.y });
-    setNewMarkerLabel(marker.label);
-    setNewMarkerNote(marker.note || '');
-    setNewMarkerStatus(marker.status);
-    setEditingMarkerId(marker.id);
-    setShowMarkerModal(true);
+  const openOrphans = () => {
+    setCurrentTaskId(null);
+    setShowOrphans(true);
+    setSearch('');
   };
 
-  const handleSaveMarker = async () => {
-    if (!newMarkerLabel.trim()) {
-      toast.error('Vui lòng nhập tên điểm đánh dấu!');
+  const openCreate = (task: ProjectTask) => {
+    if (!canManageTab) return;
+    const targetSiteId = siteId || task.constructionSiteId || '';
+    if (!targetSiteId) {
+      toast.error('Thiếu công trường', 'Cần chọn công trường trước khi tạo hồ sơ nghiệm thu.');
       return;
     }
-
-    const currentMarkers = showForm
-      ? (form.drawingMarkers || [])
-      : (viewingChecklist?.drawingMarkers || []);
-
-    let updatedMarkers: DrawingMarker[];
-
-    if (editingMarkerId) {
-      updatedMarkers = currentMarkers.map(m =>
-        m.id === editingMarkerId
-          ? { ...m, label: newMarkerLabel, note: newMarkerNote, status: newMarkerStatus }
-          : m
-      );
-    } else {
-      const newMarker: DrawingMarker = {
-        id: `marker-${Date.now()}`,
-        x: newMarkerCoords?.x || 0,
-        y: newMarkerCoords?.y || 0,
-        label: newMarkerLabel,
-        status: newMarkerStatus,
-        note: newMarkerNote || undefined,
-      };
-      updatedMarkers = [...currentMarkers, newMarker];
-    }
-
-    if (showForm) {
-      setForm(prev => ({ ...prev, drawingMarkers: updatedMarkers }));
-    } else if (viewingId) {
-      await qualityChecklistService.update(viewingId, {
-        drawingMarkers: updatedMarkers,
-      });
-      await loadData();
-    }
-
-    setShowMarkerModal(false);
-    setEditingMarkerId(null);
-    toast.success('Đã lưu điểm đánh dấu!');
-  };
-
-  const handleDeleteMarker = async (markerId: string) => {
-    if (!confirm('Bạn có chắc chắn muốn xoá điểm đánh dấu này?')) return;
-
-    const currentMarkers = showForm
-      ? (form.drawingMarkers || [])
-      : (viewingChecklist?.drawingMarkers || []);
-
-    const updatedMarkers = currentMarkers.filter(m => m.id !== markerId);
-
-    if (showForm) {
-      setForm(prev => ({ ...prev, drawingMarkers: updatedMarkers }));
-    } else if (viewingId) {
-      await qualityChecklistService.update(viewingId, {
-        drawingMarkers: updatedMarkers,
-      });
-      await loadData();
-    }
-
-    setShowMarkerModal(false);
-    setEditingMarkerId(null);
-    toast.success('Đã xoá điểm đánh dấu!');
-  };
-
-  const handleSign = async (roleCode: 'inspector' | 'contractor' | 'supervisor' | 'completion', roleName: string) => {
-    if (!confirm(`Xác nhận ký tên với tư cách là ${roleName}?`)) return;
-
-    const currentSigners = showForm
-      ? (form.signersData || [])
-      : (viewingChecklist?.signersData || []);
-
-    const newSigner: SignerData = {
-      roleCode,
-      roleName,
-      userName: user?.name || user?.email || 'Người dùng',
-      signatureUrl: user?.signatureUrl || '',
-      signedAt: new Date().toISOString(),
-    };
-
-    const updatedSigners = [
-      ...currentSigners.filter(s => s.roleCode !== roleCode),
-      newSigner,
-    ];
-
-    if (showForm) {
-      setForm(prev => ({ ...prev, signersData: updatedSigners }));
-    } else if (viewingId) {
-      await qualityChecklistService.update(viewingId, {
-        signersData: updatedSigners,
-      });
-      await loadData();
-    }
-    toast.success(`Đã ký xác nhận thành công làm ${roleName}!`);
-  };
-
-  const handleClearSignature = async (roleCode: 'inspector' | 'contractor' | 'supervisor' | 'completion', roleName: string) => {
-    if (!confirm(`Bạn có chắc chắn muốn xoá chữ ký ${roleName}?`)) return;
-
-    const currentSigners = showForm
-      ? (form.signersData || [])
-      : (viewingChecklist?.signersData || []);
-
-    const updatedSigners = currentSigners.filter(s => s.roleCode !== roleCode);
-
-    if (showForm) {
-      setForm(prev => ({ ...prev, signersData: updatedSigners }));
-    } else if (viewingId) {
-      await qualityChecklistService.update(viewingId, {
-        signersData: updatedSigners,
-      });
-      await loadData();
-    }
-    toast.success(`Đã xoá chữ ký ${roleName}!`);
-  };
-
-  const updateDynamicItemResult = (secId: string, itemId: string, result: 'pass' | 'fail' | undefined) => {
-    setForm(prev => {
-      const data = prev.checklistData || [];
-      const updated = data.map(sec => {
-        if (sec.sectionId !== secId) return sec;
-        return {
-          ...sec,
-          items: sec.items.map(item => {
-            if (item.id !== itemId) return item;
-            return { ...item, result };
-          })
-        };
-      });
-      return { ...prev, checklistData: updated };
+    setFormTask(task);
+    setEditingChecklist(null);
+    setReadonlyForm(false);
+    setForm({
+      title: taskLabel(task),
+      workDescription: task.notes || task.name,
+      workLocation: '',
+      workDate: todayIso(),
+      workSupervisor: task.assignee || '',
+      sitePhotos: [],
+      attachments: [],
+      note: '',
     });
-  };
-
-  const toggleSection = (secId: string) => {
-    setExpandedSections(prev => {
-      const next = new Set(prev);
-      if (next.has(secId)) next.delete(secId); else next.add(secId);
-      return next;
-    });
-  };
-
-  // === Create checklist from template ===
-  const handleSelectTemplate = async (template: InspectionTemplate) => {
-    setShowTemplateSelector(false);
-    setSaving(true);
-    try {
-      const created = await qualityChecklistService.createFromTemplate({
-        templateId: template.id,
-        projectId,
-        constructionSiteId: siteId,
-        createdBy: user?.name,
-      });
-      await loadData();
-
-      // Auto open edit form
-      setEditingChecklist(created);
-      setForm({ ...created });
-
-      // Expand all sections by default
-      const secIds = (created.checklistData || []).map(s => s.sectionId);
-      setExpandedSections(new Set(secIds));
-
-      setShowForm(true);
-    } catch (err: any) {
-      alert(err.message || 'Lỗi tạo hồ sơ chất lượng');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // === Edit ===
-  const openEdit = (checklist: QualityChecklist) => {
-    setEditingChecklist(checklist);
-    setForm({ ...checklist });
-
-    const secIds = (checklist.checklistData || []).map(s => s.sectionId);
-    setExpandedSections(new Set(secIds));
-
     setShowForm(true);
   };
 
-  // === Save ===
+  const openChecklist = (checklist: QualityChecklist, readonly = false) => {
+    const linkedTask = checklist.taskId ? taskMap.get(checklist.taskId) || null : null;
+    setFormTask(linkedTask);
+    setEditingChecklist(checklist);
+    setReadonlyForm(readonly || !canEditChecklist(checklist));
+    setForm({
+      ...checklist,
+      sitePhotos: checklist.sitePhotos || [],
+      attachments: checklist.attachments || [],
+    });
+    setShowForm(true);
+  };
+
+  const closeForm = () => {
+    setShowForm(false);
+    setFormTask(null);
+    setEditingChecklist(null);
+    setReadonlyForm(false);
+    setForm({});
+  };
+
+  const uploadFiles = async (files: File[], kind: 'photo' | 'attachment') => {
+    const folderSiteId = siteId || formTask?.constructionSiteId || 'project';
+    const recordId = editingChecklist?.id || `draft-${Date.now()}`;
+    const now = new Date().toISOString();
+    const uploaded: Array<QualitySitePhoto | Attachment> = [];
+
+    for (const file of files) {
+      const path = `quality/${folderSiteId}/${recordId}/${Date.now()}-${crypto.randomUUID()}-${safeStorageFileName(file.name)}`;
+      const { error } = await supabase.storage
+        .from('project-attachments')
+        .upload(path, file, { cacheControl: '3600', upsert: false });
+      if (error) throw error;
+
+      const { data } = supabase.storage.from('project-attachments').getPublicUrl(path);
+      if (kind === 'photo') {
+        uploaded.push({
+          url: data.publicUrl,
+          caption: file.name,
+          category: 'during',
+          takenAt: now,
+        } as QualitySitePhoto);
+      } else {
+        uploaded.push({
+          id: crypto.randomUUID(),
+          name: file.name,
+          fileName: file.name,
+          url: data.publicUrl,
+          fileType: file.type || file.name.split('.').pop(),
+          fileSize: file.size,
+          category: 'quality_acceptance',
+          uploadedAt: now,
+          uploadedBy: user?.id || user?.name,
+        } as Attachment);
+      }
+    }
+
+    return uploaded;
+  };
+
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []).filter(file => file.type.startsWith('image/'));
+    event.target.value = '';
+    if (files.length === 0) return;
+    setUploadingPhotos(true);
+    try {
+      const photos = await uploadFiles(files, 'photo') as QualitySitePhoto[];
+      setForm(prev => ({ ...prev, sitePhotos: [...(prev.sitePhotos || []), ...photos] }));
+      toast.success('Đã tải ảnh nghiệm thu', `${photos.length} ảnh đã sẵn sàng.`);
+    } catch (error: any) {
+      toast.error('Không tải được ảnh', error?.message);
+    } finally {
+      setUploadingPhotos(false);
+    }
+  };
+
+  const handleAttachmentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (files.length === 0) return;
+    setUploadingFiles(true);
+    try {
+      const attachments = await uploadFiles(files, 'attachment') as Attachment[];
+      setForm(prev => ({ ...prev, attachments: [...(prev.attachments || []), ...attachments] }));
+      toast.success('Đã tải file đính kèm', `${attachments.length} file đã sẵn sàng.`);
+    } catch (error: any) {
+      toast.error('Không tải được file', error?.message);
+    } finally {
+      setUploadingFiles(false);
+    }
+  };
+
+  const removePhoto = (index: number) => {
+    setForm(prev => ({
+      ...prev,
+      sitePhotos: (prev.sitePhotos || []).filter((_, photoIndex) => photoIndex !== index),
+    }));
+  };
+
+  const removeAttachment = (index: number) => {
+    setForm(prev => ({
+      ...prev,
+      attachments: (prev.attachments || []).filter((_, attachmentIndex) => attachmentIndex !== index),
+    }));
+  };
+
   const handleSave = async () => {
-    if (!editingChecklist) return;
-    setSaving(true);
-    try {
-      await qualityChecklistService.update(editingChecklist.id, form);
-      setShowForm(false);
-      setEditingChecklist(null);
-      await loadData();
-    } catch (err: any) {
-      alert(err.message || 'Lỗi lưu hồ sơ chất lượng');
-    } finally {
-      setSaving(false);
+    if (readonlyForm) return;
+    const title = String(form.title || '').trim();
+    if (!title) {
+      toast.error('Thiếu tên hồ sơ', 'Vui lòng nhập tên hồ sơ nghiệm thu.');
+      return;
     }
-  };
-
-  // === Attempt Multi-audit trigger ===
-  const handleCreateNewAttempt = async () => {
-    if (!viewingId) return;
-    const vc = checklists.find(c => c.id === viewingId);
-    if (!vc) return;
-
-    const inspector = prompt(`Nhập tên Kỹ sư QA/QC thực hiện kiểm tra lại Lần ${vc.currentAttempt + 1}:`, user?.name || '');
-    if (inspector === null) return; // cancelled
 
     setSaving(true);
     try {
-      // 1. Create historical attempt snapshot
-      await qualityChecklistService.createAttempt({
-        checklistId: vc.id,
-        attemptNumber: vc.currentAttempt,
-        inspectorName: vc.workSupervisor || inspector,
-        itemsData: vc.checklistData,
-        result: vc.inspectionResult === 'PASSED' ? 'PASSED' : 'FAILED',
-        conclusion: vc.conclusion,
-        createdBy: user?.name
-      });
-
-      // 2. Reset values for all items in the checklist for a fresh retry
-      const resetChecklistData = vc.checklistData.map(sec => ({
-        ...sec,
-        items: sec.items.map(item => ({
-          ...item,
-          actualValue: item.dataType === 'checkbox' ? 'false' : '',
-          result: undefined
-        }))
-      }));
-
-      await qualityChecklistService.update(vc.id, {
-        checklistData: resetChecklistData,
-        workSupervisor: inspector
-      });
-
+      if (editingChecklist) {
+        await qualityChecklistService.update(editingChecklist.id, {
+          title,
+          workDescription: form.workDescription || '',
+          workLocation: form.workLocation || '',
+          workDate: form.workDate || todayIso(),
+          workSupervisor: form.workSupervisor || '',
+          sitePhotos: form.sitePhotos || [],
+          attachments: form.attachments || [],
+          note: form.note || '',
+        });
+        toast.success('Đã cập nhật hồ sơ nghiệm thu');
+      } else {
+        if (!formTask) throw new Error('Chưa chọn hạng mục tiến độ.');
+        const targetSiteId = siteId || formTask.constructionSiteId || '';
+        if (!targetSiteId) throw new Error('Thiếu công trường để tạo hồ sơ.');
+        await qualityChecklistService.createForTask({
+          projectId,
+          constructionSiteId: targetSiteId,
+          taskId: formTask.id,
+          title,
+          workDescription: form.workDescription || '',
+          workLocation: form.workLocation || '',
+          workDate: form.workDate || todayIso(),
+          workSupervisor: form.workSupervisor || '',
+          sitePhotos: form.sitePhotos || [],
+          attachments: form.attachments || [],
+          note: form.note || '',
+          createdBy: user?.id || user?.name,
+        });
+        toast.success('Đã tạo hồ sơ nghiệm thu');
+      }
+      closeForm();
       await loadData();
-      loadChecklistAttempts(vc.id);
-      setActiveAttemptTab('current');
-      toast.success(`Khởi tạo thành công Lần nghiệm thu ${vc.currentAttempt + 1}!`);
-    } catch (err: any) {
-      alert(err.message || 'Lỗi tạo lần nghiệm thu mới.');
+    } catch (error: any) {
+      toast.error('Không lưu được hồ sơ', error?.message);
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleStatusChange = async (id: string, status: QualityChecklistStatus) => {
-    let reason = '';
-    if (status === 'returned' || status === 'cancelled') {
-      reason = prompt(`Lý do ${status === 'returned' ? 'trả lại' : 'huỷ'}:`) || '';
-      if (!reason.trim()) return;
-    }
-    try {
-      await qualityChecklistService.setStatus(id, status, user?.id, reason);
-      await loadData();
-      setViewingId(null);
-    } catch (err: any) { alert(err.message); }
   };
 
   const handleConfirmSubmit = async (target: ProjectSubmissionTarget) => {
@@ -705,1145 +672,649 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId, 
         'submitted',
         user?.id,
         target.note,
-        target
+        target,
       );
-      toast.success('Gửi duyệt hồ sơ chất lượng thành công!');
+      toast.success('Đã gửi duyệt hồ sơ nghiệm thu');
       setSubmittingChecklist(null);
       await loadData();
-      setViewingId(null);
-    } catch (err: any) {
-      alert(err.message || 'Lỗi gửi duyệt hồ sơ chất lượng');
+    } catch (error: any) {
+      toast.error('Không gửi được hồ sơ', error?.message);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Xóa hồ sơ chất lượng này?')) return;
+  const handleStatusChange = async (checklist: QualityChecklist, status: QualityChecklistStatus) => {
+    let reason = '';
+    if (status === 'returned' || status === 'cancelled') {
+      reason = prompt(`Lý do ${status === 'returned' ? 'trả lại' : 'huỷ'} hồ sơ:`) || '';
+      if (!reason.trim()) return;
+    }
+
     try {
-      await qualityChecklistService.remove(id);
+      await qualityChecklistService.setStatus(checklist.id, status, user?.id, reason);
+      toast.success(status === 'approved' ? 'Đã phê duyệt hồ sơ' : 'Đã cập nhật trạng thái hồ sơ');
       await loadData();
-    } catch (err: any) { alert(err.message); }
-  };
-
-  // === Dynamic Items Input Handler ===
-  const updateDynamicItemValue = (secId: string, itemId: string, value: string) => {
-    setForm(prev => {
-      const data = prev.checklistData || [];
-      const updated = data.map(sec => {
-        if (sec.sectionId !== secId) return sec;
-        return {
-          ...sec,
-          items: sec.items.map(item => {
-            if (item.id !== itemId) return item;
-
-            // Check numeric tolerance in real time (for data sync)
-            let itemResult: 'pass' | 'fail' | undefined = undefined;
-            if (item.dataType === 'number' && value) {
-              const num = parseFloat(value);
-              if (!isNaN(num)) {
-                const passesMin = item.minValue === undefined || item.minValue === null || num >= item.minValue;
-                const passesMax = item.maxValue === undefined || item.maxValue === null || num <= item.maxValue;
-                itemResult = (passesMin && passesMax) ? 'pass' : 'fail';
-              }
-            } else if (item.dataType === 'checkbox') {
-              itemResult = value === 'true' ? 'pass' : 'fail';
-            }
-
-            return { ...item, actualValue: value, result: itemResult };
-          })
-        };
-      });
-      return { ...prev, checklistData: updated };
-    });
-  };
-
-  // Custom Items
-  const addCustomItemToSection = (secId: string) => {
-    const itemName = prompt('Nhập tên tiêu chí phát sinh tại hiện trường:');
-    if (!itemName?.trim()) return;
-
-    setForm(prev => {
-      const data = prev.checklistData || [];
-      const updated = data.map(sec => {
-        if (sec.sectionId !== secId) return sec;
-
-        const maxOrder = sec.items.reduce((max, i) => i.sortOrder > max ? i.sortOrder : max, 0);
-        const newItem: QualityChecklistClonedItem = {
-          id: `custom-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-          itemName: itemName.trim(),
-          required: false,
-          dataType: 'text',
-          sortOrder: maxOrder + 1,
-          isCustom: true,
-          actualValue: '',
-          result: 'pass'
-        };
-
-        return {
-          ...sec,
-          items: [...sec.items, newItem]
-        };
-      });
-      return { ...prev, checklistData: updated };
-    });
-  };
-
-  const removeCustomItemFromSection = (secId: string, itemId: string) => {
-    setForm(prev => {
-      const data = prev.checklistData || [];
-      const updated = data.map(sec => {
-        if (sec.sectionId !== secId) return sec;
-        return {
-          ...sec,
-          items: sec.items.filter(i => i.id !== itemId || !i.isCustom)
-        };
-      });
-      return { ...prev, checklistData: updated };
-    });
-  };
-
-  // === Tolerance Checker helper for UI border highlights ===
-  const isValueOutOfTolerance = (item: QualityChecklistClonedItem): boolean => {
-    if (item.dataType !== 'number' || !item.actualValue) return false;
-    const num = parseFloat(item.actualValue);
-    if (isNaN(num)) return true;
-    if (item.minValue !== undefined && item.minValue !== null && num < item.minValue) return true;
-    if (item.maxValue !== undefined && item.maxValue !== null && num > item.maxValue) return true;
-    return false;
-  };
-
-  // === Filtering ===
-  const filtered = checklists.filter(c => {
-    if (statusFilter && c.status !== statusFilter) return false;
-    if (search) {
-      return matchesSearchQueryMultiple([c.code, c.title, c.templateName, c.workLocation], search);
+    } catch (error: any) {
+      toast.error('Không cập nhật được trạng thái', error?.message);
     }
-    return true;
-  });
-
-  // === Stats ===
-  const stats = {
-    total: checklists.length,
-    draft: checklists.filter(c => c.status === 'draft').length,
-    submitted: checklists.filter(c => c.status === 'submitted').length,
-    approved: checklists.filter(c => c.status === 'approved').length,
-    returned: checklists.filter(c => c.status === 'returned').length,
   };
 
-  const viewingChecklist = viewingId ? checklists.find(c => c.id === viewingId) : null;
+  const handleDelete = async (checklist: QualityChecklist) => {
+    if (!confirm(`Xóa hồ sơ "${checklist.title}"?`)) return;
+    try {
+      await qualityChecklistService.remove(checklist.id);
+      toast.success('Đã xoá hồ sơ nghiệm thu');
+      await loadData();
+    } catch (error: any) {
+      toast.error('Không xoá được hồ sơ', error?.message);
+    }
+  };
+
+  const renderChecklistTable = (rows: QualityChecklist[], options?: { showTaskColumn?: boolean }) => {
+    if (rows.length === 0) {
+      return (
+        <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-10 text-center">
+          <ClipboardCheck size={30} className="mx-auto text-slate-300" />
+          <p className="mt-2 text-sm font-black text-slate-500">Chưa có hồ sơ nghiệm thu</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[860px] text-left text-xs">
+            <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400">
+              <tr>
+                <th className="px-3 py-2.5">Mã</th>
+                <th className="px-3 py-2.5">Hồ sơ nghiệm thu</th>
+                {options?.showTaskColumn && <th className="px-3 py-2.5">Hạng mục</th>}
+                <th className="px-3 py-2.5">Ảnh</th>
+                <th className="px-3 py-2.5">File</th>
+                <th className="px-3 py-2.5">Ngày</th>
+                <th className="px-3 py-2.5">Trạng thái</th>
+                <th className="px-3 py-2.5 text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map(item => {
+                const linkedTask = item.taskId ? taskMap.get(item.taskId) : null;
+                const firstPhoto = (item.sitePhotos || [])[0];
+                const photoCount = (item.sitePhotos || []).length;
+                const attachmentCount = (item.attachments || []).length;
+                const canEdit = canEditChecklist(item);
+                const canApprove = canApproveChecklist(item);
+                return (
+                  <tr key={item.id} className="hover:bg-amber-50/20">
+                    <td className="px-3 py-3 align-top">
+                      <span className="font-mono text-[11px] font-black text-slate-500">{item.code}</span>
+                    </td>
+                    <td className="px-3 py-3 align-top">
+                      <button
+                        onClick={() => openChecklist(item, true)}
+                        className="block max-w-[280px] truncate text-left font-black text-slate-800 hover:text-amber-700"
+                        title={item.title}
+                      >
+                        {item.title}
+                      </button>
+                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-bold text-slate-400">
+                        {item.workLocation && <span className="inline-flex items-center gap-1"><MapPin size={10} />{item.workLocation}</span>}
+                        {item.workSupervisor && <span className="inline-flex items-center gap-1"><User size={10} />{item.workSupervisor}</span>}
+                      </div>
+                    </td>
+                    {options?.showTaskColumn && (
+                      <td className="px-3 py-3 align-top">
+                        <span className="block max-w-[220px] truncate font-bold text-slate-600" title={taskLabel(linkedTask)}>
+                          {taskLabel(linkedTask)}
+                        </span>
+                      </td>
+                    )}
+                    <td className="px-3 py-3 align-top">
+                      {firstPhoto ? (
+                        <div className="flex items-center gap-2">
+                          <img src={firstPhoto.url} alt={firstPhoto.caption || item.title} className="h-10 w-14 rounded object-cover ring-1 ring-slate-200" />
+                          <span className="text-[10px] font-black text-slate-500">{photoCount}</span>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded border border-slate-100 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-400">
+                          <ImageIcon size={12} /> 0
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 align-top">
+                      <span className="inline-flex items-center gap-1 rounded border border-slate-100 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-500">
+                        <Paperclip size={12} /> {attachmentCount}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 align-top font-bold text-slate-500">{formatDate(item.workDate || item.createdAt)}</td>
+                    <td className="px-3 py-3 align-top">
+                      <StatusBadge status={item.status || 'draft'} />
+                    </td>
+                    <td className="px-3 py-3 align-top">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          onClick={() => openChecklist(item, true)}
+                          title="Xem hồ sơ"
+                          className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                        >
+                          <Eye size={14} />
+                        </button>
+                        {canEdit && (
+                          <>
+                            <button
+                              onClick={() => openChecklist(item)}
+                              title="Sửa hồ sơ"
+                              className="rounded p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              onClick={() => setSubmittingChecklist(item)}
+                              title="Gửi duyệt"
+                              className="rounded p-2 text-amber-600 hover:bg-amber-50"
+                            >
+                              <Send size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(item)}
+                              title="Xoá hồ sơ"
+                              className="rounded p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
+                        {canApprove && (
+                          <>
+                            <button
+                              onClick={() => handleStatusChange(item, 'returned')}
+                              title="Trả lại"
+                              className="rounded p-2 text-red-600 hover:bg-red-50"
+                            >
+                              <RotateCcw size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleStatusChange(item, 'approved')}
+                              title="Phê duyệt"
+                              className="rounded p-2 text-emerald-600 hover:bg-emerald-50"
+                            >
+                              <CheckCircle2 size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full" />
-        <span className="ml-3 text-sm text-slate-500 font-semibold">Đang tải hồ sơ chất lượng...</span>
+        <Loader2 size={22} className="animate-spin text-amber-500" />
+        <span className="ml-3 text-sm font-bold text-slate-500">Đang tải module chất lượng...</span>
       </div>
     );
   }
 
-  // ==================== DETAIL VIEW ====================
-  if (viewingChecklist) {
-    const vc = viewingChecklist;
-    const statusCfg = STATUS_CONFIG[vc.status];
-    const resultBadge = vc.inspectionResult ? RESULT_BADGE[vc.inspectionResult] : null;
+  const orphanCounts = countByStatus(orphanChecklists);
+  const pageTitle = showOrphans
+    ? 'Chưa gắn hạng mục'
+    : currentTask
+      ? currentTask.name
+      : 'Thư mục hạng mục tiến độ';
+  const searchMode = !!search.trim();
 
-    const getItemValueForAttempt = (secId: string, itemId: string, attemptNum: number) => {
-      if (vc.currentAttempt === attemptNum) {
-        const sec = vc.checklistData?.find(s => s.sectionId === secId);
-        const item = sec?.items?.find(i => i.id === itemId);
-        return item ? { actualValue: item.actualValue, result: item.result } : null;
-      } else {
-        const attempt = attempts.find(a => a.attemptNumber === attemptNum);
-        if (!attempt) return null;
-        const sec = attempt.itemsData?.find(s => s.sectionId === secId);
-        const item = sec?.items?.find(i => i.id === itemId);
-        return item ? { actualValue: item.actualValue, result: item.result } : null;
-      }
-    };
-
-    const isReadonly = vc.status !== 'draft' && vc.status !== 'returned';
-
-    return (
-      <div className="space-y-6 animate-in fade-in-50 duration-200 print:p-0">
-        <style dangerouslySetInnerHTML={{
-          __html: `
-          @media print {
-            body {
-              background: white !important;
-              color: black !important;
-            }
-            .no-print {
-              display: none !important;
-            }
-            .print-full-width {
-              width: 100% !important;
-              max-width: 100% !important;
-              flex: none !important;
-              display: block !important;
-            }
-            #printable-quality-sheet {
-              display: block !important;
-              background: white !important;
-              padding: 0 !important;
-              margin: 0 !important;
-            }
-            .print-table {
-              border-collapse: collapse !important;
-              width: 100% !important;
-            }
-            .print-table th, .print-table td {
-              border: 1px solid #000 !important;
-              padding: 6px !important;
-              color: black !important;
-              font-size: 11px !important;
-            }
-            .print-signatures {
-              display: grid !important;
-              grid-template-cols: repeat(4, 1fr) !important;
-              gap: 15px !important;
-              margin-top: 30px !important;
-              page-break-inside: avoid;
-            }
-            .print-drawing-container {
-              page-break-inside: avoid;
-              text-align: center !important;
-              margin: 20px 0 !important;
-            }
-            .print-drawing-img {
-              max-width: 100% !important;
-              max-height: 400px !important;
-              object-fit: contain !important;
-              border: 1px solid #ddd !important;
-            }
-          }
-          @media (min-width: 1024px) {
-            .resizable-left-pane {
-              width: calc(var(--left-pane-width) - 12px) !important;
-              flex-shrink: 0 !important;
-            }
-            .resizable-right-pane {
-              width: calc(100% - var(--left-pane-width) - 12px) !important;
-              flex-shrink: 0 !important;
-            }
-          }
-        `}} />
-
-        <div className="flex items-center justify-between gap-3 flex-wrap no-print">
-          <button onClick={() => setViewingId(null)} className="text-xs font-black text-slate-500 hover:text-slate-700 flex items-center gap-1">← Quay lại danh sách</button>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => window.print()}
-              className="px-3 py-1.5 text-[10px] font-black bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 flex items-center gap-1 transition shadow-sm"
-            >
-              <Printer size={12} /> In biên bản
-            </button>
-
-            {vc.inspectionResult === 'FAILED' && vc.status === 'draft' && canManageTab && (
-              <button
-                onClick={handleCreateNewAttempt}
-                disabled={saving}
-                className="px-3.5 py-1.5 text-[10px] font-black bg-amber-500 hover:bg-amber-600 text-white rounded-lg flex items-center gap-1 shadow-sm transition"
-              >
-                <PlusCircle size={11} /> Khởi tạo Lần nghiệm thu {vc.currentAttempt + 1}
-              </button>
-            )}
-
-            {(() => {
-              const isCreator = vc.createdBy ? (user?.name === vc.createdBy || user?.id === vc.createdBy) : true;
-              const isAdminUser = user?.role === Role.ADMIN;
-              const canEdit = (vc.status === 'draft' || vc.status === 'returned') && (isCreator || isAdminUser);
-              const isHandler = user?.id === vc.submittedToUserId || isAdminUser;
-
-              return (
-                <>
-                  {canEdit && canManageTab && (
-                    <>
-                      <button onClick={() => { openEdit(vc); setViewingId(null); }} className="px-3 py-1.5 text-[10px] font-bold bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 flex items-center gap-1"><Edit2 size={10} /> Sửa</button>
-                      <button onClick={() => setSubmittingChecklist(vc)} className="px-3 py-1.5 text-[10px] font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-1"><Send size={10} /> Gửi duyệt</button>
-                    </>
-                  )}
-                  {vc.status === 'submitted' && isHandler && canManageTab && (
-                    <>
-                      <button onClick={() => handleStatusChange(vc.id, 'returned')} className="px-3 py-1.5 text-[10px] font-bold bg-red-50 text-red-600 rounded-lg hover:bg-red-100 flex items-center gap-1"><RotateCcw size={10} /> Trả lại</button>
-                      <button onClick={() => handleStatusChange(vc.id, 'approved')} className="px-3 py-1.5 text-[10px] font-bold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-1"><CheckCircle2 size={10} /> Phê duyệt</button>
-                    </>
-                  )}
-                  {vc.status === 'approved' && isAdminUser && (
-                    <button
-                      onClick={() => {
-                        if (confirm('Bạn có chắc chắn muốn huỷ duyệt hồ sơ này? Trạng thái sẽ quay về Nháp (Draft).')) {
-                          handleStatusChange(vc.id, 'draft');
-                        }
-                      }}
-                      className="px-3 py-1.5 text-[10px] font-bold bg-red-100 text-red-700 rounded-lg hover:bg-red-200 flex items-center gap-1"
-                    >
-                      <X size={10} /> Huỷ duyệt (Admin)
-                    </button>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-        </div>
-
-        <div
-          ref={containerRef}
-          id="printable-quality-sheet"
-          className="flex flex-col lg:flex-row gap-6 print:block relative"
-          style={{ '--left-pane-width': `${leftWidth}%` } as React.CSSProperties}
-        >
-          <div className="w-full resizable-left-pane space-y-4 print-full-width">
-            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-50 pb-3">
-                <div>
-                  <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                    <Compass size={14} className="text-indigo-600" /> Bản vẽ chi tiết & Điểm nghiệm thu
-                  </h4>
-                  <p className="text-[10px] text-slate-400 font-bold mt-0.5">Click vào bản vẽ để đánh dấu điểm kiểm soát</p>
-                </div>
-                {!isReadonly && (
-                  <div className="no-print">
-                    <input type="file" accept="image/*" onChange={handleDrawingUpload} className="hidden" id="drawing-upload-detail" />
-                    <label htmlFor="drawing-upload-detail" className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 text-slate-700 text-[10px] font-black cursor-pointer transition">
-                      <Upload size={10} /> {uploadingDrawing ? 'Tải...' : 'Đổi bản vẽ'}
-                    </label>
-                  </div>
-                )}
-              </div>
-
-              <div className="relative border border-slate-100 rounded-2xl overflow-hidden bg-slate-900/5 flex items-center justify-center print-drawing-container w-full min-h-[400px] lg:min-h-[70vh] p-2">
-                {vc.drawingUrl ? (
-                  <div
-                    className="relative cursor-crosshair group inline-block"
-                    onClick={handleDrawingClick}
-                  >
-                    <img
-                      src={vc.drawingUrl}
-                      alt="Drawing Template"
-                      className="max-w-full max-h-[68vh] object-contain select-none print-drawing-img block rounded-xl shadow-sm"
-                    />
-                    {(vc.drawingMarkers || [])
-                      .filter(m => markerFilter === 'all' || m.status === markerFilter)
-                      .map(marker => {
-                        const statusColor = marker.status === 'pass' ? 'bg-emerald-500 ring-emerald-300' : marker.status === 'fail' ? 'bg-red-500 ring-red-300' : 'bg-slate-400 ring-slate-300';
-                        return (
-                          <div
-                            key={marker.id}
-                            style={{ left: `${marker.x}%`, top: `${marker.y}%` }}
-                            onClick={(e) => handleEditMarker(marker, e)}
-                            title={`${marker.label}${marker.note ? ` (${marker.note})` : ''}`}
-                            className={`absolute w-6 h-6 -ml-3 -mt-3 rounded-full ${statusColor} ring-4 ring-offset-0 text-[9px] text-white font-black flex items-center justify-center cursor-pointer shadow hover:scale-110 active:scale-95 transition-all select-none z-10`}
-                          >
-                            {marker.label.replace(/^\D+/g, '') || '•'}
-                          </div>
-                        );
-                      })}
-                  </div>
-                ) : (
-                  <div className="text-center py-10 flex flex-col items-center justify-center">
-                    <Compass size={36} className="text-slate-300 mb-2" />
-                    <p className="text-xs font-black text-slate-500">Chưa có bản vẽ được tải lên</p>
-                    <p className="text-[9px] text-slate-400 mt-1 max-w-[200px]">Hãy nhấn "Sửa" hoặc upload bản vẽ riêng biệt cho biên bản này.</p>
-
-                    {!isReadonly && (
-                      <div className="mt-4 no-print">
-                        <input type="file" accept="image/*" onChange={handleDrawingUpload} className="hidden" id="drawing-upload-empty-detail" />
-                        <label htmlFor="drawing-upload-empty-detail" className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black rounded-lg cursor-pointer transition shadow-md shadow-indigo-600/10">
-                          {uploadingDrawing ? 'Đang tải...' : 'Tải lên bản vẽ'}
-                        </label>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-               <div className="space-y-2.5">
-                <div className="flex items-center gap-3 text-[9px] font-bold text-slate-500 bg-slate-50 p-2 rounded-xl border border-slate-100 flex-wrap no-print">
-                  <span className="text-slate-400 font-extrabold mr-1">Lọc trạng thái:</span>
-                  {[
-                    { val: 'pass', label: 'Đạt', bg: 'bg-emerald-500', activeBg: 'bg-emerald-500 text-white border-emerald-500 shadow-sm shadow-emerald-500/10' },
-                    { val: 'fail', label: 'Không đạt', bg: 'bg-red-500', activeBg: 'bg-red-500 text-white border-red-500 shadow-sm shadow-red-500/10' },
-                    { val: 'pending', label: 'Chờ kiểm', bg: 'bg-slate-400', activeBg: 'bg-slate-500 text-white border-slate-500 shadow-sm shadow-slate-500/10' }
-                  ].map(opt => (
-                    <button
-                      key={opt.val}
-                      onClick={() => setMarkerFilter(prev => prev === opt.val ? 'all' : (opt.val as any))}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition duration-150 ${
-                        markerFilter === opt.val 
-                          ? opt.activeBg 
-                          : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-                      }`}
-                    >
-                      <span className={`w-2.5 h-2.5 rounded-full ${markerFilter === opt.val ? 'bg-white' : opt.bg} block`} />
-                      {opt.label}
-                    </button>
-                  ))}
-                  {markerFilter !== 'all' && (
-                    <button
-                      onClick={() => setMarkerFilter('all')}
-                      className="text-[8px] font-black text-indigo-600 hover:text-indigo-800 ml-auto uppercase tracking-wider transition"
-                    >
-                      Hiện tất cả
-                    </button>
-                  )}
-                </div>
-
-                <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
-                  <h5 className="text-[10px] font-black text-slate-600 tracking-wide">
-                    Danh sách các điểm kiểm tra {markerFilter !== 'all' && `(${markerFilter === 'pass' ? 'Đạt' : markerFilter === 'fail' ? 'Không đạt' : 'Chờ kiểm'}):`}
-                  </h5>
-                  {((vc.drawingMarkers || []).filter(m => markerFilter === 'all' || m.status === markerFilter)).length === 0 ? (
-                    <p className="text-[9px] text-slate-400 italic">Không có điểm nào phù hợp.</p>
-                  ) : (
-                    (vc.drawingMarkers || [])
-                      .filter(m => markerFilter === 'all' || m.status === markerFilter)
-                      .map(m => (
-                        <div key={m.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg text-[10px] font-bold text-slate-700 border border-slate-100/50">
-                          <div className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full ${m.status === 'pass' ? 'bg-emerald-500' : m.status === 'fail' ? 'bg-red-500' : 'bg-slate-400'}`} />
-                            <span className="font-black text-indigo-700">{m.label}</span>
-                            {m.note && <span className="text-slate-400 font-medium">({m.note})</span>}
-                          </div>
-                          {!isReadonly && (
-                            <button
-                              onClick={(e) => handleEditMarker(m, e)}
-                              className="text-[9px] text-slate-400 hover:text-indigo-600 no-print"
-                            >
-                              Sửa
-                            </button>
-                          )}
-                        </div>
-                      ))
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div
-            onMouseDown={handleMouseDown}
-            className={`hidden lg:flex select-none w-1.5 hover:w-2 bg-slate-100 hover:bg-indigo-300 active:bg-indigo-500 cursor-col-resize transition-all duration-150 relative shrink-0 items-center justify-center rounded-full self-stretch ${isDragging ? 'bg-indigo-400 w-2' : ''
-              } no-print`}
-            title="Kéo để thay đổi kích thước bản vẽ"
-          >
-            <div className="absolute top-1/2 -translate-y-1/2 w-4 h-8 bg-white border border-slate-200 shadow-sm rounded-md flex flex-col gap-0.5 items-center justify-center cursor-col-resize hover:border-indigo-400 z-10">
-              <div className="w-0.5 h-3 bg-slate-300 rounded-full" />
-              <div className="w-0.5 h-3 bg-slate-300 rounded-full" />
-            </div>
-          </div>
-
-          <div className="w-full resizable-right-pane space-y-5 print-full-width">
-            <div className="bg-white border-2 border-slate-900 rounded-3xl overflow-hidden shadow-sm">
-              <table className="w-full text-xs text-left border-collapse print-table">
-                <tbody>
-                  <tr className="border-b border-slate-900">
-                    <td className="p-3 font-black bg-slate-50/50 border-r border-slate-900 w-[150px] text-center">
-                      <div className="text-[9px] tracking-wide text-slate-400 font-bold uppercase">Nhà thầu chính</div>
-                      <div className="text-sm tracking-wider font-extrabold text-slate-800">TIẾN THỊNH</div>
-                    </td>
-                    <td className="p-3 text-center border-r border-slate-900 bg-slate-50/10">
-                      <h2 className="text-xs font-black uppercase tracking-wider text-slate-900">Biên bản nghiệm thu nội bộ</h2>
-                      <div className="text-[9px] text-slate-400 font-bold mt-0.5">Hạng mục: <span className="text-indigo-700 font-black">{vc.templateName}</span></div>
-                      {projectName && <div className="text-[9px] text-indigo-900 font-bold mt-0.5">Dự án: <span className="font-extrabold">{projectName}</span></div>}
-                    </td>
-                    <td className="p-3 w-[150px] text-slate-800 font-bold bg-slate-50/50 text-[10px]">
-                      <div>Mã: <b className="font-mono">{vc.code}</b></div>
-                      <div>Lần NT: <b>{vc.currentAttempt}</b></div>
-                      <div>Trạng thái: <b className="uppercase">{vc.status}</b></div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="p-2 border-r border-slate-900 font-black bg-slate-50/20 text-[9px] uppercase text-slate-500 text-center">Mô tả công tác</td>
-                    <td colSpan={2} className="p-2 text-slate-900 font-bold">{vc.workDescription || '—'}</td>
-                  </tr>
-                  <tr className="border-t border-slate-900">
-                    <td className="p-2 border-r border-slate-900 font-black bg-slate-50/20 text-[9px] uppercase text-slate-500 text-center">Vị trí trục cột</td>
-                    <td className="p-2 border-r border-slate-900 text-slate-900 font-bold">{vc.workLocation || '—'}</td>
-                    <td className="p-2 text-slate-850 font-bold bg-slate-50/10">
-                      <div className="text-[9px] font-black text-slate-400 uppercase">Ngày nghiệm thu:</div>
-                      <div>{vc.workDate || '—'}</div>
-                    </td>
-                  </tr>
-                  <tr className="border-t border-slate-900">
-                    <td className="p-2 border-r border-slate-900 font-black bg-slate-50/20 text-[9px] uppercase text-slate-500 text-center">Kỹ sư giám sát</td>
-                    <td className="p-2 border-r border-slate-900 text-slate-900 font-bold">{vc.workSupervisor || '—'}</td>
-                    <td className="p-2 text-slate-850 font-bold bg-slate-50/10">
-                      <div className="text-[9px] font-black text-slate-400 uppercase">Hạn hoàn thành khắc phục:</div>
-                      <div className="text-red-600 font-extrabold">{vc.targetCompletionDate || '—'}</div>
-                    </td>
-                  </tr>
-                  <tr className="border-t border-slate-900">
-                    <td className="p-2 border-r border-slate-900 font-black bg-slate-50/20 text-[9px] uppercase text-slate-500 text-center">Tiêu chuẩn kỹ thuật</td>
-                    <td colSpan={2} className="p-2 text-slate-900 font-bold">{vc.standardReference || 'TCVN/Tiêu chuẩn dự án thiết kế.'}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 space-y-4">
-              <h4 className="text-xs font-black text-indigo-700 flex items-center gap-1.5"><CheckSquare size={14} /> Nội dung danh mục kiểm tra</h4>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left border-collapse print-table">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-slate-400 font-black text-[10px]">
-                      <th className="py-2 pr-3 w-10">Stt</th>
-                      <th className="py-2 pr-3">Nội dung kiểm tra</th>
-                      <th className="py-2 pr-3">Yêu cầu chấp nhận / Phương pháp</th>
-                      <th className="py-2 text-center w-[100px]">Lần 1</th>
-                      <th className="py-2 text-center w-[100px]">Lần 2</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(vc.checklistData || []).flatMap((sec, secIdx) => {
-                      const secItems = sec.items || [];
-                      return [
-                        <tr key={sec.sectionId} className="bg-slate-50/50 font-bold border-b border-slate-100">
-                          <td colSpan={5} className="py-2 px-2 text-slate-800 font-extrabold uppercase tracking-wide text-[10px]">
-                            {secIdx + 1}. {sec.sectionName}
-                          </td>
-                        </tr>,
-                        ...secItems.map((item, itemIdx) => {
-                          const val1 = getItemValueForAttempt(sec.sectionId, item.id, 1);
-                          const val2 = getItemValueForAttempt(sec.sectionId, item.id, 2);
-
-                          const renderAttemptCell = (valObj: typeof val1, attemptNum: number) => {
-                            if (!valObj) {
-                              return <span className="text-slate-300 font-medium">—</span>;
-                            }
-                            const isPass = valObj.result === 'pass';
-                            const badgeColor = isPass ? 'text-emerald-600 bg-emerald-50' : 'text-red-500 bg-red-50';
-
-                            return (
-                              <div className="flex flex-col items-center justify-center gap-0.5">
-                                <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${badgeColor}`}>
-                                  {isPass ? 'ĐẠT' : 'K.ĐẠT'}
-                                </span>
-                                {valObj.actualValue && valObj.actualValue !== 'true' && valObj.actualValue !== 'false' && (
-                                  <span className="text-[9px] text-slate-500 font-semibold block truncate max-w-[90px]" title={valObj.actualValue}>
-                                    {valObj.actualValue}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          };
-
-                          return (
-                            <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
-                              <td className="py-2.5 px-2 text-slate-400 font-mono text-[10px]">{secIdx + 1}.{itemIdx + 1}</td>
-                              <td className="py-2.5 pr-3 text-slate-800 font-black">
-                                {item.itemName}
-                                {item.isCustom && <span className="text-[8px] ml-1 bg-amber-100 text-amber-700 px-1 py-0.5 rounded font-black">PHÁT SINH</span>}
-                                {item.note && <p className="text-[9px] text-slate-400 font-bold mt-0.5">Ghi chú: {item.note}</p>}
-                              </td>
-                              <td className="py-2.5 pr-3 text-slate-400 font-medium leading-relaxed">
-                                <div>Mức: {item.acceptanceCriteria || '—'}</div>
-                                <div className="text-[9px] font-mono text-slate-400 mt-0.5">Phương pháp: {item.inspectionMethod || '—'}</div>
-                              </td>
-                              <td className="py-2.5 text-center border-l border-slate-100">{renderAttemptCell(val1, 1)}</td>
-                              <td className="py-2.5 text-center border-l border-slate-100">{renderAttemptCell(val2, 2)}</td>
-                            </tr>
-                          );
-                        })
-                      ];
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5 space-y-3">
-              <h4 className="text-xs font-black text-indigo-700 flex items-center gap-1.5"><CheckCircle2 size={14} /> Kết luận nghiệm thu chung</h4>
-              <div className="text-xs space-y-2 font-bold text-slate-700">
-                <div><span className="text-slate-400">Đánh giá chung:</span> <span className="text-slate-900">{vc.conclusion || 'Chưa có kết luận.'}</span></div>
-                {vc.conclusionResult && (
-                  <div>
-                    <span className="text-slate-400">Quyết định:</span>
-                    <span className={`ml-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${vc.conclusionResult === 'accepted' ? 'bg-emerald-50 text-emerald-600' : vc.conclusionResult === 'conditional' ? 'bg-amber-50 text-amber-600' : 'bg-red-50 text-red-500'
-                      }`}>
-                      {vc.conclusionResult === 'accepted' ? 'ĐỒNG Ý CHẤP NHẬN' : vc.conclusionResult === 'conditional' ? 'CHẤP NHẬN CÓ ĐIỀU KIỆN' : 'TỪ CHỐI NGHIỆM THU'}
-                    </span>
-                  </div>
-                )}
-                {vc.conditions && <div><span className="text-slate-400 text-amber-600">Điều kiện sửa đổi khắc phục:</span> <span className="text-slate-900 font-extrabold">{vc.conditions}</span></div>}
-              </div>
-            </div>
-
-            <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-4">
-              <h4 className="text-xs font-black text-indigo-700 border-b border-slate-50 pb-2 flex items-center gap-1.5"><ShieldCheck size={14} /> Chữ ký & Phê duyệt điện tử</h4>
-
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 print-signatures">
-                {[
-                  { code: 'inspector', name: 'Kỹ sư kiểm tra' },
-                  { code: 'contractor', name: 'Đại diện nhà thầu' },
-                  { code: 'supervisor', name: 'Kỹ sư giám sát' },
-                  { code: 'completion', name: 'Nghiệm thu hoàn thành' }
-                ].map(role => {
-                  const signature = (vc.signersData || []).find(s => s.roleCode === role.code);
-                  return (
-                    <div key={role.code} className="border border-slate-100 rounded-2xl p-4 flex flex-col justify-between items-center text-center bg-slate-50/30 min-h-[140px] hover:border-slate-200 transition">
-                      <div>
-                        <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{role.name}</h5>
-                        <p className="text-[9px] text-slate-500 mt-0.5 font-bold">Quy trình nghiệm thu</p>
-                      </div>
-
-                      {signature ? (
-                        <div className="space-y-1 my-2">
-                          {signature.signatureUrl ? (
-                            <img src={signature.signatureUrl} alt="Signature" className="h-10 object-contain mx-auto mix-blend-multiply select-none" />
-                          ) : (
-                            <span className="text-indigo-600 font-serif italic font-black text-sm tracking-wide block py-2">{signature.userName}</span>
-                          )}
-                          <span className="text-[9px] text-slate-700 block font-extrabold">{signature.userName}</span>
-                          <span className="text-[8px] text-slate-400 block font-mono">{new Date(signature.signedAt || '').toLocaleDateString('vi-VN')}</span>
-                        </div>
-                      ) : (
-                        <div className="text-[9px] text-slate-300 italic my-3 font-semibold">Chưa ký nhận</div>
-                      )}
-
-                      <div className="w-full pt-2 border-t border-slate-100/50 no-print flex gap-1 justify-center">
-                        {signature ? (
-                          (user?.role === Role.ADMIN || user?.name === signature.userName) && (
-                            <button onClick={() => handleClearSignature(role.code as any, role.name)} className="text-[8px] font-black text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 transition uppercase">Xoá ký</button>
-                          )
-                        ) : (
-                          <button onClick={() => handleSign(role.code as any, role.name)} className="text-[8px] font-black text-indigo-600 hover:text-indigo-800 px-2.5 py-1 rounded bg-indigo-50 hover:bg-indigo-100 transition uppercase shadow-sm">Ký duyệt</button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-        {submittingChecklist && (
-          <ProjectSubmissionDialog
-            title="Gửi duyệt hồ sơ chất lượng"
-            documentLabel="HỒ SƠ CHẤT LƯỢNG"
-            documentName={submittingChecklist.title}
-            documentSubtitle={`Mã: ${submittingChecklist.code} · Quy trình: ${submittingChecklist.templateName}`}
-            projectId={projectId}
-            constructionSiteId={siteId || null}
-            recipientPermissionCodes={['approve']}
-            onCancel={() => setSubmittingChecklist(null)}
-            onConfirm={handleConfirmSubmit}
-          />
-        )}
-      </div>
-    );
-  }
-
-  // ==================== FORM VIEW (edit flow) ====================
-  if (showForm && editingChecklist) {
-    const isReadonly = editingChecklist.status !== 'draft' && editingChecklist.status !== 'returned';
-    return (
-      <div className="space-y-4 animate-in fade-in-50 duration-200">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <h3 className="text-sm font-black text-slate-900">{editingChecklist.code} — Chỉnh sửa hồ sơ chất lượng</h3>
-            <p className="text-[10px] text-slate-400 mt-0.5 font-bold">Mẫu: <b className="text-indigo-600">{form.templateName}</b> (v{form.templateVersion})</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => { setShowForm(false); setEditingChecklist(null); }} className="px-3 py-1.5 text-[10px] font-bold bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 flex items-center gap-1"><X size={10} /> Đóng</button>
-            {!isReadonly && (
-              <button onClick={handleSave} disabled={saving} className="px-4 py-1.5 text-[10px] font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-1">
-                <Save size={10} /> {saving ? 'Đang lưu...' : 'Lưu hồ sơ'}
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden divide-y divide-slate-50">
-          {/* Section 1: General Info */}
-          <div>
-            <button onClick={() => toggleSection('general')} className="w-full flex items-center gap-3 px-5 py-4 bg-slate-50 hover:bg-slate-100/50 text-left transition">
-              <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-black">1</div>
-              <Wrench size={14} className="text-slate-500" />
-              <span className="text-xs font-black text-slate-800 flex-1">Thông tin công tác thi công</span>
-              {expandedSections.has('general') ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />}
-            </button>
-
-            {expandedSections.has('general') && (
-              <div className="px-6 py-4 space-y-4 animate-in fade-in-50 duration-150">
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 block mb-1">Tiêu đề biên bản nghiệm thu *</label>
-                  <input type="text" value={form.title || ''} onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))} placeholder="Tiêu đề..." className="w-full text-xs font-bold text-slate-900 border border-slate-200 rounded-xl px-3.5 py-2.5 outline-none focus:ring-1 focus:ring-indigo-300" readOnly={isReadonly} />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black text-slate-500 block mb-1">Mô tả công việc</label>
-                  <textarea value={form.workDescription || ''} onChange={e => setForm(prev => ({ ...prev, workDescription: e.target.value }))} placeholder="Mô tả công tác..." rows={2} className="w-full text-xs border border-slate-200 rounded-xl px-3.5 py-2.5 outline-none resize-none font-medium text-slate-700" readOnly={isReadonly} />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 mb-1 block"><MapPin size={10} className="inline mr-0.5" />Vị trí trục / cao độ</label>
-                    <input type="text" value={form.workLocation || ''} onChange={e => setForm(prev => ({ ...prev, workLocation: e.target.value }))} className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 outline-none font-bold" readOnly={isReadonly} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 mb-1 block"><Calendar size={10} className="inline mr-0.5" />Ngày thực hiện</label>
-                    <input type="date" value={form.workDate || ''} onChange={e => setForm(prev => ({ ...prev, workDate: e.target.value }))} className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 outline-none font-bold" readOnly={isReadonly} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 mb-1 block">
-                      <User size={10} className="inline mr-0.5" />Kỹ sư giám sát
-                    </label>
-                    {isReadonly ? (
-                      <input
-                        type="text"
-                        value={form.workSupervisor || ''}
-                        className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 outline-none font-bold bg-slate-50"
-                        readOnly
-                      />
-                    ) : projectStaff.length > 0 ? (
-                      <select
-                        value={form.workSupervisor || ''}
-                        onChange={e => setForm(prev => ({ ...prev, workSupervisor: e.target.value }))}
-                        className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 outline-none font-bold bg-white"
-                      >
-                        <option value="">— Chọn giám sát —</option>
-                        {projectStaff.map(staff => (
-                          <option key={staff.id} value={staff.userName || staff.userId || ''}>
-                            {staff.userName || staff.userId} ({staff.positionName || 'Nhân sự'})
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type="text"
-                        value={form.workSupervisor || ''}
-                        onChange={e => setForm(prev => ({ ...prev, workSupervisor: e.target.value }))}
-                        placeholder="Nhập tên giám sát..."
-                        className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 outline-none font-bold bg-white"
-                      />
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Render Dynamic Cloned Sections */}
-          {(form.checklistData || []).map((sec, secIdx) => {
-            const isExpanded = expandedSections.has(sec.sectionId);
-            const secItems = sec.items || [];
-
-            return (
-              <div key={sec.sectionId}>
-                <button onClick={() => toggleSection(sec.sectionId)} className="w-full flex items-center gap-3 px-5 py-4 bg-slate-50 hover:bg-slate-100/50 text-left transition">
-                  <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-black">{secIdx + 2}</div>
-                  <CheckSquare size={14} className="text-slate-500" />
-                  <span className="text-xs font-black text-slate-800 flex-1">{sec.sectionName}</span>
-                  <span className="text-[10px] text-slate-400 font-bold mr-2">
-                    {secItems.filter(i => i.result === 'pass').length}/{secItems.length} đạt
-                  </span>
-                  {isExpanded ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />}
-                </button>
-
-                {isExpanded && (
-                  <div className="px-6 py-4 space-y-4 animate-in fade-in-50 duration-150">
-                    {secItems.map((item, itemIdx) => {
-                      const outOfTolerance = isValueOutOfTolerance(item);
-
-                      return (
-                        <div key={item.id} className={`p-4 rounded-2xl border transition-all ${item.isCustom
-                          ? 'bg-amber-50/20 border-amber-200'
-                          : 'bg-white border-slate-100 hover:border-slate-200/60'
-                          }`}>
-                          <div className="flex flex-col md:flex-row justify-between gap-3 items-start md:items-center">
-                            {/* Left part: Title & Type labels */}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-xs font-black text-slate-800">{item.itemName}</span>
-                                {item.required && (
-                                  <span className="text-[8px] font-black bg-red-50 text-red-500 border border-red-100 px-1 py-0.5 rounded">BẮT BUỘC</span>
-                                )}
-                                {item.isCustom && (
-                                  <span className="text-[8px] font-black bg-amber-100 text-amber-700 px-1 py-0.5 rounded">PHÁT SINH</span>
-                                )}
-                              </div>
-                              <div className="flex gap-3 text-[10px] text-slate-400 mt-1.5 font-bold">
-                                {item.acceptanceCriteria && <span>Yêu cầu: <b className="text-slate-500">{item.acceptanceCriteria}</b></span>}
-                                {item.inspectionMethod && <span>Phương pháp: <b className="text-slate-500">{item.inspectionMethod}</b></span>}
-                              </div>
-                            </div>
-
-                            {/* Right part: Input value based on DataType */}
-                            <div className="shrink-0 flex items-center gap-3 w-full md:w-auto">
-                              {item.dataType === 'checkbox' ? (
-                                <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200">
-                                  <input
-                                    type="checkbox"
-                                    checked={item.actualValue === 'true'}
-                                    onChange={e => updateDynamicItemValue(sec.sectionId, item.id, e.target.checked ? 'true' : 'false')}
-                                    disabled={isReadonly}
-                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
-                                  />
-                                  Đạt yêu cầu
-                                </label>
-                              ) : item.dataType === 'number' ? (
-                                <div className="space-y-1 w-full md:w-48 relative">
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="text"
-                                      value={item.actualValue || ''}
-                                      onChange={e => updateDynamicItemValue(sec.sectionId, item.id, e.target.value)}
-                                      disabled={isReadonly}
-                                      placeholder="Nhập số thực..."
-                                      className={`w-full bg-slate-50 border rounded-xl px-3 py-2.5 text-xs font-black text-right outline-none focus:ring-1 ${outOfTolerance
-                                        ? 'border-red-400 focus:ring-red-400 bg-red-50 text-red-700'
-                                        : 'border-slate-200 focus:ring-indigo-300'
-                                        }`}
-                                    />
-                                    {item.unit && <span className="text-xs font-bold text-slate-400 shrink-0">{item.unit}</span>}
-                                  </div>
-                                  {outOfTolerance && (
-                                    <div className="text-[9px] text-red-500 font-bold flex items-center gap-0.5 absolute -bottom-4 right-0">
-                                      <AlertCircle size={10} /> Ngoài khoảng cho phép!
-                                    </div>
-                                  )}
-                                </div>
-                              ) : item.dataType === 'photo' ? (
-                                <div className="flex items-center gap-2 w-full md:w-64">
-                                  <input
-                                    type="text"
-                                    value={item.actualValue || ''}
-                                    onChange={e => updateDynamicItemValue(sec.sectionId, item.id, e.target.value)}
-                                    disabled={isReadonly}
-                                    placeholder="Link ảnh bằng chứng..."
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs outline-none"
-                                  />
-                                </div>
-                              ) : (
-                                <input
-                                  type="text"
-                                  value={item.actualValue || ''}
-                                  onChange={e => updateDynamicItemValue(sec.sectionId, item.id, e.target.value)}
-                                  disabled={isReadonly}
-                                  placeholder="Nhập ghi nhận..."
-                                  className="w-full md:w-56 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs outline-none"
-                                />
-                              )}
-
-                              <input
-                                type="text"
-                                value={item.note || ''}
-                                onChange={e => {
-                                  setForm(prev => {
-                                    const updated = (prev.checklistData || []).map(s => {
-                                      if (s.sectionId !== sec.sectionId) return s;
-                                      return {
-                                        ...s,
-                                        items: s.items.map(i => i.id === item.id ? { ...i, note: e.target.value } : i)
-                                      };
-                                    });
-                                    return { ...prev, checklistData: updated };
-                                  });
-                                }}
-                                disabled={isReadonly}
-                                placeholder="Ghi chú thêm"
-                                className="w-24 bg-slate-50 border border-slate-200 rounded-xl px-2 py-2.5 text-[10px] outline-none"
-                              />
-
-                              {item.isCustom && !isReadonly && (
-                                <button
-                                  onClick={() => removeCustomItemFromSection(sec.sectionId, item.id)}
-                                  className="p-2 text-red-400 hover:text-red-600 rounded-xl hover:bg-slate-50 shrink-0"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {!isReadonly && (
-                      <button
-                        onClick={() => addCustomItemToSection(sec.sectionId)}
-                        className="text-[10px] font-black text-amber-600 hover:text-amber-800 flex items-center gap-1 mt-2.5"
-                      >
-                        <Plus size={12} /> Thêm tiêu chí phát sinh tại hiện trường
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Section 6: Acceptance Conclusion */}
-          <div>
-            <button onClick={() => toggleSection('conclusion')} className="w-full flex items-center gap-3 px-5 py-4 bg-slate-50 hover:bg-slate-100/50 text-left transition">
-              <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-black">
-                {(form.checklistData || []).length + 2}
-              </div>
-              <CheckCircle2 size={14} className="text-slate-500" />
-              <span className="text-xs font-black text-slate-800 flex-1">Kết luận nghiệm thu chung</span>
-              {expandedSections.has('conclusion') ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />}
-            </button>
-
-            {expandedSections.has('conclusion') && (
-              <div className="px-6 py-4 space-y-4 animate-in fade-in-50 duration-150">
-                <textarea value={form.conclusion || ''} onChange={e => setForm(prev => ({ ...prev, conclusion: e.target.value }))} placeholder="Nhập ghi chép đánh giá kết luận nghiệm thu chung..." rows={3} className="w-full text-xs border border-slate-200 rounded-xl px-3.5 py-2.5 outline-none resize-none font-medium text-slate-700" readOnly={isReadonly} />
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black text-slate-500 mb-1 block">Quyết định nghiệm thu</label>
-                    <select value={form.conclusionResult || ''} onChange={e => setForm(prev => ({ ...prev, conclusionResult: (e.target.value || undefined) as QualityConclusionResult | undefined }))} disabled={isReadonly} className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 outline-none font-bold">
-                      <option value="">— Chưa kết luận —</option>
-                      <option value="accepted">✅ Đồng ý Chấp nhận</option>
-                      <option value="conditional">⚠️ Chấp nhận có điều kiện</option>
-                      <option value="rejected">❌ Từ chối nghiệm thu</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black text-slate-500 mb-1 block">Người lập kiểm tra</label>
-                    <input type="text" value={form.inspectorName || ''} onChange={e => setForm(prev => ({ ...prev, inspectorName: e.target.value }))} className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 outline-none font-bold" readOnly={isReadonly} />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black text-slate-500 mb-1 block">Người phê duyệt ban ngành</label>
-                    <input type="text" value={form.approverName || ''} onChange={e => setForm(prev => ({ ...prev, approverName: e.target.value }))} className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 outline-none font-bold" readOnly={isReadonly} />
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ==================== LIST VIEW (Default tab view) ====================
   return (
     <div className="space-y-5">
-      {/* Dynamic Template Selector Modal */}
-      {showTemplateSelector && (
-        <TemplateSelector onSelect={handleSelectTemplate} onClose={() => setShowTemplateSelector(false)} />
-      )}
-
-      {/* Overview Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {[
-          { label: 'Tổng biên bản', value: stats.total, color: 'text-slate-700', bg: 'bg-slate-50' },
-          { label: 'Nháp', value: stats.draft, color: 'text-slate-500', bg: 'bg-slate-50' },
-          { label: 'Chờ duyệt', value: stats.submitted, color: 'text-amber-600', bg: 'bg-amber-50/50' },
-          { label: 'Đã duyệt', value: stats.approved, color: 'text-emerald-600', bg: 'bg-emerald-50/50' },
-          { label: 'Trả lại', value: stats.returned, color: 'text-red-600', bg: 'bg-red-50/50' },
-        ].map(s => (
-          <div key={s.label} className={`${s.bg} rounded-2xl p-4 text-center border border-slate-100`}>
-            <div className={`text-xl font-black ${s.color}`}>{s.value}</div>
-            <div className="text-[9px] font-black text-slate-400 uppercase tracking-wider mt-1">{s.label}</div>
+      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[10px] font-black uppercase text-amber-600">
+              <ShieldCheck size={14} />
+              Module Chất lượng
+            </div>
+            <h2 className="mt-1 truncate text-xl font-black text-slate-900">{pageTitle}</h2>
+            <div className="mt-1 flex flex-wrap items-center gap-1 text-xs font-bold text-slate-500">
+              <button onClick={openRoot} className="rounded px-1.5 py-1 hover:bg-slate-100 hover:text-amber-700">
+                {projectName || 'Dự án'}
+              </button>
+              {breadcrumbTasks.map(task => (
+                <React.Fragment key={task.id}>
+                  <ChevronRight size={13} className="text-slate-300" />
+                  <button
+                    onClick={() => openTask(task.id)}
+                    className={`max-w-[220px] truncate rounded px-1.5 py-1 hover:bg-slate-100 hover:text-amber-700 ${task.id === currentTaskId ? 'text-slate-800' : ''}`}
+                    title={taskLabel(task)}
+                  >
+                    {task.wbsCode || task.name}
+                  </button>
+                </React.Fragment>
+              ))}
+              {showOrphans && (
+                <>
+                  <ChevronRight size={13} className="text-slate-300" />
+                  <span className="rounded px-1.5 py-1 text-slate-800">Chưa gắn hạng mục</span>
+                </>
+              )}
+            </div>
           </div>
-        ))}
+
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:w-[520px]">
+            <MiniStat label="Tổng hồ sơ" value={checklists.length} icon={<ClipboardCheck size={15} />} />
+            <MiniStat label="Chờ duyệt" value={globalCounts.submitted} icon={<Clock size={15} />} tone="amber" />
+            <MiniStat label="Đã duyệt" value={globalCounts.approved} icon={<CheckCircle2 size={15} />} tone="emerald" />
+            <MiniStat label="Chưa gắn" value={orphanChecklists.length} icon={<AlertCircle size={15} />} tone={orphanChecklists.length ? 'red' : 'slate'} />
+          </div>
+        </div>
       </div>
 
-      {/* List Toolbar Actions */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2 flex-1 max-w-lg">
-          <div className="relative flex-1">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Tìm mã biên bản, tiêu đề, tên mẫu..." className="w-full text-xs pl-9 pr-3 py-2.5 border border-slate-200 rounded-xl outline-none focus:ring-1 focus:ring-indigo-300 font-bold" />
+      <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {(currentTask || showOrphans) && (
+            <button
+              onClick={currentTask?.parentId ? () => openTask(currentTask.parentId!) : openRoot}
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50"
+            >
+              <ArrowLeft size={14} /> Quay lại
+            </button>
+          )}
+          <div className="relative min-w-0 flex-1">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              value={search}
+              onChange={event => setSearch(event.target.value)}
+              placeholder="Tìm WBS, hạng mục, hồ sơ..."
+              className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-xs font-bold outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-100"
+            />
           </div>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="text-xs border border-slate-200 rounded-xl px-3 py-2.5 outline-none font-bold bg-white">
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            value={statusFilter}
+            onChange={event => setStatusFilter(event.target.value as QualityChecklistStatus | '')}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 outline-none focus:border-amber-300"
+          >
             <option value="">Tất cả trạng thái</option>
-            {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-              <option key={key} value={key}>{cfg.label}</option>
+            {Object.entries(STATUS_CONFIG).map(([status, config]) => (
+              <option key={status} value={status}>{config.label}</option>
             ))}
           </select>
+          {orphanChecklists.length > 0 && !showOrphans && (
+            <button
+              onClick={openOrphans}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-100"
+            >
+              <AlertCircle size={14} /> Chưa gắn
+            </button>
+          )}
         </div>
-        {canManageTab && (
-          <button onClick={() => setShowTemplateSelector(true)} disabled={saving} className="px-5 py-2.5 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl flex items-center gap-1.5 shadow-lg shadow-indigo-600/10 transition">
-            <Layers size={14} /> Chọn mẫu nghiệm thu
-          </button>
-        )}
       </div>
 
-      {/* Main Inspection Checklists List */}
-      {filtered.length === 0 ? (
-        <div className="text-center py-20 bg-white rounded-3xl border border-slate-100">
-          <ClipboardCheck size={40} className="text-slate-200 mx-auto mb-3" />
-          <p className="text-sm font-black text-slate-500">Chưa có hồ sơ kiểm soát chất lượng nào</p>
-          <p className="text-xs text-slate-400 mt-1">Bấm nút "Chọn mẫu nghiệm thu" ở trên để sinh biên bản đầu tiên.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filtered.map(c => {
-            const statusCfg = STATUS_CONFIG[c.status];
-            const resultBadge = c.inspectionResult ? RESULT_BADGE[c.inspectionResult] : null;
-            return (
-              <div key={c.id} onClick={() => setViewingId(c.id)} className="bg-white rounded-2xl border border-slate-100 hover:border-indigo-200 hover:shadow-md transition-all cursor-pointer p-5 flex items-center gap-4 group">
-                <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-xl shrink-0">
-                  {c.templateCode?.includes('THEP') ? '⚙️' : '🏗️'}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] font-mono font-bold text-indigo-500">
-                      {c.code}
-                    </span>
-                    <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-bold border ${statusCfg.bg} ${statusCfg.color}`}>{statusCfg.icon} {statusCfg.label}</span>
-                    {resultBadge && <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-black ${resultBadge.color} ${resultBadge.bg}`}>{resultBadge.label}</span>}
-                    <span className="text-[9px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">Lần {c.currentAttempt}</span>
-                  </div>
-                  <h4 className="text-xs font-black text-slate-800 mt-1 truncate group-hover:text-indigo-700 transition-colors">{c.title}</h4>
-                  <div className="flex items-center gap-4 mt-2 text-[10px] text-slate-400 font-bold flex-wrap">
-                    <span className="text-indigo-500">{c.templateName}</span>
-                    {c.workLocation && <span className="flex items-center gap-0.5"><MapPin size={10} /> {c.workLocation}</span>}
-                    {c.workDate && <span>{c.workDate}</span>}
-                    {c.totalCriteria !== undefined && c.totalCriteria > 0 && (
-                      <span className="text-slate-500">Đạt: <b>{c.passedCriteria}/{c.totalCriteria}</b></span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={e => e.stopPropagation()}>
-                  {(() => {
-                    const isCreator = c.createdBy ? (user?.name === c.createdBy || user?.id === c.createdBy) : true;
-                    const isAdminUser = user?.role === Role.ADMIN;
-                    const canEdit = (c.status === 'draft' || c.status === 'returned') && (isCreator || isAdminUser);
-                    return canEdit && canManageTab && (
-                      <>
-                        <button onClick={() => openEdit(c)} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-800"><Edit2 size={13} /></button>
-                        <button onClick={() => handleDelete(c.id)} className="p-2 rounded-xl hover:bg-red-50 text-slate-400 hover:text-red-500"><Trash2 size={13} /></button>
-                      </>
-                    );
-                  })()}
-                  <Eye size={14} className="text-slate-300 ml-1" />
-                </div>
+      {currentTask && !showOrphans && (
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                {currentTask.wbsCode && (
+                  <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[11px] font-black text-slate-600">
+                    WBS {currentTask.wbsCode}
+                  </span>
+                )}
+                <span className="rounded border border-slate-200 bg-white px-2 py-1 text-[10px] font-black uppercase text-slate-500">
+                  {currentChildren.length} thư mục con
+                </span>
               </div>
-            );
-          })}
-        </div>
-      )}
-      {submittingChecklist && (
-        <ProjectSubmissionDialog
-          title="Gửi duyệt hồ sơ chất lượng"
-          documentLabel="HỒ SƠ CHẤT LƯỢNG"
-          documentName={submittingChecklist.title}
-          documentSubtitle={`Mã: ${submittingChecklist.code} · Quy trình: ${submittingChecklist.templateName}`}
-          projectId={projectId}
-          constructionSiteId={siteId || null}
-          recipientPermissionCodes={['approve']}
-          onCancel={() => setSubmittingChecklist(null)}
-          onConfirm={handleConfirmSubmit}
-        />
+              <h3 className="mt-2 text-lg font-black text-slate-900">{currentTask.name}</h3>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-bold text-slate-500">
+                <span className="inline-flex items-center gap-1"><Calendar size={12} />{formatDate(currentTask.startDate)} - {formatDate(currentTask.endDate)}</span>
+                {currentTask.assignee && <span className="inline-flex items-center gap-1"><User size={12} />{currentTask.assignee}</span>}
+              </div>
+              <div className="mt-3 max-w-md">
+                <div className="mb-1 flex items-center justify-between text-[10px] font-black text-slate-500">
+                  <span>Tiến độ hạng mục</span>
+                  <span>{Math.round(Number(currentTask.progress || 0))}%</span>
+                </div>
+                <ProgressBar value={currentTask.progress} />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <MiniStat label="Tại hạng mục" value={directTaskChecklists.length} icon={<ClipboardCheck size={15} />} tone="sky" />
+              <MiniStat label="Chờ duyệt" value={currentCounts.submitted} icon={<Clock size={15} />} tone="amber" />
+              <MiniStat label="Đã duyệt" value={currentCounts.approved} icon={<CheckCircle2 size={15} />} tone="emerald" />
+              {canManageTab && (
+                <button
+                  onClick={() => openCreate(currentTask)}
+                  className="inline-flex min-h-[72px] items-center gap-2 rounded-lg bg-amber-500 px-4 py-3 text-xs font-black text-white shadow-sm hover:bg-amber-600"
+                >
+                  <Plus size={16} /> Tạo hồ sơ nghiệm thu
+                </button>
+              )}
+            </div>
+          </div>
+        </section>
       )}
 
-      {showMarkerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200 no-print">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-gradient-to-r from-indigo-50/50 to-violet-50/50">
-              <div>
-                <h3 className="text-sm font-black text-slate-900">
-                  {editingMarkerId ? 'Chỉnh sửa điểm kiểm soát' : 'Thêm điểm kiểm soát mới'}
+      {!showOrphans && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-black text-slate-800">
+              {searchMode ? 'Kết quả hạng mục' : currentTask ? 'Thư mục con' : 'Thư mục hạng mục'}
+            </h3>
+            <span className="text-[10px] font-black uppercase text-slate-400">{visibleTasks.length} hạng mục</span>
+          </div>
+
+          {visibleTasks.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-10 text-center">
+              <Folder size={30} className="mx-auto text-slate-300" />
+              <p className="mt-2 text-sm font-black text-slate-500">Không có hạng mục phù hợp</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {visibleTasks.map(task => (
+                <FolderCard
+                  key={task.id}
+                  task={task}
+                  childCount={(childrenByParent.get(task.id) || []).length}
+                  checklists={getAggregateChecklists(task.id)}
+                  parentPath={searchMode ? getParentPath(task) : undefined}
+                  onOpen={() => openTask(task.id)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {(currentTask || showOrphans) && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-black text-slate-800">
+              {showOrphans ? 'Hồ sơ chưa gắn hạng mục' : 'Hồ sơ nghiệm thu của hạng mục'}
+            </h3>
+            <span className="text-[10px] font-black uppercase text-slate-400">{tableRows.length} hồ sơ</span>
+          </div>
+          {renderChecklistTable(tableRows, { showTaskColumn: showOrphans })}
+        </section>
+      )}
+
+      {!currentTask && !showOrphans && orphanChecklists.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-black text-slate-800">Chưa gắn hạng mục</h3>
+            <button onClick={openOrphans} className="text-xs font-black text-red-600 hover:text-red-700">
+              Xem {orphanChecklists.length} hồ sơ
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+            <MiniStat label="Tổng" value={orphanChecklists.length} icon={<AlertCircle size={15} />} tone="red" />
+            <MiniStat label="Nháp" value={orphanCounts.draft} icon={<Clock size={15} />} />
+            <MiniStat label="Chờ duyệt" value={orphanCounts.submitted} icon={<Send size={15} />} tone="amber" />
+            <MiniStat label="Đã duyệt" value={orphanCounts.approved} icon={<CheckCircle2 size={15} />} tone="emerald" />
+            <MiniStat label="Trả lại" value={orphanCounts.returned} icon={<RotateCcw size={15} />} tone="red" />
+          </div>
+        </section>
+      )}
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-3 py-6">
+          <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+              <div className="min-w-0">
+                <div className="text-[10px] font-black uppercase text-amber-600">
+                  {readonlyForm ? 'Xem hồ sơ nghiệm thu' : editingChecklist ? 'Cập nhật hồ sơ nghiệm thu' : 'Tạo hồ sơ nghiệm thu'}
+                </div>
+                <h3 className="mt-1 truncate text-base font-black text-slate-900">
+                  {form.title || taskLabel(formTask)}
                 </h3>
-                <p className="text-[10px] text-slate-400 mt-0.5 font-bold">
-                  Định vị: X={newMarkerCoords?.x.toFixed(1)}%, Y={newMarkerCoords?.y.toFixed(1)}%
-                </p>
+                {formTask && (
+                  <p className="mt-0.5 truncate text-xs font-bold text-slate-500">{taskLabel(formTask)}</p>
+                )}
               </div>
-              <button 
-                onClick={() => { setShowMarkerModal(false); setEditingMarkerId(null); }} 
-                className="text-slate-400 hover:text-slate-600"
-              >
+              <button onClick={closeForm} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
                 <X size={18} />
               </button>
             </div>
 
-            {/* Form Content */}
-            <div className="p-5 space-y-4">
-              <div>
-                <label className="text-[10px] font-black text-slate-500 block mb-1">Tên điểm đánh dấu *</label>
-                <input 
-                  type="text" 
-                  value={newMarkerLabel} 
-                  onChange={e => setNewMarkerLabel(e.target.value)} 
-                  placeholder="Ví dụ: Điểm A1, Cột B2..." 
-                  className="w-full text-xs font-bold text-slate-900 border border-slate-200 rounded-xl px-3.5 py-2.5 outline-none focus:ring-1 focus:ring-indigo-300"
-                />
-              </div>
+            <div className="overflow-y-auto p-5">
+              <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Tên hồ sơ *</label>
+                    <input
+                      value={form.title || ''}
+                      onChange={event => setForm(prev => ({ ...prev, title: event.target.value }))}
+                      readOnly={readonlyForm}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-100 read-only:bg-slate-50"
+                    />
+                  </div>
 
-              <div>
-                <label className="text-[10px] font-black text-slate-500 block mb-1">Trạng thái kiểm tra</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { val: 'pass', label: 'Đạt' },
-                    { val: 'fail', label: 'Không Đạt' },
-                    { val: 'pending', label: 'Chờ kiểm' }
-                  ].map(opt => (
-                    <button
-                      key={opt.val}
-                      type="button"
-                      onClick={() => setNewMarkerStatus(opt.val as any)}
-                      className={`py-2 px-3 border rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                        newMarkerStatus === opt.val 
-                          ? opt.val === 'pass' 
-                            ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm shadow-emerald-500/20' 
-                            : opt.val === 'fail'
-                              ? 'bg-red-500 text-white border-red-500 shadow-sm shadow-red-500/20'
-                              : 'bg-slate-500 text-white border-slate-500 shadow-sm shadow-slate-500/20'
-                          : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
-                      }`}
-                    >
-                      <span className={`w-2 h-2 rounded-full ${
-                        newMarkerStatus === opt.val 
-                          ? 'bg-white' 
-                          : opt.val === 'pass' 
-                            ? 'bg-emerald-500' 
-                            : opt.val === 'fail' 
-                              ? 'bg-red-500' 
-                              : 'bg-slate-400'
-                      }`} />
-                      {opt.label}
-                    </button>
-                  ))}
+                  <div>
+                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Mô tả công việc</label>
+                    <textarea
+                      rows={3}
+                      value={form.workDescription || ''}
+                      onChange={event => setForm(prev => ({ ...prev, workDescription: event.target.value }))}
+                      readOnly={readonlyForm}
+                      className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-700 outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-100 read-only:bg-slate-50"
+                    />
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div>
+                      <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Vị trí</label>
+                      <input
+                        value={form.workLocation || ''}
+                        onChange={event => setForm(prev => ({ ...prev, workLocation: event.target.value }))}
+                        readOnly={readonlyForm}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold outline-none focus:border-amber-300 read-only:bg-slate-50"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Ngày nghiệm thu</label>
+                      <input
+                        type="date"
+                        value={form.workDate || ''}
+                        onChange={event => setForm(prev => ({ ...prev, workDate: event.target.value }))}
+                        readOnly={readonlyForm}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold outline-none focus:border-amber-300 read-only:bg-slate-50"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Giám sát</label>
+                      {readonlyForm ? (
+                        <input
+                          value={form.workSupervisor || ''}
+                          readOnly
+                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold outline-none"
+                        />
+                      ) : projectStaff.length > 0 ? (
+                        <select
+                          value={form.workSupervisor || ''}
+                          onChange={event => setForm(prev => ({ ...prev, workSupervisor: event.target.value }))}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold outline-none focus:border-amber-300"
+                        >
+                          <option value="">- Chọn giám sát -</option>
+                          {projectStaff.map(staff => (
+                            <option key={staff.id} value={staff.userName || staff.userId || ''}>
+                              {staff.userName || staff.userId}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          value={form.workSupervisor || ''}
+                          onChange={event => setForm(prev => ({ ...prev, workSupervisor: event.target.value }))}
+                          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold outline-none focus:border-amber-300"
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-[10px] font-black uppercase text-slate-400">Ghi chú</label>
+                    <textarea
+                      rows={3}
+                      value={form.note || ''}
+                      onChange={event => setForm(prev => ({ ...prev, note: event.target.value }))}
+                      readOnly={readonlyForm}
+                      className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-700 outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-100 read-only:bg-slate-50"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="text-[10px] font-black text-slate-500 block mb-1">Ghi chú (nếu có)</label>
-                <textarea 
-                  value={newMarkerNote} 
-                  onChange={e => setNewMarkerNote(e.target.value)} 
-                  placeholder="Ghi chú thêm về lỗi hoặc mô tả điểm..." 
-                  rows={3} 
-                  className="w-full text-xs border border-slate-200 rounded-xl px-3.5 py-2.5 outline-none resize-none font-medium text-slate-700 focus:ring-1 focus:ring-indigo-300"
-                />
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-xs font-black text-slate-800">Ảnh nghiệm thu</h4>
+                        <p className="text-[10px] font-bold text-slate-400">{(form.sitePhotos || []).length} ảnh</p>
+                      </div>
+                      {!readonlyForm && (
+                        <>
+                          <input id="quality-photo-upload" type="file" accept="image/*" multiple onChange={handlePhotoUpload} className="hidden" />
+                          <label
+                            htmlFor="quality-photo-upload"
+                            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50"
+                          >
+                            {uploadingPhotos ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                            Ảnh
+                          </label>
+                        </>
+                      )}
+                    </div>
+                    {(form.sitePhotos || []).length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-slate-200 py-8 text-center">
+                        <ImageIcon size={24} className="mx-auto text-slate-300" />
+                        <p className="mt-2 text-xs font-bold text-slate-400">Chưa có ảnh</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        {(form.sitePhotos || []).map((photo, index) => (
+                          <div key={`${photo.url}-${index}`} className="group relative overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                            <img src={photo.url} alt={photo.caption || `Ảnh ${index + 1}`} className="h-28 w-full object-cover" />
+                            <div className="absolute inset-x-0 bottom-0 bg-slate-950/55 px-2 py-1 text-[10px] font-bold text-white">
+                              <span className="block truncate">{photo.caption || `Ảnh ${index + 1}`}</span>
+                            </div>
+                            {!readonlyForm && (
+                              <button
+                                onClick={() => removePhoto(index)}
+                                className="absolute right-1 top-1 rounded bg-white/90 p-1 text-red-500 opacity-0 shadow-sm transition group-hover:opacity-100"
+                                title="Xoá ảnh"
+                              >
+                                <X size={12} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-xs font-black text-slate-800">File đính kèm</h4>
+                        <p className="text-[10px] font-bold text-slate-400">{(form.attachments || []).length} file</p>
+                      </div>
+                      {!readonlyForm && (
+                        <>
+                          <input id="quality-file-upload" type="file" multiple onChange={handleAttachmentUpload} className="hidden" />
+                          <label
+                            htmlFor="quality-file-upload"
+                            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50"
+                          >
+                            {uploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                            File
+                          </label>
+                        </>
+                      )}
+                    </div>
+                    {(form.attachments || []).length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-slate-200 py-8 text-center">
+                        <Paperclip size={24} className="mx-auto text-slate-300" />
+                        <p className="mt-2 text-xs font-bold text-slate-400">Chưa có file</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {(form.attachments || []).map((attachment, index) => (
+                          <div key={attachment.id || `${attachment.url}-${index}`} className="flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                            <span className="text-slate-400"><FileIcon type={attachment.fileType} /></span>
+                            <a
+                              href={attachment.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="min-w-0 flex-1 truncate text-xs font-black text-slate-700 hover:text-amber-700"
+                            >
+                              {attachment.name || attachment.fileName || `File ${index + 1}`}
+                            </a>
+                            {attachment.fileSize !== undefined && (
+                              <span className="text-[10px] font-bold text-slate-400">{Math.ceil(attachment.fileSize / 1024)} KB</span>
+                            )}
+                            {!readonlyForm && (
+                              <button
+                                onClick={() => removeAttachment(index)}
+                                className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                                title="Xoá file"
+                              >
+                                <X size={13} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Footer actions */}
-            <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex justify-between gap-3">
-              <div>
-                {editingMarkerId && (
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteMarker(editingMarkerId)}
-                    className="px-4 py-2 text-xs font-bold bg-red-50 hover:bg-red-100 text-red-600 rounded-xl flex items-center gap-1 transition animate-in fade-in duration-150"
-                  >
-                    <Trash2 size={12} /> Xoá điểm
-                  </button>
-                )}
+            <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-5 py-4">
+              <div className="text-[10px] font-bold text-slate-400">
+                {editingChecklist ? `${editingChecklist.code} · ${STATUS_CONFIG[editingChecklist.status]?.label || editingChecklist.status}` : 'Hồ sơ nháp mới'}
               </div>
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setShowMarkerModal(false); setEditingMarkerId(null); }}
-                  className="px-4 py-2 text-xs font-bold bg-white border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition"
-                >
-                  Huỷ
+                <button onClick={closeForm} className="rounded-lg px-4 py-2 text-xs font-black text-slate-500 hover:bg-white">
+                  Đóng
                 </button>
-                <button
-                  type="button"
-                  onClick={handleSaveMarker}
-                  className="px-5 py-2 text-xs font-black bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition shadow-md shadow-indigo-600/10"
-                >
-                  Lưu
-                </button>
+                {!readonlyForm && (
+                  <button
+                    onClick={handleSave}
+                    disabled={saving || uploadingPhotos || uploadingFiles}
+                    className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-xs font-black text-white hover:bg-amber-600 disabled:opacity-50"
+                  >
+                    {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                    Lưu hồ sơ
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
+      )}
+
+      {submittingChecklist && (
+        <ProjectSubmissionDialog
+          title="Gửi duyệt hồ sơ nghiệm thu"
+          documentLabel="HỒ SƠ CHẤT LƯỢNG"
+          documentName={submittingChecklist.title}
+          documentSubtitle={`${submittingChecklist.code} · ${taskLabel(submittingChecklist.taskId ? taskMap.get(submittingChecklist.taskId) : null)}`}
+          details={[
+            { label: 'Ảnh nghiệm thu', value: `${(submittingChecklist.sitePhotos || []).length} ảnh` },
+            { label: 'File đính kèm', value: `${(submittingChecklist.attachments || []).length} file` },
+          ]}
+          projectId={projectId}
+          constructionSiteId={siteId || null}
+          recipientPermissionCodes={['approve']}
+          recipientHint="Chọn người có quyền phê duyệt hồ sơ chất lượng."
+          onCancel={() => setSubmittingChecklist(null)}
+          onConfirm={handleConfirmSubmit}
+        />
       )}
     </div>
   );
