@@ -17,6 +17,7 @@ import {
   Sparkles,
   UserRound,
   Warehouse,
+  ArrowRight,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useWorkflow } from '../context/WorkflowContext';
@@ -417,15 +418,15 @@ const Home: React.FC = () => {
   }, [capabilities.project, hrmConstructionSites.length, projectFinances]);
 
   const shortcuts = useMemo(() => {
-    const itemsList: Array<{ to: string; icon: React.ReactNode; title: string; description: string; show: boolean }> = [
-      { to: '/requests', icon: <ClipboardList size={18} />, title: 'Yêu cầu vật tư', description: 'Tạo và theo dõi cấp vật tư', show: canUseModule(user, 'WMS') },
-      { to: '/inventory', icon: <Package size={18} />, title: 'Kho vật tư', description: 'Tra tồn kho và cảnh báo', show: canUseModule(user, 'WMS') },
-      { to: '/operations', icon: <Warehouse size={18} />, title: 'Phiếu kho', description: 'Nhập, xuất, chuyển kho', show: canUseModule(user, 'WMS') },
-      { to: '/da', icon: <FolderKanban size={18} />, title: 'Dự án', description: 'Tiến độ, BOQ, nghiệm thu', show: canUseModule(user, 'DA') },
-      { to: '/rq', icon: <Inbox size={18} />, title: 'Phiếu yêu cầu', description: 'Yêu cầu nội bộ và phê duyệt', show: canUseModule(user, 'RQ') },
-      { to: '/wf', icon: <GitBranch size={18} />, title: 'Quy trình', description: 'Luồng duyệt và chứng từ', show: canUseModule(user, 'WF') },
-      { to: '/my-profile', icon: <UserRound size={18} />, title: 'Hồ sơ cá nhân', description: 'Thông tin và chữ ký', show: true },
-      { to: '/settings', icon: <Settings size={18} />, title: 'Cài đặt', description: 'Người dùng và hệ thống', show: capabilities.admin },
+    const itemsList: Array<{ to: string; icon: React.ReactNode; title: string; description: string; show: boolean; color: string }> = [
+      { to: '/requests', icon: <ClipboardList size={18} />, title: 'Yêu cầu vật tư', description: 'Tạo và theo dõi cấp vật tư', show: canUseModule(user, 'WMS'), color: 'text-teal-600 bg-teal-50 border-teal-100 dark:bg-teal-950/20 dark:border-teal-900/50 dark:text-teal-400' },
+      { to: '/inventory', icon: <Package size={18} />, title: 'Kho vật tư', description: 'Tra tồn kho và cảnh báo', show: canUseModule(user, 'WMS'), color: 'text-amber-600 bg-amber-50 border-amber-100 dark:bg-amber-950/20 dark:border-amber-900/50 dark:text-amber-400' },
+      { to: '/operations', icon: <Warehouse size={18} />, title: 'Phiếu kho', description: 'Nhập, xuất, chuyển kho', show: canUseModule(user, 'WMS'), color: 'text-cyan-600 bg-cyan-50 border-cyan-100 dark:bg-cyan-950/20 dark:border-cyan-900/50 dark:text-cyan-400' },
+      { to: '/da', icon: <FolderKanban size={18} />, title: 'Dự án', description: 'Tiến độ, BOQ, nghiệm thu', show: canUseModule(user, 'DA'), color: 'text-indigo-600 bg-indigo-50 border-indigo-100 dark:bg-indigo-950/20 dark:border-indigo-900/50 dark:text-indigo-400' },
+      { to: '/rq', icon: <Inbox size={18} />, title: 'Phiếu yêu cầu', description: 'Yêu cầu nội bộ và phê duyệt', show: canUseModule(user, 'RQ'), color: 'text-blue-600 bg-blue-50 border-blue-100 dark:bg-blue-950/20 dark:border-blue-900/50 dark:text-blue-400' },
+      { to: '/wf', icon: <GitBranch size={18} />, title: 'Quy trình', description: 'Luồng duyệt và chứng từ', show: canUseModule(user, 'WF'), color: 'text-violet-600 bg-violet-50 border-violet-100 dark:bg-violet-950/20 dark:border-violet-900/50 dark:text-violet-400' },
+      { to: '/my-profile', icon: <UserRound size={18} />, title: 'Hồ sơ cá nhân', description: 'Thông tin và chữ ký', show: true, color: 'text-slate-600 bg-slate-50 border-slate-200 dark:bg-slate-800/30 dark:border-slate-700/50 dark:text-slate-400' },
+      { to: '/settings', icon: <Settings size={18} />, title: 'Cài đặt', description: 'Người dùng và hệ thống', show: capabilities.admin, color: 'text-rose-600 bg-rose-50 border-rose-100 dark:bg-rose-950/20 dark:border-rose-900/50 dark:text-rose-450' },
     ];
     return itemsList.filter(item => item.show).slice(0, 8);
   }, [capabilities.admin, user]);
@@ -518,7 +519,7 @@ const Home: React.FC = () => {
           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
             <AlertTriangle size={11} className="text-amber-500" /> CẢNH BÁO RỦI RO
           </div>
-          <div className="text-3xl font-black text-amber-500 dark:text-amber-400 leading-none tracking-tight">
+          <div className="text-3xl font-black text-amber-500 dark:text-amber-450 leading-none tracking-tight">
             {visibleNotifications.length + lowStockItems.length}
           </div>
           <div className="text-[10px] text-muted-foreground font-medium mt-2">
@@ -557,7 +558,7 @@ const Home: React.FC = () => {
             message="Các hồ sơ chờ bạn duyệt hoặc xác nhận sẽ xuất hiện ở đây."
           />
         ) : (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             {actionItems.map(item => <NextActionCard key={item.id} {...item} />)}
           </div>
         )}
@@ -571,7 +572,7 @@ const Home: React.FC = () => {
                 <h2 className="text-base font-black text-slate-900 dark:text-white">Theo dõi của tôi</h2>
                 <p className="text-xs font-bold text-slate-400">Những hồ sơ bạn tạo đang còn mở.</p>
               </div>
-              <Link to="/rq" className="inline-flex items-center gap-1 text-xs font-black text-slate-600 hover:text-slate-900 dark:text-slate-300">
+              <Link to="/rq" className="inline-flex items-center gap-1 text-xs font-black text-slate-650 hover:text-slate-900 dark:text-slate-300">
                 Xem yêu cầu <FileText size={13} />
               </Link>
             </div>
@@ -582,7 +583,7 @@ const Home: React.FC = () => {
                 message="Các phiếu nháp, chờ duyệt hoặc đang xử lý do bạn tạo sẽ được gom ở đây."
               />
             ) : (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {trackingItems.map(item => <NextActionCard key={item.id} {...item} />)}
               </div>
             )}
@@ -601,11 +602,14 @@ const Home: React.FC = () => {
                   className="rounded-2xl border border-slate-100/80 bg-gradient-to-br from-white to-slate-50/50 p-4 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.02] hover:-translate-y-0.5 dark:border-slate-750 dark:from-slate-800 dark:to-slate-900/50 group"
                 >
                   <div className="flex items-start gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-100 bg-slate-50/50 text-slate-600 dark:border-slate-750 dark:bg-slate-900 dark:text-slate-350 transition-transform duration-300 group-hover:scale-110">
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-all duration-300 group-hover:scale-110 ${item.color}`}>
                       {item.icon}
                     </div>
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-black text-slate-900 dark:text-white">{item.title}</h3>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-sm font-black text-slate-900 dark:text-white">{item.title}</h3>
+                        <ArrowRight size={14} className="text-slate-350 dark:text-slate-600 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-300 shrink-0" />
+                      </div>
                       <p className="mt-1 text-xs font-medium leading-5 text-slate-450 dark:text-slate-400">{item.description}</p>
                     </div>
                   </div>
@@ -634,16 +638,20 @@ const Home: React.FC = () => {
                     <button
                       key={notification.id}
                       onClick={() => openNotification(notification)}
-                      className="block w-full rounded-2xl border border-slate-100/80 bg-gradient-to-br from-white to-slate-50/50 p-4 text-left shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5 dark:border-slate-750 dark:from-slate-800 dark:to-slate-900/50 group"
+                      className="block w-full rounded-2xl border border-slate-100/80 border-l-4 border-l-red-500 bg-gradient-to-br from-white to-slate-50/50 p-3.5 text-left shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5 dark:border-slate-750 dark:from-slate-800 dark:to-slate-900/50 group"
                     >
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 text-red-500 transition-transform duration-300 group-hover:scale-110"><Bell size={16} /></div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 flex items-center justify-center text-red-500 shrink-0 transition-transform duration-300 group-hover:scale-110">
+                          <Bell size={15} />
+                        </div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <h3 className="truncate text-sm font-black text-slate-900 dark:text-white">{notification.title}</h3>
-                            <StatusBadge status={notification.severity} label={notification.severity === 'critical' ? 'Khẩn cấp' : 'Mới'} tone={notification.severity === 'critical' ? 'danger' : 'info'} />
+                          <div className="flex items-center justify-between gap-1.5">
+                            <h4 className="truncate text-xs font-black text-slate-800 dark:text-white leading-tight">{notification.title}</h4>
+                            <span className="shrink-0 text-[9px] font-black bg-red-50 text-red-650 px-1.5 py-0.5 rounded-md dark:bg-red-950/40 dark:text-red-400 border border-red-150/45 dark:border-red-900/30">
+                              KHẨN CẤP
+                            </span>
                           </div>
-                          <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-slate-500 dark:text-slate-400">{notification.message}</p>
+                          <p className="mt-0.5 truncate text-[10px] font-medium text-slate-450 dark:text-slate-400">{notification.message}</p>
                         </div>
                       </div>
                     </button>
@@ -652,13 +660,20 @@ const Home: React.FC = () => {
                     <Link
                       key={item.id}
                       to="/inventory"
-                      className="block rounded-2xl border border-amber-100/80 bg-gradient-to-br from-amber-50/50 to-amber-50 p-4 shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5 dark:border-amber-955/20 dark:from-amber-955/10 dark:to-amber-955/20 group"
+                      className="block w-full rounded-2xl border border-amber-100/80 border-l-4 border-l-amber-500 bg-gradient-to-br from-amber-50/20 to-amber-50/40 p-3.5 text-left shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5 dark:border-amber-955/20 dark:from-amber-955/10 dark:to-amber-955/20 group"
                     >
-                      <div className="flex items-start gap-3">
-                        <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-500 transition-transform duration-300 group-hover:scale-110" />
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/40 flex items-center justify-center text-amber-600 shrink-0 transition-transform duration-300 group-hover:scale-110">
+                          <AlertTriangle size={15} />
+                        </div>
                         <div className="min-w-0 flex-1">
-                          <h3 className="truncate text-sm font-black text-amber-900 dark:text-amber-200">{item.name}</h3>
-                          <p className="mt-1 text-xs font-bold text-amber-700 dark:text-amber-350">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <h4 className="truncate text-xs font-black text-amber-900 dark:text-amber-200 leading-tight">{item.name}</h4>
+                            <span className="shrink-0 text-[9px] font-black bg-amber-100/60 text-amber-800 px-1.5 py-0.5 rounded-md dark:bg-amber-950/50 dark:text-amber-400 border border-amber-200/40 dark:border-amber-900/30">
+                              TỒN THẤP
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">
                             Tồn {stock.toLocaleString('vi-VN')} {item.unit} / tối thiểu {Number(item.minStock || 0).toLocaleString('vi-VN')}
                           </p>
                         </div>

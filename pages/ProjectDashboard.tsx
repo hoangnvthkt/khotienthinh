@@ -71,6 +71,7 @@ const DocumentsTab = React.lazy(() => import('./project/DocumentsTab'));
 const ProjectOrgTab = React.lazy(() => import('./project/ProjectOrgTab'));
 const ExecutiveTab = React.lazy(() => import('./project/ExecutiveTab'));
 const QualityTab = React.lazy(() => import('./project/QualityTab'));
+const SafetyTab = React.lazy(() => import('./project/SafetyTab'));
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
     planning: { label: 'Lập kế hoạch', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
@@ -3099,6 +3100,8 @@ const ProjectDashboard: React.FC = () => {
 	                        <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('subcontract')} />
                     ) : overviewTab === 'quality' ? (
                         <QualityTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('quality')} />
+                    ) : overviewTab === 'safety' ? (
+                        <SafetyTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('safety')} />
                     ) : overviewTab === 'material' ? (
                         <MaterialTab
                             constructionSiteId={effectiveSiteId || undefined}

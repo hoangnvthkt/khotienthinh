@@ -174,7 +174,7 @@ export type NotificationWorkGroup = 'action' | 'tracking' | 'alert';
 
 export const getNotificationWorkGroup = (notification: AppNotification): NotificationWorkGroup => {
   if (notification.severity === 'critical') return 'alert';
-  if (['inventory', 'budget', 'progress', 'payment'].includes(notification.category) && notification.severity !== 'info') return 'alert';
+  if (['inventory', 'budget', 'progress', 'payment', 'safety'].includes(notification.category) && notification.severity !== 'info') return 'alert';
   if (!notification.isRead && [
     'workflow',
     'request',
@@ -184,6 +184,8 @@ export const getNotificationWorkGroup = (notification: AppNotification): Notific
     'quality_checklist',
     'quantity_acceptance',
     'payment_certificate',
+    'safety_issue',
+    'safety_inspection',
   ].some(token => String(notification.sourceType || notification.category).includes(token))) {
     return 'action';
   }

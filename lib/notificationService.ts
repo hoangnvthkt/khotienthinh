@@ -47,6 +47,7 @@ export const NOTIFICATION_CATEGORIES = {
   payment: { label: 'Thanh toán', icon: '🧾', color: 'text-red-600 bg-red-50' },
   progress: { label: 'Tiến độ', icon: '📐', color: 'text-blue-600 bg-blue-50' },
   material: { label: 'Vật tư', icon: '📦', color: 'text-amber-600 bg-amber-50' },
+  safety: { label: 'An toàn', icon: '🛡️', color: 'text-red-600 bg-red-50' },
   inventory: { label: 'Tồn kho', icon: '📋', color: 'text-cyan-600 bg-cyan-50' },
   contract: { label: 'Hợp đồng', icon: '📝', color: 'text-violet-600 bg-violet-50' },
   hrm: { label: 'Nhân sự', icon: '👤', color: 'text-indigo-600 bg-indigo-50' },
