@@ -1,5 +1,11 @@
 import { loadXlsx } from '../../loadXlsx';
-import { buildSearchText, cleanG8Name, normalizeHeaderText, parseVietnameseNumber } from './normalize';
+import {
+  buildSearchText,
+  cleanG8Name,
+  normalizeHeaderText,
+  parseVietnameseNumber,
+  splitVietnameseNumberAndUnit,
+} from './normalize';
 import {
   detectGroupType,
   detectResourceTypeFromCode,
@@ -121,19 +127,39 @@ const detectName = (row: G8RawRow, mapping: G8ColumnMapping, code: string): stri
   }) || '');
 };
 
-const detectUnit = (row: G8RawRow, mapping: G8ColumnMapping): string => {
+const splitLikelyCoefficientUnit = (value: unknown): { coefficient: number | null; unit: string } => {
+  const parsed = splitVietnameseNumberAndUnit(value, { preferDecimalDot: true });
+  if (parsed.number === null || !parsed.unit || !isLikelyUnit(parsed.unit)) {
+    return { coefficient: null, unit: '' };
+  }
+  return { coefficient: parsed.number, unit: parsed.unit };
+};
+
+const detectUnit = (row: G8RawRow, mapping: G8ColumnMapping, splitCombinedUnit = false): string => {
   const mapped = safeCol(row.values, mapping.unitCol);
-  if (mapped && !isHeaderNoise(mapped)) return mapped;
+  if (mapped && !isHeaderNoise(mapped)) {
+    if (splitCombinedUnit) {
+      const split = splitLikelyCoefficientUnit(mapped);
+      if (split.unit) return split.unit;
+    }
+    return mapped;
+  }
+  if (splitCombinedUnit) {
+    const split = splitLikelyCoefficientUnit(safeCol(row.values, mapping.coefficientCol));
+    if (split.unit) return split.unit;
+  }
   return row.values.find(isLikelyUnit)?.trim() || '';
 };
 
 const detectCoefficient = (row: G8RawRow, mapping: G8ColumnMapping): number | null => {
-  const mapped = parseVietnameseNumber(safeCol(row.values, mapping.coefficientCol));
+  const mapped = parseVietnameseNumber(safeCol(row.values, mapping.coefficientCol), { preferDecimalDot: true });
   if (mapped !== null) return mapped;
+  const splitUnit = splitLikelyCoefficientUnit(safeCol(row.values, mapping.unitCol));
+  if (splitUnit.coefficient !== null) return splitUnit.coefficient;
   const excluded = new Set(uniqueCols(mapping.itemCodeCol, mapping.resourceCodeCol, mapping.nameCol, mapping.unitCol));
   for (let index = row.values.length - 1; index >= 0; index -= 1) {
     if (excluded.has(index)) continue;
-    const value = parseVietnameseNumber(row.values[index]);
+    const value = parseVietnameseNumber(row.values[index], { preferDecimalDot: true });
     if (value !== null) return value;
   }
   return null;
@@ -297,7 +323,7 @@ export const parseG8Rows = (
     }
 
     const resourceName = detectName(row, mapping, resourceCode);
-    const unit = detectUnit(row, mapping);
+    const unit = detectUnit(row, mapping, true);
     const resourceType = currentGroup || detectResourceTypeFromCode(resourceCode) || 'other';
     const warnings = [
       ...(!resourceName ? ['Thiếu tên nguồn lực.'] : []),

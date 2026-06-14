@@ -1,6 +1,6 @@
 import { fromDb, toDb } from '../dbMapping';
 import { isSupabaseConfigured, supabase } from '../supabase';
-import { buildSearchText } from './import/normalize';
+import { buildSearchText, parseVietnameseNumber } from './import/normalize';
 import { parseG8ExcelArrayBuffer } from './import/g8ExcelParser';
 import {
   CostNormImportCommitResult,
@@ -197,8 +197,8 @@ const assertSupabaseConfigured = () => {
 
 const normalizeCoefficient = (value: unknown): number | null => {
   if (value === null || value === undefined || value === '') return null;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) throw new Error('Định mức/hệ số không hợp lệ.');
+  const parsed = parseVietnameseNumber(value);
+  if (parsed === null) throw new Error('Định mức/hệ số không hợp lệ.');
   return parsed;
 };
 

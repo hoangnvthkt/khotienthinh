@@ -14,14 +14,14 @@ export const isWorkItemCode = (value: unknown): boolean => {
 
 export const isResourceCode = (value: unknown): boolean => {
   const text = String(value ?? '').trim().toUpperCase();
-  return /^[A-Z]\d{3,}(?:\.\d+)?(?:_[A-Z0-9]+)?$/.test(text);
+  return /^[A-Z]{1,4}\d{3,}(?:\.\d+)?(?:_[A-Z0-9]+)?$/.test(text);
 };
 
 export const detectResourceTypeFromCode = (value: unknown): CostNormResourceType | null => {
   const text = String(value ?? '').trim().toUpperCase();
   if (!text) return null;
-  if (text.startsWith('V')) return 'material';
-  if (text.startsWith('N')) return 'labor';
+  if (/^(V|VL|VT)/.test(text)) return 'material';
+  if (/^(N|NC)/.test(text)) return 'labor';
   if (text.startsWith('M')) return 'machine';
   return null;
 };

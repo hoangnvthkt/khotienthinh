@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { parseVietnameseNumber, normalizeSearchText } from '../normalize';
+import {
+  formatVietnameseNumber,
+  normalizeSearchText,
+  parseVietnameseNumber,
+  splitVietnameseNumberAndUnit,
+} from '../normalize';
 import { detectG8HeaderRow, parseG8Rows } from '../g8ExcelParser';
+import { detectResourceTypeFromCode, isResourceCode, isWorkItemCode } from '../validators';
 import { G8RawRow } from '../types';
 
 const makeRows = (rows: string[][], sheetName = 'G8'): G8RawRow[] =>
@@ -30,6 +36,21 @@ describe('G8 Excel parser', () => {
     expect(parseVietnameseNumber('0,96')).toBe(0.96);
     expect(parseVietnameseNumber('0,6')).toBe(0.6);
     expect(parseVietnameseNumber('1.234,56')).toBe(1234.56);
+    expect(parseVietnameseNumber('0,333 m3')).toBe(0.333);
+    expect(parseVietnameseNumber('0.573')).toBe(0.573);
+    expect(parseVietnameseNumber('1.234')).toBe(1234);
+    expect(parseVietnameseNumber('197.825', { preferDecimalDot: true })).toBe(197.825);
+    expect(splitVietnameseNumberAndUnit('0,333 m3')).toMatchObject({
+      number: 0.333,
+      unit: 'm3',
+    });
+  });
+
+  it('formats numbers with Vietnamese decimal and thousands separators', () => {
+    expect(formatVietnameseNumber(0.139)).toBe('0,139');
+    expect(formatVietnameseNumber(1.33)).toBe('1,33');
+    expect(formatVietnameseNumber(1234.56)).toBe('1.234,56');
+    expect(formatVietnameseNumber(null)).toBe('');
   });
 
   it('normalizes searchable Vietnamese text', () => {
@@ -60,6 +81,92 @@ describe('G8 Excel parser', () => {
     expect(item.components.filter(row => row.resourceType === 'labor')).toHaveLength(1);
     expect(item.components.filter(row => row.resourceType === 'machine')).toHaveLength(3);
     expect(item.components.find(row => row.resourceCode === 'M112.4002_TT11')?.coefficient).toBe(0.23);
+  });
+
+  it('recognizes real G8 material codes with multi-letter VT prefix', () => {
+    expect(isResourceCode('VT00024')).toBe(true);
+    expect(isResourceCode('VL00024')).toBe(true);
+    expect(isResourceCode('V00515')).toBe(true);
+    expect(isResourceCode('N0006')).toBe(true);
+    expect(isResourceCode('M112.4002_TT11')).toBe(true);
+    expect(isResourceCode('AB.66112')).toBe(false);
+    expect(isWorkItemCode('AB.66112')).toBe(true);
+    expect(detectResourceTypeFromCode('VT00024')).toBe('material');
+    expect(detectResourceTypeFromCode('VL00024')).toBe('material');
+  });
+
+  it('parses a real G8 row where work code is in STT and material code is VT00024', () => {
+    const rows = makeRows([
+      ['STT', 'Mã hiệu đơn giá', 'TÊN CÔNG TÁC', 'ĐƠN VỊ', 'ĐỊNH MỨC'],
+      ['AB.66112', '', 'Đắp cát công trình bằng máy lu bánh thép 9T, máy ủi 110CV, độ chặt Y/C K = 0,9', '100m3', ''],
+      ['', '', 'Vật liệu', '', ''],
+      ['', 'VT00024', '- Cát san lấp', 'm3', '122'],
+      ['', '', 'Nhân công', '', ''],
+      ['', '', '- Nhân công bậc 3,0/7 - Nhóm 1', 'công', '1,33'],
+      ['', '', 'Máy thi công', '', ''],
+      ['', '', '- Máy ủi - công suất: 110 CV', 'ca', '0,139'],
+      ['', '', '- Máy lu bánh thép tự hành - trọng lượng: 8,5 T - 9 T', 'ca', '0,278'],
+      ['', '', '- Máy khác', '%', '1,5'],
+    ]);
+    const detected = detectG8HeaderRow(rows);
+    const result = parseG8Rows(rows, detected.mapping, detected.rowNumber);
+    const item = result.items[0];
+    const material = item.components.find(component => component.resourceCode === 'VT00024');
+
+    expect(item.code).toBe('AB.66112');
+    expect(item.unit).toBe('100m3');
+    expect(material).toMatchObject({
+      resourceCode: 'VT00024',
+      resourceName: 'Cát san lấp',
+      resourceType: 'material',
+      unit: 'm3',
+      coefficient: 122,
+    });
+  });
+
+  it('splits combined Vietnamese coefficient and unit cells in resource rows', () => {
+    const rows = makeRows([
+      ['STT', 'Mã hiệu đơn giá', 'TÊN CÔNG TÁC', 'ĐƠN VỊ', 'ĐỊNH MỨC'],
+      ['AB.66112', '', 'Đắp cát công trình bằng máy lu bánh thép 9T, máy ủi 110CV', '100m3', ''],
+      ['', '', 'Vật liệu', '', ''],
+      ['', 'VT00024', '- Cát san lấp', '0,333 m3', ''],
+      ['', 'VT00025', '- Cát đắp khác', '', '1,234 m3'],
+    ]);
+    const detected = detectG8HeaderRow(rows);
+    const result = parseG8Rows(rows, detected.mapping, detected.rowNumber);
+    const item = result.items[0];
+    const materialFromUnitCol = item.components.find(component => component.resourceCode === 'VT00024');
+    const materialFromCoefficientCol = item.components.find(component => component.resourceCode === 'VT00025');
+
+    expect(item.unit).toBe('100m3');
+    expect(materialFromUnitCol).toMatchObject({
+      unit: 'm3',
+      coefficient: 0.333,
+    });
+    expect(materialFromCoefficientCol).toMatchObject({
+      unit: 'm3',
+      coefficient: 1.234,
+    });
+  });
+
+  it('treats dot decimals from xlsx numeric cells as coefficients', () => {
+    const rows = makeRows([
+      ['STT', 'Mã hiệu đơn giá', 'TÊN CÔNG TÁC', 'ĐƠN VỊ', 'ĐỊNH MỨC'],
+      ['AF.11111', '', 'Bê tông lót móng SX bằng máy trộn, đổ bằng thủ công, M150, đá 4×6, PCB40', 'm3', ''],
+      ['', '', 'Vật liệu', '', ''],
+      ['', '', '- Xi măng PCB 30', 'kg', '197.825'],
+      ['', '', '- Cát vàng', 'm3', '0.573'],
+      ['', '', '- Đá 4×6', 'm3', '0.929'],
+    ]);
+    const detected = detectG8HeaderRow(rows);
+    const result = parseG8Rows(rows, detected.mapping, detected.rowNumber);
+    const materials = result.items[0].components;
+
+    expect(materials.find(component => component.resourceName === 'Xi măng PCB 30')?.coefficient).toBe(197.825);
+    expect(materials.find(component => component.resourceName === 'Cát vàng')?.coefficient).toBe(0.573);
+    expect(materials.find(component => component.resourceName === 'Đá 4×6')?.coefficient).toBe(0.929);
+    expect(formatVietnameseNumber(materials.find(component => component.resourceName === 'Cát vàng')?.coefficient)).toBe('0,573');
+    expect(formatVietnameseNumber(materials.find(component => component.resourceName === 'Đá 4×6')?.coefficient)).toBe('0,929');
   });
 
   it('classifies raw rows for import trace persistence', () => {

@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, Plus, RefreshCw,
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { g8CostNormImportService } from '../../lib/costNorm/costNormImportService';
-import { buildSearchText, resourceTypeLabel } from '../../lib/costNorm/import/normalize';
+import { buildSearchText, formatVietnameseNumber, parseVietnameseNumber, resourceTypeLabel } from '../../lib/costNorm/import/normalize';
 import {
   CostNormImportCommitResult,
   CostNormLibraryMetadata,
@@ -18,7 +18,7 @@ const BTN_SOFT = 'inline-flex items-center gap-2 rounded-xl border border-slate-
 const BTN_PRIMARY = 'inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50';
 const FIELD = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:border-indigo-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200';
 const MINI_FIELD = 'w-20 rounded-lg border border-slate-200 px-2 py-1 text-xs font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200';
-const CELL_FIELD = 'w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 outline-none focus:border-indigo-300 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200';
+const CELL_FIELD = 'min-w-0 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 outline-none focus:border-indigo-300 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200';
 const ICON_BTN = 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300';
 
 interface CostNormImportWizardProps {
@@ -121,6 +121,7 @@ const CostNormImportWizard: React.FC<CostNormImportWizardProps> = ({ canManage, 
   const [analyzing, setAnalyzing] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [commitResult, setCommitResult] = useState<CostNormImportCommitResult | null>(null);
+  const [coefficientInputs, setCoefficientInputs] = useState<Record<string, string>>({});
 
   const totals = useMemo(() => ({
     material: parseResult?.items.reduce((sum, item) => sum + item.components.filter(row => row.resourceType === 'material').length, 0) || 0,
@@ -138,6 +139,7 @@ const CostNormImportWizard: React.FC<CostNormImportWizardProps> = ({ canManage, 
     setFile(nextFile);
     setParseResult(null);
     setCommitResult(null);
+    setCoefficientInputs({});
     setStep(1);
     const baseName = nextFile.name.replace(/\.[^.]+$/, '');
     setMetadata(prev => ({
@@ -162,6 +164,7 @@ const CostNormImportWizard: React.FC<CostNormImportWizardProps> = ({ canManage, 
         ...result,
         items: cloneItems(result.items),
       });
+      setCoefficientInputs({});
       setMapping(result.columnMapping);
       setStep(result.items.length > 0 ? 3 : 2);
       toast.info('Đã phân tích G8', `${result.parsedItems} công tác, ${result.parsedComponents} dòng hao phí.`);
@@ -280,6 +283,29 @@ const CostNormImportWizard: React.FC<CostNormImportWizardProps> = ({ canManage, 
           : component),
       };
     }));
+  };
+
+  const coefficientInputValue = (component: ParsedNormComponent) =>
+    coefficientInputs[component.id] ?? formatVietnameseNumber(component.coefficient);
+
+  const updateDraftCoefficientInput = (itemId: string, componentId: string, value: string) => {
+    setCoefficientInputs(prev => ({ ...prev, [componentId]: value }));
+    if (!value.trim()) {
+      updateDraftComponent(itemId, componentId, { coefficient: null });
+      return;
+    }
+    const parsed = parseVietnameseNumber(value);
+    if (parsed !== null) updateDraftComponent(itemId, componentId, { coefficient: parsed });
+  };
+
+  const finalizeDraftCoefficientInput = (itemId: string, componentId: string, value: string) => {
+    const parsed = value.trim() ? parseVietnameseNumber(value) : null;
+    updateDraftComponent(itemId, componentId, { coefficient: parsed });
+    setCoefficientInputs(prev => {
+      const next = { ...prev };
+      delete next[componentId];
+      return next;
+    });
   };
 
   const deleteDraftComponent = (itemId: string, componentId: string) => {
@@ -452,7 +478,7 @@ const CostNormImportWizard: React.FC<CostNormImportWizardProps> = ({ canManage, 
                     </button>
                   </div>
                 </div>
-                <div className="mt-3 grid grid-cols-1 gap-2 xl:grid-cols-3">
+                <div className="mt-3 grid grid-cols-1 gap-2 2xl:grid-cols-2">
                   {groupedTypes.map(type => {
                     const rows = item.components.filter(component => component.resourceType === type);
                     if (!rows.length) return null;
@@ -464,9 +490,9 @@ const CostNormImportWizard: React.FC<CostNormImportWizardProps> = ({ canManage, 
                             Thêm
                           </button>
                         </div>
-                        <div className="space-y-1">
+                        <div className="space-y-2 overflow-x-auto pb-1">
                           {rows.map(row => (
-                            <div key={row.id} className="grid grid-cols-[78px_72px_minmax(0,1fr)_48px_62px_28px] gap-1">
+                            <div key={row.id} className="grid min-w-[700px] grid-cols-[112px_120px_minmax(240px,1fr)_64px_88px_32px] gap-2">
                               <select
                                 value={row.resourceType}
                                 onChange={event => updateDraftComponent(item.id, row.id, { resourceType: event.target.value as CostNormResourceType })}
@@ -495,10 +521,11 @@ const CostNormImportWizard: React.FC<CostNormImportWizardProps> = ({ canManage, 
                                 placeholder="ĐVT"
                               />
                               <input
-                                type="number"
-                                step="any"
-                                value={row.coefficient ?? ''}
-                                onChange={event => updateDraftComponent(item.id, row.id, { coefficient: event.target.value === '' ? null : Number(event.target.value) })}
+                                type="text"
+                                inputMode="decimal"
+                                value={coefficientInputValue(row)}
+                                onChange={event => updateDraftCoefficientInput(item.id, row.id, event.target.value)}
+                                onBlur={event => finalizeDraftCoefficientInput(item.id, row.id, event.target.value)}
                                 className={`${CELL_FIELD} text-right`}
                                 placeholder="ĐM"
                               />

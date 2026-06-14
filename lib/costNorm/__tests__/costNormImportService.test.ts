@@ -327,4 +327,27 @@ describe('g8CostNormImportService load methods', () => {
     expect(tables.cost_norm_item_components.some(row => row.id === created.id)).toBe(false);
     expect(tables.cost_norm_change_logs.some(row => row.action === 'component_delete')).toBe(true);
   });
+
+  it('updates a component coefficient from Vietnamese number text', async () => {
+    const { g8CostNormImportService } = await import('../costNormImportService');
+    const updated = await g8CostNormImportService.updateComponent('component-1', {
+      resourceType: 'labor',
+      rawResourceCode: 'NC0006',
+      rawResourceName: 'Nhân công bậc 3,0/7',
+      unit: 'công',
+      coefficient: '1,33' as any,
+      lineIndex: 0,
+    }, 'actor-1');
+
+    expect(updated).toMatchObject({
+      id: 'component-1',
+      resourceType: 'labor',
+      coefficient: 1.33,
+    });
+    expect(tables.cost_norm_item_components[0]).toMatchObject({
+      raw_resource_code: 'NC0006',
+      coefficient: 1.33,
+    });
+    expect(tables.cost_norm_change_logs.some(row => row.action === 'component_update')).toBe(true);
+  });
 });

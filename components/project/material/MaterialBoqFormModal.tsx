@@ -86,7 +86,9 @@ export const MaterialBoqFormModal: React.FC<MaterialBoqFormModalProps> = ({
     onSave,
     formatQuantity,
     formatMoneyShort,
-}) => (
+}) => {
+    const isG8NormItem = editingBoq?.sourceType === 'g8_norm';
+    return (
     <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
         <div className="mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800">
             <div className="flex items-center justify-between rounded-t-3xl border-b border-slate-100 bg-gradient-to-r from-indigo-500 to-purple-500 px-6 py-4">
@@ -173,7 +175,7 @@ export const MaterialBoqFormModal: React.FC<MaterialBoqFormModalProps> = ({
                             className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" readOnly={!!bInventoryItemId} />
                     </div>
                     <div>
-                        <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">Ngưỡng hao hụt *</label>
+                        <label className="mb-1 block text-[10px] font-bold uppercase text-slate-500">{isG8NormItem ? 'Định mức hao phí *' : 'Ngưỡng hao hụt *'}</label>
                         <input type="text" inputMode="decimal" value={bThreshold} onChange={event => onBThresholdChange(event.target.value)} placeholder="0,5"
                             className="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2.5 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500" />
                     </div>
@@ -199,7 +201,7 @@ export const MaterialBoqFormModal: React.FC<MaterialBoqFormModalProps> = ({
                 </div>
 
                 <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-xs">
-                    <div className="font-bold text-indigo-500">KL vật tư = KL dự toán đầu mục × Ngưỡng hao hụt</div>
+                    <div className="font-bold text-indigo-500">KL vật tư = KL dự toán đầu mục × {isG8NormItem ? 'Định mức hao phí' : 'Ngưỡng hao hụt'}</div>
                     {selectedWorkBoqItem ? (
                         <div className="mt-1 text-indigo-700">
                             <span className="font-black">{formatQuantity(selectedWorkPlannedQty)} × {hasValidThreshold ? formatQuantity(thresholdValue) : '—'} = {formatQuantity(autoBudgetQty)} {bUnit || ''}</span>
@@ -243,4 +245,5 @@ export const MaterialBoqFormModal: React.FC<MaterialBoqFormModalProps> = ({
             </div>
         </div>
     </div>
-);
+    );
+};

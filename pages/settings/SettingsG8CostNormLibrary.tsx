@@ -21,7 +21,7 @@ import {
   CostNormLibraryRecord,
   g8CostNormImportService,
 } from '../../lib/costNorm/costNormImportService';
-import { buildSearchText, resourceTypeLabel } from '../../lib/costNorm/import/normalize';
+import { buildSearchText, formatVietnameseNumber, parseVietnameseNumber, resourceTypeLabel } from '../../lib/costNorm/import/normalize';
 import { CostNormResourceType } from '../../lib/costNorm/import/types';
 
 interface SettingsG8CostNormLibraryProps {
@@ -30,7 +30,7 @@ interface SettingsG8CostNormLibraryProps {
 
 const RESOURCE_TYPES: CostNormResourceType[] = ['material', 'labor', 'machine', 'adjustment', 'other'];
 const FIELD = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-sky-300';
-const CELL_FIELD = 'w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 outline-none focus:border-sky-300';
+const CELL_FIELD = 'min-w-0 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 outline-none focus:border-sky-300';
 const ICON_BTN = 'inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-50';
 
 const statusLabel: Record<string, string> = {
@@ -73,6 +73,7 @@ const SettingsG8CostNormLibrary: React.FC<SettingsG8CostNormLibraryProps> = ({ a
   const [statusSaving, setStatusSaving] = useState(false);
   const [savingMetadata, setSavingMetadata] = useState(false);
   const [busyId, setBusyId] = useState('');
+  const [coefficientInputs, setCoefficientInputs] = useState<Record<string, string>>({});
   const [libraryForm, setLibraryForm] = useState({
     name: '',
     code: '',
@@ -111,6 +112,7 @@ const SettingsG8CostNormLibrary: React.FC<SettingsG8CostNormLibraryProps> = ({ a
     try {
       const nextDetails = await g8CostNormImportService.getLibraryDetails(libraryId);
       setDetails(nextDetails);
+      setCoefficientInputs({});
     } catch (error) {
       logApiError('settings-g8.getLibraryDetails', error);
       toast.error('Không thể tải chi tiết G8', getApiErrorMessage(error));
@@ -234,6 +236,29 @@ const SettingsG8CostNormLibrary: React.FC<SettingsG8CostNormLibraryProps> = ({ a
             : component),
         })),
       };
+    });
+  };
+
+  const coefficientInputValue = (component: CostNormComponentRecord) =>
+    coefficientInputs[component.id] ?? formatVietnameseNumber(component.coefficient);
+
+  const updateCoefficientInput = (componentId: string, value: string) => {
+    setCoefficientInputs(prev => ({ ...prev, [componentId]: value }));
+    if (!value.trim()) {
+      updateLocalComponent(componentId, { coefficient: null });
+      return;
+    }
+    const parsed = parseVietnameseNumber(value);
+    if (parsed !== null) updateLocalComponent(componentId, { coefficient: parsed });
+  };
+
+  const finalizeCoefficientInput = (componentId: string, value: string) => {
+    const parsed = value.trim() ? parseVietnameseNumber(value) : null;
+    updateLocalComponent(componentId, { coefficient: parsed });
+    setCoefficientInputs(prev => {
+      const next = { ...prev };
+      delete next[componentId];
+      return next;
     });
   };
 
@@ -545,8 +570,11 @@ const SettingsG8CostNormLibrary: React.FC<SettingsG8CostNormLibraryProps> = ({ a
                               type={type}
                               rows={rows}
                               busyId={busyId}
+                              coefficientInputValue={coefficientInputValue}
                               onAdd={() => addComponent(item.id, type)}
                               onChange={updateLocalComponent}
+                              onCoefficientChange={updateCoefficientInput}
+                              onCoefficientBlur={finalizeCoefficientInput}
                               onSave={saveComponent}
                               onDelete={deleteComponent}
                             />
@@ -606,11 +634,14 @@ const ResourceGroup: React.FC<{
   type: CostNormResourceType;
   rows: CostNormComponentRecord[];
   busyId: string;
+  coefficientInputValue: (component: CostNormComponentRecord) => string;
   onAdd: () => void;
   onChange: (componentId: string, patch: Record<string, any>) => void;
+  onCoefficientChange: (componentId: string, value: string) => void;
+  onCoefficientBlur: (componentId: string, value: string) => void;
   onSave: (componentId: string) => void;
   onDelete: (componentId: string) => void;
-}> = ({ type, rows, busyId, onAdd, onChange, onSave, onDelete }) => (
+}> = ({ type, rows, busyId, coefficientInputValue, onAdd, onChange, onCoefficientChange, onCoefficientBlur, onSave, onDelete }) => (
   <div className="rounded-lg bg-white p-2">
     <div className="mb-1 flex items-center justify-between gap-2">
       <div className="text-[10px] font-black uppercase text-slate-400">{resourceTypeLabel(type)}</div>
@@ -621,9 +652,9 @@ const ResourceGroup: React.FC<{
         </button>
       </div>
     </div>
-    <div className="space-y-1">
+    <div className="space-y-2 overflow-x-auto pb-1">
       {rows.map(row => (
-        <div key={row.id} className="grid grid-cols-[78px_72px_minmax(0,1fr)_48px_62px_56px] gap-1">
+        <div key={row.id} className="grid min-w-[740px] grid-cols-[112px_120px_minmax(260px,1fr)_64px_88px_64px] gap-2">
           <select
             value={row.resourceType}
             onChange={event => onChange(row.id, { resourceType: event.target.value as CostNormResourceType })}
@@ -652,10 +683,11 @@ const ResourceGroup: React.FC<{
             placeholder="ĐVT"
           />
           <input
-            type="number"
-            step="any"
-            value={row.coefficient ?? ''}
-            onChange={event => onChange(row.id, { coefficient: event.target.value === '' ? null : Number(event.target.value) })}
+            type="text"
+            inputMode="decimal"
+            value={coefficientInputValue(row)}
+            onChange={event => onCoefficientChange(row.id, event.target.value)}
+            onBlur={event => onCoefficientBlur(row.id, event.target.value)}
             className={`${CELL_FIELD} text-right`}
             placeholder="ĐM"
           />
