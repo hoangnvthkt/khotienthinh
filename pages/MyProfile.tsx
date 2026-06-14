@@ -12,15 +12,16 @@ import { useToast } from '../context/ToastContext';
 import { supabase } from '../lib/supabase';
 import AchievementWall from '../components/AchievementWall';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
+import { employeeSelfService } from '../lib/employeeSelfService';
 
 type TabKey = 'personal' | 'work' | 'contact' | 'assets' | 'achievements';
 
 const MyProfile: React.FC = () => {
     const {
-        user, users, employees, hrmAreas, hrmOffices, hrmEmployeeTypes,
+        user, employees, hrmAreas, hrmOffices, hrmEmployeeTypes,
         hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites,
         orgUnits, assets, assetAssignments, assetCategories,
-        updateEmployee, updateUser,
+        setUser, updateEmployee, updateUser, replaceEmployeeLocal,
     } = useApp();
     useModuleData('hrm');
     useModuleData('ts');
@@ -50,18 +51,17 @@ const MyProfile: React.FC = () => {
             const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
             const url = urlData.publicUrl;
 
-            // 1. Update user avatar
-            await updateUser({
-                ...linkedUser,
-                avatar: url,
-            });
-
-            // 2. Update employee avatarUrl if linked
             if (employee) {
-                await updateEmployee({
-                    ...employee,
-                    avatarUrl: url,
-                });
+                const updatedEmployee = await employeeSelfService.updateMyProfile({ avatarUrl: url });
+                if (updatedEmployee) {
+                    replaceEmployeeLocal(updatedEmployee);
+                    setUser({ ...linkedUser, avatar: url });
+                } else {
+                    await updateEmployee({ ...employee, avatarUrl: url });
+                    await updateUser({ ...linkedUser, avatar: url });
+                }
+            } else {
+                await updateUser({ ...linkedUser, avatar: url });
             }
 
             toast.success('Đã thay đổi ảnh đại diện mới thành công!');
@@ -105,18 +105,34 @@ const MyProfile: React.FC = () => {
     const saveEditing = async () => {
         setSavingProfile(true);
         try {
+            let updatedEmployee: Employee | null = null;
             if (employee) {
-                await updateEmployee({
-                    ...employee,
+                const patch = {
                     fullName: editForm.fullName,
                     gender: editForm.gender,
                     dateOfBirth: editForm.dateOfBirth,
                     maritalStatus: editForm.maritalStatus,
                     phone: editForm.phone,
-                    updatedAt: new Date().toISOString(),
-                });
+                };
+                updatedEmployee = await employeeSelfService.updateMyProfile(patch);
+                if (updatedEmployee) {
+                    replaceEmployeeLocal(updatedEmployee);
+                } else {
+                    await updateEmployee({
+                        ...employee,
+                        ...patch,
+                        updatedAt: new Date().toISOString(),
+                    });
+                }
             }
-            if (editForm.fullName !== linkedUser.name || editForm.phone !== (linkedUser.phone || '')) {
+            if (updatedEmployee) {
+                setUser({
+                    ...linkedUser,
+                    name: editForm.fullName,
+                    phone: editForm.phone,
+                    avatar: updatedEmployee.avatarUrl || linkedUser.avatar,
+                });
+            } else if (editForm.fullName !== linkedUser.name || editForm.phone !== (linkedUser.phone || '')) {
                 await updateUser({
                     ...linkedUser,
                     name: editForm.fullName,

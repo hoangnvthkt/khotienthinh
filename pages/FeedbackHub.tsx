@@ -356,29 +356,31 @@ const FeedbackHub: React.FC = () => {
     return after;
   };
 
+  const activeFeedbackId = searchParams.get('feedbackId') || '';
+
   return (
-    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4">
-      <header className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 p-1">
+      <header className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between bg-gradient-to-r from-blue-600/5 via-indigo-600/0 to-transparent p-4 rounded-3xl border border-blue-500/10 dark:border-blue-500/5 bg-white/40 dark:bg-slate-900/10 backdrop-blur-sm shadow-sm">
         <div>
-          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-blue-600 dark:text-blue-300">
-            <MessageSquarePlus size={16} />
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">
+            <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse shrink-0"></div>
             Feedback Hub
           </div>
-          <h1 className="mt-1 text-2xl font-black text-slate-900 dark:text-white">Trung tâm góp ý & cải tiến</h1>
+          <h1 className="mt-1.5 text-2xl font-black bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-350 bg-clip-text text-transparent">Trung tâm góp ý & cải tiến</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={loadItems}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-600 shadow-sm transition hover:bg-slate-50 hover-lift dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
           >
-            <RefreshCw size={15} className={isLoading ? 'animate-spin' : ''} />
+            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
             Tải lại
           </button>
           <button
             onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700"
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-blue-500/20 hover:from-blue-700 hover:to-indigo-700 hover-lift transition-all"
           >
-            <MessageSquarePlus size={15} />
+            <MessageSquarePlus size={14} />
             Gửi góp ý mới
           </button>
         </div>
@@ -391,7 +393,7 @@ const FeedbackHub: React.FC = () => {
         </div>
       )}
 
-      <nav className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      <nav className="flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         {FEEDBACK_TABS.map(tab => {
           const Icon = tab.icon;
           const active = activeTab === tab.id;
@@ -399,7 +401,7 @@ const FeedbackHub: React.FC = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-black transition ${active ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'}`}
+              className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-black transition ${active ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:text-slate-350 dark:hover:bg-slate-800'}`}
             >
               <Icon size={15} />
               {tab.label}
@@ -408,25 +410,24 @@ const FeedbackHub: React.FC = () => {
         })}
       </nav>
 
-      <section className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Tổng góp ý</p>
-          <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{filteredItems.length}</p>
+      <section className="grid gap-4 sm:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200/80 bg-white/60 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/40 backdrop-blur-sm border-l-4 border-l-slate-400 transition-all hover:shadow-md">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tổng góp ý</p>
+          <p className="mt-1 text-2xl font-black text-slate-850 dark:text-white">{filteredItems.length}</p>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Đang mở</p>
-          <p className="mt-1 text-2xl font-black text-blue-600 dark:text-blue-300">{openItems}</p>
+        <div className="rounded-2xl border border-slate-200/80 bg-white/60 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/40 backdrop-blur-sm border-l-4 border-l-blue-500 transition-all hover:shadow-md">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Đang mở</p>
+          <p className="mt-1 text-2xl font-black text-blue-600 dark:text-blue-400">{openItems}</p>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Hoàn tất</p>
-          <p className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-300">{doneItems}</p>
+        <div className="rounded-2xl border border-slate-200/80 bg-white/60 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/40 backdrop-blur-sm border-l-4 border-l-emerald-500 transition-all hover:shadow-md">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Hoàn tất</p>
+          <p className="mt-1 text-2xl font-black text-emerald-600 dark:text-emerald-400">{doneItems}</p>
         </div>
       </section>
 
       {isManager && selectedIds.length > 0 && (
         <FeedbackBulkBar
           selectedCount={selectedIds.length}
-          users={users}
           onClear={clearSelection}
           onApply={async input => {
             await bulkUpdateAdminFields(selectedIds, input);
@@ -469,7 +470,7 @@ const FeedbackHub: React.FC = () => {
         </div>
       </section>
 
-      <div className="grid min-h-[560px] gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
+      <div className={`grid min-h-[560px] gap-6 transition-all duration-300 ${activeFeedbackId ? 'xl:grid-cols-[1fr_480px]' : 'grid-cols-1'}`}>
         <section className="min-w-0">
           {isLoading ? (
             <EmptyState title="Đang tải góp ý" message="Hệ thống đang lấy danh sách mới nhất." />
@@ -521,25 +522,27 @@ const FeedbackHub: React.FC = () => {
           )}
         </section>
 
-        <aside className="xl:sticky xl:top-4 xl:self-start">
-          <FeedbackDetailPanel
-            detail={detail}
-            isLoading={isDetailLoading}
-            users={users}
-            currentUser={user}
-            canManage={isManager}
-            onClose={closeDetail}
-            onVote={toggleVote}
-            onToggleWatch={toggleWatch}
-            onComment={handleCreateComment}
-            onAdminUpdate={handleAdminUpdate}
-            onUploadAttachment={uploadAttachment}
-            onDeleteAttachment={deleteAttachment}
-            onCreateChecklistItem={createChecklistItem}
-            onUpdateChecklistItem={updateChecklistItem}
-            onDeleteChecklistItem={deleteChecklistItem}
-          />
-        </aside>
+        {activeFeedbackId && (
+          <aside className="xl:sticky xl:top-4 xl:self-start animate-fade-in-up">
+            <FeedbackDetailPanel
+              detail={detail}
+              isLoading={isDetailLoading}
+              users={users}
+              currentUser={user}
+              canManage={isManager}
+              onClose={closeDetail}
+              onVote={toggleVote}
+              onToggleWatch={toggleWatch}
+              onComment={handleCreateComment}
+              onAdminUpdate={handleAdminUpdate}
+              onUploadAttachment={uploadAttachment}
+              onDeleteAttachment={deleteAttachment}
+              onCreateChecklistItem={createChecklistItem}
+              onUpdateChecklistItem={updateChecklistItem}
+              onDeleteChecklistItem={deleteChecklistItem}
+            />
+          </aside>
+        )}
       </div>
 
       {showCreate && (
@@ -555,13 +558,11 @@ const FeedbackHub: React.FC = () => {
 
 const FeedbackBulkBar: React.FC<{
   selectedCount: number;
-  users: User[];
   onClear: () => void;
   onApply: (input: FeedbackAdminUpdateInput) => Promise<void>;
-}> = ({ selectedCount, users, onClear, onApply }) => {
+}> = ({ selectedCount, onClear, onApply }) => {
   const [status, setStatus] = useState<FeedbackStatus | ''>('');
   const [priority, setPriority] = useState<FeedbackPriority | ''>('');
-  const [assignedTo, setAssignedTo] = useState('');
   const [dueAt, setDueAt] = useState('');
   const [isApplying, setIsApplying] = useState(false);
 
@@ -569,7 +570,6 @@ const FeedbackBulkBar: React.FC<{
     const payload: FeedbackAdminUpdateInput = {};
     if (status) payload.status = status;
     if (priority) payload.priority = priority;
-    if (assignedTo !== '') payload.assignedTo = assignedTo || null;
     if (dueAt) payload.dueAt = new Date(dueAt).toISOString();
     if (Object.keys(payload).length === 0) return;
 
@@ -578,7 +578,6 @@ const FeedbackBulkBar: React.FC<{
       await onApply(payload);
       setStatus('');
       setPriority('');
-      setAssignedTo('');
       setDueAt('');
     } finally {
       setIsApplying(false);
@@ -588,7 +587,7 @@ const FeedbackBulkBar: React.FC<{
   return (
     <section className="flex flex-col gap-2 rounded-2xl border border-blue-200 bg-blue-50 p-3 shadow-sm dark:border-blue-500/20 dark:bg-blue-500/10 lg:flex-row lg:items-end">
       <div className="text-sm font-black text-blue-800 dark:text-blue-200">{selectedCount} góp ý đã chọn</div>
-      <div className="grid flex-1 gap-2 sm:grid-cols-4">
+      <div className="grid flex-1 gap-2 sm:grid-cols-3">
         <FormSelect label="Trạng thái" value={status} onChange={value => setStatus(value as FeedbackStatus | '')}>
           <option value="">Giữ trạng thái</option>
           {FEEDBACK_STATUSES.map(option => <option key={option} value={option}>{STATUS_LABELS[option]}</option>)}
@@ -596,10 +595,6 @@ const FeedbackBulkBar: React.FC<{
         <FormSelect label="Ưu tiên" value={priority} onChange={value => setPriority(value as FeedbackPriority | '')}>
           <option value="">Giữ ưu tiên</option>
           {FEEDBACK_PRIORITIES.map(option => <option key={option} value={option}>{PRIORITY_LABELS[option]}</option>)}
-        </FormSelect>
-        <FormSelect label="Người xử lý" value={assignedTo} onChange={setAssignedTo}>
-          <option value="">Giữ/Chưa assign</option>
-          {users.map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
         </FormSelect>
         <label>
           <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">SLA</span>
@@ -630,53 +625,57 @@ const FeedbackListView: React.FC<{
   canManage: boolean;
   onOpen: (id: string) => void;
   onSelect: (id: string) => void;
-}> = ({ items, userNameById, activeId, selectedIds, canManage, onOpen, onSelect }) => (
-  <>
-    <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:block">
-      <table className="w-full table-fixed text-left">
-        <thead className="border-b border-slate-100 bg-slate-50 text-[11px] font-black uppercase tracking-widest text-slate-400 dark:border-slate-800 dark:bg-slate-800/60">
-          <tr>
-            {canManage && <th className="w-[4%] px-4 py-3"></th>}
-            <th className={`${canManage ? 'w-[32%]' : 'w-[36%]'} px-4 py-3`}>Góp ý</th>
-            <th className="w-[14%] px-4 py-3">Module</th>
-            <th className="w-[13%] px-4 py-3">Ưu tiên</th>
-            <th className="w-[14%] px-4 py-3">Trạng thái</th>
-            <th className="w-[13%] px-4 py-3">Người gửi</th>
-            <th className="w-[10%] px-4 py-3 text-right">Tương tác</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-          {items.map(item => (
-            <FeedbackRow
-              key={item.id}
-              item={item}
-              active={activeId === item.id}
-              selected={selectedIds.includes(item.id)}
-              canManage={canManage}
-              submitterName={userNameById.get(item.createdBy) || 'Không rõ'}
-              onOpen={() => onOpen(item.id)}
-              onSelect={() => onSelect(item.id)}
-            />
-          ))}
-        </tbody>
-      </table>
-    </div>
-    <div className="space-y-3 lg:hidden">
-      {items.map(item => (
-        <FeedbackCard
-          key={item.id}
-          item={item}
-          active={activeId === item.id}
-          selected={selectedIds.includes(item.id)}
-          canManage={canManage}
-          submitterName={userNameById.get(item.createdBy) || 'Không rõ'}
-          onOpen={() => onOpen(item.id)}
-          onSelect={() => onSelect(item.id)}
-        />
-      ))}
-    </div>
-  </>
-);
+}> = ({ items, userNameById, activeId, selectedIds, canManage, onOpen, onSelect }) => {
+  const hasActiveItem = !!activeId;
+  return (
+    <>
+      <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 lg:block">
+        <table className="w-full table-fixed text-left">
+          <thead className="border-b border-slate-100 bg-slate-50 text-[11px] font-black uppercase tracking-widest text-slate-400 dark:border-slate-800 dark:bg-slate-800/60">
+            <tr>
+              {canManage && <th className="w-[48px] px-4 py-3"></th>}
+              <th className="px-4 py-3">Góp ý</th>
+              {!hasActiveItem && <th className="w-[16%] px-4 py-3">Module</th>}
+              <th className="w-[110px] px-4 py-3">Ưu tiên</th>
+              <th className="w-[130px] px-4 py-3">Trạng thái</th>
+              {!hasActiveItem && <th className="w-[16%] px-4 py-3">Người gửi</th>}
+              {!hasActiveItem && <th className="w-[120px] px-4 py-3 text-right">Tương tác</th>}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            {items.map(item => (
+              <FeedbackRow
+                key={item.id}
+                item={item}
+                active={activeId === item.id}
+                selected={selectedIds.includes(item.id)}
+                canManage={canManage}
+                submitterName={userNameById.get(item.createdBy) || 'Không rõ'}
+                onOpen={() => onOpen(item.id)}
+                onSelect={() => onSelect(item.id)}
+                hasActiveItem={hasActiveItem}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="space-y-3 lg:hidden">
+        {items.map(item => (
+          <FeedbackCard
+            key={item.id}
+            item={item}
+            active={activeId === item.id}
+            selected={selectedIds.includes(item.id)}
+            canManage={canManage}
+            submitterName={userNameById.get(item.createdBy) || 'Không rõ'}
+            onOpen={() => onOpen(item.id)}
+            onSelect={() => onSelect(item.id)}
+          />
+        ))}
+      </div>
+    </>
+  );
+};
 
 const FilterSelect: React.FC<{
   label: string;
@@ -705,10 +704,11 @@ const FeedbackRow: React.FC<{
   submitterName: string;
   onOpen: () => void;
   onSelect: () => void;
-}> = ({ item, active, selected, canManage, submitterName, onOpen, onSelect }) => (
+  hasActiveItem: boolean;
+}> = ({ item, active, selected, canManage, submitterName, onOpen, onSelect, hasActiveItem }) => (
   <tr
     onClick={onOpen}
-    className={`cursor-pointer transition ${active ? 'bg-blue-50/80 dark:bg-blue-500/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'}`}
+    className={`cursor-pointer transition-all duration-150 border-l-4 ${active ? 'bg-blue-50/50 border-l-blue-600 dark:bg-blue-955 dark:border-l-blue-500' : 'border-l-transparent hover:bg-slate-50/80 dark:hover:bg-slate-800/60'}`}
   >
     {canManage && (
       <td className="px-4 py-3 align-top">
@@ -720,12 +720,13 @@ const FeedbackRow: React.FC<{
             onSelect();
           }}
           onClick={event => event.stopPropagation()}
+          className="rounded border-slate-350 text-blue-650 focus:ring-blue-500 dark:bg-slate-900"
         />
       </td>
     )}
     <td className="px-4 py-3 align-top">
       <div className="flex min-w-0 items-start gap-3">
-        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-655 dark:bg-slate-800 dark:text-slate-300">
           {typeIcon(item.type)}
         </div>
         <div className="min-w-0">
@@ -739,17 +740,19 @@ const FeedbackRow: React.FC<{
         </div>
       </div>
     </td>
-    <td className="px-4 py-3 align-top text-sm font-bold text-slate-600 dark:text-slate-300">{MODULE_LABELS[item.module]}</td>
+    {!hasActiveItem && <td className="px-4 py-3 align-top text-sm font-bold text-slate-655 dark:text-slate-300">{MODULE_LABELS[item.module]}</td>}
     <td className="px-4 py-3 align-top"><Badge className={PRIORITY_STYLES[item.priority]}>{PRIORITY_LABELS[item.priority]}</Badge></td>
     <td className="px-4 py-3 align-top"><Badge className={STATUS_STYLES[item.status]}>{STATUS_LABELS[item.status]}</Badge></td>
-    <td className="px-4 py-3 align-top text-sm font-bold text-slate-600 dark:text-slate-300">{submitterName}</td>
-    <td className="px-4 py-3 text-right align-top">
-      <div className="flex justify-end gap-2 text-xs font-black text-slate-500 dark:text-slate-400">
-        <span className="inline-flex items-center gap-1"><ThumbsUp size={13} />{item.voteCount}</span>
-        <span className="inline-flex items-center gap-1"><MessageSquare size={13} />{item.commentCount}</span>
-        <span className="inline-flex items-center gap-1"><Users size={13} />{item.watcherCount}</span>
-      </div>
-    </td>
+    {!hasActiveItem && <td className="px-4 py-3 align-top text-sm font-bold text-slate-655 dark:text-slate-300">{submitterName}</td>}
+    {!hasActiveItem && (
+      <td className="px-4 py-3 text-right align-top">
+        <div className="flex justify-end gap-2 text-xs font-black text-slate-500 dark:text-slate-400">
+          <span className="inline-flex items-center gap-1"><ThumbsUp size={13} />{item.voteCount}</span>
+          <span className="inline-flex items-center gap-1"><MessageSquare size={13} />{item.commentCount}</span>
+          <span className="inline-flex items-center gap-1"><Users size={13} />{item.watcherCount}</span>
+        </div>
+      </td>
+    )}
   </tr>
 );
 
@@ -764,7 +767,7 @@ const FeedbackCard: React.FC<{
 }> = ({ item, active, selected, canManage, submitterName, onOpen, onSelect }) => (
   <button
     onClick={onOpen}
-    className={`w-full rounded-2xl border bg-white p-4 text-left shadow-sm transition dark:bg-slate-900 ${active ? 'border-blue-400 ring-2 ring-blue-500/20' : 'border-slate-200 dark:border-slate-700'}`}
+    className={`w-full rounded-2xl border bg-white p-4 text-left shadow-sm transition-all duration-200 hover-lift dark:bg-slate-900 ${active ? 'border-blue-400 ring-2 ring-blue-500/20 bg-blue-50/5 dark:bg-blue-955 dark:border-slate-800' : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'}`}
   >
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
@@ -816,7 +819,7 @@ const FeedbackBoardView: React.FC<{
   const userNameById = useMemo(() => new Map(users.map(user => [user.id, user.name])), [users]);
 
   return (
-    <div className="grid gap-3 xl:grid-cols-4">
+    <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
       {BOARD_STATUSES.map(status => {
         const items = groups.get(status) || [];
         return (
@@ -835,13 +838,13 @@ const FeedbackBoardView: React.FC<{
               await onStatusChange(draggedId, status);
               setDraggedId(null);
             }}
-            className={`min-h-[220px] rounded-2xl border bg-slate-50 p-3 dark:bg-slate-900/60 ${dragOverStatus === status ? 'border-blue-400 ring-2 ring-blue-500/20' : 'border-slate-200 dark:border-slate-700'}`}
+            className={`w-[290px] min-w-[290px] shrink-0 min-h-[450px] rounded-2xl border bg-slate-50/50 p-3 dark:bg-slate-900/30 transition-all duration-200 ${dragOverStatus === status ? 'border-blue-400 ring-2 ring-blue-500/20 bg-blue-50/30 dark:bg-blue-500/10' : 'border-slate-200 dark:border-slate-800'}`}
           >
-            <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="mb-3 flex items-center justify-between gap-2 bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-100 dark:border-slate-800/80 shadow-sm">
               <Badge className={STATUS_STYLES[status]}>{STATUS_LABELS[status]}</Badge>
-              <span className="text-xs font-black text-slate-400">{items.length}</span>
+              <span className="text-[11px] font-black text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{items.length}</span>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1 custom-scrollbar">
               {items.map(item => (
                 <div
                   key={item.id}
@@ -851,7 +854,7 @@ const FeedbackBoardView: React.FC<{
                     setDraggedId(null);
                     setDragOverStatus(null);
                   }}
-                  className={`rounded-xl border bg-white p-3 shadow-sm transition dark:bg-slate-900 ${activeId === item.id ? 'border-blue-400 ring-2 ring-blue-500/20' : 'border-slate-200 dark:border-slate-700'} ${draggedId === item.id ? 'opacity-50' : ''}`}
+                  className={`rounded-xl border bg-white p-3 shadow-sm transition-all duration-200 hover-lift dark:bg-slate-900 ${activeId === item.id ? 'border-blue-400 ring-2 ring-blue-500/20 bg-blue-50/5 dark:bg-blue-955 dark:border-slate-800' : 'border-slate-200 dark:border-slate-800'} ${draggedId === item.id ? 'opacity-50' : ''}`}
                 >
                   <div className="flex items-start gap-2">
                     {canManage && (
@@ -859,29 +862,32 @@ const FeedbackBoardView: React.FC<{
                         type="checkbox"
                         checked={selectedIds.includes(item.id)}
                         onChange={() => onSelect(item.id)}
-                        className="mt-1"
+                        className="mt-1 rounded border-slate-350 text-blue-655 focus:ring-blue-500 dark:bg-slate-900"
                       />
                     )}
                     <button onClick={() => onOpen(item.id)} className="min-w-0 flex-1 text-left">
-                      <p className="line-clamp-2 text-sm font-black text-slate-900 dark:text-white">{item.title}</p>
-                      <p className="mt-1 text-[11px] font-bold text-slate-400">{MODULE_LABELS[item.module]} · {userNameById.get(item.createdBy) || 'Không rõ'}</p>
+                      <p className="line-clamp-2 text-sm font-black text-slate-900 dark:text-white leading-snug">{item.title}</p>
+                      <p className="mt-1 text-[11px] font-bold text-slate-400 flex items-center gap-1">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-300 dark:bg-slate-655 shrink-0"></span>
+                        {MODULE_LABELS[item.module]} · {userNameById.get(item.createdBy) || 'Không rõ'}
+                      </p>
                     </button>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-3 flex flex-wrap gap-1.5">
                     <Badge className={PRIORITY_STYLES[item.priority]}>{PRIORITY_LABELS[item.priority]}</Badge>
-                    {item.dueAt && <Badge className="border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"><CalendarDays size={12} />{compactDate(item.dueAt)}</Badge>}
+                    {item.dueAt && <Badge className="border-amber-200 bg-amber-50 text-amber-750 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"><CalendarDays size={12} />{compactDate(item.dueAt)}</Badge>}
                   </div>
-                  <div className="mt-3 flex items-center justify-between gap-2 text-[11px] font-black text-slate-400">
-                    <span className="flex items-center gap-3">
-                      <span className="inline-flex items-center gap-1"><ThumbsUp size={12} />{item.voteCount}</span>
-                      <span className="inline-flex items-center gap-1"><MessageSquare size={12} />{item.commentCount}</span>
-                      <span className="inline-flex items-center gap-1"><Users size={12} />{item.watcherCount}</span>
+                  <div className="mt-3 flex items-center justify-between gap-2 text-[11px] font-black text-slate-400 border-t border-slate-50 dark:border-slate-800/40 pt-2.5">
+                    <span className="flex items-center gap-2.5">
+                      <span className="inline-flex items-center gap-0.5"><ThumbsUp size={11} />{item.voteCount}</span>
+                      <span className="inline-flex items-center gap-0.5"><MessageSquare size={11} />{item.commentCount}</span>
+                      <span className="inline-flex items-center gap-0.5"><Users size={11} />{item.watcherCount}</span>
                     </span>
                     {canManage && (
                       <select
                         value={item.status}
                         onChange={event => onStatusChange(item.id, event.target.value as FeedbackStatus)}
-                        className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-black text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        className="h-7 rounded-lg border border-slate-200 bg-white px-1.5 text-[10px] font-black text-slate-600 dark:border-slate-850 dark:bg-slate-800 dark:text-slate-200 outline-none focus:border-blue-500"
                       >
                         {FEEDBACK_STATUSES.map(option => <option key={option} value={option}>{STATUS_LABELS[option]}</option>)}
                       </select>
@@ -889,6 +895,12 @@ const FeedbackBoardView: React.FC<{
                   </div>
                 </div>
               ))}
+              {items.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-8 text-slate-300 dark:text-slate-700 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-white/40 dark:bg-slate-900/10">
+                  <span className="text-xl">📥</span>
+                  <p className="text-[10px] font-bold mt-1 text-slate-400">Trống</p>
+                </div>
+              )}
             </div>
           </section>
         );
@@ -996,33 +1008,36 @@ const FeedbackRoadmapView: React.FC<{
   const userNameById = useMemo(() => new Map(users.map(user => [user.id, user.name])), [users]);
 
   return (
-    <div className="grid gap-3 xl:grid-cols-4">
+    <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
       {FEEDBACK_ROADMAP_STAGES.map(stage => {
         const stageItems = items.filter(item => (item.roadmapStage || item.status) === stage);
         return (
-          <section key={stage} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/60">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-black text-slate-800 dark:text-white">{ROADMAP_STAGE_LABELS[stage]}</h3>
-              <span className="text-xs font-black text-slate-400">{stageItems.length}</span>
+          <section key={stage} className="w-[290px] min-w-[290px] shrink-0 min-h-[450px] rounded-2xl border border-slate-200 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-slate-900/30">
+            <div className="mb-3 flex items-center justify-between bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
+              <h3 className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">{ROADMAP_STAGE_LABELS[stage]}</h3>
+              <span className="text-xs font-black text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{stageItems.length}</span>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1 custom-scrollbar">
               {stageItems.map(item => (
-                <div key={item.id} className={`rounded-xl border bg-white p-3 shadow-sm dark:bg-slate-900 ${activeId === item.id ? 'border-blue-400 ring-2 ring-blue-500/20' : 'border-slate-200 dark:border-slate-700'}`}>
+                <div key={item.id} className={`rounded-xl border bg-white p-3 shadow-sm transition-all duration-200 hover-lift dark:bg-slate-900 ${activeId === item.id ? 'border-blue-400 ring-2 ring-blue-500/20 bg-blue-50/5 dark:bg-blue-955 dark:border-slate-800' : 'border-slate-200 dark:border-slate-800'}`}>
                   <button onClick={() => onOpen(item.id)} className="w-full text-left">
-                    <p className="line-clamp-2 text-sm font-black text-slate-900 dark:text-white">{item.title}</p>
-                    <p className="mt-1 text-[11px] font-bold text-slate-400">{MODULE_LABELS[item.module]} · {userNameById.get(item.createdBy) || 'Không rõ'}</p>
+                    <p className="line-clamp-2 text-sm font-black text-slate-900 dark:text-white leading-snug">{item.title}</p>
+                    <p className="mt-1 text-[11px] font-bold text-slate-400 flex items-center gap-1">
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-300 dark:bg-slate-655 shrink-0"></span>
+                      {MODULE_LABELS[item.module]} · {userNameById.get(item.createdBy) || 'Không rõ'}
+                    </p>
                   </button>
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-3 flex flex-wrap gap-1.5 items-center">
                     <Badge className={PRIORITY_STYLES[item.priority]}>{PRIORITY_LABELS[item.priority]}</Badge>
-                    <span className="inline-flex items-center gap-1 text-[11px] font-black text-slate-400"><ThumbsUp size={12} />{item.voteCount}</span>
+                    <span className="inline-flex items-center gap-0.5 text-[11px] font-black text-slate-400"><ThumbsUp size={11} />{item.voteCount}</span>
                     {item.targetRelease && <Badge className="border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">{item.targetRelease}</Badge>}
                   </div>
                   {canManage && (
-                    <div className="mt-3 grid gap-2">
+                    <div className="mt-3 grid gap-2 border-t border-slate-50 dark:border-slate-800/40 pt-2.5">
                       <select
                         value={item.roadmapStage || stage}
                         onChange={event => onUpdate(item.id, { roadmapStage: event.target.value as FeedbackRoadmapStage })}
-                        className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-black text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-black text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 focus:border-blue-500 outline-none"
                       >
                         {FEEDBACK_ROADMAP_STAGES.map(option => <option key={option} value={option}>{ROADMAP_STAGE_LABELS[option]}</option>)}
                       </select>
@@ -1033,13 +1048,19 @@ const FeedbackRoadmapView: React.FC<{
                             void onUpdate(item.id, { targetRelease: event.target.value || null });
                           }
                         }}
-                        placeholder="Target release"
-                        className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-600 outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        placeholder="Target (VD: Tháng 7)"
+                        className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-650 dark:border-slate-850 dark:bg-slate-800 dark:text-slate-200 outline-none focus:border-blue-500"
                       />
                     </div>
                   )}
                 </div>
               ))}
+              {stageItems.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-8 text-slate-300 dark:text-slate-700 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-white/40 dark:bg-slate-900/10">
+                  <span className="text-xl">🛣️</span>
+                  <p className="text-[10px] font-bold mt-1 text-slate-400">Trống</p>
+                </div>
+              )}
             </div>
           </section>
         );
@@ -1274,7 +1295,6 @@ const FeedbackDetailPanel: React.FC<{
     setAdminState({
       status: detail.item.status,
       priority: detail.item.priority,
-      assignedTo: detail.item.assignedTo || '',
       rejectedReason: detail.item.rejectedReason || '',
       dueAt: dateInputValue(detail.item.dueAt),
       targetRelease: detail.item.targetRelease || '',
@@ -1328,7 +1348,6 @@ const FeedbackDetailPanel: React.FC<{
       await onAdminUpdate(item.id, {
         status: adminState.status,
         priority: adminState.priority,
-        assignedTo: adminState.assignedTo || null,
         rejectedReason: adminState.status === 'rejected' ? adminState.rejectedReason : null,
         dueAt: adminState.dueAt ? new Date(adminState.dueAt).toISOString() : null,
         targetRelease: adminState.targetRelease || null,
@@ -1341,24 +1360,26 @@ const FeedbackDetailPanel: React.FC<{
   };
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
-      <div className="border-b border-slate-100 p-4 dark:border-slate-800">
+    <div className="overflow-hidden rounded-2xl border border-slate-200/85 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900/95 backdrop-blur-md">
+      <div className="border-b border-slate-100 p-4 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-850/20">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="mb-2 flex flex-wrap gap-2">
+            <div className="mb-2 flex flex-wrap gap-1.5">
               <Badge className={STATUS_STYLES[item.status]}>{STATUS_LABELS[item.status]}</Badge>
               <Badge className={PRIORITY_STYLES[item.priority]}>{PRIORITY_LABELS[item.priority]}</Badge>
             </div>
-            <h2 className="text-lg font-black text-slate-900 dark:text-white">{item.title}</h2>
-            <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">
+            <h2 className="text-base font-black text-slate-900 dark:text-white leading-snug">{item.title}</h2>
+            <p className="mt-1 text-[11px] font-bold text-slate-400">
               {TYPE_LABELS[item.type]} · {MODULE_LABELS[item.module]} · {nameOf(item.createdBy)}
             </p>
           </div>
-          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-white">
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-white shrink-0 hover:scale-105 active:scale-95">
             <X size={18} />
           </button>
         </div>
-        <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-300">{item.description}</p>
+        <div className="mt-4 bg-slate-50/40 dark:bg-slate-900/40 p-3 rounded-xl border border-slate-100/80 dark:border-slate-800/80">
+          <p className="whitespace-pre-wrap text-xs leading-relaxed font-semibold text-slate-700 dark:text-slate-350">{item.description}</p>
+        </div>
         {itemAttachments.length > 0 && (
           <div className="mt-4">
             <FeedbackAttachmentList
@@ -1369,113 +1390,125 @@ const FeedbackDetailPanel: React.FC<{
             />
           </div>
         )}
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-400">
-          <span className="inline-flex items-center gap-1"><Clock size={13} />{fullDate(item.createdAt)}</span>
-          <span className="inline-flex items-center gap-1"><Tag size={13} />Ảnh hưởng: {PRIORITY_LABELS[item.impactLevel]}</span>
-          <span className="inline-flex items-center gap-1">{item.visibility === 'public' ? <Eye size={13} /> : <EyeOff size={13} />}{item.visibility}</span>
-          {item.dueAt && <span className="inline-flex items-center gap-1"><CalendarDays size={13} />SLA: {fullDate(item.dueAt)}</span>}
-          {item.roadmapStage && <span className="inline-flex items-center gap-1"><Milestone size={13} />{ROADMAP_STAGE_LABELS[item.roadmapStage]}</span>}
+        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-black uppercase tracking-wider text-slate-400/80 border-t border-slate-100 dark:border-slate-800 pt-3">
+          <span className="inline-flex items-center gap-1"><Clock size={12} />{fullDate(item.createdAt)}</span>
+          <span className="inline-flex items-center gap-1"><Tag size={12} />Ảnh hưởng: {PRIORITY_LABELS[item.impactLevel]}</span>
+          <span className="inline-flex items-center gap-1">{item.visibility === 'public' ? <Eye size={12} /> : <EyeOff size={12} />}{item.visibility}</span>
+          {item.dueAt && <span className="inline-flex items-center gap-1"><CalendarDays size={12} className="text-amber-500" />SLA: {fullDate(item.dueAt)}</span>}
+          {item.roadmapStage && <span className="inline-flex items-center gap-1"><Milestone size={12} className="text-blue-500" />{ROADMAP_STAGE_LABELS[item.roadmapStage]}</span>}
         </div>
         {item.tags.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3.5 flex flex-wrap gap-1.5 border-t border-slate-50 dark:border-slate-800/30 pt-3">
             {item.tags.map(tag => (
-              <Badge key={tag} className="border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">#{tag}</Badge>
+              <Badge key={tag} className="border-slate-200 bg-slate-50 text-slate-655 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">#{tag}</Badge>
             ))}
           </div>
         )}
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             onClick={() => onVote(item.id)}
-            className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-black transition ${item.hasVoted ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300' : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'}`}
+            className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-black transition-all hover-lift ${item.hasVoted ? 'border-blue-200 bg-blue-55/40 text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300 shadow-sm shadow-blue-500/5' : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800'}`}
           >
-            <ThumbsUp size={15} />
+            <ThumbsUp size={14} className={item.hasVoted ? 'fill-blue-55 text-blue-600 dark:fill-blue-400' : ''} />
             {item.voteCount} vote
           </button>
           <button
             onClick={() => onToggleWatch(item.id)}
-            className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-black transition ${item.isWatching ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300' : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'}`}
+            className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-black transition-all hover-lift ${item.isWatching ? 'border-emerald-200 bg-emerald-55/40 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300 shadow-sm shadow-emerald-500/5' : 'border-slate-200 text-slate-655 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800'}`}
           >
-            <Users size={15} />
+            <Users size={14} />
             {item.watcherCount} theo dõi
           </button>
         </div>
       </div>
 
       {canManage && (
-        <form onSubmit={submitAdminUpdate} className="border-b border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-800/40">
+        <form onSubmit={submitAdminUpdate} className="border-b border-slate-150 bg-slate-50/40 p-4 dark:border-slate-800 dark:bg-slate-800/20">
           <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
-            <Settings2 size={15} />
-            Xử lý
+            <Settings2 size={15} className="text-blue-500" />
+            Xử lý góp ý
           </div>
           {adminError && <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">{adminError}</div>}
-          <div className="grid gap-2 sm:grid-cols-2">
-            <FormSelect label="Trạng thái" value={adminState.status || item.status} onChange={value => setAdminState(prev => ({ ...prev, status: value as FeedbackStatus }))}>
-              {FEEDBACK_STATUSES.map(status => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}
-            </FormSelect>
-            <FormSelect label="Ưu tiên" value={adminState.priority || item.priority} onChange={value => setAdminState(prev => ({ ...prev, priority: value as FeedbackPriority }))}>
-              {FEEDBACK_PRIORITIES.map(priority => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}
-            </FormSelect>
-            <FormSelect label="Người xử lý" value={adminState.assignedTo || ''} onChange={value => setAdminState(prev => ({ ...prev, assignedTo: value }))}>
-              <option value="">Chưa assign</option>
-              {users.map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
-            </FormSelect>
-            <label>
-              <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Lý do từ chối</span>
-              <input
-                value={adminState.rejectedReason || ''}
-                onChange={event => setAdminState(prev => ({ ...prev, rejectedReason: event.target.value }))}
-                disabled={adminState.status !== 'rejected'}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold outline-none transition focus:border-blue-400 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-              />
-            </label>
+          
+          <div className="space-y-3">
+            {/* Status & Priority */}
+            <div className="grid gap-3 grid-cols-2">
+              <FormSelect label="Trạng thái" value={adminState.status || item.status} onChange={value => setAdminState(prev => ({ ...prev, status: value as FeedbackStatus }))}>
+                {FEEDBACK_STATUSES.map(status => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}
+              </FormSelect>
+              <FormSelect label="Ưu tiên" value={adminState.priority || item.priority} onChange={value => setAdminState(prev => ({ ...prev, priority: value as FeedbackPriority }))}>
+                {FEEDBACK_PRIORITIES.map(priority => <option key={priority} value={priority}>{PRIORITY_LABELS[priority]}</option>)}
+              </FormSelect>
+            </div>
+
+            {/* SLA & Roadmap */}
+            <div className="grid gap-3 grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Hạn xử lý (SLA)</span>
+                <input
+                  type="date"
+                  value={adminState.dueAt || ''}
+                  onChange={event => setAdminState(prev => ({ ...prev, dueAt: event.target.value }))}
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold outline-none transition focus:border-blue-400 focus:ring-1 focus:ring-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                />
+              </label>
+              <FormSelect label="Lộ trình (Roadmap)" value={adminState.roadmapStage || ''} onChange={value => setAdminState(prev => ({ ...prev, roadmapStage: (value || null) as FeedbackRoadmapStage | null }))}>
+                <option value="">Chưa đưa vào roadmap</option>
+                {FEEDBACK_ROADMAP_STAGES.map(stage => <option key={stage} value={stage}>{ROADMAP_STAGE_LABELS[stage]}</option>)}
+              </FormSelect>
+            </div>
+
+            {/* Target release & Tags */}
+            <div className="grid gap-3 grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Target release</span>
+                <input
+                  value={adminState.targetRelease || ''}
+                  onChange={event => setAdminState(prev => ({ ...prev, targetRelease: event.target.value }))}
+                  placeholder="VD: V3.1 / Tháng 7"
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold outline-none transition focus:border-blue-400 focus:ring-1 focus:ring-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Tags</span>
+                <input
+                  value={(adminState.tags || []).join(', ')}
+                  onChange={event => setAdminState(prev => ({ ...prev, tags: event.target.value.split(',').map(tag => tag.trim()).filter(Boolean) }))}
+                  placeholder="mobile, ux, bug"
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold outline-none transition focus:border-blue-400 focus:ring-1 focus:ring-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                />
+              </label>
+            </div>
+
+            {/* Rejected Reason (Full width, only enabled if status is rejected) */}
+            {adminState.status === 'rejected' && (
+              <label className="block animate-fade-in-up">
+                <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-red-500 font-bold">Lý do từ chối *</span>
+                <input
+                  value={adminState.rejectedReason || ''}
+                  onChange={event => setAdminState(prev => ({ ...prev, rejectedReason: event.target.value }))}
+                  required
+                  placeholder="Nhập lý do từ chối cụ thể..."
+                  className="h-10 w-full rounded-xl border border-red-200 bg-red-50/50 px-3 text-xs font-bold outline-none transition focus:border-red-400 focus:ring-1 focus:ring-red-400 dark:border-slate-750 dark:bg-slate-900 dark:text-white"
+                />
+              </label>
+            )}
           </div>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            <label>
-              <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">SLA</span>
-              <input
-                type="date"
-                value={adminState.dueAt || ''}
-                onChange={event => setAdminState(prev => ({ ...prev, dueAt: event.target.value }))}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold outline-none transition focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-              />
-            </label>
-            <FormSelect label="Roadmap" value={adminState.roadmapStage || ''} onChange={value => setAdminState(prev => ({ ...prev, roadmapStage: (value || null) as FeedbackRoadmapStage | null }))}>
-              <option value="">Chưa đưa vào roadmap</option>
-              {FEEDBACK_ROADMAP_STAGES.map(stage => <option key={stage} value={stage}>{ROADMAP_STAGE_LABELS[stage]}</option>)}
-            </FormSelect>
-            <label>
-              <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Target release</span>
-              <input
-                value={adminState.targetRelease || ''}
-                onChange={event => setAdminState(prev => ({ ...prev, targetRelease: event.target.value }))}
-                placeholder="VD: V3.1 / Tháng 7"
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold outline-none transition focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-              />
-            </label>
-            <label>
-              <span className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Tags</span>
-              <input
-                value={(adminState.tags || []).join(', ')}
-                onChange={event => setAdminState(prev => ({ ...prev, tags: event.target.value.split(',').map(tag => tag.trim()).filter(Boolean) }))}
-                placeholder="mobile, ux, sla"
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold outline-none transition focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-              />
-            </label>
-          </div>
-          <button type="submit" className="mt-3 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200">
+
+          <button type="submit" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-black text-white shadow-md shadow-blue-500/20 transition hover:bg-blue-700 hover-lift">
             <CheckCircle2 size={15} />
-            Cập nhật
+            Lưu thay đổi
           </button>
         </form>
       )}
 
-      <div className="max-h-[620px] overflow-y-auto p-4">
+      <div className="max-h-[620px] overflow-y-auto p-4 custom-scrollbar">
         {canSeeTechInfo && (
-          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+          <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/30">
             <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Thông tin kỹ thuật</p>
-            <div className="space-y-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
-              <p>Route: {item.relatedRoute || 'N/A'}</p>
-              <p>Version: {item.appVersion || 'N/A'}</p>
+            <div className="space-y-1 text-xs font-semibold text-slate-655 dark:text-slate-350">
+              <p>Route: <code>{item.relatedRoute || 'N/A'}</code></p>
+              <p>Version: <code>{item.appVersion || 'N/A'}</code></p>
               <p>Device: {item.deviceInfo.platform || 'N/A'} · {item.deviceInfo.viewport || 'N/A'}</p>
             </div>
           </div>
@@ -1491,14 +1524,14 @@ const FeedbackDetailPanel: React.FC<{
           onDelete={onDeleteChecklistItem}
         />
 
-        <div className="mb-5">
-          <h3 className="mb-3 text-xs font-black uppercase tracking-widest text-slate-400">Timeline</h3>
-          <div className="space-y-2">
-            <TimelineRow icon={<Clock size={14} />} title="Đã tạo góp ý" subtitle={`${nameOf(item.createdBy)} · ${fullDate(item.createdAt)}`} />
+        <div className="mb-6">
+          <h3 className="mb-4 text-xs font-black uppercase tracking-widest text-slate-400">Lịch sử xử lý</h3>
+          <div className="relative pl-4 border-l-2 border-slate-200 dark:border-slate-800 space-y-5 ml-3">
+            <TimelineRow icon={<Clock size={13} className="text-blue-500" />} title="Đã tạo góp ý" subtitle={`${nameOf(item.createdBy)} · ${fullDate(item.createdAt)}`} />
             {detail.statusLogs.map(log => (
               <TimelineRow
                 key={log.id}
-                icon={log.newStatus === 'rejected' ? <XCircle size={14} /> : <CheckCircle2 size={14} />}
+                icon={log.newStatus === 'rejected' ? <XCircle size={13} className="text-rose-500" /> : <CheckCircle2 size={13} className="text-emerald-500" />}
                 title={`${log.oldStatus ? STATUS_LABELS[log.oldStatus] : 'Mới'} → ${STATUS_LABELS[log.newStatus]}`}
                 subtitle={`${nameOf(log.changedBy)} · ${fullDate(log.createdAt)}${log.reason ? ` · ${log.reason}` : ''}`}
               />
@@ -1507,50 +1540,67 @@ const FeedbackDetailPanel: React.FC<{
         </div>
 
         <div>
-          <h3 className="mb-3 text-xs font-black uppercase tracking-widest text-slate-400">Bình luận</h3>
+          <h3 className="mb-4 text-xs font-black uppercase tracking-widest text-slate-400">Ý kiến phản hồi</h3>
           <div className="space-y-3">
             {detail.comments.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-center text-xs font-bold text-slate-400 dark:border-slate-700">Chưa có bình luận.</p>
-            ) : detail.comments.map(entry => (
-              <div key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
-                <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-black text-slate-400">
-                  <span className="inline-flex items-center gap-1"><UserCircle size={13} />{nameOf(entry.authorUserId)}</span>
-                  <span>{compactDate(entry.createdAt)}</span>
-                </div>
-                {entry.isInternal && <Badge className="mb-2 border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">Nội bộ</Badge>}
-                <p className="whitespace-pre-wrap text-sm font-medium leading-6 text-slate-700 dark:text-slate-300">{entry.body}</p>
-                {commentAttachments(entry.id).length > 0 && (
-                  <div className="mt-3">
-                    <FeedbackAttachmentList
-                      attachments={commentAttachments(entry.id)}
-                      currentUser={currentUser}
-                      canManage={canManage}
-                      onDelete={onDeleteAttachment}
-                    />
+              <p className="rounded-2xl border border-dashed border-slate-200 py-6 text-center text-xs font-bold text-slate-400 dark:border-slate-700">Chưa có ý kiến phản hồi.</p>
+            ) : detail.comments.map(entry => {
+              const isInternalComment = entry.isInternal;
+              return (
+                <div
+                  key={entry.id}
+                  className={`rounded-2xl p-3 border transition-all duration-200 ${
+                    isInternalComment
+                      ? 'bg-amber-50/40 border-amber-100 dark:bg-amber-95/10 dark:border-amber-900/30 border-l-4 border-l-amber-500 dark:border-l-amber-600'
+                      : 'bg-slate-50/60 border-slate-100 dark:bg-slate-800/30 dark:border-slate-800/60'
+                  }`}
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2 text-[10px] font-black text-slate-450">
+                    <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-350">
+                      <UserCircle size={13} className="text-slate-455" />
+                      {nameOf(entry.authorUserId)}
+                    </span>
+                    <span>{compactDate(entry.createdAt)}</span>
                   </div>
-                )}
-              </div>
-            ))}
+                  {isInternalComment && (
+                    <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-800 dark:bg-amber-950/50 dark:text-amber-400 mb-2">
+                      🔒 Nội bộ
+                    </span>
+                  )}
+                  <p className="whitespace-pre-wrap text-xs font-medium leading-relaxed text-slate-750 dark:text-slate-300">{entry.body}</p>
+                  {commentAttachments(entry.id).length > 0 && (
+                    <div className="mt-3">
+                      <FeedbackAttachmentList
+                        attachments={commentAttachments(entry.id)}
+                        currentUser={currentUser}
+                        canManage={canManage}
+                        onDelete={onDeleteAttachment}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-          <form onSubmit={submitComment} className="mt-3 space-y-2">
+          <form onSubmit={submitComment} className="mt-4 space-y-2">
             <textarea
               value={comment}
               onChange={event => setComment(event.target.value)}
-              placeholder="Viết bình luận"
+              placeholder="Viết bình luận hoặc ý kiến của bạn..."
               rows={3}
-              className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-medium outline-none transition focus:border-blue-400 focus:bg-white dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-medium outline-none transition focus:border-blue-400 focus:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-white"
             />
             <AttachmentPicker files={commentFiles} onChange={setCommentFiles} disabled={isSending} compact />
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-between gap-2 pt-1">
               {canManage ? (
-                <label className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400">
-                  <input type="checkbox" checked={isInternal} onChange={event => setIsInternal(event.target.checked)} />
-                  Nội bộ
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400 cursor-pointer">
+                  <input type="checkbox" checked={isInternal} onChange={event => setIsInternal(event.target.checked)} className="rounded border-slate-350 text-blue-600 focus:ring-blue-500" />
+                  Bình luận nội bộ
                 </label>
               ) : <span />}
-              <button disabled={isSending || !comment.trim()} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white transition hover:bg-blue-700 disabled:opacity-50">
-                <Send size={14} />
-                Gửi
+              <button disabled={isSending || !comment.trim()} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white hover:bg-blue-700 shadow-md shadow-blue-500/10 transition-all hover-lift disabled:opacity-50">
+                <Send size={13} />
+                Gửi phản hồi
               </button>
             </div>
           </form>
@@ -1673,6 +1723,7 @@ const FeedbackChecklistPanel: React.FC<{
   const [busyId, setBusyId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const doneCount = checklist.filter(entry => entry.isDone).length;
+  const progressPercent = checklist.length > 0 ? Math.round((doneCount / checklist.length) * 100) : 0;
 
   if (!canManage && checklist.length === 0) return null;
 
@@ -1695,19 +1746,35 @@ const FeedbackChecklistPanel: React.FC<{
   };
 
   return (
-    <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+    <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/30">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
-          <ClipboardList size={15} />
-          Checklist
+          <ClipboardList size={15} className="text-indigo-500" />
+          Checklist xử lý
         </div>
-        <span className="text-[11px] font-black text-slate-400">{doneCount}/{checklist.length}</span>
+        <span className="text-[11px] font-black text-slate-400 bg-slate-200/50 dark:bg-slate-800 px-2 py-0.5 rounded-full">{doneCount}/{checklist.length}</span>
       </div>
+
+      {checklist.length > 0 && (
+        <div className="mb-4 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/60 shadow-sm">
+          <div className="flex justify-between items-center text-[9px] font-black tracking-wider text-slate-400 mb-1.5">
+            <span>TIẾN ĐỘ HOÀN THÀNH</span>
+            <span>{progressPercent}%</span>
+          </div>
+          <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="space-y-2">
         {checklist.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-3 text-center text-xs font-bold text-slate-400 dark:border-slate-700 dark:bg-slate-900">Chưa có checklist xử lý.</p>
+          <p className="rounded-lg border border-dashed border-slate-200 bg-white/60 px-3 py-3 text-center text-xs font-bold text-slate-400 dark:border-slate-800 dark:bg-slate-900/40">Chưa có checklist xử lý.</p>
         ) : checklist.map(entry => (
-          <div key={entry.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-900">
+          <div key={entry.id} className="flex items-center gap-2.5 rounded-xl border border-slate-150 bg-white px-2.5 py-2.5 dark:border-slate-800 dark:bg-slate-900/60 transition shadow-sm hover:border-slate-200 dark:hover:border-slate-700">
             <button
               type="button"
               disabled={!canManage || busyId === entry.id}
@@ -1724,9 +1791,9 @@ const FeedbackChecklistPanel: React.FC<{
               }}
               className="shrink-0 text-slate-400 transition hover:text-emerald-600 disabled:opacity-60 dark:hover:text-emerald-300"
             >
-              {busyId === entry.id ? <Loader2 size={17} className="animate-spin" /> : entry.isDone ? <CheckSquare2 size={17} /> : <Square size={17} />}
+              {busyId === entry.id ? <Loader2 size={17} className="animate-spin" /> : entry.isDone ? <CheckSquare2 size={17} className="text-emerald-500" /> : <Square size={17} />}
             </button>
-            <span className={`min-w-0 flex-1 text-sm font-bold ${entry.isDone ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{entry.title}</span>
+            <span className={`min-w-0 flex-1 text-xs font-bold ${entry.isDone ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{entry.title}</span>
             {canManage && (
               <button
                 type="button"
@@ -1739,27 +1806,27 @@ const FeedbackChecklistPanel: React.FC<{
                     setBusyId(null);
                   }
                 }}
-                className="shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+                className="shrink-0 rounded-lg p-1 text-slate-400 transition hover:bg-red-50 hover:text-red-650 disabled:opacity-40 dark:hover:bg-red-500/10 dark:hover:text-red-300"
               >
-                <Trash2 size={14} />
+                <Trash2 size={13} />
               </button>
             )}
           </div>
         ))}
       </div>
       {canManage && (
-        <form onSubmit={addItem} className="mt-3 flex gap-2">
+        <form onSubmit={addItem} className="mt-3.5 flex gap-2">
           <input
             value={title}
             onChange={event => setTitle(event.target.value)}
-            placeholder="Thêm việc cần xử lý"
-            className="h-10 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold outline-none transition focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            placeholder="Thêm đầu việc mới..."
+            className="h-10 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold outline-none transition focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
           />
           <button
             disabled={isAdding || !title.trim()}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white transition hover:bg-slate-700 disabled:opacity-50 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition disabled:opacity-50 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 shadow-sm"
           >
-            {isAdding ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+            {isAdding ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
           </button>
         </form>
       )}
@@ -1768,11 +1835,13 @@ const FeedbackChecklistPanel: React.FC<{
 };
 
 const TimelineRow: React.FC<{ icon: React.ReactNode; title: string; subtitle: string }> = ({ icon, title, subtitle }) => (
-  <div className="flex gap-3">
-    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300">{icon}</div>
+  <div className="relative pl-6">
+    <div className="absolute -left-[27px] top-0.5 flex h-[22px] w-[22px] items-center justify-center rounded-full bg-white border-2 border-slate-200 text-slate-500 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-350 shadow-sm">
+      {icon}
+    </div>
     <div className="min-w-0">
-      <p className="text-sm font-black text-slate-800 dark:text-white">{title}</p>
-      <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">{subtitle}</p>
+      <p className="text-xs font-black text-slate-850 dark:text-white leading-normal">{title}</p>
+      <p className="mt-0.5 text-[11px] font-bold text-slate-400">{subtitle}</p>
     </div>
   </div>
 );

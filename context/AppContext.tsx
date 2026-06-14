@@ -170,6 +170,7 @@ interface AppContextType {
   removeSupplier: (id: string) => void;
   addEmployee: (employee: Employee) => Promise<void>;
   updateEmployee: (employee: Employee) => Promise<void>;
+  replaceEmployeeLocal: (employee: Employee) => void;
   removeEmployee: (id: string) => Promise<void>;
   updateAppSettings: (settings: AppSettings) => void;
   approvePartialTransaction: (id: string, selectedItemIds: string[], approverId: string) => Promise<void>;
@@ -2468,6 +2469,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     auditService.log({ tableName: 'employees', recordId: e.id, action: 'UPDATE', oldData: oldEmp as any, newData: e as any, userId: user.id, userName: user.name || user.username });
   };
 
+  const replaceEmployeeLocal = useCallback((e: Employee) => {
+    setEmployees(prev => prev.map(item => item.id === e.id ? e : item));
+  }, []);
+
   const removeEmployee = async (id: string) => {
     const e = employees.find(emp => emp.id === id);
     setEmployees(prev => prev.filter(emp => emp.id !== id));
@@ -3080,7 +3085,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       orgUnits, addOrgUnit, updateOrgUnit, removeOrgUnit,
       addItem, addItems, updateItem, removeItem, addTransaction, updateTransactionStatus, clearTransactionHistory, addWarehouse, updateWarehouse, removeWarehouse,
       addRequest, updateRequestStatus, removeRequest, logActivity, addCategory, updateCategory, removeCategory, addUnit, updateUnit, removeUnit,
-      addSupplier, updateSupplier, removeSupplier, addEmployee, updateEmployee, removeEmployee, updateAppSettings, approvePartialTransaction, clearAllData,
+      addSupplier, updateSupplier, removeSupplier, addEmployee, updateEmployee, replaceEmployeeLocal, removeEmployee, updateAppSettings, approvePartialTransaction, clearAllData,
       lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
       auditSessions, addAuditSession,
       projectFinances, addProjectFinance, updateProjectFinance, removeProjectFinance,

@@ -9,11 +9,14 @@ import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 interface EmployeeModalProps {
     employee: Employee | null;
     onClose: () => void;
+    mode?: 'admin' | 'self';
+    onSelfUpdate?: (employee: Employee) => Promise<void>;
 }
 
-const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
+const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose, mode = 'admin', onSelfUpdate }) => {
     const { addEmployee, updateEmployee, users, employees, warehouses, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, leaveBalances, addHrmItem, updateHrmItem } = useApp();
     const toast = useToast();
+    const isSelfMode = mode === 'self';
     const [formData, setFormData] = useState<Partial<Employee>>({
         fullName: '',
         title: '',
@@ -130,6 +133,16 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
 
         setSaving(true);
         try {
+            if (isSelfMode) {
+                if (!employee?.id || !onSelfUpdate) {
+                    throw new Error('Không tìm thấy hồ sơ cá nhân để cập nhật.');
+                }
+                await onSelfUpdate(formData as Employee);
+                toast.success('Đã cập nhật thông tin cá nhân');
+                onClose();
+                return;
+            }
+
             if (employee && employee.id) {
                 await updateEmployee(formData as Employee);
             } else {
@@ -198,9 +211,9 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                         </div>
                         <div>
                             <h2 className="text-xl font-black text-slate-800 dark:text-white uppercase tracking-tight">
-                                {employee ? 'Sửa Hồ Sơ Nhân Sự' : 'Thêm Nhân Sự Mới'}
+                                {isSelfMode ? 'Sửa Thông Tin Cá Nhân' : employee ? 'Sửa Hồ Sơ Nhân Sự' : 'Thêm Nhân Sự Mới'}
                             </h2>
-                            <p className="text-xs text-slate-500 font-medium">Bổ sung hoặc cập nhật thông tin nhân viên</p>
+                            <p className="text-xs text-slate-500 font-medium">{isSelfMode ? 'Cập nhật thông tin liên hệ và ảnh đại diện của anh' : 'Bổ sung hoặc cập nhật thông tin nhân viên'}</p>
                         </div>
                     </div>
                     <button onClick={onClose} disabled={saving} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all disabled:opacity-60">
@@ -253,17 +266,19 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                                 />
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Chức Danh</label>
-                                <input
-                                    type="text"
-                                    name="title"
-                                    value={formData.title || ''}
-                                    onChange={handleChange}
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
-                                    placeholder="Ví dụ: Kế toán, Thủ kho..."
-                                />
-                            </div>
+                            {!isSelfMode && (
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Chức Danh</label>
+                                    <input
+                                        type="text"
+                                        name="title"
+                                        value={formData.title || ''}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
+                                        placeholder="Ví dụ: Kế toán, Thủ kho..."
+                                    />
+                                </div>
+                            )}
                             <div className="space-y-2">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Giới Tính</label>
                                 <select
@@ -312,43 +327,63 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                                 />
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tình Trạng</label>
-                                <select
-                                    name="status"
-                                    value={formData.status}
-                                    onChange={handleChange}
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
-                                >
-                                    <option value="Đang làm việc">Đang làm việc</option>
-                                    <option value="Đã nghỉ việc">Đã nghỉ việc</option>
-                                </select>
-                            </div>
+                            {isSelfMode && (
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tình trạng hôn nhân</label>
+                                    <select
+                                        name="maritalStatus"
+                                        value={formData.maritalStatus || ''}
+                                        onChange={handleChange}
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
+                                    >
+                                        <option value="">-- Vui lòng chọn --</option>
+                                        <option value="Độc thân">Độc thân</option>
+                                        <option value="Đã kết hôn">Đã kết hôn</option>
+                                    </select>
+                                </div>
+                            )}
 
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Ngày Bắt Đầu (Thử Việc)</label>
-                                <input
-                                    type="date"
-                                    name="startDate"
-                                    value={formData.startDate || ''}
-                                    onChange={handleChange}
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Ngày Ký Chính Thức</label>
-                                <input
-                                    type="date"
-                                    name="officialDate"
-                                    value={formData.officialDate || ''}
-                                    onChange={handleChange}
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
-                                />
-                            </div>
+                            {!isSelfMode && (
+                                <>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tình Trạng</label>
+                                        <select
+                                            name="status"
+                                            value={formData.status}
+                                            onChange={handleChange}
+                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
+                                        >
+                                            <option value="Đang làm việc">Đang làm việc</option>
+                                            <option value="Đã nghỉ việc">Đã nghỉ việc</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Ngày Bắt Đầu (Thử Việc)</label>
+                                        <input
+                                            type="date"
+                                            name="startDate"
+                                            value={formData.startDate || ''}
+                                            onChange={handleChange}
+                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Ngày Ký Chính Thức</label>
+                                        <input
+                                            type="date"
+                                            name="officialDate"
+                                            value={formData.officialDate || ''}
+                                            onChange={handleChange}
+                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-accent"
+                                        />
+                                    </div>
+                                </>
+                            )}
                         </div>
 
                         {/* ===== HRM MASTER DATA SECTION ===== */}
-                        <div className="border-t border-slate-100 dark:border-slate-800 pt-6 mt-6">
+                        {!isSelfMode && <div className="border-t border-slate-100 dark:border-slate-800 pt-6 mt-6">
                             <h3 className="text-sm font-black text-violet-600 dark:text-violet-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                                 <Layers size={16} /> Thông tin chính
                             </h3>
@@ -495,10 +530,10 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                                     </select>
                                 </div>
                             </div>
-                        </div>
+                        </div>}
 
                         {/* ===== NGÀY PHÉP NĂM ===== */}
-                        <div className="border-t border-slate-100 dark:border-slate-800 pt-6 mt-6">
+                        {!isSelfMode && <div className="border-t border-slate-100 dark:border-slate-800 pt-6 mt-6">
                             <h3 className="text-sm font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                                 <CalendarDays size={16} /> Quản lý ngày phép ({currentYear})
                             </h3>
@@ -533,10 +568,10 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                                     </div>
                                 )}
                             </div>
-                        </div>
+                        </div>}
 
                         {/* ===== ACCOUNT LINKING ===== */}
-                        <div className="border-t border-slate-100 dark:border-slate-800 pt-6 mt-6">
+                        {!isSelfMode && <div className="border-t border-slate-100 dark:border-slate-800 pt-6 mt-6">
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider text-purple-600 dark:text-purple-400">
                                 Liên kết tài khoản hệ thống / kho (nếu có)
                             </label>
@@ -560,7 +595,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({ employee, onClose }) => {
                                     );
                                 })}
                             </select>
-                        </div>
+                        </div>}
                     </form>
                 </div>
 

@@ -37,7 +37,6 @@ export const getFeedbackCommentRecipientIds = (input: {
   const activeUserIds = new Set(input.users.filter(user => user.isActive !== false).map(user => user.id));
   return uniqueFeedbackRecipientIds([
     input.item.createdBy,
-    input.item.assignedTo,
     ...(input.watchers || []).map(watcher => watcher.userId),
     ...input.comments.map(comment => comment.authorUserId),
   ], input.actorId).filter(userId => activeUserIds.has(userId));
@@ -112,13 +111,11 @@ export const feedbackNotificationService = {
     const changes = [
       input.before.status !== input.after.status ? `trạng thái ${input.after.status}` : '',
       input.before.priority !== input.after.priority ? `ưu tiên ${input.after.priority}` : '',
-      input.before.assignedTo !== input.after.assignedTo ? 'người xử lý' : '',
     ].filter(Boolean);
     if (changes.length === 0) return [];
 
     const recipientIds = uniqueFeedbackRecipientIds([
       input.after.createdBy,
-      input.after.assignedTo,
       ...(input.watchers || []).map(watcher => watcher.userId),
     ], input.actorId);
     return notificationService.notifyProjectUsers({

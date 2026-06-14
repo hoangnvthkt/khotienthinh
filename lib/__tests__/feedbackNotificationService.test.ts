@@ -28,7 +28,7 @@ describe('feedback notification helpers', () => {
     expect(getFeedbackManagerRecipientIds(users, 'admin')).toEqual(['module-admin', 'sub-admin']);
   });
 
-  it('routes public comments to creator, assignee, and commenters only', () => {
+  it('routes public comments to creator, watchers, and commenters only', () => {
     const users = [
       user({ id: 'creator' }),
       user({ id: 'assignee' }),
@@ -96,7 +96,7 @@ describe('feedback notification helpers', () => {
           updatedAt: '2026-06-14T04:00:00.000Z',
         },
       ],
-    })).toEqual(['creator', 'assignee', 'watcher', 'commenter']);
+    })).toEqual(['creator', 'watcher', 'commenter']);
   });
 
   it('resolves feedback notification deep links', () => {

@@ -156,7 +156,6 @@ export interface UploadFeedbackAttachmentInput {
 export interface FeedbackAdminUpdateInput {
   status?: FeedbackStatus;
   priority?: FeedbackPriority;
-  assignedTo?: string | null;
   rejectedReason?: string | null;
   dueAt?: string | null;
   targetRelease?: string | null;
@@ -379,7 +378,6 @@ export const buildFeedbackAdminUpdatePayload = (input: FeedbackAdminUpdateInput)
     payload.rejected_reason = input.rejectedReason || null;
   }
   if (input.priority !== undefined) payload.priority = input.priority;
-  if (input.assignedTo !== undefined) payload.assigned_to = input.assignedTo || null;
   if (input.dueAt !== undefined) payload.due_at = input.dueAt || null;
   if (input.targetRelease !== undefined) payload.target_release = input.targetRelease?.trim() || null;
   if (input.roadmapStage !== undefined) payload.roadmap_stage = input.roadmapStage || null;

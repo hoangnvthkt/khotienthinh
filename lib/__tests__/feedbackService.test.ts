@@ -152,12 +152,10 @@ describe('feedbackService helpers', () => {
     expect(buildFeedbackAdminUpdatePayload({
       status: 'rejected',
       priority: 'urgent',
-      assignedTo: 'user-9',
       rejectedReason: 'Trùng góp ý khác',
     })).toEqual({
       status: 'rejected',
       priority: 'urgent',
-      assigned_to: 'user-9',
       rejected_reason: 'Trùng góp ý khác',
     });
 
