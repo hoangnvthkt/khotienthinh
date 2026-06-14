@@ -4,7 +4,7 @@ import {
     Plus, Edit2, Trash2, X, Package,
     ChevronDown, ChevronRight,
     RefreshCcw, Download, Upload,
-    FileSpreadsheet, GitBranch, ListTree, Loader2
+    FileSpreadsheet, GitBranch, ListTree, Loader2, BookOpen
 } from 'lucide-react';
 import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowBoardFilter, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, MaterialRequestWorkflowBoardCard, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment } from '../../types';
 import { boqService, taskService, workBoqService, poService } from '../../lib/projectService';
@@ -27,6 +27,7 @@ import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../../lib/wmsPermissions';
 import { getMaterialPlanningScopeKey, materialPlanningCurveService, materialPlanningRuleService } from '../../lib/projectMaterialPlanningService';
 import { MaterialBoqFormModal } from '../../components/project/material/MaterialBoqFormModal';
+import { G8NormApplyModal } from '../../components/project/material/G8NormApplyModal';
 import { MaterialBoqImportPreviewModal } from '../../components/project/material/MaterialBoqImportPreviewModal';
 import { MaterialDashboardTab } from '../../components/project/material/MaterialDashboardTab';
 import { MaterialRequestTab } from '../../components/project/material/MaterialRequestTab';
@@ -776,6 +777,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     const [showBoqForm, setShowBoqForm] = useState(false);
     const [editingBoq, setEditingBoq] = useState<MaterialBudgetItem | null>(null);
+    const [showG8NormModal, setShowG8NormModal] = useState(false);
+    const [g8NormInitialWorkBoqItemId, setG8NormInitialWorkBoqItemId] = useState('');
+    const [g8NormInitialMappingId, setG8NormInitialMappingId] = useState('');
 
     // BOQ Form
     const [bCat, setBCat] = useState('Vật liệu xây dựng');
@@ -1577,6 +1581,22 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         setBCat('Vật liệu xây dựng'); setBName(''); setBUnit('');
         setBPrice(''); setBThreshold('0,5'); setBBudgetQtyInput(''); setBBudgetQtyManuallyEdited(false); setBNotes('');
         setBInventoryItemId(''); setBMaterialCode(''); setBWorkBoqItemId(''); setAcQuery('');
+    };
+
+    const openG8NormModal = (workBoqItemId = '', mappingId = '') => {
+        setG8NormInitialWorkBoqItemId(workBoqItemId);
+        setG8NormInitialMappingId(mappingId);
+        setShowG8NormModal(true);
+    };
+
+    const closeG8NormModal = () => {
+        setShowG8NormModal(false);
+        setG8NormInitialWorkBoqItemId('');
+        setG8NormInitialMappingId('');
+    };
+
+    const handleG8NormApplied = async () => {
+        await loadBoqData();
     };
 
     const handleWorkBoqItemChange = (value: string) => {
@@ -2480,6 +2500,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                             className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100">
                                             <Plus size={12} /> Thêm vật tư
                                         </button>
+                                        <button onClick={() => openG8NormModal()}
+                                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100">
+                                            <BookOpen size={12} /> Thêm định mức
+                                        </button>
                                     </>
                                 )}
                                 <input ref={boqImportRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportWorkBoq} />
@@ -2652,10 +2676,16 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                             <Package size={12} /> {selectedBoqRequestSummary.selectedLineCount > 0 ? 'Tạo nhanh card này' : 'Tạo yêu cầu vật tư'}
                                                         </button>
                                                         {canEditBoq && (
-                                                            <button onClick={() => { resetBoqForm(); setBWorkBoqItemId(item.id); setShowBoqForm(true); }}
-                                                                className="inline-flex items-center gap-1 rounded-xl border border-blue-200 bg-white px-3 py-2 text-[10px] font-black text-[#2563EB] transition hover:bg-blue-50 dark:bg-slate-800">
-                                                                <Plus size={12} /> Thêm vật tư
-                                                            </button>
+                                                            <>
+                                                                <button onClick={() => { resetBoqForm(); setBWorkBoqItemId(item.id); setShowBoqForm(true); }}
+                                                                    className="inline-flex items-center gap-1 rounded-xl border border-blue-200 bg-white px-3 py-2 text-[10px] font-black text-[#2563EB] transition hover:bg-blue-50 dark:bg-slate-800">
+                                                                    <Plus size={12} /> Thêm vật tư
+                                                                </button>
+                                                                <button onClick={() => openG8NormModal(item.id)}
+                                                                    className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-[10px] font-black text-emerald-700 transition hover:bg-emerald-50 dark:bg-slate-800">
+                                                                    <BookOpen size={12} /> Thêm định mức
+                                                                </button>
+                                                            </>
                                                         )}
                                                     </div>
                                                 </div>
@@ -2716,7 +2746,18 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                                                         <span className="truncate font-black text-[#0F172A] dark:text-white" title={material.itemName}>{material.itemName}</span>
                                                                                         <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black text-[#64748B] dark:bg-slate-900">{material.category}</span>
                                                                                     </div>
-                                                                                    <div className="mt-1 text-[10px] font-bold text-[#64748B]">{material.materialCode || materialStats.inventoryItem?.sku || 'Chưa liên kết mã kho'}</div>
+                                                                                    <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-bold text-[#64748B]">
+                                                                                        <span>{material.materialCode || materialStats.inventoryItem?.sku || 'Chưa liên kết mã kho'}</span>
+                                                                                        {material.sourceType === 'g8_norm' && material.sourceNormCodeSnapshot && (
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => openG8NormModal(material.workBoqItemId || item.id, material.sourceNormMappingId || '')}
+                                                                                                className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-mono text-[9px] font-black text-emerald-700 hover:bg-emerald-100"
+                                                                                            >
+                                                                                                G8 {material.sourceNormCodeSnapshot}
+                                                                                            </button>
+                                                                                        )}
+                                                                                    </div>
                                                                                 </td>
                                                                                 <td className={`px-3 py-3 text-right text-sm font-black ${materialStats.requestableQty > 0 ? 'text-[#2563EB]' : 'text-[#64748B]'}`}>{formatQuantity(materialStats.requestableQty)}</td>
                                                                                 <td className="px-3 py-3 text-right font-bold text-[#0F172A] dark:text-slate-200">{formatQuantity(material.budgetQty)}</td>
@@ -2988,6 +3029,19 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     onSave={handleSaveBoq}
                     formatQuantity={formatQuantity}
                     formatMoneyShort={fmt}
+                />
+            )}
+
+            {showG8NormModal && (
+                <G8NormApplyModal
+                    workBoqTree={workBoqTree}
+                    initialWorkBoqItemId={g8NormInitialWorkBoqItemId}
+                    initialMappingId={g8NormInitialMappingId}
+                    inventoryItems={inventoryItems}
+                    canEdit={canEditBoq}
+                    onClose={closeG8NormModal}
+                    onApplied={handleG8NormApplied}
+                    formatQuantity={formatQuantity}
                 />
             )}
 

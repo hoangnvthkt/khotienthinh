@@ -80,6 +80,7 @@ const PredictiveAnalytics = React.lazy(() => import('./pages/PredictiveAnalytics
 // Custom Dashboard
 const CustomDashboard = React.lazy(() => import('./pages/CustomDashboard'));
 const Leaderboard = React.lazy(() => import('./pages/Leaderboard'));
+const FeedbackHub = React.lazy(() => import('./pages/FeedbackHub'));
 
 // Request pages
 const RequestCategories = React.lazy(() => import('./pages/request/RequestCategories'));
@@ -255,6 +256,7 @@ const AppRoutes: React.FC = () => {
           <Route path="audit-trail" element={<AuditTrail />} />
           <Route path="analytics" element={<PredictiveAnalytics />} />
           <Route path="leaderboard" element={<Leaderboard />} />
+          <Route path="feedback" element={<FeedbackHub />} />
           <Route path="rq" element={<RequestList />} />
           <Route path="rq/dashboard" element={<RequestDashboard />} />
           <Route path="rq/categories" element={<RequestCategories />} />

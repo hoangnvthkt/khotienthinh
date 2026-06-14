@@ -45,6 +45,8 @@ import {
   CostTemplateNormalizationReport,
   CostTemplateNormalizationStatus,
   CostNormWorkbenchLine,
+  CostNormExcelImportPreview,
+  costNormExcelImportService,
   costNormStandardizationAiService,
   costNormWorkbenchService,
   InternalNormImportPayload,
@@ -382,6 +384,10 @@ const CostLibrary: React.FC = () => {
     file: File;
     result: CostImportValidationResult<InternalPriceBookImportPayload | InternalNormImportPayload>;
   } | null>(null);
+  const [normExcelFile, setNormExcelFile] = useState<File | null>(null);
+  const [normExcelSheetName, setNormExcelSheetName] = useState('');
+  const [normExcelPreview, setNormExcelPreview] = useState<CostNormExcelImportPreview | null>(null);
+  const [loadingNormExcel, setLoadingNormExcel] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1213,6 +1219,113 @@ const CostLibrary: React.FC = () => {
         : await internalNormService.importFromExcel(file, user.id);
       toast.info(kind === 'prices' ? 'Import đơn giá' : 'Import định mức', `Đã ghi ${count} dòng hợp lệ.`);
       setImportPreview(null);
+    });
+  };
+
+  const previewNormExcelWorkbook = async (file?: File | null) => {
+    if (!canManage || !file) return;
+    setLoadingNormExcel(true);
+    try {
+      const sheet = await costNormExcelImportService.previewWorkbook(file);
+      setNormExcelFile(file);
+      setNormExcelSheetName(sheet.selectedSheetName);
+      setNormExcelPreview(costNormExcelImportService.suggestLocal(sheet, selectedNormPackageTemplate?.id || selectedTemplate?.id || ''));
+      toast.info('Đã đọc file định mức', `${sheet.rows.length} dòng raw, ${sheet.sheetNames.length} sheet.`);
+    } catch (error) {
+      logApiError('cost-library.previewNormExcelWorkbook', error);
+      toast.error('Không thể đọc file định mức công ty', getApiErrorMessage(error));
+    } finally {
+      setLoadingNormExcel(false);
+    }
+  };
+
+  const changeNormExcelSheet = async (sheetName: string) => {
+    if (!normExcelFile) return;
+    setNormExcelSheetName(sheetName);
+    setLoadingNormExcel(true);
+    try {
+      const sheet = await costNormExcelImportService.previewWorkbook(normExcelFile, sheetName);
+      setNormExcelPreview(costNormExcelImportService.suggestLocal(sheet, selectedNormPackageTemplate?.id || selectedTemplate?.id || ''));
+    } catch (error) {
+      logApiError('cost-library.changeNormExcelSheet', error);
+      toast.error('Không thể đổi sheet', getApiErrorMessage(error));
+    } finally {
+      setLoadingNormExcel(false);
+    }
+  };
+
+  const runNormExcelAiImport = async () => {
+    if (!canManage || !normExcelFile) return;
+    const templateId = selectedNormPackageTemplate?.id || selectedTemplate?.id || '';
+    if (!templateId) {
+      toast.warning('Chưa có template thư viện', 'Hãy chọn hoặc tạo template để lưu các gói định mức.');
+      return;
+    }
+    setLoadingNormExcel(true);
+    try {
+      const preview = await costNormExcelImportService.suggestRemote({
+        file: normExcelFile,
+        sheetName: normExcelSheetName,
+        templateId,
+      });
+      setNormExcelPreview(preview);
+      toast.success(
+        preview.source === 'remote' ? 'AI đã tách bảng định mức' : 'Đang dùng parser local',
+        `${preview.packages.length} gói, ${preview.packages.reduce((sum, pkg) => sum + pkg.lines.length, 0)} dòng hao phí.`,
+      );
+    } catch (error) {
+      logApiError('cost-library.runNormExcelAiImport', error);
+      toast.error('Không thể tách bảng định mức bằng AI', getApiErrorMessage(error));
+    } finally {
+      setLoadingNormExcel(false);
+    }
+  };
+
+  const updateNormExcelPackage = (packageId: string, patch: Partial<CostNormExcelImportPreview['packages'][number]>) => {
+    setNormExcelPreview(prev => prev ? {
+      ...prev,
+      packages: prev.packages.map(pkg => pkg.id === packageId ? { ...pkg, ...patch, needsReview: true } : pkg),
+    } : prev);
+  };
+
+  const updateNormExcelLine = (
+    packageId: string,
+    lineId: string,
+    patch: Partial<CostNormExcelImportPreview['packages'][number]['lines'][number]>,
+  ) => {
+    setNormExcelPreview(prev => prev ? {
+      ...prev,
+      packages: prev.packages.map(pkg => pkg.id === packageId ? {
+        ...pkg,
+        needsReview: true,
+        lines: pkg.lines.map(line => line.id === lineId ? { ...line, ...patch, needsReview: true } : line),
+      } : pkg),
+    } : prev);
+  };
+
+  const removeNormExcelPackage = (packageId: string) => {
+    setNormExcelPreview(prev => prev ? { ...prev, packages: prev.packages.filter(pkg => pkg.id !== packageId) } : prev);
+  };
+
+  const removeNormExcelLine = (packageId: string, lineId: string) => {
+    setNormExcelPreview(prev => prev ? {
+      ...prev,
+      packages: prev.packages.map(pkg => pkg.id === packageId ? { ...pkg, lines: pkg.lines.filter(line => line.id !== lineId), needsReview: true } : pkg),
+    } : prev);
+  };
+
+  const saveNormExcelDraft = async () => {
+    if (!canManage || !normExcelPreview) return;
+    const templateId = selectedNormPackageTemplate?.id || selectedTemplate?.id || '';
+    if (!templateId) {
+      toast.warning('Chưa có template thư viện', 'Hãy chọn template gói định mức trước khi lưu.');
+      return;
+    }
+    await runSave('Đã lưu draft định mức từ Excel', async () => {
+      const result = await costNormExcelImportService.saveDraft({ ...normExcelPreview, templateId }, user.id);
+      toast.info('Import định mức', `Batch ${result.batchId.slice(0, 8)} • ${result.packageCount} gói • ${result.normCount} dòng draft.`);
+      setNormExcelPreview(null);
+      setNormExcelFile(null);
     });
   };
 
@@ -2050,6 +2163,110 @@ const CostLibrary: React.FC = () => {
     </div>
   );
 
+  const renderNormExcelImport = () => {
+    if (!canManage) return null;
+    const packageCount = normExcelPreview?.packages.length || 0;
+    const lineCount = normExcelPreview?.packages.reduce((sum, pkg) => sum + pkg.lines.length, 0) || 0;
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:bg-slate-900 dark:border-slate-800">
+        <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-[10px] font-black uppercase text-indigo-500">Import Excel định mức công ty</div>
+            <h2 className="text-sm font-black text-slate-800 dark:text-white">AI tách bảng định mức thành gói/hạng mục thư viện</h2>
+            <div className="mt-1 text-xs font-bold text-slate-400">
+              Lưu vào template: {(selectedNormPackageTemplate || selectedTemplate)?.code || '-'} • {packageCount} gói • {lineCount} dòng hao phí
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <label className={BTN_SOFT}>
+              <Upload size={14} /> Chọn Excel
+              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => previewNormExcelWorkbook(e.target.files?.[0])} />
+            </label>
+            <button onClick={runNormExcelAiImport} disabled={loadingNormExcel || !normExcelFile} className={BTN_SOFT}>
+              {loadingNormExcel ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />} AI tách dữ liệu
+            </button>
+            <button onClick={saveNormExcelDraft} disabled={saving || !normExcelPreview || packageCount === 0} className={BTN_PRIMARY}>
+              <Save size={14} /> Lưu draft
+            </button>
+            {normExcelPreview && <button onClick={() => { setNormExcelPreview(null); setNormExcelFile(null); }} className={BTN_SOFT}><X size={14} /> Đóng</button>}
+          </div>
+        </div>
+
+        {normExcelPreview ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-2 lg:grid-cols-[minmax(180px,260px)_minmax(0,1fr)]">
+              <select value={normExcelSheetName} onChange={e => changeNormExcelSheet(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold">
+                {normExcelPreview.sheetNames.map(sheet => <option key={sheet} value={sheet}>{sheet}</option>)}
+              </select>
+              <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-500 dark:bg-slate-800">
+                {normExcelPreview.fileName} • {normExcelPreview.rows.length} dòng raw • confidence {Math.round(normExcelPreview.confidenceScore * 100)}% • {normExcelPreview.source === 'remote' ? 'AI' : 'Local'}
+              </div>
+            </div>
+            {normExcelPreview.warnings.length > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-700">
+                <AlertTriangle size={14} className="mr-1 inline" />
+                {normExcelPreview.warnings.slice(0, 4).join(' • ')}
+              </div>
+            )}
+            <div className="max-h-[560px] space-y-3 overflow-y-auto pr-1">
+              {normExcelPreview.packages.map(pkg => (
+                <div key={pkg.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+                  <div className="grid grid-cols-1 gap-2 xl:grid-cols-[140px_minmax(220px,1fr)_100px_100px_auto]">
+                    <input value={pkg.workCode} onChange={e => updateNormExcelPackage(pkg.id, { workCode: e.target.value })} className="rounded-lg border px-2 py-1 text-xs font-mono font-black" placeholder="Mã gói" />
+                    <input value={pkg.workName} onChange={e => updateNormExcelPackage(pkg.id, { workName: e.target.value })} className="rounded-lg border px-2 py-1 text-xs font-bold" placeholder="Tên gói/hạng mục" />
+                    <input value={pkg.standardUnit || pkg.unit} onChange={e => updateNormExcelPackage(pkg.id, { standardUnit: e.target.value, unit: e.target.value })} className="rounded-lg border px-2 py-1 text-xs" placeholder="ĐVT" />
+                    <input type="number" value={pkg.baseQuantity ?? ''} onChange={e => updateNormExcelPackage(pkg.id, { baseQuantity: e.target.value === '' ? null : num(e.target.value) })} className="rounded-lg border px-2 py-1 text-xs" placeholder="Base" />
+                    <div className="flex items-center justify-end gap-2">
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-black ${pkg.needsReview ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {pkg.needsReview ? 'Review' : 'OK'}
+                      </span>
+                      <button onClick={() => removeNormExcelPackage(pkg.id)} className={BTN_MINI} title="Bỏ gói"><Trash2 size={13} /></button>
+                    </div>
+                  </div>
+                  {pkg.warnings.length > 0 && <div className="mt-2 text-[11px] font-bold text-amber-700">{pkg.warnings.slice(0, 3).join(' • ')}</div>}
+                  <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                    <table className="w-full min-w-[980px] text-xs">
+                      <thead className="bg-slate-100 text-[10px] font-black uppercase text-slate-500 dark:bg-slate-800">
+                        <tr>
+                          {['Dòng', 'Loại', 'Mã', 'Nguồn lực', 'ĐVT', 'Định mức', 'Review', ''].map(header => (
+                            <th key={header} className="px-3 py-2 text-left">{header}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {pkg.lines.map(line => (
+                          <tr key={line.id}>
+                            <td className="px-3 py-2 font-mono font-bold text-slate-500">{line.sourceRowNumber}</td>
+                            <td className="px-3 py-2">
+                              <select value={line.resourceType} onChange={e => updateNormExcelLine(pkg.id, line.id, { resourceType: e.target.value as InternalNorm['resourceType'], resourceSection: e.target.value as any })} className="w-32 rounded-lg border px-2 py-1">
+                                {['material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].map(type => <option key={type} value={type}>{type}</option>)}
+                              </select>
+                            </td>
+                            <td className="px-3 py-2"><input value={line.resourceCode} onChange={e => updateNormExcelLine(pkg.id, line.id, { resourceCode: e.target.value })} className="w-28 rounded-lg border px-2 py-1 font-mono" /></td>
+                            <td className="px-3 py-2"><input value={line.resourceName} onChange={e => updateNormExcelLine(pkg.id, line.id, { resourceName: e.target.value })} className="w-72 rounded-lg border px-2 py-1 font-bold" /></td>
+                            <td className="px-3 py-2"><input value={line.unit} onChange={e => updateNormExcelLine(pkg.id, line.id, { unit: e.target.value })} className="w-20 rounded-lg border px-2 py-1" /></td>
+                            <td className="px-3 py-2"><input type="number" value={line.normQuantity} onChange={e => updateNormExcelLine(pkg.id, line.id, { normQuantity: num(e.target.value) })} className="w-28 rounded-lg border px-2 py-1" /></td>
+                            <td className="px-3 py-2"><input type="checkbox" checked={Boolean(line.needsReview)} onChange={e => updateNormExcelLine(pkg.id, line.id, { needsReview: e.target.checked })} /></td>
+                            <td className="px-3 py-2 text-right"><button onClick={() => removeNormExcelLine(pkg.id, line.id)} className={BTN_MINI} title="Bỏ dòng"><Trash2 size={13} /></button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+              {normExcelPreview.packages.length === 0 && <EmptyState title="Chưa tách được gói định mức" />}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-300 p-4 text-xs font-bold text-slate-400">
+            Chọn file Excel định mức công ty, sau đó bấm AI tách dữ liệu để tạo các gói như Đổ bê tông, Lát sàn, Xây tường.
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderNorms = () => {
     const rawMaterials = selectedNormItem ? getRawMaterials(selectedNormItem) : [];
     const baseQuantity = selectedNormItem ? costNormWorkbenchService.getBaseQuantity(selectedNormItem) : null;
@@ -2061,6 +2278,7 @@ const CostLibrary: React.FC = () => {
     return (
       <div className="space-y-4">
         {renderPermissionNotice()}
+        {renderNormExcelImport()}
 
         <div
           ref={containerRef}

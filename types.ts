@@ -1522,7 +1522,7 @@ export interface MaterialBudgetItem {
   wasteQty?: number;            // Auto: actualQty - budgetQty
   wastePercent?: number;        // Auto: (actualQty - budgetQty)/budgetQty * 100
   wasteValue?: number;          // Giá trị hao hụt (VNĐ) = wasteQty * unitPrice
-  wasteThreshold: number;       // Ngưỡng hao hụt/hệ số tiêu hao nhân viên khai báo — mặc định 0,5
+  wasteThreshold: number;       // Ngưỡng hao hụt; với dòng G8 là định mức hao phí cho 1 đơn vị công tác
   cumulativeRequested?: number; // LK yêu cầu cấp
   cumulativeImported?: number;  // LK nhập kho (từ PO)
   cumulativeExported?: number;  // LK xuất kho (= actualQty)
@@ -1531,6 +1531,10 @@ export interface MaterialBudgetItem {
   autoAlert?: string;           // Cảnh báo tự động
   sortOrder?: number;
   notes?: string;
+  sourceType?: 'manual' | 'excel_import' | 'g8_norm';
+  sourceNormMappingId?: string | null;
+  sourceNormComponentEstimateId?: string | null;
+  sourceNormCodeSnapshot?: string | null;
 }
 
 export type MaterialDemandDistributionMethod = 'pre_start' | 'linear' | 'custom_curve';

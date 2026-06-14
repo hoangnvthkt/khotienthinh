@@ -359,6 +359,67 @@ export interface CostNormStandardizationSuggestionResult {
   source: 'remote' | 'local';
 }
 
+export interface CostNormExcelRawRow {
+  rowNumber: number;
+  values: string[];
+  rawValues: Record<string, string>;
+  text: string;
+}
+
+export interface CostNormExcelSheetPreview {
+  fileName: string;
+  sheetNames: string[];
+  selectedSheetName: string;
+  rows: CostNormExcelRawRow[];
+  mergedRanges: Array<{ startRow: number; endRow: number; startColumn: string; endColumn: string }>;
+}
+
+export interface CostNormExcelImportLine {
+  id: string;
+  sourceRowNumber: number;
+  resourceSection: 'material' | 'labor' | 'machine' | 'subcontract' | 'overhead' | 'other';
+  resourceType: InternalNorm['resourceType'];
+  resourceCode: string;
+  resourceName: string;
+  unit: string;
+  normQuantity: number;
+  wastePercent: number;
+  confidenceScore: number;
+  warnings: string[];
+  needsReview: boolean;
+  reason: string;
+}
+
+export interface CostNormExcelImportPackage {
+  id: string;
+  sourceRowStart: number;
+  sourceRowEnd: number;
+  workCode: string;
+  workName: string;
+  unit: string;
+  baseQuantity: number | null;
+  baseUnitRaw: string;
+  standardUnit: string;
+  confidenceScore: number;
+  warnings: string[];
+  needsReview: boolean;
+  lines: CostNormExcelImportLine[];
+}
+
+export interface CostNormExcelImportPreview extends CostNormExcelSheetPreview {
+  templateId: string;
+  packages: CostNormExcelImportPackage[];
+  warnings: string[];
+  confidenceScore: number;
+  source: 'remote' | 'local';
+}
+
+export interface CostNormExcelImportSaveResult {
+  batchId: string;
+  packageCount: number;
+  normCount: number;
+}
+
 const cleanUndefined = <T extends Record<string, any>>(value: T): T =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
 
@@ -401,6 +462,8 @@ const ITEM_TABLE = 'cost_template_items';
 const PARAMETER_TABLE = 'cost_template_parameters';
 const PRICE_TABLE = 'internal_price_book';
 const NORM_TABLE = 'internal_norms';
+const NORM_IMPORT_BATCH_TABLE = 'cost_norm_import_batches';
+const NORM_IMPORT_ROW_TABLE = 'cost_norm_import_rows';
 const ESTIMATE_TABLE = 'estimate_scenarios';
 const ESTIMATE_ITEM_TABLE = 'estimate_items';
 const ADJUSTMENT_TABLE = 'estimate_adjustments';
@@ -811,6 +874,248 @@ const parseWorkbookRows = async (file: File): Promise<Record<string, unknown>[]>
     Object.entries(row).map(([key, value]) => [normalizeHeader(key), value]),
   ));
 };
+
+const columnName = (index: number) => {
+  let n = index;
+  let name = '';
+  while (n >= 0) {
+    name = String.fromCharCode((n % 26) + 65) + name;
+    n = Math.floor(n / 26) - 1;
+  }
+  return name;
+};
+
+const compactRowText = (values: string[]) => values.map(value => value.trim()).filter(Boolean).join(' | ');
+
+const parseNormBaseUnit = (value: unknown): { baseQuantity: number | null; standardUnit: string; baseUnitRaw: string } => {
+  const raw = String(value || '').trim();
+  if (!raw) return { baseQuantity: null, standardUnit: '', baseUnitRaw: '' };
+  const normalized = raw.replace(',', '.').replace(/\s+/g, '');
+  const match = normalized.match(/^(\d+(?:\.\d+)?)(.+)$/);
+  if (!match) return { baseQuantity: 1, standardUnit: raw, baseUnitRaw: raw };
+  const quantity = Number(match[1]);
+  const unit = match[2] || raw;
+  return {
+    baseQuantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+    standardUnit: unit,
+    baseUnitRaw: raw,
+  };
+};
+
+const parseLooseNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  const normalized = text
+    .replace(/\s/g, '')
+    .replace(/(?<=\d)\.(?=\d{3}(?:\D|$))/g, '')
+    .replace(',', '.');
+  const match = normalized.match(/-?\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeExcelPackageCode = (value: unknown, fallback = 'NORM_PACKAGE') =>
+  normalizeCode(value || fallback, fallback).replace(/_+/g, '_').slice(0, 80);
+
+const detectNormSection = (text: string): CostNormExcelImportLine['resourceSection'] | null => {
+  const normalized = normalizeHeader(text);
+  if (normalized.includes('vat_lieu')) return 'material';
+  if (normalized.includes('nhan_cong')) return 'labor';
+  if (normalized.includes('may_thi_cong') || normalized === 'may' || normalized.includes('may_moc')) return 'machine';
+  if (normalized.includes('thau_phu')) return 'subcontract';
+  return null;
+};
+
+const sectionToResourceType = (section: CostNormExcelImportLine['resourceSection']): InternalNorm['resourceType'] =>
+  section === 'labor' || section === 'machine' || section === 'subcontract' || section === 'overhead' ? section : section === 'other' ? 'other' : 'material';
+
+const looksLikeWorkCode = (value: string) => /^[A-ZĐ]{1,5}\.?\d[\w.\-\/]*$/i.test(value.trim());
+
+const parseNormExcelWorkbook = async (file: File, preferredSheetName?: string): Promise<CostNormExcelSheetPreview> => {
+  const XLSX = await loadXlsx();
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: 'array', raw: false });
+  const sheetName = preferredSheetName && workbook.Sheets[preferredSheetName]
+    ? preferredSheetName
+    : workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  const ref = sheet?.['!ref'];
+  if (!sheet || !ref) {
+    return { fileName: file.name, sheetNames: workbook.SheetNames, selectedSheetName: sheetName || '', rows: [], mergedRanges: [] };
+  }
+  const range = XLSX.utils.decode_range(ref);
+  const rows: CostNormExcelRawRow[] = [];
+  for (let rowIndex = range.s.r; rowIndex <= range.e.r; rowIndex += 1) {
+    const values: string[] = [];
+    const rawValues: Record<string, string> = {};
+    for (let colIndex = range.s.c; colIndex <= range.e.c; colIndex += 1) {
+      const address = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
+      const cell = sheet[address];
+      const text = cell?.w !== undefined ? String(cell.w) : cell?.v !== undefined ? String(cell.v) : '';
+      values.push(text);
+      if (text.trim()) rawValues[address] = text;
+    }
+    const compactText = compactRowText(values);
+    if (compactText) rows.push({ rowNumber: rowIndex + 1, values, rawValues, text: compactText });
+  }
+  const mergedRanges = ((sheet['!merges'] || []) as any[]).map(merge => ({
+    startRow: merge.s.r + 1,
+    endRow: merge.e.r + 1,
+    startColumn: columnName(merge.s.c),
+    endColumn: columnName(merge.e.c),
+  }));
+  return { fileName: file.name, sheetNames: workbook.SheetNames, selectedSheetName: sheetName, rows, mergedRanges };
+};
+
+const localParseNormExcelRows = (sheet: CostNormExcelSheetPreview): CostNormExcelImportPackage[] => {
+  const packages: CostNormExcelImportPackage[] = [];
+  let current: CostNormExcelImportPackage | null = null;
+  let section: CostNormExcelImportLine['resourceSection'] = 'material';
+
+  const pushCurrent = (endRow: number) => {
+    if (!current) return;
+    current.sourceRowEnd = Math.max(current.sourceRowEnd, endRow);
+    if (current.lines.length === 0) {
+      current.needsReview = true;
+      current.warnings = [...current.warnings, 'Chưa nhận diện được dòng hao phí cho hạng mục này.'];
+    }
+    packages.push(current);
+  };
+
+  sheet.rows.forEach((row, index) => {
+    const values = row.values.map(value => String(value || '').trim());
+    const rowText = row.text;
+    const detectedSection = detectNormSection(rowText);
+    if (detectedSection) {
+      section = detectedSection;
+      return;
+    }
+
+    const codeCandidate = values.find(value => looksLikeWorkCode(value)) || '';
+    const possibleName = values.find((value, valueIndex) =>
+      valueIndex > 0
+      && value.length >= 8
+      && !looksLikeWorkCode(value)
+      && !/^(stt|ma|don vi|dinh muc)$/i.test(normalizeHeader(value))
+    ) || '';
+    const unitCandidate = values.find(value => /^(?:\d+(?:[,.]\d+)?)?\s*(m2|m²|m3|m³|kg|tan|tấn|cai|cái|bo|bộ|100m2|100m²|100m3|100m³)$/i.test(value)) || '';
+    const isPackageRow = Boolean(codeCandidate && possibleName && values.findIndex(value => value === codeCandidate) <= 2 && !parseLooseNumber(values[values.length - 1]));
+
+    if (isPackageRow) {
+      pushCurrent(row.rowNumber - 1);
+      const unitInfo = parseNormBaseUnit(unitCandidate);
+      const workCode = normalizeExcelPackageCode(codeCandidate);
+      current = {
+        id: `${sheet.selectedSheetName}-${row.rowNumber}-${workCode}`,
+        sourceRowStart: row.rowNumber,
+        sourceRowEnd: row.rowNumber,
+        workCode,
+        workName: possibleName.replace(/^[-–]\s*/, '').trim(),
+        unit: unitInfo.standardUnit || unitCandidate,
+        baseQuantity: unitInfo.baseQuantity,
+        baseUnitRaw: unitInfo.baseUnitRaw || unitCandidate,
+        standardUnit: unitInfo.standardUnit || unitCandidate,
+        confidenceScore: 0.55,
+        warnings: unitInfo.baseQuantity ? [] : ['Chưa nhận diện được đơn vị/base quantity của hạng mục.'],
+        needsReview: !unitInfo.baseQuantity,
+        lines: [],
+      };
+      section = 'material';
+      return;
+    }
+
+    if (!current) return;
+    const resourceCode = values.find(value => value && !looksLikeWorkCode(value) && /^[A-ZĐ]?\d[\w.\-\/]*$/i.test(value)) || '';
+    const resourceName = values.find((value, valueIndex) =>
+      valueIndex > 1
+      && value.length >= 3
+      && value !== resourceCode
+      && !/^(cong|công|ca|kg|m2|m²|m3|m³|%)$/i.test(value)
+      && parseLooseNumber(value) === null
+    ) || '';
+    const unit = values.find(value => /^(cong|công|ca|kg|m|m2|m²|m3|m³|%|tan|tấn|cai|cái|bo|bộ)$/i.test(value)) || '';
+    const normQuantity = [...values].reverse().map(parseLooseNumber).find(value => value !== null) ?? null;
+    if (!resourceName && !resourceCode && normQuantity === null) return;
+    const line: CostNormExcelImportLine = {
+      id: `${current.id}-line-${row.rowNumber}`,
+      sourceRowNumber: row.rowNumber,
+      resourceSection: section,
+      resourceType: sectionToResourceType(section),
+      resourceCode,
+      resourceName: resourceName.replace(/^[-–]\s*/, '').trim() || resourceCode || rowText,
+      unit,
+      normQuantity: normQuantity ?? 0,
+      wastePercent: 0,
+      confidenceScore: resourceName && unit && normQuantity !== null ? 0.55 : 0.3,
+      warnings: [
+        ...(!unit ? ['Thiếu đơn vị nguồn lực.'] : []),
+        ...(normQuantity === null ? ['Thiếu định mức nguồn lực.'] : []),
+      ],
+      needsReview: !resourceName || !unit || normQuantity === null,
+      reason: 'Gợi ý local từ cấu trúc bảng Excel.',
+    };
+    current.lines.push(line);
+    current.sourceRowEnd = row.rowNumber;
+    current.confidenceScore = Math.min(current.confidenceScore, line.confidenceScore);
+    if (line.needsReview) current.needsReview = true;
+    if (line.warnings.length) current.warnings = Array.from(new Set([...current.warnings, ...line.warnings]));
+
+    if (index === sheet.rows.length - 1) pushCurrent(row.rowNumber);
+  });
+
+  if (current && !packages.some(pkg => pkg.id === current?.id)) pushCurrent(current.sourceRowEnd);
+  return packages;
+};
+
+const sanitizeNormExcelLine = (line: any, pkg: CostNormExcelImportPackage, index: number): CostNormExcelImportLine => {
+  const resourceSection = (['material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].includes(String(line.resourceSection))
+    ? String(line.resourceSection)
+    : String(line.resourceType)) as CostNormExcelImportLine['resourceSection'];
+  const section = ['material', 'labor', 'machine', 'subcontract', 'overhead', 'other'].includes(resourceSection) ? resourceSection : 'material';
+  const normQuantity = parseLooseNumber(line.normQuantity) ?? 0;
+  const warnings = Array.isArray(line.warnings) ? line.warnings.map(String) : [];
+  return {
+    id: String(line.id || `${pkg.id}-ai-${index}`),
+    sourceRowNumber: Math.max(1, Number(line.sourceRowNumber || pkg.sourceRowStart || 1)),
+    resourceSection: section,
+    resourceType: safeResourceType(line.resourceType || sectionToResourceType(section)),
+    resourceCode: String(line.resourceCode || '').trim(),
+    resourceName: String(line.resourceName || line.itemName || '').trim(),
+    unit: String(line.unit || '').trim(),
+    normQuantity,
+    wastePercent: parseLooseNumber(line.wastePercent) ?? 0,
+    confidenceScore: Math.max(0, Math.min(1, Number(line.confidenceScore ?? 0.5))),
+    warnings,
+    needsReview: line.needsReview !== false || !line.resourceName || !line.unit || normQuantity <= 0,
+    reason: String(line.reason || 'AI gợi ý từ bảng định mức Excel.'),
+  };
+};
+
+const sanitizeNormExcelPackages = (rawPackages: any[], sheet: CostNormExcelSheetPreview): CostNormExcelImportPackage[] =>
+  rawPackages.map((rawPackage, index) => {
+    const workCode = normalizeExcelPackageCode(rawPackage.workCode || rawPackage.code || `IMPORT_${index + 1}`);
+    const unitInfo = parseNormBaseUnit(rawPackage.baseUnitRaw || rawPackage.unit || rawPackage.standardUnit);
+    const pkg: CostNormExcelImportPackage = {
+      id: String(rawPackage.id || `${sheet.selectedSheetName}-${index + 1}-${workCode}`),
+      sourceRowStart: Math.max(1, Number(rawPackage.sourceRowStart || rawPackage.rowNumber || 1)),
+      sourceRowEnd: Math.max(1, Number(rawPackage.sourceRowEnd || rawPackage.sourceRowStart || rawPackage.rowNumber || 1)),
+      workCode,
+      workName: String(rawPackage.workName || rawPackage.name || '').trim(),
+      unit: String(rawPackage.unit || rawPackage.standardUnit || unitInfo.standardUnit || '').trim(),
+      baseQuantity: parseLooseNumber(rawPackage.baseQuantity) ?? unitInfo.baseQuantity,
+      baseUnitRaw: String(rawPackage.baseUnitRaw || unitInfo.baseUnitRaw || rawPackage.unit || '').trim(),
+      standardUnit: String(rawPackage.standardUnit || unitInfo.standardUnit || rawPackage.unit || '').trim(),
+      confidenceScore: Math.max(0, Math.min(1, Number(rawPackage.confidenceScore ?? 0.5))),
+      warnings: Array.isArray(rawPackage.warnings) ? rawPackage.warnings.map(String) : [],
+      needsReview: rawPackage.needsReview !== false || !rawPackage.workName,
+      lines: [],
+    };
+    pkg.lines = (Array.isArray(rawPackage.lines) ? rawPackage.lines : []).map((line: any, lineIndex: number) => sanitizeNormExcelLine(line, pkg, lineIndex));
+    if (pkg.lines.some(line => line.needsReview)) pkg.needsReview = true;
+    return pkg;
+  }).filter(pkg => pkg.workName && pkg.lines.length > 0);
 
 const excelDateToIso = (value: unknown, fallback = ''): string | null => {
   if (value === null || value === undefined || value === '') return fallback || null;
@@ -2471,6 +2776,220 @@ export const internalNormService = {
     if (!isSupabaseConfigured) return;
     const { error } = await supabase.from(NORM_TABLE).delete().eq('id', id);
     if (error) throw error;
+  },
+};
+
+export const costNormExcelImportService = {
+  async previewWorkbook(file: File, sheetName?: string): Promise<CostNormExcelSheetPreview> {
+    return parseNormExcelWorkbook(file, sheetName);
+  },
+
+  suggestLocal(sheet: CostNormExcelSheetPreview, templateId = ''): CostNormExcelImportPreview {
+    const packages = localParseNormExcelRows(sheet);
+    const lineCount = packages.reduce((sum, pkg) => sum + pkg.lines.length, 0);
+    return {
+      ...sheet,
+      templateId,
+      packages,
+      warnings: packages.length === 0 ? ['Chưa nhận diện được hạng mục định mức trong sheet.'] : [],
+      confidenceScore: packages.length && lineCount ? 0.5 : 0.25,
+      source: 'local',
+    };
+  },
+
+  async suggestRemote(input: { file: File; sheetName?: string; templateId: string }, accessToken?: string): Promise<CostNormExcelImportPreview> {
+    const sheet = await parseNormExcelWorkbook(input.file, input.sheetName);
+    const local = this.suggestLocal(sheet, input.templateId);
+    if (!isSupabaseConfigured || sheet.rows.length === 0) return local;
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = accessToken || sessionData.session?.access_token || '';
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-assistant', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: {
+          action: 'cost_norm_import_excel',
+          fileName: sheet.fileName,
+          sheetName: sheet.selectedSheetName,
+          rows: sheet.rows.slice(0, 600),
+          mergedRanges: sheet.mergedRanges.slice(0, 200),
+          localPackages: local.packages.slice(0, 80),
+        },
+      });
+      if (error) throw error;
+      const raw = data as any;
+      const packages = sanitizeNormExcelPackages(Array.isArray(raw?.packages) ? raw.packages : [], sheet);
+      const warnings = Array.isArray(raw?.warnings) ? raw.warnings.map(String) : [];
+      if (packages.length === 0) {
+        return { ...local, warnings: [...local.warnings, 'AI chưa tách được gói định mức, đang dùng parser local.'] };
+      }
+      return {
+        ...sheet,
+        templateId: input.templateId,
+        packages,
+        warnings,
+        confidenceScore: Math.max(0, Math.min(1, Number(raw?.confidenceScore ?? 0.55))),
+        source: 'remote',
+      };
+    } catch (error) {
+      console.warn('costNormExcelImportService.suggestRemote fallback local:', error);
+      return { ...local, warnings: [...local.warnings, `AI lỗi, dùng parser local: ${getApiLikeMessage(error)}`] };
+    }
+  },
+
+  async saveDraft(preview: CostNormExcelImportPreview, actorId?: string): Promise<CostNormExcelImportSaveResult> {
+    if (!isSupabaseConfigured) {
+      return {
+        batchId: newId(),
+        packageCount: preview.packages.length,
+        normCount: preview.packages.reduce((sum, pkg) => sum + pkg.lines.length, 0),
+      };
+    }
+    if (!preview.templateId) throw new Error('Chưa chọn template thư viện định mức để lưu.');
+    const template = await costTemplateService.get(preview.templateId);
+    if (!template) throw new Error('Không tìm thấy template thư viện định mức.');
+    const validPackages = preview.packages.filter(pkg => pkg.workCode && pkg.workName && pkg.lines.length > 0);
+    if (validPackages.length === 0) throw new Error('Chưa có gói định mức hợp lệ để lưu.');
+
+    const batchId = newId();
+    const batchPayload = cleanUndefined(toDb({
+      id: batchId,
+      fileName: preview.fileName,
+      sheetName: preview.selectedSheetName,
+      templateId: preview.templateId,
+      status: 'imported',
+      totalRows: preview.rows.length,
+      parsedPackages: validPackages.length,
+      parsedLines: validPackages.reduce((sum, pkg) => sum + pkg.lines.length, 0),
+      confidenceScore: preview.confidenceScore,
+      warnings: preview.warnings,
+      metadata: {
+        source: 'cost_norm_excel_import',
+        sheetNames: preview.sheetNames,
+        mergedRanges: preview.mergedRanges,
+        parserSource: preview.source,
+      },
+      createdBy: actorId,
+      updatedBy: actorId,
+    }));
+    const { error: batchError } = await supabase.from(NORM_IMPORT_BATCH_TABLE).insert(batchPayload);
+    if (batchError) throw batchError;
+
+    const existingNorms = await internalNormService.list(true);
+    const itemsByCode = new Map(template.items.map(item => [item.code.toLowerCase(), item]));
+    let normCount = 0;
+
+    for (const [packageIndex, pkg] of validPackages.entries()) {
+      const existingItem = itemsByCode.get(pkg.workCode.toLowerCase());
+      const normalizedMaterials = pkg.lines
+        .filter(line => line.resourceName && line.unit && line.normQuantity > 0)
+        .map((line, lineIndex): NormalizedTemplateMaterial => ({
+          materialCode: line.resourceCode,
+          resourceType: line.resourceType,
+          normCode: `${normalizeCode(pkg.workCode)}_${normalizeCode(line.resourceCode || line.resourceName, 'RESOURCE')}`.slice(0, 120),
+          itemName: line.resourceName,
+          category: line.resourceSection,
+          unit: line.unit,
+          quantity: line.normQuantity,
+          rawQuantity: null,
+          baseQuantity: pkg.baseQuantity,
+          suggestedNormQuantity: line.normQuantity,
+          wastePercent: line.wastePercent,
+          note: line.warnings.join(' • '),
+          reason: line.reason,
+          needsReview: line.needsReview,
+          sortOrder: lineIndex,
+        }));
+      const item = await costTemplateService.upsertItem({
+        id: existingItem?.id,
+        templateId: preview.templateId,
+        sectionId: existingItem?.sectionId || null,
+        code: pkg.workCode,
+        name: pkg.workName,
+        itemType: 'work',
+        unit: pkg.standardUnit || pkg.unit,
+        baseQuantity: pkg.baseQuantity,
+        workCode: pkg.workCode,
+        normGroupCode: pkg.workCode,
+        sortOrder: existingItem?.sortOrder ?? (10_000 + packageIndex),
+        metadata: {
+          ...(existingItem?.metadata || {}),
+          sourceKind: 'cost_norm_excel_import',
+          importBatchId: batchId,
+          importFileName: preview.fileName,
+          importSheetName: preview.selectedSheetName,
+          sourceRowStart: pkg.sourceRowStart,
+          sourceRowEnd: pkg.sourceRowEnd,
+          standardUnit: pkg.standardUnit || pkg.unit,
+          standardBaseQuantity: pkg.baseQuantity,
+          standardWorkCode: pkg.workCode,
+          normalizationStatus: pkg.needsReview ? 'reviewing' : 'normalized',
+          normalizedMaterials,
+          importWarnings: pkg.warnings,
+        },
+      });
+      itemsByCode.set(item.code.toLowerCase(), item);
+
+      for (const [lineIndex, line] of pkg.lines.entries()) {
+        const rowPayload = cleanUndefined(toDb({
+          id: newId(),
+          batchId,
+          sheetName: preview.selectedSheetName,
+          rowNumber: line.sourceRowNumber,
+          rawValues: preview.rows.find(row => row.rowNumber === line.sourceRowNumber)?.rawValues || {},
+          parsedPackage: pkg,
+          parsedLine: line,
+          confidenceScore: line.confidenceScore,
+          warnings: line.warnings,
+          status: line.needsReview ? 'reviewed' : 'imported',
+        }));
+        const { error: rowError } = await supabase.from(NORM_IMPORT_ROW_TABLE).upsert(rowPayload, { onConflict: 'batch_id,row_number' });
+        if (rowError) throw rowError;
+
+        if (!line.resourceName || !line.unit || line.normQuantity <= 0) continue;
+        const normCode = buildNormCode(item, line.resourceCode || line.resourceName);
+        const region = 'all';
+        const peers = existingNorms.filter(norm => norm.normCode === normCode && norm.region === region);
+        const existingDraft = peers.find(norm => norm.status === 'draft' && norm.templateItemId === item.id);
+        const versionNo = existingDraft?.versionNo || Math.max(1, ...peers.map(norm => norm.versionNo + 1));
+        const saved = await internalNormService.upsert({
+          id: existingDraft?.id,
+          normCode,
+          templateItemId: item.id,
+          workCode: pkg.workCode,
+          resourceCode: line.resourceCode,
+          resourceName: line.resourceName,
+          resourceType: line.resourceType,
+          unit: line.unit,
+          normQuantity: line.normQuantity,
+          wastePercent: line.wastePercent,
+          applicableParameters: {
+            source: 'cost_norm_excel_import',
+            importBatchId: batchId,
+            sourceFileName: preview.fileName,
+            sheetName: preview.selectedSheetName,
+            sourceRowNumber: line.sourceRowNumber,
+            packageRowStart: pkg.sourceRowStart,
+            packageRowEnd: pkg.sourceRowEnd,
+            needsReview: line.needsReview,
+            baseQuantity: pkg.baseQuantity,
+            baseUnitRaw: pkg.baseUnitRaw,
+          },
+          region,
+          versionNo,
+          effectiveFrom: today(),
+          status: 'draft',
+          sourceNote: line.reason || `Import Excel định mức ${preview.fileName}`,
+          confidenceScore: line.confidenceScore,
+          createdBy: actorId,
+          updatedBy: actorId,
+        });
+        existingNorms.push(saved);
+        normCount += 1;
+      }
+    }
+
+    return { batchId, packageCount: validPackages.length, normCount };
   },
 };
 

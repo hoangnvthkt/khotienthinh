@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Employee, AssetStatus, ASSET_STATUS_LABELS, Asset, Role } from '../../types';
-import { X, User as UserIcon, Briefcase, Phone, Edit2, Calendar, MapPin, Building, Heart, Landmark, FolderOpen, FileText, Download, Eye, Upload, ExternalLink } from 'lucide-react';
+import { Employee, AssetStatus } from '../../types';
+import { X, User as UserIcon, Briefcase, Phone, Edit2, Landmark, FolderOpen, FileText, Eye, ExternalLink } from 'lucide-react';
 import { hrmDocumentService, HrmDocument, DocCategory } from '../../lib/hrmDocumentService';
 import { usePermission } from '../../hooks/usePermission';
 
@@ -17,6 +17,7 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
     const { user, users, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, assets, assetAssignments, assetCategories } = useApp();
     const { canManage } = usePermission();
     const canCRUD = canManage('/hrm/employees');
+    const canEditEmployee = canCRUD || employee.userId === user.id;
     const [activeTab, setActiveTab] = useState<TabKey>('personal');
 
     const linkedUser = users.find(u => u.id === employee.userId);
@@ -298,13 +299,13 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
                     >
                         Đóng
                     </button>
-                    {canCRUD && (
+                    {canEditEmployee && (
                         <button
                             onClick={() => { onClose(); onEdit(employee); }}
                             className="flex items-center space-x-2 px-5 py-2 rounded-xl bg-accent hover:bg-blue-700 text-white text-sm font-bold transition shadow-lg hover:shadow-blue-500/30"
                         >
                             <Edit2 size={15} />
-                            <span>Sửa</span>
+                            <span>{canCRUD ? 'Sửa' : 'Sửa cá nhân'}</span>
                         </button>
                     )}
                 </div>

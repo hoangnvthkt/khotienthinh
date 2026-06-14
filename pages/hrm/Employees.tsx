@@ -1,7 +1,7 @@
 import React, { useRef, useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
-import { Employee, LeaveBalance, Role } from '../../types';
+import { Employee, LeaveBalance } from '../../types';
 import { Plus, Search, Edit2, Trash2, Phone, Mail, MapPin, Building, Briefcase, Users, LayoutGrid, List, User as UserIcon, Upload, Download, Loader2, RefreshCcw } from 'lucide-react';
 import EmployeeModal from '../../components/hrm/EmployeeModal';
 import EmployeeDetailModal from '../../components/hrm/EmployeeDetailModal';
@@ -15,9 +15,10 @@ import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import { employeeSelfService } from '../../lib/employeeSelfService';
 
 const Employees: React.FC = () => {
-    const { employees, users, addEmployee, updateEmployee, removeEmployee, addHrmItem, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user } = useApp();
+    const { employees, users, addEmployee, updateEmployee, replaceEmployeeLocal, removeEmployee, addHrmItem, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user, setUser } = useApp();
     const { canManage } = usePermission();
     const canCRUD = canManage('/hrm/employees');
     useModuleData('hrm');
@@ -49,7 +50,15 @@ const Employees: React.FC = () => {
 
     const { paginatedItems: paginatedEmployees, currentPage, totalPages, totalItems, pageSize, setPage, setPageSize, startIndex, endIndex } = usePagination<Employee>(filteredEmployees, 20);
 
-    const handleEdit = (emp: Employee) => { setEditingEmployee(emp); setIsModalOpen(true); };
+    const isSelfEmployee = (emp: Employee) => Boolean(user?.id && emp.userId === user.id);
+    const canEditEmployee = (emp: Employee) => canCRUD || isSelfEmployee(emp);
+    const showActions = canCRUD || paginatedEmployees.some(isSelfEmployee);
+
+    const handleEdit = (emp: Employee) => {
+        if (!canEditEmployee(emp)) return;
+        setEditingEmployee(emp);
+        setIsModalOpen(true);
+    };
     const handleAdd = () => { setEditingEmployee(null); setIsModalOpen(true); };
     const handleView = (emp: Employee) => { setViewingEmployee(emp); };
     const handleDelete = (emp: Employee) => {
@@ -69,6 +78,37 @@ const Employees: React.FC = () => {
                 setDeleting(false);
             }
         }
+    };
+    const handleSelfEmployeeUpdate = async (nextEmployee: Employee) => {
+        const patch = {
+            fullName: nextEmployee.fullName,
+            gender: nextEmployee.gender,
+            dateOfBirth: nextEmployee.dateOfBirth,
+            maritalStatus: nextEmployee.maritalStatus,
+            phone: nextEmployee.phone,
+            email: nextEmployee.email,
+            avatarUrl: nextEmployee.avatarUrl,
+        };
+
+        const updatedEmployee = await employeeSelfService.updateMyProfile(patch);
+        if (updatedEmployee) {
+            replaceEmployeeLocal(updatedEmployee);
+            setUser({
+                ...user,
+                name: updatedEmployee.fullName || user.name,
+                phone: updatedEmployee.phone,
+                avatar: updatedEmployee.avatarUrl || user.avatar,
+            });
+            return;
+        }
+
+        await updateEmployee(nextEmployee);
+        setUser({
+            ...user,
+            name: nextEmployee.fullName || user.name,
+            phone: nextEmployee.phone,
+            avatar: nextEmployee.avatarUrl || user.avatar,
+        });
     };
     const toggleView = (mode: 'grid' | 'table') => {
         setViewMode(mode);
@@ -442,11 +482,11 @@ const Employees: React.FC = () => {
                                             </span>
                                         </div>
 
-                                        {/* Actions hover — Admin only */}
-                                        {canCRUD && (
+                                        {/* Actions hover */}
+                                        {canEditEmployee(emp) && (
                                             <div className="absolute top-1 right-1 flex gap-px opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button onClick={(e) => { e.stopPropagation(); handleEdit(emp); }} className="p-0.5 text-slate-300 hover:text-indigo-500 rounded transition-all" title="Sửa"><Edit2 size={9} /></button>
-                                                <button onClick={(e) => { e.stopPropagation(); handleDelete(emp); }} className="p-0.5 text-slate-300 hover:text-red-500 rounded transition-all" title="Xóa"><Trash2 size={9} /></button>
+                                                {canCRUD && <button onClick={(e) => { e.stopPropagation(); handleDelete(emp); }} className="p-0.5 text-slate-300 hover:text-red-500 rounded transition-all" title="Xóa"><Trash2 size={9} /></button>}
                                             </div>
                                         )}
                                     </div>
@@ -504,7 +544,7 @@ const Employees: React.FC = () => {
                                     <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50">Văn Phòng</th>
                                     <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50 min-w-[150px]">Liên Hệ</th>
                                     <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50 text-center w-[100px]">Trạng Thái</th>
-                                    {canCRUD && <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50 text-center w-[80px]">Thao Tác</th>}
+                                    {showActions && <th className="py-3 px-4 border-b border-slate-200/60 dark:border-slate-700/50 text-center w-[80px]">Thao Tác</th>}
                                 </tr>
                             </thead>
                             <tbody>
@@ -538,11 +578,11 @@ const Employees: React.FC = () => {
                                                     <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />{emp.status}
                                                 </span>
                                             </td>
-                                            {canCRUD && (
+                                            {showActions && (
                                                 <td className="py-2.5 px-4 text-center">
                                                     <div className="flex items-center justify-center gap-0.5">
-                                                        <button onClick={(e) => { e.stopPropagation(); handleEdit(emp); }} className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all" title="Sửa"><Edit2 size={14} /></button>
-                                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(emp); }} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all" title="Xóa"><Trash2 size={14} /></button>
+                                                        {canEditEmployee(emp) && <button onClick={(e) => { e.stopPropagation(); handleEdit(emp); }} className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-all" title="Sửa"><Edit2 size={14} /></button>}
+                                                        {canCRUD && <button onClick={(e) => { e.stopPropagation(); handleDelete(emp); }} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all" title="Xóa"><Trash2 size={14} /></button>}
                                                     </div>
                                                 </td>
                                             )}
@@ -550,7 +590,7 @@ const Employees: React.FC = () => {
                                     );
                                 })}
                                 {filteredEmployees.length === 0 && (
-                                    <tr><td colSpan={10} className="py-16 text-center"><Users size={40} className="mx-auto mb-3 text-slate-200 dark:text-slate-700" /><p className="text-sm font-bold text-slate-400">Chưa có nhân sự nào</p></td></tr>
+                                    <tr><td colSpan={showActions ? 10 : 9} className="py-16 text-center"><Users size={40} className="mx-auto mb-3 text-slate-200 dark:text-slate-700" /><p className="text-sm font-bold text-slate-400">Chưa có nhân sự nào</p></td></tr>
                                 )}
                             </tbody>
                         </table>
@@ -563,7 +603,14 @@ const Employees: React.FC = () => {
                 <Pagination currentPage={currentPage} totalPages={totalPages} totalItems={totalItems} startIndex={startIndex} endIndex={endIndex} onPageChange={setPage} pageSize={pageSize} onPageSizeChange={setPageSize} />
             </div>
 
-            {isModalOpen && <EmployeeModal employee={editingEmployee} onClose={() => setIsModalOpen(false)} />}
+            {isModalOpen && (
+                <EmployeeModal
+                    employee={editingEmployee}
+                    mode={editingEmployee && !canCRUD && isSelfEmployee(editingEmployee) ? 'self' : 'admin'}
+                    onSelfUpdate={handleSelfEmployeeUpdate}
+                    onClose={() => setIsModalOpen(false)}
+                />
+            )}
             {viewingEmployee && <EmployeeDetailModal employee={viewingEmployee} onClose={() => setViewingEmployee(null)} onEdit={(emp) => { setViewingEmployee(null); handleEdit(emp); }} />}
 
             <ConfirmDeleteModal

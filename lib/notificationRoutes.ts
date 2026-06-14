@@ -101,6 +101,12 @@ export const resolveNotificationPath = (notification: AppNotification): string |
     return notification.link || '/da';
   }
 
+  // ── Feedback Hub ─────────────────────────────────────
+  if (sourceType === 'feedback') {
+    const feedbackId = getMetaValue(metadata, ['feedbackId', 'feedback_id']) || notification.sourceId;
+    return withQuery('/feedback', { feedbackId });
+  }
+
   // ── Payment Certificate ───────────────────────────────
   if (sourceType === 'payment_certificate') {
     const projectPath = buildProjectPath(notification, 'payment');

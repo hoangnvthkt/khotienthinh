@@ -9,7 +9,7 @@ import {
   FileText, Hash, ArrowRight, Command, CornerDownLeft, ChevronUp, User,
   Warehouse, DollarSign, Calendar, Settings, HardHat, Box, GitBranch,
   ShoppingCart, Truck, BarChart3, Bot, Database, ShieldCheck, Landmark,
-  Building2
+  Building2, MessageSquarePlus
 } from 'lucide-react';
 
 interface SearchResult {
@@ -37,6 +37,7 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string; icon: React.Re
   'Báo cáo': { bg: 'bg-fuchsia-100 dark:bg-fuchsia-900/30', text: 'text-fuchsia-600 dark:text-fuchsia-400', icon: <BarChart3 size={12} /> },
   'Hợp đồng': { bg: 'bg-sky-100 dark:bg-sky-900/30', text: 'text-sky-600 dark:text-sky-400', icon: <FileText size={12} /> },
   'AI': { bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-600 dark:text-purple-400', icon: <Bot size={12} /> },
+  'Góp ý': { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-600 dark:text-blue-400', icon: <MessageSquarePlus size={12} /> },
   'Hệ thống': { bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-600 dark:text-slate-400', icon: <ShieldCheck size={12} /> },
   'Trang': { bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-600 dark:text-slate-400', icon: <FileText size={12} /> },
 };
@@ -67,6 +68,7 @@ const PAGES: SearchResult[] = [
   { id: 'p-cost-library', title: 'Thư viện đơn giá', subtitle: 'Danh mục chi phí và đơn giá', category: 'Hợp đồng', icon: <Landmark size={16} />, route: '/hd/cost-library', keywords: 'thu vien don gia cost library chi phi vat tu nhan cong may' },
   { id: 'p-tender-boq', title: 'Tender AI BOQ', subtitle: 'Phân tích chào thầu bằng AI', category: 'AI', icon: <Bot size={16} />, route: '/tender-ai/boq', keywords: 'tender ai chao thau boq phan tich ho so moi thau' },
   { id: 'p-ai', title: 'AI Assistant', subtitle: 'Trợ lý dữ liệu nội bộ', category: 'AI', icon: <Bot size={16} />, route: '/ai', keywords: 'ai assistant tro ly hoi dap du lieu' },
+  { id: 'p-feedback', title: 'Trung tâm góp ý', subtitle: 'Gửi góp ý, báo lỗi và theo dõi xử lý', category: 'Góp ý', icon: <MessageSquarePlus size={16} />, route: '/feedback', keywords: 'feedback gop y bao loi cai tien roadmap bug' },
   { id: 'p-audit-trail', title: 'Nhật ký thay đổi', subtitle: 'Lưu vết thao tác hệ thống', category: 'Hệ thống', icon: <ShieldCheck size={16} />, route: '/audit-trail', keywords: 'nhat ky thay doi audit trail lich su thao tac' },
   { id: 'p-storage', title: 'Kho dữ liệu', subtitle: 'Data storage và đồng bộ', category: 'Hệ thống', icon: <Database size={16} />, route: '/storage', keywords: 'kho du lieu storage database dong bo' },
   { id: 'p-settings', title: 'Cài đặt', subtitle: 'Cấu hình hệ thống', category: 'Trang', icon: <Settings size={16} />, route: '/settings', keywords: 'cai dat he thong settings' },
