@@ -21,6 +21,19 @@ export interface AppNotification {
   expiresAt?: string;
 }
 
+export interface NotificationCursor {
+  createdAt: string;
+  id: string;
+}
+
+export interface NotificationListPage {
+  items: AppNotification[];
+  nextCursor?: NotificationCursor;
+}
+
+const UNREAD_DISPLAY_LIMIT = 99;
+const UNREAD_QUERY_LIMIT = UNREAD_DISPLAY_LIMIT + 1;
+
 const toCamel = (row: any): AppNotification => ({
   id: row.id,
   userId: row.user_id,
@@ -41,12 +54,46 @@ const toCamel = (row: any): AppNotification => ({
   expiresAt: row.expires_at,
 });
 
+const compareNotificationRows = (a: any, b: any): number => {
+  const byDate = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  if (byDate !== 0) return byDate;
+  return String(b.id).localeCompare(String(a.id));
+};
+
+const dedupeRowsById = <T extends { id: string }>(rows: T[]): T[] => {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const row of rows) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    result.push(row);
+  }
+  return result;
+};
+
+const buildNotificationQuery = (limit: number, cursor?: NotificationCursor) => {
+  let query = supabase
+    .from('notifications')
+    .select('*')
+    .eq('is_dismissed', false)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(limit + 1);
+
+  if (cursor?.createdAt && cursor.id) {
+    query = query.or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`);
+  }
+
+  return query;
+};
+
 export const NOTIFICATION_CATEGORIES = {
   attendance: { label: 'Chấm công', icon: '⏰', color: 'text-teal-600 bg-teal-50' },
   budget: { label: 'Ngân sách', icon: '💰', color: 'text-orange-600 bg-orange-50' },
   payment: { label: 'Thanh toán', icon: '🧾', color: 'text-red-600 bg-red-50' },
   progress: { label: 'Tiến độ', icon: '📐', color: 'text-blue-600 bg-blue-50' },
   material: { label: 'Vật tư', icon: '📦', color: 'text-amber-600 bg-amber-50' },
+  safety: { label: 'An toàn', icon: '🛡️', color: 'text-red-600 bg-red-50' },
   inventory: { label: 'Tồn kho', icon: '📋', color: 'text-cyan-600 bg-cyan-50' },
   contract: { label: 'Hợp đồng', icon: '📝', color: 'text-violet-600 bg-violet-50' },
   hrm: { label: 'Nhân sự', icon: '👤', color: 'text-indigo-600 bg-indigo-50' },
@@ -132,54 +179,77 @@ async function notifyProjectUsers(input: NotifyProjectUsersInput): Promise<strin
 }
 
 export const notificationService = {
-  /** List notifications (recent first) */
-  async list(userId?: string, limit = 50): Promise<AppNotification[]> {
-    const baseQuery = () => supabase
-      .from('notifications')
-      .select('*')
-      .eq('is_dismissed', false)
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: false })
-      .limit(limit);
+  /** List notifications with keyset pagination (recent first) */
+  async listPage(userId?: string, options: {
+    limit?: number;
+    cursor?: NotificationCursor;
+  } = {}): Promise<NotificationListPage> {
+    const limit = Math.min(Math.max(options.limit || 50, 1), 120);
 
     if (!userId) {
-      const { data } = await baseQuery().is('user_id', null);
-      return (data || []).map(toCamel);
+      const { data, error } = await buildNotificationQuery(limit, options.cursor).is('user_id', null);
+      if (error) throw error;
+      const rows = data || [];
+      const pageRows = rows.slice(0, limit);
+      const last = pageRows[pageRows.length - 1];
+      return {
+        items: pageRows.map(toCamel),
+        nextCursor: rows.length > limit && last ? { createdAt: last.created_at, id: last.id } : undefined,
+      };
     }
 
     const [userResult, globalResult] = await Promise.all([
-      baseQuery().eq('user_id', userId),
-      baseQuery().is('user_id', null),
+      buildNotificationQuery(limit, options.cursor).eq('user_id', userId),
+      buildNotificationQuery(limit, options.cursor).is('user_id', null),
     ]);
+    if (userResult.error) throw userResult.error;
+    if (globalResult.error) throw globalResult.error;
 
-    return [...(userResult.data || []), ...(globalResult.data || [])]
-      .sort((a: any, b: any) => {
-        const byDate = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        if (byDate !== 0) return byDate;
-        return String(b.id).localeCompare(String(a.id));
-      })
-      .slice(0, limit)
-      .map(toCamel);
+    const mergedRows = dedupeRowsById([...(userResult.data || []), ...(globalResult.data || [])])
+      .sort(compareNotificationRows);
+    const pageRows = mergedRows.slice(0, limit);
+    const last = pageRows[pageRows.length - 1];
+
+    return {
+      items: pageRows.map(toCamel),
+      nextCursor: mergedRows.length > limit && last ? { createdAt: last.created_at, id: last.id } : undefined,
+    };
   },
 
-  /** Count unread */
+  /** List notifications (recent first) */
+  async list(userId?: string, limit = 50): Promise<AppNotification[]> {
+    const page = await this.listPage(userId, { limit });
+    return page.items;
+  },
+
+  /** Capped unread count. Returns 100 when there are more than 99 unread notifications. */
   async countUnread(userId?: string): Promise<number> {
     const baseQuery = () => supabase
       .from('notifications')
-      .select('id', { count: 'exact', head: true })
+      .select('id')
       .eq('is_read', false)
-      .eq('is_dismissed', false);
+      .eq('is_dismissed', false)
+      .limit(UNREAD_QUERY_LIMIT);
 
     if (!userId) {
-      const { count } = await baseQuery().is('user_id', null);
-      return count || 0;
+      const { data, error } = await baseQuery().is('user_id', null);
+      if (error) throw error;
+      return Math.min((data || []).length, UNREAD_QUERY_LIMIT);
     }
 
     const [userResult, globalResult] = await Promise.all([
       baseQuery().eq('user_id', userId),
       baseQuery().is('user_id', null),
     ]);
-    return (userResult.count || 0) + (globalResult.count || 0);
+    if (userResult.error) throw userResult.error;
+    if (globalResult.error) throw globalResult.error;
+
+    const unreadIds = new Set<string>();
+    for (const row of [...(userResult.data || []), ...(globalResult.data || [])]) {
+      unreadIds.add(row.id);
+      if (unreadIds.size >= UNREAD_QUERY_LIMIT) return UNREAD_QUERY_LIMIT;
+    }
+    return unreadIds.size;
   },
 
   /** Mark as read */

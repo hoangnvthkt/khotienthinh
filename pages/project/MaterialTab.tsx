@@ -107,6 +107,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         canEditBoq,
         canDeleteBoq,
         canApproveProjectRequest,
+        canViewAvailableStock,
         canCreateMaterialRequest,
     } = useProjectMaterialAccess({
         materialPermissions,
@@ -147,7 +148,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const loadedBoqScopeRef = useRef<string | null>(null);
     const [projectRequests, setProjectRequests] = useState<MaterialRequest[]>([]);
     const [projectRequestsLoaded, setProjectRequestsLoaded] = useState(false);
-    const [projectRequestBoardHydrated, setProjectRequestBoardHydrated] = useState(false);
+    const [, setProjectRequestBoardHydrated] = useState(false);
     const [requestEventsByRequest, setRequestEventsByRequest] = useState<Record<string, MaterialRequestEvent[]>>({});
     const [requestFulfillmentBatches, setRequestFulfillmentBatches] = useState<Record<string, MaterialRequestFulfillmentBatch[]>>({});
     const [requestWorkflowSubjects, setRequestWorkflowSubjects] = useState<Record<string, ProjectWorkflowSubject>>({});
@@ -194,7 +195,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const needsProjectRequestData = PROJECT_REQUEST_DATA_TABS.has(activeSubTab) || isReqModalOpen || Boolean(activeMaterialRequestDeepLinkId);
     const needsProjectWorkflowBoard = activeSubTab === 'request' || Boolean(activeMaterialRequestDeepLinkId);
     const needsRequestFulfillmentDetails = PROJECT_REQUEST_FULFILLMENT_TABS.has(activeSubTab) || isReqModalOpen;
-    const needsRequestEvents = activeSubTab === 'request' || isReqModalOpen || Boolean(activeMaterialRequestDeepLinkId);
 
     const [expandedWorkBoqMaterialIds, setExpandedWorkBoqMaterialIds] = useState<Set<string>>(() => new Set());
     const [expandedWorkBoqNodeIds, setExpandedWorkBoqNodeIds] = useState<Set<string>>(() => new Set());
@@ -731,19 +731,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 setRequestFulfillmentBatches({});
                 return;
             }
-            const batchesByRequest = await materialRequestFulfillmentService.listByRequests(requests.map(req => req.id));
+            const fulfillment = await materialRequestFulfillmentService.listSummariesByRequests(requests);
             if (cancelled) return;
-            const summaries = requests.reduce<Record<string, MaterialRequestFulfillmentSummary>>((acc, req) => {
-                acc[req.id] = materialRequestFulfillmentService.summarizeRequest(req, batchesByRequest[req.id] || []);
-                return acc;
-            }, {});
-            const counts = requests.reduce<Record<string, number>>((acc, req) => {
-                acc[req.id] = (batchesByRequest[req.id] || []).length;
-                return acc;
-            }, {});
-            setRequestFulfillmentBatches(batchesByRequest);
-            setRequestFulfillmentSummaries(summaries);
-            setRequestFulfillmentBatchCounts(counts);
+            setRequestFulfillmentSummaries(fulfillment.summariesByRequestId);
+            setRequestFulfillmentBatchCounts(fulfillment.batchCountsByRequestId);
         };
         loadFulfillment().catch(err => {
             console.warn('Failed to load material request fulfillment summaries:', err);
@@ -757,23 +748,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     }, [needsRequestFulfillmentDetails, requests]);
 
     useEffect(() => {
-        if (!needsRequestEvents) return;
-        if (projectRequestBoardHydrated) return;
-        let cancelled = false;
-        const loadEvents = async () => {
-            if (requests.length === 0) {
-                setRequestEventsByRequest({});
-                return;
-            }
-            const events = await materialRequestService.listEventsByRequestIds(requests.map(req => req.id));
-            if (!cancelled) setRequestEventsByRequest(events);
-        };
-        loadEvents().catch(err => {
-            console.warn('Failed to load material request events:', err);
-            if (!cancelled) setRequestEventsByRequest({});
-        });
-        return () => { cancelled = true; };
-    }, [needsRequestEvents, projectRequestBoardHydrated, requests]);
+        if (requests.length === 0) setRequestEventsByRequest({});
+    }, [requests.length]);
 
     const [showBoqForm, setShowBoqForm] = useState(false);
     const [editingBoq, setEditingBoq] = useState<MaterialBudgetItem | null>(null);
@@ -917,16 +893,16 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         knownSubject?: ProjectWorkflowSubject | null,
     ): Promise<MaterialRequest | null> => {
         const previousSubjectId = requestWorkflowSubjects[requestId]?.id;
-        const [updated, subject, events] = await Promise.all([
+        const [updated, subject, eventPage] = await Promise.all([
             materialRequestService.getById(requestId),
             knownSubject !== undefined
                 ? Promise.resolve(knownSubject)
                 : projectWorkflowService.getSubjectByMaterialRequestId(requestId),
-            materialRequestService.listEventsByRequestIds([requestId]),
+            materialRequestService.listEventsByRequest(requestId),
         ]);
 
         if (updated) upsertProjectRequest(updated);
-        setRequestEventsByRequest(prev => ({ ...prev, ...events }));
+        setRequestEventsByRequest(prev => ({ ...prev, [requestId]: eventPage.items }));
 
         if (subject) {
             setRequestWorkflowSubjects(prev => ({ ...prev, [requestId]: subject }));
@@ -1036,8 +1012,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 metadata: params.metadata,
             });
             upsertProjectRequest(updated);
-            const events = await materialRequestService.listEventsByRequestIds([updated.id]);
-            setRequestEventsByRequest(prev => ({ ...prev, ...events }));
+            const eventPage = await materialRequestService.listEventsByRequest(updated.id);
+            setRequestEventsByRequest(prev => ({ ...prev, [updated.id]: eventPage.items }));
             if (params.target?.userId) {
                 void projectSubmissionService.notifyTarget({
                     target: params.target,
@@ -3096,6 +3072,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         }
                         projectWorkflowNextNode={selectedRequestLive ? getWorkflowNextNode(requestWorkflowSubjects[selectedRequestLive.id]) : null}
                         projectWorkflowReturnTargetNode={selectedRequestLive ? getWorkflowReturnTargetNode(requestWorkflowSubjects[selectedRequestLive.id]) : null}
+                        canViewAvailableStock={canViewAvailableStock}
                         onProjectWorkflowAction={handleProjectWorkflowActionFromModal}
                         onSaved={handleMaterialRequestSavedFromBoq}
                         onDeleted={handleRequestDeleted}

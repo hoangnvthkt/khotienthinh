@@ -1060,9 +1060,6 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 if (!requestedVerifier?.userId) {
                     throw new Error('Vui lòng chọn người xác nhận từ Tổ chức dự án.');
                 }
-                if (requestedVerifier.userId === user?.id && !isAdminUser) {
-                    throw new Error('Người xác nhận phải khác người gửi để hệ thống gửi được thông báo.');
-                }
                 const permissionCheck = projectId
                     ? await projectStaffService.checkProjectPermission(requestedVerifier.userId, projectId, 'verify', constructionSiteId)
                     : constructionSiteId
@@ -1263,14 +1260,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         try {
             const rows = await projectStaffService.listProjectStaffWithPermissions(projectId, constructionSiteId, ['verify']);
             const options = uniqueStaffByUser(rows)
-                .filter(staff => isAdminUser || staff.userId !== user?.id)
                 .sort((a, b) =>
                     (a.positionLevel || 99) - (b.positionLevel || 99)
                     || (a.userName || '').localeCompare(b.userName || '', 'vi')
                 );
             setVerifierOptions(options);
             if (options.length === 0) {
-                toast.warning('Chưa có người xác nhận phù hợp', 'Tổ chức dự án chưa có người khác bạn được cấp quyền verify.');
+                toast.warning('Chưa có người xác nhận phù hợp', 'Tổ chức dự án chưa có người được cấp quyền verify.');
             }
         } catch (error: any) {
             toast.error('Không thể tải người xác nhận', error?.message || 'Vui lòng kiểm tra Tổ chức dự án.');

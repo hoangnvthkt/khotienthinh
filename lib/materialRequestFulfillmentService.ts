@@ -267,6 +267,12 @@ export interface PreparePoReceiptForQualityReviewResult {
   materialRequestIds: string[];
 }
 
+export interface MaterialRequestFulfillmentSummaryBundle {
+  summariesByRequestId: Record<string, MaterialRequestFulfillmentSummary>;
+  batchCountsByRequestId: Record<string, number>;
+  activeBatchCountsByRequestId: Record<string, number>;
+}
+
 export interface UpdateTransactionReceiptQuantityLineInput {
   index: number;
   quantity: number;
@@ -321,6 +327,61 @@ const emptySummary = (request: MaterialRequest): MaterialRequestFulfillmentSumma
   });
 
   return { materialRequestId: request.id, ...totals, lineSummaries };
+};
+
+const INACTIVE_FULFILLMENT_BATCH_STATUSES = new Set(['cancelled', 'draft', 'returned']);
+
+const summarizeRequestWithBatches = (
+  request: MaterialRequest,
+  batches: MaterialRequestFulfillmentBatch[] = [],
+): MaterialRequestFulfillmentSummary => {
+  const summary = emptySummary(request);
+  const lineMap = new Map(summary.lineSummaries.map(line => [line.requestLineId, line]));
+
+  batches
+    .filter(batch => !INACTIVE_FULFILLMENT_BATCH_STATUSES.has(batch.status))
+    .forEach(batch => {
+      batch.lines.forEach(line => {
+        const target = lineMap.get(line.requestLineId);
+        if (!target) return;
+        target.issuedQty += Number(line.issuedQty || 0);
+        if (batch.status === 'received') {
+          target.receivedQty += Number(line.receivedQty || 0);
+          (target as any).allocatedQty = Number((target as any).allocatedQty || 0) + Number(line.receivedQty || 0);
+        } else if (batch.status === 'variance_pending') {
+          (target as any).allocatedQty = Number((target as any).allocatedQty || 0) + Number(line.receivedQty || 0);
+        } else if (batch.status === 'issued') {
+          (target as any).allocatedQty = Number((target as any).allocatedQty || 0) + Number(line.issuedQty || 0);
+        }
+      });
+    });
+
+  summary.lineSummaries.forEach(line => {
+    const allocatedQty = Number((line as any).allocatedQty || 0);
+    line.remainingToIssue = Math.max(0, line.committedQty - allocatedQty);
+    line.remainingToReceive = Math.max(0, line.committedQty - line.receivedQty);
+    delete (line as any).allocatedQty;
+  });
+
+  const totals = summary.lineSummaries.reduce((sum, line) => ({
+    requestedQty: sum.requestedQty + line.requestedQty,
+    committedQty: sum.committedQty + line.committedQty,
+    orderedQty: sum.orderedQty + line.orderedQty,
+    issuedQty: sum.issuedQty + line.issuedQty,
+    receivedQty: sum.receivedQty + line.receivedQty,
+    remainingToIssue: sum.remainingToIssue + line.remainingToIssue,
+    remainingToReceive: sum.remainingToReceive + line.remainingToReceive,
+  }), {
+    requestedQty: 0,
+    committedQty: 0,
+    orderedQty: 0,
+    issuedQty: 0,
+    receivedQty: 0,
+    remainingToIssue: 0,
+    remainingToReceive: 0,
+  });
+
+  return { ...summary, ...totals };
 };
 
 export const materialRequestFulfillmentService = {
@@ -471,54 +532,91 @@ export const materialRequestFulfillmentService = {
     }, {});
   },
 
+  async listSummariesByRequests(requests: MaterialRequest[]): Promise<MaterialRequestFulfillmentSummaryBundle> {
+    const requestMap = new Map(requests.filter(Boolean).map(request => [request.id, request]));
+    const requestIds = [...requestMap.keys()];
+    const emptyBundle = requestIds.reduce<MaterialRequestFulfillmentSummaryBundle>((acc, requestId) => {
+      const request = requestMap.get(requestId);
+      if (request) acc.summariesByRequestId[requestId] = emptySummary(request);
+      acc.batchCountsByRequestId[requestId] = 0;
+      acc.activeBatchCountsByRequestId[requestId] = 0;
+      return acc;
+    }, {
+      summariesByRequestId: {},
+      batchCountsByRequestId: {},
+      activeBatchCountsByRequestId: {},
+    });
+    if (requestIds.length === 0) return emptyBundle;
+
+    const { data: batchRows, error: batchError } = await supabase
+      .from(BATCH_TABLE)
+      .select('id,material_request_id,status,batch_date,fulfillment_mode,source_type')
+      .in('material_request_id', requestIds)
+      .order('batch_date', { ascending: false });
+    if (batchError) {
+      if (isMissingFulfillmentTable(batchError)) return emptyBundle;
+      throw batchError;
+    }
+
+    const batches = batchRows || [];
+    const batchCountsByRequestId: Record<string, number> = { ...emptyBundle.batchCountsByRequestId };
+    const activeBatchCountsByRequestId: Record<string, number> = { ...emptyBundle.activeBatchCountsByRequestId };
+    const activeBatches = batches.filter(batch => !INACTIVE_FULFILLMENT_BATCH_STATUSES.has(batch.status));
+    batches.forEach(batch => {
+      const requestId = batch.material_request_id;
+      batchCountsByRequestId[requestId] = (batchCountsByRequestId[requestId] || 0) + 1;
+    });
+    activeBatches.forEach(batch => {
+      const requestId = batch.material_request_id;
+      activeBatchCountsByRequestId[requestId] = (activeBatchCountsByRequestId[requestId] || 0) + 1;
+    });
+
+    let lineRows: any[] = [];
+    if (activeBatches.length > 0) {
+      const { data, error } = await supabase
+        .from(LINE_TABLE)
+        .select('batch_id,material_request_id,request_line_id,item_id,requested_qty_snapshot,committed_qty_snapshot,issued_qty,received_qty')
+        .in('batch_id', activeBatches.map(batch => batch.id))
+        .order('created_at', { ascending: true });
+      if (error) {
+        if (isMissingFulfillmentTable(error)) return {
+          summariesByRequestId: emptyBundle.summariesByRequestId,
+          batchCountsByRequestId,
+          activeBatchCountsByRequestId,
+        };
+        throw error;
+      }
+      lineRows = data || [];
+    }
+
+    const linesByBatch = new Map<string, any[]>();
+    lineRows.forEach(line => {
+      const key = line.batch_id;
+      linesByBatch.set(key, [...(linesByBatch.get(key) || []), line]);
+    });
+
+    const activeBatchesByRequest = activeBatches.reduce<Record<string, MaterialRequestFulfillmentBatch[]>>((map, batch) => {
+      const requestId = batch.material_request_id;
+      map[requestId] = [...(map[requestId] || []), normalizeBatch(batch, linesByBatch.get(batch.id) || [])];
+      return map;
+    }, {});
+
+    const summariesByRequestId = requestIds.reduce<Record<string, MaterialRequestFulfillmentSummary>>((acc, requestId) => {
+      const request = requestMap.get(requestId);
+      if (!request) return acc;
+      acc[requestId] = summarizeRequestWithBatches(request, activeBatchesByRequest[requestId] || []);
+      return acc;
+    }, {});
+
+    return {
+      summariesByRequestId,
+      batchCountsByRequestId,
+      activeBatchCountsByRequestId,
+    };
+  },
+
   summarizeRequest(request: MaterialRequest, batches: MaterialRequestFulfillmentBatch[] = []): MaterialRequestFulfillmentSummary {
-    const summary = emptySummary(request);
-    const lineMap = new Map(summary.lineSummaries.map(line => [line.requestLineId, line]));
-
-    batches
-      .filter(batch => !['cancelled', 'draft', 'returned'].includes(batch.status))
-      .forEach(batch => {
-        batch.lines.forEach(line => {
-          const target = lineMap.get(line.requestLineId);
-          if (!target) return;
-          target.issuedQty += Number(line.issuedQty || 0);
-          if (batch.status === 'received') {
-            target.receivedQty += Number(line.receivedQty || 0);
-            (target as any).allocatedQty = Number((target as any).allocatedQty || 0) + Number(line.receivedQty || 0);
-          } else if (batch.status === 'variance_pending') {
-            (target as any).allocatedQty = Number((target as any).allocatedQty || 0) + Number(line.receivedQty || 0);
-          } else if (batch.status === 'issued') {
-            (target as any).allocatedQty = Number((target as any).allocatedQty || 0) + Number(line.issuedQty || 0);
-          }
-        });
-      });
-
-    summary.lineSummaries.forEach(line => {
-      const allocatedQty = Number((line as any).allocatedQty || 0);
-      line.remainingToIssue = Math.max(0, line.committedQty - allocatedQty);
-      line.remainingToReceive = Math.max(0, line.committedQty - line.receivedQty);
-      delete (line as any).allocatedQty;
-    });
-
-    const totals = summary.lineSummaries.reduce((sum, line) => ({
-      requestedQty: sum.requestedQty + line.requestedQty,
-      committedQty: sum.committedQty + line.committedQty,
-      orderedQty: sum.orderedQty + line.orderedQty,
-      issuedQty: sum.issuedQty + line.issuedQty,
-      receivedQty: sum.receivedQty + line.receivedQty,
-      remainingToIssue: sum.remainingToIssue + line.remainingToIssue,
-      remainingToReceive: sum.remainingToReceive + line.remainingToReceive,
-    }), {
-      requestedQty: 0,
-      committedQty: 0,
-      orderedQty: 0,
-      issuedQty: 0,
-      receivedQty: 0,
-      remainingToIssue: 0,
-      remainingToReceive: 0,
-    });
-
-    return { ...summary, ...totals };
+    return summarizeRequestWithBatches(request, batches);
   },
 
   nextRequestStatus(request: MaterialRequest, batches: MaterialRequestFulfillmentBatch[]): RequestStatus {

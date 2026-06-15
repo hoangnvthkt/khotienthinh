@@ -15,15 +15,16 @@ const pushBlocker = (deps: ProjectDocumentDependencies, blocker: string, rollbac
 
 async function countRows(table: string, column: string, value: string, optional = true): Promise<number> {
   try {
-    const { count, error } = await supabase
+    const { data, error } = await supabase
       .from(table)
-      .select('*', { count: 'exact', head: true })
-      .eq(column, value);
+      .select('id')
+      .eq(column, value)
+      .limit(1);
     if (error) throw error;
-    return count || 0;
+    return data && data.length > 0 ? 1 : 0;
   } catch (error: any) {
     if (!optional) throw error;
-    console.warn(`Cannot count ${table}.${column} dependencies`, error?.message || error);
+    console.warn(`Cannot check ${table}.${column} dependencies`, error?.message || error);
     return 0;
   }
 }
@@ -32,34 +33,43 @@ async function countRowsByFilters(table: string, filters: Record<string, string>
   try {
     let query = supabase
       .from(table)
-      .select('*', { count: 'exact', head: true });
+      .select('id');
     Object.entries(filters).forEach(([column, value]) => {
       query = query.eq(column, value);
     });
-    const { count, error } = await query;
+    const { data, error } = await query.limit(1);
     if (error) throw error;
-    return count || 0;
+    return data && data.length > 0 ? 1 : 0;
   } catch (error: any) {
     if (!optional) throw error;
-    console.warn(`Cannot count ${table} dependencies`, error?.message || error);
+    console.warn(`Cannot check ${table} dependencies`, error?.message || error);
     return 0;
   }
 }
 
 async function countPaymentCertificatesByAcceptance(acceptanceId: string): Promise<{ total: number; locked: number }> {
   try {
-    const { data, error } = await supabase
-      .from('payment_certificates')
-      .select('id, status')
-      .eq('acceptance_id', acceptanceId);
-    if (error) throw error;
-    const rows = data || [];
+    const [anyResult, lockedResult] = await Promise.all([
+      supabase
+        .from('payment_certificates')
+        .select('id')
+        .eq('acceptance_id', acceptanceId)
+        .limit(1),
+      supabase
+        .from('payment_certificates')
+        .select('id')
+        .eq('acceptance_id', acceptanceId)
+        .in('status', ['submitted', 'approved', 'paid', 'cancelled'])
+        .limit(1),
+    ]);
+    if (anyResult.error) throw anyResult.error;
+    if (lockedResult.error) throw lockedResult.error;
     return {
-      total: rows.length,
-      locked: rows.filter(row => ['submitted', 'approved', 'paid', 'cancelled'].includes(row.status)).length,
+      total: anyResult.data && anyResult.data.length > 0 ? 1 : 0,
+      locked: lockedResult.data && lockedResult.data.length > 0 ? 1 : 0,
     };
   } catch (error: any) {
-    console.warn('Cannot count payment certificate dependencies', error?.message || error);
+    console.warn('Cannot check payment certificate dependencies', error?.message || error);
     return { total: 0, locked: 0 };
   }
 }
@@ -81,14 +91,15 @@ async function getDailyLogVolumeIds(dailyLogId: string): Promise<string[]> {
 async function countAcceptedVolumeLinks(volumeIds: string[]): Promise<number> {
   if (volumeIds.length === 0) return 0;
   try {
-    const { count, error } = await supabase
+    const { data, error } = await supabase
       .from('quantity_acceptance_items')
-      .select('*', { count: 'exact', head: true })
-      .overlaps('source_daily_log_volume_ids', volumeIds);
+      .select('id')
+      .overlaps('source_daily_log_volume_ids', volumeIds)
+      .limit(1);
     if (error) throw error;
-    return count || 0;
+    return data && data.length > 0 ? 1 : 0;
   } catch (error: any) {
-    console.warn('Cannot count accepted daily log volume links', error?.message || error);
+    console.warn('Cannot check accepted daily log volume links', error?.message || error);
     return 0;
   }
 }
@@ -107,14 +118,14 @@ export const projectDocumentDependencyService = {
     if (delayCount > 0) {
       pushBlocker(
         deps,
-        `Không thể xoá/sửa nhật ký vì đã có ${delayCount} sự kiện chậm tiến độ liên kết.`,
+        'Không thể xoá/sửa nhật ký vì đã có sự kiện chậm tiến độ liên kết.',
         'Xử lý hoặc void sự kiện chậm tiến độ trước khi điều chỉnh nhật ký.',
       );
     }
     if (acceptanceLinkCount > 0) {
       pushBlocker(
         deps,
-        `Không thể xoá/sửa nhật ký vì khối lượng đã nằm trong ${acceptanceLinkCount} dòng nghiệm thu.`,
+        'Không thể xoá/sửa nhật ký vì khối lượng đã nằm trong dòng nghiệm thu.',
         'Trả lại/huỷ nghiệm thu liên quan trước, sau đó điều chỉnh nhật ký gốc.',
       );
     }
@@ -148,19 +159,19 @@ export const projectDocumentDependencyService = {
       pushBlocker(deps, `Không thể xoá hạng mục vì còn ${dependentCount} công việc đang phụ thuộc vào nó.`, 'Gỡ dependency ở các công việc kế tiếp trước.');
     }
     if (completionCount > 0) {
-      pushBlocker(deps, `Không thể xoá hạng mục vì đã có ${completionCount} phiếu hoàn thành liên kết.`, 'Huỷ hoặc xử lý phiếu hoàn thành trước khi xoá task.');
+      pushBlocker(deps, 'Không thể xoá hạng mục vì đã có phiếu hoàn thành liên kết.', 'Huỷ hoặc xử lý phiếu hoàn thành trước khi xoá task.');
     }
     if (volumeCount > 0) {
-      pushBlocker(deps, `Không thể xoá hạng mục vì đã có ${volumeCount} dòng khối lượng nhật ký liên kết.`, 'Điều chỉnh nhật ký thi công hoặc chuyển khối lượng sang hạng mục khác trước.');
+      pushBlocker(deps, 'Không thể xoá hạng mục vì đã có dòng khối lượng nhật ký liên kết.', 'Điều chỉnh nhật ký thi công hoặc chuyển khối lượng sang hạng mục khác trước.');
     }
     if (delayCount > 0) {
-      pushBlocker(deps, `Không thể xoá hạng mục vì đã có ${delayCount} sự kiện chậm tiến độ liên kết.`, 'Void/xử lý sự kiện chậm tiến độ trước.');
+      pushBlocker(deps, 'Không thể xoá hạng mục vì đã có sự kiện chậm tiến độ liên kết.', 'Void/xử lý sự kiện chậm tiến độ trước.');
     }
     if (contractLinkCount > 0) {
-      pushBlocker(deps, `Không thể xoá hạng mục vì đã map với ${contractLinkCount} dòng BOQ hợp đồng.`, 'Gỡ liên kết BOQ trước khi xoá task.');
+      pushBlocker(deps, 'Không thể xoá hạng mục vì đã map với dòng BOQ hợp đồng.', 'Gỡ liên kết BOQ trước khi xoá task.');
     }
     if (internalAcceptanceCount > 0) {
-      pushBlocker(deps, `Không thể xoá hạng mục vì đã có ${internalAcceptanceCount} dòng nghiệm thu nội bộ liên kết.`, 'Huỷ/rollback nghiệm thu nội bộ trước khi xoá task.');
+      pushBlocker(deps, 'Không thể xoá hạng mục vì đã có dòng nghiệm thu nội bộ liên kết.', 'Huỷ/rollback nghiệm thu nội bộ trước khi xoá task.');
     }
     return deps;
   },
@@ -170,10 +181,10 @@ export const projectDocumentDependencyService = {
     const paymentCounts = await countPaymentCertificatesByAcceptance(acceptance.id);
     deps.metadata = paymentCounts;
     if (paymentCounts.total > 0) {
-      const lockedText = paymentCounts.locked > 0 ? `, trong đó ${paymentCounts.locked} chứng từ đã gửi/duyệt/thanh toán` : '';
+      const lockedText = paymentCounts.locked > 0 ? ', trong đó có chứng từ đã gửi/duyệt/thanh toán' : '';
       pushBlocker(
         deps,
-        `Không thể xoá/huỷ nghiệm thu vì đã có ${paymentCounts.total} chứng từ thanh toán liên kết${lockedText}.`,
+        `Không thể xoá/huỷ nghiệm thu vì đã có chứng từ thanh toán liên kết${lockedText}.`,
         'Xoá, trả lại hoặc rollback chứng từ thanh toán liên kết trước khi điều chỉnh nghiệm thu.',
       );
     }
@@ -223,28 +234,28 @@ export const projectDocumentDependencyService = {
       advanceCount,
     };
     if (boqCount > 0) {
-      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${boqCount} dòng BOQ hợp đồng.`, 'Xoá/rollback BOQ hợp đồng trước khi xoá hợp đồng.');
+      pushBlocker(deps, 'Không thể xoá hợp đồng vì còn dòng BOQ hợp đồng.', 'Xoá/rollback BOQ hợp đồng trước khi xoá hợp đồng.');
     }
     if (acceptanceCount > 0) {
-      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${acceptanceCount} nghiệm thu liên kết.`, 'Rollback nghiệm thu trước khi xoá hợp đồng.');
+      pushBlocker(deps, 'Không thể xoá hợp đồng vì còn nghiệm thu liên kết.', 'Rollback nghiệm thu trước khi xoá hợp đồng.');
     }
     if (paymentCount > 0) {
-      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${paymentCount} chứng từ thanh toán liên kết.`, 'Rollback/xoá chứng từ thanh toán trước khi xoá hợp đồng.');
+      pushBlocker(deps, 'Không thể xoá hợp đồng vì còn chứng từ thanh toán liên kết.', 'Rollback/xoá chứng từ thanh toán trước khi xoá hợp đồng.');
     }
     if (variationCount > 0) {
-      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${variationCount} điều chỉnh BOQ/phát sinh.`, 'Xử lý điều chỉnh BOQ/phát sinh trước khi xoá hợp đồng.');
+      pushBlocker(deps, 'Không thể xoá hợp đồng vì còn điều chỉnh BOQ/phát sinh.', 'Xử lý điều chỉnh BOQ/phát sinh trước khi xoá hợp đồng.');
     }
     if (appendixCount > 0) {
-      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${appendixCount} phụ lục hợp đồng.`, 'Xoá phụ lục hợp đồng trước khi xoá hợp đồng.');
+      pushBlocker(deps, 'Không thể xoá hợp đồng vì còn phụ lục hợp đồng.', 'Xoá phụ lục hợp đồng trước khi xoá hợp đồng.');
     }
     if (scheduleCount > 0) {
-      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${scheduleCount} lịch thanh toán.`, 'Xoá lịch thanh toán trước khi xoá hợp đồng.');
+      pushBlocker(deps, 'Không thể xoá hợp đồng vì còn lịch thanh toán.', 'Xoá lịch thanh toán trước khi xoá hợp đồng.');
     }
     if (guaranteeCount > 0) {
-      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${guaranteeCount} bảo lãnh hợp đồng.`, 'Xử lý bảo lãnh hợp đồng trước khi xoá hợp đồng.');
+      pushBlocker(deps, 'Không thể xoá hợp đồng vì còn bảo lãnh hợp đồng.', 'Xử lý bảo lãnh hợp đồng trước khi xoá hợp đồng.');
     }
     if (advanceCount > 0) {
-      pushBlocker(deps, `Không thể xoá hợp đồng vì còn ${advanceCount} khoản tạm ứng.`, 'Rollback/xử lý tạm ứng trước khi xoá hợp đồng.');
+      pushBlocker(deps, 'Không thể xoá hợp đồng vì còn khoản tạm ứng.', 'Rollback/xử lý tạm ứng trước khi xoá hợp đồng.');
     }
     return deps;
   },
@@ -260,21 +271,21 @@ export const projectDocumentDependencyService = {
     if (childCount > 0) {
       pushBlocker(
         deps,
-        `Không thể xoá BOQ vì còn ${childCount} hạng mục con.`,
+        'Không thể xoá BOQ vì còn hạng mục con.',
         'Xoá hoặc chuyển hạng mục con sang nhóm khác trước khi xoá BOQ cha.',
       );
     }
     if (paymentCount > 0) {
       pushBlocker(
         deps,
-        `Không thể xoá BOQ vì đã có ${paymentCount} dòng chứng từ thanh toán liên kết.`,
+        'Không thể xoá BOQ vì đã có dòng chứng từ thanh toán liên kết.',
         'Rollback hoặc xoá chứng từ thanh toán trước khi chỉnh BOQ gốc.',
       );
     }
     if (acceptanceCount > 0) {
       pushBlocker(
         deps,
-        `Không thể xoá BOQ vì đã có ${acceptanceCount} dòng nghiệm thu liên kết.`,
+        'Không thể xoá BOQ vì đã có dòng nghiệm thu liên kết.',
         'Rollback hoặc xoá nghiệm thu trước khi chỉnh BOQ gốc.',
       );
     }

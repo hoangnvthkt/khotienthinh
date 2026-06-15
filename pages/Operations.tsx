@@ -24,6 +24,8 @@ import { useModuleData } from '../hooks/useModuleData';
 import { canApproveWmsTransaction, canReceiveWmsTransaction, isFulfillmentBatchTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { clampQuantity, parseQuantityInput } from '../lib/quantityInput';
+import { getTransactionNextAction, getTransactionTypeLabel } from '../lib/erpWorkflow';
+import { EmptyState, PageHeader, StatusBadge } from '../components/erp';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
@@ -394,15 +396,21 @@ const Operations: React.FC = () => {
         isLoading={processingApproval}
       />
 
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-black text-slate-800 tracking-tight">Nghiệp vụ kho</h1>
-        {hasAssignedWh && activeWarehouse && (
-          <div className="flex items-center gap-2 bg-blue-50 text-accent px-3 py-1.5 rounded-xl border border-blue-100">
-            <ShieldAlert size={14} />
-            <span className="text-[10px] font-black uppercase tracking-widest">Phạm vi: {activeWarehouse.name}</span>
-          </div>
-        )}
-      </div>
+      <PageHeader
+        eyebrow="WMS"
+        title="Nghiệp vụ kho"
+        description="Tạo phiếu nhập, xuất, chuyển kho và xử lý các hàng đợi duyệt/nhận hàng."
+        meta={
+          <>
+            <StatusBadge status="pending" label={`${pendingAdminTxs.length} chờ duyệt`} tone={pendingAdminTxs.length > 0 ? 'warning' : 'success'} size="md" />
+            <StatusBadge status="approved" label={`${pendingReceiptTxs.length} chờ nhận`} tone={pendingReceiptTxs.length > 0 ? 'info' : 'success'} size="md" />
+            <StatusBadge status="completed" label={`${historyTransactions.length} đã xử lý`} tone="neutral" size="md" />
+            {hasAssignedWh && activeWarehouse && (
+              <StatusBadge status="scope" label={`Phạm vi: ${activeWarehouse.name}`} tone="info" size="md" />
+            )}
+          </>
+        }
+      />
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="flex border-b border-slate-100 overflow-x-auto bg-slate-50/50 scrollbar-hide">
@@ -432,7 +440,11 @@ const Operations: React.FC = () => {
                   <span className="text-[10px] font-black bg-slate-100 px-2 py-0.5 rounded text-slate-500 uppercase">{pendingAdminTxs.length} PHIẾU</span>
                 </div>
                 {pendingAdminTxs.length === 0 ? (
-                  <div className="py-10 text-center border border-dashed border-slate-100 rounded-2xl text-slate-300 text-xs italic">Không có phiếu nào đang chờ duyệt.</div>
+                  <EmptyState
+                    icon={<ShieldAlert size={18} />}
+                    title="Không có phiếu đang chờ duyệt"
+                    message="Các phiếu cần bạn duyệt số lượng/chất lượng sẽ xuất hiện tại đây."
+                  />
                 ) : (
                   <div className="grid grid-cols-1 gap-4">
                     {pendingAdminTxs.map(tx => {
@@ -456,6 +468,8 @@ const Operations: React.FC = () => {
                       const isFulfillmentTx = isFulfillmentBatchTransaction(tx);
                       const isMaterialIssueTx = tx.items.some(item => !!item.materialIssueOrderId);
                       const pendingLabel = isFulfillmentTx ? 'CHỜ DUYỆT SL/CL' : (isMaterialIssueTx ? 'CHỜ KHO XUẤT CẤP' : 'CHỜ DUYỆT');
+                      const action = getTransactionNextAction(tx, user);
+                      const typeLabel = getTransactionTypeLabel(tx.type);
 
                       return (
                         <div key={tx.id} onClick={() => setViewingHistoryTx(tx)}
@@ -465,9 +479,9 @@ const Operations: React.FC = () => {
                           <div className="flex flex-col md:flex-row justify-between gap-4">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider bg-orange-100 text-orange-700">{pendingLabel}</span>
+                                <StatusBadge status={tx.status} label={pendingLabel} tone={action.tone} />
                                 <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider bg-blue-50 text-blue-600 border border-blue-100">
-                                  {isMaterialIssueTx ? '🏗️ Xuất cấp thi công' : tx.type === 'IMPORT' ? '📥 Nhập kho' : tx.type === 'EXPORT' ? '📤 Xuất kho' : tx.type === 'TRANSFER' ? '🔄 Chuyển kho' : '🗑️ Xuất hủy'}
+                                  {isMaterialIssueTx ? 'Xuất cấp thi công' : typeLabel}
                                 </span>
                                 <span className="text-[10px] text-slate-400 font-mono font-bold">{new Date(tx.date).toLocaleString()}</span>
                                 {/* ── Badge cảnh báo tồn khả dụng ── */}
@@ -496,6 +510,7 @@ const Operations: React.FC = () => {
                               <div className="text-xs text-slate-500 bg-slate-50 p-2 rounded-lg group-hover:bg-orange-50/50 transition-colors">
                                 {tx.items.length} vật tư • {tx.note || 'Không có ghi chú'}
                               </div>
+                              <p className="mt-2 text-[11px] font-bold text-slate-500">{action.nextAction}</p>
                               {/* ── Chi tiết tồn khả dụng cho Admin ── */}
                               {hasStockConflict && (
                                 <div className="mt-2 space-y-1">
@@ -545,18 +560,23 @@ const Operations: React.FC = () => {
                   <span className="text-[10px] font-black bg-blue-50 px-2 py-0.5 rounded text-blue-500 uppercase">{pendingReceiptTxs.length} PHIẾU</span>
                 </div>
                 {pendingReceiptTxs.length === 0 ? (
-                  <div className="py-10 text-center border border-dashed border-slate-100 rounded-2xl text-slate-300 text-xs italic">Không có hàng hoá nào đang chờ xác nhận nhập.</div>
+                  <EmptyState
+                    icon={<Inbox size={18} />}
+                    title="Không có hàng đang chờ nhận"
+                    message="Các phiếu đã duyệt và cần kho đích xác nhận sẽ nằm ở hàng đợi này."
+                  />
                 ) : (
                   <div className="grid grid-cols-1 gap-4">
                     {pendingReceiptTxs.map(tx => {
                       const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
                       const isMyWarehouse = targetWh?.id === user.assignedWarehouseId;
+                      const action = getTransactionNextAction(tx, user);
                       return (
                         <div key={tx.id} onClick={() => setViewingHistoryTx(tx)} className={`bg-white border rounded-2xl p-4 transition-all cursor-pointer group ${isMyWarehouse ? 'border-blue-200 bg-blue-50/5 shadow-md shadow-blue-500/5 hover:border-blue-400' : 'border-slate-100 hover:border-accent'}`}>
                           <div className="flex flex-col md:flex-row justify-between gap-4">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-2">
-                                <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider bg-blue-600 text-white shadow-sm">ĐÃ DUYỆT - CHỜ NHẬN</span>
+                                <StatusBadge status={tx.status} label="Đã duyệt - chờ nhận" tone={action.tone} />
                                 <span className="text-[10px] text-slate-400 font-mono font-bold">Admin đã duyệt lúc {new Date(tx.date).toLocaleTimeString()}</span>
                               </div>
                               <div className="flex items-center gap-2 mb-3">
@@ -570,6 +590,7 @@ const Operations: React.FC = () => {
                                 })}
                                 {tx.items.length > 2 && <div className="text-[10px] text-slate-400 mt-1 italic text-center">... và {tx.items.length - 2} hạng mục khác</div>}
                               </div>
+                              <p className="mt-2 text-[11px] font-bold text-slate-500">{action.nextAction}</p>
                             </div>
                             {canReceiveWmsTransaction(user, tx) && (
                               <div className="flex md:flex-col gap-2 min-w-[160px] pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 md:pl-4" onClick={(e) => e.stopPropagation()}>
@@ -605,9 +626,7 @@ const Operations: React.FC = () => {
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${isApproved ? 'bg-green-100 text-green-700 border-green-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                                {isApproved ? 'Hoàn thành' : 'Từ chối'}
-                              </span>
+                              <StatusBadge status={tx.status} label={isApproved ? 'Hoàn thành' : 'Từ chối'} tone={isApproved ? 'success' : 'danger'} />
                               <span className="text-xs font-black text-slate-700">{tx.type} • {tx.id.slice(-6)}</span>
                             </div>
                             <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-tight">{requester?.name} • {new Date(tx.date).toLocaleDateString('vi-VN')}</p>

@@ -11,34 +11,36 @@ import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 const TABLE = 'contract_items';
 const RESOURCE_TABLE = 'contract_item_resources';
 
-async function getUsageCounts(id: string): Promise<{ paymentCount: number; acceptanceCount: number }> {
+async function hasLinkedRows(table: string, column: string, value: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from(table)
+    .select('id')
+    .eq(column, value)
+    .limit(1);
+  if (error) throw error;
+  return (data?.length || 0) > 0;
+}
+
+async function getUsageFlags(id: string): Promise<{ hasPaymentUsage: boolean; hasAcceptanceUsage: boolean }> {
   const [paymentResult, acceptanceResult] = await Promise.all([
-    supabase
-      .from('payment_certificate_items')
-      .select('*', { count: 'exact', head: true })
-      .eq('contract_item_id', id),
-    supabase
-      .from('quantity_acceptance_items')
-      .select('*', { count: 'exact', head: true })
-      .eq('contract_item_id', id),
+    hasLinkedRows('payment_certificate_items', 'contract_item_id', id),
+    hasLinkedRows('quantity_acceptance_items', 'contract_item_id', id),
   ]);
-  if (paymentResult.error) throw paymentResult.error;
-  if (acceptanceResult.error) throw acceptanceResult.error;
   return {
-    paymentCount: paymentResult.count || 0,
-    acceptanceCount: acceptanceResult.count || 0,
+    hasPaymentUsage: paymentResult,
+    hasAcceptanceUsage: acceptanceResult,
   };
 }
 
-function assertNoUsage(id: string, usage: { paymentCount: number; acceptanceCount: number }) {
-  if (usage.paymentCount > 0) {
+function assertNoUsage(id: string, usage: { hasPaymentUsage: boolean; hasAcceptanceUsage: boolean }) {
+  if (usage.hasPaymentUsage) {
     throw new Error(
-      `Không thể xóa hạng mục này vì đã có ${usage.paymentCount} chứng chỉ thanh toán liên kết. Vui lòng rollback hoặc xóa chứng chỉ thanh toán trước.`
+      'Không thể xóa hạng mục này vì đã có chứng chỉ thanh toán liên kết. Vui lòng rollback hoặc xóa chứng chỉ thanh toán trước.'
     );
   }
-  if (usage.acceptanceCount > 0) {
+  if (usage.hasAcceptanceUsage) {
     throw new Error(
-      `Không thể xóa hạng mục này vì đã có ${usage.acceptanceCount} phiếu nghiệm thu khối lượng liên kết. Vui lòng rollback hoặc xóa nghiệm thu trước.`
+      'Không thể xóa hạng mục này vì đã có phiếu nghiệm thu khối lượng liên kết. Vui lòng rollback hoặc xóa nghiệm thu trước.'
     );
   }
 }
@@ -136,8 +138,8 @@ export const contractItemService = {
       if (lockInfo?.is_locked) {
         throw new Error('BOQ đã có nghiệm thu/thanh toán, chỉ được điều chỉnh qua phát sinh hợp đồng.');
       }
-      const usage = await getUsageCounts(id);
-      if (usage.paymentCount > 0 || usage.acceptanceCount > 0) {
+      const usage = await getUsageFlags(id);
+      if (usage.hasPaymentUsage || usage.hasAcceptanceUsage) {
         throw new Error('BOQ đã có nghiệm thu/thanh toán liên kết, chỉ được điều chỉnh qua phát sinh hợp đồng.');
       }
     }
@@ -160,7 +162,7 @@ export const contractItemService = {
 
   /** Xóa hạng mục */
   async remove(id: string): Promise<void> {
-    assertNoUsage(id, await getUsageCounts(id));
+    assertNoUsage(id, await getUsageFlags(id));
 
     const { error } = await supabase.from(TABLE).delete().eq('id', id);
     if (error) throw error;

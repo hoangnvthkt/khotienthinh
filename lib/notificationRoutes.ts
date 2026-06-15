@@ -107,6 +107,19 @@ export const resolveNotificationPath = (notification: AppNotification): string |
     return withQuery('/feedback', { feedbackId });
   }
 
+  // ── Project Safety ────────────────────────────────────
+  if (sourceType.startsWith('safety_') || notification.category === 'safety') {
+    const safetyId = getMetaValue(metadata, ['safetyId', 'safety_id']) || notification.sourceId;
+    const safetyView = getMetaValue(metadata, ['safetyView', 'safety_view']) ||
+      (sourceType === 'safety_issue' ? 'issues' :
+        sourceType === 'safety_inspection' ? 'inspections' :
+          sourceType === 'safety_equipment' ? 'equipment' :
+            sourceType === 'safety_subcontractor' ? 'contractors' : 'overview');
+    const projectPath = buildProjectPath(notification, 'safety', { safetyView, safetyId });
+    if (projectPath) return projectPath;
+    return notification.link || '/da?tab=safety';
+  }
+
   // ── Payment Certificate ───────────────────────────────
   if (sourceType === 'payment_certificate') {
     const projectPath = buildProjectPath(notification, 'payment');

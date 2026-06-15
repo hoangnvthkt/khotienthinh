@@ -11,7 +11,7 @@ const STAFF_TABLE = 'project_staff';
 const PERM_TABLE = 'project_staff_permissions';
 const PERM_TYPE_TABLE = 'project_permission_types';
 
-export type ProjectPermissionCode = 'view' | 'edit' | 'delete' | 'submit' | 'verify' | 'confirm' | 'approve';
+export type ProjectPermissionCode = 'view' | 'edit' | 'delete' | 'submit' | 'verify' | 'confirm' | 'approve' | 'view_available_stock';
 
 export const PROJECT_PERMISSION_LABELS: Record<ProjectPermissionCode, string> = {
   view: 'xem dữ liệu',
@@ -21,6 +21,7 @@ export const PROJECT_PERMISSION_LABELS: Record<ProjectPermissionCode, string> = 
   verify: 'xác nhận kết quả',
   confirm: 'xác nhận nghiệp vụ',
   approve: 'phê duyệt',
+  view_available_stock: 'xem vật tư khả dụng',
 };
 
 const PROJECT_PERMISSION_CODES = new Set<ProjectPermissionCode>([
@@ -31,6 +32,7 @@ const PROJECT_PERMISSION_CODES = new Set<ProjectPermissionCode>([
   'verify',
   'confirm',
   'approve',
+  'view_available_stock',
 ]);
 
 export const normalizeProjectPermissionCode = (code: string): ProjectPermissionCode | null => {
@@ -393,32 +395,35 @@ export const projectStaffService = {
 
   /** Check nhanh: CT này đã setup staff chưa? */
   async hasSiteStaff(constructionSiteId: string): Promise<boolean> {
-    const { count, error } = await supabase
+    const { data, error } = await supabase
       .from(STAFF_TABLE)
-      .select('id', { count: 'exact', head: true })
+      .select('id')
       .eq('construction_site_id', constructionSiteId)
-      .is('end_date', null);
+      .is('end_date', null)
+      .limit(1);
     if (error) throw error;
-    return (count || 0) > 0;
+    return (data || []).length > 0;
   },
 
   /** Check nhanh: project này đã setup staff chưa? */
   async hasProjectStaff(projectId: string, constructionSiteId?: string): Promise<boolean> {
-    const { count, error } = await supabase
+    const { data, error } = await supabase
       .from(STAFF_TABLE)
-      .select('id', { count: 'exact', head: true })
+      .select('id')
       .eq('project_id', projectId)
-      .is('end_date', null);
+      .is('end_date', null)
+      .limit(1);
     if (error) throw error;
-    if ((count || 0) > 0) return true;
+    if ((data || []).length > 0) return true;
     if (!constructionSiteId) return false;
-    const { count: fallbackCount, error: fallbackError } = await supabase
+    const { data: fallbackData, error: fallbackError } = await supabase
       .from(STAFF_TABLE)
-      .select('id', { count: 'exact', head: true })
+      .select('id')
       .eq('construction_site_id', constructionSiteId)
-      .is('end_date', null);
+      .is('end_date', null)
+      .limit(1);
     if (fallbackError) throw fallbackError;
-    return (fallbackCount || 0) > 0;
+    return (fallbackData || []).length > 0;
   },
 
   async hasProjectPbac(projectId?: string, constructionSiteId?: string | null): Promise<boolean> {

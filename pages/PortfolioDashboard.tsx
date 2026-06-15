@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { portfolioService, ProjectSummary, PortfolioKPIs } from '../lib/portfolioService';
+import { EmptyState, PageHeader, StatusBadge } from '../components/erp';
 
 const fmt = (n: number) => {
     if (n >= 1e9) return (n / 1e9).toFixed(1) + ' tỷ';
@@ -132,30 +133,31 @@ const PortfolioDashboard: React.FC = () => {
 
     if (summaries.length === 0) {
         return (
-            <div className="flex items-center justify-center h-96">
-                <div className="text-center">
-                    <Building2 size={56} className="mx-auto mb-4 text-slate-200" />
-                    <p className="text-lg font-black text-slate-400">Chưa có dự án nào</p>
-                    <p className="text-xs text-slate-300 mt-2">Tạo công trình và thêm dữ liệu dự án để xem tổng quan</p>
-                </div>
+            <div className="py-12">
+                <EmptyState
+                    icon={<Building2 size={22} />}
+                    title="Chưa có dự án nào"
+                    message="Tạo công trình và thêm dữ liệu dự án để xem tổng quan đa dự án."
+                />
             </div>
         );
     }
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-black text-slate-800 dark:text-white flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
-                            <Layers size={20} />
-                        </div>
-                        Tổng quan Đa dự án
-                    </h1>
-                    <p className="text-xs text-slate-400 mt-1 ml-[52px]">Portfolio Dashboard • {summaries.length} dự án</p>
-                </div>
-            </div>
+            <PageHeader
+                eyebrow="DA Portfolio"
+                title="Tổng quan đa dự án"
+                description="Theo dõi danh mục dự án theo tiến độ, chi phí, lợi nhuận và rủi ro cần chú ý."
+                meta={
+                    <>
+                        <StatusBadge status="completed" label={`${summaries.length} dự án`} tone="neutral" size="md" />
+                        <StatusBadge status="in_progress" label={`${kpis.activeProjects} đang thi công`} tone="info" size="md" />
+                        <StatusBadge status="warning" label={`${kpis.totalWasteOver} vượt hao hụt`} tone={kpis.totalWasteOver > 0 ? 'attention' : 'success'} size="md" />
+                        <StatusBadge status={kpis.totalProfit >= 0 ? 'completed' : 'warning'} label={`LN ${fmt(kpis.totalProfit)}`} tone={kpis.totalProfit >= 0 ? 'success' : 'danger'} size="md" />
+                    </>
+                }
+            />
 
             {/* KPI Cards */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">

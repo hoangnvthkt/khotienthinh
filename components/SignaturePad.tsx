@@ -2,6 +2,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import SignaturePadLib from 'signature_pad';
 import { Trash2, Save, RotateCcw, PenTool, X } from 'lucide-react';
+import { useConfirm } from '../context/ConfirmContext';
 
 interface SignaturePadProps {
     currentSignatureUrl?: string;
@@ -16,6 +17,7 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ currentSignatureUrl, onSave
     const [isEmpty, setIsEmpty] = useState(true);
     const [saving, setSaving] = useState(false);
     const [mode, setMode] = useState<'view' | 'draw'>(currentSignatureUrl ? 'view' : 'draw');
+    const confirm = useConfirm();
 
     useEffect(() => {
         if (mode === 'draw' && canvasRef.current) {
@@ -53,7 +55,14 @@ const SignaturePad: React.FC<SignaturePadProps> = ({ currentSignatureUrl, onSave
     };
 
     const handleDelete = async () => {
-        if (!confirm('Xóa chữ ký số?')) return;
+        const ok = await confirm({
+            title: 'Xóa chữ ký số',
+            targetName: 'Chữ ký đang lưu',
+            subtitle: 'Sau khi xóa, bạn cần vẽ lại chữ ký trước khi ký các hồ sơ tiếp theo.',
+            actionLabel: 'Xóa chữ ký',
+            intent: 'danger',
+        });
+        if (!ok) return;
         setSaving(true);
         await onDelete();
         setSaving(false);

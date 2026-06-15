@@ -344,12 +344,13 @@ export const contractCostItemService = {
 
   async remove(id: string): Promise<void> {
     if (!isSupabaseConfigured) return;
-    const { count, error: countError } = await supabase
+    const { data: childRows, error: childError } = await supabase
       .from('contract_cost_items')
-      .select('*', { count: 'exact', head: true })
-      .eq('parent_id', id);
-    if (countError) throw countError;
-    if (count && count > 0) {
+      .select('id')
+      .eq('parent_id', id)
+      .limit(1);
+    if (childError) throw childError;
+    if ((childRows?.length || 0) > 0) {
       throw new Error('Khoản mục này đang có khoản mục con. Vui lòng xoá hoặc chuyển các khoản mục con trước.');
     }
     const { error } = await supabase

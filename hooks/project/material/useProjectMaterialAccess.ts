@@ -21,6 +21,7 @@ export interface ProjectMaterialAccessState {
     canDeleteBoq: boolean;
     canSubmitProjectRequest: boolean;
     canApproveProjectRequest: boolean;
+    canViewAvailableStock: boolean;
     canCreateMaterialRequest: boolean;
 }
 
@@ -61,6 +62,7 @@ export const useProjectMaterialAccess = ({
     const [canDeleteProjectBoq, setCanDeleteProjectBoq] = useState(false);
     const [canSubmitProjectRequest, setCanSubmitProjectRequest] = useState(false);
     const [canApproveProjectRequest, setCanApproveProjectRequest] = useState(false);
+    const [canViewAvailableStock, setCanViewAvailableStock] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
@@ -117,27 +119,44 @@ export const useProjectMaterialAccess = ({
     useEffect(() => {
         let cancelled = false;
         const loadProjectRequestPermissions = async () => {
-            if (!projectId || user.role === Role.ADMIN || canManageRequest) {
+            if (user.role === Role.ADMIN || canManageRequest) {
                 if (!cancelled) {
-                    setCanSubmitProjectRequest(user.role === Role.ADMIN || canManageRequest);
-                    setCanApproveProjectRequest(user.role === Role.ADMIN || canManageRequest);
+                    setCanSubmitProjectRequest(true);
+                    setCanApproveProjectRequest(true);
+                    setCanViewAvailableStock(true);
+                }
+                return;
+            }
+            if (!user.id || (!projectId && !constructionSiteId)) {
+                if (!cancelled) {
+                    setCanSubmitProjectRequest(false);
+                    setCanApproveProjectRequest(false);
+                    setCanViewAvailableStock(false);
                 }
                 return;
             }
             try {
-                const [submitPerm, approvePerm] = await Promise.all([
-                    projectStaffService.checkProjectPermission(user.id, projectId, 'submit', constructionSiteId || undefined),
-                    projectStaffService.checkProjectPermission(user.id, projectId, 'approve', constructionSiteId || undefined),
+                const checkPermission = (code: string) => projectId
+                    ? projectStaffService.checkProjectPermission(user.id, projectId, code, constructionSiteId || undefined)
+                    : constructionSiteId
+                        ? projectStaffService.checkPermission(user.id, constructionSiteId, code)
+                        : Promise.resolve({ allowed: false });
+                const [submitPerm, approvePerm, availableStockPerm] = await Promise.all([
+                    checkPermission('submit'),
+                    checkPermission('approve'),
+                    checkPermission('view_available_stock'),
                 ]);
                 if (!cancelled) {
                     setCanSubmitProjectRequest(submitPerm.allowed);
                     setCanApproveProjectRequest(approvePerm.allowed);
+                    setCanViewAvailableStock(availableStockPerm.allowed);
                 }
             } catch (error) {
                 console.warn('Failed to check project material request permissions', error);
                 if (!cancelled) {
                     setCanSubmitProjectRequest(false);
                     setCanApproveProjectRequest(false);
+                    setCanViewAvailableStock(false);
                 }
             }
         };
@@ -167,6 +186,7 @@ export const useProjectMaterialAccess = ({
         canDeleteBoq,
         canSubmitProjectRequest,
         canApproveProjectRequest,
+        canViewAvailableStock,
         canCreateMaterialRequest,
     };
 };

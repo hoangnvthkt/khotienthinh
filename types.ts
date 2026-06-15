@@ -4512,3 +4512,284 @@ export interface SubcontractorContract {
   createdAt: string;
   updatedAt: string;
 }
+
+// ==================== AN TOÀN DỰ ÁN (Safety Management) ====================
+
+export type SafetySeverity = 'low' | 'medium' | 'high' | 'critical';
+export type SafetyIssueType = 'hazard' | 'violation' | 'near_miss' | 'minor_incident' | 'serious_incident' | 'corrective_action';
+export type SafetyIssueStatus = 'new' | 'assigned' | 'in_progress' | 'waiting_verification' | 'resolved' | 'closed' | 'rejected' | 'overdue';
+export type SafetyInspectionStatus = 'draft' | 'in_progress' | 'completed' | 'cancelled';
+export type SafetyInspectionResult = 'pass' | 'fail' | 'na';
+export type SafetyContractorStatus = 'pending_documents' | 'approved' | 'active' | 'suspended' | 'completed';
+export type SafetyEquipmentStatus = 'pending_review' | 'approved' | 'active' | 'expired' | 'suspended' | 'removed';
+export type SafetyDocumentStatus = 'missing' | 'submitted' | 'approved' | 'rejected' | 'expired';
+export type SafetyWorkerStatus = 'active' | 'inactive' | 'suspended';
+
+export interface SafetyAttachment extends Attachment {
+  storagePath?: string;
+  previewUrl?: string;
+}
+
+export interface SafetyChecklistTemplate {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  code: string;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  riskLevel: SafetySeverity;
+  isActive: boolean;
+  sortOrder: number;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyChecklistTemplateItem {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  templateId: string;
+  itemName: string;
+  description?: string | null;
+  requirement?: string | null;
+  defaultRiskLevel: SafetySeverity;
+  requiresPhoto: boolean;
+  sortOrder: number;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyTeam {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  subcontractorId?: string | null;
+  code?: string | null;
+  name: string;
+  supervisorName?: string | null;
+  supervisorPhone?: string | null;
+  status: 'active' | 'inactive' | 'suspended';
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyWorker {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  employeeId?: string | null;
+  userId?: string | null;
+  teamId?: string | null;
+  subcontractorId?: string | null;
+  fullName: string;
+  workerCode?: string | null;
+  phone?: string | null;
+  roleName?: string | null;
+  status: SafetyWorkerStatus;
+  trainingStatus: 'not_trained' | 'trained' | 'expired';
+  ppeStatus: 'missing' | 'partial' | 'complete';
+  eligibilityStatus: 'eligible' | 'not_eligible' | 'suspended';
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetySubcontractor {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  name: string;
+  code?: string | null;
+  representativeName?: string | null;
+  representativePhone?: string | null;
+  workScope?: string | null;
+  status: SafetyContractorStatus;
+  documentsStatus: 'missing' | 'partial' | 'complete';
+  violationCount: number;
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetySubcontractorDocument {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  subcontractorId: string;
+  documentType: string;
+  name: string;
+  status: SafetyDocumentStatus;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  attachments: SafetyAttachment[];
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyEquipment {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  subcontractorId?: string | null;
+  ownerName?: string | null;
+  equipmentCode?: string | null;
+  name: string;
+  model?: string | null;
+  serialNumber?: string | null;
+  operatorWorkerId?: string | null;
+  operatorName?: string | null;
+  inspectionExpiryDate?: string | null;
+  status: SafetyEquipmentStatus;
+  documentsStatus: 'missing' | 'partial' | 'complete';
+  attachments: SafetyAttachment[];
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyEquipmentDocument {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  equipmentId: string;
+  documentType: string;
+  name: string;
+  status: SafetyDocumentStatus;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  attachments: SafetyAttachment[];
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyIssue {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  code: string;
+  title: string;
+  type: SafetyIssueType;
+  severity: SafetySeverity;
+  status: SafetyIssueStatus;
+  area?: string | null;
+  description?: string | null;
+  beforePhotos: SafetyAttachment[];
+  afterPhotos: SafetyAttachment[];
+  attachments: SafetyAttachment[];
+  assignedToUserId?: string | null;
+  assignedToName?: string | null;
+  dueAt?: string | null;
+  resolvedAt?: string | null;
+  closedAt?: string | null;
+  contractorId?: string | null;
+  equipmentId?: string | null;
+  workerId?: string | null;
+  sourceInspectionId?: string | null;
+  sourceInspectionItemId?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyComment {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  issueId: string;
+  body: string;
+  attachments: SafetyAttachment[];
+  createdBy?: string | null;
+  createdByName?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyStatusLog {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  issueId: string;
+  fromStatus?: string | null;
+  toStatus: string;
+  reason?: string | null;
+  metadata: Record<string, any>;
+  createdBy?: string | null;
+  createdAt?: string;
+}
+
+export interface SafetyInspection {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  code: string;
+  templateId?: string | null;
+  inspectionDate: string;
+  area?: string | null;
+  inspectorUserId?: string | null;
+  inspectorName?: string | null;
+  status: SafetyInspectionStatus;
+  summary?: string | null;
+  score?: number | null;
+  attachments: SafetyAttachment[];
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyInspectionItem {
+  id: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  inspectionId: string;
+  templateItemId?: string | null;
+  itemName: string;
+  requirement?: string | null;
+  result: SafetyInspectionResult;
+  riskLevel: SafetySeverity;
+  note?: string | null;
+  photos: SafetyAttachment[];
+  assignedToUserId?: string | null;
+  assignedToName?: string | null;
+  dueAt?: string | null;
+  generatedIssueId?: string | null;
+  sortOrder: number;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SafetyDashboardSummary {
+  safetyScore: number;
+  openIssues: number;
+  highRiskIssues: number;
+  criticalIssues: number;
+  dueTodayInspections: number;
+  completedTodayInspections: number;
+  expiringEquipment: number;
+  expiredEquipment: number;
+  untrainedWorkers: number;
+  contractorsMissingDocs: number;
+  topRiskAreas: Array<{ label: string; count: number }>;
+  nextActions: Array<{
+    id: string;
+    title: string;
+    code?: string;
+    status: string;
+    severity?: SafetySeverity;
+    dueAt?: string | null;
+    actorName?: string | null;
+    sourceType: 'safety_issue' | 'safety_inspection' | 'safety_equipment' | 'safety_subcontractor';
+  }>;
+}

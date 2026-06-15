@@ -49,6 +49,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
         (mode === 'mobile' && isMobileViewport) ||
         (mode === 'desktop' && !isMobileViewport);
     const isActive = enabled && isViewportEnabled;
+    const unreadLabel = unreadCount > 99 ? '99+' : String(unreadCount);
 
     useEffect(() => {
         if (mode === 'always') return;
@@ -87,8 +88,11 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
     useEffect(() => {
         if (!isActive) return;
         const channel = notificationService.subscribe((n) => {
-            setNotifications(prev => [n, ...prev]);
-            if (!n.isRead) setUnreadCount(c => c + 1);
+            setNotifications(prev => {
+                if (prev.some(item => item.id === n.id)) return prev;
+                return [n, ...prev].slice(0, 50);
+            });
+            if (!n.isRead) setUnreadCount(c => Math.min(100, c + 1));
 
             // Browser Push Notification — show when tab not focused
             if ('Notification' in window && !document.hasFocus() && Notification.permission === 'granted') {
@@ -231,7 +235,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
 
     const handleRunChecks = async () => {
         setChecking(true);
-        const count = await notificationService.runAlertChecks();
+        await notificationService.runAlertChecks();
         await Promise.all([loadCount(), loadList()]);
         setChecking(false);
     };
@@ -271,7 +275,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                 <Bell size={18} />
                 {unreadCount > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-[9px] font-black text-white bg-red-500 rounded-full ring-2 ring-white dark:ring-slate-800 animate-pulse">
-                        {unreadCount > 99 ? '99+' : unreadCount}
+                        {unreadLabel}
                     </span>
                 )}
             </button>
@@ -289,7 +293,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                             <h3 className="font-black text-sm text-slate-800 dark:text-white flex items-center gap-2">
                                 <Bell size={14} className="text-indigo-500" /> Thông báo
                                 {unreadCount > 0 && (
-                                    <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-red-500 text-white">{unreadCount}</span>
+                                    <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-red-500 text-white">{unreadLabel}</span>
                                 )}
                             </h3>
                             <div className="flex items-center gap-1">
@@ -405,6 +409,19 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                                 })}
                             </div>
                         )}
+                    </div>
+
+                    <div className="border-t border-slate-100 p-3 dark:border-slate-700">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setIsOpen(false);
+                                navigate('/notifications');
+                            }}
+                            className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-black text-white transition hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+                        >
+                            Xem tất cả thông báo <ExternalLink size={12} />
+                        </button>
                     </div>
                 </div>
             )}

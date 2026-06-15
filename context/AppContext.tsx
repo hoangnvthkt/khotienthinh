@@ -18,6 +18,7 @@ import {
   MOCK_SUPPLIERS, MOCK_TRANSACTIONS
 } from '../constants';
 import { auditService } from '../lib/auditService';
+import { activityService } from '../lib/activityService';
 import { realtimeService, RealtimeStatus } from '../lib/realtimeService';
 import { notificationService } from '../lib/notificationService';
 import { logApiError } from '../lib/apiError';
@@ -235,6 +236,7 @@ interface AppContextType {
   }) => Promise<AssetTransfer | null>;
   isModuleAdmin: (moduleKey: string) => boolean;
   loadModuleData: (module: AppModule, force?: boolean) => Promise<void>;
+  setActiveRealtimeModules: (modules: AppModule[]) => void;
   refreshWmsRecords: (options: WmsRecordRefreshOptions) => Promise<void>;
   isLoading: boolean;
   isRefreshing: boolean;
@@ -449,20 +451,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, 20000);
   }, []);
 
-  const activateRealtimeTables = useCallback((tables: readonly string[]) => {
-    if (!isSupabaseConfigured || tables.length === 0) return;
+  const setActiveRealtimeModules = useCallback((modules: AppModule[]) => {
+    if (!isSupabaseConfigured) return;
 
-    let changed = false;
-    tables.forEach(table => {
-      if (!realtimeTablesRef.current.has(table)) {
-        realtimeTablesRef.current.add(table);
-        changed = true;
-      }
-    });
+    const nextTables = Array.from(new Set([
+      ...BASE_REALTIME_TABLES,
+      ...modules.flatMap(module => REALTIME_TABLES_BY_MODULE[module] || []),
+    ])).sort();
+    const currentTables = [...realtimeTablesRef.current].sort();
+    const nextKey = nextTables.join('|');
+    const currentKey = currentTables.join('|');
+    if (nextKey === currentKey) return;
 
-    if (changed) {
-      realtimeService.connect([...realtimeTablesRef.current]);
-    }
+    realtimeTablesRef.current = new Set(nextTables);
+    realtimeService.connect(nextTables);
   }, []);
 
   useEffect(() => {
@@ -674,11 +676,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // ── Activities ──
     const unsubAct = realtimeService.on('activities', (event) => {
       if (event.eventType === 'INSERT') {
-        const a = event.newRecord;
-        const mapped = {
-          ...a, userId: a.user_id, userName: a.user_name, userAvatar: a.user_avatar, warehouseId: a.warehouse_id
-        };
-        setActivities(prev => [mapped, ...prev].slice(0, 50));
+        const mapped = activityService.fromRealtimeRow(event.newRecord);
+        if (user.assignedWarehouseId && mapped.warehouseId !== user.assignedWarehouseId) return;
+        setActivities(prev => {
+          if (prev.some(activity => activity.id === mapped.id)) return prev;
+          return [mapped, ...prev].slice(0, 50);
+        });
       }
     });
 
@@ -771,9 +774,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
-    // Keep bootstrap realtime deliberately small. Module tables are enabled
-    // lazily from loadModuleData() to reduce realtime.list_changes pressure.
-    activateRealtimeTables(BASE_REALTIME_TABLES);
+    setActiveRealtimeModules([]);
 
     return () => {
       unsubStatus();
@@ -784,7 +785,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       realtimeTablesRef.current.clear();
       realtimeService.disconnect();
     };
-  }, [activateRealtimeTables]);
+  }, [setActiveRealtimeModules]);
 
   // ==================== LAZY MODULE DATA LOADING ====================
   const fetchTableHelper = async (table: string, query: any = supabase.from(table).select('*')) => {
@@ -842,7 +843,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!isSupabaseConfigured) return;
     if (!force && (loadedModulesRef.current.has(module) || (module === 'wms-core' && loadedModulesRef.current.has('wms')))) return;
     loadedModulesRef.current.add(module);
-    activateRealtimeTables(REALTIME_TABLES_BY_MODULE[module] || []);
 
     try {
       const loadWmsCoreData = async () => {
@@ -880,21 +880,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else if (module === 'wms-core') {
         await loadWmsCoreData();
       } else if (module === 'wms') {
-        const [itemsData, whData, supData, txData, reqData, actData, catData, unitData, lossNormsData, auditSessionsData] = await Promise.all([
+        const [itemsData, whData, supData, txData, reqData, actPage, catData, unitData, lossNormsData, auditSessionsData] = await Promise.all([
           fetchAllInventoryItemRows(),
           fetchTableHelper('warehouses'),
           fetchTableHelper('suppliers'),
           fetchTableHelper('transactions', supabase.from('transactions').select('*').order('date', { ascending: false })),
           fetchTableHelper('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
-          fetchTableHelper(
-            'activities',
-            supabase
-              .from('activities')
-              .select('id,type,action,description,status,timestamp,user_id,user_name,user_avatar,warehouse_id')
-              .order('timestamp', { ascending: false })
-              .order('id', { ascending: false })
-              .limit(50)
-          ),
+          activityService.listPage({ limit: 50, warehouseId: user.assignedWarehouseId || undefined }).catch((err) => {
+            logApiError('activities', err);
+            return { items: [] };
+          }),
           fetchTableHelper('categories'),
           fetchTableHelper('units'),
           fetchTableHelper('loss_norms'),
@@ -905,13 +900,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (supData) setSuppliers(supData.map((s: any) => ({ ...s, contactPerson: s.contact_person })));
         if (txData) setTransactions(txData.map(mapTransactionFromDb));
         if (reqData) setRequests(reqData.map(mapMaterialRequestFromDb));
-        if (actData) setActivities(actData.map((a: any) => ({
-          ...a,
-          userId: a.user_id,
-          userName: a.user_name,
-          userAvatar: a.user_avatar,
-          warehouseId: a.warehouse_id,
-        })));
+        setActivities(actPage.items);
         if (catData) setCategories(catData);
         if (unitData) setUnits(unitData);
         if (lossNormsData) setLossNorms(lossNormsData.map((n: any) => ({
@@ -1138,7 +1127,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error(`Error lazy-loading module "${module}":`, error);
       loadedModulesRef.current.delete(module); // Allow retry on error
     }
-  }, [activateRealtimeTables, user.authId, user.email]);
+  }, [user.authId, user.email]);
 
   // Helper to sync a single table to Supabase
   const syncToSupabase = async (table: string, data: any, throwOnError = false): Promise<boolean> => {
@@ -2148,10 +2137,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (isSupabaseConfigured) {
-      const [{ data: batchRows, error: batchError }, { data: poLinkRows, error: poLinkError }, { count: txCount, error: txError }] = await Promise.all([
+      const [{ data: batchRows, error: batchError }, { data: poLinkRows, error: poLinkError }, { data: txRows, error: txError }] = await Promise.all([
         supabase.from('material_request_fulfillment_batches').select('id,status,transaction_id').eq('material_request_id', id),
         supabase.from('purchase_order_request_lines').select('id,purchase_order_id,purchase_order_line_id').eq('material_request_id', id),
-        supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('related_request_id', id),
+        supabase.from('transactions').select('id').eq('related_request_id', id).limit(1),
       ]);
       if (batchError && batchError.code !== '42P01') throw batchError;
       if (poLinkError && poLinkError.code !== '42P01') throw poLinkError;
@@ -2210,9 +2199,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           .eq('material_request_id', id);
         if (deletePoLinksError) throw deletePoLinksError;
       }
-      if ((txCount || 0) > 0 && relatedBatches.length === 0) throw new Error('Phiếu đã phát sinh phiếu kho, không thể xoá cứng.');
+      const hasRelatedTransaction = (txRows || []).length > 0;
+      if (hasRelatedTransaction && relatedBatches.length === 0) throw new Error('Phiếu đã phát sinh phiếu kho, không thể xoá cứng.');
 
-      if ((txCount || 0) > 0) {
+      if (hasRelatedTransaction) {
         const { error: detachTxError } = await supabase
           .from('transactions')
           .update({ related_request_id: null })
@@ -3229,7 +3219,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       assets, assetCategories, assetAssignments, assetMaintenances, assetLocationStocks, assetTransfers,
       addAsset, addAssetWithInitialStock, updateAsset, removeAsset, addAssetCategory, updateAssetCategory, removeAssetCategory,
       addAssetAssignment, addAssetMaintenance, updateAssetMaintenance, addAssetTransfer, transferAssetStock,
-      isModuleAdmin, loadModuleData, refreshWmsRecords,
+      isModuleAdmin, loadModuleData, setActiveRealtimeModules, refreshWmsRecords,
       saveSignature, deleteSignature,
       login, logout, isLoading, isRefreshing, connectionError, systemSlowMessage, realtimeStatus, lastRealtimeEvent
     }}>

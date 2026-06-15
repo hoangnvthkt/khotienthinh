@@ -98,6 +98,9 @@ function calculateInspectionResult(checklist: Partial<QualityChecklist>): {
   return { totalCriteria, passedCriteria, failedCriteria, inspectionResult };
 }
 
+const shouldCalculateInspectionResult = (updates: Partial<QualityChecklist>): boolean =>
+  Object.prototype.hasOwnProperty.call(updates, 'checklistData');
+
 // ==================== CLONE TEMPLATE INTO CHECKLIST ====================
 
 function cloneTemplateSections(
@@ -320,7 +323,7 @@ export const qualityChecklistService = {
   async list(projectId?: string | null, constructionSiteId?: string): Promise<QualityChecklist[]> {
     let query = supabase.from(TABLE).select('*').order('created_at', { ascending: false });
     if (projectId) query = query.eq('project_id', projectId);
-    else if (constructionSiteId) query = query.eq('construction_site_id', constructionSiteId);
+    if (constructionSiteId) query = query.eq('construction_site_id', constructionSiteId);
     const { data, error } = await query;
     if (error) throw error;
     return (data || []).map(normalize);
@@ -400,8 +403,74 @@ export const qualityChecklistService = {
     return normalize(data);
   },
 
+  /** Tạo hồ sơ CL nháp trực tiếp từ hạng mục tiến độ, không phụ thuộc template. */
+  async createForTask(params: {
+    projectId: string;
+    constructionSiteId: string;
+    taskId: string;
+    title: string;
+    workDescription?: string;
+    workLocation?: string;
+    workDate?: string;
+    workSupervisor?: string;
+    sitePhotos?: QualityChecklist['sitePhotos'];
+    attachments?: QualityChecklist['attachments'];
+    note?: string;
+    createdBy?: string;
+  }): Promise<QualityChecklist> {
+    const code = await nextCode(params.constructionSiteId);
+    const checklist: Partial<QualityChecklist> = {
+      constructionSiteId: params.constructionSiteId,
+      projectId: params.projectId,
+      taskId: params.taskId,
+      contractItemId: null,
+      dailyLogId: null,
+      templateId: null,
+      workTypeId: null,
+      code,
+      title: params.title || code,
+      templateCode: undefined,
+      templateName: undefined,
+      templateVersion: undefined,
+      workDescription: params.workDescription,
+      workLocation: params.workLocation,
+      workDate: params.workDate || new Date().toISOString().slice(0, 10),
+      workSupervisor: params.workSupervisor,
+      checklistData: [],
+      sitePhotos: params.sitePhotos || [],
+      attachments: params.attachments || [],
+      status: 'draft',
+      currentAttempt: 1,
+      totalCriteria: 0,
+      passedCriteria: 0,
+      failedCriteria: 0,
+      inspectionResult: undefined,
+      note: params.note,
+      createdBy: params.createdBy,
+    };
+
+    const dbItem = toDb(checklist);
+    delete dbItem.id;
+    const { data, error } = await supabase.from(TABLE).insert(dbItem).select().single();
+    if (error) throw error;
+
+    await auditService.log({
+      tableName: TABLE,
+      recordId: data.id,
+      action: 'INSERT',
+      newData: { code, taskId: params.taskId, title: params.title },
+      userId: params.createdBy || 'system',
+      userName: params.createdBy || 'system',
+      description: `Tạo hồ sơ CL ${code} từ hạng mục tiến độ`,
+    });
+
+    return normalize(data);
+  },
+
   async update(id: string, updates: Partial<QualityChecklist>): Promise<void> {
-    const calc = calculateInspectionResult(updates);
+    const calc = shouldCalculateInspectionResult(updates)
+      ? calculateInspectionResult(updates)
+      : {};
     const withCalc = {
       ...updates,
       ...calc,

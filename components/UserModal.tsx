@@ -18,6 +18,7 @@ const PROJECT_TAB_PERMISSION_ICONS: Record<ProjectOverviewTabKey, any> = {
   dailylog: ClipboardCheck,
   payment: CreditCard,
   quality: ClipboardCheck,
+  safety: Shield,
   subcontract: Briefcase,
   material: Package,
   documents: FolderOpen,

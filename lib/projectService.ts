@@ -34,6 +34,45 @@ const PAYMENT_QUALITY_STATUSES = new Set<PaymentQualityStatus>(['not_applicable'
 const getDefaultPaymentQualityStatus = (milestoneType: PaymentScheduleMilestoneType): PaymentQualityStatus =>
     milestoneType === 'advance' ? 'not_applicable' : 'not_confirmed';
 
+const HOT_LIST_CACHE_TTL_MS = 30_000;
+
+type ScopedListCacheEntry<T> = {
+    expiresAt: number;
+    rows: T[];
+};
+
+const taskListCache = new Map<string, ScopedListCacheEntry<ProjectTask>>();
+const workBoqListCache = new Map<string, ScopedListCacheEntry<ProjectWorkBoqItem>>();
+
+const getScopedCacheKey = (projectIdOrSiteId: string, constructionSiteId?: string | null) =>
+    `${projectIdOrSiteId || ''}::${constructionSiteId || ''}`;
+
+const cloneCachedRows = <T>(rows: T[]): T[] => {
+    try {
+        if (typeof structuredClone === 'function') return structuredClone(rows);
+    } catch {
+        // Fall back below for older browsers or non-cloneable values.
+    }
+    return JSON.parse(JSON.stringify(rows));
+};
+
+const readScopedCache = <T>(cache: Map<string, ScopedListCacheEntry<T>>, key: string): T[] | null => {
+    const entry = cache.get(key);
+    if (!entry) return null;
+    if (entry.expiresAt < Date.now()) {
+        cache.delete(key);
+        return null;
+    }
+    return cloneCachedRows(entry.rows);
+};
+
+const writeScopedCache = <T>(cache: Map<string, ScopedListCacheEntry<T>>, key: string, rows: T[]) => {
+    cache.set(key, { expiresAt: Date.now() + HOT_LIST_CACHE_TTL_MS, rows: cloneCachedRows(rows) });
+};
+
+const clearTaskListCache = () => taskListCache.clear();
+const clearWorkBoqListCache = () => workBoqListCache.clear();
+
 const normalizePaymentSchedule = (row: any): PaymentSchedule => {
     const item = fromDb(row || {}) as PaymentSchedule;
     const milestoneType = PAYMENT_MILESTONE_TYPES.has(item.milestoneType as PaymentScheduleMilestoneType)
@@ -242,12 +281,59 @@ const taskToDb = (task: ProjectTask): any => {
     return row;
 };
 
+export type ProjectTaskLite = Pick<ProjectTask,
+    'id' | 'projectId' | 'constructionSiteId' | 'parentId' | 'name' | 'startDate' | 'endDate' |
+    'duration' | 'progress' | 'isMilestone' | 'order' | 'wbsCode' | 'fallbackUnit' |
+    'provisionalQuantity' | 'gateStatus'
+>;
+
+export type ProjectWorkBoqItemLite = Pick<ProjectWorkBoqItem,
+    'id' | 'projectId' | 'constructionSiteId' | 'sourceTaskId' | 'parentId' | 'wbsCode' |
+    'name' | 'unit' | 'plannedQty' | 'sortOrder' | 'syncStatus'
+>;
+
+const TASK_LITE_SELECT = [
+    'id',
+    'project_id',
+    'construction_site_id',
+    'parent_id',
+    'name',
+    'start_date',
+    'end_date',
+    'duration',
+    'progress',
+    'is_milestone',
+    'sort_order',
+    'wbs_code',
+    'fallback_unit',
+    'provisional_quantity',
+    'gate_status',
+].join(',');
+
+const WORK_BOQ_LITE_SELECT = [
+    'id',
+    'project_id',
+    'construction_site_id',
+    'source_task_id',
+    'parent_id',
+    'wbs_code',
+    'name',
+    'unit',
+    'planned_qty',
+    'sort_order',
+    'sync_status',
+].join(',');
+
 // NOTE: contractService đã chuyển sang lib/hdService.ts
 
 
 // ==================== TASKS (GANTT) ====================
 export const taskService = {
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectTask[]> {
+        const cacheKey = getScopedCacheKey(projectIdOrSiteId, constructionSiteId);
+        const cached = readScopedCache(taskListCache, cacheKey);
+        if (cached) return cached;
+
         const { data, error } = await supabase
             .from('project_tasks')
             .select('*')
@@ -255,7 +341,19 @@ export const taskService = {
             .order('sort_order', { ascending: true })
             .order('id', { ascending: true });
         if (error) throw error;
-        return dedupeRowsById(data || []).map(taskFromDb);
+        const rows = dedupeRowsById(data || []).map(taskFromDb);
+        writeScopedCache(taskListCache, cacheKey, rows);
+        return cloneCachedRows(rows);
+    },
+    async listLite(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectTaskLite[]> {
+        const { data, error } = await supabase
+            .from('project_tasks')
+            .select(TASK_LITE_SELECT)
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
+            .order('sort_order', { ascending: true })
+            .order('id', { ascending: true });
+        if (error) throw error;
+        return dedupeRowsById((data || []) as any[]).map(taskFromDb) as ProjectTaskLite[];
     },
     async listBySites(siteIds: string[]): Promise<ProjectTask[]> {
         if (siteIds.length === 0) return [];
@@ -274,12 +372,14 @@ export const taskService = {
             .from('project_tasks')
             .upsert(items.map(taskToDb), { onConflict: 'id' });
         if (error) throw error;
+        clearTaskListCache();
     },
     async upsert(item: ProjectTask): Promise<void> {
         const { error } = await supabase
             .from('project_tasks')
             .upsert(taskToDb(item), { onConflict: 'id' });
         if (error) throw error;
+        clearTaskListCache();
     },
     async remove(id: string): Promise<void> {
         const { error } = await supabase
@@ -287,6 +387,7 @@ export const taskService = {
             .delete()
             .eq('id', id);
         if (error) throw error;
+        clearTaskListCache();
     },
 };
 
@@ -572,6 +673,10 @@ const poRequestLineLinkToDb = (link: PurchaseOrderRequestLineLink): any => {
 // ==================== WORK BOQ (TỪ TIẾN ĐỘ) ====================
 export const workBoqService = {
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectWorkBoqItem[]> {
+        const cacheKey = getScopedCacheKey(projectIdOrSiteId, constructionSiteId);
+        const cached = readScopedCache(workBoqListCache, cacheKey);
+        if (cached) return cached;
+
         const { data, error } = await supabase
             .from('project_work_boq_items')
             .select('*')
@@ -579,7 +684,20 @@ export const workBoqService = {
             .order('sort_order', { ascending: true })
             .order('id', { ascending: true });
         if (error) throw error;
-        return dedupeRowsById(data || []).map(fromDb);
+        const rows = dedupeRowsById(data || []).map(fromDb) as ProjectWorkBoqItem[];
+        writeScopedCache(workBoqListCache, cacheKey, rows);
+        return cloneCachedRows(rows);
+    },
+
+    async listLite(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectWorkBoqItemLite[]> {
+        const { data, error } = await supabase
+            .from('project_work_boq_items')
+            .select(WORK_BOQ_LITE_SELECT)
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
+            .order('sort_order', { ascending: true })
+            .order('id', { ascending: true });
+        if (error) throw error;
+        return dedupeRowsById((data || []) as any[]).map(fromDb) as ProjectWorkBoqItemLite[];
     },
 
     previewSync(tasks: ProjectTask[], existingItems: ProjectWorkBoqItem[]): WorkBoqSyncPreview {
@@ -598,6 +716,7 @@ export const workBoqService = {
                 .from('project_work_boq_items')
                 .upsert(rows.map(workBoqToDb), { onConflict: 'id' });
             if (error) throw error;
+            clearWorkBoqListCache();
         }
         return preview;
     },
@@ -607,6 +726,7 @@ export const workBoqService = {
             .from('project_work_boq_items')
             .upsert(workBoqToDb(item), { onConflict: 'id' });
         if (error) throw error;
+        clearWorkBoqListCache();
     },
 
     async upsertMany(items: ProjectWorkBoqItem[]): Promise<void> {
@@ -615,11 +735,13 @@ export const workBoqService = {
             .from('project_work_boq_items')
             .upsert(items.map(workBoqToDb), { onConflict: 'id' });
         if (error) throw error;
+        clearWorkBoqListCache();
     },
 
     async remove(id: string): Promise<void> {
         const { error } = await supabase.from('project_work_boq_items').delete().eq('id', id);
         if (error) throw error;
+        clearWorkBoqListCache();
     },
 };
 

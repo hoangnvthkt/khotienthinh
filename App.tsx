@@ -18,6 +18,7 @@ import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { ROUTE_TO_MODULE } from './constants/routes';
 import { getProjectAllowedSubModuleRedirect, hasProjectTabPermissionRoute } from './lib/projectTabPermissions';
 import { createPerformanceTrace } from './lib/performanceTrace';
+import { isChatEnabled } from './lib/featureFlags';
 
 // Lazy load all page components for code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -265,7 +266,7 @@ const AppRoutes: React.FC = () => {
           <Route path="hrm/ranking" element={<EmployeeRanking />} />
           <Route path="da" element={<ProjectDashboard />} />
           <Route path="da/portfolio" element={<PortfolioDashboard />} />
-          <Route path="chat" element={<Chat />} />
+          <Route path="chat" element={isChatEnabled ? <Chat /> : <Navigate to="/" replace />} />
           <Route path="storage" element={<DataStorage />} />
           <Route path="ai" element={<AiAssistant />} />
           <Route path="ai/executive" element={<ExecutiveAI />} />
@@ -315,26 +316,32 @@ const AppRoutes: React.FC = () => {
 
 const AppDataWarmup: React.FC = () => {
   const { pathname } = useLocation();
-  const { loadModuleData } = useApp();
+  const { loadModuleData, setActiveRealtimeModules } = useApp();
   const { refreshData: refreshWorkflowData } = useWorkflow();
   const { refreshData: refreshRequestData } = useRequest();
   const { loadChatData } = useChat();
 
   useEffect(() => {
-    if (pathname === '/login' || pathname === '/' || pathname === '/my-profile') return;
+    if (pathname === '/login' || pathname === '/' || pathname === '/my-profile') {
+      setActiveRealtimeModules([]);
+      return;
+    }
 
     const wmsRoutes = ['/dashboard', '/inventory', '/operations', '/requests', '/material-code-requests', '/reports', '/audit', '/misa-export'];
     if (wmsRoutes.some(route => pathname === route || pathname.startsWith(`${route}/`))) {
+      setActiveRealtimeModules(['wms']);
       loadModuleData('wms').catch(err => console.warn('WMS lazy load failed:', err));
       return;
     }
 
     if (pathname.startsWith('/hrm') || pathname.startsWith('/employee-dashboard') || pathname.startsWith('/org-map')) {
+      setActiveRealtimeModules(['hrm']);
       loadModuleData('hrm').catch(err => console.warn('HRM lazy load failed:', err));
       return;
     }
 
     if (pathname.startsWith('/da')) {
+      setActiveRealtimeModules(['wms-core']);
       loadModuleData('da').catch(err => console.warn('Project lazy load failed:', err));
       return;
     }
@@ -350,9 +357,13 @@ const AppDataWarmup: React.FC = () => {
     }
 
     if (pathname.startsWith('/settings') || pathname.startsWith('/users')) {
+      setActiveRealtimeModules(['admin']);
       loadModuleData('admin').catch(err => console.warn('Admin lazy load failed:', err));
+      return;
     }
-  }, [pathname, loadModuleData]);
+
+    setActiveRealtimeModules([]);
+  }, [pathname, loadModuleData, setActiveRealtimeModules]);
 
   useEffect(() => {
     const needsWorkflowData = pathname.startsWith('/wf') || pathname === '/employee-dashboard' || pathname === '/custom-dashboard';
@@ -367,7 +378,7 @@ const AppDataWarmup: React.FC = () => {
   }, [pathname, refreshRequestData]);
 
   useEffect(() => {
-    if (pathname === '/chat') {
+    if (isChatEnabled && pathname === '/chat') {
       loadChatData().catch(err => console.warn('Chat warmup failed:', err));
     }
   }, [pathname, loadChatData]);

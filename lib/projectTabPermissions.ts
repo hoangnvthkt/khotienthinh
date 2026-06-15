@@ -11,6 +11,7 @@ export const PROJECT_TAB_PERMISSIONS = [
   { key: 'payment', label: 'Nghiệm thu & Thanh toán', icon: '💳', route: '/da/tabs/payment' },
   { key: 'cashflow', label: 'Dòng tiền', icon: '💰', route: '/da/tabs/cashflow' },
   { key: 'quality', label: 'Chất lượng', icon: '✅', route: '/da/tabs/quality' },
+  { key: 'safety', label: 'An toàn', icon: '🛡️', route: '/da/tabs/safety' },
   { key: 'subcontract', label: 'Nhà thầu', icon: '🏗️', route: '/da/tabs/subcontract' },
   { key: 'material', label: 'Vật tư', icon: '📦', route: '/da/tabs/material' },
   { key: 'documents', label: 'Tài liệu', icon: '📎', route: '/da/tabs/documents' },

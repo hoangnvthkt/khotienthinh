@@ -345,6 +345,7 @@ const PROJECT_PERMISSION_HINTS: Record<ProjectPermissionCode, string> = {
     verify: 'xác nhận kỹ thuật',
     confirm: 'xác nhận nghiệp vụ',
     approve: 'duyệt hoặc từ chối nghiệm thu',
+    view_available_stock: 'xem vật tư khả dụng',
 };
 
 // ============= COMPONENTS =============
