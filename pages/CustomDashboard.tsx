@@ -554,21 +554,13 @@ const CustomDashboard: React.FC = () => {
 
   // ═════════ Compute Alert Data ═════════
   const alertData = useMemo(() => {
-    const alerts: any[] = [];
-    // Low stock alerts
-    items.forEach(it => {
-      const stock = Object.values(it.stockByWarehouse || {}).reduce((s: number, v: any) => s + (Number(v) || 0), 0);
-      if (it.minStock && stock < it.minStock) {
-        alerts.push({
-          severity: stock === 0 ? 'critical' : 'warning',
-          icon: stock === 0 ? '🔴' : '🟡',
-          title: `${it.name} — ${stock === 0 ? 'HẾT HÀNG' : 'sắp hết'}`,
-          message: `Tồn: ${stock} / Min: ${it.minStock}`,
-        });
-      }
-    });
-    return alerts.sort((a, b) => (a.severity === 'critical' ? -1 : 1));
-  }, [items]);
+    return smartAlertSummary.alerts.map(alert => ({
+      severity: alert.severity,
+      icon: ALERT_CATEGORY_INFO[alert.category].icon,
+      title: alert.title,
+      message: alert.message,
+    }));
+  }, [smartAlertSummary.alerts]);
 
   // AI insight (simple auto-gen)
   const aiInsight = useMemo(() => {
@@ -576,7 +568,7 @@ const CustomDashboard: React.FC = () => {
     const pending = kpiData.pendingRequests + kpiData.pendingWorkflows;
     if (alerts === 0 && pending === 0) return { insight: '✅ Hệ thống vận hành bình thường. Không có cảnh báo hay phiếu chờ xử lý.' };
     let text = `📋 Tóm tắt: `;
-    if (alerts > 0) text += `${alerts} vật tư cần bổ sung. `;
+    if (alerts > 0) text += `${alerts} cảnh báo vận hành cần chú ý. `;
     if (kpiData.pendingRequests > 0) text += `${kpiData.pendingRequests} phiếu đề xuất chờ duyệt. `;
     if (kpiData.pendingWorkflows > 0) text += `${kpiData.pendingWorkflows} quy trình đang chạy. `;
     text += `\n\n💡 Đề xuất: Xử lý phiếu chờ trước để tránh nghẽn cổ chai.`;

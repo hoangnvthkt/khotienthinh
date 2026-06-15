@@ -127,6 +127,7 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
             if (workflowBoardSearch.trim()) {
                 const matched = matchesSearchQueryMultiple([
                     request.code,
+                    request.title,
                     request.id,
                     requester?.name,
                     request.submittedToName,
@@ -210,7 +211,8 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                             className="grid w-full grid-cols-1 gap-3 border-b border-slate-100 px-4 py-4 text-left transition hover:bg-slate-50/70 last:border-b-0 dark:border-slate-800 dark:hover:bg-slate-800/50 lg:grid-cols-[minmax(150px,0.75fr)_minmax(260px,1.35fr)_minmax(170px,0.8fr)_minmax(155px,0.7fr)_auto] lg:items-center"
                         >
                             <div className="min-w-0">
-                                <div className="truncate font-mono text-[11px] font-black text-purple-600">{request.code}</div>
+                                <div className="truncate text-sm font-black text-slate-800 dark:text-white">{request.title || 'Đề xuất vật tư'}</div>
+                                <div className="mt-0.5 truncate font-mono text-[10px] font-bold text-purple-600">{request.code} - Đề xuất vật tư</div>
                                 <div className="mt-1 flex flex-wrap gap-1.5">
                                     <StatusBadge status={request.status} label={statusView.label} tone={statusView.tone} />
                                     {slaState === 'overdue' && <StatusBadge status="overdue" label="Quá hạn SLA" tone="attention" />}

@@ -35,6 +35,17 @@ const buildProjectPath = (
   return withQuery('/da', { projectId, siteId, tab, ...extra });
 };
 
+const buildMaterialRequestPath = (notification: AppNotification): string | undefined => {
+  const metadata = notification.metadata || {};
+  const requestId =
+    getMetaValue(metadata, ['requestId', 'request_id', 'materialRequestId', 'material_request_id', 'subjectId', 'subject_id']) ||
+    (notification.sourceType === 'material_request' ? notification.sourceId : undefined);
+  const projectPath = buildProjectPath(notification, 'material', { materialTab: 'request', requestId });
+  if (projectPath) return projectPath;
+  if (requestId) return withQuery('/da', { tab: 'material', materialTab: 'request', requestId });
+  return notification.link || '/da?tab=material&materialTab=request';
+};
+
 export const resolveNotificationPath = (notification: AppNotification): string | undefined => {
   const metadata = notification.metadata || {};
   const sourceType = notification.sourceType || '';
@@ -46,7 +57,18 @@ export const resolveNotificationPath = (notification: AppNotification): string |
   }
 
   // ── Workflow ──────────────────────────────────────────
-  const workflowInstanceId = getMetaValue(metadata, ['instanceId', 'workflowInstanceId']);
+  const workflowInstanceId = getMetaValue(metadata, ['instanceId', 'workflowInstanceId', 'workflow_instance_id']);
+  const workflowSubjectType = getMetaValue(metadata, ['subjectType', 'subject_type']);
+  const materialWorkflowRequestId = getMetaValue(metadata, ['materialRequestId', 'material_request_id', 'requestId', 'request_id']);
+  if (
+    sourceType === 'material_request_workflow' ||
+    (sourceType.startsWith('workflow') && (workflowSubjectType === 'material_request' || materialWorkflowRequestId))
+  ) {
+    return buildMaterialRequestPath(notification);
+  }
+  if (sourceType.startsWith('workflow') && notification.link && !notification.link.startsWith('/wf')) {
+    return notification.link;
+  }
   if (workflowInstanceId || sourceType.startsWith('workflow')) {
     return withQuery('/wf', { instanceId: workflowInstanceId });
   }
@@ -59,11 +81,7 @@ export const resolveNotificationPath = (notification: AppNotification): string |
 
   // ── Material Request (Phiếu vật tư dự án) ────────────
   if (sourceType === 'material_request' || sourceType === 'material') {
-    // Try deep-link to project material tab first
-    const projectPath = buildProjectPath(notification, 'material', { materialTab: 'request' });
-    if (projectPath) return projectPath;
-    // Fallback to WMS operations page
-    return '/operations';
+    return buildMaterialRequestPath(notification);
   }
 
   // ── Purchase Order ────────────────────────────────────

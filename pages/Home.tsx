@@ -158,20 +158,23 @@ const buildTransactionAction = (tx: Transaction, user: User, users: User[], ware
 const buildMaterialRequestAction = (request: MaterialRequest, user: User, users: User[], warehouses: ReturnType<typeof useApp>['warehouses']): HomeActionItem | null => {
   const sourceName = warehouses.find(item => item.id === request.sourceWarehouseId)?.name;
   const siteName = warehouses.find(item => item.id === request.siteWarehouseId)?.name;
+  const requestHref = request.requestOrigin === 'project'
+    ? `/da?projectId=${request.projectId || ''}&siteId=${request.constructionSiteId || ''}&tab=material&materialTab=request&requestId=${request.id}`
+    : '/requests';
 
   if (request.status === RequestStatus.PENDING && canApproveMaterialRequest(user, request)) {
     return {
       id: `mr-approve-${request.id}`,
       category: 'material',
       score: 88,
-      title: 'Yêu cầu vật tư chờ thẩm định',
+      title: request.title || 'Đề xuất vật tư',
       code: request.code,
       status: request.status,
       statusLabel: 'Chờ duyệt',
       nextAction: `Thẩm định yêu cầu từ ${siteName || 'công trường'}.`,
       actorName: getUserName(users, request.requesterId) || request.requestedBy,
       dueAt: request.expectedDate || request.createdDate,
-      href: '/requests',
+      href: requestHref,
       actionLabel: 'Mở yêu cầu',
     };
   }
@@ -180,14 +183,14 @@ const buildMaterialRequestAction = (request: MaterialRequest, user: User, users:
       id: `mr-export-${request.id}`,
       category: 'material',
       score: 84,
-      title: 'Yêu cầu vật tư chờ xuất',
+      title: request.title || 'Đề xuất vật tư',
       code: request.code,
       status: request.status,
       statusLabel: 'Chờ xuất',
       nextAction: `Kho ${sourceName || 'nguồn'} cần xuất vật tư cho ${siteName || 'công trường'}.`,
       actorName: getUserName(users, request.requesterId) || request.requestedBy,
       dueAt: request.expectedDate || request.createdDate,
-      href: '/requests',
+      href: requestHref,
       actionLabel: 'Xuất kho',
     };
   }
@@ -196,14 +199,14 @@ const buildMaterialRequestAction = (request: MaterialRequest, user: User, users:
       id: `mr-receive-${request.id}`,
       category: 'material',
       score: 82,
-      title: 'Yêu cầu vật tư chờ nhận',
+      title: request.title || 'Đề xuất vật tư',
       code: request.code,
       status: request.status,
       statusLabel: 'Đang giao',
       nextAction: `Xác nhận vật tư đã nhận tại ${siteName || 'kho công trường'}.`,
       actorName: getUserName(users, request.requesterId) || request.requestedBy,
       dueAt: request.expectedDate || request.createdDate,
-      href: '/requests',
+      href: requestHref,
       actionLabel: 'Xác nhận nhận',
     };
   }
@@ -218,7 +221,6 @@ const Home: React.FC = () => {
   const {
     user,
     users,
-    items,
     warehouses,
     transactions,
     requests: materialRequests,
@@ -240,7 +242,7 @@ const Home: React.FC = () => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
   const moduleCapabilities = useMemo(() => resolveHomeCapabilities(user), [user]);
-  const shouldLoadWms = moduleCapabilities.material || moduleCapabilities.warehouse;
+  const shouldLoadWms = moduleCapabilities.material || moduleCapabilities.warehouse || moduleCapabilities.project;
   const shouldLoadProject = moduleCapabilities.project;
 
   useEffect(() => {
@@ -272,6 +274,14 @@ const Home: React.FC = () => {
   const workflowTodos = useMemo<HomeActionItem[]>(() => workflowInstances
     .filter(instance => instance.status === WorkflowInstanceStatus.RUNNING)
     .map(instance => {
+      const subjectType = String(instance.formData?.subjectType || instance.formData?.subject_type || '').toLowerCase();
+      const subjectId = String(instance.formData?.subjectId || instance.formData?.subject_id || '');
+      const isMaterialRequestWorkflow = subjectType === 'material_request'
+        || materialRequests.some(request =>
+          request.workflowInstanceId === instance.id
+          || request.id === subjectId
+        );
+      if (isMaterialRequestWorkflow) return null;
       const { currentNode, assignedToCurrentUser, label } = getWorkflowAssignees(instance, workflowNodes, users, user);
       if (!assignedToCurrentUser) return null;
       const template = workflowTemplates.find(item => item.id === instance.templateId);
@@ -290,7 +300,7 @@ const Home: React.FC = () => {
         actionLabel: 'Mở quy trình',
       } as HomeActionItem;
     })
-    .filter(Boolean) as HomeActionItem[], [user, users, workflowInstances, workflowNodes, workflowTemplates]);
+    .filter(Boolean) as HomeActionItem[], [materialRequests, user, users, workflowInstances, workflowNodes, workflowTemplates]);
 
   const rqTodos = useMemo<HomeActionItem[]>(() => rqRequests
     .filter(request => request.status === RQStatus.PENDING)
@@ -341,7 +351,16 @@ const Home: React.FC = () => {
 
   const trackingItems = useMemo<HomeActionItem[]>(() => {
     const wf = workflowInstances
-      .filter(item => item.createdBy === user.id && item.status === WorkflowInstanceStatus.RUNNING)
+      .filter(item => {
+        if (item.createdBy !== user.id || item.status !== WorkflowInstanceStatus.RUNNING) return false;
+        const subjectType = String(item.formData?.subjectType || item.formData?.subject_type || '').toLowerCase();
+        const subjectId = String(item.formData?.subjectId || item.formData?.subject_id || '');
+        return subjectType !== 'material_request'
+          && !materialRequests.some(request =>
+            request.workflowInstanceId === item.id
+            || request.id === subjectId
+          );
+      })
       .slice(0, 4)
       .map(item => ({
         id: `track-wf-${item.id}`,
@@ -381,7 +400,7 @@ const Home: React.FC = () => {
         id: `track-mr-${item.id}`,
         category: 'tracking' as const,
         score: 20,
-        title: 'Yêu cầu vật tư của tôi',
+        title: item.title || 'Đề xuất vật tư của tôi',
         code: item.code,
         status: item.status,
         statusLabel: requestStatusLabel(item.status),
@@ -394,19 +413,10 @@ const Home: React.FC = () => {
     return [...wf, ...rq, ...material].slice(0, 6);
   }, [materialRequests, rqRequests, shouldLoadWms, user.id, workflowInstances]);
 
-  const lowStockItems = useMemo(() => {
-    if (!shouldLoadWms) return [];
-    return items
-      .map(item => ({
-        item,
-        stock: Object.values(item.stockByWarehouse || {}).reduce((sum: number, value) => sum + Number(value || 0), 0),
-      }))
-      .filter(row => row.stock <= Number(row.item.minStock || 0))
-      .slice(0, 5);
-  }, [items, shouldLoadWms]);
-
   const visibleNotifications = useMemo(
-    () => notifications.filter(item => !item.isRead || item.severity === 'critical').slice(0, 5),
+    () => notifications
+      .filter(item => item.category !== 'inventory' && (!item.isRead || item.severity === 'critical'))
+      .slice(0, 5),
     [notifications],
   );
 
@@ -420,7 +430,7 @@ const Home: React.FC = () => {
   const shortcuts = useMemo(() => {
     const itemsList: Array<{ to: string; icon: React.ReactNode; title: string; description: string; show: boolean; color: string }> = [
       { to: '/requests', icon: <ClipboardList size={18} />, title: 'Yêu cầu vật tư', description: 'Tạo và theo dõi cấp vật tư', show: canUseModule(user, 'WMS'), color: 'text-teal-600 bg-teal-50 border-teal-100 dark:bg-teal-950/20 dark:border-teal-900/50 dark:text-teal-400' },
-      { to: '/inventory', icon: <Package size={18} />, title: 'Kho vật tư', description: 'Tra tồn kho và cảnh báo', show: canUseModule(user, 'WMS'), color: 'text-amber-600 bg-amber-50 border-amber-100 dark:bg-amber-950/20 dark:border-amber-900/50 dark:text-amber-400' },
+      { to: '/inventory', icon: <Package size={18} />, title: 'Kho vật tư', description: 'Tra cứu tồn kho', show: canUseModule(user, 'WMS'), color: 'text-amber-600 bg-amber-50 border-amber-100 dark:bg-amber-950/20 dark:border-amber-900/50 dark:text-amber-400' },
       { to: '/operations', icon: <Warehouse size={18} />, title: 'Phiếu kho', description: 'Nhập, xuất, chuyển kho', show: canUseModule(user, 'WMS'), color: 'text-cyan-600 bg-cyan-50 border-cyan-100 dark:bg-cyan-950/20 dark:border-cyan-900/50 dark:text-cyan-400' },
       { to: '/da', icon: <FolderKanban size={18} />, title: 'Dự án', description: 'Tiến độ, BOQ, nghiệm thu', show: canUseModule(user, 'DA'), color: 'text-indigo-600 bg-indigo-50 border-indigo-100 dark:bg-indigo-950/20 dark:border-indigo-900/50 dark:text-indigo-400' },
       { to: '/rq', icon: <Inbox size={18} />, title: 'Phiếu yêu cầu', description: 'Yêu cầu nội bộ và phê duyệt', show: canUseModule(user, 'RQ'), color: 'text-blue-600 bg-blue-50 border-blue-100 dark:bg-blue-950/20 dark:border-blue-900/50 dark:text-blue-400' },
@@ -520,10 +530,10 @@ const Home: React.FC = () => {
             <AlertTriangle size={11} className="text-amber-500" /> CẢNH BÁO RỦI RO
           </div>
           <div className="text-3xl font-black text-amber-500 dark:text-amber-450 leading-none tracking-tight">
-            {visibleNotifications.length + lowStockItems.length}
+            {visibleNotifications.length}
           </div>
           <div className="text-[10px] text-muted-foreground font-medium mt-2">
-            Thông báo khẩn & tồn kho thấp
+            Thông báo quan trọng cần chú ý
           </div>
         </div>
 
@@ -626,61 +636,35 @@ const Home: React.FC = () => {
               <p className="text-xs font-bold text-slate-400">Thông tin cần chú ý để giảm sai sót vận hành.</p>
             </div>
             <div className="space-y-3">
-              {visibleNotifications.length === 0 && lowStockItems.length === 0 ? (
+              {visibleNotifications.length === 0 ? (
                 <EmptyState
                   icon={<ShieldCheck size={20} />}
                   title="Chưa có cảnh báo quan trọng"
-                  message="Thông báo khẩn và cảnh báo tồn kho sẽ xuất hiện ở đây."
+                  message="Các thông báo quan trọng khác sẽ xuất hiện ở đây."
                 />
               ) : (
-                <>
-                  {visibleNotifications.map(notification => (
-                    <button
-                      key={notification.id}
-                      onClick={() => openNotification(notification)}
-                      className="block w-full rounded-2xl border border-slate-100/80 border-l-4 border-l-red-500 bg-gradient-to-br from-white to-slate-50/50 p-3.5 text-left shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5 dark:border-slate-750 dark:from-slate-800 dark:to-slate-900/50 group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 flex items-center justify-center text-red-500 shrink-0 transition-transform duration-300 group-hover:scale-110">
-                          <Bell size={15} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-1.5">
-                            <h4 className="truncate text-xs font-black text-slate-800 dark:text-white leading-tight">{notification.title}</h4>
-                            <span className="shrink-0 text-[9px] font-black bg-red-50 text-red-650 px-1.5 py-0.5 rounded-md dark:bg-red-950/40 dark:text-red-400 border border-red-150/45 dark:border-red-900/30">
-                              KHẨN CẤP
-                            </span>
-                          </div>
-                          <p className="mt-0.5 truncate text-[10px] font-medium text-slate-450 dark:text-slate-400">{notification.message}</p>
-                        </div>
+                visibleNotifications.map(notification => (
+                  <button
+                    key={notification.id}
+                    onClick={() => openNotification(notification)}
+                    className="block w-full rounded-2xl border border-slate-100/80 border-l-4 border-l-red-500 bg-gradient-to-br from-white to-slate-50/50 p-3.5 text-left shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5 dark:border-slate-750 dark:from-slate-800 dark:to-slate-900/50 group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 flex items-center justify-center text-red-500 shrink-0 transition-transform duration-300 group-hover:scale-110">
+                        <Bell size={15} />
                       </div>
-                    </button>
-                  ))}
-                  {lowStockItems.map(({ item, stock }) => (
-                    <Link
-                      key={item.id}
-                      to="/inventory"
-                      className="block w-full rounded-2xl border border-amber-100/80 border-l-4 border-l-amber-500 bg-gradient-to-br from-amber-50/20 to-amber-50/40 p-3.5 text-left shadow-sm transition-all duration-300 hover:shadow-md hover:scale-[1.01] hover:-translate-y-0.5 dark:border-amber-955/20 dark:from-amber-955/10 dark:to-amber-955/20 group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/40 flex items-center justify-center text-amber-600 shrink-0 transition-transform duration-300 group-hover:scale-110">
-                          <AlertTriangle size={15} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <h4 className="truncate text-xs font-black text-slate-800 dark:text-white leading-tight">{notification.title}</h4>
+                          <span className="shrink-0 text-[9px] font-black bg-red-50 text-red-650 px-1.5 py-0.5 rounded-md dark:bg-red-950/40 dark:text-red-400 border border-red-150/45 dark:border-red-900/30">
+                            KHẨN CẤP
+                          </span>
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-1.5">
-                            <h4 className="truncate text-xs font-black text-amber-900 dark:text-amber-200 leading-tight">{item.name}</h4>
-                            <span className="shrink-0 text-[9px] font-black bg-amber-100/60 text-amber-800 px-1.5 py-0.5 rounded-md dark:bg-amber-950/50 dark:text-amber-400 border border-amber-200/40 dark:border-amber-900/30">
-                              TỒN THẤP
-                            </span>
-                          </div>
-                          <p className="mt-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">
-                            Tồn {stock.toLocaleString('vi-VN')} {item.unit} / tối thiểu {Number(item.minStock || 0).toLocaleString('vi-VN')}
-                          </p>
-                        </div>
+                        <p className="mt-0.5 truncate text-[10px] font-medium text-slate-450 dark:text-slate-400">{notification.message}</p>
                       </div>
-                    </Link>
-                  ))}
-                </>
+                    </div>
+                  </button>
+                ))
               )}
             </div>
           </section>

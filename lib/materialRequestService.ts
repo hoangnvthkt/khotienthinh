@@ -214,6 +214,7 @@ export const resolveRequestKanbanStage = (
 
 export const mapMaterialRequestFromDb = (row: any): MaterialRequest => ({
   ...row,
+  title: row.title ?? row.note ?? 'Đề xuất vật tư',
   projectId: row.project_id ?? row.projectId ?? null,
   constructionSiteId: row.construction_site_id ?? row.constructionSiteId ?? null,
   requestOrigin: row.request_origin ?? row.requestOrigin ?? 'wms',

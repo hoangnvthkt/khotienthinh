@@ -1163,7 +1163,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       } else if (table === 'requests') {
         payload = {
-          id: data.id, code: data.code, site_warehouse_id: data.siteWarehouseId, source_warehouse_id: data.sourceWarehouseId || null,
+          id: data.id, code: data.code, title: data.title || 'Đề xuất vật tư', site_warehouse_id: data.siteWarehouseId, source_warehouse_id: data.sourceWarehouseId || null,
           project_id: data.projectId || null,
           construction_site_id: data.constructionSiteId || null,
           request_origin: data.requestOrigin || 'wms',

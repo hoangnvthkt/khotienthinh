@@ -96,6 +96,7 @@ interface RequestModalProps {
 }
 
 export type MaterialRequestInitialDraft = {
+    title?: string;
     workBoqItemId?: string | null;
     note?: string;
     neededDate?: string;
@@ -246,6 +247,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [isSaving, setIsSaving] = useState(false);
 
     // Form State
+    const [requestTitle, setRequestTitle] = useState('');
     const [siteWarehouseId, setSiteWarehouseId] = useState('');
     const [sourceWarehouseId, setSourceWarehouseId] = useState('');
     const [stockPreviewWarehouseId, setStockPreviewWarehouseId] = useState('');
@@ -701,6 +703,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 setSiteWarehouseId(request.siteWarehouseId);
                 setSourceWarehouseId(request.sourceWarehouseId || '');
                 setStockPreviewWarehouseId('');
+                setRequestTitle(request.title || 'Đề xuất vật tư');
                 setNote(request.note || '');
                 setExpectedDate(request.expectedDate || '');
                 setFulfillmentMode(request.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
@@ -712,6 +715,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 setSiteWarehouseId(defaultSiteWarehouseId || user.assignedWarehouseId || '');
                 setSourceWarehouseId('');
                 setStockPreviewWarehouseId('');
+                setRequestTitle(initialDraft?.title || '');
                 setNote(initialDraft?.note || '');
                 setExpectedDate(initialDraft?.neededDate || new Date(Date.now() + 86400000 * 3).toISOString());
                 setFulfillmentMode(MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
@@ -1045,6 +1049,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             ...(request || {}),
             id: request?.id || `mr-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
             code: request?.code || `MR-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`,
+            title: requestTitle.trim() || request?.title || 'Đề xuất vật tư',
             projectId: effectiveProjectId,
             constructionSiteId: effectiveConstructionSiteId,
             requestOrigin: isProjectRequest ? 'project' : 'wms',
@@ -1102,6 +1107,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
     };
 
     const validateDraftForm = async () => {
+        if (isProjectRequest && !requestTitle.trim()) {
+            toast.warning('Thiếu tên đề xuất', 'Vui lòng nhập tên đề xuất vật tư.');
+            return false;
+        }
         if (!siteWarehouseId || (!isProjectRequest && !sourceWarehouseId) || reqItems.length === 0) {
             toast.warning('Thiếu thông tin', isProjectRequest ? 'Vui lòng chọn kho nhận và ít nhất 1 vật tư.' : 'Vui lòng chọn đầy đủ kho nhận, kho nguồn và ít nhất 1 vật tư.');
             return false;
@@ -2151,12 +2160,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-border bg-muted/50">
-                    <div>
+                    <div className="min-w-0">
                         <h3 className="font-bold text-lg text-foreground">
-                            {isEditable && !request ? 'Tạo đề xuất vật tư' : `Phiếu đề xuất: ${request?.code}`}
+                            {requestTitle.trim() || request?.title || (isEditable && !request ? 'Tạo đề xuất vật tư' : 'Đề xuất vật tư')}
                         </h3>
-                        <p className="text-xs text-muted-foreground">
-                            {isEditable && !request ? 'Tạo phiếu nháp trước, kiểm tra lại rồi gửi duyệt sau.' : `Trạng thái: ${requestStatusText}${request?.submittedToName ? ` • Gửi: ${request.submittedToName}` : ''}`}
+                        <p className="truncate text-xs text-muted-foreground">
+                            {request?.code ? `${request.code} - Đề xuất vật tư` : 'Phiếu mới - Đề xuất vật tư'}
+                            {request ? ` • Trạng thái: ${requestStatusText}${request.submittedToName ? ` • Gửi: ${request.submittedToName}` : ''}` : ''}
                         </p>
                     </div>
                     <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
@@ -2190,6 +2200,22 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
                 {/* Content */}
                 <div className="p-6 overflow-y-auto flex-1 bg-slate-50/10 dark:bg-background/20">
+                    {isEditable && (
+                        <div className="mb-5 rounded-xl border border-blue-200/50 bg-card p-4 shadow-sm dark:border-blue-900/40">
+                            <label className="mb-2 block text-[10px] font-black uppercase text-blue-600 dark:text-blue-400">
+                                Tên đề xuất
+                            </label>
+                            <input
+                                type="text"
+                                value={requestTitle}
+                                onChange={(event) => setRequestTitle(event.target.value)}
+                                maxLength={200}
+                                autoFocus={!request}
+                                className="w-full bg-transparent text-base font-black text-foreground outline-none placeholder:font-bold placeholder:text-muted-foreground"
+                                placeholder="Ví dụ: Vật tư thi công sàn tầng 4"
+                            />
+                        </div>
+                    )}
                     {projectWorkflowSubject && request && (
                         <ProjectWorkflowPanel
                             subject={projectWorkflowSubject}

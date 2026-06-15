@@ -11,7 +11,6 @@ import {
 
 export type AlertSeverity = 'critical' | 'warning' | 'info';
 export type AlertCategory = 
-  | 'low_stock'        // Tồn kho thấp
   | 'request_overdue'  // Phiếu quá hạn SLA
   | 'budget_overrun'   // Ngân sách vượt
   | 'contract_expiring'// Hợp đồng sắp hết hạn
@@ -37,7 +36,6 @@ export interface SmartAlert {
 // ═════════ Alert Rules Configuration ═════════
 
 const RULES = {
-  LOW_STOCK_THRESHOLD: 1.0,     // stock <= minStock * ratio → alert
   REQUEST_SLA_HOURS: 48,        // Phiếu chờ > 48h → overdue
   BUDGET_WARNING_PERCENT: 90,   // Budget usage > 90% → warning
   BUDGET_CRITICAL_PERCENT: 100, // Budget usage > 100% → critical
@@ -66,37 +64,7 @@ function hoursSince(dateStr: string): number {
 
 // ═════════ Alert Scanners ═════════
 
-/** Scan 1: Tồn kho thấp */
-function scanLowStock(items: InventoryItem[]): SmartAlert[] {
-  return items
-    .filter(item => {
-      if (!item.minStock || item.minStock <= 0) return false;
-      const totalStock = Object.values(item.stockByWarehouse || {})
-        .reduce((sum: number, qty) => sum + (Number(qty) || 0), 0);
-      return totalStock <= item.minStock * RULES.LOW_STOCK_THRESHOLD;
-    })
-    .map(item => {
-      const totalStock = Object.values(item.stockByWarehouse || {})
-        .reduce((sum: number, qty) => sum + (Number(qty) || 0), 0);
-      const isOut = totalStock <= 0;
-      return {
-        id: genId(),
-        category: 'low_stock' as AlertCategory,
-        severity: isOut ? 'critical' as AlertSeverity : 'warning' as AlertSeverity,
-        title: isOut ? `🔴 ${item.name} — HẾT HÀNG` : `⚠️ ${item.name} — Tồn thấp`,
-        message: isOut
-          ? `${item.sku} đã hết hàng (tồn: 0, tối thiểu: ${item.minStock}). Cần bổ sung gấp!`
-          : `${item.sku} tồn ${totalStock} / tối thiểu ${item.minStock} ${item.unit}`,
-        entityId: item.id,
-        entityType: 'item',
-        navigateTo: '/inventory',
-        createdAt: now(),
-        actionLabel: 'Tạo đề xuất mua',
-      };
-    });
-}
-
-/** Scan 2: Phiếu đề xuất quá SLA */
+/** Scan 1: Phiếu đề xuất quá SLA */
 function scanOverdueRequests(requests: MaterialRequest[]): SmartAlert[] {
   return requests
     .filter(r => r.status === 'PENDING' && hoursSince(r.createdDate) > RULES.REQUEST_SLA_HOURS)
@@ -323,7 +291,6 @@ class AlertEngine {
   /** Run all alert scanners */
   scan(input: AlertEngineInput): AlertEngineSummary {
     const allAlerts: SmartAlert[] = [
-      ...scanLowStock(input.items),
       ...scanOverdueRequests(input.requests),
       ...scanBudgetOverrun(input.projectFinances, input.constructionSites),
       ...scanExpiringContracts(input.laborContracts, input.employees),
@@ -394,7 +361,6 @@ export const alertEngine = new AlertEngine();
 // ═════════ Category Labels & Icons ═════════
 
 export const ALERT_CATEGORY_INFO: Record<AlertCategory, { label: string; icon: string; color: string }> = {
-  low_stock:         { label: 'Tồn kho thấp',       icon: '📦', color: 'orange' },
   request_overdue:   { label: 'Phiếu quá hạn',      icon: '⏰', color: 'red' },
   budget_overrun:    { label: 'Vượt ngân sách',      icon: '💰', color: 'red' },
   contract_expiring: { label: 'HĐ sắp hết hạn',     icon: '📋', color: 'amber' },

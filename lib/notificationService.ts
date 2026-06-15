@@ -76,6 +76,7 @@ const buildNotificationQuery = (limit: number, cursor?: NotificationCursor) => {
     .from('notifications')
     .select('*')
     .eq('is_dismissed', false)
+    .neq('category', 'inventory')
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .limit(limit + 1);
@@ -94,7 +95,6 @@ export const NOTIFICATION_CATEGORIES = {
   progress: { label: 'Tiến độ', icon: '📐', color: 'text-blue-600 bg-blue-50' },
   material: { label: 'Vật tư', icon: '📦', color: 'text-amber-600 bg-amber-50' },
   safety: { label: 'An toàn', icon: '🛡️', color: 'text-red-600 bg-red-50' },
-  inventory: { label: 'Tồn kho', icon: '📋', color: 'text-cyan-600 bg-cyan-50' },
   contract: { label: 'Hợp đồng', icon: '📝', color: 'text-violet-600 bg-violet-50' },
   hrm: { label: 'Nhân sự', icon: '👤', color: 'text-indigo-600 bg-indigo-50' },
   feedback: { label: 'Góp ý', icon: '💬', color: 'text-blue-600 bg-blue-50' },
@@ -229,6 +229,7 @@ export const notificationService = {
       .select('id')
       .eq('is_read', false)
       .eq('is_dismissed', false)
+      .neq('category', 'inventory')
       .limit(UNREAD_QUERY_LIMIT);
 
     if (!userId) {
@@ -540,63 +541,7 @@ export const notificationService = {
       console.error('Contract expiry check error:', err);
     }
 
-    // 7. 📦 Inventory low stock — items below min_stock threshold
-    try {
-      const { data: allItems } = await supabase
-        .from('items')
-        .select('id, name, min_stock, unit');
-      if (allItems) {
-        // Get current stock per item across all warehouses
-        const { data: stockData } = await supabase
-          .from('transactions')
-          .select('type, items')
-          .eq('status', 'COMPLETED');
-        
-        // Calculate total stock per item
-        const stockMap = new Map<string, number>();
-        for (const tx of (stockData || [])) {
-          for (const txItem of (tx.items || [])) {
-            const itemId = txItem.itemId || txItem.item_id;
-            if (!itemId) continue;
-            const quantity = Number(txItem.quantity || txItem.qty || 0);
-            const current = stockMap.get(itemId) || 0;
-            if (['IMPORT', 'in', 'nhap', 'return'].includes(tx.type)) {
-              stockMap.set(itemId, current + quantity);
-            } else if (['EXPORT', 'LIQUIDATION', 'out'].includes(tx.type)) {
-              stockMap.set(itemId, current - quantity);
-            }
-          }
-        }
-
-        for (const item of allItems) {
-          const minStock = item.min_stock || 0;
-          if (minStock <= 0) continue;
-          const currentStock = stockMap.get(item.id) || 0;
-          if (currentStock <= minStock) {
-            const alertId = `inventory_low_${item.id}`;
-            if (!isNew('inventory', alertId)) continue;
-            const isCritical = currentStock <= 0;
-            await createNotification({
-              type: isCritical ? 'error' : 'warning',
-              category: 'inventory',
-              title: isCritical ? '🚨 Hết hàng!' : '📦 Tồn kho thấp',
-              message: `${item.name}: còn ${currentStock} ${item.unit || ''} (tối thiểu ${minStock})`,
-              severity: isCritical ? 'critical' : 'warning',
-              icon: '📦',
-              link: '/kho',
-              sourceType: 'inventory',
-              sourceId: alertId,
-              metadata: { itemId: item.id, currentStock, minStock },
-            });
-            alertCount++;
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Inventory alert error:', err);
-    }
-
-    // 8. ⚠️ Overdue requests — request_instances past due_date
+    // 7. ⚠️ Overdue requests — request_instances past due_date
     try {
       const { data: overdueReqs } = await supabase
         .from('request_instances')
@@ -751,6 +696,7 @@ export const notificationService = {
       .on('postgres_changes', options, (payload) => {
         const notification = toCamel(payload.new);
         if (notification.userId && notification.userId !== userId) return;
+        if (notification.category === 'inventory') return;
         callback(notification);
       })
       .subscribe();

@@ -2446,6 +2446,7 @@ export interface MaterialRequestFulfillmentSummary {
 export interface MaterialRequest extends ProjectSubmissionFields {
   id: string;
   code: string; // e.g., MR-2023-001
+  title?: string;
   projectId?: string | null;
   constructionSiteId?: string | null;
   requestOrigin?: MaterialRequestOrigin;

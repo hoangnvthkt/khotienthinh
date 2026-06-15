@@ -51,7 +51,7 @@ interface WorkflowContextType {
 
 const WorkflowContext = createContext<WorkflowContextType | undefined>(undefined);
 
-const WORKFLOW_INSTANCE_LIST_SELECT = 'id, template_id, code, title, created_by, current_node_id, status, watchers, step_assignees, created_at, updated_at';
+const WORKFLOW_INSTANCE_LIST_SELECT = 'id, template_id, code, title, created_by, current_node_id, status, form_data, watchers, step_assignees, created_at, updated_at';
 const WORKFLOW_INSTANCE_LIST_LIMIT = 300;
 
 // DB snake_case <-> TS camelCase mappers
@@ -119,6 +119,17 @@ const mapPrintTemplateFromDB = (row: any): WorkflowPrintTemplate => ({
     storagePath: row.storage_path,
     createdAt: row.created_at,
 });
+
+const getWorkflowSubjectValue = (formData: Record<string, any> | undefined, keys: string[]): string | undefined => {
+    for (const key of keys) {
+        const value = formData?.[key];
+        if (value !== undefined && value !== null && String(value).trim()) return String(value);
+    }
+    return undefined;
+};
+
+const buildMaterialRequestLink = (request: { id: string; project_id?: string | null; construction_site_id?: string | null }) =>
+    `/da?projectId=${request.project_id || ''}&siteId=${request.construction_site_id || ''}&tab=material&materialTab=request&requestId=${request.id}`;
 
 export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
@@ -202,6 +213,53 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return getWorkflowRoleRecipients(node.config?.assigneeRole);
     }, [getWorkflowRoleRecipients]);
 
+    const getMaterialRequestWorkflowNotificationContext = useCallback(async (instance: WorkflowInstance) => {
+        const formData = instance.formData || {};
+        const subjectType = getWorkflowSubjectValue(formData, ['subjectType', 'subject_type']);
+        const requestId = getWorkflowSubjectValue(formData, ['subjectId', 'subject_id', 'requestId', 'request_id', 'materialRequestId']);
+
+        let query = supabase
+            .from('requests')
+            .select('id, code, title, project_id, construction_site_id, workflow_instance_id, request_origin')
+            .limit(1);
+
+        if (requestId) {
+            query = query.eq('id', requestId);
+        } else if (subjectType === 'material_request') {
+            query = query.eq('workflow_instance_id', instance.id);
+        } else {
+            query = query.eq('workflow_instance_id', instance.id);
+        }
+
+        const { data, error } = await query.maybeSingle();
+        if (error) {
+            console.warn('Cannot resolve material request workflow notification route:', error);
+            return null;
+        }
+        if (!data) return null;
+        if (subjectType && subjectType !== 'material_request' && data.request_origin !== 'project') return null;
+
+        return {
+            category: 'material',
+            icon: '📦',
+            link: buildMaterialRequestLink(data),
+            sourceType: 'material_request',
+            sourceId: data.id,
+            metadata: {
+                ...formData,
+                subjectType: 'material_request',
+                requestId: data.id,
+                materialRequestId: data.id,
+                requestCode: data.code,
+                projectId: data.project_id || undefined,
+                constructionSiteId: data.construction_site_id || undefined,
+                materialTab: 'request',
+                workflowInstanceId: instance.id,
+                instanceId: instance.id,
+            },
+        };
+    }, []);
+
     const notifyWorkflowUsers = useCallback(async (input: {
         recipientIds: Array<string | null | undefined>;
         actorId?: string;
@@ -210,6 +268,10 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         message: string;
         severity?: 'info' | 'warning' | 'critical';
         sourceId: string;
+        category?: string;
+        icon?: string;
+        link?: string;
+        sourceType?: string;
         metadata?: Record<string, any>;
     }) => {
         try {
@@ -217,13 +279,13 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 recipientIds: input.recipientIds,
                 actorId: input.actorId,
                 type: input.type,
-                category: 'system',
+                category: input.category || 'system',
                 title: input.title,
                 message: input.message,
                 severity: input.severity || 'info',
-                icon: '📋',
-                link: '/wf',
-                sourceType: 'workflow',
+                icon: input.icon || '📋',
+                link: input.link || '/wf',
+                sourceType: input.sourceType || 'workflow',
                 sourceId: input.sourceId,
                 metadata: input.metadata || {},
             });
@@ -391,14 +453,21 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (data && firstTaskNodeId) {
             const firstNode = templateNodes.find(n => n.id === firstTaskNodeId);
             const recipientIds = await getWorkflowNodeRecipientIds(firstNode, createdInstance.stepAssignees);
+            const materialNotificationContext = await getMaterialRequestWorkflowNotificationContext(createdInstance);
             await notifyWorkflowUsers({
                 recipientIds,
                 actorId: userId,
                 type: 'info',
-                title: '📋 Phiếu quy trình mới cần xử lý',
-                message: `"${title}" (${code}) — Bạn cần duyệt bước "${firstNode?.label || ''}"`,
-                sourceId: `wf_new_${data.id}`,
-                metadata: { instanceId: data.id, templateId, nodeId: firstTaskNodeId },
+                title: materialNotificationContext ? 'Phiếu vật tư cần xử lý' : '📋 Phiếu quy trình mới cần xử lý',
+                message: materialNotificationContext
+                    ? `Phiếu ${materialNotificationContext.metadata.requestCode || code} đang chờ bạn xử lý bước "${firstNode?.label || ''}".`
+                    : `"${title}" (${code}) — Bạn cần duyệt bước "${firstNode?.label || ''}"`,
+                sourceId: materialNotificationContext?.sourceId || `wf_new_${data.id}`,
+                category: materialNotificationContext?.category,
+                icon: materialNotificationContext?.icon,
+                link: materialNotificationContext?.link,
+                sourceType: materialNotificationContext?.sourceType,
+                metadata: { ...(materialNotificationContext?.metadata || {}), instanceId: data.id, templateId, nodeId: firstTaskNodeId },
             });
         }
 
@@ -471,7 +540,11 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
         if (processedRow) {
             const existingFormData = instances.find(i => i.id === instanceId)?.formData || {};
-            const updatedInstance = { ...mapInstanceFromDB(processedRow), formData: existingFormData };
+            const mappedInstance = mapInstanceFromDB(processedRow);
+            const updatedInstance = {
+                ...mappedInstance,
+                formData: Object.keys(existingFormData).length > 0 ? existingFormData : mappedInstance.formData,
+            };
             setInstances(prev => prev.map(i => i.id === instanceId ? updatedInstance : i));
         }
 
@@ -511,67 +584,117 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // 🔔 Push notifications for workflow actions
         try {
             const inst = mapInstanceFromDB(freshInstance);
-            const nextInstance = processedRow ? mapInstanceFromDB(processedRow) : undefined;
+            const mappedNextInstance = processedRow ? mapInstanceFromDB(processedRow) : undefined;
+            const nextInstance = mappedNextInstance
+                ? {
+                    ...mappedNextInstance,
+                    formData: Object.keys(mappedNextInstance.formData || {}).length > 0 ? mappedNextInstance.formData : inst.formData,
+                }
+                : undefined;
+            const materialNotificationContext = await getMaterialRequestWorkflowNotificationContext(inst);
+            const workflowNotificationFields = (metadata: Record<string, any> = {}) => ({
+                sourceId: materialNotificationContext?.sourceId,
+                category: materialNotificationContext?.category,
+                icon: materialNotificationContext?.icon,
+                link: materialNotificationContext?.link,
+                sourceType: materialNotificationContext?.sourceType,
+                metadata: { ...(materialNotificationContext?.metadata || {}), ...metadata },
+            });
             if (action === WorkflowInstanceAction.APPROVED) {
+                const route = workflowNotificationFields({ instanceId, action, status: nextInstance?.status });
                 await notifyWorkflowUsers({
                     recipientIds: [inst.createdBy],
                     actorId: userId,
                     type: 'success',
-                    title: '✅ Phiếu quy trình được duyệt',
-                    message: `"${inst.title}" (${inst.code}) đã được duyệt${nextInstance?.status === WorkflowInstanceStatus.COMPLETED ? ' hoàn tất' : ''}`,
-                    sourceId: `wf_approved_${instanceId}_${Date.now()}`,
-                    metadata: { instanceId, action, status: nextInstance?.status },
+                    title: materialNotificationContext ? 'Phiếu vật tư được duyệt' : '✅ Phiếu quy trình được duyệt',
+                    message: materialNotificationContext
+                        ? `Phiếu ${materialNotificationContext.metadata.requestCode || inst.code} đã được duyệt${nextInstance?.status === WorkflowInstanceStatus.COMPLETED ? ' hoàn tất' : ''}.`
+                        : `"${inst.title}" (${inst.code}) đã được duyệt${nextInstance?.status === WorkflowInstanceStatus.COMPLETED ? ' hoàn tất' : ''}`,
+                    sourceId: route.sourceId || `wf_approved_${instanceId}_${Date.now()}`,
+                    category: route.category,
+                    icon: route.icon,
+                    link: route.link,
+                    sourceType: route.sourceType,
+                    metadata: route.metadata,
                 });
 
                 if (nextInstance?.status === WorkflowInstanceStatus.RUNNING && nextInstance.currentNodeId) {
                     const nextNode = templateNodes.find(n => n.id === nextInstance.currentNodeId);
                     if (nextNode && nextNode.type !== WorkflowNodeType.END) {
                         const recipientIds = await getWorkflowNodeRecipientIds(nextNode, nextInstance.stepAssignees);
+                        const nextRoute = workflowNotificationFields({ instanceId, nodeId: nextNode.id, assignedUserId: nextAssigneeUserId || undefined });
                         await notifyWorkflowUsers({
                             recipientIds,
                             actorId: userId,
                             type: 'info',
-                            title: '📋 Phiếu quy trình cần duyệt',
-                            message: `"${inst.title}" (${inst.code}) — Bạn cần duyệt bước "${nextNode.label}"`,
-                            sourceId: `wf_next_${instanceId}_${Date.now()}`,
-                            metadata: { instanceId, nodeId: nextNode.id, assignedUserId: nextAssigneeUserId || undefined },
+                            title: materialNotificationContext ? 'Phiếu vật tư cần xử lý' : '📋 Phiếu quy trình cần duyệt',
+                            message: materialNotificationContext
+                                ? `Phiếu ${materialNotificationContext.metadata.requestCode || inst.code} đang chờ bạn xử lý bước "${nextNode.label}".`
+                                : `"${inst.title}" (${inst.code}) — Bạn cần duyệt bước "${nextNode.label}"`,
+                            sourceId: nextRoute.sourceId || `wf_next_${instanceId}_${Date.now()}`,
+                            category: nextRoute.category,
+                            icon: nextRoute.icon,
+                            link: nextRoute.link,
+                            sourceType: nextRoute.sourceType,
+                            metadata: nextRoute.metadata,
                         });
                     }
                 }
             } else if (action === WorkflowInstanceAction.REJECTED) {
+                const route = workflowNotificationFields({ instanceId, action });
                 await notifyWorkflowUsers({
                     recipientIds: [inst.createdBy],
                     actorId: userId,
                     type: 'error',
-                    title: '❌ Phiếu quy trình bị từ chối',
-                    message: `"${inst.title}" (${inst.code}) đã bị từ chối${comment ? ': ' + comment : ''}`,
+                    title: materialNotificationContext ? 'Phiếu vật tư bị từ chối' : '❌ Phiếu quy trình bị từ chối',
+                    message: materialNotificationContext
+                        ? `Phiếu ${materialNotificationContext.metadata.requestCode || inst.code} đã bị từ chối${comment ? ': ' + comment : ''}`
+                        : `"${inst.title}" (${inst.code}) đã bị từ chối${comment ? ': ' + comment : ''}`,
                     severity: 'warning',
-                    sourceId: `wf_rejected_${instanceId}_${Date.now()}`,
-                    metadata: { instanceId, action },
+                    sourceId: route.sourceId || `wf_rejected_${instanceId}_${Date.now()}`,
+                    category: route.category,
+                    icon: route.icon,
+                    link: route.link,
+                    sourceType: route.sourceType,
+                    metadata: route.metadata,
                 });
             } else if (action === WorkflowInstanceAction.REVISION_REQUESTED) {
+                const route = workflowNotificationFields({ instanceId, action, currentNodeId: nextInstance?.currentNodeId });
                 await notifyWorkflowUsers({
                     recipientIds: [inst.createdBy],
                     actorId: userId,
                     type: 'warning',
-                    title: '↩ Phiếu quy trình cần bổ sung',
-                    message: `"${inst.title}" (${inst.code}) cần bổ sung${comment ? ': ' + comment : ''}`,
+                    title: materialNotificationContext ? 'Phiếu vật tư cần bổ sung' : '↩ Phiếu quy trình cần bổ sung',
+                    message: materialNotificationContext
+                        ? `Phiếu ${materialNotificationContext.metadata.requestCode || inst.code} cần bổ sung${comment ? ': ' + comment : ''}`
+                        : `"${inst.title}" (${inst.code}) cần bổ sung${comment ? ': ' + comment : ''}`,
                     severity: 'warning',
-                    sourceId: `wf_revision_${instanceId}_${Date.now()}`,
-                    metadata: { instanceId, action, currentNodeId: nextInstance?.currentNodeId },
+                    sourceId: route.sourceId || `wf_revision_${instanceId}_${Date.now()}`,
+                    category: route.category,
+                    icon: route.icon,
+                    link: route.link,
+                    sourceType: route.sourceType,
+                    metadata: route.metadata,
                 });
 
                 if (nextInstance?.status === WorkflowInstanceStatus.RUNNING && nextInstance.currentNodeId) {
                     const revisionNode = templateNodes.find(n => n.id === nextInstance.currentNodeId);
                     const recipientIds = await getWorkflowNodeRecipientIds(revisionNode, nextInstance.stepAssignees);
+                    const revisionRoute = workflowNotificationFields({ instanceId, nodeId: revisionNode?.id });
                     await notifyWorkflowUsers({
                         recipientIds,
                         actorId: userId,
                         type: 'info',
-                        title: '📋 Phiếu quy trình đã quay về bước của bạn',
-                        message: `"${inst.title}" (${inst.code}) — cần xử lý lại bước "${revisionNode?.label || ''}"`,
-                        sourceId: `wf_revision_assignee_${instanceId}_${Date.now()}`,
-                        metadata: { instanceId, nodeId: revisionNode?.id },
+                        title: materialNotificationContext ? 'Phiếu vật tư đã quay về bước của bạn' : '📋 Phiếu quy trình đã quay về bước của bạn',
+                        message: materialNotificationContext
+                            ? `Phiếu ${materialNotificationContext.metadata.requestCode || inst.code} cần xử lý lại bước "${revisionNode?.label || ''}".`
+                            : `"${inst.title}" (${inst.code}) — cần xử lý lại bước "${revisionNode?.label || ''}"`,
+                        sourceId: revisionRoute.sourceId || `wf_revision_assignee_${instanceId}_${Date.now()}`,
+                        category: revisionRoute.category,
+                        icon: revisionRoute.icon,
+                        link: revisionRoute.link,
+                        sourceType: revisionRoute.sourceType,
+                        metadata: revisionRoute.metadata,
                     });
                 }
             }
@@ -662,13 +785,20 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (error) { console.error(error); return false; }
         setInstances(prev => prev.map(i => i.id === instanceId ? { ...i, watchers } : i));
         if (currentInstance && addedWatchers.length > 0) {
+            const materialNotificationContext = await getMaterialRequestWorkflowNotificationContext(currentInstance);
             await notifyWorkflowUsers({
                 recipientIds: addedWatchers,
                 type: 'info',
-                title: '👀 Bạn được tag theo dõi quy trình',
-                message: `"${currentInstance.title}" (${currentInstance.code}) đã thêm bạn vào danh sách theo dõi`,
-                sourceId: `wf_watchers_${instanceId}_${Date.now()}`,
-                metadata: { instanceId },
+                title: materialNotificationContext ? 'Bạn được thêm theo dõi phiếu vật tư' : '👀 Bạn được tag theo dõi quy trình',
+                message: materialNotificationContext
+                    ? `Phiếu ${materialNotificationContext.metadata.requestCode || currentInstance.code} đã thêm bạn vào danh sách theo dõi.`
+                    : `"${currentInstance.title}" (${currentInstance.code}) đã thêm bạn vào danh sách theo dõi`,
+                sourceId: materialNotificationContext?.sourceId || `wf_watchers_${instanceId}_${Date.now()}`,
+                category: materialNotificationContext?.category,
+                icon: materialNotificationContext?.icon,
+                link: materialNotificationContext?.link,
+                sourceType: materialNotificationContext?.sourceType,
+                metadata: { ...(materialNotificationContext?.metadata || {}), instanceId },
             });
         }
         return true;

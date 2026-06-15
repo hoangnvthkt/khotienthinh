@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import CommandPalette from './CommandPalette';
@@ -14,7 +14,7 @@ import LoadingSpinner from './LoadingSpinner';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
 import { useOfflineSync } from '../hooks/useOfflineSync';
-import { RefreshCw, Menu, AlertTriangle, ExternalLink, Bell, X, Moon, Sun, Package } from 'lucide-react';
+import { RefreshCw, Menu, AlertTriangle, ExternalLink, Moon, Sun } from 'lucide-react';
 
 const SESSION_TIMEOUT_MS = 12 * 60 * 60 * 1000; // 12 tiếng làm việc (tránh tự động logout trong ngày)
 const WARN_BEFORE_MS = 5 * 60 * 1000; // Cảnh báo 5 phút trước
@@ -28,7 +28,7 @@ const Layout: React.FC = () => {
   const [sessionWarning, setSessionWarning] = useState(false);
   const [countdown, setCountdown] = useState(300); // 5 minutes in seconds
 
-  const { isRefreshing, appSettings, isLoading, connectionError, systemSlowMessage, logout, items, user, employees } = useApp();
+  const { isRefreshing, appSettings, isLoading, connectionError, systemSlowMessage, logout, user, employees } = useApp();
   const { isDark, toggleTheme } = useTheme();
   const { isOnline, isSyncing, pendingCount, syncNow } = useOfflineSync();
   const navigate = useNavigate();
@@ -39,14 +39,6 @@ const Layout: React.FC = () => {
   const countdownRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   const appInitials = appSettings.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
-
-  // Low stock notifications
-  const lowStockItems = useMemo(() => {
-    return items.filter(item => {
-      const totalStock = Object.values(item.stockByWarehouse).reduce((a: number, b) => a + (b as number), 0);
-      return totalStock <= item.minStock;
-    }).slice(0, 10);
-  }, [items]);
 
   // Session timeout logic
   const resetTimers = () => {

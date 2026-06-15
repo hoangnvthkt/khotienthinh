@@ -254,6 +254,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
         const handlerNames = assigneeIds.map(id => userById.get(id)?.name || id).join(' ');
         const matched = matchesSearchQueryMultiple([
           request.code,
+          request.title,
           request.id,
           requester?.name,
           request.submittedToName,
@@ -432,10 +433,10 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                             />
                             <div className="min-w-0">
                               <h4 className="text-[13px] font-bold text-foreground leading-tight line-clamp-2">
-                                {request.code} - Đề xuất vật tư
+                                {request.title || 'Đề xuất vật tư'}
                               </h4>
-                              <span className="font-mono text-[9px] font-bold text-muted-foreground mt-0.5 block">
-                                WF-{request.id?.substring(0, 8)}
+                              <span className="mt-0.5 block truncate font-mono text-[9px] font-bold text-muted-foreground">
+                                {request.code} - Đề xuất vật tư
                               </span>
                             </div>
                           </div>
@@ -562,9 +563,12 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                                 <span className="inline-flex items-center gap-1 rounded bg-indigo-500/10 px-1.5 py-0.5 text-[9px] font-black uppercase text-indigo-400">
                                   Xem nhanh phiếu
                                 </span>
-                                <h4 className="mt-1 font-mono text-sm font-black text-indigo-600">
-                                  {request.code}
+                                <h4 className="mt-1 text-sm font-black text-foreground">
+                                  {request.title || 'Đề xuất vật tư'}
                                 </h4>
+                                <div className="mt-0.5 font-mono text-[10px] font-bold text-indigo-600">
+                                  {request.code} - Đề xuất vật tư
+                                </div>
                               </div>
                               <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase text-white bg-gradient-to-r ${getHeaderGradient(column.id)}`}>
                                 {column.label}
