@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save, FileDown, Clock } from 'lucide-react';
+import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save, FileDown, Clock, ChevronDown, ChevronRight } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from '../context/AppContext';
 import {
@@ -89,6 +89,7 @@ interface RequestModalProps {
     projectWorkflowNodes?: WorkflowNode[];
     projectWorkflowNextNode?: WorkflowNode | null;
     projectWorkflowReturnTargetNode?: WorkflowNode | null;
+    canViewAvailableStock?: boolean;
     onProjectWorkflowAction?: (context: ProjectWorkflowActionContext) => void | Promise<void>;
     onSaved?: (request: MaterialRequest) => void;
     onDeleted?: (requestId: string) => void;
@@ -123,6 +124,35 @@ type RequestLineDraft = {
     skuSnapshot?: string;
     specification?: string;
     manualReason?: string;
+};
+
+type RequestDisplayRow = RequestLineDraft | RequestItem;
+
+type RequestDisplaySource = {
+    row: RequestDisplayRow;
+    index: number;
+    requestQty: number;
+    approvedQty: number;
+    issuedQty: number;
+    receivedQty: number;
+    remainingToReceive: number;
+    isExcess: boolean;
+};
+
+type RequestDisplayGroup = {
+    key: string;
+    itemId: string;
+    name: string;
+    sku: string;
+    unit: string;
+    specification?: string;
+    sources: RequestDisplaySource[];
+    requestQty: number;
+    approvedQty: number;
+    issuedQty: number;
+    receivedQty: number;
+    remainingToReceive: number;
+    isExcess: boolean;
 };
 
 type FulfillmentQtyDraft = {
@@ -202,6 +232,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     projectWorkflowNodes = [],
     projectWorkflowNextNode,
     projectWorkflowReturnTargetNode,
+    canViewAvailableStock = false,
     onProjectWorkflowAction,
     onSaved,
     onDeleted,
@@ -224,9 +255,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [overrideReason, setOverrideReason] = useState('');
     const [reqItems, setReqItems] = useState<RequestLineDraft[]>([]);
     const [approvedItems, setApprovedItems] = useState<{ lineId?: string, itemId: string, qty: number }[]>([]);
-    const [draftWorkBoqItemId, setDraftWorkBoqItemId] = useState('');
-    const [draftMaterialBudgetItemId, setDraftMaterialBudgetItemId] = useState('');
-    const [draftQty, setDraftQty] = useState('');
+    const [selectedWorkBoqItemIds, setSelectedWorkBoqItemIds] = useState<Set<string>>(() => new Set());
+    const [draftWorkBoqSearch, setDraftWorkBoqSearch] = useState('');
+    const [isWorkBoqSearchOpen, setWorkBoqSearchOpen] = useState(false);
+    const [selectedMaterialBudgetIds, setSelectedMaterialBudgetIds] = useState<Set<string>>(() => new Set());
+    const [draftBudgetQtyById, setDraftBudgetQtyById] = useState<Record<string, string>>({});
     const [draftNeededDate, setDraftNeededDate] = useState('');
     const [draftLineNote, setDraftLineNote] = useState('');
     const [submittingProjectRequest, setSubmittingProjectRequest] = useState<MaterialRequest | null>(null);
@@ -245,6 +278,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [returningReceivedBatch, setReturningReceivedBatch] = useState<MaterialRequestFulfillmentBatch | null>(null);
     const [returnDestinationWarehouseId, setReturnDestinationWarehouseId] = useState('');
     const [returnReceivedReason, setReturnReceivedReason] = useState('');
+    const [expandedMaterialGroupKeys, setExpandedMaterialGroupKeys] = useState<Set<string>>(() => new Set());
     const [poSourceLabelsById, setPoSourceLabelsById] = useState<Record<string, string>>({});
 
     const [isItemSelectOpen, setItemSelectOpen] = useState(false);
@@ -273,11 +307,30 @@ const RequestModal: React.FC<RequestModalProps> = ({
         );
     const workBoqMap = useMemo(() => new Map(workBoqItems.map(item => [item.id, item])), [workBoqItems]);
     const materialBudgetMap = useMemo(() => new Map(materialBudgetItems.map(item => [item.id, item])), [materialBudgetItems]);
+    const getWorkBoqLabel = (item?: ProjectWorkBoqItem | null) => item
+        ? `${item.wbsCode ? `${item.wbsCode} - ` : ''}${item.name}`
+        : '';
+    const selectedWorkBoqItems = useMemo(
+        () => Array.from(selectedWorkBoqItemIds).map(id => workBoqMap.get(id)).filter((item): item is ProjectWorkBoqItem => Boolean(item)),
+        [selectedWorkBoqItemIds, workBoqMap],
+    );
+    const selectedWorkBoqLabel = selectedWorkBoqItems.length === 1
+        ? getWorkBoqLabel(selectedWorkBoqItems[0])
+        : selectedWorkBoqItems.length > 1
+            ? `${selectedWorkBoqItems.length} đầu mục công việc đã chọn`
+            : 'Chọn đầu mục công việc để xem vật tư';
+    const workBoqSearchOptions = useMemo(() => {
+        const query = draftWorkBoqSearch.trim().toLowerCase();
+        const candidates = query
+            ? workBoqItems.filter(item => getWorkBoqLabel(item).toLowerCase().includes(query))
+            : workBoqItems;
+        return candidates.slice(0, 12);
+    }, [draftWorkBoqSearch, workBoqItems]);
     const budgetOptions = useMemo(
         () => materialBudgetItems
-            .filter(item => !draftWorkBoqItemId || item.workBoqItemId === draftWorkBoqItemId)
+            .filter(item => selectedWorkBoqItemIds.size > 0 && !!item.workBoqItemId && selectedWorkBoqItemIds.has(item.workBoqItemId))
             .filter(item => Number(item.budgetQty || 0) > 0),
-        [draftWorkBoqItemId, materialBudgetItems],
+        [materialBudgetItems, selectedWorkBoqItemIds],
     );
 
     const getRequestStatusLabel = (status: RequestStatus | string) => {
@@ -393,6 +446,26 @@ const RequestModal: React.FC<RequestModalProps> = ({
             if (budgetId) runningDraftQtyByBudget.set(budgetId, draftBeforeQty + Number(line.qty || 0));
             return [line.lineId, snapshot] as const;
         }));
+    };
+
+    const getNewLineBudgetSnapshot = (materialBudgetItemId?: string | null, currentQty = 0, excludeRequestId?: string) => {
+        const reservation = getBudgetReservationSnapshot(materialBudgetItemId, excludeRequestId);
+        const draftRequested = getDraftRequestedQty(materialBudgetItemId);
+        const reservedBeforeQty = reservation.reservedQty + draftRequested;
+        const totalRequested = reservedBeforeQty + Number(currentQty || 0);
+        const budgetQty = reservation.budgetQty;
+        const overBeforeQty = budgetQty > 0 ? Math.max(0, reservedBeforeQty - budgetQty) : 0;
+        const overAfterQty = budgetQty > 0 ? Math.max(0, totalRequested - budgetQty) : 0;
+        return {
+            ...reservation,
+            previousRequested: reservation.reservedQty,
+            reservedBeforeQty,
+            totalRequested,
+            availableQty: budgetQty - reservedBeforeQty,
+            overBudgetQty: Math.max(0, overAfterQty - overBeforeQty),
+            overBudgetPercent: budgetQty > 0 ? (Math.max(0, overAfterQty - overBeforeQty) / budgetQty) * 100 : 0,
+            overAfterQty,
+        };
     };
 
     const getLineInventory = (itemId?: string) => items.find(i => i.id === itemId);
@@ -610,6 +683,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             setShowApprovalPanel(false);
             setIsSaving(false);
             setIsIssuePanelOpen(false);
+            setExpandedMaterialGroupKeys(new Set());
             setReceivingBatch(null);
             setReceivePanelMode('receipt');
             setReturningReceivedBatch(null);
@@ -650,9 +724,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     .filter((line): line is RequestLineDraft => Boolean(line) && line.qty > 0);
                 setReqItems(initialLines);
                 setApprovedItems([]);
-                setDraftWorkBoqItemId(initialDraft?.workBoqItemId || '');
-                setDraftMaterialBudgetItemId('');
-                setDraftQty('');
+                const initialWorkId = initialDraft?.workBoqItemId || '';
+                setSelectedWorkBoqItemIds(new Set(initialWorkId ? [initialWorkId] : []));
+                setDraftWorkBoqSearch(initialWorkId ? getWorkBoqLabel(workBoqMap.get(initialWorkId)) : '');
+                setSelectedMaterialBudgetIds(new Set());
+                setDraftBudgetQtyById({});
                 setDraftNeededDate('');
                 setDraftLineNote('');
             }
@@ -729,55 +805,136 @@ const RequestModal: React.FC<RequestModalProps> = ({
         });
     };
 
-    const handleAddBudgetLine = () => {
-        const budget = materialBudgetMap.get(draftMaterialBudgetItemId);
-        if (!budget) {
-            toast.warning('Chưa chọn vật tư BOQ', 'Vui lòng chọn dòng vật tư/định mức thuộc BOQ triển khai.');
+    const getBudgetInventoryItem = (budget: MaterialBudgetItem) => items.find(item =>
+        item.id === budget.inventoryItemId ||
+        (!!budget.materialCode && item.sku.toLowerCase() === budget.materialCode.toLowerCase()) ||
+        item.name.toLowerCase() === budget.itemName.toLowerCase()
+    );
+
+    const handleToggleWorkBoqItem = (item: ProjectWorkBoqItem) => {
+        setSelectedWorkBoqItemIds(prev => {
+            const next = new Set(prev);
+            if (next.has(item.id)) next.delete(item.id);
+            else next.add(item.id);
+            return next;
+        });
+        setSelectedMaterialBudgetIds(new Set());
+        setDraftBudgetQtyById({});
+    };
+
+    const handleToggleBudgetSelection = (budget: MaterialBudgetItem) => {
+        setSelectedMaterialBudgetIds(prev => {
+            const next = new Set(prev);
+            const isSelected = next.has(budget.id);
+            if (isSelected) {
+                next.delete(budget.id);
+                setDraftBudgetQtyById(qtyMap => {
+                    const { [budget.id]: _removed, ...rest } = qtyMap;
+                    return rest;
+                });
+                return next;
+            }
+            next.add(budget.id);
+            setDraftBudgetQtyById(qtyMap => {
+                if (qtyMap[budget.id]) return qtyMap;
+                const snapshot = getNewLineBudgetSnapshot(budget.id, 0, request?.id);
+                const suggestedQty = canViewAvailableStock && snapshot.availableQty > 0
+                    ? Math.max(0, snapshot.availableQty)
+                    : '';
+                return { ...qtyMap, [budget.id]: suggestedQty ? String(suggestedQty) : '' };
+            });
+            return next;
+        });
+    };
+
+    const handleAddBudgetLines = () => {
+        const selectedBudgets = budgetOptions.filter(budget => selectedMaterialBudgetIds.has(budget.id));
+        if (selectedBudgets.length === 0) {
+            toast.warning('Chưa chọn vật tư BOQ', 'Vui lòng tick một hoặc nhiều vật tư/định mức thuộc đầu mục công việc.');
             return;
         }
-        const inventoryItem = items.find(item =>
-            item.id === budget.inventoryItemId ||
-            (!!budget.materialCode && item.sku.toLowerCase() === budget.materialCode.toLowerCase()) ||
-            item.name.toLowerCase() === budget.itemName.toLowerCase()
-        );
-        if (!inventoryItem) {
-            toast.warning('Chưa có mã kho', 'Dòng BOQ này chưa liên kết với vật tư trong danh mục. Vui lòng tạo Đề xuất cấp mã vật tư/vật liệu trước.');
-            return;
+
+        const missingQty: string[] = [];
+        const missingInventory: string[] = [];
+        const validLines: Array<{ budget: MaterialBudgetItem; inventoryItem: InventoryItem; qty: number }> = [];
+        const overBudgetLines: Array<{ budget: MaterialBudgetItem; snapshot: ReturnType<typeof getNewLineBudgetSnapshot> }> = [];
+
+        selectedBudgets.forEach(budget => {
+            const inventoryItem = getBudgetInventoryItem(budget);
+            if (!inventoryItem) {
+                missingInventory.push(budget.itemName);
+                return;
+            }
+            const qty = Math.max(0, Number(draftBudgetQtyById[budget.id] || 0));
+            if (qty <= 0) {
+                missingQty.push(budget.itemName);
+                return;
+            }
+            const snapshot = getNewLineBudgetSnapshot(budget.id, qty, request?.id);
+            if (snapshot.budgetQty > 0 && snapshot.totalRequested > snapshot.budgetQty) {
+                overBudgetLines.push({ budget, snapshot });
+            }
+            validLines.push({ budget, inventoryItem, qty });
+        });
+
+        if (missingInventory.length > 0) {
+            toast.warning('Có vật tư chưa có mã kho', `${missingInventory.slice(0, 3).join(', ')}${missingInventory.length > 3 ? ` và ${missingInventory.length - 3} dòng khác` : ''}. Vui lòng tạo Đề xuất cấp mã vật tư/vật liệu trước.`);
         }
-        const qty = Math.max(0, Number(draftQty || 0));
-        if (qty <= 0) {
-            toast.warning('Thiếu khối lượng', 'Vui lòng nhập khối lượng đề xuất lớn hơn 0.');
-            return;
+        if (missingQty.length > 0) {
+            toast.warning('Thiếu khối lượng', `Vui lòng nhập số lượng lớn hơn 0 cho: ${missingQty.slice(0, 3).join(', ')}${missingQty.length > 3 ? ` và ${missingQty.length - 3} dòng khác` : ''}.`);
         }
-        const reservation = getBudgetReservationSnapshot(budget.id, request?.id);
-        const currentDraftQty = getDraftRequestedQty(budget.id);
-        const nextReservedQty = reservation.reservedQty + currentDraftQty + qty;
-        if (reservation.budgetQty > 0 && nextReservedQty > reservation.budgetQty) {
-            toast.warning(
-                'Vượt KL khả dụng BOQ',
-                `${budget.itemName}: khả dụng ${Math.max(0, reservation.budgetQty - reservation.reservedQty - currentDraftQty).toLocaleString('vi-VN')} ${budget.unit}; sau dòng này vượt ${(nextReservedQty - reservation.budgetQty).toLocaleString('vi-VN')} ${budget.unit}. Phiếu vẫn tạo được nếu nhập lý do.`,
-            );
+        if (validLines.length === 0) return;
+
+        if (overBudgetLines.length > 0) {
+            const first = overBudgetLines[0];
+            const message = canViewAvailableStock
+                ? `${first.budget.itemName}: khả dụng ${Math.max(0, first.snapshot.availableQty).toLocaleString('vi-VN')} ${first.budget.unit}; sau dòng này vượt ${(first.snapshot.totalRequested - first.snapshot.budgetQty).toLocaleString('vi-VN')} ${first.budget.unit}${overBudgetLines.length > 1 ? `, và ${overBudgetLines.length - 1} dòng khác cũng vượt.` : '.'}`
+                : `${overBudgetLines.length} dòng vượt phần khả dụng/định mức. Phiếu vẫn tạo được nếu nhập lý do.`;
+            toast.warning('Vượt KL khả dụng BOQ', message);
         }
-        const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
-        setReqItems(prev => [...prev, {
-            lineId: crypto.randomUUID(),
-            itemId: inventoryItem.id,
-            qty,
-            workBoqItemId: budget.workBoqItemId || draftWorkBoqItemId || null,
-            workBoqItemName: work?.name || '',
-            materialBudgetItemId: budget.id,
-            materialBudgetItemName: budget.itemName,
-            neededDate: draftNeededDate || '',
-            note: draftLineNote || '',
-            isManualItem: false,
-            itemNameSnapshot: inventoryItem.name,
-            unitSnapshot: inventoryItem.unit,
-            skuSnapshot: inventoryItem.sku,
-            specification: budget.notes || '',
-            overBudgetReason: '',
-        }]);
-        setDraftMaterialBudgetItemId('');
-        setDraftQty('');
+
+        setReqItems(prev => {
+            let next = [...prev];
+            validLines.forEach(({ budget, inventoryItem, qty }) => {
+                const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
+                const existingIndex = next.findIndex(line => line.materialBudgetItemId === budget.id);
+                if (existingIndex >= 0) {
+                    next = next.map((line, index) => {
+                        if (index !== existingIndex) return line;
+                        const nextNote = draftLineNote
+                            ? [line.note, draftLineNote].filter(Boolean).join('; ')
+                            : line.note;
+                        return {
+                            ...line,
+                            qty: Number(line.qty || 0) + qty,
+                            neededDate: draftNeededDate || line.neededDate,
+                            note: nextNote,
+                        };
+                    });
+                    return;
+                }
+                next.push({
+                    lineId: crypto.randomUUID(),
+                    itemId: inventoryItem.id,
+                    qty,
+                    workBoqItemId: budget.workBoqItemId || null,
+                    workBoqItemName: work?.name || '',
+                    materialBudgetItemId: budget.id,
+                    materialBudgetItemName: budget.itemName,
+                    neededDate: draftNeededDate || '',
+                    note: draftLineNote || '',
+                    isManualItem: false,
+                    itemNameSnapshot: inventoryItem.name,
+                    unitSnapshot: inventoryItem.unit,
+                    skuSnapshot: inventoryItem.sku,
+                    specification: budget.notes || '',
+                    overBudgetReason: '',
+                });
+            });
+            return next;
+        });
+        setSelectedMaterialBudgetIds(new Set());
+        setDraftBudgetQtyById({});
         setDraftLineNote('');
     };
 
@@ -1869,12 +2026,76 @@ const RequestModal: React.FC<RequestModalProps> = ({
         : request?.status === RequestStatus.DRAFT
             ? 'Nháp'
             : request?.status || 'NEW';
+    const canSeeAvailability = !isProjectRequest || canViewAvailableStock;
     const showSourceWarehouseField = !isEditable || !isProjectRequest || canEditApprovalQuantities;
     const stockContextWarehouseId = isEditable && isProjectRequest ? stockPreviewWarehouseId : sourceWarehouseId;
-    const draftBudgetReservation = isEditable && draftMaterialBudgetItemId
-        ? getBudgetReservationSnapshot(draftMaterialBudgetItemId, request?.id)
-        : null;
     const editableBudgetSnapshots = isEditable ? buildSequentialLineBudgetSnapshots(reqItems, request?.id) : null;
+    const requestDisplayRows: RequestDisplayRow[] = isEditable ? reqItems : (request?.items || []);
+    const materialDisplayGroups = requestDisplayRows.reduce<RequestDisplayGroup[]>((groups, row, index) => {
+        const itemId = row.itemId;
+        const sku = getLineSku(row);
+        const unit = getLineUnit(row);
+        const name = getLineName(row);
+        const key = sku
+            ? `sku:${sku.toLowerCase()}`
+            : itemId
+                ? `item:${itemId}`
+                : `name:${(row.materialBudgetItemName || name || '').toLowerCase()}::${unit || ''}`;
+        const requestQty = isEditable ? Number((row as RequestLineDraft).qty || 0) : Number((row as RequestItem).requestQty || 0);
+        const lineId = row.lineId;
+        const requestLineId = request && !isEditable ? getRequestLineId(request, row as RequestItem, index) : lineId;
+        const lineFulfillment = requestLineId ? fulfillmentLineSummaryMap.get(requestLineId) : undefined;
+        const approvedQty = approvedItems.find(ai => (lineId && ai.lineId === lineId) || (!lineId && ai.itemId === itemId))?.qty
+            ?? (!isEditable ? Number((row as RequestItem).approvedQty || 0) : 0);
+        const issuedQty = lineFulfillment?.issuedQty || Number((row as RequestItem).issuedQty || 0);
+        const receivedQty = lineFulfillment?.receivedQty || 0;
+        const remainingToReceive = lineFulfillment?.remainingToReceive ?? Math.max(0, requestQty - receivedQty);
+        const source: RequestDisplaySource = {
+            row,
+            index,
+            requestQty,
+            approvedQty,
+            issuedQty,
+            receivedQty,
+            remainingToReceive,
+            isExcess: !isEditable && approvedQty > requestQty,
+        };
+        const existing = groups.find(group => group.key === key);
+        if (existing) {
+            existing.sources.push(source);
+            existing.requestQty += requestQty;
+            existing.approvedQty += approvedQty;
+            existing.issuedQty += issuedQty;
+            existing.receivedQty += receivedQty;
+            existing.remainingToReceive += remainingToReceive;
+            existing.isExcess = existing.isExcess || source.isExcess;
+            return groups;
+        }
+        groups.push({
+            key,
+            itemId,
+            name,
+            sku: sku || '',
+            unit: unit || '',
+            specification: row.specification,
+            sources: [source],
+            requestQty,
+            approvedQty,
+            issuedQty,
+            receivedQty,
+            remainingToReceive,
+            isExcess: source.isExcess,
+        });
+        return groups;
+    }, []);
+    const toggleMaterialGroup = (groupKey: string) => {
+        setExpandedMaterialGroupKeys(prev => {
+            const next = new Set(prev);
+            if (next.has(groupKey)) next.delete(groupKey);
+            else next.add(groupKey);
+            return next;
+        });
+    };
     const canDeleteRequest = !!request
         && [RequestStatus.DRAFT, RequestStatus.PENDING, RequestStatus.REJECTED].includes(request.status)
         && (
@@ -1891,7 +2112,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         && projectWorkflowSubject?.status !== 'RETURNED';
 
     return (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
+        <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
             <div className="bg-card text-card-foreground border border-border rounded-t-2xl sm:rounded-2xl w-full sm:w-[70vw] xl:max-w-[1050px] 2xl:max-w-[1180px] shadow-2xl flex flex-col max-h-[85vh] sm:max-h-[85vh] overflow-hidden relative">
 
                 {/* Decision Overlay */}
@@ -2069,7 +2290,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             </div>
                         )}
 
-                        {isEditable && isProjectRequest && (
+                        {isEditable && isProjectRequest && canSeeAvailability && (
                             <div className="bg-card p-4 rounded-xl border border-cyan-200/40 dark:border-cyan-900/40 shadow-sm space-y-2">
                                 <label className="text-[10px] uppercase font-black text-cyan-500">Xem tồn kho khi đề xuất</label>
                                 <div className="flex items-center gap-2 text-cyan-700 font-bold">
@@ -2169,86 +2390,137 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     <div className="text-xs font-black text-foreground">Thêm vật tư theo BOQ triển khai</div>
                                     <div className="text-[10px] font-bold text-muted-foreground">BOQ là mức trần cảnh báo; đề xuất vượt vẫn gửi được khi nhập lý do.</div>
                                 </div>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
-                                <select
-                                    value={draftWorkBoqItemId}
-                                    onChange={event => {
-                                        setDraftWorkBoqItemId(event.target.value);
-                                        setDraftMaterialBudgetItemId('');
-                                    }}
-                                    className="md:col-span-4 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
-                                >
-                                    <option value="">Chọn đầu mục BOQ triển khai...</option>
-                                    {workBoqItems.map(item => <option key={item.id} value={item.id}>{item.wbsCode ? `${item.wbsCode} - ` : ''}{item.name}</option>)}
-                                </select>
-                                <select
-                                    value={draftMaterialBudgetItemId}
-                                    onChange={event => setDraftMaterialBudgetItemId(event.target.value)}
-                                    className="md:col-span-4 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
-                                >
-                                    <option value="">Chọn vật tư/định mức...</option>
-                                    {budgetOptions.length === 0 && (
-                                        <option value="" disabled>
-                                            {draftWorkBoqItemId ? 'Đầu mục này chưa khai báo vật tư có KL dự toán' : 'Chưa có vật tư BOQ nào có KL dự toán'}
-                                        </option>
-                                    )}
-                                    {budgetOptions.map(item => {
-                                        const reservation = getBudgetReservationSnapshot(item.id, request?.id);
-                                        const overQty = Math.max(0, reservation.reservedQty - reservation.budgetQty);
-                                        return (
-                                            <option key={item.id} value={item.id}>
-                                                {item.itemName} • Dự toán {reservation.budgetQty.toLocaleString('vi-VN')} {item.unit} • Đã giữ/nhận {reservation.reservedQty.toLocaleString('vi-VN')} • Khả dụng {Math.max(0, reservation.availableQty).toLocaleString('vi-VN')}{overQty > 0 ? ` • Vượt ${overQty.toLocaleString('vi-VN')}` : ''}
-                                            </option>
-                                        );
-                                    })}
-                                </select>
-                                <input
-                                    type="number"
-                                    min={0}
-                                    value={draftQty}
-                                    onChange={event => setDraftQty(event.target.value)}
-                                    placeholder="Số lượng"
-                                    className="md:col-span-1 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
-                                />
-                                <input
-                                    type="date"
-                                    value={draftNeededDate}
-                                    onChange={event => setDraftNeededDate(event.target.value)}
-                                    className="md:col-span-2 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
-                                />
-                                <button onClick={handleAddBudgetLine} className="md:col-span-1 px-3 py-2 rounded-xl bg-amber-500 text-white text-xs font-black hover:bg-amber-600">
-                                    Thêm
-                                </button>
-                                {draftBudgetReservation && (
-                                    <div className="md:col-span-12 space-y-2 rounded-xl border border-amber-200/40 bg-card p-2 text-[10px] text-muted-foreground dark:border-amber-800/40">
-                                        <BoqSummaryStrip
-                                            budgetQty={draftBudgetReservation.budgetQty}
-                                            reservedQty={draftBudgetReservation.reservedQty}
-                                            currentQty={Number(draftQty || 0)}
-                                            availableQty={draftBudgetReservation.availableQty}
-                                            overBudgetQty={Math.max(0, -draftBudgetReservation.availableQty)}
-                                            unit={draftBudgetReservation.budget?.unit}
-                                            pendingCount={draftBudgetReservation.pendingSources.length}
-                                        />
-                                        {draftBudgetReservation.pendingSources.length > 0 && (
-                                            <div className="mt-1.5 space-y-0.5">
-                                                <div className="font-black uppercase text-amber-600">Phiếu đang chiếm chỗ/chờ xử lý</div>
-                                                {draftBudgetReservation.pendingSources.slice(0, 4).map(source => (
-                                                    <div key={`${source.requestId}-${source.status}`} className="font-semibold">
-                                                        {source.code} • {source.statusLabel} • {source.requesterName} • {source.qty.toLocaleString('vi-VN')} {draftBudgetReservation.budget?.unit || ''}
-                                                    </div>
-                                                ))}
-                                                {draftBudgetReservation.pendingSources.length > 4 && (
-                                                    <div className="font-semibold">+{draftBudgetReservation.pendingSources.length - 4} phiếu khác đang giữ chỗ.</div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                                <input
-                                    value={draftLineNote}
-                                    onChange={event => setDraftLineNote(event.target.value)}
+	                            </div>
+	                            <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+	                                <div className="relative md:col-span-7">
+		                                    <input
+		                                        value={draftWorkBoqSearch}
+		                                        onChange={event => {
+		                                            setDraftWorkBoqSearch(event.target.value);
+		                                            setWorkBoqSearchOpen(true);
+		                                        }}
+	                                        onFocus={() => setWorkBoqSearchOpen(true)}
+	                                        onBlur={() => window.setTimeout(() => setWorkBoqSearchOpen(false), 150)}
+	                                        placeholder="Tìm đầu mục công việc..."
+	                                        className="w-full px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
+	                                    />
+	                                    {isWorkBoqSearchOpen && (
+	                                        <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-xl border border-amber-200/60 bg-card shadow-xl">
+	                                            {workBoqSearchOptions.length === 0 ? (
+	                                                <div className="px-3 py-3 text-xs font-bold text-muted-foreground">Không tìm thấy đầu mục phù hợp.</div>
+		                                            ) : (
+		                                                workBoqSearchOptions.map(item => (
+		                                                    <button
+		                                                        key={item.id}
+		                                                        type="button"
+		                                                        onMouseDown={event => event.preventDefault()}
+		                                                        onClick={() => handleToggleWorkBoqItem(item)}
+		                                                        className="flex w-full items-start gap-2 border-b border-border/50 px-3 py-2 text-left text-xs font-bold text-foreground hover:bg-amber-50 dark:hover:bg-amber-950/30 last:border-b-0"
+		                                                    >
+		                                                        <input
+		                                                            type="checkbox"
+		                                                            readOnly
+		                                                            checked={selectedWorkBoqItemIds.has(item.id)}
+		                                                            className="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-300"
+		                                                        />
+		                                                        <span className="block min-w-0 flex-1 truncate">{getWorkBoqLabel(item)}</span>
+		                                                    </button>
+		                                                ))
+		                                            )}
+	                                        </div>
+	                                    )}
+	                                </div>
+	                                <input
+	                                    type="date"
+	                                    value={draftNeededDate}
+	                                    onChange={event => setDraftNeededDate(event.target.value)}
+	                                    className="md:col-span-3 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
+	                                />
+	                                <button
+	                                    onClick={handleAddBudgetLines}
+	                                    disabled={selectedMaterialBudgetIds.size === 0}
+	                                    className="md:col-span-2 px-3 py-2 rounded-xl bg-amber-500 text-white text-xs font-black hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+	                                >
+	                                    Thêm {selectedMaterialBudgetIds.size > 0 ? `(${selectedMaterialBudgetIds.size})` : ''}
+	                                </button>
+		                                <div className="md:col-span-12 rounded-xl border border-amber-200/40 bg-card dark:border-amber-800/40">
+		                                    <div className="border-b border-amber-100/60 px-3 py-2 text-[10px] font-black uppercase text-muted-foreground">
+		                                        {selectedWorkBoqLabel}
+		                                    </div>
+		                                    <div className="max-h-72 overflow-y-auto divide-y divide-border/60">
+		                                        {selectedWorkBoqItemIds.size === 0 ? (
+		                                            <div className="px-3 py-4 text-xs font-bold text-muted-foreground">Gõ tên hoặc mã WBS rồi tick một hoặc nhiều đầu mục công việc.</div>
+		                                        ) : budgetOptions.length === 0 ? (
+		                                            <div className="px-3 py-4 text-xs font-bold text-muted-foreground">Các đầu mục đã chọn chưa khai báo vật tư có KL dự toán.</div>
+		                                        ) : (
+		                                            budgetOptions.map(item => {
+		                                                const checked = selectedMaterialBudgetIds.has(item.id);
+		                                                const reservation = getNewLineBudgetSnapshot(item.id, Number(draftBudgetQtyById[item.id] || 0), request?.id);
+		                                                const inventoryItem = getBudgetInventoryItem(item);
+		                                                const work = item.workBoqItemId ? workBoqMap.get(item.workBoqItemId) : undefined;
+		                                                const overQty = Math.max(0, reservation.totalRequested - reservation.budgetQty);
+		                                                return (
+	                                                    <label key={item.id} className="grid grid-cols-1 gap-2 px-3 py-2 text-xs md:grid-cols-12 md:items-center">
+	                                                        <div className="flex min-w-0 items-start gap-2 md:col-span-7">
+	                                                            <input
+	                                                                type="checkbox"
+	                                                                checked={checked}
+	                                                                onChange={() => handleToggleBudgetSelection(item)}
+	                                                                className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-300"
+	                                                            />
+		                                                            <div className="min-w-0">
+		                                                                <div className="truncate font-black text-foreground">{item.itemName}</div>
+		                                                                <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] font-bold text-muted-foreground">
+		                                                                    {selectedWorkBoqItemIds.size > 1 && work && (
+		                                                                        <>
+		                                                                            <span className="max-w-[260px] truncate text-amber-700">{getWorkBoqLabel(work)}</span>
+		                                                                            <span>•</span>
+		                                                                        </>
+		                                                                    )}
+		                                                                    <span>{inventoryItem?.sku || item.materialCode || 'Chưa có mã kho'}</span>
+	                                                                    <span>•</span>
+	                                                                    <span>{item.unit}</span>
+	                                                                    {canSeeAvailability && (
+	                                                                        <>
+	                                                                            <span>•</span>
+	                                                                            <span>Dự toán {reservation.budgetQty.toLocaleString('vi-VN')}</span>
+	                                                                            <span>•</span>
+	                                                                            <span>Đã giữ/nhận {reservation.reservedBeforeQty.toLocaleString('vi-VN')}</span>
+	                                                                            <span>•</span>
+	                                                                            <span>Khả dụng {Math.max(0, reservation.availableQty).toLocaleString('vi-VN')}</span>
+	                                                                        </>
+	                                                                    )}
+	                                                                </div>
+	                                                            </div>
+	                                                        </div>
+	                                                        <input
+	                                                            type="number"
+	                                                            min={0}
+	                                                            value={draftBudgetQtyById[item.id] || ''}
+	                                                            onChange={event => {
+	                                                                const value = event.target.value;
+	                                                                setDraftBudgetQtyById(prev => ({ ...prev, [item.id]: value }));
+	                                                                if (value && !selectedMaterialBudgetIds.has(item.id)) {
+	                                                                    setSelectedMaterialBudgetIds(prev => new Set(prev).add(item.id));
+	                                                                }
+	                                                            }}
+	                                                            placeholder="Số lượng"
+	                                                            className="md:col-span-2 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
+	                                                        />
+	                                                        <div className="md:col-span-3 flex flex-wrap justify-start gap-1 md:justify-end">
+	                                                            {!inventoryItem && <span className="rounded bg-red-50 px-1.5 py-0.5 text-[9px] font-bold text-red-600 border border-red-200/60">Chưa có mã kho</span>}
+	                                                            {canSeeAvailability && reservation.pendingSources.length > 0 && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 border border-amber-200/60">{reservation.pendingSources.length} phiếu giữ chỗ</span>}
+	                                                            {overQty > 0 && <span className="rounded bg-orange-50 px-1.5 py-0.5 text-[9px] font-bold text-orange-650 border border-orange-200/60">{canSeeAvailability ? `Vượt ${overQty.toLocaleString('vi-VN')}` : 'Vượt định mức'}</span>}
+	                                                        </div>
+	                                                    </label>
+	                                                );
+	                                            })
+	                                        )}
+	                                    </div>
+	                                </div>
+	                                <input
+	                                    value={draftLineNote}
+	                                    onChange={event => setDraftLineNote(event.target.value)}
                                     placeholder="Ghi chú dòng..."
                                     className="md:col-span-12 px-3 py-2 rounded-xl border border-amber-200/40 dark:border-amber-800/40 bg-card text-xs outline-none focus:ring-2 focus:ring-amber-300 text-foreground"
                                 />
@@ -2266,7 +2538,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     <th className="p-4 w-32 text-right">Số lượng Y/C</th>
                                     {!isEditable && (
                                         <>
-                                            <th className="p-4 w-32 text-right text-blue-600 bg-blue-50/30">{stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</th>
+                                            {canSeeAvailability && <th className="p-4 w-32 text-right text-blue-600 bg-blue-50/30">{stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</th>}
                                             <th className="p-4 w-32 text-right text-emerald-600 bg-emerald-50/30">Cam kết</th>
                                             <th className="p-4 w-28 text-right text-indigo-600 bg-indigo-50/30">Đã xuất</th>
                                             <th className="p-4 w-28 text-right text-cyan-600 bg-cyan-50/30">Đã nhận</th>
@@ -2277,126 +2549,236 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border">
-                                {(isEditable ? reqItems : (request?.items || [])).map((row, idx) => {
-                                    const itemId = row.itemId;
-                                    const requestQty = isEditable ? row.qty : row.requestQty;
-                                    const itemInfo = getLineInventory(itemId);
-                                    const stockSummary = getAggregateStockSummary(itemId, stockContextWarehouseId, request?.id);
-                                    const sourceStock = stockSummary.available;
-                                    const lineId = row.lineId;
-                                    const requestLineId = request && !isEditable ? getRequestLineId(request, row as RequestItem, idx) : lineId;
-                                    const lineFulfillment = requestLineId ? fulfillmentLineSummaryMap.get(requestLineId) : undefined;
-                                    const approvedQty = approvedItems.find(ai => (lineId && ai.lineId === lineId) || (!lineId && ai.itemId === itemId))?.qty || 0;
-                                    const issuedQty = lineFulfillment?.issuedQty || Number((row as RequestItem).issuedQty || 0);
-                                    const receivedQty = lineFulfillment?.receivedQty || 0;
-                                    const remainingToReceive = lineFulfillment?.remainingToReceive ?? Math.max(0, requestQty - receivedQty);
-                                    const isExcess = !isEditable && approvedQty > requestQty;
-                                    const budgetSnapshot = editableBudgetSnapshots?.get((row as RequestLineDraft).lineId) || buildLineBudgetSnapshot(row as RequestLineDraft, request?.id);
-                                    const needsReason = isEditable && isProjectRequest && (!row.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0);
+                                {materialDisplayGroups.map(group => {
+                                    const primary = group.sources[0];
+                                    const primaryRow = primary.row;
+                                    const hasMultipleSources = group.sources.length > 1;
+                                    const isExpanded = expandedMaterialGroupKeys.has(group.key);
+                                    const stockSummary = canSeeAvailability ? getAggregateStockSummary(group.itemId, stockContextWarehouseId, request?.id) : null;
+                                    const sourceStock = stockSummary?.available || 0;
+                                    const itemInfo = getLineInventory(group.itemId);
+                                    const canEditGroupQty = isEditable && !hasMultipleSources;
+                                    const canEditGroupApproval = !isEditable && canEditApprovalQuantities && !hasMultipleSources;
+                                    const groupColSpan = isEditable ? 4 : canSeeAvailability ? 8 : 7;
 
                                     return (
-                                        <tr key={idx} className={`transition-colors ${isExcess ? 'bg-orange-50/50' : 'hover:bg-slate-50/50'}`}>
-                                            <td className="p-4">
-                                                <div>
-                                                    <div className="font-bold text-foreground">{getLineName(row)}</div>
-                                                    <div className="text-[10px] font-mono text-muted-foreground">{getLineSku(row) || '—'}</div>
-                                                    {row.specification && <div className="text-[10px] text-muted-foreground mt-0.5">{row.specification}</div>}
-                                                    {isProjectRequest && (
-                                                        <div className="mt-1 space-y-1">
-                                                            <div className="flex flex-wrap gap-1">
-                                                                {(row.workBoqItemName || row.materialBudgetItemName) && (
-                                                                    <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/40 dark:border-amber-800/40 text-[9px] font-bold">
-                                                                        {row.workBoqItemName || 'BOQ'}{row.materialBudgetItemName ? ` • ${row.materialBudgetItemName}` : ''}
-                                                                    </span>
-                                                                )}
-                                                                {!row.materialBudgetItemId && <span className="px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-950/40 text-red-650 dark:text-red-400 border border-red-200/40 dark:border-red-900/40 text-[9px] font-bold">Ngoài BOQ</span>}
-                                                                {isEditable && row.materialBudgetItemId && (
-                                                                    <span className="px-1.5 py-0.5 rounded bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-400 border border-cyan-200/40 dark:border-cyan-800/40 text-[9px] font-bold">
-                                                                        Khả dụng trước dòng {Math.max(0, budgetSnapshot.availableQty).toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}
-                                                                    </span>
-                                                                )}
-                                                                {isEditable && budgetSnapshot.pendingSources.length > 0 && (
-                                                                    <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/40 dark:border-amber-800/40 text-[9px] font-bold">
-                                                                        {budgetSnapshot.pendingSources.length} phiếu đang giữ chỗ
-                                                                    </span>
-                                                                )}
-                                                                {budgetSnapshot.overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-950/40 text-orange-650 dark:text-orange-400 border border-orange-200/40 dark:border-orange-900/40 text-[9px] font-bold">Vượt {budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}</span>}
-                                                            </div>
-                                                            {isEditable && row.materialBudgetItemId && (
-                                                                <BoqSummaryStrip
-                                                                    budgetQty={budgetSnapshot.budgetQty}
-                                                                    reservedQty={budgetSnapshot.reservedBeforeQty}
-                                                                    currentQty={Number((row as RequestLineDraft).qty || 0)}
-                                                                    availableQty={budgetSnapshot.availableQty}
-                                                                    overBudgetQty={budgetSnapshot.overBudgetQty}
-                                                                    unit={budgetSnapshot.budget?.unit}
-                                                                    pendingCount={budgetSnapshot.pendingSources.length}
-                                                                    compact
-                                                                />
+                                        <React.Fragment key={group.key}>
+                                            <tr className={`transition-colors ${group.isExcess ? 'bg-orange-50/50' : 'hover:bg-slate-50/50'}`}>
+                                                <td className="p-4">
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            {hasMultipleSources && (
+                                                                <button
+                                                                    onClick={() => toggleMaterialGroup(group.key)}
+                                                                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-border text-muted-foreground hover:bg-muted"
+                                                                    title={isExpanded ? 'Thu gọn chi tiết nguồn' : 'Xem chi tiết nguồn'}
+                                                                >
+                                                                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                                </button>
                                                             )}
-                                                            {needsReason && (
-                                                                <input
-                                                                    value={(row as RequestLineDraft).overBudgetReason || ''}
-                                                                    onChange={event => handleUpdateItem(idx, 'overBudgetReason', event.target.value)}
-                                                                    placeholder={!row.materialBudgetItemId ? 'Lý do ngoài BOQ/ngoài định mức...' : 'Lý do đề xuất vượt định mức...'}
-                                                                    className="w-full px-2 py-1 rounded-lg border border-orange-200 dark:border-orange-800/40 bg-card text-foreground text-[10px] outline-none focus:ring-1 focus:ring-orange-300"
-                                                                />
+                                                            <div className="min-w-0">
+                                                                <div className="font-bold text-foreground">{group.name}</div>
+                                                                <div className="text-[10px] font-mono text-muted-foreground">{group.sku || '—'}</div>
+                                                            </div>
+                                                            {hasMultipleSources && (
+                                                                <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 border border-amber-200/60">
+                                                                    {group.sources.length} hạng mục
+                                                                </span>
                                                             )}
                                                         </div>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="p-4 text-center text-muted-foreground font-medium">{getLineUnit(row) || '-'}</td>
-                                            <td className="p-4 text-right">
-                                                {isEditable ? (
-                                                    <input
-                                                        type="number" min="1"
-                                                        value={requestQty}
-                                                        onChange={(e) => handleUpdateItem(idx, 'qty', e.target.value)}
-                                                        className="w-20 text-right p-1 border border-border bg-card text-foreground rounded font-bold"
-                                                    />
-                                                ) : (
-                                                    <span className="font-bold text-foreground">{requestQty}</span>
-                                                )}
-                                            </td>
-                                            {!isEditable && (
-                                                <>
-                                                    <td className="p-4 text-right font-bold text-blue-600">
-                                                        {sourceStock.toLocaleString()}
-                                                        {stockSummary.reserved > 0 && (
-                                                            <div className="text-[9px] text-amber-600 dark:text-amber-400 font-bold">Giữ chỗ: {stockSummary.reserved}</div>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-4 text-right">
-                                                        {canEditApprovalQuantities ? (
-                                                            <div className="flex flex-col items-end">
-                                                                <input
-                                                                    type="number" min="0" max={!isProjectRequest && itemInfo ? sourceStock : undefined}
-                                                                    value={approvedQty}
-                                                                    onChange={(e) => handleUpdateApprovedItem(row as RequestItem, Number(e.target.value))}
-                                                                    className={`w-20 text-right p-1 border rounded font-bold bg-card text-foreground focus:ring-2 outline-none transition-colors ${isExcess ? 'border-orange-400 text-orange-700 dark:text-orange-400 focus:ring-orange-500' : 'border-emerald-250 text-emerald-705 focus:ring-emerald-500'}`}
-                                                                />
-                                                                {isExcess && <span className="text-[9px] text-orange-600 dark:text-orange-400 font-bold mt-1 uppercase">Duyệt vượt mức</span>}
+                                                        {group.specification && <div className="text-[10px] text-muted-foreground mt-0.5">{group.specification}</div>}
+                                                        {!hasMultipleSources && isProjectRequest && (
+                                                            <div className="mt-1 space-y-1">
+                                                                {(() => {
+                                                                    const budgetSnapshot = editableBudgetSnapshots?.get((primaryRow as RequestLineDraft).lineId) || buildLineBudgetSnapshot(primaryRow as RequestLineDraft, request?.id);
+                                                                    const needsReason = isEditable && (!primaryRow.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0);
+                                                                    return (
+                                                                        <>
+                                                                            <div className="flex flex-wrap gap-1">
+                                                                                {(primaryRow.workBoqItemName || primaryRow.materialBudgetItemName) && (
+                                                                                    <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/40 dark:border-amber-800/40 text-[9px] font-bold">
+                                                                                        {primaryRow.workBoqItemName || 'BOQ'}{primaryRow.materialBudgetItemName ? ` • ${primaryRow.materialBudgetItemName}` : ''}
+                                                                                    </span>
+                                                                                )}
+                                                                                {!primaryRow.materialBudgetItemId && <span className="px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-950/40 text-red-650 dark:text-red-400 border border-red-200/40 dark:border-red-900/40 text-[9px] font-bold">Ngoài BOQ</span>}
+                                                                                {canSeeAvailability && isEditable && primaryRow.materialBudgetItemId && (
+                                                                                    <span className="px-1.5 py-0.5 rounded bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-400 border border-cyan-200/40 dark:border-cyan-800/40 text-[9px] font-bold">
+                                                                                        Khả dụng trước dòng {Math.max(0, budgetSnapshot.availableQty).toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}
+                                                                                    </span>
+                                                                                )}
+                                                                                {canSeeAvailability && isEditable && budgetSnapshot.pendingSources.length > 0 && (
+                                                                                    <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/40 dark:border-amber-800/40 text-[9px] font-bold">
+                                                                                        {budgetSnapshot.pendingSources.length} phiếu đang giữ chỗ
+                                                                                    </span>
+                                                                                )}
+                                                                                {budgetSnapshot.overBudgetQty > 0 && (
+                                                                                    <span className="px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-950/40 text-orange-650 dark:text-orange-400 border border-orange-200/40 dark:border-orange-900/40 text-[9px] font-bold">
+                                                                                        {canSeeAvailability ? `Vượt ${budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} ${budgetSnapshot.budget?.unit || ''}` : 'Vượt định mức'}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                            {canSeeAvailability && isEditable && primaryRow.materialBudgetItemId && (
+                                                                                <BoqSummaryStrip
+                                                                                    budgetQty={budgetSnapshot.budgetQty}
+                                                                                    reservedQty={budgetSnapshot.reservedBeforeQty}
+                                                                                    currentQty={Number((primaryRow as RequestLineDraft).qty || 0)}
+                                                                                    availableQty={budgetSnapshot.availableQty}
+                                                                                    overBudgetQty={budgetSnapshot.overBudgetQty}
+                                                                                    unit={budgetSnapshot.budget?.unit}
+                                                                                    pendingCount={budgetSnapshot.pendingSources.length}
+                                                                                    compact
+                                                                                />
+                                                                            )}
+                                                                            {needsReason && (
+                                                                                <input
+                                                                                    value={(primaryRow as RequestLineDraft).overBudgetReason || ''}
+                                                                                    onChange={event => handleUpdateItem(primary.index, 'overBudgetReason', event.target.value)}
+                                                                                    placeholder={!primaryRow.materialBudgetItemId ? 'Lý do ngoài BOQ/ngoài định mức...' : 'Lý do đề xuất vượt định mức...'}
+                                                                                    className="w-full px-2 py-1 rounded-lg border border-orange-200 dark:border-orange-800/40 bg-card text-foreground text-[10px] outline-none focus:ring-1 focus:ring-orange-300"
+                                                                                />
+                                                                            )}
+                                                                        </>
+                                                                    );
+                                                                })()}
                                                             </div>
-                                                        ) : (
-                                                            <span className={`font-bold ${isExcess ? 'text-orange-600 dark:text-orange-400 underline' : 'text-emerald-750 dark:text-emerald-400'}`}>
-                                                                {row.approvedQty || 0}
-                                                            </span>
                                                         )}
-                                                    </td>
-                                                    <td className="p-4 text-right font-bold text-indigo-600">{issuedQty.toLocaleString('vi-VN')}</td>
-                                                    <td className="p-4 text-right font-bold text-cyan-600">{receivedQty.toLocaleString('vi-VN')}</td>
-                                                    <td className="p-4 text-right font-bold text-muted-foreground">{remainingToReceive.toLocaleString('vi-VN')}</td>
-                                                </>
-                                            )}
-                                            {isEditable && (
-                                                <td className="p-4 text-center">
-                                                    <button onClick={() => setReqItems(reqItems.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600">
-                                                        <Trash2 size={16} />
-                                                    </button>
+                                                    </div>
                                                 </td>
+                                                <td className="p-4 text-center text-muted-foreground font-medium">{group.unit || '-'}</td>
+                                                <td className="p-4 text-right">
+                                                    {canEditGroupQty ? (
+                                                        <input
+                                                            type="number" min="1"
+                                                            value={primary.requestQty}
+                                                            onChange={(e) => handleUpdateItem(primary.index, 'qty', e.target.value)}
+                                                            className="w-20 text-right p-1 border border-border bg-card text-foreground rounded font-bold"
+                                                        />
+                                                    ) : (
+                                                        <span className="font-bold text-foreground">{group.requestQty.toLocaleString('vi-VN')}</span>
+                                                    )}
+                                                </td>
+                                                {!isEditable && (
+                                                    <>
+                                                        {canSeeAvailability && (
+                                                            <td className="p-4 text-right font-bold text-blue-600">
+                                                                {sourceStock.toLocaleString('vi-VN')}
+                                                                {(stockSummary?.reserved || 0) > 0 && (
+                                                                    <div className="text-[9px] text-amber-600 dark:text-amber-400 font-bold">Giữ chỗ: {stockSummary?.reserved}</div>
+                                                                )}
+                                                            </td>
+                                                        )}
+                                                        <td className="p-4 text-right">
+                                                            {canEditGroupApproval ? (
+                                                                <div className="flex flex-col items-end">
+                                                                    <input
+                                                                        type="number" min="0" max={!isProjectRequest && itemInfo ? sourceStock : undefined}
+                                                                        value={primary.approvedQty}
+                                                                        onChange={(e) => handleUpdateApprovedItem(primaryRow as RequestItem, Number(e.target.value))}
+                                                                        className={`w-20 text-right p-1 border rounded font-bold bg-card text-foreground focus:ring-2 outline-none transition-colors ${group.isExcess ? 'border-orange-400 text-orange-700 dark:text-orange-400 focus:ring-orange-500' : 'border-emerald-250 text-emerald-705 focus:ring-emerald-500'}`}
+                                                                    />
+                                                                    {group.isExcess && <span className="text-[9px] text-orange-600 dark:text-orange-400 font-bold mt-1 uppercase">Duyệt vượt mức</span>}
+                                                                </div>
+                                                            ) : (
+                                                                <span className={`font-bold ${group.isExcess ? 'text-orange-600 dark:text-orange-400 underline' : 'text-emerald-750 dark:text-emerald-400'}`}>
+                                                                    {group.approvedQty.toLocaleString('vi-VN')}
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td className="p-4 text-right font-bold text-indigo-600">{group.issuedQty.toLocaleString('vi-VN')}</td>
+                                                        <td className="p-4 text-right font-bold text-cyan-600">{group.receivedQty.toLocaleString('vi-VN')}</td>
+                                                        <td className="p-4 text-right font-bold text-muted-foreground">{group.remainingToReceive.toLocaleString('vi-VN')}</td>
+                                                    </>
+                                                )}
+                                                {isEditable && (
+                                                    <td className="p-4 text-center">
+                                                        <button onClick={() => setReqItems(reqItems.filter((_, i) => hasMultipleSources ? !group.sources.some(source => source.index === i) : i !== primary.index))} className="text-red-400 hover:text-red-600">
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </td>
+                                                )}
+                                            </tr>
+                                            {hasMultipleSources && isExpanded && (
+                                                <tr className="bg-muted/30">
+                                                    <td colSpan={groupColSpan} className="px-4 pb-4">
+                                                        <div className="mt-2 space-y-2 rounded-lg border border-border bg-card p-3">
+                                                            {group.sources.map(source => {
+                                                                const sourceRow = source.row;
+                                                                const budgetSnapshot = editableBudgetSnapshots?.get((sourceRow as RequestLineDraft).lineId) || buildLineBudgetSnapshot(sourceRow as RequestLineDraft, request?.id);
+                                                                const needsReason = isEditable && isProjectRequest && (!sourceRow.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0);
+                                                                return (
+                                                                    <div key={`${group.key}-${source.index}`} className="grid grid-cols-12 gap-2 rounded-lg border border-border/70 p-2 text-xs">
+                                                                        <div className="col-span-12 md:col-span-6">
+                                                                            <div className="font-bold text-foreground">{sourceRow.workBoqItemName || 'Ngoài BOQ'}</div>
+                                                                            <div className="text-[10px] text-muted-foreground">{sourceRow.materialBudgetItemName || sourceRow.itemNameSnapshot || group.name}</div>
+                                                                            {sourceRow.note && <div className="mt-1 text-[10px] text-muted-foreground">{sourceRow.note}</div>}
+                                                                            <div className="mt-1 flex flex-wrap gap-1">
+                                                                                {!sourceRow.materialBudgetItemId && <span className="rounded bg-red-50 px-1.5 py-0.5 text-[9px] font-bold text-red-650 border border-red-200/50">Ngoài BOQ</span>}
+                                                                                {canSeeAvailability && isEditable && sourceRow.materialBudgetItemId && (
+                                                                                    <span className="rounded bg-cyan-50 px-1.5 py-0.5 text-[9px] font-bold text-cyan-700 border border-cyan-200/50">
+                                                                                        Khả dụng trước dòng {Math.max(0, budgetSnapshot.availableQty).toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}
+                                                                                    </span>
+                                                                                )}
+                                                                                {budgetSnapshot.overBudgetQty > 0 && (
+                                                                                    <span className="rounded bg-orange-50 px-1.5 py-0.5 text-[9px] font-bold text-orange-650 border border-orange-200/50">
+                                                                                        {canSeeAvailability ? `Vượt ${budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} ${budgetSnapshot.budget?.unit || ''}` : 'Vượt định mức'}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="col-span-6 md:col-span-2 text-right">
+                                                                            <div className="text-[9px] uppercase font-bold text-muted-foreground">Số lượng</div>
+                                                                            {isEditable ? (
+                                                                                <input
+                                                                                    type="number" min="1"
+                                                                                    value={source.requestQty}
+                                                                                    onChange={(e) => handleUpdateItem(source.index, 'qty', e.target.value)}
+                                                                                    className="mt-1 w-20 text-right p-1 border border-border bg-card text-foreground rounded font-bold"
+                                                                                />
+                                                                            ) : (
+                                                                                <div className="font-black">{source.requestQty.toLocaleString('vi-VN')}</div>
+                                                                            )}
+                                                                        </div>
+                                                                        {!isEditable && (
+                                                                            <>
+                                                                                <div className="col-span-6 md:col-span-1 text-right">
+                                                                                    <div className="text-[9px] uppercase font-bold text-emerald-500">Cam kết</div>
+                                                                                    <div className="font-black">{source.approvedQty.toLocaleString('vi-VN')}</div>
+                                                                                </div>
+                                                                                <div className="col-span-6 md:col-span-1 text-right">
+                                                                                    <div className="text-[9px] uppercase font-bold text-indigo-500">Đã xuất</div>
+                                                                                    <div className="font-black">{source.issuedQty.toLocaleString('vi-VN')}</div>
+                                                                                </div>
+                                                                                <div className="col-span-6 md:col-span-1 text-right">
+                                                                                    <div className="text-[9px] uppercase font-bold text-cyan-500">Đã nhận</div>
+                                                                                    <div className="font-black">{source.receivedQty.toLocaleString('vi-VN')}</div>
+                                                                                </div>
+                                                                            </>
+                                                                        )}
+                                                                        {isEditable && (
+                                                                            <div className="col-span-6 md:col-span-4 flex items-start justify-end gap-2">
+                                                                                <button onClick={() => setReqItems(reqItems.filter((_, i) => i !== source.index))} className="mt-4 text-red-400 hover:text-red-600">
+                                                                                    <Trash2 size={16} />
+                                                                                </button>
+                                                                            </div>
+                                                                        )}
+                                                                        {needsReason && (
+                                                                            <div className="col-span-12">
+                                                                                <input
+                                                                                    value={(sourceRow as RequestLineDraft).overBudgetReason || ''}
+                                                                                    onChange={event => handleUpdateItem(source.index, 'overBudgetReason', event.target.value)}
+                                                                                    placeholder={!sourceRow.materialBudgetItemId ? 'Lý do ngoài BOQ/ngoài định mức...' : 'Lý do đề xuất vượt định mức...'}
+                                                                                    className="w-full px-2 py-1 rounded-lg border border-orange-200 dark:border-orange-800/40 bg-card text-foreground text-[10px] outline-none focus:ring-1 focus:ring-orange-300"
+                                                                                />
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </td>
+                                                </tr>
                                             )}
-                                        </tr>
+                                        </React.Fragment>
                                     );
                                 })}
                             </tbody>
@@ -2410,53 +2792,58 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
                     {/* Mobile card view */}
                     <div className="md:hidden space-y-2">
-                        {(isEditable ? reqItems : (request?.items || [])).map((row, idx) => {
-                            const itemId = row.itemId;
-                            const requestQty = isEditable ? row.qty : row.requestQty;
-                            const itemInfo = getLineInventory(itemId);
-                            const stockSummary = getAggregateStockSummary(itemId, stockContextWarehouseId, request?.id);
-                            const sourceStock = stockSummary.available;
-                            const lineId = row.lineId;
-                            const requestLineId = request && !isEditable ? getRequestLineId(request, row as RequestItem, idx) : lineId;
-                            const lineFulfillment = requestLineId ? fulfillmentLineSummaryMap.get(requestLineId) : undefined;
-                            const approvedQty = approvedItems.find(ai => (lineId && ai.lineId === lineId) || (!lineId && ai.itemId === itemId))?.qty || 0;
-                            const issuedQty = lineFulfillment?.issuedQty || Number((row as RequestItem).issuedQty || 0);
-                            const receivedQty = lineFulfillment?.receivedQty || 0;
-                            const remainingToReceive = lineFulfillment?.remainingToReceive ?? Math.max(0, requestQty - receivedQty);
-                            const isExcess = !isEditable && approvedQty > requestQty;
-                            const budgetSnapshot = editableBudgetSnapshots?.get((row as RequestLineDraft).lineId) || buildLineBudgetSnapshot(row as RequestLineDraft, request?.id);
-                            const needsReason = isEditable && isProjectRequest && (!row.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0);
+                        {materialDisplayGroups.map(group => {
+                            const primary = group.sources[0];
+                            const primaryRow = primary.row;
+                            const hasMultipleSources = group.sources.length > 1;
+                            const isExpanded = expandedMaterialGroupKeys.has(group.key);
+                            const stockSummary = canSeeAvailability ? getAggregateStockSummary(group.itemId, stockContextWarehouseId, request?.id) : null;
+                            const sourceStock = stockSummary?.available || 0;
+                            const itemInfo = getLineInventory(group.itemId);
+                            const canEditGroupQty = isEditable && !hasMultipleSources;
+                            const canEditGroupApproval = !isEditable && canEditApprovalQuantities && !hasMultipleSources;
+                            const budgetSnapshot = editableBudgetSnapshots?.get((primaryRow as RequestLineDraft).lineId) || buildLineBudgetSnapshot(primaryRow as RequestLineDraft, request?.id);
+                            const needsReason = isEditable && isProjectRequest && !hasMultipleSources && (!primaryRow.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0);
 
                             return (
-                                <div key={idx} className={`bg-card rounded-xl p-3 border ${isExcess ? 'border-orange-200 bg-orange-50/10 dark:bg-orange-955/20' : 'border-border'} shadow-sm`}>
+                                <div key={group.key} className={`bg-card rounded-xl p-3 border ${group.isExcess ? 'border-orange-200 bg-orange-50/10 dark:bg-orange-955/20' : 'border-border'} shadow-sm`}>
                                     <div className="flex items-start justify-between mb-2">
                                         <div className="min-w-0 flex-1">
-                                            <div className="font-bold text-sm text-foreground truncate">{getLineName(row)}</div>
-                                            <div className="text-[10px] font-mono text-muted-foreground">{getLineSku(row) || '—'} • {getLineUnit(row) || '-'}</div>
-                                            {row.specification && <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{row.specification}</div>}
-                                            {isProjectRequest && (row.workBoqItemName || row.materialBudgetItemName || !row.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0) && (
+                                            <div className="flex items-center gap-2">
+                                                {hasMultipleSources && (
+                                                    <button
+                                                        onClick={() => toggleMaterialGroup(group.key)}
+                                                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground"
+                                                        title={isExpanded ? 'Thu gọn chi tiết nguồn' : 'Xem chi tiết nguồn'}
+                                                    >
+                                                        {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                                                    </button>
+                                                )}
+                                                <div className="min-w-0">
+                                                    <div className="font-bold text-sm text-foreground truncate">{group.name}</div>
+                                                    <div className="text-[10px] font-mono text-muted-foreground">{group.sku || '—'} • {group.unit || '-'}</div>
+                                                </div>
+                                                {hasMultipleSources && <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 border border-amber-200/60">{group.sources.length} hạng mục</span>}
+                                            </div>
+                                            {group.specification && <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{group.specification}</div>}
+                                            {!hasMultipleSources && isProjectRequest && (primaryRow.workBoqItemName || primaryRow.materialBudgetItemName || !primaryRow.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0) && (
                                                 <div className="mt-1 flex flex-wrap gap-1">
-                                                    {(row.workBoqItemName || row.materialBudgetItemName) && <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/40 dark:border-amber-800/40 text-[9px] font-bold">{row.workBoqItemName || 'BOQ'}{row.materialBudgetItemName ? ` • ${row.materialBudgetItemName}` : ''}</span>}
-                                                    {!row.materialBudgetItemId && <span className="px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-950/40 text-red-650 dark:text-red-400 border border-red-200/40 dark:border-red-900/40 text-[9px] font-bold">Ngoài BOQ</span>}
-                                                    {isEditable && row.materialBudgetItemId && (
+                                                    {(primaryRow.workBoqItemName || primaryRow.materialBudgetItemName) && <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/40 dark:border-amber-800/40 text-[9px] font-bold">{primaryRow.workBoqItemName || 'BOQ'}{primaryRow.materialBudgetItemName ? ` • ${primaryRow.materialBudgetItemName}` : ''}</span>}
+                                                    {!primaryRow.materialBudgetItemId && <span className="px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-950/40 text-red-650 dark:text-red-400 border border-red-200/40 dark:border-red-900/40 text-[9px] font-bold">Ngoài BOQ</span>}
+                                                    {canSeeAvailability && isEditable && primaryRow.materialBudgetItemId && (
                                                         <span className="px-1.5 py-0.5 rounded bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-400 border border-cyan-200/40 dark:border-cyan-800/40 text-[9px] font-bold">
                                                             Khả dụng trước dòng {Math.max(0, budgetSnapshot.availableQty).toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}
                                                         </span>
                                                     )}
-                                                    {isEditable && budgetSnapshot.pendingSources.length > 0 && (
-                                                        <span className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/40 dark:border-amber-800/40 text-[9px] font-bold">
-                                                            {budgetSnapshot.pendingSources.length} phiếu đang giữ chỗ
-                                                        </span>
-                                                    )}
-                                                    {budgetSnapshot.overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-950/40 text-orange-650 dark:text-orange-400 border border-orange-200/40 dark:border-orange-900/40 text-[9px] font-bold">Vượt {budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}</span>}
+                                                    {budgetSnapshot.overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-950/40 text-orange-650 dark:text-orange-400 border border-orange-200/40 dark:border-orange-900/40 text-[9px] font-bold">{canSeeAvailability ? `Vượt ${budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} ${budgetSnapshot.budget?.unit || ''}` : 'Vượt định mức'}</span>}
                                                 </div>
                                             )}
-                                            {isProjectRequest && isEditable && row.materialBudgetItemId && (
+                                            {canSeeAvailability && isProjectRequest && isEditable && !hasMultipleSources && primaryRow.materialBudgetItemId && (
                                                 <div className="mt-2">
                                                     <BoqSummaryStrip
                                                         budgetQty={budgetSnapshot.budgetQty}
                                                         reservedQty={budgetSnapshot.reservedBeforeQty}
-                                                        currentQty={Number((row as RequestLineDraft).qty || 0)}
+                                                        currentQty={Number((primaryRow as RequestLineDraft).qty || 0)}
                                                         availableQty={budgetSnapshot.availableQty}
                                                         overBudgetQty={budgetSnapshot.overBudgetQty}
                                                         unit={budgetSnapshot.budget?.unit}
@@ -2467,72 +2854,127 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             )}
                                         </div>
                                         {isEditable && (
-                                            <button onClick={() => setReqItems(reqItems.filter((_, i) => i !== idx))} className="p-1.5 text-red-400 hover:text-red-600 shrink-0">
+                                            <button onClick={() => setReqItems(reqItems.filter((_, i) => hasMultipleSources ? !group.sources.some(source => source.index === i) : i !== primary.index))} className="p-1.5 text-red-400 hover:text-red-600 shrink-0">
                                                 <Trash2 size={16} />
                                             </button>
                                         )}
                                     </div>
                                     {needsReason && (
                                         <input
-                                            value={(row as RequestLineDraft).overBudgetReason || ''}
-                                            onChange={event => handleUpdateItem(idx, 'overBudgetReason', event.target.value)}
-                                            placeholder={!row.materialBudgetItemId ? 'Lý do ngoài BOQ/ngoài định mức...' : 'Lý do đề xuất vượt định mức...'}
+                                            value={(primaryRow as RequestLineDraft).overBudgetReason || ''}
+                                            onChange={event => handleUpdateItem(primary.index, 'overBudgetReason', event.target.value)}
+                                            placeholder={!primaryRow.materialBudgetItemId ? 'Lý do ngoài BOQ/ngoài định mức...' : 'Lý do đề xuất vượt định mức...'}
                                             className="mt-2 w-full px-2 py-1.5 rounded-lg border border-orange-200 dark:border-orange-800/40 bg-card text-foreground text-xs outline-none focus:ring-1 focus:ring-orange-300"
                                         />
                                     )}
                                     <div className="flex items-center gap-3">
                                         <div className="flex-1">
                                             <div className="text-[9px] uppercase font-bold text-muted-foreground mb-0.5">SL yêu cầu</div>
-                                            {isEditable ? (
+                                            {canEditGroupQty ? (
                                                 <input
                                                     type="number" min="1"
-                                                    value={requestQty}
-                                                    onChange={(e) => handleUpdateItem(idx, 'qty', e.target.value)}
+                                                    value={primary.requestQty}
+                                                    onChange={(e) => handleUpdateItem(primary.index, 'qty', e.target.value)}
                                                     className="w-full text-center p-2 border border-border bg-card text-foreground rounded-lg font-bold text-sm"
                                                 />
                                             ) : (
-                                                <div className="font-bold text-foreground text-sm">{requestQty}</div>
+                                                <div className="font-bold text-foreground text-sm">{group.requestQty.toLocaleString('vi-VN')}</div>
                                             )}
                                         </div>
+                                        {!isEditable && canSeeAvailability && (
+                                            <div className="flex-1">
+                                                <div className="text-[9px] uppercase font-bold text-blue-500 mb-0.5">{stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</div>
+                                                <div className="font-bold text-blue-600 dark:text-blue-400 text-sm">{sourceStock.toLocaleString('vi-VN')}</div>
+                                                {(stockSummary?.reserved || 0) > 0 && <div className="text-[9px] text-amber-600 dark:text-amber-400 font-bold">Giữ chỗ: {stockSummary?.reserved}</div>}
+                                            </div>
+                                        )}
                                         {!isEditable && (
-                                            <>
-                                                <div className="flex-1">
-                                                    <div className="text-[9px] uppercase font-bold text-blue-500 mb-0.5">{stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</div>
-                                                    <div className="font-bold text-blue-600 dark:text-blue-400 text-sm">{sourceStock.toLocaleString()}</div>
-                                                    {stockSummary.reserved > 0 && <div className="text-[9px] text-amber-600 dark:text-amber-400 font-bold">Giữ chỗ: {stockSummary.reserved}</div>}
-                                                </div>
-                                                <div className="flex-1">
-                                                    <div className="text-[9px] uppercase font-bold text-emerald-500 mb-0.5">Duyệt</div>
-                                                    {canEditApprovalQuantities ? (
-                                                        <input
-                                                            type="number" min="0" max={!isProjectRequest && itemInfo ? sourceStock : undefined}
-                                                            value={approvedQty}
-                                                            onChange={(e) => handleUpdateApprovedItem(row as RequestItem, Number(e.target.value))}
-                                                            className={`w-full text-center p-2 border rounded-lg font-bold bg-card text-foreground text-sm ${isExcess ? 'border-orange-400 text-orange-700 dark:text-orange-450' : 'border-emerald-250 text-emerald-705'}`}
-                                                        />
-                                                    ) : (
-                                                        <div className={`font-bold text-sm ${isExcess ? 'text-orange-600 dark:text-orange-400' : 'text-emerald-750 dark:text-emerald-400'}`}>
-                                                            {row.approvedQty || 0}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </>
+                                            <div className="flex-1">
+                                                <div className="text-[9px] uppercase font-bold text-emerald-500 mb-0.5">Duyệt</div>
+                                                {canEditGroupApproval ? (
+                                                    <input
+                                                        type="number" min="0" max={!isProjectRequest && itemInfo ? sourceStock : undefined}
+                                                        value={primary.approvedQty}
+                                                        onChange={(e) => handleUpdateApprovedItem(primaryRow as RequestItem, Number(e.target.value))}
+                                                        className={`w-full text-center p-2 border rounded-lg font-bold bg-card text-foreground text-sm ${group.isExcess ? 'border-orange-400 text-orange-700 dark:text-orange-450' : 'border-emerald-250 text-emerald-705'}`}
+                                                    />
+                                                ) : (
+                                                    <div className={`font-bold text-sm ${group.isExcess ? 'text-orange-600 dark:text-orange-400' : 'text-emerald-750 dark:text-emerald-400'}`}>
+                                                        {group.approvedQty.toLocaleString('vi-VN')}
+                                                    </div>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                     {!isEditable && (
                                         <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-muted border border-border p-2">
                                             <div>
                                                 <div className="text-[9px] uppercase font-bold text-indigo-505 dark:text-indigo-400">Đã xuất</div>
-                                                <div className="text-xs font-black text-indigo-650 dark:text-indigo-400">{issuedQty.toLocaleString('vi-VN')}</div>
+                                                <div className="text-xs font-black text-indigo-650 dark:text-indigo-400">{group.issuedQty.toLocaleString('vi-VN')}</div>
                                             </div>
                                             <div>
                                                 <div className="text-[9px] uppercase font-bold text-cyan-505 dark:text-cyan-400">Đã nhận</div>
-                                                <div className="text-xs font-black text-cyan-600 dark:text-cyan-400">{receivedQty.toLocaleString('vi-VN')}</div>
+                                                <div className="text-xs font-black text-cyan-600 dark:text-cyan-400">{group.receivedQty.toLocaleString('vi-VN')}</div>
                                             </div>
                                             <div>
                                                 <div className="text-[9px] uppercase font-bold text-muted-foreground">Còn lại</div>
-                                                <div className="text-xs font-black text-foreground">{remainingToReceive.toLocaleString('vi-VN')}</div>
+                                                <div className="text-xs font-black text-foreground">{group.remainingToReceive.toLocaleString('vi-VN')}</div>
                                             </div>
+                                        </div>
+                                    )}
+                                    {hasMultipleSources && isExpanded && (
+                                        <div className="mt-3 space-y-2 rounded-lg border border-border bg-muted/20 p-2">
+                                            {group.sources.map(source => {
+                                                const sourceRow = source.row;
+                                                const sourceBudgetSnapshot = editableBudgetSnapshots?.get((sourceRow as RequestLineDraft).lineId) || buildLineBudgetSnapshot(sourceRow as RequestLineDraft, request?.id);
+                                                const sourceNeedsReason = isEditable && isProjectRequest && (!sourceRow.materialBudgetItemId || sourceBudgetSnapshot.overBudgetQty > 0);
+                                                return (
+                                                    <div key={`${group.key}-${source.index}`} className="rounded-lg border border-border bg-card p-2">
+                                                        <div className="text-xs font-bold text-foreground">{sourceRow.workBoqItemName || 'Ngoài BOQ'}</div>
+                                                        <div className="text-[10px] text-muted-foreground">{sourceRow.materialBudgetItemName || sourceRow.itemNameSnapshot || group.name}</div>
+                                                        <div className="mt-2 flex items-center gap-2">
+                                                            <div className="flex-1">
+                                                                <div className="text-[9px] uppercase font-bold text-muted-foreground">Số lượng</div>
+                                                                {isEditable ? (
+                                                                    <input
+                                                                        type="number" min="1"
+                                                                        value={source.requestQty}
+                                                                        onChange={(e) => handleUpdateItem(source.index, 'qty', e.target.value)}
+                                                                        className="mt-1 w-full text-center p-1.5 border border-border bg-card text-foreground rounded-lg font-bold text-sm"
+                                                                    />
+                                                                ) : (
+                                                                    <div className="font-black">{source.requestQty.toLocaleString('vi-VN')}</div>
+                                                                )}
+                                                            </div>
+                                                            {!isEditable && (
+                                                                <>
+                                                                    <div className="flex-1 text-right">
+                                                                        <div className="text-[9px] uppercase font-bold text-indigo-500">Đã xuất</div>
+                                                                        <div className="font-black">{source.issuedQty.toLocaleString('vi-VN')}</div>
+                                                                    </div>
+                                                                    <div className="flex-1 text-right">
+                                                                        <div className="text-[9px] uppercase font-bold text-cyan-500">Đã nhận</div>
+                                                                        <div className="font-black">{source.receivedQty.toLocaleString('vi-VN')}</div>
+                                                                    </div>
+                                                                </>
+                                                            )}
+                                                            {isEditable && (
+                                                                <button onClick={() => setReqItems(reqItems.filter((_, i) => i !== source.index))} className="mt-4 p-1.5 text-red-400 hover:text-red-600">
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                        {sourceNeedsReason && (
+                                                            <input
+                                                                value={(sourceRow as RequestLineDraft).overBudgetReason || ''}
+                                                                onChange={event => handleUpdateItem(source.index, 'overBudgetReason', event.target.value)}
+                                                                placeholder={!sourceRow.materialBudgetItemId ? 'Lý do ngoài BOQ/ngoài định mức...' : 'Lý do đề xuất vượt định mức...'}
+                                                                className="mt-2 w-full px-2 py-1.5 rounded-lg border border-orange-200 dark:border-orange-800/40 bg-card text-foreground text-xs outline-none focus:ring-1 focus:ring-orange-300"
+                                                            />
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </div>
@@ -2629,37 +3071,37 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 </div>
 
                 {/* Footer Actions */}
-                <div className="p-4 border-t border-border bg-muted/50 flex justify-between items-center relative">
-                    <div className="text-muted-foreground text-[10px] uppercase font-black tracking-widest">
+                <div className="p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] sm:pb-4 border-t border-border bg-muted/50 flex justify-between items-center relative">
+                    <div className="hidden sm:block text-muted-foreground text-[10px] uppercase font-black tracking-widest">
                         Security: {request?.id.slice(-6) || 'NEW-REQ'}
                     </div>
 
-                    <div className="flex gap-3 items-center">
-                        <button onClick={onClose} className="px-5 py-2 rounded-lg border border-border text-foreground font-bold hover:bg-muted transition-colors">
+                    <div className="flex gap-2 sm:gap-3 items-center w-full sm:w-auto justify-end">
+                        <button onClick={onClose} className="px-3 py-1.5 sm:px-5 sm:py-2 rounded-lg border border-border text-foreground text-xs sm:text-sm font-bold hover:bg-muted transition-colors whitespace-nowrap">
                             Đóng
                         </button>
 
                         {canDeleteRequest && (
-                            <button disabled={isSaving} onClick={handleDeleteRequest} className="px-5 py-2 rounded-lg border border-red-200/40 dark:border-red-905/40 text-red-750 dark:text-red-400 bg-red-50/10 dark:bg-red-955/20 font-bold hover:bg-red-100/20 disabled:opacity-60 disabled:cursor-not-allowed flex items-center">
-                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Trash2 size={18} className="mr-2" />} Xoá phiếu
+                            <button disabled={isSaving} onClick={handleDeleteRequest} className="px-3 py-1.5 sm:px-5 sm:py-2 rounded-lg border border-red-200/40 dark:border-red-905/40 text-red-750 dark:text-red-400 bg-red-50/10 dark:bg-red-955/20 text-xs sm:text-sm font-bold hover:bg-red-100/20 disabled:opacity-60 disabled:cursor-not-allowed flex items-center whitespace-nowrap">
+                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Trash2 size={14} className="mr-1.5 sm:mr-2" />} Xoá phiếu
                             </button>
                         )}
 
                         {canReturn && !isEditable && (
-                            <button disabled={isSaving} onClick={handleReturnRequest} className="px-5 py-2 rounded-lg border border-amber-200/40 dark:border-amber-905/40 text-amber-700 dark:text-amber-400 bg-amber-50/10 dark:bg-amber-955/20 font-bold hover:bg-amber-100/20 disabled:opacity-60 disabled:cursor-not-allowed flex items-center">
-                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <AlertCircle size={18} className="mr-2" />} Trả lại
+                            <button disabled={isSaving} onClick={handleReturnRequest} className="px-3 py-1.5 sm:px-5 sm:py-2 rounded-lg border border-amber-200/40 dark:border-amber-905/40 text-amber-700 dark:text-amber-400 bg-amber-50/10 dark:bg-amber-955/20 text-xs sm:text-sm font-bold hover:bg-amber-100/20 disabled:opacity-60 disabled:cursor-not-allowed flex items-center whitespace-nowrap">
+                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <AlertCircle size={14} className="mr-1.5 sm:mr-2" />} Trả lại
                             </button>
                         )}
 
                         {isEditable && (
-                            <button disabled={isSaving} onClick={handleSubmitCreate} className="px-6 py-2 rounded-lg bg-slate-700 text-white font-bold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-slate-500/20">
-                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />} {isSaving ? 'Đang lưu...' : request ? 'Lưu nháp' : 'Tạo đề xuất'}
+                            <button disabled={isSaving} onClick={handleSubmitCreate} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-slate-700 text-white text-xs sm:text-sm font-bold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-slate-500/20 whitespace-nowrap">
+                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Save size={14} className="mr-1.5 sm:mr-2" />} {isSaving ? 'Đang lưu...' : request ? 'Lưu nháp' : 'Tạo đề xuất'}
                             </button>
                         )}
 
                         {canSubmitDraft && (
-                            <button disabled={isSaving} onClick={handleOpenSubmitDraft} className="px-6 py-2 rounded-lg bg-accent text-white font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20">
-                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Send size={18} className="mr-2" />} Gửi duyệt
+                            <button disabled={isSaving} onClick={handleOpenSubmitDraft} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-accent text-white text-xs sm:text-sm font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20 whitespace-nowrap">
+                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Send size={14} className="mr-1.5 sm:mr-2" />} Gửi duyệt
                             </button>
                         )}
 
@@ -2667,40 +3109,40 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             <button
                                 disabled={isSaving}
                                 onClick={() => setShowApprovalPanel(true)}
-                                className="px-6 py-2 rounded-lg bg-accent text-white font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20 transition-all"
+                                className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-accent text-white text-xs sm:text-sm font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20 transition-all whitespace-nowrap"
                             >
-                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <AlertCircle size={18} className="mr-2" />}
+                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <AlertCircle size={14} className="mr-1.5 sm:mr-2" />}
                                 {isSaving ? 'ĐANG XỬ LÝ...' : 'XỬ LÝ ĐỀ XUẤT'}
                             </button>
                         )}
 
                         {canPrepareIssue && (
-                            <button disabled={isSaving || !sourceWarehouseId} onClick={() => handleAction(RequestStatus.APPROVED)} className="px-6 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20">
-                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Save size={18} className="mr-2" />} {isSaving ? 'Đang lưu...' : 'Lưu phân nguồn'}
+                            <button disabled={isSaving || !sourceWarehouseId} onClick={() => handleAction(RequestStatus.APPROVED)} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-blue-600 text-white text-xs sm:text-sm font-bold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-blue-500/20 whitespace-nowrap">
+                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Save size={14} className="mr-1.5 sm:mr-2" />} {isSaving ? 'Đang lưu...' : 'Lưu phân nguồn'}
                             </button>
                         )}
 
                         {canCreateFulfillmentBatch && (
-                            <button disabled={isSaving || !(sourceWarehouseId || request?.sourceWarehouseId)} onClick={openIssuePanel} className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-indigo-500/20">
-                                <Truck size={18} className="mr-2" /> Tạo đợt cấp
+                            <button disabled={isSaving || !(sourceWarehouseId || request?.sourceWarehouseId)} onClick={openIssuePanel} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-indigo-600 text-white text-xs sm:text-sm font-bold hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-indigo-500/20 whitespace-nowrap">
+                                <Truck size={14} className="mr-1.5 sm:mr-2" /> Tạo đợt cấp
                             </button>
                         )}
 
                         {canCreateFulfillmentBatch && (
-                            <button disabled={isSaving || !(sourceWarehouseId || request?.sourceWarehouseId)} onClick={() => setIsExternalIssuePanelOpen(true)} className="px-6 py-2 rounded-lg bg-slate-900 text-white font-bold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-slate-500/20">
-                                <PackageCheck size={18} className="mr-2" /> Xuất cấp thi công
+                            <button disabled={isSaving || !(sourceWarehouseId || request?.sourceWarehouseId)} onClick={() => setIsExternalIssuePanelOpen(true)} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-slate-900 text-white text-xs sm:text-sm font-bold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-slate-500/20 whitespace-nowrap">
+                                <PackageCheck size={14} className="mr-1.5 sm:mr-2" /> Xuất cấp thi công
                             </button>
                         )}
 
                         {canExport && (
-                            <button disabled={isSaving} onClick={() => handleAction(RequestStatus.IN_TRANSIT)} className="px-6 py-2 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-indigo-500/20">
-                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <Truck size={18} className="mr-2" />} {isSaving ? 'Đang xử lý...' : 'Xác nhận xuất kho'}
+                            <button disabled={isSaving} onClick={() => handleAction(RequestStatus.IN_TRANSIT)} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-indigo-600 text-white text-xs sm:text-sm font-bold hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-indigo-500/20 whitespace-nowrap">
+                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <Truck size={14} className="mr-1.5 sm:mr-2" />} {isSaving ? 'Đang xử lý...' : 'Xác nhận xuất kho'}
                             </button>
                         )}
 
                         {canReceive && (
-                            <button disabled={isSaving} onClick={() => handleAction(RequestStatus.COMPLETED)} className="px-6 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-emerald-500/20">
-                                {isSaving ? <Loader2 size={18} className="mr-2 animate-spin" /> : <CheckCircle size={18} className="mr-2" />} {isSaving ? 'Đang xử lý...' : fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Xác nhận sử dụng' : 'Xác nhận nhận hàng'}
+                            <button disabled={isSaving} onClick={() => handleAction(RequestStatus.COMPLETED)} className="px-3 py-1.5 sm:px-6 sm:py-2 rounded-lg bg-emerald-600 text-white text-xs sm:text-sm font-bold hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center shadow-lg shadow-emerald-500/20 whitespace-nowrap">
+                                {isSaving ? <Loader2 size={14} className="mr-1.5 sm:mr-2 animate-spin" /> : <CheckCircle size={14} className="mr-1.5 sm:mr-2" />} {isSaving ? 'Đang xử lý...' : fulfillmentMode === MaterialRequestFulfillmentMode.DIRECT_CONSUMPTION ? 'Xác nhận sử dụng' : 'Xác nhận nhận hàng'}
                             </button>
                         )}
                     </div>
@@ -2708,7 +3150,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             </div>
 
             {isIssuePanelOpen && request && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
+                <div className="fixed inset-0 z-[1010] flex items-center justify-center bg-black/40 p-4">
                     <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-card border border-border shadow-2xl flex flex-col">
                         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
                             <div>
@@ -2798,7 +3240,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             )}
 
             {isExternalIssuePanelOpen && request && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
+                <div className="fixed inset-0 z-[1010] flex items-center justify-center bg-black/40 p-4">
                     <div className="w-full max-w-6xl max-h-[88vh] overflow-hidden rounded-2xl bg-card border border-border shadow-2xl flex flex-col">
                         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
                             <div>
@@ -2829,7 +3271,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             )}
 
             {selectedFulfillmentBatch && request && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
+                <div className="fixed inset-0 z-[1010] flex items-center justify-center bg-black/40 p-4">
                     <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-card border border-border shadow-2xl flex flex-col">
                         <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
                             <div>
@@ -2978,7 +3420,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             )}
 
             {returningReceivedBatch && request && (
-                <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+                <div className="fixed inset-0 z-[1020] flex items-center justify-center bg-black/50 p-4">
                     <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-card border border-border shadow-2xl flex flex-col">
                         <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
                             <div>
@@ -3077,7 +3519,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             )}
 
             {receivingBatch && request && (
-                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
+                <div className="fixed inset-0 z-[1010] flex items-center justify-center bg-black/40 p-4">
                     <div className="w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-card border border-border shadow-2xl flex flex-col">
                         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
                             <div>
@@ -3172,8 +3614,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 onClose={() => setItemSelectOpen(false)}
                 onSelect={handleSelectFromModal}
                 onOpenScanner={() => setScannerOpen(true)}
-                filterWarehouseId={isProjectRequest ? stockPreviewWarehouseId : sourceWarehouseId}
+                filterWarehouseId={isProjectRequest && !canSeeAvailability ? undefined : isProjectRequest ? stockPreviewWarehouseId : sourceWarehouseId}
                 allowAllItems={isProjectRequest}
+                showStockQuantities={canSeeAvailability}
             />
 
             {isScannerOpen && (

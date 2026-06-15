@@ -11,7 +11,7 @@ const STAFF_TABLE = 'project_staff';
 const PERM_TABLE = 'project_staff_permissions';
 const PERM_TYPE_TABLE = 'project_permission_types';
 
-export type ProjectPermissionCode = 'view' | 'edit' | 'delete' | 'submit' | 'verify' | 'confirm' | 'approve';
+export type ProjectPermissionCode = 'view' | 'edit' | 'delete' | 'submit' | 'verify' | 'confirm' | 'approve' | 'view_available_stock';
 
 export const PROJECT_PERMISSION_LABELS: Record<ProjectPermissionCode, string> = {
   view: 'xem dữ liệu',
@@ -21,6 +21,7 @@ export const PROJECT_PERMISSION_LABELS: Record<ProjectPermissionCode, string> = 
   verify: 'xác nhận kết quả',
   confirm: 'xác nhận nghiệp vụ',
   approve: 'phê duyệt',
+  view_available_stock: 'xem vật tư khả dụng',
 };
 
 const PROJECT_PERMISSION_CODES = new Set<ProjectPermissionCode>([
@@ -31,6 +32,7 @@ const PROJECT_PERMISSION_CODES = new Set<ProjectPermissionCode>([
   'verify',
   'confirm',
   'approve',
+  'view_available_stock',
 ]);
 
 export const normalizeProjectPermissionCode = (code: string): ProjectPermissionCode | null => {

@@ -16,7 +16,7 @@ import {
     WorkflowNode,
     WorkflowRuntimeNode,
 } from '../../../types';
-import { EmptyState, NextActionCard, StatusBadge } from '../../erp';
+import { EmptyState, StatusBadge } from '../../erp';
 import { getMaterialRequestNextAction, getMaterialRequestStatusView } from '../../../lib/erpWorkflow';
 import { getMaterialRequestSlaState } from '../../../lib/materialRequestService';
 import { matchesSearchQueryMultiple } from '../../../lib/searchUtils';
@@ -31,6 +31,13 @@ const LazyPanelFallback = ({ label = 'Đang tải dữ liệu...' }: { label?: s
         <Loader2 size={14} className="mr-2 animate-spin text-indigo-500" /> {label}
     </div>
 );
+
+const formatDate = (value?: string | null) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
 
 type MaterialRequestTabProps = {
     projectId?: string;
@@ -161,8 +168,9 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
         }
 
         return (
-            <div className="grid grid-cols-1 gap-3 p-4 lg:grid-cols-2">
-                {filteredListRequests.map(request => {
+            <div className="p-4">
+                <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white dark:border-slate-700/60 dark:bg-slate-900/30">
+                    {filteredListRequests.map(request => {
                     const subject = requestWorkflowSubjects[request.id];
                     const requester = userById.get(request.requesterId);
                     const assigneeIds = subject?.currentAssigneeUserIds?.length
@@ -192,35 +200,49 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                         Number(line.overBudgetQtySnapshot || 0) > 0
                     );
                     const slaState = getMaterialRequestSlaState(request);
+                    const materialSummary = `${request.items?.length || 0} dòng vật tư${summary ? ` • nhận ${summary.receivedQty.toLocaleString('vi-VN')}/${summary.committedQty.toLocaleString('vi-VN')}` : ''}`;
 
                     return (
-                        <div key={request.id} className="relative">
-                            <NextActionCard
-                                title={`${request.items?.length || 0} dòng vật tư${summary ? ` • nhận ${summary.receivedQty.toLocaleString('vi-VN')}/${summary.committedQty.toLocaleString('vi-VN')}` : ''}`}
-                                code={request.code}
-                                status={request.status}
-                                statusLabel={statusView.label}
-                                tone={statusView.tone}
-                                nextAction={statusView.nextAction}
-                                actorName={handlerLabel || requester?.name}
-                                dueAt={request.workflowStepDueAt || request.expectedDate || request.createdDate}
-                                actionLabel={statusView.actionLabel}
-                                onClick={() => onOpenRequest(request)}
-                            />
-                            <div className="pointer-events-none absolute bottom-4 left-4 right-4 flex flex-wrap gap-1.5">
-                                {slaState === 'overdue' && <StatusBadge status="overdue" label="Quá hạn SLA" tone="attention" />}
-                                {overLines.length > 0 && (
-                                    <StatusBadge
-                                        status="warning"
-                                        label={`${overLines.length} dòng vượt/ngoài BOQ`}
-                                        tone="attention"
-                                    />
-                                )}
-                                {request.overrideReason && <StatusBadge status="warning" label="Có lý do override" tone="warning" />}
+                        <button
+                            key={request.id}
+                            type="button"
+                            onClick={() => onOpenRequest(request)}
+                            className="grid w-full grid-cols-1 gap-3 border-b border-slate-100 px-4 py-4 text-left transition hover:bg-slate-50/70 last:border-b-0 dark:border-slate-800 dark:hover:bg-slate-800/50 lg:grid-cols-[minmax(150px,0.75fr)_minmax(260px,1.35fr)_minmax(170px,0.8fr)_minmax(155px,0.7fr)_auto] lg:items-center"
+                        >
+                            <div className="min-w-0">
+                                <div className="truncate font-mono text-[11px] font-black text-purple-600">{request.code}</div>
+                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                    <StatusBadge status={request.status} label={statusView.label} tone={statusView.tone} />
+                                    {slaState === 'overdue' && <StatusBadge status="overdue" label="Quá hạn SLA" tone="attention" />}
+                                </div>
                             </div>
-                        </div>
+                            <div className="min-w-0">
+                                <div className="truncate text-sm font-black text-slate-800 dark:text-white">{materialSummary}</div>
+                                <div className="mt-1 line-clamp-2 text-xs font-bold leading-relaxed text-slate-500 dark:text-slate-300">{statusView.nextAction}</div>
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                    {overLines.length > 0 && <StatusBadge status="warning" label={`${overLines.length} dòng vượt/ngoài BOQ`} tone="attention" />}
+                                    {request.overrideReason && <StatusBadge status="warning" label="Có lý do override" tone="warning" />}
+                                </div>
+                            </div>
+                            <div className="min-w-0 text-xs">
+                                <div className="font-black text-slate-400">Người yêu cầu</div>
+                                <div className="mt-1 truncate font-bold text-slate-700 dark:text-slate-200">{requester?.name || request.requesterId || '-'}</div>
+                                {handlerLabel && (
+                                    <div className="mt-1 truncate text-[11px] font-bold text-slate-400">Xử lý: {handlerLabel}</div>
+                                )}
+                            </div>
+                            <div className="min-w-0 text-xs">
+                                <div className="font-black text-slate-400">Hạn / ngày tạo</div>
+                                <div className="mt-1 truncate font-bold text-slate-700 dark:text-slate-200">{formatDate(request.workflowStepDueAt || request.expectedDate || request.createdDate)}</div>
+                                <div className="mt-1 truncate text-[11px] font-bold text-slate-400">{formatDate(request.createdDate)}</div>
+                            </div>
+                            <div className="justify-self-start rounded-xl border border-slate-200 px-3 py-2 text-[10px] font-black uppercase text-slate-700 transition group-hover:border-purple-200 group-hover:text-purple-700 lg:justify-self-end">
+                                {statusView.actionLabel}
+                            </div>
+                        </button>
                     );
                 })}
+                </div>
             </div>
         );
     };

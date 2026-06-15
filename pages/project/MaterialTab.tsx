@@ -106,6 +106,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         canEditBoq,
         canDeleteBoq,
         canApproveProjectRequest,
+        canViewAvailableStock,
         canCreateMaterialRequest,
     } = useProjectMaterialAccess({
         materialPermissions,
@@ -3042,6 +3043,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         }
                         projectWorkflowNextNode={selectedRequestLive ? getWorkflowNextNode(requestWorkflowSubjects[selectedRequestLive.id]) : null}
                         projectWorkflowReturnTargetNode={selectedRequestLive ? getWorkflowReturnTargetNode(requestWorkflowSubjects[selectedRequestLive.id]) : null}
+                        canViewAvailableStock={canViewAvailableStock}
                         onProjectWorkflowAction={handleProjectWorkflowActionFromModal}
                         onSaved={handleMaterialRequestSavedFromBoq}
                         onDeleted={handleRequestDeleted}

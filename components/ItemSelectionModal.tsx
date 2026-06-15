@@ -11,6 +11,7 @@ interface ItemSelectionModalProps {
   onOpenScanner: () => void;
   filterWarehouseId?: string; // ID kho để lọc vật tư (cho xuất/chuyển/hủy)
   allowAllItems?: boolean;    // true = hiển thị tất cả vật tư (cho nhập kho/đề xuất nhu cầu)
+  showStockQuantities?: boolean;
 }
 
 const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
@@ -19,7 +20,8 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
   onSelect,
   onOpenScanner,
   filterWarehouseId,
-  allowAllItems = false
+  allowAllItems = false,
+  showStockQuantities = true
 }) => {
   const { items, warehouses } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
@@ -59,7 +61,7 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
         <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
           <div>
             <h3 className="font-bold text-lg text-slate-800">Chọn vật tư</h3>
-            {allowAllItems && targetWarehouse ? (
+            {allowAllItems && targetWarehouse && showStockQuantities ? (
               <p className="text-xs text-blue-600 font-bold flex items-center mt-1 uppercase tracking-tighter">
                 <Filter size={12} className="mr-1" />
                 Tất cả vật tư hệ thống — xem tồn tại: {targetWarehouse.name}
@@ -67,9 +69,9 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
             ) : allowAllItems ? (
               <p className="text-xs text-emerald-600 font-bold flex items-center mt-1 uppercase tracking-tighter">
                 <Search size={12} className="mr-1" />
-                Tìm theo mã SKU hoặc tên — tổng tồn tất cả kho
+                {showStockQuantities ? 'Tìm theo mã SKU hoặc tên — tổng tồn tất cả kho' : 'Tìm theo mã SKU hoặc tên'}
               </p>
-            ) : targetWarehouse ? (
+            ) : targetWarehouse && showStockQuantities ? (
               <p className="text-xs text-blue-600 font-bold flex items-center mt-1 uppercase tracking-tighter">
                 <Filter size={12} className="mr-1" />
                 Vật tư có tồn tại: {targetWarehouse.name}
@@ -109,7 +111,7 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
               <tr>
                 <th className="p-4">Mã SKU</th>
                 <th className="p-4">Tên vật tư</th>
-                <th className="p-4 text-right">{targetWarehouse ? 'Tồn kho đang xem' : 'Tổng tồn'}</th>
+                {showStockQuantities && <th className="p-4 text-right">{targetWarehouse ? 'Tồn kho đang xem' : 'Tổng tồn'}</th>}
                 <th className="p-4 text-center">Hành động</th>
               </tr>
             </thead>
@@ -123,10 +125,12 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
                       <div className="font-bold text-slate-800 text-sm">{item.name}</div>
                       <div className="text-[10px] text-slate-400 uppercase font-bold">{item.category}</div>
                     </td>
-                    <td className="p-4 text-right">
-                      <span className={`font-black ${stock === 0 ? 'text-slate-300' : 'text-slate-700'}`}>{stock.toLocaleString()}</span>
-                      <span className="text-[10px] text-slate-400 font-bold ml-1 uppercase">{item.unit}</span>
-                    </td>
+                    {showStockQuantities && (
+                      <td className="p-4 text-right">
+                        <span className={`font-black ${stock === 0 ? 'text-slate-300' : 'text-slate-700'}`}>{stock.toLocaleString()}</span>
+                        <span className="text-[10px] text-slate-400 font-bold ml-1 uppercase">{item.unit}</span>
+                      </td>
+                    )}
                     <td className="p-4 text-center">
                       <button
                         onClick={() => { onSelect(item); }}
@@ -140,7 +144,7 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
               })}
               {filteredItems.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="p-20 text-center">
+                  <td colSpan={showStockQuantities ? 4 : 3} className="p-20 text-center">
                     <div className="flex flex-col items-center opacity-20">
                       <PackageOpen size={64} />
                       <p className="mt-4 font-black uppercase tracking-widest text-sm">
