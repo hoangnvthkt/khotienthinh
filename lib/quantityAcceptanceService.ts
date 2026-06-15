@@ -732,13 +732,14 @@ export const quantityAcceptanceService = {
       throw new Error('Phiếu nghiệm thu chưa có hạng mục. Cần tạo lại sau khi nhật ký verified có liên kết task/BOQ hợp đồng.');
     }
     if (status === 'cancelled') {
-      const { count: linkedCertCount, error: linkedCertError } = await supabase
+      const { data: linkedCertRows, error: linkedCertError } = await supabase
         .from('payment_certificates')
-        .select('*', { count: 'exact', head: true })
-        .eq('acceptance_id', id);
+        .select('id')
+        .eq('acceptance_id', id)
+        .limit(1);
       if (linkedCertError) throw linkedCertError;
-      if ((linkedCertCount || 0) > 0) {
-        throw new Error(`Không thể huỷ nghiệm thu vì đã có ${linkedCertCount} chứng từ thanh toán liên kết. Vui lòng xoá/rollback chứng từ thanh toán trước.`);
+      if ((linkedCertRows?.length || 0) > 0) {
+        throw new Error('Không thể huỷ nghiệm thu vì đã có chứng từ thanh toán liên kết. Vui lòng xoá/rollback chứng từ thanh toán trước.');
       }
     }
 

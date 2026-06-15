@@ -16,6 +16,16 @@ import { materialRequestBoqLineSnapshotService } from './materialRequestBoqLineS
 
 const EVENT_TABLE = 'material_request_events';
 
+export interface MaterialRequestEventCursor {
+  createdAt: string;
+  id: string;
+}
+
+export interface MaterialRequestEventPage {
+  items: MaterialRequestEvent[];
+  nextCursor?: MaterialRequestEventCursor;
+}
+
 export const MATERIAL_REQUEST_STEP_SLA_HOURS: Record<MaterialRequestWorkflowStep, number | null> = {
   draft: null,
   site_manager_review: 24,
@@ -207,6 +217,39 @@ export const materialRequestService = {
       acc[event.requestId] = [...(acc[event.requestId] || []), event];
       return acc;
     }, {});
+  },
+
+  async listEventsByRequest(requestId: string, options: {
+    limit?: number;
+    cursor?: MaterialRequestEventCursor;
+  } = {}): Promise<MaterialRequestEventPage> {
+    if (!requestId) return { items: [] };
+    const limit = Math.min(Math.max(options.limit || 100, 1), 200);
+    let query = supabase
+      .from(EVENT_TABLE)
+      .select('*')
+      .eq('request_id', requestId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(limit + 1);
+
+    if (options.cursor?.createdAt && options.cursor.id) {
+      query = query.or(`created_at.lt.${options.cursor.createdAt},and(created_at.eq.${options.cursor.createdAt},id.lt.${options.cursor.id})`);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      if (isMissingEventTable(error)) return { items: [] };
+      throw error;
+    }
+
+    const rows = data || [];
+    const pageRows = rows.slice(0, limit);
+    const last = pageRows[pageRows.length - 1];
+    return {
+      items: pageRows.map(mapEventFromDb),
+      nextCursor: rows.length > limit && last ? { createdAt: last.created_at, id: last.id } : undefined,
+    };
   },
 
   async recordEvent(event: {

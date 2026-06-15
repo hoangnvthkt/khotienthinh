@@ -46,12 +46,12 @@ const countRows = async (
   label: string,
   buildQuery: () => any,
 ): Promise<InventoryItemDeleteBlocker | null> => {
-  const { count, error } = await buildQuery();
+  const { data, error } = await buildQuery();
   if (error) {
     if (optionalMissingTableCodes.has(error.code)) return null;
     throw error;
   }
-  const safeCount = Number(count || 0);
+  const safeCount = (data || []).length > 0 ? 1 : 0;
   return safeCount > 0 ? { key: label, label, count: safeCount } : null;
 };
 
@@ -60,34 +60,34 @@ export const getRemoteInventoryItemDeleteBlockers = async (itemId: string): Prom
 
   const checks = await Promise.all([
     countRows('Phiếu giao dịch kho liên quan', () =>
-      supabase.from('transactions').select('id', { count: 'exact', head: true }).contains('items', [{ itemId }]),
+      supabase.from('transactions').select('id').contains('items', [{ itemId }]).limit(1),
     ),
     countRows('Phiếu giao dịch kho pending item liên quan', () =>
-      supabase.from('transactions').select('id', { count: 'exact', head: true }).contains('pending_items', [{ id: itemId }]),
+      supabase.from('transactions').select('id').contains('pending_items', [{ id: itemId }]).limit(1),
     ),
     countRows('Đề xuất vật tư liên quan', () =>
-      supabase.from('requests').select('id', { count: 'exact', head: true }).contains('items', [{ itemId }]),
+      supabase.from('requests').select('id').contains('items', [{ itemId }]).limit(1),
     ),
     countRows('Đơn hàng PO liên quan', () =>
-      supabase.from('purchase_orders').select('id', { count: 'exact', head: true }).contains('items', [{ itemId }]),
+      supabase.from('purchase_orders').select('id').contains('items', [{ itemId }]).limit(1),
     ),
     countRows('Đợt nhận vật tư từ PO/đề xuất liên quan', () =>
-      supabase.from('material_request_fulfillment_lines').select('id', { count: 'exact', head: true }).eq('item_id', itemId),
+      supabase.from('material_request_fulfillment_lines').select('id').eq('item_id', itemId).limit(1),
     ),
     countRows('Phiếu xuất cấp thi công liên quan', () =>
-      supabase.from('material_issue_lines').select('id', { count: 'exact', head: true }).eq('item_id', itemId),
+      supabase.from('material_issue_lines').select('id').eq('item_id', itemId).limit(1),
     ),
     countRows('Xác nhận nhận vật tư liên quan', () =>
-      supabase.from('material_issue_receipt_lines').select('id', { count: 'exact', head: true }).eq('item_id', itemId),
+      supabase.from('material_issue_receipt_lines').select('id').eq('item_id', itemId).limit(1),
     ),
     countRows('Phiếu trả vật tư thi công liên quan', () =>
-      supabase.from('material_issue_return_lines').select('id', { count: 'exact', head: true }).eq('item_id', itemId),
+      supabase.from('material_issue_return_lines').select('id').eq('item_id', itemId).limit(1),
     ),
     countRows('Sổ công nợ vật tư đối tác liên quan', () =>
-      supabase.from('material_party_ledger').select('id', { count: 'exact', head: true }).eq('item_id', itemId),
+      supabase.from('material_party_ledger').select('id').eq('item_id', itemId).limit(1),
     ),
     countRows('Phiếu trả hàng NCC liên quan', () =>
-      supabase.from('purchase_order_supplier_return_lines').select('id', { count: 'exact', head: true }).eq('item_id', itemId),
+      supabase.from('purchase_order_supplier_return_lines').select('id').eq('item_id', itemId).limit(1),
     ),
   ]);
 

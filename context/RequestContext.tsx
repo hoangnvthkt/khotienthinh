@@ -96,43 +96,104 @@ const mapLogFromDB = (row: any): RequestLog => ({
     createdAt: row.created_at,
 });
 
+const mapPrintTemplateFromDB = (row: any): RequestPrintTemplate => ({
+    id: row.id,
+    categoryId: row.category_id,
+    name: row.name,
+    fileName: row.file_name,
+    storagePath: row.storage_path,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+});
+
+const sortByCreatedAtDesc = <T extends { createdAt?: string }>(items: T[]): T[] =>
+    [...items].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
+const sortLogsByCreatedAtAsc = (items: RequestLog[]): RequestLog[] =>
+    [...items].sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+
 export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [categories, setCategories] = useState<RequestCategory[]>([]);
     const [requests, setRequests] = useState<RequestInstance[]>([]);
     const [logs, setLogs] = useState<RequestLog[]>([]);
     const [printTemplates, setPrintTemplates] = useState<RequestPrintTemplate[]>([]);
     const [isLoading, setIsLoading] = useState(false);
-    const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const fallbackRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const hasLoadedRef = useRef(false);
+    const requestsRef = useRef<RequestInstance[]>([]);
     const inflightRefreshRef = useRef<Promise<void> | null>(null);
+    const inflightRecentRefreshRef = useRef<Promise<void> | null>(null);
 
-    const refreshData = useCallback(async () => {
-        if (inflightRefreshRef.current) return inflightRefreshRef.current;
-        setIsLoading(true);
+    useEffect(() => {
+        requestsRef.current = requests;
+    }, [requests]);
+
+    const loadCategories = useCallback(async () => {
+        const { data, error } = await supabase
+            .from('request_categories')
+            .select('*')
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+        setCategories((data || []).map(mapCategoryFromDB));
+    }, []);
+
+    const loadPrintTemplates = useCallback(async () => {
+        const { data, error } = await supabase
+            .from('request_print_templates')
+            .select('*')
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+        setPrintTemplates((data || []).map(mapPrintTemplateFromDB));
+    }, []);
+
+    const loadRecentRequestsWithLogs = useCallback(async () => {
+        if (inflightRecentRefreshRef.current) return inflightRecentRefreshRef.current;
+
         const refreshTask = (async () => {
-            const [catRes, reqRes, ptRes] = await Promise.all([
-                supabase.from('request_categories').select('*').order('created_at', { ascending: false }),
-                supabase.from('request_instances').select('*').order('created_at', { ascending: false }).limit(REQUEST_INSTANCE_LIST_LIMIT),
-                supabase.from('request_print_templates').select('*').order('created_at', { ascending: false }),
-            ]);
-            if (catRes.data) setCategories(catRes.data.map(mapCategoryFromDB));
-            if (reqRes.data) setRequests(reqRes.data.map(mapRequestFromDB));
-            if (reqRes.data && reqRes.data.length > 0) {
-                const requestIds = reqRes.data.map((r: any) => r.id);
-                const { data: logData } = await supabase
+            const { data: requestRows, error: requestError } = await supabase
+                .from('request_instances')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(REQUEST_INSTANCE_LIST_LIMIT);
+            if (requestError) throw requestError;
+
+            const mappedRequests = (requestRows || []).map(mapRequestFromDB);
+            setRequests(mappedRequests);
+
+            if (requestRows && requestRows.length > 0) {
+                const requestIds = requestRows.map((row: any) => row.id);
+                const { data: logRows, error: logError } = await supabase
                     .from('request_logs')
                     .select('*')
                     .in('request_id', requestIds)
                     .order('created_at', { ascending: true });
-                if (logData) setLogs(logData.map(mapLogFromDB));
+                if (logError) throw logError;
+                setLogs((logRows || []).map(mapLogFromDB));
             } else {
                 setLogs([]);
             }
-            if (ptRes.data) setPrintTemplates(ptRes.data.map((r: any): RequestPrintTemplate => ({
-                id: r.id, categoryId: r.category_id, name: r.name, fileName: r.file_name,
-                storagePath: r.storage_path, createdAt: r.created_at, updatedAt: r.updated_at,
-            })));
         })();
+
+        inflightRecentRefreshRef.current = refreshTask;
+        try {
+            await refreshTask;
+        } finally {
+            inflightRecentRefreshRef.current = null;
+        }
+    }, []);
+
+    const loadInitialRequestData = useCallback(async () => {
+        await Promise.all([
+            loadCategories(),
+            loadPrintTemplates(),
+            loadRecentRequestsWithLogs(),
+        ]);
+    }, [loadCategories, loadPrintTemplates, loadRecentRequestsWithLogs]);
+
+    const refreshData = useCallback(async () => {
+        if (inflightRefreshRef.current) return inflightRefreshRef.current;
+        setIsLoading(true);
+        const refreshTask = loadInitialRequestData();
         inflightRefreshRef.current = refreshTask;
         try {
             await refreshTask;
@@ -143,28 +204,149 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
             inflightRefreshRef.current = null;
             setIsLoading(false);
         }
-    }, []);
+    }, [loadInitialRequestData]);
 
-    // Debounced refresh for realtime events
-    const debouncedRefresh = useCallback(() => {
+    const scheduleRecentRequestsRefresh = useCallback(() => {
         if (!hasLoadedRef.current) return;
-        if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
-        refreshTimeoutRef.current = setTimeout(() => refreshData(), 1000);
-    }, [refreshData]);
+        if (fallbackRefreshTimeoutRef.current) clearTimeout(fallbackRefreshTimeoutRef.current);
+        fallbackRefreshTimeoutRef.current = setTimeout(() => {
+            fallbackRefreshTimeoutRef.current = null;
+            loadRecentRequestsWithLogs().catch(err => console.error('RequestContext recent refresh error:', err));
+        }, 1000);
+    }, [loadRecentRequestsWithLogs]);
+
+    const applyRequestRealtimePayload = useCallback((payload: any) => {
+        const eventType = payload?.eventType as 'INSERT' | 'UPDATE' | 'DELETE' | undefined;
+        const row = eventType === 'DELETE' ? payload?.old : payload?.new;
+        if (!eventType || !row?.id) {
+            scheduleRecentRequestsRefresh();
+            return;
+        }
+
+        if (eventType === 'DELETE') {
+            setRequests(prev => prev.filter(request => request.id !== row.id));
+            setLogs(prev => prev.filter(log => log.requestId !== row.id));
+            return;
+        }
+
+        let mapped: RequestInstance;
+        try {
+            mapped = mapRequestFromDB(row);
+        } catch (err) {
+            console.warn('Cannot map request realtime payload; refreshing recent requests.', err);
+            scheduleRecentRequestsRefresh();
+            return;
+        }
+
+        if (!mapped.createdAt) {
+            scheduleRecentRequestsRefresh();
+            return;
+        }
+
+        setRequests(prev => {
+            const existingIndex = prev.findIndex(request => request.id === mapped.id);
+            if (existingIndex >= 0) {
+                const next = [...prev];
+                next[existingIndex] = mapped;
+                return sortByCreatedAtDesc(next).slice(0, REQUEST_INSTANCE_LIST_LIMIT);
+            }
+
+            const oldest = prev[prev.length - 1];
+            const mappedTime = new Date(mapped.createdAt).getTime();
+            const oldestTime = oldest?.createdAt ? new Date(oldest.createdAt).getTime() : 0;
+            if (eventType === 'UPDATE' && prev.length >= REQUEST_INSTANCE_LIST_LIMIT && mappedTime < oldestTime) {
+                return prev;
+            }
+
+            return sortByCreatedAtDesc([mapped, ...prev]).slice(0, REQUEST_INSTANCE_LIST_LIMIT);
+        });
+    }, [scheduleRecentRequestsRefresh]);
+
+    const applyRequestLogRealtimePayload = useCallback((payload: any) => {
+        const eventType = payload?.eventType as 'INSERT' | 'UPDATE' | 'DELETE' | undefined;
+        const row = eventType === 'DELETE' ? payload?.old : payload?.new;
+        if (!eventType || !row?.id || !row?.request_id) {
+            scheduleRecentRequestsRefresh();
+            return;
+        }
+
+        if (!requestsRef.current.some(request => request.id === row.request_id)) return;
+
+        if (eventType === 'DELETE') {
+            setLogs(prev => prev.filter(log => log.id !== row.id));
+            return;
+        }
+
+        let mapped: RequestLog;
+        try {
+            mapped = mapLogFromDB(row);
+        } catch (err) {
+            console.warn('Cannot map request log realtime payload; refreshing recent requests.', err);
+            scheduleRecentRequestsRefresh();
+            return;
+        }
+
+        setLogs(prev => {
+            const existingIndex = prev.findIndex(log => log.id === mapped.id);
+            if (existingIndex >= 0) {
+                const next = [...prev];
+                next[existingIndex] = mapped;
+                return sortLogsByCreatedAtAsc(next);
+            }
+            return sortLogsByCreatedAtAsc([...prev, mapped]);
+        });
+    }, [scheduleRecentRequestsRefresh]);
+
+    const applyCategoryRealtimePayload = useCallback((payload: any) => {
+        const eventType = payload?.eventType as 'INSERT' | 'UPDATE' | 'DELETE' | undefined;
+        const row = eventType === 'DELETE' ? payload?.old : payload?.new;
+        if (!eventType || !row?.id) {
+            loadCategories().catch(err => console.error('RequestContext category refresh error:', err));
+            return;
+        }
+
+        if (eventType === 'DELETE') {
+            setCategories(prev => prev.filter(category => category.id !== row.id));
+            return;
+        }
+
+        try {
+            const mapped = mapCategoryFromDB(row);
+            setCategories(prev => {
+                const exists = prev.some(category => category.id === mapped.id);
+                const next = exists
+                    ? prev.map(category => category.id === mapped.id ? mapped : category)
+                    : [mapped, ...prev];
+                return sortByCreatedAtDesc(next);
+            });
+        } catch (err) {
+            console.warn('Cannot map request category realtime payload; refreshing categories.', err);
+            loadCategories().catch(refreshErr => console.error('RequestContext category refresh error:', refreshErr));
+        }
+    }, [loadCategories]);
 
     // ---- Realtime subscriptions ----
     useEffect(() => {
         const channel = supabase.channel('request-changes')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'request_instances' }, () => debouncedRefresh())
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'request_logs' }, () => debouncedRefresh())
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'request_categories' }, () => debouncedRefresh())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'request_instances' }, applyRequestRealtimePayload)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'request_logs' }, applyRequestLogRealtimePayload)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'request_categories' }, applyCategoryRealtimePayload)
             .subscribe();
 
         return () => {
-            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+            if (fallbackRefreshTimeoutRef.current) clearTimeout(fallbackRefreshTimeoutRef.current);
             supabase.removeChannel(channel);
         };
-    }, [debouncedRefresh]);
+    }, [applyRequestRealtimePayload, applyRequestLogRealtimePayload, applyCategoryRealtimePayload]);
+
+    useEffect(() => {
+        const refreshOnFocus = () => {
+            if (!hasLoadedRef.current) return;
+            loadRecentRequestsWithLogs().catch(err => console.error('RequestContext focus refresh error:', err));
+        };
+        window.addEventListener('focus', refreshOnFocus);
+        return () => window.removeEventListener('focus', refreshOnFocus);
+    }, [loadRecentRequestsWithLogs]);
 
     // ---- Helpers ----
 
@@ -275,7 +457,7 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
             comment: 'Phiếu yêu cầu được tạo mới',
         });
 
-        await refreshData();
+        await loadRecentRequestsWithLogs();
 
         // 📝 Audit trail: new request created
         auditService.log({
@@ -325,7 +507,7 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         const { error } = await supabase.from('request_instances').update(payload).eq('id', id);
         if (error) { console.error(error); return false; }
-        await refreshData();
+        await loadRecentRequestsWithLogs();
         return true;
     };
 
@@ -349,7 +531,7 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
         await supabase.from('request_logs').insert({
             request_id: id, action: 'SUBMITTED', acted_by: userId, comment: 'Gửi phiếu yêu cầu',
         });
-        await refreshData();
+        await loadRecentRequestsWithLogs();
         const currentApprover = req ? getCurrentApproverStep(req) : null;
         if (req && currentApprover?.userId && currentApprover.userId !== userId) {
             notificationService.create({
@@ -396,7 +578,7 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
         if (error) { console.error(error); return false; }
 
-        await refreshData();
+        await loadRecentRequestsWithLogs();
 
         // 📝 Audit trail: request approved
         auditService.log({
@@ -473,7 +655,7 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
         if (error) { console.error(error); return false; }
 
-        await refreshData();
+        await loadRecentRequestsWithLogs();
 
         // 📝 Audit trail: request rejected
         auditService.log({
@@ -517,7 +699,7 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
         await supabase.from('request_logs').insert({
             request_id: id, action: 'COMPLETED', acted_by: userId, comment: comment || 'Hoàn thành yêu cầu',
         });
-        await refreshData();
+        await loadRecentRequestsWithLogs();
 
         // 📝 Audit trail: request completed
         const compReq = requests.find(r => r.id === id);
@@ -557,7 +739,7 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
         await supabase.from('request_logs').insert({
             request_id: id, action: 'CANCELLED', acted_by: userId, comment: comment || 'Hủy phiếu yêu cầu',
         });
-        await refreshData();
+        await loadRecentRequestsWithLogs();
 
         // 📝 Audit trail: request cancelled
         const canReq = requests.find(r => r.id === id);
@@ -597,11 +779,11 @@ export const RequestProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const path = `rq/${categoryId}/${Date.now()}_${file.name}`;
         const { error: upErr } = await supabase.storage.from('workflow-templates').upload(path, file);
         if (upErr) { console.error(upErr); return false; }
-        const { error: dbErr } = await supabase.from('request_print_templates').insert({
+        const { data: templateRow, error: dbErr } = await supabase.from('request_print_templates').insert({
             category_id: categoryId, name, file_name: file.name, storage_path: path,
-        });
+        }).select('*').single();
         if (dbErr) { console.error(dbErr); return false; }
-        await refreshData();
+        if (templateRow) setPrintTemplates(prev => [mapPrintTemplateFromDB(templateRow), ...prev]);
         return true;
     };
 

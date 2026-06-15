@@ -467,16 +467,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 setRequestFulfillmentBatchCounts({});
                 return;
             }
-            const batchesByRequest = await materialRequestFulfillmentService.listByRequests(scopedMaterialRequests.map(req => req.id));
+            const fulfillment = await materialRequestFulfillmentService.listSummariesByRequests(scopedMaterialRequests);
             if (cancelled) return;
-            setRequestFulfillmentSummaries(scopedMaterialRequests.reduce<Record<string, MaterialRequestFulfillmentSummary>>((acc, req) => {
-                acc[req.id] = materialRequestFulfillmentService.summarizeRequest(req, batchesByRequest[req.id] || []);
-                return acc;
-            }, {}));
-            setRequestFulfillmentBatchCounts(scopedMaterialRequests.reduce<Record<string, number>>((acc, req) => {
-                acc[req.id] = (batchesByRequest[req.id] || []).length;
-                return acc;
-            }, {}));
+            setRequestFulfillmentSummaries(fulfillment.summariesByRequestId);
+            setRequestFulfillmentBatchCounts(fulfillment.batchCountsByRequestId);
         };
         loadFulfillment().catch(err => {
             console.warn('Failed to load material request fulfillment summaries for PO tab:', err);

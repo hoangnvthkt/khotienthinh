@@ -18,6 +18,7 @@ import { useChat } from '../context/ChatContext';
 import { Role, TransactionStatus, RequestStatus } from '../types';
 import { canApproveMaterialRequest, canApproveWmsTransaction, canExportMaterialRequest, canReceiveMaterialRequest, canReceiveWmsTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
 import { hasProjectTabPermissionRoute } from '../lib/projectTabPermissions';
+import { isChatEnabled } from '../lib/featureFlags';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -416,20 +417,22 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                     <span className="font-bold text-sm">Cài đặt</span>
                   </NavLink>
 
-                  <NavLink to="/chat" onClick={toggle}
-                    className={({ isActive }) => `flex items-center justify-between px-4 py-2.5 rounded-xl transition-all group ${isActive
-                      ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
-                    <div className="flex items-center">
-                      <MessageCircle className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
-                      <span className="font-bold text-sm">Tin nhắn</span>
-                    </div>
-                    {totalUnread > 0 && (
-                      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 bg-red-500 ring-slate-900 animate-pulse">
-                        {totalUnread > 9 ? '9+' : totalUnread}
-                      </span>
-                    )}
-                  </NavLink>
+                  {isChatEnabled && (
+                    <NavLink to="/chat" onClick={toggle}
+                      className={({ isActive }) => `flex items-center justify-between px-4 py-2.5 rounded-xl transition-all group ${isActive
+                        ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                      <div className="flex items-center">
+                        <MessageCircle className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                        <span className="font-bold text-sm">Tin nhắn</span>
+                      </div>
+                      {totalUnread > 0 && (
+                        <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 bg-red-500 ring-slate-900 animate-pulse">
+                          {totalUnread > 9 ? '9+' : totalUnread}
+                        </span>
+                      )}
+                    </NavLink>
+                  )}
                 </div>
               </>
             ) : isModuleView && activeModule && isModuleAllowed ? (
@@ -469,20 +472,22 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                     <Settings className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
                     <span className="font-bold text-sm">Cài đặt</span>
                   </NavLink>
-                  <NavLink to="/chat" onClick={toggle}
-                    className={({ isActive }) => `flex items-center justify-between px-4 py-2.5 rounded-xl transition-all group ${isActive
-                      ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
-                    <div className="flex items-center">
-                      <MessageCircle className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
-                      <span className="font-bold text-sm">Tin nhắn</span>
-                    </div>
-                    {totalUnread > 0 && (
-                      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 bg-red-500 ring-slate-900 animate-pulse">
-                        {totalUnread > 9 ? '9+' : totalUnread}
-                      </span>
-                    )}
-                  </NavLink>
+                  {isChatEnabled && (
+                    <NavLink to="/chat" onClick={toggle}
+                      className={({ isActive }) => `flex items-center justify-between px-4 py-2.5 rounded-xl transition-all group ${isActive
+                        ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                      <div className="flex items-center">
+                        <MessageCircle className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                        <span className="font-bold text-sm">Tin nhắn</span>
+                      </div>
+                      {totalUnread > 0 && (
+                        <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 bg-red-500 ring-slate-900 animate-pulse">
+                          {totalUnread > 9 ? '9+' : totalUnread}
+                        </span>
+                      )}
+                    </NavLink>
+                  )}
                 </div>
               </>
             ) : null}
@@ -583,25 +588,27 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
               </NavLink>
 
               {/* Tin nhắn */}
-              <NavLink to="/chat" title={collapsed ? 'Tin nhắn' : undefined}
-                className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : 'justify-between'} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
-                  ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
-                <div className="flex items-center relative">
-                  <MessageCircle className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
-                  {!collapsed && <span className="font-bold text-sm">Tin nhắn</span>}
-                  {collapsed && totalUnread > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center ring-1 ring-white/20 animate-pulse">
+              {isChatEnabled && (
+                <NavLink to="/chat" title={collapsed ? 'Tin nhắn' : undefined}
+                  className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : 'justify-between'} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                    ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                  <div className="flex items-center relative">
+                    <MessageCircle className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                    {!collapsed && <span className="font-bold text-sm">Tin nhắn</span>}
+                    {collapsed && totalUnread > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center ring-1 ring-white/20 animate-pulse">
+                        {totalUnread > 9 ? '9+' : totalUnread}
+                      </span>
+                    )}
+                  </div>
+                  {!collapsed && totalUnread > 0 && (
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 bg-red-500 ring-slate-900 animate-pulse">
                       {totalUnread > 9 ? '9+' : totalUnread}
                     </span>
                   )}
-                </div>
-                {!collapsed && totalUnread > 0 && (
-                  <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 bg-red-500 ring-slate-900 animate-pulse">
-                    {totalUnread > 9 ? '9+' : totalUnread}
-                  </span>
-                )}
-              </NavLink>
+                </NavLink>
+              )}
             </>
           )}
 
@@ -719,25 +726,27 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                   <Settings className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
                   {!collapsed && <span className="font-bold text-sm">Cài đặt</span>}
                 </NavLink>
-                <NavLink to="/chat" title={collapsed ? 'Tin nhắn' : undefined}
-                  className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : 'justify-between'} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
-                    ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
-                  <div className="flex items-center relative">
-                    <MessageCircle className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
-                    {!collapsed && <span className="font-bold text-sm">Tin nhắn</span>}
-                    {collapsed && totalUnread > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center ring-1 ring-white/20 animate-pulse">
+                {isChatEnabled && (
+                  <NavLink to="/chat" title={collapsed ? 'Tin nhắn' : undefined}
+                    className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : 'justify-between'} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                      ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                    <div className="flex items-center relative">
+                      <MessageCircle className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                      {!collapsed && <span className="font-bold text-sm">Tin nhắn</span>}
+                      {collapsed && totalUnread > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[8px] font-black rounded-full flex items-center justify-center ring-1 ring-white/20 animate-pulse">
+                          {totalUnread > 9 ? '9+' : totalUnread}
+                        </span>
+                      )}
+                    </div>
+                    {!collapsed && totalUnread > 0 && (
+                      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 bg-red-500 ring-slate-900 animate-pulse">
                         {totalUnread > 9 ? '9+' : totalUnread}
                       </span>
                     )}
-                  </div>
-                  {!collapsed && totalUnread > 0 && (
-                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-black text-white shadow-sm ring-2 bg-red-500 ring-slate-900 animate-pulse">
-                      {totalUnread > 9 ? '9+' : totalUnread}
-                    </span>
-                  )}
-                </NavLink>
+                  </NavLink>
+                )}
               </div>
             </>
           )}

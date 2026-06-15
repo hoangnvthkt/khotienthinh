@@ -15,6 +15,7 @@ import { WorkflowInstanceStatus, WorkflowNodeType, RQStatus } from '../types';
 import { AnimatedNumber, LastUpdated } from '../components/LiveDashboardWidgets';
 import DailyMissions from '../components/DailyMissions';
 import { getTimeGreeting, getRandomQuote } from '../lib/funMessages';
+import { isChatEnabled } from '../lib/featureFlags';
 
 // ═══════════════════════════════════════════════════════
 //  EMPLOYEE DASHBOARD — Mobile-First Todo-List Style
@@ -666,7 +667,7 @@ const EmployeeDashboard: React.FC = () => {
                         { icon: <DollarSign size={17} />, label: 'Bảng lương', to: '/hrm/payroll', gradient: 'from-amber-500 to-orange-500', shadow: 'shadow-amber-500/20' },
                         { icon: <GitBranch size={17} />, label: 'Quy trình', to: '/wf', gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/20' },
                         { icon: <Inbox size={17} />, label: 'Yêu cầu', to: '/rq', gradient: 'from-cyan-500 to-sky-600', shadow: 'shadow-cyan-500/20' },
-                        { icon: <MessageCircle size={17} />, label: 'Tin nhắn', to: '/chat', gradient: 'from-pink-500 to-rose-600', shadow: 'shadow-pink-500/20' },
+                        ...(isChatEnabled ? [{ icon: <MessageCircle size={17} />, label: 'Tin nhắn', to: '/chat', gradient: 'from-pink-500 to-rose-600', shadow: 'shadow-pink-500/20' }] : []),
                         { icon: <Bot size={17} />, label: 'Trợ lý AI', to: '/ai', gradient: 'from-fuchsia-500 to-purple-600', shadow: 'shadow-fuchsia-500/20' },
                         { icon: <UserIcon size={17} />, label: 'Hồ sơ', to: '/my-profile', gradient: 'from-slate-500 to-slate-700', shadow: 'shadow-slate-500/20' },
                     ].map((link, i) => (

@@ -298,16 +298,17 @@ export const safetyService = {
     filters?: SafetyIssueFilters;
     page?: number;
     pageSize?: number;
-  }): Promise<{ items: SafetyIssue[]; count: number }> {
+    includeTotal?: boolean;
+  }): Promise<{ items: SafetyIssue[]; count: number; hasNextPage: boolean }> {
     const page = params.page || 1;
     const pageSize = params.pageSize || 25;
     const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
+    const readTo = params.includeTotal ? from + pageSize - 1 : from + pageSize;
+    const baseIssueQuery = params.includeTotal
+      ? supabase.from(ISSUE_TABLE).select('*', { count: 'exact' })
+      : supabase.from(ISSUE_TABLE).select('*');
     let query = scopeQuery(
-      supabase
-        .from(ISSUE_TABLE)
-        .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false }),
+      baseIssueQuery.order('created_at', { ascending: false }),
       params.projectId,
       params.constructionSiteId,
     );
@@ -322,11 +323,18 @@ export const safetyService = {
       query = query.or(`title.ilike.%${term}%,code.ilike.%${term}%,area.ilike.%${term}%,description.ilike.%${term}%`);
     }
 
-    const { data, error, count } = await query.range(from, to);
+    const { data, error, count } = await query.range(from, readTo);
     if (error) throw error;
+    const rows = data || [];
+    const hasExtraRow = !params.includeTotal && rows.length > pageSize;
+    const pageRows = hasExtraRow ? rows.slice(0, pageSize) : rows;
+    const hasNextPage = params.includeTotal
+      ? from + pageRows.length < Number(count || 0)
+      : hasExtraRow;
     return {
-      items: await Promise.all((data || []).map(hydrateIssue)),
-      count: count || 0,
+      items: await Promise.all(pageRows.map(hydrateIssue)),
+      count: params.includeTotal ? Number(count || 0) : from + pageRows.length + (hasNextPage ? 1 : 0),
+      hasNextPage,
     };
   },
 

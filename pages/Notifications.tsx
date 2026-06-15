@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Bell, Check, CheckCheck, Clock, ExternalLink, Inbox, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { AlertTriangle, Bell, Check, CheckCheck, Clock, ExternalLink, Inbox, RefreshCw, Trash2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { AppNotification, NOTIFICATION_CATEGORIES, notificationService } from '../lib/notificationService';
+import { AppNotification, NOTIFICATION_CATEGORIES, NotificationCursor, notificationService } from '../lib/notificationService';
 import { resolveNotificationPath } from '../lib/notificationRoutes';
 import { getNotificationWorkGroup, getNotificationWorkGroupLabel, NotificationWorkGroup } from '../lib/erpWorkflow';
 import { EmptyState, FilterBar, MobileCardList, PageHeader, StatusBadge } from '../components/erp';
@@ -46,23 +46,41 @@ const Notifications: React.FC = () => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<NotificationCursor | undefined>();
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<NotificationFilter>('all');
 
-  const loadNotifications = useCallback(async () => {
+  const loadFirstPage = useCallback(async () => {
     setRefreshing(true);
     try {
-      const list = await notificationService.list(user.id, 120);
-      setNotifications(list);
+      const page = await notificationService.listPage(user.id, { limit: 50 });
+      setNotifications(page.items);
+      setNextCursor(page.nextCursor);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, [user.id]);
 
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await notificationService.listPage(user.id, { limit: 50, cursor: nextCursor });
+      setNotifications(prev => {
+        const seen = new Set(prev.map(item => item.id));
+        return [...prev, ...page.items.filter(item => !seen.has(item.id))];
+      });
+      setNextCursor(page.nextCursor);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, nextCursor, user.id]);
+
   useEffect(() => {
-    void loadNotifications();
-  }, [loadNotifications]);
+    void loadFirstPage();
+  }, [loadFirstPage]);
 
   const counts = useMemo(() => {
     return notifications.reduce<Record<string, number>>((acc, notification) => {
@@ -210,7 +228,7 @@ const Notifications: React.FC = () => {
           {
             label: refreshing ? 'Đang tải' : 'Làm mới',
             icon: <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />,
-            onClick: loadNotifications,
+            onClick: loadFirstPage,
             disabled: refreshing,
           },
           ...(counts.unread ? [{
@@ -280,6 +298,19 @@ const Notifications: React.FC = () => {
               </section>
             );
           })}
+          {nextCursor && filter === 'all' && !searchTerm.trim() && (
+            <div className="flex justify-center pt-2">
+              <button
+                type="button"
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+              >
+                <RefreshCw size={14} className={loadingMore ? 'animate-spin' : ''} />
+                {loadingMore ? 'Đang tải' : 'Tải thêm'}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

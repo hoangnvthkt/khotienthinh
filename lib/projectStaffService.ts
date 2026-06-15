@@ -395,32 +395,35 @@ export const projectStaffService = {
 
   /** Check nhanh: CT này đã setup staff chưa? */
   async hasSiteStaff(constructionSiteId: string): Promise<boolean> {
-    const { count, error } = await supabase
+    const { data, error } = await supabase
       .from(STAFF_TABLE)
-      .select('id', { count: 'exact', head: true })
+      .select('id')
       .eq('construction_site_id', constructionSiteId)
-      .is('end_date', null);
+      .is('end_date', null)
+      .limit(1);
     if (error) throw error;
-    return (count || 0) > 0;
+    return (data || []).length > 0;
   },
 
   /** Check nhanh: project này đã setup staff chưa? */
   async hasProjectStaff(projectId: string, constructionSiteId?: string): Promise<boolean> {
-    const { count, error } = await supabase
+    const { data, error } = await supabase
       .from(STAFF_TABLE)
-      .select('id', { count: 'exact', head: true })
+      .select('id')
       .eq('project_id', projectId)
-      .is('end_date', null);
+      .is('end_date', null)
+      .limit(1);
     if (error) throw error;
-    if ((count || 0) > 0) return true;
+    if ((data || []).length > 0) return true;
     if (!constructionSiteId) return false;
-    const { count: fallbackCount, error: fallbackError } = await supabase
+    const { data: fallbackData, error: fallbackError } = await supabase
       .from(STAFF_TABLE)
-      .select('id', { count: 'exact', head: true })
+      .select('id')
       .eq('construction_site_id', constructionSiteId)
-      .is('end_date', null);
+      .is('end_date', null)
+      .limit(1);
     if (fallbackError) throw fallbackError;
-    return (fallbackCount || 0) > 0;
+    return (fallbackData || []).length > 0;
   },
 
   async hasProjectPbac(projectId?: string, constructionSiteId?: string | null): Promise<boolean> {

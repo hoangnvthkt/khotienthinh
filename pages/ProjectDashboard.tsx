@@ -863,7 +863,10 @@ const ProjectDashboard: React.FC = () => {
         return rows;
     }, [projectRows, projectFilters, projectSort, projectSortAsc, projectFinances, projectTransactions, hrmConstructionSites, isAdmin, taskProgressBySite, getEffectiveContractValue]);
 
-    const projectPageCount = Math.max(1, Math.ceil(projectTotal / PROJECT_LIST_PAGE_SIZE));
+    const projectPageCount = projectHasNextPage
+        ? Math.max(projectPage + 1, Math.ceil(projectTotal / PROJECT_LIST_PAGE_SIZE))
+        : Math.max(1, Math.ceil(projectTotal / PROJECT_LIST_PAGE_SIZE));
+    const projectTotalLabel = projectHasNextPage ? `${projectTotal}+` : projectTotal.toLocaleString('vi-VN');
     const projectPageStart = projectTotal === 0 ? 0 : (projectPage - 1) * PROJECT_LIST_PAGE_SIZE + 1;
     const projectPageEnd = projectTotal === 0
         ? 0
@@ -3360,7 +3363,7 @@ const ProjectDashboard: React.FC = () => {
                     <div>
                         <h3 className="text-sm font-black text-slate-700 uppercase tracking-wider">Danh sách dự án</h3>
                         <p className="text-xs text-slate-400 mt-0.5">
-                            {projectPageStart}-{projectPageEnd} / {projectTotal} dự án theo bộ lọc • Trang {projectPage}/{projectPageCount} • {hrmConstructionSites.length} công trường HRM có thể liên kết
+                            {projectPageStart}-{projectPageEnd} / {projectTotalLabel} dự án theo bộ lọc • Trang {projectPage}/{projectPageCount} • {hrmConstructionSites.length} công trường HRM có thể liên kết
                         </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -3656,7 +3659,7 @@ const ProjectDashboard: React.FC = () => {
                         })}
                         <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                             <div className="text-xs font-bold text-slate-500">
-                                Đang xem {projectPageStart}-{projectPageEnd} trên {projectTotal} dự án
+                                Đang xem {projectPageStart}-{projectPageEnd} trên {projectTotalLabel} dự án
                             </div>
                             <div className="flex items-center justify-end gap-2">
                                 <button

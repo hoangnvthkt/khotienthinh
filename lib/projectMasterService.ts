@@ -45,6 +45,7 @@ export type ProjectListPageOptions = ProjectListOptions & {
   hidden?: 'active' | 'hidden' | 'all';
   sort?: ProjectListSortKey;
   ascending?: boolean;
+  includeTotal?: boolean;
 };
 
 export type ProjectListPage = {
@@ -242,31 +243,42 @@ export const projectMasterService = {
     const pageSize = normalizePageSize(options.pageSize);
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
+    const readTo = options.includeTotal ? to : from + pageSize;
     const buildQuery = (includePinnedOrder: boolean) => {
-      let query = supabase.from(TABLE).select('*', { count: 'exact' });
+      let query = options.includeTotal
+        ? supabase.from(TABLE).select('*', { count: 'exact' })
+        : supabase.from(TABLE).select('*');
       query = applyProjectListFilters(query, options);
       return includePinnedOrder
-        ? applyProjectListOrder(query, options).range(from, to)
-        : query.order('updated_at', { ascending: Boolean(options.ascending) }).range(from, to);
+        ? applyProjectListOrder(query, options).range(from, readTo)
+        : query.order('updated_at', { ascending: Boolean(options.ascending) }).range(from, readTo);
     };
 
     const { data, error, count } = await buildQuery(true);
     let rowsData = data || [];
-    let total = count || 0;
+    let totalCount = count || 0;
     if (error && !isMissingSchemaError(error)) throw error;
     if (error) {
       const fallback = await buildQuery(false);
       if (fallback.error) throw fallback.error;
       rowsData = fallback.data || [];
-      total = fallback.count || 0;
+      totalCount = fallback.count || 0;
     }
+    const hasExtraRow = !options.includeTotal && rowsData.length > pageSize;
+    const pageRows = hasExtraRow ? rowsData.slice(0, pageSize) : rowsData;
+    const total = options.includeTotal
+      ? Number(totalCount || 0)
+      : from + pageRows.length + (hasExtraRow ? 1 : 0);
+    const hasNextPage = options.includeTotal
+      ? from + pageRows.length < total
+      : hasExtraRow;
 
     return {
-      rows: rowsData.map(mapProject),
+      rows: pageRows.map(mapProject),
       page,
       pageSize,
       total,
-      hasNextPage: from + rowsData.length < total,
+      hasNextPage,
     };
   },
 

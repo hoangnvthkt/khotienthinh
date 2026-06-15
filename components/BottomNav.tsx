@@ -11,6 +11,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { Role } from '../types';
 import { xpService, UserXP, LEVELS } from '../lib/xpService';
+import { isChatEnabled } from '../lib/featureFlags';
 
 // === Master catalog of all available taskbar items ===
 interface NavItem {
@@ -30,7 +31,7 @@ const ICON_MAP: Record<string, React.FC<{ size?: number; strokeWidth?: number }>
   HardDrive, BookOpen, MapPin,
 };
 
-const ALL_NAV_ITEMS: NavItem[] = [
+const BASE_NAV_ITEMS: NavItem[] = [
   { key: 'HOME', to: '/', iconName: 'LayoutDashboard', label: 'Hôm nay', shortLabel: 'Home', matchPrefix: '/', color: 'text-indigo-500' },
   { key: 'NOTIFICATIONS', to: '/notifications', iconName: 'Bell', label: 'Thông báo', shortLabel: 'TB', matchPrefix: '/notifications', color: 'text-blue-500' },
   { key: 'WMS', to: '/inventory', iconName: 'Package', label: 'Vật tư', shortLabel: 'VT', matchPrefix: '/inventory|/operations|/audit|/requests|/material-code-requests|/misa-export', color: 'text-emerald-500' },
@@ -51,11 +52,18 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { key: 'AI', to: '/ai', iconName: 'Bot', label: 'Trợ lý AI', shortLabel: 'AI', matchPrefix: '/ai', color: 'text-fuchsia-500' },
 ];
 
-const DEFAULT_KEYS = ['HOME', 'WMS', 'HRM', 'DA', 'CHAT'];
+const ALL_NAV_ITEMS: NavItem[] = BASE_NAV_ITEMS.filter(item => isChatEnabled || item.key !== 'CHAT');
+const DEFAULT_KEYS = isChatEnabled ? ['HOME', 'WMS', 'HRM', 'DA', 'CHAT'] : ['HOME', 'WMS', 'HRM', 'DA', 'RQ'];
 const STORAGE_KEY = 'vioo_btm_nav';
 const STORAGE_VERSION_KEY = 'vioo_btm_nav_version';
 const CHAT_NAV_VERSION = 'chat-v1';
 const MAX_ITEMS = 5;
+
+const normalizeNavKeys = (keys: string[]) => {
+  const allowedKeys = new Set(ALL_NAV_ITEMS.map(item => item.key));
+  const normalized = keys.filter(key => allowedKeys.has(key)).slice(0, MAX_ITEMS);
+  return normalized.length >= 2 ? normalized : DEFAULT_KEYS;
+};
 
 const BottomNav: React.FC = () => {
   const { user } = useApp();
@@ -74,12 +82,16 @@ const BottomNav: React.FC = () => {
   const [enabledKeys, setEnabledKeys] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? JSON.parse(saved) : DEFAULT_KEYS;
+      return saved ? normalizeNavKeys(JSON.parse(saved)) : DEFAULT_KEYS;
     } catch { return DEFAULT_KEYS; }
   });
 
   useEffect(() => {
     try {
+      if (!isChatEnabled) {
+        setEnabledKeys(prev => normalizeNavKeys(prev));
+        return;
+      }
       if (localStorage.getItem(STORAGE_VERSION_KEY) === CHAT_NAV_VERSION) return;
       setEnabledKeys(prev => {
         localStorage.setItem(STORAGE_VERSION_KEY, CHAT_NAV_VERSION);

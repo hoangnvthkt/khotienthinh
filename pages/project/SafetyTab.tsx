@@ -58,6 +58,7 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
   const [summary, setSummary] = useState<SafetyDashboardSummary | null>(null);
   const [issues, setIssues] = useState<SafetyIssue[]>([]);
   const [issueCount, setIssueCount] = useState(0);
+  const [issueHasNextPage, setIssueHasNextPage] = useState(false);
   const [inspections, setInspections] = useState<SafetyInspection[]>([]);
   const [contractors, setContractors] = useState<SafetySubcontractor[]>([]);
   const [equipment, setEquipment] = useState<SafetyEquipment[]>([]);
@@ -92,6 +93,7 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
       const result = await safetyService.listIssues({ projectId, constructionSiteId, filters: issueFilters, page: 1, pageSize: 100 });
       setIssues(result.items);
       setIssueCount(result.count);
+      setIssueHasNextPage(result.hasNextPage);
     } catch (error: any) {
       logApiError('SafetyTab.loadIssues', error);
       toast.error('Không tải được sự cố/nguy cơ', getApiErrorMessage(error));
@@ -417,7 +419,7 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
 
       {issueCount > issues.length && view === 'issues' && (
         <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-center text-xs font-bold text-slate-500">
-          Đang hiển thị {issues.length}/{issueCount} ghi nhận mới nhất.
+          Đang hiển thị {issues.length}/{issueHasNextPage ? `${issueCount}+` : issueCount} ghi nhận mới nhất.
         </div>
       )}
     </div>
