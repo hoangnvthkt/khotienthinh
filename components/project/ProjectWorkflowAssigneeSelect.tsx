@@ -40,9 +40,81 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
     () => Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [],
     [value],
   );
+  const fixedUserId = node?.config?.assigneeUserId || null;
+  const creatorModeUserId = node?.config?.assignmentMode === 'creator' ? creatorUserId || null : null;
+  const lockedUserId = fixedUserId || creatorModeUserId;
+  const configuredUserTargetIds = useMemo(
+    () => new Set(
+      (node?.config?.assignmentTargets || [])
+        .filter(target => target.type === 'user' && target.userId)
+        .map(target => target.userId!)
+    ),
+    [node?.config?.assignmentTargets],
+  );
+  const activeUsers = useMemo(
+    () => users
+      .filter(user => user.isActive !== false)
+      .filter(user => !node?.config?.assigneeRole || user.role === node.config.assigneeRole),
+    [node?.config?.assigneeRole, users],
+  );
+  const activeEmployees = useMemo(
+    () => employees.filter(employee => employee.status === 'Đang làm việc' && employee.userId),
+    [employees],
+  );
+  const displayCandidates = useMemo(() => {
+    const byUserId = new Map<string, ProjectStaff>();
+    candidates.forEach(candidate => {
+      if (candidate.userId) byUserId.set(candidate.userId, candidate);
+    });
+
+    const shouldShowUserFallback = candidates.length === 0 || configuredUserTargetIds.size > 0;
+    if (shouldShowUserFallback) {
+      activeUsers
+        .filter(user => configuredUserTargetIds.size === 0 || configuredUserTargetIds.has(user.id))
+        .forEach((user, index) => {
+          if (byUserId.has(user.id)) return;
+          byUserId.set(user.id, {
+            id: `user-${user.id}`,
+            projectId: subject.projectId || null,
+            constructionSiteId: subject.constructionSiteId || null,
+            userId: user.id,
+            positionId: '',
+            sortOrder: index,
+            userName: user.name || user.username || user.email || user.id,
+            positionName: user.role,
+          });
+        });
+    }
+
+    selectedUserIds.forEach((userId, index) => {
+      if (byUserId.has(userId)) return;
+      const user = userById.get(userId);
+      if (!user) return;
+      byUserId.set(userId, {
+        id: `selected-${userId}`,
+        projectId: subject.projectId || null,
+        constructionSiteId: subject.constructionSiteId || null,
+        userId,
+        positionId: '',
+        sortOrder: index,
+        userName: user.name || user.username || user.email || user.id,
+        positionName: user.role,
+      });
+    });
+
+    return Array.from(byUserId.values());
+  }, [
+    activeUsers,
+    candidates,
+    configuredUserTargetIds,
+    selectedUserIds,
+    subject.constructionSiteId,
+    subject.projectId,
+    userById,
+  ]);
 
   const filteredCandidates = useMemo(() => {
-    return candidates.filter(staff => {
+    return displayCandidates.filter(staff => {
       const userName = staff.userName || userById.get(staff.userId)?.name || staff.userId || '';
       const positionName = staff.positionName || '';
       const text = `${userName} ${positionName}`.toLowerCase();
@@ -50,15 +122,7 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
         searchTerm.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       );
     });
-  }, [candidates, searchTerm, userById]);
-
-  const fixedUserId = node?.config?.assigneeUserId || null;
-  const creatorModeUserId = node?.config?.assignmentMode === 'creator' ? creatorUserId || null : null;
-  const lockedUserId = fixedUserId || creatorModeUserId;
-  const activeEmployees = useMemo(
-    () => employees.filter(employee => employee.status === 'Đang làm việc' && employee.userId),
-    [employees],
-  );
+  }, [displayCandidates, searchTerm, userById]);
   const configuredDepartmentIds = useMemo(
     () => new Set(
       (node?.config?.assignmentTargets || [])
@@ -68,8 +132,8 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
     [node?.config?.assignmentTargets],
   );
   const candidateUserIds = useMemo(
-    () => new Set(candidates.map(candidate => candidate.userId)),
-    [candidates],
+    () => new Set(displayCandidates.map(candidate => candidate.userId)),
+    [displayCandidates],
   );
   const departments = useMemo(
     () => orgUnits
@@ -207,7 +271,7 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
           <span>Danh sách ứng viên</span>
           {loading && <Loader2 size={13} className="animate-spin text-slate-300" />}
         </div>
-        {!loading && candidates.length > 0 && (
+        {!loading && displayCandidates.length > 0 && (
           <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2 bg-slate-50/30">
             <Search size={13} className="text-slate-400 shrink-0" />
             <input
@@ -253,7 +317,7 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
         </div>
       </div>
 
-      {!loading && candidates.length === 0 && (
+      {!loading && displayCandidates.length === 0 && (
         <div className="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-100 bg-amber-50 px-2 py-1.5 text-[10px] font-bold text-amber-700">
           <AlertTriangle size={12} className="mt-0.5 shrink-0" />
           Chưa có nhân sự phù hợp với cấu hình bước này.

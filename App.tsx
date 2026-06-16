@@ -344,8 +344,21 @@ const AppDataWarmup: React.FC = () => {
     }
 
     if (pathname.startsWith('/da')) {
-      setActiveRealtimeModules(['wms-core']);
-      loadModuleData('da').catch(err => console.warn('Project lazy load failed:', err));
+      setActiveRealtimeModules(['wms-core', 'admin', 'hrm']);
+      Promise.all([
+        loadModuleData('da'),
+        loadModuleData('admin'),
+        loadModuleData('hrm'),
+      ]).catch(err => console.warn('Project lazy load failed:', err));
+      return;
+    }
+
+    if (pathname.startsWith('/wf')) {
+      setActiveRealtimeModules(['admin', 'hrm']);
+      Promise.all([
+        loadModuleData('admin'),
+        loadModuleData('hrm'),
+      ]).catch(err => console.warn('Workflow people lazy load failed:', err));
       return;
     }
 
