@@ -1,5 +1,5 @@
 
-import React, { Suspense, useState, useEffect } from 'react';
+import React, { Suspense, useState, useEffect, useRef } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation, matchPath } from 'react-router-dom';
 import Layout from './components/Layout';
 import LoadingSpinner from './components/LoadingSpinner';
@@ -125,16 +125,13 @@ const TenderBoqAnalyzer = React.lazy(() => import('./pages/tender-ai/TenderBoqAn
 // Fallback mock mode (isSupabaseConfigured = false): dùng localStorage.
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [authState, setAuthState] = useState<'loading' | 'ok' | 'no'>(
-    // Khởi tạo ngay từ localStorage để tránh flash redirect khi đã login
-    !!localStorage.getItem('vioo_user') ? 'ok' : (isSupabaseConfigured ? 'loading' : 'no')
+    isSupabaseConfigured ? 'loading' : (!!localStorage.getItem('vioo_user') ? 'ok' : 'no')
   );
 
   useEffect(() => {
     if (!isSupabaseConfigured) return; // Mock mode — đã xử lý ở initialState
-    const hasCachedUser = () => Boolean(localStorage.getItem('vioo_user'));
-    const isExplicitLogout = () => {
-      const logoutAt = Number(localStorage.getItem('vioo_explicit_logout_at') || 0);
-      return logoutAt > 0 && Date.now() - logoutAt < 15000;
+    const clearCachedUser = () => {
+      localStorage.removeItem('vioo_user');
     };
 
     // Kiểm tra session hiện tại ngay khi mount
@@ -143,16 +140,23 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
       hasSavedUser: !!localStorage.getItem('vioo_user'),
     });
     supabase.auth.getSession()
-      .then(({ data: { session } }) => {
-        const useCachedUser = !session && hasCachedUser();
-        trace.finish({ hasSession: !!session, useCachedUser });
-        setAuthState(session || hasCachedUser() ? 'ok' : 'no');
+      .then(async ({ data: { session } }) => {
+        if (!session) {
+          clearCachedUser();
+          trace.finish({ hasSession: false, hasVerifiedUser: false });
+          setAuthState('no');
+          return;
+        }
+        const { data, error } = await supabase.auth.getUser();
+        if (error || !data.user) throw error || new Error('No verified Supabase user');
+        trace.finish({ hasSession: true, hasVerifiedUser: true });
+        setAuthState('ok');
       })
       .catch(error => {
-        console.warn('Supabase session check failed, keeping cached user if present:', error);
-        const useCachedUser = hasCachedUser();
-        trace.finish({ hasSession: false, useCachedUser, error: error?.message || 'getSession failed' });
-        setAuthState(hasCachedUser() ? 'ok' : 'no');
+        console.warn('Supabase session check failed, forcing login:', error);
+        clearCachedUser();
+        trace.finish({ hasSession: false, hasVerifiedUser: false, error: error?.message || 'session check failed' });
+        setAuthState('no');
       });
 
     // Lắng nghe thay đổi: logout từ tab khác, token hết hạn
@@ -161,11 +165,8 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
         setAuthState('ok');
         return;
       }
-      if (event === 'SIGNED_OUT' && isExplicitLogout()) {
-        setAuthState('no');
-        return;
-      }
-      setAuthState(hasCachedUser() ? 'ok' : 'no');
+      clearCachedUser();
+      setAuthState('no');
     });
 
     return () => subscription.unsubscribe();
@@ -337,10 +338,20 @@ const AppRoutes: React.FC = () => {
 
 const AppDataWarmup: React.FC = () => {
   const { pathname } = useLocation();
-  const { loadModuleData, setActiveRealtimeModules } = useApp();
+  const {
+    loadModuleData,
+    setActiveRealtimeModules,
+    users,
+    employees,
+    orgUnits,
+    moduleLoadedAt,
+    realtimeStatus,
+  } = useApp();
   const { refreshData: refreshWorkflowData } = useWorkflow();
   const { refreshData: refreshRequestData } = useRequest();
   const { loadChatData } = useChat();
+  const lastFocusRefreshAtRef = useRef(0);
+  const previousRealtimeStatusRef = useRef(realtimeStatus);
 
   useEffect(() => {
     if (pathname === '/login' || pathname === '/' || pathname === '/my-profile') {
@@ -372,10 +383,12 @@ const AppDataWarmup: React.FC = () => {
     }
 
     if (pathname.startsWith('/wf')) {
+      const forceAdmin = users.length <= 1;
+      const forceHrm = employees.length === 0 || orgUnits.length === 0;
       setActiveRealtimeModules(['admin', 'hrm']);
       Promise.all([
-        loadModuleData('admin'),
-        loadModuleData('hrm'),
+        loadModuleData('admin', forceAdmin),
+        loadModuleData('hrm', forceHrm),
       ]).catch(err => console.warn('Workflow people lazy load failed:', err));
       return;
     }
@@ -397,13 +410,54 @@ const AppDataWarmup: React.FC = () => {
     }
 
     setActiveRealtimeModules([]);
-  }, [pathname, loadModuleData, setActiveRealtimeModules]);
+  }, [employees.length, loadModuleData, orgUnits.length, pathname, setActiveRealtimeModules, users.length]);
 
   useEffect(() => {
     const needsWorkflowData = pathname.startsWith('/wf') || pathname === '/employee-dashboard' || pathname === '/custom-dashboard';
     if (!needsWorkflowData) return;
     refreshWorkflowData().catch(err => console.warn('Workflow warmup failed:', err));
   }, [pathname, refreshWorkflowData]);
+
+  useEffect(() => {
+    if (!pathname.startsWith('/wf')) return;
+    const refreshWorkflowScreen = () => {
+      const now = Date.now();
+      if (now - lastFocusRefreshAtRef.current < 60_000) return;
+      lastFocusRefreshAtRef.current = now;
+      Promise.all([
+        loadModuleData('admin', true),
+        loadModuleData('hrm', true),
+        refreshWorkflowData(),
+      ]).catch(err => console.warn('Workflow focus refresh failed:', err));
+    };
+    const handleFocus = () => refreshWorkflowScreen();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refreshWorkflowScreen();
+    };
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [loadModuleData, pathname, refreshWorkflowData]);
+
+  useEffect(() => {
+    if (!pathname.startsWith('/wf')) {
+      previousRealtimeStatusRef.current = realtimeStatus;
+      return;
+    }
+    const previous = previousRealtimeStatusRef.current;
+    previousRealtimeStatusRef.current = realtimeStatus;
+    if (realtimeStatus !== 'connected' || previous === 'connected') return;
+    const adminFresh = moduleLoadedAt.admin && Date.now() - moduleLoadedAt.admin < 60_000;
+    const hrmFresh = moduleLoadedAt.hrm && Date.now() - moduleLoadedAt.hrm < 60_000;
+    Promise.all([
+      loadModuleData('admin', !adminFresh),
+      loadModuleData('hrm', !hrmFresh),
+      refreshWorkflowData(),
+    ]).catch(err => console.warn('Workflow realtime recovery refresh failed:', err));
+  }, [loadModuleData, moduleLoadedAt.admin, moduleLoadedAt.hrm, pathname, realtimeStatus, refreshWorkflowData]);
 
   useEffect(() => {
     const needsRequestData = pathname.startsWith('/rq') || pathname === '/employee-dashboard' || pathname === '/custom-dashboard';

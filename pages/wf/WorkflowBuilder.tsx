@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
@@ -148,7 +148,7 @@ const WorkflowBuilder: React.FC = () => {
     const { id: templateId } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { templates, getTemplateNodes, getTemplateEdges, updateTemplate, uploadPrintTemplate, deletePrintTemplate, getPrintTemplates, refreshData } = useWorkflow();
-    const { users, orgUnits, user } = useApp();
+    const { users, orgUnits, user, loadModuleData, moduleLoadState, moduleLoadErrors } = useApp();
     const { canManage } = usePermission();
 
     const template = templates.find(t => t.id === templateId);
@@ -163,6 +163,7 @@ const WorkflowBuilder: React.FC = () => {
     const [hasChanges, setHasChanges] = useState(false);
     const [editingStepId, setEditingStepId] = useState<string | null>(null);
     const [stepConfigTabs, setStepConfigTabs] = useState<Record<string, 'info' | 'assignee' | 'watchers' | 'actions'>>({});
+    const lastPeopleReloadKeyRef = useRef('');
 
     // Drag and drop state for steps
     const [dragStepId, setDragStepId] = useState<string | null>(null);
@@ -194,6 +195,54 @@ const WorkflowBuilder: React.FC = () => {
             setCustomFields(template.customFields || []);
         }
     }, [template]);
+
+    const selectedWorkflowUserIds = useMemo(() => {
+        const ids = new Set<string>();
+        template?.managers?.forEach(id => ids.add(id));
+        template?.defaultWatchers?.forEach(id => ids.add(id));
+        localNodes.forEach(node => {
+            if (node.config?.assigneeUserId) ids.add(node.config.assigneeUserId);
+            (node.config?.assignmentTargets || []).forEach((target: WorkflowAssignmentTarget) => {
+                if (target.type === 'user' && target.userId) ids.add(target.userId);
+            });
+            (node.config?.stepWatcherTargets || []).forEach((target: WorkflowAssignmentTarget) => {
+                if (target.type === 'user' && target.userId) ids.add(target.userId);
+            });
+        });
+        return Array.from(ids).filter(Boolean);
+    }, [localNodes, template?.defaultWatchers, template?.managers]);
+
+    const missingSelectedUserIds = useMemo(() => {
+        const loadedUserIds = new Set(users.map(item => item.id));
+        return selectedWorkflowUserIds.filter(id => !loadedUserIds.has(id));
+    }, [selectedWorkflowUserIds, users]);
+
+    const peopleHydrationStale = users.length <= 1 || missingSelectedUserIds.length > 0;
+    const peopleHydrationLoading = moduleLoadState.admin === 'loading' || moduleLoadState.hrm === 'loading';
+    const peopleHydrationError = moduleLoadErrors.admin || moduleLoadErrors.hrm || null;
+
+    useEffect(() => {
+        if (!templateId || !peopleHydrationStale || peopleHydrationLoading) return;
+        const reloadKey = `${users.length <= 1 ? 'few-users' : ''}|${[...missingSelectedUserIds].sort().join('|')}`;
+        if (lastPeopleReloadKeyRef.current === reloadKey) return;
+        lastPeopleReloadKeyRef.current = reloadKey;
+        Promise.all([
+            loadModuleData('admin', true),
+            loadModuleData('hrm', orgUnits.length === 0),
+        ]).catch(error => {
+            console.warn('Workflow people reload failed:', error);
+        });
+    }, [loadModuleData, missingSelectedUserIds, orgUnits.length, peopleHydrationLoading, peopleHydrationStale, templateId, users.length]);
+
+    const retryPeopleHydration = () => {
+        lastPeopleReloadKeyRef.current = '';
+        Promise.all([
+            loadModuleData('admin', true),
+            loadModuleData('hrm', true),
+        ]).catch(error => {
+            console.warn('Workflow people retry failed:', error);
+        });
+    };
 
     useEffect(() => {
         let alive = true;
@@ -564,6 +613,32 @@ const WorkflowBuilder: React.FC = () => {
                     </button>
                 </div>
             </div>
+
+            {(peopleHydrationLoading || peopleHydrationError || peopleHydrationStale) && (
+                <div className={`rounded-xl border px-4 py-3 text-xs font-bold ${
+                    peopleHydrationError
+                        ? 'border-rose-200 bg-rose-50 text-rose-700'
+                        : 'border-indigo-100 bg-indigo-50 text-indigo-700'
+                }`}>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            {peopleHydrationLoading
+                                ? 'Đang đồng bộ danh sách người dùng và phòng ban...'
+                                : peopleHydrationError
+                                    ? `Không tải được danh sách người: ${peopleHydrationError}`
+                                    : 'Danh sách người trên máy này chưa đầy đủ, hệ thống đang tải lại dữ liệu mới nhất.'}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={retryPeopleHydration}
+                            disabled={peopleHydrationLoading}
+                            className="rounded-lg border border-white/70 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                        >
+                            {peopleHydrationLoading ? 'Đang tải...' : 'Tải lại'}
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div className="glass-card rounded-xl p-4">

@@ -87,6 +87,15 @@ const userToDbPayload = (data: User) => {
 };
 
 export type AppModule = 'wms' | 'wms-core' | 'hrm' | 'da' | 'ts' | 'ex' | 'admin';
+export type ModuleLoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
+
+const APP_MODULES: AppModule[] = ['wms', 'wms-core', 'hrm', 'da', 'ts', 'ex', 'admin'];
+
+const createModuleLoadState = (status: ModuleLoadStatus = 'idle') =>
+  APP_MODULES.reduce((acc, module) => {
+    acc[module] = status;
+    return acc;
+  }, {} as Record<AppModule, ModuleLoadStatus>);
 
 const BASE_REALTIME_TABLES = ['app_settings'] as const;
 
@@ -236,6 +245,9 @@ interface AppContextType {
   }) => Promise<AssetTransfer | null>;
   isModuleAdmin: (moduleKey: string) => boolean;
   loadModuleData: (module: AppModule, force?: boolean) => Promise<void>;
+  moduleLoadState: Record<AppModule, ModuleLoadStatus>;
+  moduleLoadedAt: Partial<Record<AppModule, number>>;
+  moduleLoadErrors: Partial<Record<AppModule, string>>;
   setActiveRealtimeModules: (modules: AppModule[]) => void;
   refreshWmsRecords: (options: WmsRecordRefreshOptions) => Promise<void>;
   isLoading: boolean;
@@ -430,9 +442,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [systemSlowMessage, setSystemSlowMessage] = useState<string | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('disconnected');
   const [lastRealtimeEvent, setLastRealtimeEvent] = useState<number>(0);
+  const [moduleLoadState, setModuleLoadState] = useState<Record<AppModule, ModuleLoadStatus>>(() => createModuleLoadState());
+  const [moduleLoadedAt, setModuleLoadedAt] = useState<Partial<Record<AppModule, number>>>({});
+  const [moduleLoadErrors, setModuleLoadErrors] = useState<Partial<Record<AppModule, string>>>({});
   const loadedModulesRef = useRef<Set<string>>(new Set());
+  const inflightModuleLoadsRef = useRef<Partial<Record<AppModule, Promise<void>>>>({});
   const realtimeTablesRef = useRef<Set<string>>(new Set());
   const slowMessageTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const setModuleStatus = useCallback((module: AppModule, status: ModuleLoadStatus, error?: string) => {
+    setModuleLoadState(prev => ({ ...prev, [module]: status }));
+    setModuleLoadErrors(prev => {
+      const next = { ...prev };
+      if (error) next[module] = error;
+      else delete next[module];
+      return next;
+    });
+    if (status === 'loaded') {
+      setModuleLoadedAt(prev => ({ ...prev, [module]: Date.now() }));
+    }
+  }, []);
+
+  const markModuleLoaded = useCallback((module: AppModule) => {
+    loadedModulesRef.current.add(module);
+    setModuleStatus(module, 'loaded');
+  }, [setModuleStatus]);
+
+  const resetModuleLoadCache = useCallback(() => {
+    loadedModulesRef.current.clear();
+    inflightModuleLoadsRef.current = {};
+    setModuleLoadState(createModuleLoadState());
+    setModuleLoadedAt({});
+    setModuleLoadErrors({});
+  }, []);
 
   const clearSystemSlowMessageSoon = useCallback((delay = 1200) => {
     if (slowMessageTimeoutRef.current) clearTimeout(slowMessageTimeoutRef.current);
@@ -787,6 +829,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [setActiveRealtimeModules]);
 
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED' || event === 'SIGNED_OUT') {
+        resetModuleLoadCache();
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [resetModuleLoadCache]);
+
   // ==================== LAZY MODULE DATA LOADING ====================
   const fetchTableHelper = async (table: string, query: any = supabase.from(table).select('*')) => {
     try {
@@ -839,21 +891,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
+  const requireModuleData = <T,>(module: AppModule, label: string, data: T | null | undefined): T => {
+    if (data === null || data === undefined) {
+      throw new Error(`Không tải được dữ liệu bắt buộc "${label}" cho module ${module}.`);
+    }
+    return data;
+  };
+
   const loadModuleData = useCallback(async (module: AppModule, force = false) => {
     if (!isSupabaseConfigured) return;
     if (!force && (loadedModulesRef.current.has(module) || (module === 'wms-core' && loadedModulesRef.current.has('wms')))) return;
-    loadedModulesRef.current.add(module);
+    const existingLoad = inflightModuleLoadsRef.current[module];
+    if (existingLoad) return existingLoad;
 
-    try {
+    const loadTask = (async () => {
+      setModuleStatus(module, 'loading');
+      loadedModulesRef.current.delete(module);
+      try {
       const loadWmsCoreData = async () => {
         const [itemsData, whData, reqData] = await Promise.all([
           fetchAllInventoryItemRows(),
           fetchTableHelper('warehouses'),
           fetchTableHelper('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
         ]);
-        if (itemsData) setItems(itemsData.map(mapInventoryItemFromDb));
-        if (whData) setWarehouses(whData.map((w: any) => ({ ...w, isArchived: w.is_archived })));
-        if (reqData) setRequests(reqData.map(mapMaterialRequestFromDb));
+        setItems(requireModuleData(module, 'items', itemsData).map(mapInventoryItemFromDb));
+        setWarehouses(requireModuleData(module, 'warehouses', whData).map((w: any) => ({ ...w, isArchived: w.is_archived })));
+        setRequests(requireModuleData(module, 'requests', reqData).map(mapMaterialRequestFromDb));
       };
 
       if (module === 'admin') {
@@ -863,8 +926,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTableHelper('user_signatures'),
         ]);
         if (settingsData) setAppSettings(settingsData);
-        if (usersData && usersData.length > 0) {
-          const mappedUsers = usersData.map(mapUserFromDb);
+        const requiredUsers = requireModuleData(module, 'users', usersData);
+        if (requiredUsers.length === 0) {
+          throw new Error('Danh sách người dùng đang trống bất thường.');
+        }
+        {
+          const mappedUsers = requiredUsers.map(mapUserFromDb);
           if (sigData && sigData.length > 0) {
             const sigMap = new Map<string, string>();
             for (const sig of sigData) {
@@ -895,11 +962,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTableHelper('loss_norms'),
           fetchTableHelper('audit_sessions', supabase.from('audit_sessions').select('*').order('date', { ascending: false })),
         ]);
-        if (itemsData) setItems(itemsData.map(mapInventoryItemFromDb));
-        if (whData) setWarehouses(whData.map((w: any) => ({ ...w, isArchived: w.is_archived })));
+        setItems(requireModuleData(module, 'items', itemsData).map(mapInventoryItemFromDb));
+        setWarehouses(requireModuleData(module, 'warehouses', whData).map((w: any) => ({ ...w, isArchived: w.is_archived })));
         if (supData) setSuppliers(supData.map((s: any) => ({ ...s, contactPerson: s.contact_person })));
-        if (txData) setTransactions(txData.map(mapTransactionFromDb));
-        if (reqData) setRequests(reqData.map(mapMaterialRequestFromDb));
+        setTransactions(requireModuleData(module, 'transactions', txData).map(mapTransactionFromDb));
+        setRequests(requireModuleData(module, 'requests', reqData).map(mapMaterialRequestFromDb));
         setActivities(actPage.items);
         if (catData) setCategories(catData);
         if (unitData) setUnits(unitData);
@@ -914,7 +981,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           createdAt: n.created_at,
         })));
         if (auditSessionsData) setAuditSessions(auditSessionsData);
-        loadedModulesRef.current.add('wms-core');
+        markModuleLoaded('wms-core');
       } else if (module === 'hrm') {
         const [
           empData, areasData, officesData, empTypesData, positionsData, salaryData, schedulesData, constructionSitesData, orgUnitsData,
@@ -940,8 +1007,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchTableHelper('hrm_shift_types'),
           fetchTableHelper('hrm_employee_shifts'),
         ]);
-        if (empData) {
-          setEmployees(empData.map((e: any) => ({
+        {
+          const requiredEmployees = requireModuleData(module, 'employees', empData);
+          setEmployees(requiredEmployees.map((e: any) => ({
             id: e.id,
             employeeCode: e.employee_code,
             fullName: e.full_name,
@@ -986,8 +1054,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           createdAt: s.created_at,
         })));
         if (constructionSitesData) setHrmConstructionSites(constructionSitesData);
-        if (orgUnitsData) {
-          const units = orgUnitsData.map((u: any) => ({
+        {
+          const requiredOrgUnits = requireModuleData(module, 'org_units', orgUnitsData);
+          const units = requiredOrgUnits.map((u: any) => ({
             id: u.id,
             name: u.name,
             type: u.type,
@@ -1123,11 +1192,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (budgetEntData) setBudgetEntries(budgetEntData);
         if (expRecData) setExpenseRecords(expRecData);
       }
-    } catch (error) {
-      console.error(`Error lazy-loading module "${module}":`, error);
-      loadedModulesRef.current.delete(module); // Allow retry on error
-    }
-  }, [user.authId, user.email]);
+
+      markModuleLoaded(module);
+      } catch (error: any) {
+        const message = error?.message || `Không tải được dữ liệu module ${module}.`;
+        console.error(`Error lazy-loading module "${module}":`, error);
+        loadedModulesRef.current.delete(module);
+        setModuleStatus(module, 'error', message);
+        throw error;
+      } finally {
+        delete inflightModuleLoadsRef.current[module];
+      }
+    })();
+
+    inflightModuleLoadsRef.current[module] = loadTask;
+    return loadTask;
+  }, [markModuleLoaded, setModuleStatus, user.authId, user.email]);
 
   // Helper to sync a single table to Supabase
   const syncToSupabase = async (table: string, data: any, throwOnError = false): Promise<boolean> => {
@@ -1382,6 +1462,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const { avatar, ...userForStorage } = mappedUser;
         localStorage.setItem('vioo_user', JSON.stringify(userForStorage));
         localStorage.removeItem('vioo_explicit_logout_at');
+        resetModuleLoadCache();
         trace.endStep('map user + localStorage');
         success = true;
         return mappedUser;
@@ -1408,12 +1489,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const logout = () => {
     localStorage.setItem('vioo_explicit_logout_at', String(Date.now()));
     localStorage.removeItem('vioo_user');
+    resetModuleLoadCache();
     supabase.auth.signOut().catch(err => console.warn('Supabase signOut failed:', err));
     // We don't set user to null because the app expects a user object. 
     // We'll handle redirection in App.tsx
   };
 
   const switchUser = (newUser: User) => {
+    resetModuleLoadCache();
     setIsRefreshing(true);
     setTimeout(() => {
       setUser(newUser);
@@ -3219,7 +3302,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       assets, assetCategories, assetAssignments, assetMaintenances, assetLocationStocks, assetTransfers,
       addAsset, addAssetWithInitialStock, updateAsset, removeAsset, addAssetCategory, updateAssetCategory, removeAssetCategory,
       addAssetAssignment, addAssetMaintenance, updateAssetMaintenance, addAssetTransfer, transferAssetStock,
-      isModuleAdmin, loadModuleData, setActiveRealtimeModules, refreshWmsRecords,
+      isModuleAdmin, loadModuleData, moduleLoadState, moduleLoadedAt, moduleLoadErrors, setActiveRealtimeModules, refreshWmsRecords,
       saveSignature, deleteSignature,
       login, logout, isLoading, isRefreshing, connectionError, systemSlowMessage, realtimeStatus, lastRealtimeEvent
     }}>
