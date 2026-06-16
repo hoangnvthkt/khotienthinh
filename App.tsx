@@ -56,6 +56,7 @@ const BudgetDashboard = React.lazy(() => import('./pages/expense/BudgetDashboard
 
 // Workflow pages
 const WorkflowInstances = React.lazy(() => import('./pages/wf/WorkflowInstances'));
+const WorkflowInstanceDetail = React.lazy(() => import('./pages/wf/WorkflowInstanceDetail'));
 const WorkflowTemplates = React.lazy(() => import('./pages/wf/WorkflowTemplates'));
 const WorkflowBuilder = React.lazy(() => import('./pages/wf/WorkflowBuilder'));
 const WorkflowDashboard = React.lazy(() => import('./pages/wf/WorkflowDashboard'));
@@ -268,6 +269,7 @@ const AppRoutes: React.FC = () => {
           <Route path="audit" element={<Audit />} />
           <Route path="reports" element={<Reports />} />
           <Route path="wf" element={<WorkflowInstances />} />
+          <Route path="wf/instances/:id" element={<WorkflowInstanceDetail />} />
           <Route path="wf/dashboard" element={<WorkflowDashboard />} />
           <Route path="wf/templates" element={<WorkflowTemplates />} />
           <Route path="wf/builder/:id" element={<WorkflowBuilder />} />

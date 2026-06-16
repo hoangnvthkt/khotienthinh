@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
 import {
@@ -22,6 +22,8 @@ import { saveAs } from 'file-saver';
 import { supabase } from '../../lib/supabase';
 import { useCelebration } from '../../components/Celebration';
 import { loadXlsx } from '../../lib/loadXlsx';
+import { isWorkflowStepAssignedToUser } from '../../lib/workflowAssignmentResolver';
+import { canSeeMaterialRequestWorkflowOnKanban, isMaterialRequestWorkflowTemplate } from '../../lib/workflowVisibility';
 
 const STATUS_MAP: Record<WorkflowInstanceStatus, { label: string; color: string; icon: any }> = {
     RUNNING: { label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300', icon: Clock },
@@ -504,8 +506,9 @@ const FileFieldInput: React.FC<{
 
 const WorkflowInstances: React.FC = () => {
     const location = useLocation();
+    const navigate = useNavigate();
     const { templates, instances, nodes, edges, logs, createInstance, loadInstanceFormData, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates, updateInstanceWatchers } = useWorkflow();
-    const { user, users } = useApp();
+    const { user, users, employees, orgUnits } = useApp();
     const { celebrate, showToast: celebrationToast } = useCelebration();
     const [activeTab, setActiveTab] = useState<'mine' | 'pending' | 'watching'>('mine');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
@@ -555,6 +558,28 @@ const WorkflowInstances: React.FC = () => {
     const [stepExcelData, setStepExcelData] = useState<{ sheets: Record<string, any[][]>; sheetNames: string[] } | null>(null);
 
     const activeTemplates = templates.filter(t => t.isActive);
+    const nonMaterialActiveTemplates = activeTemplates.filter(t => !isMaterialRequestWorkflowTemplate(t));
+    const boardTemplates = activeTemplates.filter(t =>
+        !isMaterialRequestWorkflowTemplate(t) || canSeeMaterialRequestWorkflowOnKanban(user)
+    );
+    const templateById = useMemo(() => new Map(templates.map(t => [t.id, t])), [templates]);
+    const isMaterialWorkflowInstance = useCallback(
+        (instance: WorkflowInstance) => isMaterialRequestWorkflowTemplate(templateById.get(instance.templateId)),
+        [templateById],
+    );
+    const visibleListInstances = useMemo(
+        () => instances.filter(instance => !isMaterialWorkflowInstance(instance)),
+        [instances, isMaterialWorkflowInstance],
+    );
+    const visibleBoardInstances = useMemo(
+        () => canSeeMaterialRequestWorkflowOnKanban(user) ? instances : visibleListInstances,
+        [instances, user, visibleListInstances],
+    );
+    useEffect(() => {
+        if (boardTemplateId && !boardTemplates.some(template => template.id === boardTemplateId)) {
+            setBoardTemplateId('');
+        }
+    }, [boardTemplateId, boardTemplates]);
     const getEffectiveAssigneeUserId = useCallback((instance: WorkflowInstance, node?: { id: string; config: any } | null) => {
         if (!node) return undefined;
         return instance.stepAssignees?.[node.id] || node.config.assigneeUserId;
@@ -562,7 +587,7 @@ const WorkflowInstances: React.FC = () => {
 
     // Filter instances based on active tab
     const filteredInstances = useMemo(() => {
-        let list = instances;
+        let list = visibleListInstances;
 
         if (activeTab === 'mine') {
             list = list.filter(i => i.createdBy === user.id);
@@ -580,8 +605,7 @@ const WorkflowInstances: React.FC = () => {
                 if (i.status !== WorkflowInstanceStatus.RUNNING || !i.currentNodeId) return false;
                 const currentNode = nodes.find(n => n.id === i.currentNodeId);
                 if (!currentNode) return false;
-                if (getEffectiveAssigneeUserId(i, currentNode) === user.id) return true;
-                if (currentNode.config.assigneeRole === user.role) return true;
+                if (isWorkflowStepAssignedToUser(i, currentNode, user)) return true;
                 if (user.role === Role.ADMIN) return true; // admin sees all
                 // Managers can also see pending instances for their templates
                 const tmpl = templates.find(t => t.id === i.templateId);
@@ -599,7 +623,7 @@ const WorkflowInstances: React.FC = () => {
         }
 
         return list;
-    }, [instances, activeTab, filterStatus, searchTerm, user, nodes, templates, getEffectiveAssigneeUserId]);
+    }, [visibleListInstances, activeTab, filterStatus, searchTerm, user, nodes, templates]);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -977,8 +1001,7 @@ const WorkflowInstances: React.FC = () => {
         // Managers can act on all instances of their templates
         const tmpl = templates.find(t => t.id === instance.templateId);
         if (tmpl?.managers?.includes(user.id)) return true;
-        if (getEffectiveAssigneeUserId(instance, currentNode) === user.id) return true;
-        if (currentNode.config.assigneeRole === user.role) return true;
+        if (isWorkflowStepAssignedToUser(instance, currentNode, user)) return true;
         // Allow creator to act on first step after REVISION_REQUESTED
         if (instance.createdBy === user.id) {
             const templateEdgesLocal = edges.filter(e => e.templateId === instance.templateId);
@@ -1145,7 +1168,7 @@ const WorkflowInstances: React.FC = () => {
                     </div>
                     <button
                         onClick={() => setShowCreateModal(true)}
-                        disabled={activeTemplates.length === 0}
+                        disabled={nonMaterialActiveTemplates.length === 0}
                         className="flex items-center px-4 py-2.5 bg-accent text-white rounded-xl hover:bg-emerald-600 transition font-bold shadow-lg shadow-emerald-500/20 disabled:opacity-50"
                     >
                         <Plus size={18} className="mr-2" /> Tạo phiếu mới
@@ -1167,25 +1190,9 @@ const WorkflowInstances: React.FC = () => {
                         className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${activeTab === 'pending' ? 'bg-amber-500 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}
                     >
                         <Inbox size={13} /> Chờ tôi duyệt
-                        {instances.filter(i => {
-                            if (i.status !== WorkflowInstanceStatus.RUNNING || !i.currentNodeId) return false;
-                            const cn = nodes.find(n => n.id === i.currentNodeId);
-                            if (!cn) return false;
-                            if (user.role === Role.ADMIN || getEffectiveAssigneeUserId(i, cn) === user.id || cn.config.assigneeRole === user.role) return true;
-                            const tmpl = templates.find(t => t.id === i.templateId);
-                            if (tmpl?.managers?.includes(user.id)) return true;
-                            return false;
-                        }).length > 0 && (
+                        {visibleListInstances.filter(canActOnInstance).length > 0 && (
                                 <span className="bg-white/30 px-1.5 py-0.5 rounded-full text-[10px]">
-                                    {instances.filter(i => {
-                                        if (i.status !== WorkflowInstanceStatus.RUNNING || !i.currentNodeId) return false;
-                                        const cn = nodes.find(n => n.id === i.currentNodeId);
-                                        if (!cn) return false;
-                                        if (user.role === Role.ADMIN || getEffectiveAssigneeUserId(i, cn) === user.id || cn.config.assigneeRole === user.role) return true;
-                                        const tmpl = templates.find(t => t.id === i.templateId);
-                                        if (tmpl?.managers?.includes(user.id)) return true;
-                                        return false;
-                                    }).length}
+                                    {visibleListInstances.filter(canActOnInstance).length}
                                 </span>
                             )}
                     </button>
@@ -1195,9 +1202,9 @@ const WorkflowInstances: React.FC = () => {
                     >
                         <Eye size={13} /> Theo dõi
                         {(() => {
-                            const count = instances.filter(i => {
+                            const count = visibleListInstances.filter(i => {
                                 if (i.watchers?.includes(user.id)) return true;
-                                const tmpl = templates.find(t => t.id === i.templateId);
+                                const tmpl = templateById.get(i.templateId);
                                 return tmpl?.defaultWatchers?.includes(user.id) || false;
                             }).length;
                             return count > 0 ? (
@@ -1241,7 +1248,7 @@ const WorkflowInstances: React.FC = () => {
                     <div className="glass-card p-4 rounded-xl">
                         <label className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 block">Chọn quy trình để xem bảng:</label>
                         <div className="flex flex-wrap gap-2">
-                            {activeTemplates.map(t => (
+                            {boardTemplates.map(t => (
                                 <button
                                     key={t.id}
                                     onClick={() => setBoardTemplateId(t.id)}
@@ -1252,7 +1259,7 @@ const WorkflowInstances: React.FC = () => {
                                 >
                                     <GitBranch size={12} /> {t.name}
                                     <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full">
-                                        {instances.filter(i => i.templateId === t.id && i.status === 'RUNNING').length}
+                                        {visibleBoardInstances.filter(i => i.templateId === t.id && i.status === 'RUNNING').length}
                                     </span>
                                 </button>
                             ))}
@@ -1262,13 +1269,15 @@ const WorkflowInstances: React.FC = () => {
                     {boardTemplateId ? (
                         <KanbanBoard
                             templateId={boardTemplateId}
-                            instances={instances}
+                            instances={visibleBoardInstances}
+                            employees={employees}
+                            orgUnits={orgUnits}
                             onCardClick={async (instance) => {
-                                setBoardDetailInstanceId(instance.id);
                                 await ensureInstanceFormData(instance);
+                                navigate(`/wf/instances/${instance.id}`);
                             }}
-                            onDragComplete={async (instanceId, action, comment, assigneeId) => {
-                                const ok = await processInstance(instanceId, action, user.id, comment, assigneeId);
+                            onDragComplete={async (instanceId, action, comment, assigneeIds) => {
+                                const ok = await processInstance(instanceId, action, user.id, comment, assigneeIds);
                                 if (!ok) showToast('error', 'Không xử lý được phiếu.');
                             }}
                         />
@@ -1646,7 +1655,7 @@ const WorkflowInstances: React.FC = () => {
                             {/* Header Row */}
                             <div
                                 className="p-4 cursor-pointer hover:bg-white/30 dark:hover:bg-slate-700/30 transition"
-                                onClick={() => handleToggleExpand(instance)}
+                                onClick={() => navigate(`/wf/instances/${instance.id}`)}
                             >
                                 <div className="flex items-start md:items-center justify-between gap-3">
                                     <div className="flex-1 min-w-0">
@@ -2184,7 +2193,7 @@ const WorkflowInstances: React.FC = () => {
                                     className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm"
                                 >
                                     <option value="">-- Chọn quy trình --</option>
-                                    {activeTemplates.map(t => (
+                                    {nonMaterialActiveTemplates.map(t => (
                                         <option key={t.id} value={t.id}>{t.name}</option>
                                     ))}
                                 </select>

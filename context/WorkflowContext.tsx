@@ -10,6 +10,7 @@ import {
 import { notificationService } from '../lib/notificationService';
 import { auditService } from '../lib/auditService';
 import { xpService } from '../lib/xpService';
+import { normalizeStepAssigneeIds } from '../lib/workflowAssignmentResolver';
 
 interface WorkflowContextType {
     templates: WorkflowTemplate[];
@@ -36,7 +37,7 @@ interface WorkflowContextType {
     updateInstance: (instanceId: string, updates: { title?: string; formData?: Record<string, any> }) => Promise<boolean>;
     deleteInstance: (instanceId: string) => Promise<boolean>;
     cancelInstance: (instanceId: string, userId: string) => Promise<boolean>;
-    processInstance: (instanceId: string, action: WorkflowInstanceAction, userId: string, comment?: string, nextAssigneeUserId?: string) => Promise<boolean>;
+    processInstance: (instanceId: string, action: WorkflowInstanceAction, userId: string, comment?: string, nextAssigneeUserIds?: string | string[]) => Promise<boolean>;
     reopenInstance: (instanceId: string, targetNodeId: string, userId: string, comment?: string) => Promise<boolean>;
     getInstanceLogs: (instanceId: string) => WorkflowInstanceLog[];
     updateInstanceWatchers: (instanceId: string, watchers: string[]) => Promise<boolean>;
@@ -510,8 +511,9 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         action: WorkflowInstanceAction,
         userId: string,
         comment: string = '',
-        nextAssigneeUserId?: string,
+        nextAssigneeUserIds?: string | string[],
     ): Promise<boolean> => {
+        const normalizedNextAssigneeIds = normalizeStepAssigneeIds(nextAssigneeUserIds);
         // IMPORTANT: Fetch fresh data from DB to avoid stale React state closure issues
         const { data: freshInstance } = await supabase
             .from('workflow_instances')
@@ -530,13 +532,27 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const nodesRes = await supabase.from('workflow_nodes').select('*').eq('template_id', templateId);
         const templateNodes = (nodesRes.data || []).map(mapNodeFromDB);
 
-        const { data: processedData, error: processError } = await supabase.rpc('process_workflow_instance_fast', {
+        let { data: processedData, error: processError } = await supabase.rpc('process_workflow_instance_fast', {
             p_instance_id: instanceId,
             p_action: action,
             p_user_id: userId,
             p_comment: comment,
-            p_next_assignee_user_id: nextAssigneeUserId || null,
+            p_next_assignee_user_ids: normalizedNextAssigneeIds,
         });
+        if (processError && (
+            processError.code === 'PGRST202' ||
+            String(processError.message || '').includes('p_next_assignee_user_ids')
+        )) {
+            const fallback = await supabase.rpc('process_workflow_instance_fast', {
+                p_instance_id: instanceId,
+                p_action: action,
+                p_user_id: userId,
+                p_comment: comment,
+                p_next_assignee_user_id: normalizedNextAssigneeIds[0] || null,
+            });
+            processedData = fallback.data;
+            processError = fallback.error;
+        }
         if (processError) {
             console.error('processInstance RPC error:', processError);
             return false;
@@ -636,7 +652,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                     const nextNode = templateNodes.find(n => n.id === nextInstance.currentNodeId);
                     if (nextNode && nextNode.type !== WorkflowNodeType.END) {
                         const recipientIds = await getWorkflowNodeRecipientIds(nextNode, nextInstance.stepAssignees);
-                        const nextRoute = workflowNotificationFields({ instanceId, nodeId: nextNode.id, assignedUserId: nextAssigneeUserId || undefined });
+                        const nextRoute = workflowNotificationFields({ instanceId, nodeId: nextNode.id, assignedUserIds: normalizedNextAssigneeIds });
                         await notifyWorkflowUsers({
                             recipientIds,
                             actorId: userId,

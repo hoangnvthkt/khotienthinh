@@ -3,13 +3,18 @@ import { useWorkflow } from '../context/WorkflowContext';
 import { useApp } from '../context/AppContext';
 import {
     WorkflowInstance, WorkflowInstanceStatus, WorkflowInstanceAction,
-    WorkflowNodeType, Role, WorkflowNode
+    WorkflowNodeType, Role, WorkflowNode, Employee, OrgUnit
 } from '../types';
 import {
     Clock, CheckCircle, XCircle, User, GripVertical,
     ChevronRight, AlertCircle, MessageSquare, Paperclip,
     FileText, Hash, Calendar, ArrowRight, Eye
 } from 'lucide-react';
+import {
+    getWorkflowStepSelectionMode,
+    isWorkflowStepAssignedToUser,
+    resolveWorkflowStepAssigneeCandidates,
+} from '../lib/workflowAssignmentResolver';
 
 const STATUS_COLORS: Record<WorkflowInstanceStatus, string> = {
     RUNNING: 'border-l-blue-500',
@@ -28,11 +33,13 @@ const STATUS_DOT: Record<WorkflowInstanceStatus, string> = {
 interface KanbanBoardProps {
     templateId: string;
     instances: WorkflowInstance[];
+    employees?: Employee[];
+    orgUnits?: OrgUnit[];
     onCardClick: (instance: WorkflowInstance) => void;
-    onDragComplete: (instanceId: string, action: WorkflowInstanceAction, comment: string, assigneeId?: string) => void;
+    onDragComplete: (instanceId: string, action: WorkflowInstanceAction, comment: string, assigneeIds?: string[]) => void;
 }
 
-const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, onCardClick, onDragComplete }) => {
+const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employees = [], orgUnits = [], onCardClick, onDragComplete }) => {
     const { nodes, edges, logs, getInstanceLogs, processInstance, reopenInstance } = useWorkflow();
     const { user, users } = useApp();
 
@@ -40,7 +47,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, onCard
     const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
     const [showConfirmDrag, setShowConfirmDrag] = useState<{ instanceId: string; targetNodeId: string; action: WorkflowInstanceAction; isReopen?: boolean } | null>(null);
     const [dragComment, setDragComment] = useState('');
-    const [dragAssigneeId, setDragAssigneeId] = useState<string>('');
+    const [dragAssigneeIds, setDragAssigneeIds] = useState<string[]>([]);
 
     // Build ordered columns from template nodes
     const orderedColumns = useMemo(() => {
@@ -184,10 +191,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, onCard
 
         // Check permission
         const currentNode = orderedColumns[currentIdx];
-        const effectiveAssigneeUserId = instance.stepAssignees?.[currentNode.id] || currentNode.config.assigneeUserId;
-        const canAct = user.role === Role.ADMIN ||
-            effectiveAssigneeUserId === user.id ||
-            currentNode.config.assigneeRole === user.role;
+        const canAct = user.role === Role.ADMIN || isWorkflowStepAssignedToUser(instance, currentNode, user);
 
         if (!canAct) return;
 
@@ -201,11 +205,11 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, onCard
             // Reopen the instance to the target node
             await reopenInstance(showConfirmDrag.instanceId, showConfirmDrag.targetNodeId, user.id, dragComment || 'Mở lại từ Kanban board');
         } else {
-            await onDragComplete(showConfirmDrag.instanceId, showConfirmDrag.action, dragComment, dragAssigneeId || undefined);
+            await onDragComplete(showConfirmDrag.instanceId, showConfirmDrag.action, dragComment, dragAssigneeIds);
         }
         setShowConfirmDrag(null);
         setDragComment('');
-        setDragAssigneeId('');
+        setDragAssigneeIds([]);
     };
 
     const getUserName = (userId: string) => users.find(u => u.id === userId)?.name || 'N/A';
@@ -257,6 +261,47 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, onCard
         }
         return true;
     });
+
+    const dragTargetNode = useMemo(() => {
+        if (!showConfirmDrag) return null;
+        return orderedColumns.find(c => c.id === showConfirmDrag.targetNodeId) || null;
+    }, [orderedColumns, showConfirmDrag]);
+
+    const dragTargetInstance = useMemo(() => {
+        if (!showConfirmDrag) return null;
+        return instances.find(i => i.id === showConfirmDrag.instanceId) || null;
+    }, [instances, showConfirmDrag]);
+
+    const dragCandidates = useMemo(() => {
+        if (!dragTargetNode || !dragTargetInstance || showConfirmDrag?.isReopen) return [];
+        return resolveWorkflowStepAssigneeCandidates({
+            node: dragTargetNode,
+            instance: dragTargetInstance,
+            users,
+            employees,
+            orgUnits,
+            logs,
+        });
+    }, [dragTargetNode, dragTargetInstance, showConfirmDrag?.isReopen, users, employees, orgUnits, logs]);
+
+    const dragSelectionMode = getWorkflowStepSelectionMode(dragTargetNode);
+    const mustChooseDragAssignee = Boolean(
+        showConfirmDrag &&
+        !showConfirmDrag.isReopen &&
+        dragTargetNode &&
+        dragTargetNode.type !== WorkflowNodeType.END
+    );
+
+    const toggleDragAssignee = (candidateId: string) => {
+        setDragAssigneeIds(prev => {
+            if (dragSelectionMode === 'single') {
+                return prev[0] === candidateId ? [] : [candidateId];
+            }
+            return prev.includes(candidateId)
+                ? prev.filter(id => id !== candidateId)
+                : [...prev, candidateId];
+        });
+    };
 
     return (
         <div className="relative">
@@ -438,26 +483,43 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, onCard
                         </p>
 
                         {/* Assign to user */}
+                        {!showConfirmDrag.isReopen && dragTargetNode && dragTargetNode.type !== WorkflowNodeType.END && (
                         <div className="mb-4">
                             <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                                <User size={11} className="inline mr-1" />Giao cho
+                                <User size={11} className="inline mr-1" />Giao cho bước "{dragTargetNode.label}"
                             </label>
-                            <select
-                                value={dragAssigneeId}
-                                onChange={e => setDragAssigneeId(e.target.value)}
-                                className="w-full p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 outline-none focus:ring-2 focus:ring-indigo-300"
-                            >
-                                <option value="">-- Giữ nguyên người phụ trách --</option>
-                                {users
-                                    .filter(u => u.isActive !== false)
-                                    .map(u => (
-                                        <option key={u.id} value={u.id}>
-                                            {u.name} {u.role ? `(${u.role})` : ''}
-                                        </option>
-                                    ))
-                                }
-                            </select>
+                            {dragCandidates.length === 0 ? (
+                                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                                    Step này chưa có pool người hợp lệ. Kiểm tra lại cài đặt bước trước khi chuyển.
+                                </div>
+                            ) : (
+                                <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-2 space-y-1 max-h-44 overflow-y-auto">
+                                    <div className="px-1 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                        {dragSelectionMode === 'multiple' ? 'Có thể chọn nhiều người' : 'Chọn một người'}
+                                    </div>
+                                    {dragCandidates.map(candidate => {
+                                        const checked = dragAssigneeIds.includes(candidate.id);
+                                        return (
+                                            <button
+                                                key={candidate.id}
+                                                type="button"
+                                                onClick={() => toggleDragAssignee(candidate.id)}
+                                                className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition ${checked ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200' : 'hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'}`}
+                                            >
+                                                <span className={`h-4 w-4 rounded border flex items-center justify-center text-[10px] font-black ${checked ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-slate-300 dark:border-slate-600'}`}>
+                                                    {checked ? '✓' : ''}
+                                                </span>
+                                                <span className="min-w-0">
+                                                    <span className="block font-bold truncate">{candidate.name}</span>
+                                                    {candidate.sublabel && <span className="block text-[10px] opacity-70 truncate">{candidate.sublabel}</span>}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
+                        )}
 
                         <textarea
                             placeholder="Nhập ghi chú (tùy chọn)..."
@@ -468,19 +530,20 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, onCard
                         />
                         <div className="flex justify-end gap-2">
                             <button
-                                onClick={() => { setShowConfirmDrag(null); setDragComment(''); setDragAssigneeId(''); }}
+                                onClick={() => { setShowConfirmDrag(null); setDragComment(''); setDragAssigneeIds([]); }}
                                 className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl text-xs font-bold hover:bg-slate-200 transition"
                             >
                                 Hủy
                             </button>
                             <button
                                 onClick={confirmDragAction}
+                                disabled={mustChooseDragAssignee && dragAssigneeIds.length === 0}
                                 className={`px-4 py-2 rounded-xl text-xs font-bold text-white transition shadow-lg ${showConfirmDrag.isReopen
                                     ? 'bg-purple-500 hover:bg-purple-600 shadow-purple-500/25'
                                     : showConfirmDrag.action === WorkflowInstanceAction.APPROVED
                                         ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/25'
                                         : 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/25'
-                                }`}
+                                } disabled:opacity-50 disabled:cursor-not-allowed`}
                             >
                                 {showConfirmDrag.isReopen ? '↻ Mở lại' : showConfirmDrag.action === WorkflowInstanceAction.APPROVED ? '✓ Duyệt' : '↩ Yêu cầu bổ sung'}
                             </button>

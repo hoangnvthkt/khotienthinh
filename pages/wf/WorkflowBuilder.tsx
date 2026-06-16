@@ -916,6 +916,17 @@ const WorkflowBuilder: React.FC = () => {
                                                     </select>
                                                 </div>
                                                 <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
+                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Chế độ chọn người khi chuyển bước</label>
+                                                    <select
+                                                        value={step.config.assigneeSelectionMode || 'single'}
+                                                        onChange={e => updateStepConfig(step.id, 'assigneeSelectionMode', e.target.value)}
+                                                        className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
+                                                    >
+                                                        <option value="single">Chọn một người</option>
+                                                        <option value="multiple">Chọn nhiều người</option>
+                                                    </select>
+                                                </div>
+                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Quyền được chọn</label>
                                                     <input
                                                         type="text"

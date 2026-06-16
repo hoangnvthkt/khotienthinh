@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
 import {
-  WorkflowInstance, WorkflowInstanceStatus, WorkflowNodeType,
+  Role, WorkflowInstance, WorkflowInstanceStatus, WorkflowNodeType,
   WorkflowInstanceAction
 } from '../../types';
 import {
@@ -15,6 +15,7 @@ import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Legend
 } from 'recharts';
+import { isMaterialRequestWorkflowTemplate } from '../../lib/workflowVisibility';
 
 // ========== Types ==========
 interface DrillDownData {
@@ -72,7 +73,7 @@ const PRESET_LABELS: Record<DatePreset, string> = {
 
 const WorkflowDashboard: React.FC = () => {
   const { templates, instances, nodes, edges, logs } = useWorkflow();
-  const { users } = useApp();
+  const { user, users } = useApp();
   const [drillDown, setDrillDown] = useState<DrillDownData | null>(null);
 
   // ==================== DATE FILTER ====================
@@ -94,15 +95,25 @@ const WorkflowDashboard: React.FC = () => {
   };
 
   // Filter instances by date range
+  const visibleTemplates = useMemo(
+    () => templates.filter(t => user.role === Role.ADMIN || !isMaterialRequestWorkflowTemplate(t)),
+    [templates, user.role],
+  );
+  const visibleTemplateIds = useMemo(() => new Set(visibleTemplates.map(t => t.id)), [visibleTemplates]);
+  const visibleInstances = useMemo(
+    () => instances.filter(i => visibleTemplateIds.has(i.templateId)),
+    [instances, visibleTemplateIds],
+  );
+
   const filteredInstances = useMemo(() => {
-    if (!dateFrom && !dateTo) return instances;
-    return instances.filter(i => {
+    if (!dateFrom && !dateTo) return visibleInstances;
+    return visibleInstances.filter(i => {
       const d = i.createdAt.slice(0, 10);
       if (dateFrom && d < dateFrom) return false;
       if (dateTo && d > dateTo) return false;
       return true;
     });
-  }, [instances, dateFrom, dateTo]);
+  }, [visibleInstances, dateFrom, dateTo]);
 
   // ==================== SLA ANALYSIS ====================
   // For each instance+node, compute time spent and compare with SLA
@@ -238,7 +249,7 @@ const WorkflowDashboard: React.FC = () => {
   ].filter(d => d.value > 0), [stats]);
 
   const barData = useMemo(() => {
-    return templates.filter(t => t.isActive).map(t => {
+    return visibleTemplates.filter(t => t.isActive).map(t => {
       const tInstances = filteredInstances.filter(i => i.templateId === t.id);
       return {
         name: t.name.length > 15 ? t.name.slice(0, 15) + '...' : t.name,
@@ -249,7 +260,7 @@ const WorkflowDashboard: React.FC = () => {
         rejected: tInstances.filter(i => i.status === WorkflowInstanceStatus.REJECTED).length,
       };
     }).filter(d => d.total > 0);
-  }, [templates, filteredInstances]);
+  }, [visibleTemplates, filteredInstances]);
 
   // ==================== EMPLOYEE RANKINGS ====================
   const employeeStats = useMemo(() => {
@@ -353,7 +364,7 @@ const WorkflowDashboard: React.FC = () => {
   };
 
   const getUserName = (userId: string) => users.find(u => u.id === userId)?.name || userId.slice(0, 8);
-  const getTemplateName = (templateId: string) => templates.find(t => t.id === templateId)?.name || '—';
+  const getTemplateName = (templateId: string) => visibleTemplates.find(t => t.id === templateId)?.name || '—';
 
   // ==================== RENDER ====================
   return (
@@ -398,7 +409,7 @@ const WorkflowDashboard: React.FC = () => {
         </div>
         {(dateFrom || dateTo) && (
           <span className="text-[10px] text-violet-500 font-bold bg-violet-50 dark:bg-violet-900/20 px-2 py-1 rounded-lg">
-            {filteredInstances.length}/{instances.length} phiếu
+            {filteredInstances.length}/{visibleInstances.length} phiếu
           </span>
         )}
       </div>

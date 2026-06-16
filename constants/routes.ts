@@ -40,6 +40,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   // ── WORKFLOW ──────────────────────────────────────────
   '/wf/dashboard':  'WF',
   '/wf':            'WF',
+  '/wf/instances/:id': 'WF',
   '/wf/templates':  'WF',
   '/wf/builder/:id': 'WF',
 

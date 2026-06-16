@@ -2527,6 +2527,7 @@ export interface ProjectWorkflowNodeConfig {
   assigneeUserId?: string;
   formFields?: { name: string; label: string; type: 'text' | 'number' | 'textarea'; required?: boolean }[];
   slaHours?: number;
+  assigneeSelectionMode?: 'single' | 'multiple';
   assignmentMode?: ProjectWorkflowAssignmentMode;
   approvalPolicy?: WorkflowApprovalPolicy;
   assignmentTargets?: WorkflowAssignmentTarget[];
@@ -2990,6 +2991,26 @@ export interface WorkflowPrintTemplate {
   fileName: string;
   storagePath: string;
   createdAt: string;
+}
+
+export interface WorkflowInstanceCommentAttachment {
+  id: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  storagePath: string;
+  kind: 'image' | 'file';
+  uploadedAt?: string;
+}
+
+export interface WorkflowInstanceComment {
+  id: string;
+  instanceId: string;
+  authorUserId: string;
+  body: string;
+  attachments: WorkflowInstanceCommentAttachment[];
+  createdAt: string;
+  updatedAt?: string;
 }
 
 // ==================== REQUEST MODULE ====================
