@@ -25,6 +25,7 @@ const WorkflowTemplates: React.FC = () => {
     const [editingTemplate, setEditingTemplate] = useState<typeof templates[0] | null>(null);
     const [editName, setEditName] = useState('');
     const [editDesc, setEditDesc] = useState('');
+    const [createError, setCreateError] = useState('');
     // Role pickers
     const [newManagers, setNewManagers] = useState<string[]>([]);
     const [newWatchers, setNewWatchers] = useState<string[]>([]);
@@ -89,9 +90,15 @@ const WorkflowTemplates: React.FC = () => {
     );
 
     const handleCreate = async () => {
-        if (!canManageWorkflowTemplates || !newName.trim()) return;
-        const t = await createTemplate(newName.trim(), newDesc.trim(), user.id);
-        if (t) {
+        setCreateError('');
+        if (!canManageWorkflowTemplates) {
+            setCreateError('Tài khoản chưa có quyền quản trị Mẫu quy trình.');
+            return;
+        }
+        if (!newName.trim()) return;
+        try {
+            const t = await createTemplate(newName.trim(), newDesc.trim(), user.id);
+            if (!t) throw new Error('Không nhận được dữ liệu mẫu quy trình sau khi tạo.');
             // Save managers + default watchers
             await updateTemplate({ ...t, managers: newManagers, defaultWatchers: newWatchers });
             setShowCreateModal(false);
@@ -99,7 +106,11 @@ const WorkflowTemplates: React.FC = () => {
             setNewDesc('');
             setNewManagers([]);
             setNewWatchers([]);
+            setCreateError('');
             navigate(`/wf/builder/${t.id}`);
+        } catch (error) {
+            console.error('Create workflow template failed:', error);
+            setCreateError(error instanceof Error ? error.message : 'Không thể tạo mẫu quy trình. Vui lòng thử lại.');
         }
     };
 
@@ -295,8 +306,13 @@ const WorkflowTemplates: React.FC = () => {
                             <UserPicker selected={newManagers} onChange={setNewManagers} label="Quản trị viên" icon={<Shield size={12} className="text-amber-500" />} color="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" />
                             <UserPicker selected={newWatchers} onChange={setNewWatchers} label="Người theo dõi mặc định" icon={<Eye size={12} className="text-blue-500" />} color="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" />
                         </div>
+                        {createError && (
+                            <div className="mt-4 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-600 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
+                                {createError}
+                            </div>
+                        )}
                         <div className="flex gap-3 mt-6">
-                            <button onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
+                            <button onClick={() => { setShowCreateModal(false); setCreateError(''); }} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
                             <button onClick={handleCreate} disabled={!newName.trim()} className="flex-1 px-4 py-2.5 bg-accent text-white rounded-xl font-bold text-sm hover:bg-emerald-600 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20">Tạo & Thiết kế</button>
                         </div>
                     </div>

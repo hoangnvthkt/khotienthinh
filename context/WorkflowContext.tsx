@@ -78,6 +78,11 @@ const mapNodeFromDB = (row: any): WorkflowNode => ({
     positionY: row.position_y || 0,
 });
 
+const isTemplateRemovedNode = (node: WorkflowNode) => {
+    const config = node.config as Record<string, unknown> | undefined;
+    return config?.__templateRemoved === true || config?.__templateRemoved === 'true';
+};
+
 const mapEdgeFromDB = (row: any): WorkflowEdge => ({
     id: row.id,
     templateId: row.template_id,
@@ -306,7 +311,8 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             managers: [],
             default_watchers: [],
         }).select().single();
-        if (error || !data) { console.error(error); return null; }
+        if (error) throw error;
+        if (!data) throw new Error('Không nhận được dữ liệu mẫu quy trình sau khi tạo.');
         const t = mapTemplateFromDB(data);
         setTemplates(prev => [t, ...prev]);
         return t;
@@ -336,8 +342,16 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     // ---- Nodes & Edges ----
 
-    const getTemplateNodes = (templateId: string) => nodes.filter(n => n.templateId === templateId);
-    const getTemplateEdges = (templateId: string) => edges.filter(e => e.templateId === templateId);
+    const getTemplateNodes = (templateId: string) =>
+        nodes.filter(n => n.templateId === templateId && !isTemplateRemovedNode(n));
+    const getTemplateEdges = (templateId: string) => {
+        const activeNodeIds = new Set(getTemplateNodes(templateId).map(node => node.id));
+        return edges.filter(e =>
+            e.templateId === templateId &&
+            activeNodeIds.has(e.sourceNodeId) &&
+            activeNodeIds.has(e.targetNodeId)
+        );
+    };
 
     const saveNodesAndEdges = async (templateId: string, newNodes: WorkflowNode[], newEdges: WorkflowEdge[]) => {
         // Use UPSERT instead of delete+insert to avoid FK constraint violations
@@ -391,8 +405,8 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const createInstance = async (templateId: string, title: string, userId: string, formData: Record<string, any> = {}): Promise<WorkflowInstance | null> => {
         // Find the START node of this template
-        const templateNodes = nodes.filter(n => n.templateId === templateId);
-        const templateEdges = edges.filter(e => e.templateId === templateId);
+        const templateNodes = getTemplateNodes(templateId);
+        const templateEdges = getTemplateEdges(templateId);
         const startNode = templateNodes.find(n => n.type === WorkflowNodeType.START);
         if (!startNode) { console.error('No START node found'); return null; }
 
@@ -717,8 +731,9 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const deleteInstance = async (instanceId: string): Promise<boolean> => {
         await supabase.from('workflow_instance_logs').delete().eq('instance_id', instanceId);
-        const { error } = await supabase.from('workflow_instances').delete().eq('id', instanceId);
+        const { data, error } = await supabase.from('workflow_instances').delete().eq('id', instanceId).select('id');
         if (error) { console.error(error); return false; }
+        if (!data || data.length === 0) return false;
         setInstances(prev => prev.filter(i => i.id !== instanceId));
         setLogs(prev => prev.filter(l => l.instanceId !== instanceId));
         return true;

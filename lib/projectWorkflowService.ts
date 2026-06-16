@@ -301,14 +301,19 @@ export const projectWorkflowService = {
     ]);
     if (nodeError) throw nodeError;
     if (edgeError) throw edgeError;
-    const nodes = (nodeRows || []).map(mapWorkflowNode).filter(Boolean) as WorkflowNode[];
+    const nodes = ((nodeRows || []).map(mapWorkflowNode).filter(Boolean) as WorkflowNode[])
+      .filter(node => {
+        const config = node.config as Record<string, unknown> | undefined;
+        return config?.__templateRemoved !== true && config?.__templateRemoved !== 'true';
+      });
+    const activeNodeIds = new Set(nodes.map(node => node.id));
     const edges = (edgeRows || []).map((row: any): WorkflowEdge => ({
       id: row.id,
       templateId: row.template_id,
       sourceNodeId: row.source_node_id,
       targetNodeId: row.target_node_id,
       label: row.label || '',
-    }));
+    })).filter(edge => activeNodeIds.has(edge.sourceNodeId) && activeNodeIds.has(edge.targetNodeId));
     const start = nodes.find(node => node.type === WorkflowNodeType.START);
     const firstId = start ? edges.find(edge => edge.sourceNodeId === start.id)?.targetNodeId : null;
     return { firstNode: firstId ? nodes.find(node => node.id === firstId) || null : null, nodes, edges };
