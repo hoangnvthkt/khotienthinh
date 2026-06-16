@@ -16,6 +16,58 @@ import { employeeSelfService } from '../lib/employeeSelfService';
 
 type TabKey = 'personal' | 'work' | 'contact' | 'assets' | 'achievements';
 
+const InfoRow: React.FC<{ label: string; value?: string | null; icon?: React.ReactNode; badge?: boolean; badgeColor?: string }> = ({ label, value, icon, badge, badgeColor }) => (
+    <div className="group flex items-center py-4 border-b border-slate-100 dark:border-slate-700/50 last:border-0 hover:bg-slate-50 dark:hover:bg-white/[0.03] -mx-3 px-3 rounded-xl transition-all duration-300">
+        {icon && (
+            <span className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center mr-3 shrink-0 text-indigo-500 dark:text-indigo-400 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-500/20 group-hover:text-indigo-600 dark:group-hover:text-indigo-300 transition-all duration-300">
+                {icon}
+            </span>
+        )}
+        <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 w-36 shrink-0">{label}</span>
+        {badge && value ? (
+            <span className={`text-[11px] font-bold px-3 py-1 rounded-lg ${badgeColor || 'bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 border border-indigo-500/20'}`}>
+                {value}
+            </span>
+        ) : (
+            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{value || <span className="text-slate-300 dark:text-slate-600 italic text-xs">Chưa cập nhật</span>}</span>
+        )}
+    </div>
+);
+
+const EditRow: React.FC<{
+    label: string; icon?: React.ReactNode;
+    type?: 'text' | 'date' | 'select';
+    value: string; onChange: (v: string) => void;
+    options?: { value: string; label: string }[];
+}> = ({ label, icon, type = 'text', value, onChange, options }) => (
+    <div className="flex items-center py-3 border-b border-white/5 dark:border-white/[0.03] last:border-0 -mx-3 px-3 rounded-xl">
+        {icon && (
+            <span className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center mr-3 shrink-0 text-indigo-400">
+                {icon}
+            </span>
+        )}
+        <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400/80 dark:text-slate-500 w-36 shrink-0">{label}</span>
+        <div className="flex-1">
+            {type === 'select' && options ? (
+                <select
+                    value={value}
+                    onChange={e => onChange(e.target.value)}
+                    className="w-full p-2.5 border border-white/10 rounded-xl text-sm font-semibold bg-white/[0.04] dark:bg-white/[0.03] backdrop-blur-sm outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500/30 transition-all text-slate-700 dark:text-slate-200"
+                >
+                    {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+            ) : (
+                <input
+                    type={type}
+                    value={value}
+                    onChange={e => onChange(e.target.value)}
+                    className="w-full p-2.5 border border-white/10 rounded-xl text-sm font-semibold bg-white/[0.04] dark:bg-white/[0.03] backdrop-blur-sm outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500/30 transition-all text-slate-700 dark:text-slate-200"
+                />
+            )}
+        </div>
+    </div>
+);
+
 const MyProfile: React.FC = () => {
     const {
         user, employees, hrmAreas, hrmOffices, hrmEmployeeTypes,
@@ -176,59 +228,6 @@ const MyProfile: React.FC = () => {
         { key: 'assets', label: 'Tài Sản', icon: <Landmark size={15} />, count: employeeAssets.length },
         { key: 'achievements', label: 'Thành Tích', icon: <Medal size={15} /> },
     ];
-
-    // Glass info row
-    const InfoRow: React.FC<{ label: string; value?: string | null; icon?: React.ReactNode; badge?: boolean; badgeColor?: string }> = ({ label, value, icon, badge, badgeColor }) => (
-        <div className="group flex items-center py-4 border-b border-slate-100 dark:border-slate-700/50 last:border-0 hover:bg-slate-50 dark:hover:bg-white/[0.03] -mx-3 px-3 rounded-xl transition-all duration-300">
-            {icon && (
-                <span className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center mr-3 shrink-0 text-indigo-500 dark:text-indigo-400 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-500/20 group-hover:text-indigo-600 dark:group-hover:text-indigo-300 transition-all duration-300">
-                    {icon}
-                </span>
-            )}
-            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 w-36 shrink-0">{label}</span>
-            {badge && value ? (
-                <span className={`text-[11px] font-bold px-3 py-1 rounded-lg ${badgeColor || 'bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 border border-indigo-500/20'}`}>
-                    {value}
-                </span>
-            ) : (
-                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{value || <span className="text-slate-300 dark:text-slate-600 italic text-xs">Chưa cập nhật</span>}</span>
-            )}
-        </div>
-    );
-
-    const EditRow: React.FC<{
-        label: string; icon?: React.ReactNode;
-        type?: 'text' | 'date' | 'select';
-        value: string; onChange: (v: string) => void;
-        options?: { value: string; label: string }[];
-    }> = ({ label, icon, type = 'text', value, onChange, options }) => (
-        <div className="flex items-center py-3 border-b border-white/5 dark:border-white/[0.03] last:border-0 -mx-3 px-3 rounded-xl">
-            {icon && (
-                <span className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center mr-3 shrink-0 text-indigo-400">
-                    {icon}
-                </span>
-            )}
-            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400/80 dark:text-slate-500 w-36 shrink-0">{label}</span>
-            <div className="flex-1">
-                {type === 'select' && options ? (
-                    <select
-                        value={value}
-                        onChange={e => onChange(e.target.value)}
-                        className="w-full p-2.5 border border-white/10 rounded-xl text-sm font-semibold bg-white/[0.04] dark:bg-white/[0.03] backdrop-blur-sm outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500/30 transition-all text-slate-700 dark:text-slate-200"
-                    >
-                        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                ) : (
-                    <input
-                        type={type}
-                        value={value}
-                        onChange={e => onChange(e.target.value)}
-                        className="w-full p-2.5 border border-white/10 rounded-xl text-sm font-semibold bg-white/[0.04] dark:bg-white/[0.03] backdrop-blur-sm outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500/30 transition-all text-slate-700 dark:text-slate-200"
-                    />
-                )}
-            </div>
-        </div>
-    );
 
     const formatDate = (dateStr?: string) => {
         if (!dateStr) return undefined;

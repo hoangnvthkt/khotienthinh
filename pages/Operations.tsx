@@ -8,7 +8,8 @@ import {
   Plus, Trash2, ArrowRight, Save, Send, Clock,
   CheckCircle, XCircle, FileText, User, History,
   AlertTriangle, Flame, ShieldAlert, PackageSearch,
-  ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Inbox, Minus, Scale, Banknote, Lock, Loader2
+  ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Inbox, Minus, Scale, Banknote, Lock, Loader2,
+  Search, Printer, FileDown
 } from 'lucide-react';
 import ItemSelectionModal from '../components/ItemSelectionModal';
 import WarningModal from '../components/WarningModal';
@@ -28,6 +29,47 @@ import { getTransactionNextAction, getTransactionTypeLabel } from '../lib/erpWor
 import { EmptyState, PageHeader, StatusBadge } from '../components/erp';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
+
+type HistoryColumnKey = 'import' | 'export' | 'transfer' | 'rejected';
+
+const escapeHtml = (value: unknown) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+const formatVoucherDate = (date: string) => new Date(date).toLocaleDateString('vi-VN', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+});
+
+const formatVoucherCode = (tx: Transaction) => `TT ${formatVoucherDate(tx.date)}`;
+
+const getVoucherTitle = (tx: Transaction) => {
+  if (tx.status === TransactionStatus.CANCELLED) return 'Phiếu từ chối';
+  switch (tx.type) {
+    case TransactionType.IMPORT:
+      return 'Phiếu nhập kho';
+    case TransactionType.EXPORT:
+      return 'Phiếu xuất kho';
+    case TransactionType.TRANSFER:
+      return 'Phiếu chuyển kho';
+    case TransactionType.LIQUIDATION:
+      return 'Phiếu xuất hủy';
+    default:
+      return 'Phiếu kho';
+  }
+};
+
+const getHistoryColumnKey = (tx: Transaction): HistoryColumnKey => {
+  if (tx.status === TransactionStatus.CANCELLED) return 'rejected';
+  if (tx.type === TransactionType.IMPORT) return 'import';
+  if (tx.type === TransactionType.TRANSFER) return 'transfer';
+  return 'export';
+};
 
 const Operations: React.FC = () => {
   const location = useLocation();
@@ -80,6 +122,12 @@ const Operations: React.FC = () => {
   const [txItems, setTxItems] = useState<TransactionItem[]>([]);
   const [submittingTx, setSubmittingTx] = useState(false);
   const [processingApproval, setProcessingApproval] = useState(false);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<'all' | TransactionType>('all');
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | TransactionStatus.COMPLETED | TransactionStatus.CANCELLED>('all');
+  const [historyWarehouseFilter, setHistoryWarehouseFilter] = useState('all');
+  const [historyDateFrom, setHistoryDateFrom] = useState('');
+  const [historyDateTo, setHistoryDateTo] = useState('');
   // State lưu thông tin kế toán khi NHẬP KHO: itemId -> { accountingQty, accountingPrice }
   const [accountingData, setAccountingData] = useState<Record<string, { qty: string; price: string }>>({});
 
@@ -145,7 +193,69 @@ const Operations: React.FC = () => {
     return baseHistory.filter(t => t.requesterId === user.id);
   }, [transactions, isAdmin, isKeeper, user]);
 
-  const { paginatedItems: paginatedHistory, currentPage: histPage, totalPages: histTotalPages, totalItems: histTotal, pageSize: histPageSize, setPage: histSetPage, setPageSize: histSetPageSize, startIndex: histStart, endIndex: histEnd } = usePagination<Transaction>(historyTransactions, 15);
+  const filteredHistoryTransactions = useMemo(() => {
+    const keyword = historySearch.trim().toLowerCase();
+    const fromTime = historyDateFrom ? new Date(`${historyDateFrom}T00:00:00`).getTime() : null;
+    const toTime = historyDateTo ? new Date(`${historyDateTo}T23:59:59.999`).getTime() : null;
+
+    return historyTransactions.filter(tx => {
+      const txTime = new Date(tx.date).getTime();
+      if (fromTime !== null && txTime < fromTime) return false;
+      if (toTime !== null && txTime > toTime) return false;
+      if (historyTypeFilter !== 'all' && tx.type !== historyTypeFilter) return false;
+      if (historyStatusFilter !== 'all' && tx.status !== historyStatusFilter) return false;
+      if (
+        historyWarehouseFilter !== 'all' &&
+        tx.sourceWarehouseId !== historyWarehouseFilter &&
+        tx.targetWarehouseId !== historyWarehouseFilter
+      ) {
+        return false;
+      }
+
+      if (!keyword) return true;
+
+      const requester = users.find(item => item.id === tx.requesterId);
+      const approver = users.find(item => item.id === tx.approverId);
+      const sourceWh = warehouses.find(item => item.id === tx.sourceWarehouseId);
+      const targetWh = warehouses.find(item => item.id === tx.targetWarehouseId);
+      const supplier = suppliers.find(item => item.id === tx.supplierId);
+      const itemText = tx.items.map(line => {
+        const product = items.find(item => item.id === line.itemId) || tx.pendingItems?.find(item => item.id === line.itemId);
+        return [product?.sku, product?.name, line.quantity, product?.unit].filter(Boolean).join(' ');
+      }).join(' ');
+
+      const searchable = [
+        getVoucherTitle(tx),
+        formatVoucherCode(tx),
+        tx.id,
+        tx.type,
+        tx.status,
+        requester?.name,
+        approver?.name,
+        sourceWh?.name,
+        targetWh?.name,
+        supplier?.name,
+        tx.note,
+        itemText,
+      ].filter(Boolean).join(' ').toLowerCase();
+
+      return searchable.includes(keyword);
+    });
+  }, [
+    historyDateFrom,
+    historyDateTo,
+    historySearch,
+    historyStatusFilter,
+    historyTransactions,
+    historyTypeFilter,
+    historyWarehouseFilter,
+    items,
+    suppliers,
+    users,
+    warehouses,
+  ]);
+
+  const { paginatedItems: paginatedHistory, currentPage: histPage, totalPages: histTotalPages, totalItems: histTotal, pageSize: histPageSize, setPage: histSetPage, setPageSize: histSetPageSize, startIndex: histStart, endIndex: histEnd } = usePagination<Transaction>(filteredHistoryTransactions, 15);
 
   // Tính tồn kho ON-HAND trong kho đang chọn (chỉ cho import fallback)
   const getStockInWarehouse = (itemId: string, warehouseId: string): number => {
@@ -354,6 +464,171 @@ const Operations: React.FC = () => {
   }, [activeTab]);
 
   const activeWarehouse = warehouses.find(w => w.id === user.assignedWarehouseId);
+
+  const handlePrintTransaction = (tx: Transaction, mode: 'print' | 'pdf' = 'print') => {
+    const title = getVoucherTitle(tx);
+    const code = formatVoucherCode(tx);
+    const requester = users.find(item => item.id === tx.requesterId);
+    const approver = users.find(item => item.id === tx.approverId);
+    const sourceWh = warehouses.find(item => item.id === tx.sourceWarehouseId);
+    const targetWh = warehouses.find(item => item.id === tx.targetWarehouseId);
+    const supplier = suppliers.find(item => item.id === tx.supplierId);
+    const documentTitle = `${mode === 'pdf' ? 'PDF_' : ''}${title}_${code}`.replace(/[^\p{L}\p{N}_-]+/gu, '_');
+    const flowLabel = tx.type === TransactionType.IMPORT
+      ? `Nhập vào: ${targetWh?.name || '-'}`
+      : tx.type === TransactionType.TRANSFER
+        ? `${sourceWh?.name || '-'} -> ${targetWh?.name || '-'}`
+        : `Xuất từ: ${sourceWh?.name || '-'}`;
+
+    const rows = tx.items.map((line, index) => {
+      const product = items.find(item => item.id === line.itemId) || tx.pendingItems?.find(item => item.id === line.itemId);
+      const amount = Number(line.quantity || 0) * Number(line.price || 0);
+      return `
+        <tr>
+          <td>${index + 1}</td>
+          <td>
+            <strong>${escapeHtml(product?.name || 'Vật tư')}</strong>
+            <div class="muted">${escapeHtml(product?.sku || line.itemId)}</div>
+          </td>
+          <td class="right">${Number(line.quantity || 0).toLocaleString('vi-VN')}</td>
+          <td>${escapeHtml(product?.unit || '')}</td>
+          <td class="right">${line.price ? Number(line.price).toLocaleString('vi-VN') : ''}</td>
+          <td class="right">${amount ? amount.toLocaleString('vi-VN') : ''}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const html = `<!doctype html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(documentTitle)}</title>
+        <style>
+          * { box-sizing: border-box; }
+          body { font-family: Arial, sans-serif; color: #0f172a; margin: 32px; }
+          .header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 20px; }
+          h1 { margin: 0; font-size: 26px; text-transform: uppercase; letter-spacing: 0.04em; }
+          .code { font-size: 18px; font-weight: 800; margin-top: 8px; }
+          .status { text-align: right; font-size: 12px; text-transform: uppercase; font-weight: 800; color: ${tx.status === TransactionStatus.CANCELLED ? '#dc2626' : '#059669'}; }
+          .meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 24px; margin: 18px 0 22px; font-size: 13px; }
+          .meta div { border-bottom: 1px solid #e2e8f0; padding-bottom: 7px; }
+          .label { color: #64748b; font-size: 10px; text-transform: uppercase; font-weight: 800; display: block; margin-bottom: 3px; }
+          table { width: 100%; border-collapse: collapse; font-size: 13px; }
+          th { background: #f1f5f9; text-transform: uppercase; font-size: 10px; letter-spacing: 0.06em; color: #475569; }
+          th, td { border: 1px solid #cbd5e1; padding: 9px 10px; vertical-align: top; }
+          .right { text-align: right; }
+          .muted { color: #64748b; font-size: 11px; margin-top: 2px; }
+          .note { margin-top: 18px; border-left: 4px solid #94a3b8; background: #f8fafc; padding: 12px 14px; font-size: 13px; }
+          .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 42px; text-align: center; font-size: 12px; font-weight: 800; }
+          .signatures span { display: block; margin-top: 64px; font-weight: 400; color: #64748b; }
+          @media print { body { margin: 18mm; } .no-print { display: none; } }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <h1>${escapeHtml(title)}</h1>
+            <div class="code">Mã phiếu: ${escapeHtml(code)}</div>
+          </div>
+          <div class="status">${tx.status === TransactionStatus.CANCELLED ? 'Từ chối' : 'Hoàn thành'}</div>
+        </div>
+        <div class="meta">
+          <div><span class="label">Ngày lập</span>${escapeHtml(new Date(tx.date).toLocaleString('vi-VN'))}</div>
+          <div><span class="label">Luồng kho</span>${escapeHtml(flowLabel)}</div>
+          <div><span class="label">Người lập</span>${escapeHtml(requester?.name || 'Hệ thống')}</div>
+          <div><span class="label">Người phê duyệt</span>${escapeHtml(approver?.name || '-')}</div>
+          <div><span class="label">Nhà cung cấp</span>${escapeHtml(supplier?.name || '-')}</div>
+          <div><span class="label">Mã giao dịch hệ thống</span>${escapeHtml(tx.id)}</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>STT</th>
+              <th>Vật tư</th>
+              <th class="right">Số lượng</th>
+              <th>ĐVT</th>
+              <th class="right">Đơn giá</th>
+              <th class="right">Thành tiền</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${tx.note ? `<div class="note"><strong>Ghi chú:</strong> ${escapeHtml(tx.note)}</div>` : ''}
+        <div class="signatures">
+          <div>Người lập<span>Ký, ghi rõ họ tên</span></div>
+          <div>Thủ kho<span>Ký, ghi rõ họ tên</span></div>
+          <div>Người duyệt<span>Ký, ghi rõ họ tên</span></div>
+        </div>
+        <script>setTimeout(function(){ window.print(); }, 250);</script>
+      </body>
+      </html>`;
+
+    const printWindow = window.open('', '_blank', 'width=980,height=720');
+    if (!printWindow) {
+      toast.error(mode === 'pdf' ? 'Không thể xuất PDF' : 'Không thể in phiếu', 'Trình duyệt đang chặn cửa sổ in/PDF.');
+      return;
+    }
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    if (mode === 'pdf') {
+      toast.info('Xuất PDF', 'Trong hộp thoại in, chọn "Save as PDF" để lưu file.');
+    }
+  };
+
+  const historyColumnCounts = useMemo(() => {
+    return filteredHistoryTransactions.reduce<Record<HistoryColumnKey, number>>((acc, tx) => {
+      acc[getHistoryColumnKey(tx)] += 1;
+      return acc;
+    }, { import: 0, export: 0, transfer: 0, rejected: 0 });
+  }, [filteredHistoryTransactions]);
+
+  const historyColumns: Array<{
+    key: HistoryColumnKey;
+    title: string;
+    description: string;
+    icon: React.ReactNode;
+    count: number;
+    className: string;
+    headerClassName: string;
+  }> = [
+    {
+      key: 'import',
+      title: 'Phiếu nhập kho',
+      description: 'Đã nhập kho',
+      icon: <ArrowDownLeft size={14} />,
+      count: historyColumnCounts.import,
+      className: 'border-emerald-100 bg-emerald-50/30',
+      headerClassName: 'text-emerald-700 bg-emerald-100/80 border-emerald-200',
+    },
+    {
+      key: 'export',
+      title: 'Phiếu xuất kho',
+      description: 'Xuất kho / xuất hủy',
+      icon: <ArrowUpRight size={14} />,
+      count: historyColumnCounts.export,
+      className: 'border-blue-100 bg-blue-50/30',
+      headerClassName: 'text-blue-700 bg-blue-100/80 border-blue-200',
+    },
+    {
+      key: 'transfer',
+      title: 'Phiếu chuyển kho',
+      description: 'Điều chuyển nội bộ',
+      icon: <ArrowLeftRight size={14} />,
+      count: historyColumnCounts.transfer,
+      className: 'border-violet-100 bg-violet-50/30',
+      headerClassName: 'text-violet-700 bg-violet-100/80 border-violet-200',
+    },
+    {
+      key: 'rejected',
+      title: 'Từ chối',
+      description: 'Phiếu đã hủy',
+      icon: <XCircle size={14} />,
+      count: historyColumnCounts.rejected,
+      className: 'border-rose-100 bg-rose-50/30',
+      headerClassName: 'text-rose-700 bg-rose-100/80 border-rose-200',
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -610,33 +885,205 @@ const Operations: React.FC = () => {
 
               {/* LỊCH SỬ HOẠT ĐỘNG */}
               <section className="space-y-4 pt-8 border-t border-slate-100">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-bold text-slate-800 flex items-center text-sm"><History size={18} className="mr-2 text-slate-500" /> Lịch sử hoạt động</h3>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h3 className="font-bold text-slate-800 flex items-center text-sm"><History size={18} className="mr-2 text-slate-500" /> Lịch sử nhập xuất</h3>
+                    <p className="text-[11px] font-semibold text-slate-400 mt-1">{histTotal} phiếu phù hợp bộ lọc</p>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-black">
+                    {historyColumns.map(column => (
+                      <div key={column.key} className={`rounded-xl border px-3 py-2 ${column.headerClassName}`}>
+                        <div className="flex items-center gap-1.5">
+                          {column.icon}
+                          <span>{column.title}</span>
+                        </div>
+                        <div className="text-lg leading-5 mt-1">{column.count}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 gap-2">
-                  {paginatedHistory.map(tx => {
-                    const requester = users.find(u => u.id === tx.requesterId);
-                    const isApproved = tx.status === TransactionStatus.COMPLETED;
-                    const isLiquidation = tx.type === TransactionType.LIQUIDATION;
-                    return (
-                      <div key={tx.id} onClick={() => setViewingHistoryTx(tx)} className={`flex items-center justify-between p-3 rounded-2xl border border-slate-50 hover:border-accent transition-all cursor-pointer group ${isApproved ? (isLiquidation ? 'bg-red-50/20' : 'bg-green-50/10') : 'bg-slate-50'}`}>
-                        <div className="flex items-center gap-4">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isApproved ? 'bg-green-100 text-green-600' : 'bg-slate-200 text-slate-400'}`}>
-                            {isApproved ? <CheckCircle size={16} /> : <XCircle size={16} />}
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <StatusBadge status={tx.status} label={isApproved ? 'Hoàn thành' : 'Từ chối'} tone={isApproved ? 'success' : 'danger'} />
-                              <span className="text-xs font-black text-slate-700">{tx.type} • {tx.id.slice(-6)}</span>
+
+                <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
+                    <div className="relative md:col-span-2">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        value={historySearch}
+                        onChange={event => setHistorySearch(event.target.value)}
+                        placeholder="Tìm mã phiếu, người lập, kho, vật tư..."
+                        className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-accent focus:ring-2 focus:ring-accent/10"
+                      />
+                    </div>
+                    <select
+                      value={historyTypeFilter}
+                      onChange={event => setHistoryTypeFilter(event.target.value as 'all' | TransactionType)}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-600 outline-none focus:border-accent focus:ring-2 focus:ring-accent/10"
+                    >
+                      <option value="all">Tất cả loại phiếu</option>
+                      <option value={TransactionType.IMPORT}>Phiếu nhập kho</option>
+                      <option value={TransactionType.EXPORT}>Phiếu xuất kho</option>
+                      <option value={TransactionType.TRANSFER}>Phiếu chuyển kho</option>
+                      <option value={TransactionType.LIQUIDATION}>Phiếu xuất hủy</option>
+                    </select>
+                    <select
+                      value={historyStatusFilter}
+                      onChange={event => setHistoryStatusFilter(event.target.value as 'all' | TransactionStatus.COMPLETED | TransactionStatus.CANCELLED)}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-600 outline-none focus:border-accent focus:ring-2 focus:ring-accent/10"
+                    >
+                      <option value="all">Tất cả trạng thái</option>
+                      <option value={TransactionStatus.COMPLETED}>Hoàn thành</option>
+                      <option value={TransactionStatus.CANCELLED}>Từ chối</option>
+                    </select>
+                    <select
+                      value={historyWarehouseFilter}
+                      onChange={event => setHistoryWarehouseFilter(event.target.value)}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-600 outline-none focus:border-accent focus:ring-2 focus:ring-accent/10"
+                    >
+                      <option value="all">Tất cả kho</option>
+                      {warehouses.map(warehouse => (
+                        <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                      ))}
+                    </select>
+                    <div className="grid grid-cols-2 gap-2 xl:col-span-1">
+                      <input
+                        type="date"
+                        value={historyDateFrom}
+                        onChange={event => setHistoryDateFrom(event.target.value)}
+                        className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-600 outline-none focus:border-accent focus:ring-2 focus:ring-accent/10"
+                      />
+                      <input
+                        type="date"
+                        value={historyDateTo}
+                        onChange={event => setHistoryDateTo(event.target.value)}
+                        className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-600 outline-none focus:border-accent focus:ring-2 focus:ring-accent/10"
+                      />
+                    </div>
+                  </div>
+                  {(historySearch || historyTypeFilter !== 'all' || historyStatusFilter !== 'all' || historyWarehouseFilter !== 'all' || historyDateFrom || historyDateTo) && (
+                    <div className="flex justify-end mt-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHistorySearch('');
+                          setHistoryTypeFilter('all');
+                          setHistoryStatusFilter('all');
+                          setHistoryWarehouseFilter('all');
+                          setHistoryDateFrom('');
+                          setHistoryDateTo('');
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-800"
+                      >
+                        Xóa lọc
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {paginatedHistory.length === 0 ? (
+                  <EmptyState
+                    icon={<History size={18} />}
+                    title="Không có phiếu phù hợp"
+                    message="Thử đổi từ khóa, khoảng ngày, kho hoặc loại phiếu để xem thêm lịch sử."
+                  />
+                ) : (
+                  <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
+                    {historyColumns.map(column => {
+                      const columnTransactions = paginatedHistory.filter(tx => getHistoryColumnKey(tx) === column.key);
+                      return (
+                        <div key={column.key} className={`rounded-2xl border p-3 min-h-[220px] ${column.className}`}>
+                          <div className={`mb-3 flex items-center justify-between rounded-xl border px-3 py-2 ${column.headerClassName}`}>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide">
+                                {column.icon}
+                                <span className="truncate">{column.title}</span>
+                              </div>
+                              <p className="mt-0.5 text-[10px] font-bold opacity-75">{column.description}</p>
                             </div>
-                            <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-tight">{requester?.name} • {new Date(tx.date).toLocaleDateString('vi-VN')}</p>
+                            <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-black">{column.count}</span>
+                          </div>
+
+                          <div className="space-y-2">
+                            {columnTransactions.length === 0 ? (
+                              <div className="rounded-xl border border-dashed border-slate-200 bg-white/70 p-4 text-center text-[11px] font-bold text-slate-400">
+                                Không có phiếu ở trang này
+                              </div>
+                            ) : columnTransactions.map(tx => {
+                              const requester = users.find(u => u.id === tx.requesterId);
+                              const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
+                              const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
+                              const supplier = suppliers.find(s => s.id === tx.supplierId);
+                              const isApproved = tx.status === TransactionStatus.COMPLETED;
+                              const flowLabel = tx.type === TransactionType.IMPORT
+                                ? (targetWh?.name || 'Kho nhận')
+                                : tx.type === TransactionType.TRANSFER
+                                  ? `${sourceWh?.name || '-'} -> ${targetWh?.name || '-'}`
+                                  : (sourceWh?.name || 'Kho xuất');
+                              return (
+                                <div
+                                  key={tx.id}
+                                  onClick={() => setViewingHistoryTx(tx)}
+                                  className="group rounded-2xl border border-white bg-white p-3 shadow-sm transition-all hover:border-accent hover:shadow-md cursor-pointer"
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <StatusBadge status={tx.status} label={isApproved ? 'Hoàn thành' : 'Từ chối'} tone={isApproved ? 'success' : 'danger'} />
+                                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">{formatVoucherCode(tx)}</span>
+                                      </div>
+                                      <h4 className="mt-2 text-sm font-black text-slate-800 leading-snug">{getVoucherTitle(tx)}</h4>
+                                      <p className="mt-1 text-[10px] font-bold uppercase tracking-tight text-slate-400">
+                                        {requester?.name || 'Hệ thống'} • {formatVoucherDate(tx.date)}
+                                      </p>
+                                    </div>
+                                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isApproved ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                      {isApproved ? <CheckCircle size={17} /> : <XCircle size={17} />}
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-600">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-slate-400">Kho</span>
+                                      <span className="truncate text-right">{flowLabel}</span>
+                                    </div>
+                                    {supplier && (
+                                      <div className="flex items-center justify-between gap-2 mt-1">
+                                        <span className="text-slate-400">NCC</span>
+                                        <span className="truncate text-right">{supplier.name}</span>
+                                      </div>
+                                    )}
+                                    <div className="flex items-center justify-between gap-2 mt-1">
+                                      <span className="text-slate-400">Vật tư</span>
+                                      <span>{tx.items.length} dòng</span>
+                                    </div>
+                                  </div>
+
+                                  {tx.note && <p className="mt-2 line-clamp-2 text-[11px] font-semibold text-slate-500">{tx.note}</p>}
+
+                                  <div className="mt-3 flex gap-2" onClick={event => event.stopPropagation()}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePrintTransaction(tx, 'print')}
+                                      className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                                    >
+                                      <Printer size={13} /> In
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePrintTransaction(tx, 'pdf')}
+                                      className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-slate-700"
+                                    >
+                                      <FileDown size={13} /> PDF
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
-                        <ArrowRight size={16} className="text-slate-300 group-hover:translate-x-1 transition-transform" />
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
                 <Pagination currentPage={histPage} totalPages={histTotalPages} totalItems={histTotal} startIndex={histStart} endIndex={histEnd} onPageChange={histSetPage} pageSize={histPageSize} onPageSizeChange={histSetPageSize} />
               </section>
             </div>
