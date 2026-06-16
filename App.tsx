@@ -199,17 +199,35 @@ const SubModuleGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
   // User không được phép dùng module này nói chung
   const allowedModules = user.allowedModules;
-  if (allowedModules !== undefined && !allowedModules.includes(moduleKey)) {
+  const hasSubModuleGrant =
+    (user.allowedSubModules?.[moduleKey] || []).length > 0 ||
+    (user.adminSubModules?.[moduleKey] || []).length > 0 ||
+    (user.adminModules || []).includes(moduleKey);
+  if (allowedModules !== undefined && !allowedModules.includes(moduleKey) && !hasSubModuleGrant) {
     return <Navigate to="/" replace />;
   }
 
   // User bị giới hạn sub-route trong module
   const hasSubModuleRestriction = Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, moduleKey);
   const allowedSubs = user.allowedSubModules?.[moduleKey] || [];
-  if (hasSubModuleRestriction && allowedSubs.length === 0) {
+  const adminSubs = user.adminSubModules?.[moduleKey] || [];
+  const isLegacyModuleAdmin = (user.adminModules || []).includes(moduleKey);
+  const isAllowedSubRoute =
+    allowedSubs.includes(pathname) ||
+    adminSubs.includes(pathname) ||
+    isLegacyModuleAdmin ||
+    [...allowedSubs, ...adminSubs].some(routePattern =>
+      routePattern.includes(':') && matchPath({ path: routePattern, end: true }, pathname)
+    ) ||
+    (
+      moduleKey === 'WF' &&
+      pathname.startsWith('/wf/builder/') &&
+      (allowedSubs.includes('/wf/templates') || adminSubs.includes('/wf/templates') || isLegacyModuleAdmin)
+    );
+  if (hasSubModuleRestriction && allowedSubs.length === 0 && adminSubs.length === 0 && !isLegacyModuleAdmin) {
     return <Navigate to="/" replace />;
   }
-  if (hasSubModuleRestriction && !allowedSubs.includes(pathname)) {
+  if (hasSubModuleRestriction && !isAllowedSubRoute) {
     const canOpenProjectShell =
       moduleKey === 'DA' &&
       pathname === '/da' &&

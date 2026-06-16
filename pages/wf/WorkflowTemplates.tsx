@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
 import { Role } from '../../types';
+import { usePermission } from '../../hooks/usePermission';
+import { canAccessRoute } from '../../lib/routeAccess';
 import {
     Plus, GitBranch, Settings2, Trash2, ToggleLeft, ToggleRight,
     Search, Layers, Clock, User, ShieldAlert, ChevronRight, Edit2, Shield, Eye, X
@@ -13,7 +15,8 @@ import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 const WorkflowTemplates: React.FC = () => {
     const navigate = useNavigate();
     const { templates, createTemplate, updateTemplate, deleteTemplate, instances, getTemplateNodes } = useWorkflow();
-    const { user, users, isModuleAdmin } = useApp();
+    const { user, users } = useApp();
+    const { canManage } = usePermission();
     const [searchTerm, setSearchTerm] = useState('');
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [newName, setNewName] = useState('');
@@ -61,9 +64,11 @@ const WorkflowTemplates: React.FC = () => {
     );
     };
 
-    const isAdmin = user.role === Role.ADMIN;
-    const isWorkflowModuleAdmin = isModuleAdmin('WF');
-    const canViewAllTemplates = isAdmin || isWorkflowModuleAdmin;
+    const isSystemAdmin = user.role === Role.ADMIN;
+    const canManageWorkflowTemplates = canManage('/wf/templates');
+    const canViewAllTemplates = canAccessRoute(user, '/wf/templates') || canManageWorkflowTemplates;
+    const canManageTemplate = (template: typeof templates[0]) =>
+        canManageWorkflowTemplates || Boolean(template.managers?.includes(user.id));
 
     if (!canViewAllTemplates && !templates.some(t => t.managers?.includes(user.id))) {
         return (
@@ -84,7 +89,7 @@ const WorkflowTemplates: React.FC = () => {
     );
 
     const handleCreate = async () => {
-        if (!newName.trim()) return;
+        if (!canManageWorkflowTemplates || !newName.trim()) return;
         const t = await createTemplate(newName.trim(), newDesc.trim(), user.id);
         if (t) {
             // Save managers + default watchers
@@ -99,6 +104,7 @@ const WorkflowTemplates: React.FC = () => {
     };
 
     const handleToggleActive = async (t: typeof templates[0]) => {
+        if (!canManageTemplate(t)) return;
         await updateTemplate({ ...t, isActive: !t.isActive });
     };
 
@@ -108,6 +114,7 @@ const WorkflowTemplates: React.FC = () => {
     };
 
     const openEditModal = (t: typeof templates[0]) => {
+        if (!canManageTemplate(t)) return;
         setEditingTemplate(t);
         setEditName(t.name);
         setEditDesc(t.description);
@@ -117,6 +124,7 @@ const WorkflowTemplates: React.FC = () => {
 
     const handleEdit = async () => {
         if (!editingTemplate || !editName.trim()) return;
+        if (!canManageTemplate(editingTemplate)) return;
         await updateTemplate({ ...editingTemplate, name: editName.trim(), description: editDesc.trim(), managers: editManagers, defaultWatchers: editWatchers });
         setEditingTemplate(null);
     };
@@ -131,7 +139,7 @@ const WorkflowTemplates: React.FC = () => {
                     </h1>
                     <p className="text-sm text-slate-500 dark:text-slate-400">Thiết kế và quản lý các mẫu quy trình duyệt phiếu cho công ty.</p>
                 </div>
-                {isAdmin && (
+                {canManageWorkflowTemplates && (
                     <button
                         onClick={() => setShowCreateModal(true)}
                         className="flex items-center px-4 py-2.5 bg-accent text-white rounded-xl hover:bg-emerald-600 transition font-bold shadow-lg shadow-emerald-500/20"
@@ -159,11 +167,12 @@ const WorkflowTemplates: React.FC = () => {
                     const creator = users.find(u => u.id === t.createdBy);
                     const nodeCount = getTemplateNodes(t.id).length;
                     const instanceCount = instances.filter(i => i.templateId === t.id).length;
+                    const canManageThisTemplate = canManageTemplate(t);
                     return (
                         <div
                             key={t.id}
-                            className="glass-card rounded-2xl p-5 hover:shadow-lg transition-all group cursor-pointer relative overflow-hidden"
-                            onClick={() => navigate(`/wf/builder/${t.id}`)}
+                            className={`glass-card rounded-2xl p-5 transition-all group relative overflow-hidden ${canManageThisTemplate ? 'cursor-pointer hover:shadow-lg' : ''}`}
+                            onClick={() => { if (canManageThisTemplate) navigate(`/wf/builder/${t.id}`); }}
                         >
                             {/* Active indicator */}
                             <div className={`absolute top-0 left-0 w-full h-1 ${t.isActive ? 'bg-gradient-to-r from-emerald-400 to-teal-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
@@ -180,7 +189,7 @@ const WorkflowTemplates: React.FC = () => {
                                         </span>
                                     </div>
                                 </div>
-                                <ChevronRight size={16} className="text-slate-300 group-hover:text-accent transition" />
+                                {canManageThisTemplate && <ChevronRight size={16} className="text-slate-300 group-hover:text-accent transition" />}
                             </div>
 
                             {t.description && (
@@ -212,14 +221,16 @@ const WorkflowTemplates: React.FC = () => {
                                     <span>{creator?.name || 'N/A'}</span>
                                 </div>
                                 <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                                    <button
-                                        onClick={() => handleToggleActive(t)}
-                                        className={`p-1.5 rounded-lg transition ${t.isActive ? 'text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/30' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
-                                        title={t.isActive ? 'Tắt quy trình' : 'Bật quy trình'}
-                                    >
-                                        {t.isActive ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-                                    </button>
-                                    {isAdmin && (
+                                    {canManageThisTemplate && (
+                                        <button
+                                            onClick={() => handleToggleActive(t)}
+                                            className={`p-1.5 rounded-lg transition ${t.isActive ? 'text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/30' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                                            title={t.isActive ? 'Tắt quy trình' : 'Bật quy trình'}
+                                        >
+                                            {t.isActive ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                                        </button>
+                                    )}
+                                    {isSystemAdmin && (
                                         <button
                                             onClick={() => setDeleteConfirmId(t.id)}
                                             className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition"
@@ -228,13 +239,15 @@ const WorkflowTemplates: React.FC = () => {
                                             <Trash2 size={14} />
                                         </button>
                                     )}
-                                    <button
-                                        onClick={() => openEditModal(t)}
-                                        className="p-1.5 rounded-lg text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition"
-                                        title="Sửa thông tin"
-                                    >
-                                        <Edit2 size={14} />
-                                    </button>
+                                    {canManageThisTemplate && (
+                                        <button
+                                            onClick={() => openEditModal(t)}
+                                            className="p-1.5 rounded-lg text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition"
+                                            title="Sửa thông tin"
+                                        >
+                                            <Edit2 size={14} />
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </div>

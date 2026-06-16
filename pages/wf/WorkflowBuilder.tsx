@@ -5,6 +5,7 @@ import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
 import { WorkflowAssignmentTarget, WorkflowNode, WorkflowEdge, WorkflowNodeType, WorkflowCustomField, CustomFieldType, WorkflowPrintTemplate, Role } from '../../types';
 import { projectWorkflowService } from '../../lib/projectWorkflowService';
+import { usePermission } from '../../hooks/usePermission';
 import {
     ArrowLeft, Save, Plus, Trash2, GripVertical, ChevronUp, ChevronDown,
     UserCheck, Settings2, X, Layers, FileText, ToggleLeft, ToggleRight,
@@ -147,9 +148,12 @@ const WorkflowBuilder: React.FC = () => {
     const { id: templateId } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { templates, getTemplateNodes, getTemplateEdges, updateTemplate, uploadPrintTemplate, deletePrintTemplate, getPrintTemplates, refreshData } = useWorkflow();
-    const { users, orgUnits, user, isModuleAdmin } = useApp();
+    const { users, orgUnits, user } = useApp();
+    const { canManage } = usePermission();
 
     const template = templates.find(t => t.id === templateId);
+    const canManageWorkflowTemplates = canManage('/wf/templates');
+    const canConfigureTemplate = canManageWorkflowTemplates || Boolean(template?.managers?.includes(user.id));
 
     const [activeTab, setActiveTab] = useState<'steps' | 'fields' | 'print'>('steps');
     const [localNodes, setLocalNodes] = useState<WorkflowNode[]>([]);
@@ -244,6 +248,7 @@ const WorkflowBuilder: React.FC = () => {
     };
 
     const addStep = () => {
+        if (!canConfigureTemplate) return;
         const orderedSteps = getOrderedSteps();
         const newNode: WorkflowNode = {
             id: generateId(),
@@ -260,6 +265,7 @@ const WorkflowBuilder: React.FC = () => {
     };
 
     const removeStep = (nodeId: string) => {
+        if (!canConfigureTemplate) return;
         setLocalNodes(prev => prev.filter(n => n.id !== nodeId));
         setLocalEdges(prev => prev.filter(e => e.sourceNodeId !== nodeId && e.targetNodeId !== nodeId));
         if (editingStepId === nodeId) setEditingStepId(null);
@@ -267,11 +273,13 @@ const WorkflowBuilder: React.FC = () => {
     };
 
     const updateStepLabel = (nodeId: string, label: string) => {
+        if (!canConfigureTemplate) return;
         setLocalNodes(prev => prev.map(n => n.id === nodeId ? { ...n, label } : n));
         setHasChanges(true);
     };
 
     const updateStepConfig = (nodeId: string, key: string, value: any) => {
+        if (!canConfigureTemplate) return;
         setLocalNodes(prev => prev.map(n => {
             if (n.id !== nodeId) return n;
             return { ...n, config: { ...n.config, [key]: value === '' ? undefined : value } };
@@ -302,16 +310,18 @@ const WorkflowBuilder: React.FC = () => {
     };
 
     const updateTemplateUserList = async (key: 'managers' | 'defaultWatchers', userIds: string[]) => {
-        if (!template) return;
+        if (!template || !canConfigureTemplate) return;
         await updateTemplate({ ...template, [key]: userIds });
     };
 
     const updateStepType = (nodeId: string, type: WorkflowNodeType) => {
+        if (!canConfigureTemplate) return;
         setLocalNodes(prev => prev.map(n => n.id === nodeId ? { ...n, type } : n));
         setHasChanges(true);
     };
 
     const moveStep = (nodeId: string, direction: 'up' | 'down') => {
+        if (!canConfigureTemplate) return;
         const steps = getOrderedSteps();
         const idx = steps.findIndex(s => s.id === nodeId);
         if ((direction === 'up' && idx <= 0) || (direction === 'down' && idx >= steps.length - 1)) return;
@@ -417,6 +427,7 @@ const WorkflowBuilder: React.FC = () => {
     // ========== CUSTOM FIELDS MANAGEMENT ==========
 
     const addCustomField = () => {
+        if (!canConfigureTemplate) return;
         if (!newFieldLabel.trim()) return;
         const field: WorkflowCustomField = {
             id: generateId(),
@@ -437,16 +448,19 @@ const WorkflowBuilder: React.FC = () => {
     };
 
     const removeCustomField = (fieldId: string) => {
+        if (!canConfigureTemplate) return;
         setCustomFields(prev => prev.filter(f => f.id !== fieldId));
         setHasChanges(true);
     };
 
     const toggleFieldRequired = (fieldId: string) => {
+        if (!canConfigureTemplate) return;
         setCustomFields(prev => prev.map(f => f.id === fieldId ? { ...f, required: !f.required } : f));
         setHasChanges(true);
     };
 
     const moveField = (fieldId: string, direction: 'up' | 'down') => {
+        if (!canConfigureTemplate) return;
         setCustomFields(prev => {
             const idx = prev.findIndex(f => f.id === fieldId);
             if ((direction === 'up' && idx <= 0) || (direction === 'down' && idx >= prev.length - 1)) return prev;
@@ -461,7 +475,7 @@ const WorkflowBuilder: React.FC = () => {
     // ========== SAVE ==========
 
     const handleSave = async () => {
-        if (!templateId || !template) return;
+        if (!templateId || !template || !canConfigureTemplate) return;
         setIsSaving(true);
         try {
             let nodesToSave = [...localNodes];
@@ -524,7 +538,7 @@ const WorkflowBuilder: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    {(user.role === Role.ADMIN || isModuleAdmin('WF')) && <button
+                    {canManageWorkflowTemplates && <button
                         onClick={toggleMaterialRequestDefaultBinding}
                         disabled={bindingSaving}
                         className={`flex items-center px-4 py-2.5 rounded-xl text-xs font-black border transition disabled:opacity-50 ${
@@ -543,7 +557,7 @@ const WorkflowBuilder: React.FC = () => {
                     )}
                     <button
                         onClick={handleSave}
-                        disabled={isSaving || !hasChanges}
+                        disabled={isSaving || !hasChanges || !canConfigureTemplate}
                         className="flex items-center px-5 py-2.5 bg-accent text-white rounded-xl text-sm font-bold hover:bg-emerald-600 transition disabled:opacity-50 shadow-lg shadow-emerald-500/20"
                     >
                         <Save size={15} className="mr-2" /> {isSaving ? 'Đang lưu...' : 'Lưu'}
@@ -938,6 +952,7 @@ const WorkflowBuilder: React.FC = () => {
                     {/* Add Step Button */}
                     <button
                         onClick={addStep}
+                        disabled={!canConfigureTemplate}
                         className="w-full flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl text-sm font-bold text-slate-400 hover:text-accent hover:border-accent transition group"
                     >
                         <Plus size={16} className="group-hover:scale-110 transition-transform" /> Thêm giai đoạn
