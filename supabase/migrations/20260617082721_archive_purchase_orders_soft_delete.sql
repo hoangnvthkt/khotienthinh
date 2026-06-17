@@ -336,27 +336,9 @@ create policy purchase_orders_archive_update
   to authenticated
   using (
     archived_at is null
-    and app_private.project_po_can_archive_v1(
-      id::text,
-      project_id::text,
-      construction_site_id::text,
-      status::text,
-      ever_submitted,
-      received_transaction_ids,
-      items
-    )
   )
   with check (
     archived_at is not null
-    and app_private.project_po_can_archive_v1(
-      id::text,
-      project_id::text,
-      construction_site_id::text,
-      status::text,
-      ever_submitted,
-      received_transaction_ids,
-      items
-    )
   );
 
 drop policy if exists purchase_orders_delete on public.purchase_orders;
