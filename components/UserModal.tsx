@@ -15,6 +15,7 @@ const PROJECT_TAB_PERMISSION_ICONS: Record<ProjectOverviewTabKey, any> = {
   cashflow: Repeat,
   contract: FileSignature,
   gantt: GitBranch,
+  weekly_progress: Calendar,
   dailylog: ClipboardCheck,
   payment: CreditCard,
   quality: ClipboardCheck,

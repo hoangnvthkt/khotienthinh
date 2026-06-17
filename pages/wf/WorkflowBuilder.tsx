@@ -10,7 +10,7 @@ import {
     ArrowLeft, Save, Plus, Trash2, GripVertical, ChevronUp, ChevronDown,
     UserCheck, Settings2, X, Layers, FileText, ToggleLeft, ToggleRight,
     Zap, Play, Flag, Clock, Type, AlignLeft, Hash, Calendar, List, Paperclip, Printer, Upload, Download, Eye,
-    Search, Check
+    Search, Check, Table2
 } from 'lucide-react';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
@@ -21,6 +21,7 @@ const FIELD_TYPE_CONFIG: Record<CustomFieldType, { label: string; icon: any; col
     date: { label: 'Ngày tháng', icon: Calendar, color: 'bg-amber-500' },
     select: { label: 'Danh sách chọn', icon: List, color: 'bg-violet-500' },
     file: { label: 'Tệp đính kèm', icon: Paperclip, color: 'bg-rose-500' },
+    table: { label: 'Bảng dữ liệu', icon: Table2, color: 'bg-teal-500' },
 };
 
 interface SearchableCheckboxSelectProps {
@@ -484,7 +485,7 @@ const WorkflowBuilder: React.FC = () => {
             label: newFieldLabel.trim(),
             type: newFieldType,
             required: newFieldRequired,
-            options: newFieldType === 'select' ? newFieldOptions.split(',').map(o => o.trim()).filter(Boolean) : undefined,
+            options: (newFieldType === 'select' || newFieldType === 'table') ? newFieldOptions.split(',').map(o => o.trim()).filter(Boolean) : undefined,
             placeholder: '',
         };
         setCustomFields(prev => [...prev, field]);
@@ -1130,6 +1131,11 @@ const WorkflowBuilder: React.FC = () => {
                                                         Tùy chọn: {field.options.join(', ')}
                                                     </p>
                                                 )}
+                                                {field.type === 'table' && field.options && (
+                                                    <p className="text-[10px] text-teal-600 dark:text-teal-400 font-semibold truncate">
+                                                        Cột: {field.options.join(', ')}
+                                                    </p>
+                                                )}
                                             </div>
 
                                             {/* Required toggle */}
@@ -1210,14 +1216,16 @@ const WorkflowBuilder: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    {newFieldType === 'select' && (
+                                    {(newFieldType === 'select' || newFieldType === 'table') && (
                                         <div>
-                                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Các tùy chọn (phân cách bằng dấu phẩy)</label>
+                                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                                                {newFieldType === 'select' ? 'Các tùy chọn (phân cách bằng dấu phẩy)' : 'Tên các cột của bảng (phân cách bằng dấu phẩy)'}
+                                            </label>
                                             <input
                                                 type="text"
                                                 value={newFieldOptions}
                                                 onChange={e => setNewFieldOptions(e.target.value)}
-                                                placeholder="VD: Công trường A, Công trường B, Văn phòng"
+                                                placeholder={newFieldType === 'select' ? 'VD: Công trường A, Công trường B, Văn phòng' : 'VD: Tên vật tư, ĐVT, Số lượng đề xuất, Ghi chú'}
                                                 className="w-full px-4 py-2.5 bg-white/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 text-sm"
                                             />
                                         </div>

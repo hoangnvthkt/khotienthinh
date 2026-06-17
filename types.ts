@@ -2497,7 +2497,7 @@ export enum WorkflowInstanceAction {
   REOPENED = 'REOPENED',
 }
 
-export type CustomFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'file';
+export type CustomFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'file' | 'table';
 
 export type ProjectWorkflowSubjectType = 'material_request';
 export type ProjectWorkflowSubjectStatus = 'RUNNING' | 'RETURNED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED';

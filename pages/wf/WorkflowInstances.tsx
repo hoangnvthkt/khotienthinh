@@ -504,6 +504,112 @@ const FileFieldInput: React.FC<{
     );
 };
 
+// ========== Table Field Input ==========
+interface TableFieldInputProps {
+    fieldName: string;
+    columns: string[];
+    value: string[][] | null | undefined;
+    onChange: (val: string[][]) => void;
+    disabled?: boolean;
+}
+
+const TableFieldInput: React.FC<TableFieldInputProps> = ({ fieldName, columns, value, onChange, disabled = false }) => {
+    // Ensure value is initialized with at least one row if empty
+    const rows = React.useMemo(() => {
+        if (Array.isArray(value) && value.length > 0) return value;
+        return [Array(columns.length).fill('')];
+    }, [value, columns.length]);
+
+    const handleCellChange = (rowIndex: number, colIndex: number, text: string) => {
+        const updated = rows.map((r, ri) => {
+            if (ri !== rowIndex) return r;
+            const newRow = [...r];
+            newRow[colIndex] = text;
+            return newRow;
+        });
+        onChange(updated);
+    };
+
+    const addRow = () => {
+        const updated = [...rows, Array(columns.length).fill('')];
+        onChange(updated);
+    };
+
+    const removeRow = (rowIndex: number) => {
+        if (rows.length <= 1) {
+            onChange([Array(columns.length).fill('')]);
+            return;
+        }
+        const updated = rows.filter((_, ri) => ri !== rowIndex);
+        onChange(updated);
+    };
+
+    return (
+        <div className="mt-2 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-900">
+            <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                    <thead>
+                        <tr className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-700">
+                            <th className="px-3 py-2 text-center w-10">#</th>
+                            {columns.map((col, idx) => (
+                                <th key={idx} className="px-3 py-2">{col}</th>
+                            ))}
+                            {!disabled && <th className="px-3 py-2 text-center w-12"></th>}
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {rows.map((row, ri) => (
+                            <tr key={ri} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                                <td className="px-3 py-2 text-center text-slate-400 font-semibold align-middle">
+                                    {String(ri + 1).padStart(2, '0')}
+                                </td>
+                                {columns.map((_, ci) => (
+                                    <td key={ci} className="px-2 py-1 align-middle">
+                                        <input
+                                            type="text"
+                                            value={row[ci] ?? ''}
+                                            onChange={e => handleCellChange(ri, ci, e.target.value)}
+                                            disabled={disabled}
+                                            className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg bg-transparent focus:ring-1 focus:ring-accent outline-none text-slate-700 dark:text-slate-200"
+                                            placeholder="..."
+                                        />
+                                    </td>
+                                ))}
+                                {!disabled && (
+                                    <td className="px-2 py-1 text-center align-middle">
+                                        <button
+                                            type="button"
+                                            onClick={() => removeRow(ri)}
+                                            className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition"
+                                            title="Xóa dòng"
+                                        >
+                                            <Trash2 size={13} />
+                                        </button>
+                                    </td>
+                                )}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            {!disabled && (
+                <div className="p-2 bg-slate-50/50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                    <button
+                        type="button"
+                        onClick={addRow}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-accent hover:bg-emerald-600 text-white text-[11px] font-bold rounded-lg transition shadow-sm"
+                    >
+                        <Plus size={12} /> Thêm dòng
+                    </button>
+                    <span className="text-[10px] text-slate-400 font-medium">
+                        Tổng cộng: {rows.length} dòng
+                    </span>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const WorkflowInstances: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
@@ -1114,6 +1220,15 @@ const WorkflowInstances: React.FC = () => {
                             <option key={opt} value={opt}>{opt}</option>
                         ))}
                     </select>
+                )}
+                {field.type === 'table' && (
+                    <TableFieldInput
+                        fieldName={field.name}
+                        columns={field.options || []}
+                        value={data[field.name]}
+                        onChange={(val: string[][]) => onChange(field.name, val)}
+                        disabled={disabled}
+                    />
                 )}
                 {field.type === 'file' && (
                     <FileFieldInput

@@ -62,6 +62,7 @@ import { StatusBadge } from '../components/erp';
 const CashFlowTab = React.lazy(() => import('./project/CashFlowTab'));
 const ContractTab = React.lazy(() => import('./project/ContractTab'));
 const GanttTab = React.lazy(() => import('./project/GanttTab'));
+const WeeklyProgressTab = React.lazy(() => import('./project/WeeklyProgressTab'));
 const DailyLogTab = React.lazy(() => import('./project/DailyLogTab'));
 const PaymentWorkbenchTab = React.lazy(() => import('./project/PaymentWorkbenchTab'));
 const SubcontractTab = React.lazy(() => import('./project/SubcontractTab'));
@@ -3093,6 +3094,8 @@ const ProjectDashboard: React.FC = () => {
                         <ContractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('contract')} />
                     ) : overviewTab === 'gantt' ? (
                         <GanttTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('gantt')} />
+                    ) : overviewTab === 'weekly_progress' ? (
+                        <WeeklyProgressTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('weekly_progress')} />
 	                    ) : overviewTab === 'dailylog' ? (
 	                        <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('dailylog')} />
 	                    ) : overviewTab === 'payment' ? (

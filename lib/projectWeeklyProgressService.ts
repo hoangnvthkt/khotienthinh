@@ -172,6 +172,20 @@ const weeklyToDb = (row: ProjectWeeklyTaskProgress): Record<string, unknown> => 
 };
 
 export const projectWeeklyProgressService = {
+  async listAll(scopeKey: string): Promise<ProjectWeeklyTaskProgress[]> {
+    if (!isSupabaseConfigured || !scopeKey) return [];
+    const { data, error } = await supabase
+      .from(WEEKLY_TABLE)
+      .select('*')
+      .eq('scope_key', scopeKey)
+      .order('week_start', { ascending: true });
+    if (error) {
+      console.warn('project weekly progress listAll failed:', error.message);
+      return [];
+    }
+    return (data || []).map(row => fromDb(row) as ProjectWeeklyTaskProgress);
+  },
+
   async listByWeek(scopeKey: string, weekStart: string): Promise<ProjectWeeklyTaskProgress[]> {
     if (!isSupabaseConfigured || !scopeKey) return [];
     const { data, error } = await supabase

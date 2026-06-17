@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
     ArrowLeft, CheckCircle, Clock, FileText, GitBranch, Image as ImageIcon,
-    MessageSquare, Paperclip, RefreshCcw, RotateCcw, Send, User, X, XCircle
+    MessageSquare, Paperclip, RefreshCcw, RotateCcw, Send, User, X, XCircle,
+    AlertCircle, Calendar, Download, Eye, Table2, FileSpreadsheet, ChevronRight, ChevronDown, Check
 } from 'lucide-react';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
@@ -15,6 +16,7 @@ import {
     WorkflowInstanceStatus,
     WorkflowNode,
     WorkflowNodeType,
+    WorkflowPrintTemplate,
 } from '../../types';
 import {
     getWorkflowStepSelectionMode,
@@ -23,6 +25,9 @@ import {
 } from '../../lib/workflowAssignmentResolver';
 import { workflowInstanceCommentService } from '../../lib/workflowInstanceCommentService';
 import { canSeeMaterialRequestWorkflowOnKanban, isMaterialRequestWorkflowTemplate } from '../../lib/workflowVisibility';
+import { supabase } from '../../lib/supabase';
+import { saveAs } from 'file-saver';
+import { loadXlsx } from '../../lib/loadXlsx';
 
 const STATUS_LABEL: Record<WorkflowInstanceStatus, string> = {
     RUNNING: 'Đang xử lý',
@@ -49,6 +54,215 @@ const formatBytes = (bytes: number) => {
     return `${(bytes / Math.pow(1024, exponent)).toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
 };
 
+// ========== Excel Table Preview ==========
+const ExcelTablePreview: React.FC<{
+    sheets: Record<string, any[][]>;
+    sheetNames: string[];
+}> = ({ sheets, sheetNames }) => {
+    const [activeSheet, setActiveSheet] = useState(sheetNames[0] || '');
+    const data = sheets[activeSheet] || [];
+    if (!data.length) return <p className="text-xs text-slate-400 italic">Không có dữ liệu</p>;
+
+    const headers = data[0] || [];
+    const rows = data.slice(1);
+
+    return (
+        <div className="mt-2 rounded-xl border border-emerald-250 dark:border-emerald-800/40 overflow-hidden bg-white dark:bg-slate-900">
+            {sheetNames.length > 1 && (
+                <div className="flex gap-0 border-b border-emerald-100 dark:border-emerald-800/30 bg-emerald-50/50 dark:bg-emerald-900/10 overflow-x-auto">
+                    {sheetNames.map(name => (
+                        <button key={name} onClick={() => setActiveSheet(name)}
+                            className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-all border-b-2 ${activeSheet === name
+                                ? 'text-emerald-700 dark:text-emerald-300 border-emerald-500 bg-white dark:bg-slate-800'
+                                : 'text-slate-400 border-transparent hover:text-slate-600'
+                                }`}>
+                            <Table2 size={10} className="inline mr-1" />{name}
+                        </button>
+                    ))}
+                </div>
+            )}
+            <div className="overflow-auto max-h-[250px]" style={{ maxWidth: '100%' }}>
+                <table className="w-full text-xs text-left">
+                    <thead className="sticky top-0 z-10 bg-emerald-100 dark:bg-emerald-900/40">
+                        <tr>
+                            {headers.map((h: any, i: number) => (
+                                <th key={i} className="px-3 py-2 font-bold whitespace-nowrap border-b text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700">
+                                    {h ?? `Cột ${i + 1}`}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map((row: any[], ri: number) => (
+                            <tr key={ri} className={ri % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50/50 dark:bg-slate-800/30'}>
+                                {headers.map((_: any, ci: number) => (
+                                    <td key={ci} className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-850 text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                                        {row[ci] ?? ''}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            <div className="px-3 py-1.5 text-[10px] text-slate-400 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                <FileSpreadsheet size={10} className="inline mr-1" />
+                {rows.length} dòng × {headers.length} cột
+            </div>
+        </div>
+    );
+};
+
+// ========== File Helpers ==========
+const WORKFLOW_ATTACHMENT_BUCKET = 'workflow-attachments';
+
+const downloadFileFromBase64 = (base64: string, fileName: string, mimeType: string) => {
+    const byteChars = atob(base64);
+    const byteNumbers = new Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: mimeType || 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+};
+
+const getBase64DataUrl = (base64: string, mimeType: string) => `data:${mimeType};base64,${base64}`;
+
+const getAttachmentBucket = (file: any) => file?.storageBucket || WORKFLOW_ATTACHMENT_BUCKET;
+
+const hasDownloadableFile = (file: any) => Boolean(file?.data || file?.storagePath);
+
+const downloadWorkflowFile = async (file: any) => {
+    try {
+        if (file?.data) {
+            downloadFileFromBase64(file.data, file.fileName, file.fileType);
+            return;
+        }
+        if (file?.storagePath) {
+            const { data, error } = await supabase.storage.from(getAttachmentBucket(file)).download(file.storagePath);
+            if (error || !data) throw error || new Error('Không tải được file');
+            saveAs(data, file.fileName || 'attachment');
+        }
+    } catch (err) {
+        console.error('downloadWorkflowFile error:', err);
+        alert('Không tải được file đính kèm. Vui lòng thử lại.');
+    }
+};
+
+// ========== File Preview Modal ==========
+const FilePreviewModal: React.FC<{
+    file: any;
+    onClose: () => void;
+}> = ({ file, onClose }) => {
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [previewError, setPreviewError] = useState('');
+    const isImage = /^image\//i.test(file?.fileType || '');
+    const isPdf = /pdf/i.test(file?.fileType || '') || /\.pdf$/i.test(file?.fileName || '');
+    const isExcel = /\.xlsx|xls|csv$/i.test(file?.fileName || '');
+
+    useEffect(() => {
+        let objectUrl: string | null = null;
+        let cancelled = false;
+        setPreviewUrl(null);
+        setPreviewError('');
+
+        const loadPreview = async () => {
+            if (!file || (!isImage && !isPdf)) return;
+            if (file.data) {
+                setPreviewUrl(getBase64DataUrl(file.data, isPdf ? 'application/pdf' : file.fileType));
+                return;
+            }
+            if (!file.storagePath) {
+                setPreviewError('File cũ không còn dữ liệu xem trước');
+                return;
+            }
+            const { data, error } = await supabase.storage.from(getAttachmentBucket(file)).download(file.storagePath);
+            if (cancelled) return;
+            if (error || !data) {
+                console.error('File preview download error:', error);
+                setPreviewError('Không tải được bản xem trước');
+                return;
+            }
+            objectUrl = URL.createObjectURL(data);
+            setPreviewUrl(objectUrl);
+        };
+
+        loadPreview();
+        return () => {
+            cancelled = true;
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
+    }, [file, isImage, isPdf]);
+
+    if (!file) return null;
+
+    return (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-[90vw] max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+                <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                    <Paperclip size={16} className="text-rose-400" />
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{file.fileName}</p>
+                        <p className="text-[10px] text-slate-400">{file.fileType} • {(file.fileSize / 1024).toFixed(1)} KB</p>
+                    </div>
+                    <button
+                        onClick={() => downloadWorkflowFile(file)}
+                        disabled={!hasDownloadableFile(file)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600 transition shadow-md"
+                    >
+                        <Download size={13} /> Tải về
+                    </button>
+                    <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 transition-colors">
+                        <X size={18} />
+                    </button>
+                </div>
+                <div className="flex-1 overflow-auto p-4">
+                    {isImage && previewUrl && (
+                        <div className="flex items-center justify-center">
+                            <img src={previewUrl} alt={file.fileName} className="max-w-full max-h-[70vh] rounded-lg shadow-lg" />
+                        </div>
+                    )}
+                    {isPdf && previewUrl && (
+                        <iframe
+                            src={previewUrl}
+                            className="w-full h-[70vh] rounded-lg border border-slate-200 dark:border-slate-700"
+                            title={file.fileName}
+                        />
+                    )}
+                    {(isImage || isPdf) && !previewUrl && (
+                        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                            <FileText size={48} className="mb-3 opacity-50" />
+                            <p className="text-sm font-medium">{previewError || 'Đang tải bản xem trước...'}</p>
+                        </div>
+                    )}
+                    {isExcel && file.excelData && file.sheetNames && (
+                        <ExcelTablePreview sheets={file.excelData} sheetNames={file.sheetNames} />
+                    )}
+                    {isExcel && (!file.excelData || !file.sheetNames) && (
+                        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                            <FileSpreadsheet size={48} className="mb-3 opacity-50" />
+                            <p className="text-sm font-medium">File Excel lưu trữ trong Storage</p>
+                        </div>
+                    )}
+                    {!isImage && !isPdf && !isExcel && (
+                        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                            <FileText size={48} className="mb-3 opacity-50" />
+                            <p className="text-sm font-medium">Không hỗ trợ xem trước loại tệp này</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ========== Attachment Preview inside Comments ==========
 const AttachmentPreview: React.FC<{ attachment: WorkflowInstanceCommentAttachment }> = ({ attachment }) => {
     const [url, setUrl] = useState<string>('');
 
@@ -87,6 +301,7 @@ const AttachmentPreview: React.FC<{ attachment: WorkflowInstanceCommentAttachmen
     );
 };
 
+// ========== Main Component ==========
 const WorkflowInstanceDetail: React.FC = () => {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -106,6 +321,8 @@ const WorkflowInstanceDetail: React.FC = () => {
     const [actionComment, setActionComment] = useState('');
     const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<string[]>([]);
     const [activeAction, setActiveAction] = useState<WorkflowInstanceAction | null>(null);
+    const [previewFile, setPreviewFile] = useState<any>(null);
+    const [fieldsExpanded, setFieldsExpanded] = useState(true);
 
     const instance = useMemo(() => instances.find(item => item.id === id), [instances, id]);
     const template = useMemo(() => templates.find(item => item.id === instance?.templateId), [templates, instance?.templateId]);
@@ -129,6 +346,10 @@ const WorkflowInstanceDetail: React.FC = () => {
         }
         return result;
     }, [template, nodes, edges]);
+
+    const orderedSteps = useMemo(() => {
+        return orderedNodes.filter(node => node.type !== WorkflowNodeType.START && node.type !== WorkflowNodeType.END);
+    }, [orderedNodes]);
 
     const nextNode = useMemo(() => {
         if (!currentNode) return null;
@@ -167,6 +388,7 @@ const WorkflowInstanceDetail: React.FC = () => {
             logs: instanceLogs,
         });
     }, [transitionTargetNode, instance, users, employees, orgUnits, instanceLogs]);
+
     const transitionSelectionMode = getWorkflowStepSelectionMode(transitionTargetNode);
     const mustChooseAssignee = Boolean(
         activeAction &&
@@ -175,6 +397,88 @@ const WorkflowInstanceDetail: React.FC = () => {
         transitionTargetNode.type !== WorkflowNodeType.END
     );
 
+    // ========== timing / SLA calculation ==========
+    const stepTimings = useMemo(() => {
+        if (!instance || !template || orderedSteps.length === 0) return [];
+        const logsSorted = [...instanceLogs].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        let lastTime = new Date(instance.createdAt).getTime();
+
+        return orderedSteps.map((step, idx) => {
+            const stepLogs = logsSorted.filter(log => log.nodeId === step.id);
+            const isCurrent = step.id === instance.currentNodeId && instance.status === WorkflowInstanceStatus.RUNNING;
+
+            let startTime = lastTime;
+            let endTime: number | null = null;
+            let duration = 0;
+            let status: 'pending' | 'running' | 'completed' = 'pending';
+            let actorName = '';
+            let actionDate = '';
+            let comment = '';
+
+            const resolveLog = stepLogs.find(l =>
+                l.action === WorkflowInstanceAction.APPROVED ||
+                l.action === WorkflowInstanceAction.REJECTED
+            );
+
+            if (resolveLog) {
+                endTime = new Date(resolveLog.createdAt).getTime();
+                duration = endTime - startTime;
+                status = 'completed';
+                const actor = users.find(u => u.id === resolveLog.actedBy);
+                actorName = actor?.name || 'N/A';
+                actionDate = new Date(resolveLog.createdAt).toLocaleString('vi-VN');
+                comment = resolveLog.comment;
+                lastTime = endTime;
+            } else if (isCurrent) {
+                endTime = Date.now();
+                duration = endTime - startTime;
+                status = 'running';
+            } else {
+                startTime = 0;
+                status = 'pending';
+            }
+
+            return {
+                stepId: step.id,
+                label: step.label,
+                startTime: startTime > 0 ? new Date(startTime).toLocaleString('vi-VN') : '',
+                endTime: endTime && status !== 'running' ? new Date(endTime).toLocaleString('vi-VN') : '',
+                durationHours: startTime > 0 ? Number((duration / (1000 * 60 * 60)).toFixed(2)) : 0,
+                status,
+                actorName,
+                actionDate,
+                comment,
+                logs: stepLogs
+            };
+        });
+    }, [instance, template, orderedSteps, instanceLogs, users]);
+
+    const currentStepTiming = useMemo(() => {
+        return stepTimings.find(t => t.stepId === instance?.currentNodeId && t.status === 'running');
+    }, [stepTimings, instance?.currentNodeId]);
+
+    const isOverdue = useMemo(() => {
+        if (!currentNode || !currentStepTiming || !currentNode.config?.slaHours) return false;
+        return currentStepTiming.durationHours > currentNode.config.slaHours;
+    }, [currentNode, currentStepTiming]);
+
+    const totalSlaHours = useMemo(() => {
+        return orderedSteps.reduce((sum, step) => sum + (step.config?.slaHours || 0), 0);
+    }, [orderedSteps]);
+
+    const totalDurationHours = useMemo(() => {
+        if (!instance) return 0;
+        const start = new Date(instance.createdAt).getTime();
+        const end = instance.status === WorkflowInstanceStatus.RUNNING ? Date.now() : new Date(instance.updatedAt).getTime();
+        return Number(((end - start) / (1000 * 60 * 60)).toFixed(2));
+    }, [instance]);
+
+    const currentStepIndex = useMemo(() => {
+        if (!instance || !currentNode) return 0;
+        return orderedSteps.findIndex(s => s.id === instance.currentNodeId) + 1;
+    }, [instance, currentNode, orderedSteps]);
+
+    // ========== comments and actions ==========
     const loadComments = useCallback(async () => {
         if (!id) return;
         try {
@@ -318,11 +622,39 @@ const WorkflowInstanceDetail: React.FC = () => {
         );
     }
 
-    const originalFormEntries = Object.entries(instance.formData || {})
-        .filter(([key, value]) => !key.startsWith('step_') && isPlainDisplayValue(value));
+    const customFieldsToRender = template?.customFields || [];
+
+    // Calculate deadline formatted string
+    const deadlineString = (() => {
+        if (currentNode && instance.status === WorkflowInstanceStatus.RUNNING) {
+            const currentStep = stepTimings.find(t => t.stepId === currentNode.id && t.status === 'running');
+            if (currentStep && currentNode.config?.slaHours) {
+                const startMs = new Date(instance.createdAt).getTime() + (currentStepIndex > 1 ? stepTimings.slice(0, currentStepIndex - 1).reduce((s, t) => s + (t.durationHours * 60 * 60 * 1000), 0) : 0);
+                const deadlineMs = startMs + (currentNode.config.slaHours * 60 * 60 * 1000);
+                return new Date(deadlineMs).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
+            }
+        }
+        return 'N/A';
+    })();
+
+    // Stage Managers candidate names
+    const stageManagersString = (() => {
+        if (!currentNode || instance.status !== WorkflowInstanceStatus.RUNNING) return 'N/A';
+        const candidates = resolveWorkflowStepAssigneeCandidates({
+            node: currentNode,
+            instance,
+            users,
+            employees,
+            orgUnits,
+            logs: instanceLogs
+        });
+        if (candidates.length === 0) return currentNode.config?.assigneeRole || 'N/A';
+        return candidates.map(c => `@${c.name.split(' ').pop()?.toLowerCase() || c.name}`).join(', ');
+    })();
 
     return (
         <div className="min-h-[calc(100vh-120px)] space-y-5">
+            {/* Header Title Block */}
             <div className="flex flex-col gap-3 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 px-5 py-4 shadow-sm md:flex-row md:items-center md:justify-between">
                 <div className="flex items-start gap-3 min-w-0">
                     <button onClick={() => navigate('/wf')} className="mt-1 rounded-xl p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
@@ -349,83 +681,164 @@ const WorkflowInstanceDetail: React.FC = () => {
                 </button>
             </div>
 
+            {/* Layout Grid */}
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+                {/* Main Column (Left) */}
                 <div className="space-y-5">
-                    <section className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
-                        <h2 className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                            <FileText size={16} /> Thông tin phiếu
-                        </h2>
-                        {originalFormEntries.length > 0 ? (
-                            <div className="grid gap-3 md:grid-cols-2">
-                                {originalFormEntries.map(([key, value]) => (
-                                    <div key={key} className="rounded-xl bg-slate-50 dark:bg-slate-800/70 px-3 py-2">
-                                        <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">{key}</div>
-                                        <div className="mt-1 break-words text-sm font-semibold text-slate-700 dark:text-slate-200">{String(value)}</div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="text-sm font-semibold text-slate-400">Phiếu chưa có dữ liệu biểu mẫu hiển thị.</p>
-                        )}
-                    </section>
+                    {/* Horizontal Stages Progress Timeline */}
+                    <div className="flex flex-wrap items-center gap-2 p-3 bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm overflow-x-auto">
+                        {orderedSteps.map((step, index) => {
+                            const isCurrent = step.id === instance.currentNodeId && instance.status === WorkflowInstanceStatus.RUNNING;
+                            const stepLogs = instanceLogs.filter(log => log.nodeId === step.id);
+                            const isCompleted = stepLogs.some(log => log.action === WorkflowInstanceAction.APPROVED);
+                            const isLast = index === orderedSteps.length - 1;
 
-                    <section className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
-                        <h2 className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                            <GitBranch size={16} /> Luồng xử lý
-                        </h2>
-                        <div className="space-y-3">
-                            {orderedNodes.filter(node => node.type !== WorkflowNodeType.START).map(node => {
-                                const nodeLogs = instanceLogs.filter(log => log.nodeId === node.id);
-                                const isCurrent = node.id === instance.currentNodeId && instance.status === WorkflowInstanceStatus.RUNNING;
-                                return (
-                                    <div key={node.id} className={`rounded-xl border px-4 py-3 ${isCurrent ? 'border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/50'}`}>
-                                        <div className="flex items-center justify-between gap-3">
-                                            <div>
-                                                <div className="text-sm font-black text-slate-800 dark:text-slate-100">{node.label}</div>
-                                                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{node.type}</div>
-                                            </div>
-                                            {isCurrent && <span className="rounded-full bg-amber-500 px-2 py-1 text-[10px] font-black text-white">Đang ở bước này</span>}
-                                        </div>
-                                        {nodeLogs.length > 0 && (
-                                            <div className="mt-3 space-y-2">
-                                                {nodeLogs.map(log => {
-                                                    const actor = users.find(item => item.id === log.actedBy);
-                                                    return (
-                                                        <div key={log.id} className="text-xs text-slate-500 dark:text-slate-400">
-                                                            <span className="font-bold text-slate-700 dark:text-slate-200">{actor?.name || 'N/A'}</span>
-                                                            {' '}<span>{ACTION_LABEL[log.action] || log.action}</span>
-                                                            {' '}<span className="text-slate-400">{new Date(log.createdAt).toLocaleString('vi-VN')}</span>
-                                                            {log.comment && <div className="mt-1 rounded-lg bg-white dark:bg-slate-900 px-3 py-2 italic">{log.comment}</div>}
+                            let bgClass = 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-800/40 dark:text-slate-400 dark:border-slate-700';
+                            if (isCurrent) {
+                                bgClass = 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800 font-black';
+                            } else if (isCompleted) {
+                                bgClass = 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800 font-black';
+                            }
+
+                            return (
+                                <div key={step.id} className="flex items-center gap-2 shrink-0">
+                                    <div className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-xl text-xs transition ${bgClass}`}>
+                                        <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-black ${isCurrent ? 'bg-blue-600 text-white' : isCompleted ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                                            }`}>{index + 1}</span>
+                                        <span>{step.label}</span>
+                                    </div>
+                                    {!isLast && <ChevronRight size={14} className="text-slate-300 dark:text-slate-600" />}
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Accordion Custom Fields */}
+                    <div className="bg-slate-50/50 dark:bg-slate-850/20 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm">
+                        <button
+                            onClick={() => setFieldsExpanded(!fieldsExpanded)}
+                            className="w-full flex items-center justify-between px-5 py-3.5 bg-slate-100/50 dark:bg-slate-800/40 border-b border-slate-200/60 dark:border-slate-700/60 transition hover:bg-slate-100 dark:hover:bg-slate-800"
+                        >
+                            <span className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                                {fieldsExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />} TRƯỜNG DỮ LIỆU KHI NHẬP MỚI
+                            </span>
+                            <span className="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2.5 py-0.5 rounded-full font-bold">
+                                {customFieldsToRender.length} trường
+                            </span>
+                        </button>
+
+                        {fieldsExpanded && (
+                            <div className="p-5 bg-white dark:bg-slate-900 space-y-4 animate-fade-in">
+                                <div className="border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm bg-white dark:bg-slate-950/40">
+                                    <div className="text-xs font-black text-indigo-500 uppercase tracking-widest flex items-center gap-1">
+                                        <span>⤳ ĐẦU VÀO</span>
+                                    </div>
+                                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 border-b border-slate-100 dark:border-slate-800 pb-2">
+                                        THÔNG TIN CHI TIẾT
+                                    </div>
+
+                                    {customFieldsToRender.length > 0 ? (
+                                        <div className="mt-3 divide-y divide-slate-100 dark:divide-slate-800/50">
+                                            {customFieldsToRender.map((field, idx) => {
+                                                const value = instance.formData?.[field.name];
+                                                const numStr = String(idx + 2).padStart(2, '0'); // numbering sequence (starts at 02 like screenshot)
+
+                                                return (
+                                                    <div key={field.id} className="py-3.5 first:pt-0 last:pb-0">
+                                                        <div className="text-[10px] font-black uppercase tracking-wider text-slate-450 dark:text-slate-500">
+                                                            {numStr} {field.label}
                                                         </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </section>
+                                                        <div className="mt-1">
+                                                            {/* Table field rendering */}
+                                                            {field.type === 'table' && (
+                                                                <div className="mt-2 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-sm max-w-full">
+                                                                    <div className="overflow-x-auto">
+                                                                        <table className="w-full text-xs text-left">
+                                                                            <thead>
+                                                                                <tr className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-450 font-bold border-b border-slate-200 dark:border-slate-700">
+                                                                                    <th className="px-3 py-2 text-center w-10">#</th>
+                                                                                    {(field.options || []).map((col, cIdx) => (
+                                                                                        <th key={cIdx} className="px-3 py-2 whitespace-nowrap">{col}</th>
+                                                                                    ))}
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                                                                {Array.isArray(value) && value.length > 0 ? (
+                                                                                    value.map((row, ri) => (
+                                                                                        <tr key={ri} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                                                                                            <td className="px-3 py-2 text-center text-slate-400 font-semibold">{String(ri + 1).padStart(2, '0')}</td>
+                                                                                            {(field.options || []).map((_, ci) => (
+                                                                                                <td key={ci} className="px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">{row[ci] ?? ''}</td>
+                                                                                            ))}
+                                                                                        </tr>
+                                                                                    ))
+                                                                                ) : (
+                                                                                    <tr>
+                                                                                        <td colSpan={(field.options?.length || 0) + 1} className="px-3 py-4 text-center text-slate-400 italic font-semibold">
+                                                                                            Bảng không có dữ liệu
+                                                                                        </td>
+                                                                                    </tr>
+                                                                                )}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {/* File field rendering */}
+                                                            {field.type === 'file' && value && typeof value === 'object' && value.fileName && (
+                                                                <div className="mt-1.5 flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-xs max-w-md border border-slate-100 dark:border-slate-800">
+                                                                    <Paperclip size={13} className="text-rose-450 shrink-0" />
+                                                                    <span className="font-semibold text-slate-700 dark:text-slate-300 flex-1 truncate">{value.fileName}</span>
+                                                                    <span className="text-[10px] text-slate-400 shrink-0">({(value.fileSize / 1024).toFixed(1)} KB)</span>
+                                                                    <button onClick={() => setPreviewFile(value)} className="p-1 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-500 transition-colors" title="Xem trước">
+                                                                        <Eye size={13} />
+                                                                    </button>
+                                                                    {hasDownloadableFile(value) && (
+                                                                        <button onClick={() => downloadWorkflowFile(value)} className="p-1 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về">
+                                                                            <Download size={13} />
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                            {/* Simple field rendering */}
+                                                            {field.type !== 'table' && field.type !== 'file' && (
+                                                                <span className="break-words text-sm font-black text-slate-800 dark:text-slate-100">
+                                                                    {value !== null && value !== undefined && String(value).trim() !== '' ? String(value) : <span className="text-slate-300 dark:text-slate-650 font-normal italic">Trống</span>}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm font-semibold text-slate-400 mt-2">Quy trình không cấu hình trường dữ liệu tùy chỉnh.</p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
+                    {/* Workflow Actions Section */}
                     {canAct && (
-                        <section className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
+                        <section className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm">
                             <h2 className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
                                 <Send size={16} /> Xử lý phiếu
                             </h2>
                             <div className="mb-4 flex flex-wrap gap-2">
-                                <button onClick={() => setActiveAction(WorkflowInstanceAction.APPROVED)} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black ${activeAction === WorkflowInstanceAction.APPROVED ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'}`}>
+                                <button onClick={() => setActiveAction(WorkflowInstanceAction.APPROVED)} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black ${activeAction === WorkflowInstanceAction.APPROVED ? 'bg-emerald-500 text-white shadow-md' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'}`}>
                                     <CheckCircle size={14} /> Duyệt / chuyển bước
                                 </button>
-                                <button onClick={() => setActiveAction(WorkflowInstanceAction.REVISION_REQUESTED)} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black ${activeAction === WorkflowInstanceAction.REVISION_REQUESTED ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'}`}>
+                                <button onClick={() => setActiveAction(WorkflowInstanceAction.REVISION_REQUESTED)} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black ${activeAction === WorkflowInstanceAction.REVISION_REQUESTED ? 'bg-amber-500 text-white shadow-md' : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'}`}>
                                     <RotateCcw size={14} /> Yêu cầu bổ sung
                                 </button>
-                                <button onClick={() => setActiveAction(WorkflowInstanceAction.REJECTED)} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black ${activeAction === WorkflowInstanceAction.REJECTED ? 'bg-red-500 text-white' : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'}`}>
+                                <button onClick={() => setActiveAction(WorkflowInstanceAction.REJECTED)} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black ${activeAction === WorkflowInstanceAction.REJECTED ? 'bg-red-500 text-white shadow-md' : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'}`}>
                                     <XCircle size={14} /> Từ chối
                                 </button>
                             </div>
 
                             {activeAction && activeAction !== WorkflowInstanceAction.REJECTED && transitionTargetNode?.type !== WorkflowNodeType.END && (
-                                <div className="mb-4">
+                                <div className="mb-4 animate-fade-in">
                                     <div className="mb-2 text-xs font-black uppercase tracking-wider text-slate-400">
                                         Người nhận bước "{transitionTargetNode?.label || 'tiếp theo'}"
                                     </div>
@@ -465,7 +878,7 @@ const WorkflowInstanceDetail: React.FC = () => {
                                 onChange={event => setActionComment(event.target.value)}
                                 placeholder="Ghi chú xử lý..."
                                 rows={3}
-                                className="mb-3 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300 dark:border-slate-700 dark:bg-slate-800"
+                                className="mb-3 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 dark:border-slate-700 dark:bg-slate-800"
                             />
                             {actionError && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600 dark:bg-red-900/20 dark:text-red-300">{actionError}</div>}
                             <button
@@ -477,77 +890,296 @@ const WorkflowInstanceDetail: React.FC = () => {
                             </button>
                         </section>
                     )}
+
+                    {/* Wide Comments Section */}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 flex flex-col shadow-sm">
+                        <h2 className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            <MessageSquare size={16} /> Trao đổi thảo luận
+                        </h2>
+                        <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1 mb-4">
+                            {comments.length === 0 && (
+                                <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 p-8 text-center text-sm font-semibold text-slate-400">
+                                    Chưa có trao đổi nào trong phiếu này.
+                                </div>
+                            )}
+                            {comments.map(comment => {
+                                const author = users.find(item => item.id === comment.authorUserId);
+                                const mine = comment.authorUserId === user.id;
+                                return (
+                                    <div key={comment.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                                        <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 shadow-sm ${mine ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'}`}>
+                                            <div className={`mb-1 text-[10px] font-black uppercase tracking-wider ${mine ? 'text-indigo-100' : 'text-slate-400'}`}>
+                                                {author?.name || 'N/A'} • {new Date(comment.createdAt).toLocaleString('vi-VN')}
+                                            </div>
+                                            {comment.body && <div className="whitespace-pre-wrap text-sm font-medium leading-relaxed">{comment.body}</div>}
+                                            {comment.attachments.length > 0 && (
+                                                <div className="mt-2 grid gap-2 grid-cols-2 md:grid-cols-3">
+                                                    {comment.attachments.map(attachment => <AttachmentPreview key={attachment.id} attachment={attachment} />)}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        <div className="border-t border-slate-200 pt-4 dark:border-slate-700">
+                            {draftAttachments.length > 0 && (
+                                <div className="mb-3 grid gap-2 grid-cols-2 md:grid-cols-3">
+                                    {draftAttachments.map(attachment => (
+                                        <div key={attachment.id} className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-1.5 border border-slate-100 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                            <Paperclip size={13} className="text-slate-400" />
+                                            <span className="min-w-0 flex-1 truncate">{attachment.fileName}</span>
+                                            <button onClick={() => removeDraftAttachment(attachment)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
+                                                <X size={13} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <textarea
+                                value={commentBody}
+                                onChange={event => setCommentBody(event.target.value)}
+                                placeholder="Nhập nội dung trao đổi thảo luận..."
+                                rows={3}
+                                className="mb-3 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 dark:border-slate-700 dark:bg-slate-800 text-slate-700 dark:text-slate-250"
+                            />
+                            {commentError && <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600 dark:bg-red-900/20 dark:text-red-300">{commentError}</div>}
+                            <div className="flex items-center justify-between gap-2">
+                                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+                                    <Paperclip size={14} /> {isUploading ? 'Đang tải...' : 'Đính kèm tệp'}
+                                    <input type="file" multiple className="hidden" onChange={event => { handleAttachmentFiles(event.target.files); event.target.value = ''; }} />
+                                </label>
+                                <button
+                                    onClick={sendComment}
+                                    disabled={isSendingComment || isUploading || (!commentBody.trim() && draftAttachments.length === 0)}
+                                    className="inline-flex items-center gap-2 rounded-xl bg-indigo-500 px-5 py-2 text-xs font-black text-white hover:bg-indigo-650 disabled:cursor-not-allowed disabled:opacity-50 shadow-md shadow-indigo-500/20"
+                                >
+                                    <Send size={14} /> Gửi tin
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <aside className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 xl:sticky xl:top-4 xl:max-h-[calc(100vh-120px)] xl:overflow-hidden flex flex-col">
-                    <h2 className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        <MessageSquare size={16} /> Trao đổi
-                    </h2>
-                    <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-                        {comments.length === 0 && (
-                            <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 p-6 text-center text-sm font-semibold text-slate-400">
-                                Chưa có trao đổi nào.
+                {/* Sidebar Column (Right) */}
+                <div className="space-y-5">
+                    {/* Overdue Alert Banner */}
+                    {isOverdue && (
+                        <div className="flex items-center gap-2.5 rounded-xl border border-red-200 bg-red-500 text-white px-4 py-3 shadow-md animate-pulse">
+                            <AlertCircle size={18} className="shrink-0" />
+                            <div className="text-xs font-black flex-1 uppercase tracking-wider">
+                                Quá hạn tại bước này!
                             </div>
-                        )}
-                        {comments.map(comment => {
-                            const author = users.find(item => item.id === comment.authorUserId);
-                            const mine = comment.authorUserId === user.id;
-                            return (
-                                <div key={comment.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-[88%] rounded-2xl px-3 py-2 ${mine ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'}`}>
-                                        <div className={`mb-1 text-[10px] font-black uppercase tracking-wider ${mine ? 'text-indigo-100' : 'text-slate-400'}`}>
-                                            {author?.name || 'N/A'} • {new Date(comment.createdAt).toLocaleString('vi-VN')}
-                                        </div>
-                                        {comment.body && <div className="whitespace-pre-wrap text-sm font-medium">{comment.body}</div>}
-                                        {comment.attachments.length > 0 && (
-                                            <div className="mt-2 grid gap-2">
-                                                {comment.attachments.map(attachment => <AttachmentPreview key={attachment.id} attachment={attachment} />)}
-                                            </div>
-                                        )}
-                                    </div>
+                            <span className="text-[11px] font-black">
+                                {currentStepTiming ? `${currentStepTiming.durationHours}h` : ''} / {currentNode?.config?.slaHours}h
+                            </span>
+                        </div>
+                    )}
+
+                    {/* Current Stage Card */}
+                    {currentNode && instance.status === WorkflowInstanceStatus.RUNNING && (
+                        <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50/80 to-blue-100/30 dark:border-blue-900/50 dark:from-slate-900 dark:to-blue-950/20 p-5 shadow-sm">
+                            <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest block">Giai đoạn hiện tại</span>
+                            <h3 className="text-base font-black text-blue-800 dark:text-blue-300 mt-1">
+                                [{currentStepIndex}/{orderedSteps.length}] {currentNode.label}
+                            </h3>
+                            <div className="mt-3.5 space-y-2.5 text-xs">
+                                <div className="flex justify-between font-semibold text-slate-500 dark:text-slate-400">
+                                    <span>Thời hạn hoàn thành:</span>
+                                    <span className="text-slate-800 dark:text-slate-200 font-bold">{deadlineString}</span>
                                 </div>
-                            );
-                        })}
+                                <div className="flex justify-between font-semibold text-slate-500 dark:text-slate-400">
+                                    <span>Thời gian bắt đầu:</span>
+                                    <span className="text-slate-800 dark:text-slate-200 font-bold">
+                                        {currentStepTiming ? currentStepTiming.startTime.split(' ')[0] : 'N/A'}
+                                    </span>
+                                </div>
+                                <div className="pt-2 border-t border-blue-200/50 dark:border-blue-900/30 flex justify-between text-[11px] font-black uppercase text-slate-400">
+                                    <span>Kỳ vọng SLA</span>
+                                    <span>Đã sử dụng</span>
+                                </div>
+                                <div className="flex justify-between text-sm font-black text-slate-700 dark:text-slate-200">
+                                    <span>{currentNode.config?.slaHours ? `${currentNode.config.slaHours.toFixed(2)}h` : 'N/A'}</span>
+                                    <span className={isOverdue ? 'text-red-500 font-bold' : 'text-blue-600 dark:text-blue-400'}>
+                                        {currentStepTiming ? `${currentStepTiming.durationHours}h` : '0.00h'}
+                                    </span>
+                                </div>
+                                {/* Progress Bar */}
+                                {currentNode.config?.slaHours && currentStepTiming && (
+                                    <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden mt-1 shadow-inner">
+                                        <div
+                                            className={`h-full rounded-full transition-all ${isOverdue ? 'bg-red-500' : 'bg-blue-500'}`}
+                                            style={{ width: `${Math.min((currentStepTiming.durationHours / currentNode.config.slaHours) * 100, 100)}%` }}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                            {nextNode && (
+                                <div className="mt-4 pt-3 border-t border-blue-200/50 dark:border-blue-900/30 text-[10px] font-black text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                                    <span>» Giai đoạn kế tiếp:</span>
+                                    <span className="underline">{nextNode.label} ({nextNode.config?.slaHours || 24}h0m)</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Task Info Card */}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm">
+                        <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2">Thông tin nhiệm vụ</h4>
+                        <div className="mt-3 space-y-2.5 text-xs">
+                            <div className="flex justify-between font-semibold">
+                                <span className="text-slate-400">Mã nhiệm vụ:</span>
+                                <span className="text-slate-700 dark:text-slate-200 font-mono font-bold">#{instance.code}</span>
+                            </div>
+                            <div className="flex justify-between font-semibold">
+                                <span className="text-slate-400">Tạo bởi:</span>
+                                <span className="text-slate-700 dark:text-slate-200 font-bold">{creator?.name || 'N/A'}</span>
+                            </div>
+                            <div className="flex justify-between font-semibold">
+                                <span className="text-slate-400">Thời gian tạo:</span>
+                                <span className="text-slate-700 dark:text-slate-200 font-bold">{new Date(instance.createdAt).toLocaleString('vi-VN')}</span>
+                            </div>
+                            <div className="flex justify-between font-semibold">
+                                <span className="text-slate-400">Cập nhật gần nhất:</span>
+                                <span className="text-slate-700 dark:text-slate-200 font-bold">{new Date(instance.updatedAt).toLocaleString('vi-VN')}</span>
+                            </div>
+                            <div className="flex justify-between font-semibold">
+                                <span className="text-slate-400">Giai đoạn hiện tại:</span>
+                                <span className="text-slate-700 dark:text-slate-200 font-bold">{currentNode?.label || 'Hoàn thành'}</span>
+                            </div>
+                            {currentNode && instance.status === WorkflowInstanceStatus.RUNNING && (
+                                <div className="flex justify-between font-semibold">
+                                    <span className="text-slate-400">Người quản trị giai đoạn:</span>
+                                    <span className="text-indigo-600 dark:text-indigo-400 font-bold text-right truncate max-w-[200px]" title={stageManagersString}>
+                                        {stageManagersString}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
-                    <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-700">
-                        {draftAttachments.length > 0 && (
-                            <div className="mb-3 grid gap-2">
-                                {draftAttachments.map(attachment => (
-                                    <div key={attachment.id} className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                        <Paperclip size={13} className="text-slate-400" />
-                                        <span className="min-w-0 flex-1 truncate">{attachment.fileName}</span>
-                                        <button onClick={() => removeDraftAttachment(attachment)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
-                                            <X size={13} />
-                                        </button>
-                                    </div>
-                                ))}
+                    {/* Followers Card */}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm">
+                        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                            <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400">Người theo dõi</h4>
+                            <span className="text-[10px] font-bold text-indigo-500 hover:underline cursor-pointer">Thêm nhiều người</span>
+                        </div>
+                        <div className="mt-3 flex items-center gap-2 overflow-x-auto py-1">
+                            <div className="flex -space-x-2.5 overflow-hidden">
+                                {Array.from(new Set([...(template?.defaultWatchers || []), ...(instance.watchers || [])])).slice(0, 8).map((watcherId, idx) => {
+                                    const watcherUser = users.find(u => u.id === watcherId);
+                                    return (
+                                        <div
+                                            key={watcherId}
+                                            className="inline-block h-8 w-8 rounded-full ring-2 ring-white dark:ring-slate-900 bg-slate-200 flex items-center justify-center text-[10px] font-black text-slate-600 uppercase border border-slate-100 shadow-sm"
+                                            title={watcherUser?.name || 'N/A'}
+                                        >
+                                            {watcherUser?.name ? watcherUser.name.split(' ').pop()?.slice(0, 2) : '?'}
+                                        </div>
+                                    );
+                                })}
                             </div>
-                        )}
-                        <textarea
-                            value={commentBody}
-                            onChange={event => setCommentBody(event.target.value)}
-                            placeholder="Nhập trao đổi..."
-                            rows={3}
-                            className="mb-2 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-300 dark:border-slate-700 dark:bg-slate-800"
-                        />
-                        {commentError && <div className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600 dark:bg-red-900/20 dark:text-red-300">{commentError}</div>}
-                        <div className="flex items-center justify-between gap-2">
-                            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
-                                <Paperclip size={14} /> {isUploading ? 'Đang tải...' : 'Đính kèm'}
-                                <input type="file" multiple className="hidden" onChange={event => { handleAttachmentFiles(event.target.files); event.target.value = ''; }} />
-                            </label>
-                            <button
-                                onClick={sendComment}
-                                disabled={isSendingComment || isUploading || (!commentBody.trim() && draftAttachments.length === 0)}
-                                className="inline-flex items-center gap-2 rounded-xl bg-indigo-500 px-4 py-2 text-xs font-black text-white hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                                <Send size={14} /> Gửi
+                            <button className="h-8 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-[10px] font-black text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition ml-auto">
+                                Theo dõi
                             </button>
                         </div>
                     </div>
-                </aside>
+
+                    {/* Total Time / Duration Progress */}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm">
+                        <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2">Tổng thời gian sử dụng</h4>
+                        <div className="mt-3 text-xs space-y-2">
+                            <div className="flex justify-between font-semibold">
+                                <span className="text-slate-400">Tổng SLA kỳ vọng:</span>
+                                <span className="text-slate-800 dark:text-slate-200 font-bold">{totalSlaHours.toFixed(2)} giờ</span>
+                            </div>
+                            <div className="flex justify-between font-semibold">
+                                <span className="text-slate-400">Đã sử dụng thực tế:</span>
+                                <span className={`font-bold ${totalDurationHours > totalSlaHours ? 'text-red-500 font-bold animate-pulse' : 'text-slate-800 dark:text-slate-200'}`}>
+                                    {totalDurationHours.toFixed(2)} giờ
+                                </span>
+                            </div>
+                            <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden mt-2">
+                                <div
+                                    className={`h-full rounded-full transition-all ${totalDurationHours > totalSlaHours ? 'bg-red-500' : 'bg-emerald-500'}`}
+                                    style={{ width: `${Math.min((totalDurationHours / (totalSlaHours || 1)) * 100, 100)}%` }}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Stage Timeline History Card */}
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm">
+                        <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-2.5">Tiến trình của các giai đoạn</h4>
+                        <div className="mt-4 space-y-5 relative pl-4 border-l border-slate-200 dark:border-slate-800">
+                            {stepTimings.map((timing, idx) => {
+                                const isCurrent = timing.status === 'running';
+                                const isCompleted = timing.status === 'completed';
+
+                                return (
+                                    <div key={timing.stepId} className="relative text-xs">
+                                        {/* Status Dot */}
+                                        <div className={`absolute -left-[22.5px] top-0.5 h-3 w-3 rounded-full border-2 bg-white dark:bg-slate-900 transition-all ${isCompleted
+                                            ? 'border-emerald-500 bg-emerald-500 text-white flex items-center justify-center text-[6px]'
+                                            : isCurrent
+                                                ? 'border-blue-500 bg-blue-500'
+                                                : 'border-slate-300 dark:border-slate-700'
+                                            }`}>
+                                            {isCompleted && <Check size={6} className="stroke-[3] text-white" />}
+                                        </div>
+
+                                        <div className="flex flex-col gap-0.5">
+                                            <div className="flex items-center justify-between">
+                                                <span className={`font-black uppercase tracking-wide ${isCurrent ? 'text-blue-600 dark:text-blue-400' : 'text-slate-700 dark:text-slate-200'}`}>
+                                                    {idx + 1}. {timing.label}
+                                                </span>
+                                                {timing.startTime && (
+                                                    <span className="text-[10px] text-slate-400 font-bold shrink-0">
+                                                        SLA: {orderedSteps[idx]?.config?.slaHours || 24}h
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {timing.startTime ? (
+                                                <div className="mt-1 space-y-1 text-slate-500 dark:text-slate-400 font-medium">
+                                                    <div className="flex justify-between text-[10px]">
+                                                        <span>Thực tế:</span>
+                                                        <span className={`font-bold ${isCurrent && isOverdue ? 'text-red-500' : 'text-slate-700 dark:text-slate-350'}`}>
+                                                            {timing.durationHours.toFixed(2)}h
+                                                        </span>
+                                                    </div>
+                                                    {isCompleted && timing.actorName && (
+                                                        <div className="text-[10px] mt-0.5 bg-slate-50 dark:bg-slate-800/40 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800/20">
+                                                            <div>
+                                                                Xử lý: <span className="font-bold text-slate-700 dark:text-slate-200">{timing.actorName}</span>
+                                                            </div>
+                                                            <div className="text-[9px] text-slate-400 mt-0.5">{timing.actionDate}</div>
+                                                            {timing.comment && <div className="mt-1 italic text-slate-400">"{timing.comment}"</div>}
+                                                        </div>
+                                                    )}
+                                                    {isCurrent && (
+                                                        <span className="inline-block px-1.5 py-0.5 bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 rounded text-[9px] font-black uppercase tracking-wider animate-pulse">
+                                                            Đang xử lý ở bước này
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-[10px] text-slate-300 dark:text-slate-700 font-semibold italic">Chưa bắt đầu</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
             </div>
+
+            {/* File Preview Overlay Modal */}
+            {previewFile && (
+                <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
+            )}
         </div>
     );
 };
