@@ -1722,6 +1722,9 @@ export interface PurchaseOrder extends ProjectSubmissionFields {
   materialRequestId?: string;
   deliveryNote?: string;     // Ghi chú giao hàng
   note?: string;
+  archivedAt?: string | null;
+  archivedBy?: string | null;
+  archiveReason?: string | null;
   createdAt: string;
 }
 

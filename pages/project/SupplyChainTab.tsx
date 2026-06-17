@@ -1220,14 +1220,19 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
     const handleDeletePo = async (po: PurchaseOrder) => {
         if (!ensureCanManage('xoá đơn hàng')) return;
-        const ok = await confirm({ targetName: po.poNumber, title: 'Xoá đơn hàng' });
+        const ok = await confirm({
+            targetName: po.poNumber,
+            title: 'Lưu trữ đơn hàng',
+            warningText: 'PO sẽ được ẩn khỏi danh sách, nhưng phiếu trả NCC và giao dịch kho vẫn được giữ để đối soát.',
+            confirmText: 'Lưu trữ',
+        });
         if (!ok) return;
         try {
             await poService.remove(po.id);
             await loadSupplyData();
-            toast.success('Xoá PO thành công');
+            toast.success('Đã lưu trữ PO');
         } catch (e: any) {
-            toast.error('Lỗi xoá', e?.message);
+            toast.error('Lỗi lưu trữ', e?.message);
         }
     };
 
@@ -2214,6 +2219,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
                                                             <button onClick={e => { e.stopPropagation(); openEditPo(po); }} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
                                                             <button onClick={async e => { e.stopPropagation(); handleDeletePo(po); }}
+                                                                title="Lưu trữ PO"
                                                                 className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
                                                         </div>
                                                     )}

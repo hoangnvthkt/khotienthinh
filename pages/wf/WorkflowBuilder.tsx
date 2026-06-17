@@ -32,6 +32,62 @@ interface SearchableCheckboxSelectProps {
     maxHeightClass?: string;
 }
 
+const WORKFLOW_BUILDER_DRAFT_VERSION = 1;
+
+interface WorkflowBuilderDraft {
+    version: number;
+    templateId: string;
+    savedAt: string;
+    localNodes: WorkflowNode[];
+    localEdges: WorkflowEdge[];
+    customFields: WorkflowCustomField[];
+    activeTab?: 'steps' | 'fields' | 'print';
+    editingStepId?: string | null;
+}
+
+const getWorkflowBuilderDraftKey = (templateId?: string) =>
+    templateId ? `vioo_wf_builder_draft_${templateId}` : '';
+
+const readWorkflowBuilderDraft = (templateId?: string): WorkflowBuilderDraft | null => {
+    const key = getWorkflowBuilderDraftKey(templateId);
+    if (!key) return null;
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as WorkflowBuilderDraft;
+        if (
+            parsed?.version !== WORKFLOW_BUILDER_DRAFT_VERSION ||
+            parsed.templateId !== templateId ||
+            !Array.isArray(parsed.localNodes) ||
+            !Array.isArray(parsed.localEdges) ||
+            !Array.isArray(parsed.customFields)
+        ) {
+            localStorage.removeItem(key);
+            return null;
+        }
+        return parsed;
+    } catch (error) {
+        console.warn('Cannot read workflow builder draft:', error);
+        localStorage.removeItem(key);
+        return null;
+    }
+};
+
+const writeWorkflowBuilderDraft = (draft: WorkflowBuilderDraft) => {
+    const key = getWorkflowBuilderDraftKey(draft.templateId);
+    if (!key) return;
+    try {
+        localStorage.setItem(key, JSON.stringify(draft));
+    } catch (error) {
+        console.warn('Cannot save workflow builder draft:', error);
+    }
+};
+
+const clearWorkflowBuilderDraft = (templateId?: string) => {
+    const key = getWorkflowBuilderDraftKey(templateId);
+    if (key) localStorage.removeItem(key);
+};
+
 const SearchableCheckboxSelect: React.FC<SearchableCheckboxSelectProps> = ({
     options,
     selectedValues,
@@ -182,20 +238,77 @@ const WorkflowBuilder: React.FC = () => {
     const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
     const [isMaterialRequestDefault, setIsMaterialRequestDefault] = useState(false);
     const [bindingSaving, setBindingSaving] = useState(false);
+    const [draftRestoredAt, setDraftRestoredAt] = useState<string | null>(null);
+    const [serverRefreshSkippedAt, setServerRefreshSkippedAt] = useState<string | null>(null);
+    const hydratedTemplateIdRef = useRef<string | null>(null);
+    const lastSavedDraftSignatureRef = useRef('');
+    const lastTemplatesRef = useRef<unknown>(null);
 
     useEffect(() => {
-        if (templateId) {
-            const tNodes = getTemplateNodes(templateId);
-            setLocalNodes(tNodes);
-            setLocalEdges(getTemplateEdges(templateId));
+        if (!templateId) return;
+
+        const templatesChanged = lastTemplatesRef.current !== templates;
+        lastTemplatesRef.current = templates;
+        const isNewTemplate = hydratedTemplateIdRef.current !== templateId;
+        if (isNewTemplate) {
+            const draft = readWorkflowBuilderDraft(templateId);
+            hydratedTemplateIdRef.current = templateId;
+            lastSavedDraftSignatureRef.current = '';
+            setServerRefreshSkippedAt(null);
+            if (draft) {
+                setLocalNodes(draft.localNodes);
+                setLocalEdges(draft.localEdges);
+                setCustomFields(draft.customFields);
+                if (draft.activeTab) setActiveTab(draft.activeTab);
+                setEditingStepId(draft.editingStepId || null);
+                setDraftRestoredAt(draft.savedAt);
+                setHasChanges(true);
+                return;
+            }
+            setEditingStepId(null);
         }
-    }, [templateId, templates]);
+
+        if (hasChanges && !isNewTemplate) {
+            if (templatesChanged) setServerRefreshSkippedAt(new Date().toISOString());
+            return;
+        }
+
+        const tNodes = getTemplateNodes(templateId);
+        setLocalNodes(tNodes);
+        setLocalEdges(getTemplateEdges(templateId));
+        setCustomFields(template?.customFields || []);
+        setDraftRestoredAt(null);
+        if (isNewTemplate) setHasChanges(false);
+    }, [hasChanges, templateId, templates]);
 
     useEffect(() => {
-        if (template) {
-            setCustomFields(template.customFields || []);
-        }
-    }, [template]);
+        if (!templateId || !hasChanges) return;
+        const draft: WorkflowBuilderDraft = {
+            version: WORKFLOW_BUILDER_DRAFT_VERSION,
+            templateId,
+            savedAt: new Date().toISOString(),
+            localNodes,
+            localEdges,
+            customFields,
+            activeTab,
+            editingStepId,
+        };
+        const signature = JSON.stringify(draft);
+        if (signature === lastSavedDraftSignatureRef.current) return;
+        lastSavedDraftSignatureRef.current = signature;
+        writeWorkflowBuilderDraft(draft);
+        setDraftRestoredAt(draft.savedAt);
+    }, [activeTab, customFields, editingStepId, hasChanges, localEdges, localNodes, templateId]);
+
+    useEffect(() => {
+        if (!hasChanges) return;
+        const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+            event.preventDefault();
+            event.returnValue = '';
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [hasChanges]);
 
     const selectedWorkflowUserIds = useMemo(() => {
         const ids = new Set<string>();
@@ -243,6 +356,29 @@ const WorkflowBuilder: React.FC = () => {
         ]).catch(error => {
             console.warn('Workflow people retry failed:', error);
         });
+    };
+
+    const reloadSavedTemplateState = () => {
+        if (!templateId) return;
+        setLocalNodes(getTemplateNodes(templateId));
+        setLocalEdges(getTemplateEdges(templateId));
+        setCustomFields(template?.customFields || []);
+        setEditingStepId(null);
+        setHasChanges(false);
+        setDraftRestoredAt(null);
+        setServerRefreshSkippedAt(null);
+        clearWorkflowBuilderDraft(templateId);
+        lastSavedDraftSignatureRef.current = '';
+    };
+
+    const discardDraft = () => {
+        if (hasChanges && !window.confirm('Bỏ toàn bộ thay đổi chưa lưu và tải lại dữ liệu đã lưu trên server?')) return;
+        reloadSavedTemplateState();
+    };
+
+    const goBackToTemplates = () => {
+        if (hasChanges && !window.confirm('Quy trình đang có thay đổi chưa lưu. Bản nháp vẫn được giữ trên máy này nếu anh rời trang. Tiếp tục quay lại?')) return;
+        navigate('/wf/templates');
     };
 
     useEffect(() => {
@@ -556,6 +692,10 @@ const WorkflowBuilder: React.FC = () => {
             setLocalNodes(nodesToSave);
             setLocalEdges(edgesToSave);
             await refreshData();
+            clearWorkflowBuilderDraft(templateId);
+            lastSavedDraftSignatureRef.current = '';
+            setDraftRestoredAt(null);
+            setServerRefreshSkippedAt(null);
             setHasChanges(false);
         } finally {
             setIsSaving(false);
@@ -579,7 +719,7 @@ const WorkflowBuilder: React.FC = () => {
             {/* Top Bar */}
             <div className="flex items-center justify-between px-4 py-3 glass-card rounded-xl">
                 <div className="flex items-center gap-3">
-                    <button onClick={() => navigate('/wf/templates')} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition">
+                    <button onClick={goBackToTemplates} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition">
                         <ArrowLeft size={18} />
                     </button>
                     <div>
@@ -614,6 +754,33 @@ const WorkflowBuilder: React.FC = () => {
                     </button>
                 </div>
             </div>
+
+            {hasChanges && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            Đang giữ bản nháp chưa lưu trên máy này.
+                            {draftRestoredAt && (
+                                <span className="ml-1 font-semibold opacity-80">
+                                    Lưu nháp lúc {new Date(draftRestoredAt).toLocaleTimeString('vi-VN')}.
+                                </span>
+                            )}
+                            {serverRefreshSkippedAt && (
+                                <span className="ml-1 font-semibold opacity-80">
+                                    Dữ liệu server vừa refresh nhưng không ghi đè bản đang sửa.
+                                </span>
+                            )}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={discardDraft}
+                            className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-amber-700 shadow-sm hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200"
+                        >
+                            Bỏ bản nháp
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {(peopleHydrationLoading || peopleHydrationError || peopleHydrationStale) && (
                 <div className={`rounded-xl border px-4 py-3 text-xs font-bold ${
