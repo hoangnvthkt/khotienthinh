@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Image as ImageIcon, Paperclip, Upload, X } from 'lucide-react';
+import { Eye, Image as ImageIcon, Paperclip, Upload, X } from 'lucide-react';
 import { SafetyAttachment } from '../../../types';
 import { safetyService } from '../../../lib/safetyService';
 
@@ -12,6 +12,7 @@ interface Props {
   uploadedBy?: string;
   imageOnly?: boolean;
   label?: string;
+  onPreview?: (attachments: SafetyAttachment[], index: number) => void;
 }
 
 const isImage = (item: SafetyAttachment) =>
@@ -26,6 +27,7 @@ const SafetyAttachmentUploader: React.FC<Props> = ({
   uploadedBy,
   imageOnly = false,
   label = 'Tệp đính kèm',
+  onPreview,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -56,6 +58,15 @@ const SafetyAttachmentUploader: React.FC<Props> = ({
     onChange(attachments.filter((_, idx) => idx !== index));
   };
 
+  const preview = (index: number) => {
+    if (onPreview) {
+      onPreview(attachments, index);
+      return;
+    }
+    const url = attachments[index]?.previewUrl || attachments[index]?.url;
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
@@ -84,17 +95,30 @@ const SafetyAttachmentUploader: React.FC<Props> = ({
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           {attachments.map((item, index) => (
             <div key={`${item.storagePath || item.url}-${index}`} className="group relative overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-              {isImage(item) && item.url ? (
-                <img src={item.previewUrl || item.url} alt={item.name} className="h-24 w-full object-cover" />
-              ) : (
-                <div className="flex h-24 flex-col items-center justify-center gap-2 text-slate-400">
-                  {isImage(item) ? <ImageIcon size={20} /> : <Paperclip size={20} />}
-                  <span className="max-w-full truncate px-2 text-[10px] font-bold">{item.name}</span>
-                </div>
-              )}
               <button
                 type="button"
-                onClick={() => remove(index)}
+                onClick={() => preview(index)}
+                className="block w-full text-left"
+                title={`Xem ${item.name}`}
+              >
+                {isImage(item) && item.url ? (
+                  <img src={item.previewUrl || item.url} alt={item.name} className="h-24 w-full object-cover" />
+                ) : (
+                  <div className="flex h-24 flex-col items-center justify-center gap-2 text-slate-400">
+                    {isImage(item) ? <ImageIcon size={20} /> : <Paperclip size={20} />}
+                    <span className="max-w-full truncate px-2 text-[10px] font-bold">{item.name}</span>
+                  </div>
+                )}
+                <span className="absolute bottom-1 right-1 rounded-full bg-white/90 p-1 text-slate-500 opacity-100 shadow-sm md:opacity-0 md:group-hover:opacity-100">
+                  <Eye size={12} />
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  remove(index);
+                }}
                 className="absolute right-1 top-1 rounded-full bg-white/90 p-1 text-slate-500 opacity-100 shadow-sm hover:text-red-600 md:opacity-0 md:group-hover:opacity-100"
                 title="Gỡ khỏi hồ sơ"
               >

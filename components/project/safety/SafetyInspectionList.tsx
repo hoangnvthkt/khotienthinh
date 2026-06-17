@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Plus } from 'lucide-react';
-import { SafetyInspection, SafetyInspectionItem, SafetyInspectionResult } from '../../../types';
+import { AlertTriangle, CheckCircle2, ClipboardCheck, Edit2, Eye, Plus, Trash2 } from 'lucide-react';
+import { SafetyAttachment, SafetyInspection, SafetyInspectionItem, SafetyInspectionResult } from '../../../types';
 import { EmptyState, StatusBadge } from '../../erp';
 import {
   SAFETY_INSPECTION_STATUS_LABELS,
@@ -8,6 +8,7 @@ import {
   getSafetyResultTone,
   getSafetySeverityTone,
 } from '../../../lib/safetyWorkflow';
+import SafetyAttachmentList from './SafetyAttachmentList';
 
 interface Props {
   inspections: SafetyInspection[];
@@ -16,6 +17,9 @@ interface Props {
   onComplete: (inspection: SafetyInspection) => Promise<void>;
   onGenerateIssue: (inspection: SafetyInspection, item: SafetyInspectionItem) => Promise<void>;
   onCreate: () => void;
+  onEdit?: (inspection: SafetyInspection) => void;
+  onDelete?: (inspection: SafetyInspection) => void;
+  onPreviewAttachment?: (attachments: SafetyAttachment[], index: number) => void;
   canManage?: boolean;
   loading?: boolean;
 }
@@ -39,8 +43,11 @@ const InspectionDetail: React.FC<{
   onUpdateItem: Props['onUpdateItem'];
   onComplete: Props['onComplete'];
   onGenerateIssue: Props['onGenerateIssue'];
+  onEdit?: Props['onEdit'];
+  onDelete?: Props['onDelete'];
+  onPreviewAttachment?: Props['onPreviewAttachment'];
   canManage?: boolean;
-}> = ({ inspection, getItems, onUpdateItem, onComplete, onGenerateIssue, canManage }) => {
+}> = ({ inspection, getItems, onUpdateItem, onComplete, onGenerateIssue, onEdit, onDelete, onPreviewAttachment, canManage }) => {
   const [items, setItems] = useState<SafetyInspectionItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -65,19 +72,64 @@ const InspectionDetail: React.FC<{
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-      <button type="button" onClick={toggle} className="flex w-full items-start justify-between gap-3 p-4 text-left hover:bg-slate-50">
+      <div onClick={toggle} className="flex w-full cursor-pointer items-start justify-between gap-3 p-4 hover:bg-slate-50">
         <div className="min-w-0">
           <div className="font-mono text-[10px] font-black text-orange-600">{inspection.code}</div>
           <h3 className="mt-1 text-sm font-black text-slate-800">{inspection.area || 'Kiểm tra hiện trường'}</h3>
           <p className="mt-1 text-xs font-medium text-slate-500">{formatDate(inspection.inspectionDate)} • {inspection.inspectorName || '-'}</p>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-2">
-          <StatusBadge status={inspection.status} label={SAFETY_INSPECTION_STATUS_LABELS[inspection.status]} tone={getSafetyInspectionStatusTone(inspection.status)} />
-          {inspection.score !== null && inspection.score !== undefined && <span className="text-xs font-black text-slate-500">{inspection.score}%</span>}
+        <div className="flex shrink-0 items-center gap-3">
+          <div className="flex flex-col items-end gap-1.5">
+            <StatusBadge status={inspection.status} label={SAFETY_INSPECTION_STATUS_LABELS[inspection.status]} tone={getSafetyInspectionStatusTone(inspection.status)} />
+            {inspection.score !== null && inspection.score !== undefined && <span className="text-xs font-black text-slate-500">{inspection.score}%</span>}
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void toggle();
+            }}
+            className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-50"
+            title="Xem chi tiết"
+          >
+            <Eye size={13} />
+          </button>
+          {canManage && (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit?.(inspection);
+                }}
+                className="rounded-lg border border-slate-200 p-1.5 text-blue-600 hover:bg-blue-50"
+                title="Sửa"
+              >
+                <Edit2 size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete?.(inspection);
+                }}
+                className="rounded-lg border border-slate-200 p-1.5 text-red-600 hover:bg-red-50"
+                title="Xóa"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          )}
         </div>
-      </button>
+      </div>
       {open && (
         <div className="space-y-3 border-t border-slate-100 p-4">
+          <SafetyAttachmentList
+            label="Ảnh/file kiểm tra"
+            attachments={inspection.attachments}
+            onPreview={onPreviewAttachment}
+          />
+
           {loading ? (
             <div className="h-20 animate-pulse rounded-lg bg-slate-100" />
           ) : items.length === 0 ? (
@@ -94,6 +146,12 @@ const InspectionDetail: React.FC<{
                   <StatusBadge status={item.result} label={resultLabels[item.result]} tone={getSafetyResultTone(item.result)} />
                 </div>
               </div>
+              <SafetyAttachmentList
+                compact
+                label="Ảnh tiêu chí"
+                attachments={item.photos}
+                onPreview={onPreviewAttachment}
+              />
               {canManage && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {(['pass', 'fail', 'na'] as SafetyInspectionResult[]).map(result => (
@@ -122,7 +180,19 @@ const InspectionDetail: React.FC<{
   );
 };
 
-const SafetyInspectionList: React.FC<Props> = ({ inspections, getItems, onUpdateItem, onComplete, onGenerateIssue, onCreate, canManage, loading }) => {
+const SafetyInspectionList: React.FC<Props> = ({
+  inspections,
+  getItems,
+  onUpdateItem,
+  onComplete,
+  onGenerateIssue,
+  onCreate,
+  onEdit,
+  onDelete,
+  onPreviewAttachment,
+  canManage,
+  loading,
+}) => {
   if (loading) {
     return <div className="grid gap-3">{[0, 1].map(index => <div key={index} className="h-24 animate-pulse rounded-lg bg-slate-100" />)}</div>;
   }
@@ -160,6 +230,9 @@ const SafetyInspectionList: React.FC<Props> = ({ inspections, getItems, onUpdate
             onUpdateItem={onUpdateItem}
             onComplete={onComplete}
             onGenerateIssue={onGenerateIssue}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onPreviewAttachment={onPreviewAttachment}
             canManage={canManage}
           />
         ))}
@@ -173,6 +246,9 @@ const SafetyInspectionList: React.FC<Props> = ({ inspections, getItems, onUpdate
             onUpdateItem={onUpdateItem}
             onComplete={onComplete}
             onGenerateIssue={onGenerateIssue}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onPreviewAttachment={onPreviewAttachment}
             canManage={canManage}
           />
         ))}

@@ -13,6 +13,7 @@ import {
 } from '../../../lib/safetyWorkflow';
 import SafetyAttachmentUploader from './SafetyAttachmentUploader';
 import SafetyStatusTimeline from './SafetyStatusTimeline';
+import SafetyImageGalleryModal from './SafetyImageGalleryModal';
 
 interface Props {
   issue: SafetyIssue;
@@ -40,6 +41,7 @@ const SafetyIssueDetailModal: React.FC<Props> = ({ issue, currentUser, canManage
   const [loading, setLoading] = useState(true);
   const [savingComment, setSavingComment] = useState(false);
   const [changingStatus, setChangingStatus] = useState<SafetyIssueStatus | null>(null);
+  const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
 
   const loadDetail = async () => {
     setLoading(true);
@@ -135,7 +137,7 @@ const SafetyIssueDetailModal: React.FC<Props> = ({ issue, currentUser, canManage
                 <div className="mb-2 text-[10px] font-black uppercase text-slate-400">Ảnh hiện trường</div>
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
                   {issue.beforePhotos.map((photo, index) => (
-                    <img key={`${photo.url}-${index}`} src={photo.previewUrl || photo.url} alt={photo.name} className="h-32 rounded-lg border border-slate-100 object-cover" />
+                    <img key={`${photo.url}-${index}`} src={photo.previewUrl || photo.url} alt={photo.name} className="h-32 w-full cursor-pointer rounded-lg border border-slate-100 object-cover transition hover:opacity-90" onClick={() => setGalleryIndex(index)} />
                   ))}
                 </div>
               </div>
@@ -195,6 +197,14 @@ const SafetyIssueDetailModal: React.FC<Props> = ({ issue, currentUser, canManage
           </aside>
         </div>
       </div>
+      {galleryIndex !== null && (
+        <SafetyImageGalleryModal
+          attachments={issue.beforePhotos}
+          currentIndex={galleryIndex}
+          onClose={() => setGalleryIndex(null)}
+          onIndexChange={setGalleryIndex}
+        />
+      )}
     </div>
   );
 };

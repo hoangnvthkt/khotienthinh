@@ -16,6 +16,7 @@ import {
   SafetyIssueType,
   SafetySeverity,
   SafetySubcontractor,
+  SafetyTeam,
 } from '../types';
 import { SAFETY_ISSUE_STATUS_LABELS, SAFETY_SEVERITY_LABELS } from './safetyWorkflow';
 
@@ -27,6 +28,7 @@ const INSPECTION_TABLE = 'safety_inspections';
 const INSPECTION_ITEM_TABLE = 'safety_inspection_items';
 const CONTRACTOR_TABLE = 'safety_subcontractors';
 const EQUIPMENT_TABLE = 'safety_equipment';
+const TEAM_TABLE = 'safety_teams';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -85,6 +87,16 @@ async function hydrateComment(row: any): Promise<SafetyComment> {
 
 async function hydrateEquipment(row: any): Promise<SafetyEquipment> {
   const item = fromDb(row) as SafetyEquipment;
+  return { ...item, attachments: await signAttachments(item.attachments) };
+}
+
+async function hydrateContractor(row: any): Promise<SafetySubcontractor> {
+  const item = fromDb(row) as SafetySubcontractor;
+  return { ...item, attachments: await signAttachments(item.attachments) };
+}
+
+async function hydrateTeam(row: any): Promise<SafetyTeam> {
+  const item = fromDb(row) as SafetyTeam;
   return { ...item, attachments: await signAttachments(item.attachments) };
 }
 
@@ -425,9 +437,6 @@ export const safetyService = {
   },
 
   async removeDraftIssue(id: string): Promise<void> {
-    const { data, error: readError } = await supabase.from(ISSUE_TABLE).select('status').eq('id', id).single();
-    if (readError) throw readError;
-    if (data.status !== 'new') throw new Error('Chỉ xóa được ghi nhận an toàn mới tạo.');
     const { error } = await supabase.from(ISSUE_TABLE).delete().eq('id', id);
     if (error) throw error;
   },
@@ -588,7 +597,7 @@ export const safetyService = {
       constructionSiteId,
     );
     if (error) throw error;
-    return (data || []).map(row => fromDb(row) as SafetySubcontractor);
+    return Promise.all((data || []).map(hydrateContractor));
   },
 
   async upsertContractor(input: Partial<SafetySubcontractor> & { projectId: string; name: string }): Promise<SafetySubcontractor> {
@@ -597,6 +606,7 @@ export const safetyService = {
       status: input.status || 'pending_documents',
       documentsStatus: input.documentsStatus || 'missing',
       violationCount: input.violationCount || 0,
+      attachments: input.attachments || [],
     });
     let result;
     if (input.id) result = await supabase.from(CONTRACTOR_TABLE).update(payload).eq('id', input.id).select().single();
@@ -605,7 +615,7 @@ export const safetyService = {
       result = await supabase.from(CONTRACTOR_TABLE).insert(payload).select().single();
     }
     if (result.error) throw result.error;
-    const contractor = fromDb(result.data) as SafetySubcontractor;
+    const contractor = await hydrateContractor(result.data);
     if (contractor.documentsStatus !== 'complete') {
       await notifySafety({
         projectId: contractor.projectId,
@@ -619,6 +629,11 @@ export const safetyService = {
       }).catch(error => console.warn('Cannot notify contractor safety', error));
     }
     return contractor;
+  },
+
+  async deleteContractor(id: string): Promise<void> {
+    const { error } = await supabase.from(CONTRACTOR_TABLE).delete().eq('id', id);
+    if (error) throw error;
   },
 
   async listEquipment(projectId: string, constructionSiteId?: string | null): Promise<SafetyEquipment[]> {
@@ -661,6 +676,49 @@ export const safetyService = {
       }).catch(error => console.warn('Cannot notify equipment safety', error));
     }
     return equipment;
+  },
+
+  async deleteEquipment(id: string): Promise<void> {
+    const { error } = await supabase.from(EQUIPMENT_TABLE).delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  async deleteInspection(id: string): Promise<void> {
+    const { error: itemsError } = await supabase.from(INSPECTION_ITEM_TABLE).delete().eq('inspection_id', id);
+    if (itemsError) throw itemsError;
+    const { error } = await supabase.from(INSPECTION_TABLE).delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  async listTeams(projectId: string, constructionSiteId?: string | null): Promise<SafetyTeam[]> {
+    const { data, error } = await scopeQuery(
+      supabase.from(TEAM_TABLE).select('*').order('created_at', { ascending: false }).limit(100),
+      projectId,
+      constructionSiteId,
+    );
+    if (error) throw error;
+    return Promise.all((data || []).map(hydrateTeam));
+  },
+
+  async upsertTeam(input: Partial<SafetyTeam> & { projectId: string; name: string }): Promise<SafetyTeam> {
+    const payload = toDb({
+      ...input,
+      status: input.status || 'active',
+      attachments: input.attachments || [],
+    });
+    let result;
+    if (input.id) result = await supabase.from(TEAM_TABLE).update(payload).eq('id', input.id).select().single();
+    else {
+      delete payload.id;
+      result = await supabase.from(TEAM_TABLE).insert(payload).select().single();
+    }
+    if (result.error) throw result.error;
+    return hydrateTeam(result.data);
+  },
+
+  async deleteTeam(id: string): Promise<void> {
+    const { error } = await supabase.from(TEAM_TABLE).delete().eq('id', id);
+    if (error) throw error;
   },
 
   async uploadAttachment(params: {

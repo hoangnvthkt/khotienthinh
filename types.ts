@@ -4595,6 +4595,7 @@ export interface SafetyTeam {
   supervisorPhone?: string | null;
   status: 'active' | 'inactive' | 'suspended';
   note?: string | null;
+  attachments?: SafetyAttachment[];
   createdBy?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -4635,6 +4636,7 @@ export interface SafetySubcontractor {
   documentsStatus: 'missing' | 'partial' | 'complete';
   violationCount: number;
   note?: string | null;
+  attachments?: SafetyAttachment[];
   createdBy?: string | null;
   createdAt?: string;
   updatedAt?: string;

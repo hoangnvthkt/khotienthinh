@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Plus, Save, Trash2, X } from 'lucide-react';
 import { SafetyAttachment, SafetyInspection, SafetyInspectionItem, SafetySeverity, User } from '../../../types';
 import SafetyAttachmentUploader from './SafetyAttachmentUploader';
+import { safetyService } from '../../../lib/safetyService';
 
 interface Props {
   projectId: string;
   constructionSiteId?: string | null;
   currentUser: User;
+  inspection?: SafetyInspection | null;
+  onPreviewAttachment?: (attachments: SafetyAttachment[], index: number) => void;
   onClose: () => void;
   onSave: (input: Partial<SafetyInspection> & {
     projectId: string;
@@ -14,43 +17,69 @@ interface Props {
   }) => Promise<void>;
 }
 
-const SafetyInspectionFormModal: React.FC<Props> = ({ projectId, constructionSiteId, currentUser, onClose, onSave }) => {
+const SafetyInspectionFormModal: React.FC<Props> = ({ projectId, constructionSiteId, currentUser, inspection, onPreviewAttachment, onClose, onSave }) => {
   const tempId = useState(() => `draft-${crypto.randomUUID()}`)[0];
   const [area, setArea] = useState('');
   const [inspectionDate, setInspectionDate] = useState(new Date().toISOString().slice(0, 10));
   const [summary, setSummary] = useState('');
   const [attachments, setAttachments] = useState<SafetyAttachment[]>([]);
-  const [items, setItems] = useState<Array<{ itemName: string; requirement?: string; riskLevel: SafetySeverity }>>([
+  const [items, setItems] = useState<Array<{ id?: string; itemName: string; requirement?: string; riskLevel: SafetySeverity; result?: any; generatedIssueId?: any; createdBy?: any }>>([
     { itemName: 'Khu vực làm việc sạch sẽ, không có nguy cơ vấp ngã', riskLevel: 'medium' },
     { itemName: 'Công nhân sử dụng PPE đúng quy định', riskLevel: 'medium' },
     { itemName: 'Thiết bị/máy móc có hồ sơ kiểm định hợp lệ', riskLevel: 'high' },
   ]);
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    if (inspection) {
+      setArea(inspection.area || '');
+      setInspectionDate(inspection.inspectionDate || new Date().toISOString().slice(0, 10));
+      setSummary(inspection.summary || '');
+      setAttachments(inspection.attachments || []);
+
+      safetyService.getInspectionItems(inspection.id).then(rows => {
+        setItems(rows.map(r => ({
+          id: r.id,
+          itemName: r.itemName,
+          requirement: r.requirement || undefined,
+          riskLevel: r.riskLevel,
+          result: r.result,
+          generatedIssueId: r.generatedIssueId,
+          createdBy: r.createdBy,
+        })));
+      }).catch(error => {
+        console.warn('Cannot load inspection items for edit form', error);
+      });
+    }
+  }, [inspection]);
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
     try {
       await onSave({
+        id: inspection?.id,
         projectId,
         constructionSiteId: constructionSiteId || null,
         inspectionDate,
         area: area.trim() || null,
-        inspectorUserId: currentUser.id,
-        inspectorName: currentUser.name || currentUser.username,
+        inspectorUserId: inspection?.inspectorUserId || currentUser.id,
+        inspectorName: inspection?.inspectorName || currentUser.name || currentUser.username,
         summary: summary.trim() || null,
         attachments,
-        createdBy: currentUser.id,
-        status: 'in_progress',
+        createdBy: inspection?.createdBy || currentUser.id,
+        status: inspection?.status || 'in_progress',
         items: items.filter(item => item.itemName.trim()).map((item, index) => ({
+          id: item.id,
           itemName: item.itemName.trim(),
           requirement: item.requirement?.trim() || null,
           riskLevel: item.riskLevel,
-          result: 'na',
+          result: item.result || 'na',
+          generatedIssueId: item.generatedIssueId || null,
           sortOrder: index + 1,
-          createdBy: currentUser.id,
+          createdBy: item.createdBy || currentUser.id,
         })),
-      });
+      } as any);
       onClose();
     } finally {
       setSaving(false);
@@ -67,8 +96,8 @@ const SafetyInspectionFormModal: React.FC<Props> = ({ projectId, constructionSit
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
           <div>
             <div className="text-[10px] font-black uppercase text-orange-600">Kiểm tra hiện trường</div>
-            <h3 className="mt-1 text-base font-black text-slate-800">Tạo checklist an toàn</h3>
-            <p className="mt-1 text-xs font-medium text-slate-500">Checklist nhanh cho cán bộ an toàn đi hiện trường.</p>
+            <h3 className="mt-1 text-base font-black text-slate-800">{inspection ? 'Sửa checklist an toàn' : 'Tạo checklist an toàn'}</h3>
+            <p className="mt-1 text-xs font-medium text-slate-500">{inspection ? 'Cập nhật lại checklist an toàn cho hiện trường.' : 'Checklist nhanh cho cán bộ an toàn đi hiện trường.'}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
@@ -114,12 +143,21 @@ const SafetyInspectionFormModal: React.FC<Props> = ({ projectId, constructionSit
             ))}
           </div>
 
-          <SafetyAttachmentUploader projectId={projectId} recordType="inspections" recordId={tempId} attachments={attachments} onChange={setAttachments} uploadedBy={currentUser.name || currentUser.username} label="Ảnh/file ban đầu" />
+          <SafetyAttachmentUploader
+            projectId={projectId}
+            recordType="inspections"
+            recordId={tempId}
+            attachments={attachments}
+            onChange={setAttachments}
+            uploadedBy={currentUser.name || currentUser.username}
+            label="Ảnh/file ban đầu"
+            onPreview={onPreviewAttachment}
+          />
         </div>
         <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4">
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100">Hủy</button>
           <button type="submit" disabled={saving || items.every(item => !item.itemName.trim())} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-800 disabled:opacity-50">
-            <Save size={14} /> {saving ? 'Đang lưu...' : 'Tạo checklist'}
+            <Save size={14} /> {saving ? 'Đang lưu...' : inspection ? 'Lưu thay đổi' : 'Tạo checklist'}
           </button>
         </div>
       </form>
