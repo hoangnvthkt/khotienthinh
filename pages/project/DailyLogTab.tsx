@@ -20,6 +20,7 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import DailyLogDetailTabs from '../../components/project/DailyLogDetailTabs';
+import SafetyImageGalleryModal from '../../components/project/safety/SafetyImageGalleryModal';
 
 interface DailyLogTabProps {
     constructionSiteId?: string;
@@ -211,7 +212,7 @@ interface DailyLogViewerProps {
     canDelete: boolean;
     busy: boolean;
     onClose: () => void;
-    onPreviewImage?: (img: { url: string; title?: string }) => void;
+    onPreviewImage?: (attachments: { url: string; name: string; fileType?: string }[], index: number) => void;
     onEdit: () => void;
     onRollback: () => void | Promise<void>;
     onSubmit: () => void;
@@ -380,7 +381,12 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                         key={`${photo.url}-${index}`} 
                                         onClick={() => {
                                             if (onPreviewImage) {
-                                                onPreviewImage({ url: photo.url, title: photo.name || `Ảnh công trường ${index + 1}` });
+                                                const galleryList = (log.photos || []).map((p, idx) => ({
+                                                    url: p.url,
+                                                    name: p.name || `Ảnh công trường ${idx + 1}`,
+                                                    fileType: 'image/jpeg'
+                                                }));
+                                                onPreviewImage(galleryList, index);
                                             }
                                         }}
                                         className="group cursor-zoom-in"
@@ -417,32 +423,55 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                             </div>
                                             {attachments.length > 0 && (
                                                 <div className="mt-2 flex flex-wrap gap-2">
-                                                    {attachments.map(file => {
-                                                        const label = file.name || file.fileName || 'Bằng chứng';
-                                                        const attachmentUrl = normalizeAttachmentUrl(file);
-                                                        if (attachmentUrl && isImageAttachment({ ...file, url: attachmentUrl })) {
+                                                    {(() => {
+                                                        const imageAttachments = attachments
+                                                            .map(file => {
+                                                                const label = file.name || file.fileName || 'Bằng chứng';
+                                                                const attachmentUrl = normalizeAttachmentUrl(file);
+                                                                return {
+                                                                    ...file,
+                                                                    url: attachmentUrl,
+                                                                    name: label,
+                                                                    isImg: attachmentUrl && isImageAttachment({ ...file, url: attachmentUrl })
+                                                                };
+                                                            })
+                                                            .filter(item => item.isImg);
+
+                                                        return attachments.map((file) => {
+                                                            const label = file.name || file.fileName || 'Bằng chứng';
+                                                            const attachmentUrl = normalizeAttachmentUrl(file);
+                                                            const isImg = attachmentUrl && isImageAttachment({ ...file, url: attachmentUrl });
+                                                            
+                                                            if (isImg) {
+                                                                const imgIndexInGallery = imageAttachments.findIndex(img => img.url === attachmentUrl);
+                                                                return (
+                                                                    <div 
+                                                                        key={file.id || attachmentUrl} 
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (onPreviewImage) {
+                                                                                const galleryList = imageAttachments.map(img => ({
+                                                                                    url: img.url,
+                                                                                    name: img.name,
+                                                                                    fileType: 'image/jpeg'
+                                                                                }));
+                                                                                onPreviewImage(galleryList, imgIndexInGallery >= 0 ? imgIndexInGallery : 0);
+                                                                            }
+                                                                        }}
+                                                                        className="group w-24 cursor-zoom-in"
+                                                                    >
+                                                                        <img src={attachmentUrl} alt={label} className="w-24 h-20 object-cover rounded-lg border border-white dark:border-slate-700/80 shadow-sm group-hover:border-blue-200 dark:group-hover:border-blue-500 hover:scale-[1.03] transition-all duration-200" />
+                                                                        <div className="mt-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 truncate">{label}</div>
+                                                                    </div>
+                                                                );
+                                                            }
                                                             return (
-                                                                <div 
-                                                                    key={file.id || attachmentUrl} 
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        if (onPreviewImage) {
-                                                                            onPreviewImage({ url: attachmentUrl, title: label });
-                                                                        }
-                                                                    }}
-                                                                    className="group w-24 cursor-zoom-in"
-                                                                >
-                                                                    <img src={attachmentUrl} alt={label} className="w-24 h-20 object-cover rounded-lg border border-white dark:border-slate-700/80 shadow-sm group-hover:border-blue-200 dark:group-hover:border-blue-500 hover:scale-[1.03] transition-all duration-200" />
-                                                                    <div className="mt-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 truncate">{label}</div>
-                                                                </div>
+                                                                <a key={file.id || attachmentUrl || label} href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-card px-2 py-1 text-[10px] font-bold text-blue-400 border border-border hover:bg-muted">
+                                                                    <Paperclip size={10} /> {label}
+                                                                </a>
                                                             );
-                                                        }
-                                                        return (
-                                                            <a key={file.id || attachmentUrl || label} href={attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-card px-2 py-1 text-[10px] font-bold text-blue-400 border border-border hover:bg-muted">
-                                                                <Paperclip size={10} /> {label}
-                                                            </a>
-                                                        );
-                                                    })}
+                                                        });
+                                                    })()}
                                                 </div>
                                             )}
                                         </div>
@@ -708,7 +737,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [calendarMonth, setCalendarMonth] = useState(monthKeyFromDate(new Date()));
     const [dayLogPicker, setDayLogPicker] = useState<{ date: string; logs: DailyLog[] } | null>(null);
     const [viewLogId, setViewLogId] = useState<string | null>(null);
-    const [previewImage, setPreviewImage] = useState<{ url: string; title?: string } | null>(null);
+    const [galleryAttachments, setGalleryAttachments] = useState<{ url: string; name: string; fileType?: string }[] | null>(null);
+    const [galleryIndex, setGalleryIndex] = useState<number>(0);
 
     // Form state
     const [fDate, setFDate] = useState(new Date().toISOString().split('T')[0]);
@@ -1994,7 +2024,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     canDelete={canDeleteViewingLog}
                     busy={busyLogIds.has(viewingLog.id)}
                     onClose={() => setViewLogId(null)}
-                    onPreviewImage={setPreviewImage}
+                    onPreviewImage={(list, idx) => {
+                        setGalleryAttachments(list);
+                        setGalleryIndex(idx);
+                    }}
                     onEdit={() => {
                         setViewLogId(null);
                         openEdit(viewingLog);
@@ -2249,7 +2282,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                 <img 
                                                     src={p.url} 
                                                     alt={p.name} 
-                                                    onClick={() => setPreviewImage({ url: p.url, title: p.name || `Ảnh công trường ${i + 1}` })}
+                                                    onClick={() => {
+                                                        const galleryList = fPhotos.map((photo, idx) => ({
+                                                            url: photo.url,
+                                                            name: photo.name || `Ảnh công trường ${idx + 1}`,
+                                                            fileType: 'image/jpeg'
+                                                        }));
+                                                        setGalleryAttachments(galleryList);
+                                                        setGalleryIndex(i);
+                                                    }}
                                                     className="w-12 h-12 object-cover rounded-lg border border-slate-200 dark:border-slate-700 cursor-zoom-in hover:scale-105 transition-transform duration-150" 
                                                 />
                                                 <button onClick={() => setFPhotos(fPhotos.filter((_, idx) => idx !== i))}
@@ -2369,20 +2410,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             )}
 
             {/* Lightbox Component Overlay */}
-            {previewImage && (
-                <div className="fixed inset-0 z-[1000] flex flex-col items-center justify-center bg-black/85 backdrop-blur-md transition-all duration-300 px-4 animate-in fade-in-0" onClick={() => setPreviewImage(null)}>
-                    <button onClick={() => setPreviewImage(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all duration-200 hover:rotate-90">
-                        <X size={20} />
-                    </button>
-                    <div className="max-w-[90vw] max-h-[80vh] flex flex-col items-center select-none" onClick={e => e.stopPropagation()}>
-                        <img src={previewImage.url} alt={previewImage.title || "Xem ảnh"} className="max-w-full max-h-[75vh] object-contain rounded-2xl shadow-2xl border border-white/10 animate-in zoom-in-95 duration-200" />
-                        {previewImage.title && (
-                            <p className="mt-3 text-xs font-bold text-slate-200 text-center tracking-wide px-4 py-2 rounded-xl bg-slate-900/50 backdrop-blur-sm max-w-lg truncate border border-white/5">
-                                {previewImage.title}
-                            </p>
-                        )}
-                    </div>
-                </div>
+            {galleryAttachments && galleryAttachments.length > 0 && (
+                <SafetyImageGalleryModal
+                    attachments={galleryAttachments}
+                    currentIndex={galleryIndex}
+                    onClose={() => setGalleryAttachments(null)}
+                    onIndexChange={setGalleryIndex}
+                />
             )}
         </div>
     );

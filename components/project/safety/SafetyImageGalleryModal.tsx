@@ -56,7 +56,7 @@ const SafetyImageGalleryModal: React.FC<Props> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col justify-between bg-slate-950/95 p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[1000] flex flex-col justify-between bg-slate-950/95 p-4 animate-in fade-in duration-200">
       {/* Header */}
       <div className="flex items-center justify-between gap-4 py-2 text-white">
         <div className="min-w-0">
