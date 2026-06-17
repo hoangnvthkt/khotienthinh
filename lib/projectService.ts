@@ -3,7 +3,7 @@ import {
     ProjectTask, DailyLog, AcceptanceRecord,
     MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor,
     PurchaseOrder, PaymentSchedule, ProjectBaseline, ProjectWorkBoqItem, PurchaseOrderRequestLineLink,
-    PaymentDossierStatus, PaymentQualityStatus, PaymentScheduleMilestoneType
+    PaymentDossierStatus, PaymentQualityStatus, PaymentScheduleMilestoneType, PurchaseOrderRemovalResult
 } from '../types';
 import { auditService } from './auditService';
 import { dailyLogDetailService } from './dailyLogDetailService';
@@ -572,6 +572,8 @@ const poToDb = (po: PurchaseOrder): any => {
 
 const poFromDb = (row: any): PurchaseOrder => fromDb(row) as PurchaseOrder;
 const isActivePurchaseOrder = (po: PurchaseOrder): boolean => !po.archivedAt;
+const PO_SUBMITTED_STATUSES = new Set(['sent', 'confirmed', 'in_transit', 'partial', 'delivered', 'closed', 'returned']);
+const poStatusMarksSubmitted = (status?: string | null): boolean => PO_SUBMITTED_STATUSES.has(String(status || 'draft'));
 
 const poRequestLineLinkToDb = (link: PurchaseOrderRequestLineLink): any => {
     const row = toDb(link);
@@ -819,7 +821,7 @@ export const poService = {
             .from('purchase_orders')
             .upsert(poToDb({
                 ...item,
-                ...projectSubmissionService.actionMeta(undefined, item.status !== 'draft'),
+                ...projectSubmissionService.actionMeta(undefined, poStatusMarksSubmitted(item.status)),
             }), { onConflict: 'id' });
         if (error) throw error;
     },
@@ -931,18 +933,15 @@ export const poService = {
         await this.upsert(updated);
         return updated;
     },
-    async remove(id: string): Promise<void> {
-        const { count, error } = await supabase
-            .from('purchase_orders')
-            .update({
-                archived_at: new Date().toISOString(),
-                archive_reason: 'Người dùng lưu trữ PO từ tab Cung ứng',
-            }, { count: 'exact' })
-            .eq('id', id);
+    async remove(id: string): Promise<PurchaseOrderRemovalResult> {
+        const { data, error } = await supabase
+            .rpc('remove_purchase_order_v1', { p_po_id: id })
+            .single();
         if (error) throw error;
-        if (!count) {
-            throw new Error('Không lưu trữ được PO trên Supabase. Vui lòng kiểm tra quyền xoá hoặc trạng thái PO.');
+        if (!data) {
+            throw new Error('Không xoá/lưu trữ được PO trên Supabase. Vui lòng kiểm tra quyền xoá hoặc trạng thái PO.');
         }
+        return fromDb(data) as PurchaseOrderRemovalResult;
     },
 };
 

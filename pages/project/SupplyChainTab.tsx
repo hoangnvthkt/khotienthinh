@@ -237,6 +237,16 @@ const getPoReceiptStats = (po: PurchaseOrder) => {
     };
 };
 
+const hasPoStockImpactHint = (
+    po: PurchaseOrder,
+    supplierReturns: PurchaseOrderSupplierReturn[] = [],
+): boolean => {
+    const hasReceivedQty = po.items.some(item => Number(item.receivedQty || 0) > 0 || Number(item.returnedQty || 0) > 0);
+    const hasReceiptTransactions = (po.receivedTransactionIds || []).length > 0;
+    const hasCompletedSupplierReturn = supplierReturns.some(item => item.status === 'completed');
+    return hasReceivedQty || hasReceiptTransactions || hasCompletedSupplierReturn;
+};
+
 const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, projectId, canManageTab = true, compact = false, initialDraftPo = null, initialDraftPoKey = 0 }) => {
     const toast = useToast();
     const confirm = useConfirm();
@@ -1061,7 +1071,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         const updated = {
             status,
             ...statusPatch,
-            ...projectSubmissionService.actionMeta(user?.id, status !== 'draft'),
+            ...projectSubmissionService.actionMeta(user?.id, !['draft', 'cancelled'].includes(status)),
             actualDeliveryDate: status === 'delivered' ? new Date().toISOString().split('T')[0] : po.actualDeliveryDate,
             deliveryNote: status === 'delivered' && po.status === 'partial'
                 ? [
@@ -1220,19 +1230,24 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
     const handleDeletePo = async (po: PurchaseOrder) => {
         if (!ensureCanManage('xoá đơn hàng')) return;
+        const hasStockImpact = hasPoStockImpactHint(po, supplierReturnsByPo[po.id] || []);
         const ok = await confirm({
             targetName: po.poNumber,
-            title: 'Lưu trữ đơn hàng',
-            warningText: 'PO sẽ được ẩn khỏi danh sách, nhưng phiếu trả NCC và giao dịch kho vẫn được giữ để đối soát.',
-            confirmText: 'Lưu trữ',
+            title: hasStockImpact ? 'Lưu trữ đơn hàng' : 'Xoá đơn hàng',
+            warningText: hasStockImpact
+                ? 'PO đã có dấu hiệu phát sinh kho nên sẽ được ẩn khỏi danh sách, nhưng giao dịch kho và phiếu trả NCC vẫn được giữ để đối soát.'
+                : 'PO chưa có dấu hiệu phát sinh kho nên sẽ được xoá khỏi bảng Đơn đặt hàng. Các liên kết đặt hàng từ yêu cầu vật tư sẽ được dọn để có thể tạo PO lại khi cần.',
+            confirmText: hasStockImpact ? 'Lưu trữ' : 'Xoá PO',
+            intent: hasStockImpact ? 'warning' : 'danger',
+            countdownSeconds: hasStockImpact ? 1 : 2,
         });
         if (!ok) return;
         try {
-            await poService.remove(po.id);
+            const result = await poService.remove(po.id);
             await loadSupplyData();
-            toast.success('Đã lưu trữ PO');
+            toast.success(result.action === 'deleted' ? 'Đã xoá PO' : 'Đã lưu trữ PO');
         } catch (e: any) {
-            toast.error('Lỗi lưu trữ', e?.message);
+            toast.error('Lỗi xoá/lưu trữ PO', e?.message);
         }
     };
 
@@ -2109,6 +2124,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 const groupPrintMenuKey = po.procurementGroupId ? `group:${po.procurementGroupId}` : '';
                                 const isPrintMenuOpen = poPrintMenuId === po.id || (!!groupPrintMenuKey && poPrintMenuId === groupPrintMenuKey);
                                 const supplierReturns = supplierReturnsByPo[po.id] || [];
+                                const removalTitle = hasPoStockImpactHint(po, supplierReturns) ? 'Lưu trữ PO' : 'Xoá PO';
                                 const totalReceivedQty = po.items.reduce((sum, item) => sum + Number(item.receivedQty || 0), 0);
                                 const completedReturnQty = Math.max(
                                     po.items.reduce((sum, item) => sum + Number(item.returnedQty || 0), 0),
@@ -2219,7 +2235,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">
                                                             <button onClick={e => { e.stopPropagation(); openEditPo(po); }} className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>
                                                             <button onClick={async e => { e.stopPropagation(); handleDeletePo(po); }}
-                                                                title="Lưu trữ PO"
+                                                                title={removalTitle}
                                                                 className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500"><Trash2 size={11} /></button>
                                                         </div>
                                                     )}

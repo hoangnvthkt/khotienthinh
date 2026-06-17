@@ -1728,6 +1728,12 @@ export interface PurchaseOrder extends ProjectSubmissionFields {
   createdAt: string;
 }
 
+export interface PurchaseOrderRemovalResult {
+  action: 'deleted' | 'archived';
+  id: string;
+  poNumber: string;
+}
+
 export interface PurchaseOrderItem {
   lineId?: string;
   itemId: string;
