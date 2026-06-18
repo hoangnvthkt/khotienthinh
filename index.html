@@ -384,16 +384,6 @@
   class="bg-gradient-to-br from-emerald-50 via-slate-50 to-teal-50 dark:from-[#101214] dark:via-[#0e1117] dark:to-[#101214] text-slate-900 dark:text-[#CBD5E1] font-sans antialiased min-h-screen bg-fixed transition-colors duration-500">
   <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
-  <script>
-    // Register Service Worker
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-          .then(reg => console.log('SW registered:', reg.scope))
-          .catch(err => console.log('SW failed:', err));
-      });
-    }
-  </script>
 </body>
 
 </html>

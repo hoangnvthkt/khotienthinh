@@ -444,10 +444,13 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId, canMa
         if (confirmedWeeklyOverrunKeys.has(key)) return true;
         const ok = await confirm({
             title: 'Tiến độ vượt quá 100%',
-            message: `Hạng mục "${task.name}" có tiến độ ${progressPercent}%. Bạn có chắc chắn muốn chốt tiến độ lớn hơn 100% không?`,
-            confirmLabel: 'Đồng ý',
+            targetName: task.name,
+            confirmText: `Hạng mục này có tiến độ ${progressPercent}%. Bạn có chắc chắn muốn chốt tiến độ lớn hơn 100% cho`,
+            warningText: 'Tiến độ lớn hơn 100% có thể làm sai lệch báo cáo nếu chưa được kiểm tra.',
+            actionLabel: 'Đồng ý',
             cancelLabel: 'Huỷ',
-            confirmTone: 'warning',
+            intent: 'warning',
+            countdownSeconds: 0,
         });
         if (ok) {
             setConfirmedWeeklyOverrunKeys(prev => {

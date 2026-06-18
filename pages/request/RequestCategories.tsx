@@ -8,7 +8,7 @@ import {
     Plus, FileText, Search, Trash2, Edit2, ToggleLeft, ToggleRight,
     ShieldAlert, X, ChevronDown, ChevronUp, GripVertical, Settings2,
     Type, AlignLeft, Hash, Calendar, List, Paperclip, Layers,
-    Clock, User, Inbox, Upload, Printer
+    Clock, User, Inbox, Upload, Printer, Table2
 } from 'lucide-react';
 
 const FIELD_TYPE_CONFIG: Record<CustomFieldType, { label: string; icon: any; color: string }> = {
@@ -18,6 +18,7 @@ const FIELD_TYPE_CONFIG: Record<CustomFieldType, { label: string; icon: any; col
     date: { label: 'Ngày tháng', icon: Calendar, color: 'bg-amber-500' },
     select: { label: 'Danh sách chọn', icon: List, color: 'bg-violet-500' },
     file: { label: 'Tệp đính kèm', icon: Paperclip, color: 'bg-rose-500' },
+    table: { label: 'Bảng dữ liệu', icon: Table2, color: 'bg-cyan-500' },
 };
 
 const ICON_OPTIONS = ['FileText', 'Inbox', 'Clock', 'Settings2', 'Layers', 'User'];

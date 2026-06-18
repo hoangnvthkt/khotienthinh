@@ -765,78 +765,136 @@ const WorkflowInstanceDetail: React.FC = () => {
                                     </div>
 
                                     {customFieldsToRender.length > 0 ? (
-                                        <div className="mt-3 divide-y divide-slate-100 dark:divide-slate-800/50">
-                                            {customFieldsToRender.map((field, idx) => {
-                                                const value = instance.formData?.[field.name];
-                                                const numStr = String(idx + 2).padStart(2, '0'); // numbering sequence (starts at 02 like screenshot)
+                                        <div className="mt-4 space-y-5">
+                                            {/* Simple Fields Grid */}
+                                            {customFieldsToRender.filter(f => f.type !== 'table' && f.type !== 'file' && f.type !== 'textarea').length > 0 && (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                                                    {customFieldsToRender
+                                                        .filter(f => f.type !== 'table' && f.type !== 'file' && f.type !== 'textarea')
+                                                        .map((field) => {
+                                                            const value = instance.formData?.[field.name];
+                                                            const idx = customFieldsToRender.findIndex(f => f.id === field.id);
+                                                            const numStr = String(idx + 2).padStart(2, '0');
 
-                                                return (
-                                                    <div key={field.id} className="py-3.5 first:pt-0 last:pb-0">
-                                                        <div className="text-[10px] font-black uppercase tracking-wider text-slate-450 dark:text-slate-500">
-                                                            {numStr} {field.label}
-                                                        </div>
-                                                        <div className="mt-1">
-                                                            {/* Table field rendering */}
-                                                            {field.type === 'table' && (
-                                                                <div className="mt-2 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-sm max-w-full">
-                                                                    <div className="overflow-x-auto">
-                                                                        <table className="w-full text-xs text-left" style={{ minWidth: Math.max(600, (field.options || []).length * 150) }}>
-                                                                            <thead>
-                                                                                <tr className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-450 font-bold border-b border-slate-200 dark:border-slate-700">
-                                                                                    <th className="px-3 py-2 text-center w-10">#</th>
-                                                                                    {(field.options || []).map((col, cIdx) => (
-                                                                                        <th key={cIdx} className="px-3 py-2 whitespace-nowrap">{col}</th>
-                                                                                    ))}
-                                                                                </tr>
-                                                                            </thead>
-                                                                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                                                                {Array.isArray(value) && value.length > 0 ? (
-                                                                                    value.map((row, ri) => (
-                                                                                        <tr key={ri} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                                                                                            <td className="px-3 py-2 text-center text-slate-400 font-semibold">{String(ri + 1).padStart(2, '0')}</td>
-                                                                                            {(field.options || []).map((_, ci) => (
-                                                                                                <td key={ci} className="px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">{row[ci] ?? ''}</td>
-                                                                                            ))}
-                                                                                        </tr>
-                                                                                    ))
-                                                                                ) : (
-                                                                                    <tr>
-                                                                                        <td colSpan={(field.options?.length || 0) + 1} className="px-3 py-4 text-center text-slate-400 italic font-semibold">
-                                                                                            Bảng không có dữ liệu
-                                                                                        </td>
-                                                                                    </tr>
-                                                                                )}
-                                                                            </tbody>
-                                                                        </table>
+                                                            return (
+                                                                <div key={field.id} className="p-3 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-slate-50 dark:hover:bg-slate-900/80 border border-slate-100 dark:border-slate-800/80 rounded-xl transition-all duration-200 shadow-sm">
+                                                                    <div className="flex items-center gap-2 mb-1.5 pb-1.5 border-b border-slate-100 dark:border-slate-800/80">
+                                                                        <span className="flex h-5 items-center justify-center rounded bg-emerald-600 px-1.5 text-[9px] font-black text-white uppercase tracking-wider shadow-sm shadow-emerald-600/10">
+                                                                            {numStr}
+                                                                        </span>
+                                                                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+                                                                            {field.label}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="break-words text-sm font-semibold text-slate-800 dark:text-slate-200">
+                                                                        {value !== null && value !== undefined && String(value).trim() !== '' ? String(value) : <span className="text-slate-300 dark:text-slate-650 font-normal italic">Trống</span>}
                                                                     </div>
                                                                 </div>
-                                                            )}
-                                                            {/* File field rendering */}
-                                                            {field.type === 'file' && value && typeof value === 'object' && value.fileName && (
-                                                                <div className="mt-1.5 flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-xs max-w-md border border-slate-100 dark:border-slate-800">
-                                                                    <Paperclip size={13} className="text-rose-450 shrink-0" />
-                                                                    <span className="font-semibold text-slate-700 dark:text-slate-300 flex-1 truncate">{value.fileName}</span>
-                                                                    <span className="text-[10px] text-slate-400 shrink-0">({(value.fileSize / 1024).toFixed(1)} KB)</span>
-                                                                    <button onClick={() => setPreviewFile(value)} className="p-1 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-500 transition-colors" title="Xem trước">
-                                                                        <Eye size={13} />
-                                                                    </button>
-                                                                    {hasDownloadableFile(value) && (
-                                                                        <button onClick={() => downloadWorkflowFile(value)} className="p-1 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về">
-                                                                            <Download size={13} />
-                                                                        </button>
-                                                                    )}
+                                                            );
+                                                        })}
+                                                </div>
+                                            )}
+
+                                            {/* Complex Fields Full Width List */}
+                                            {customFieldsToRender.filter(f => f.type === 'table' || f.type === 'file' || f.type === 'textarea').length > 0 && (
+                                                <div className="space-y-4 pt-1">
+                                                    {customFieldsToRender
+                                                        .filter(f => f.type === 'table' || f.type === 'file' || f.type === 'textarea')
+                                                        .map((field) => {
+                                                            const value = instance.formData?.[field.name];
+                                                            const idx = customFieldsToRender.findIndex(f => f.id === field.id);
+                                                            const numStr = String(idx + 2).padStart(2, '0');
+
+                                                            return (
+                                                                <div key={field.id} className="p-4 bg-slate-50/20 dark:bg-slate-900/10 border border-slate-100 dark:border-slate-800/80 rounded-xl shadow-sm">
+                                                                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100 dark:border-slate-800/80">
+                                                                        <span className="flex h-5 items-center justify-center rounded bg-emerald-600 px-1.5 text-[9px] font-black text-white uppercase tracking-wider shadow-sm shadow-emerald-600/10">
+                                                                            {numStr}
+                                                                        </span>
+                                                                        <span className="text-xs font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                                                                            {field.label}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="mt-1">
+                                                                        {/* Table field rendering */}
+                                                                        {field.type === 'table' && (
+                                                                            <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-sm max-w-full">
+                                                                                <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+                                                                                    <table className="w-full text-xs text-left" style={{ minWidth: Math.max(600, (field.options || []).length * 150) }}>
+                                                                                        <thead>
+                                                                                            <tr className="bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300 font-bold border-b border-slate-200 dark:border-slate-700">
+                                                                                                <th className="px-4 py-3 text-center w-12 font-bold uppercase tracking-wider text-[10px]">#</th>
+                                                                                                {(field.options || []).map((col, colIdx) => (
+                                                                                                    <th key={colIdx} className="px-4 py-3 whitespace-nowrap font-bold uppercase tracking-wider text-[10px]">{col}</th>
+                                                                                                ))}
+                                                                                            </tr>
+                                                                                        </thead>
+                                                                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                                                                                            {Array.isArray(value) && value.length > 0 ? (
+                                                                                                value.map((row, ri) => (
+                                                                                                    <tr key={ri} className="even:bg-slate-50/30 dark:even:bg-slate-900/10 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                                                                                                        <td className="px-4 py-3 text-center">
+                                                                                                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500">
+                                                                                                                {ri + 1}
+                                                                                                            </span>
+                                                                                                        </td>
+                                                                                                        {(field.options || []).map((_, ci) => (
+                                                                                                            <td key={ci} className="px-4 py-3 text-slate-700 dark:text-slate-300 whitespace-nowrap font-medium">{row[ci] ?? ''}</td>
+                                                                                                        ))}
+                                                                                                    </tr>
+                                                                                                ))
+                                                                                            ) : (
+                                                                                                <tr>
+                                                                                                    <td colSpan={(field.options?.length || 0) + 1} className="px-4 py-6 text-center text-slate-400 italic font-semibold">
+                                                                                                        Bảng không có dữ liệu
+                                                                                                    </td>
+                                                                                                </tr>
+                                                                                            )}
+                                                                                        </tbody>
+                                                                                    </table>
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                        {/* File field rendering */}
+                                                                        {field.type === 'file' && value && typeof value === 'object' && value.fileName ? (
+                                                                            <div className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800/80 rounded-xl text-xs max-w-md shadow-sm transition hover:shadow-md">
+                                                                                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 dark:bg-rose-950/20 text-rose-500 shrink-0">
+                                                                                    <Paperclip size={16} />
+                                                                                </div>
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <span className="block font-semibold text-slate-800 dark:text-slate-200 truncate" title={value.fileName}>
+                                                                                        {value.fileName}
+                                                                                    </span>
+                                                                                    <span className="block text-[10px] text-slate-400 font-medium mt-0.5">
+                                                                                        {(value.fileSize / 1024).toFixed(1)} KB
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="flex items-center gap-1 shrink-0">
+                                                                                    <button onClick={() => setPreviewFile(value)} className="p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-500 transition-colors" title="Xem trước">
+                                                                                        <Eye size={14} />
+                                                                                    </button>
+                                                                                    {hasDownloadableFile(value) && (
+                                                                                        <button onClick={() => downloadWorkflowFile(value)} className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về">
+                                                                                            <Download size={14} />
+                                                                                        </button>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        ) : field.type === 'file' && (
+                                                                            <span className="text-slate-300 dark:text-slate-650 font-normal italic text-sm">Chưa có tệp đính kèm</span>
+                                                                        )}
+                                                                        {/* Textarea field rendering */}
+                                                                        {field.type === 'textarea' && (
+                                                                            <div className="text-sm font-medium text-slate-750 dark:text-slate-350 whitespace-pre-wrap leading-relaxed">
+                                                                                {value !== null && value !== undefined && String(value).trim() !== '' ? String(value) : <span className="text-slate-300 dark:text-slate-650 font-normal italic">Trống</span>}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
-                                                            )}
-                                                            {/* Simple field rendering */}
-                                                            {field.type !== 'table' && field.type !== 'file' && (
-                                                                <span className="break-words text-sm font-black text-slate-800 dark:text-slate-100">
-                                                                    {value !== null && value !== undefined && String(value).trim() !== '' ? String(value) : <span className="text-slate-300 dark:text-slate-650 font-normal italic">Trống</span>}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
+                                                            );
+                                                        })}
+                                                </div>
+                                            )}
                                         </div>
                                     ) : (
                                         <p className="text-sm font-semibold text-slate-400 mt-2">Quy trình không cấu hình trường dữ liệu tùy chỉnh.</p>

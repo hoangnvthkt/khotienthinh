@@ -1857,6 +1857,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             <td colspan="10" class="approval-value-cell"><strong>${escapeHtml(getUserPositionLabel())}</strong></td>
                         </tr>
                         <tr>
+                            <td class="approval-label-cell" colspan="2"><em>Số PO:</em></td>
+                            <td colspan="10" class="approval-value-cell"><strong>${escapeHtml(po.poNumber)}</strong></td>
+                        </tr>
+                        <tr>
                             <td colspan="12" class="approval-intro"><em>Đề nghị BGD duyệt đơn hàng:</em></td>
                         </tr>
                         <tr>
@@ -1864,15 +1868,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         </tr>
                     </tbody>
                 </table>
-
-                <div class="approval-meta-grid">
-                    <div><span>Số PO</span><strong>${escapeHtml(po.poNumber)}</strong></div>
-                    <div><span>Nhà cung cấp</span><strong>${escapeHtml(po.vendorName || '-')}</strong></div>
-                    <div><span>Nhóm mua hàng</span><strong>${escapeHtml(po.procurementGroupNo || '-')}</strong></div>
-                    <div><span>Ngày cần giao</span><strong>${escapeHtml(po.expectedDeliveryDate || '-')}</strong></div>
-                    <div><span>Tổng giá trị</span><strong>${totalAmount.toLocaleString('vi-VN')} đ</strong></div>
-                    <div><span>Kho nhận</span><strong>${escapeHtml(warehouses.find(w => w.id === po.targetWarehouseId)?.name || '-')}</strong></div>
-                </div>
 
                 <table class="approval-lines">
                     <thead>
@@ -1898,9 +1893,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 ${po.note ? `<div class="approval-note"><strong>Ghi chú:</strong> ${escapeHtml(po.note)}</div>` : ''}
 
                 <div class="approval-signatures">
-                    <div><strong>Người đề nghị</strong><span>${escapeHtml(user.name || '')}</span></div>
-                    <div><strong>Phòng/Bộ phận kiểm tra</strong><span></span></div>
-                    <div><strong>Ban giám đốc duyệt</strong><span></span></div>
+                    <div><strong>BP Vật tư-TB</strong><span>${escapeHtml(user.name || '')}</span></div>
+                    <div><strong>PT Phòng QLDA</strong><span>Lưu Công Danh</span></div>
+                    <div><strong>Giám đốc vật tư</strong><span>Nguyễn Thị Mơ</span></div>
+                    <div><strong>Tổng giám đốc</strong><span>Dương Xuân Thịnh</span></div>
                 </div>
             </section>
         `;
@@ -2113,7 +2109,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 .approval-right { text-align: right; }
                 .approval-muted { margin-top: 2px; color: #666; font-size: 10px; }
                 .approval-note { margin-top: 12px; border: 1px solid #d7d7d7; padding: 8px 10px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 12px; }
-                .approval-signatures { margin-top: 34px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; text-align: center; font-family: "Times New Roman", Times, serif; }
+                .approval-signatures { margin-top: 34px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; text-align: center; font-family: "Times New Roman", Times, serif; }
                 .approval-signatures div { min-height: 82px; }
                 .approval-signatures strong { display: block; margin-bottom: 54px; }
                 .approval-signatures span { font-weight: 700; }
