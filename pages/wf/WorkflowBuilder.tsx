@@ -10,7 +10,7 @@ import {
     ArrowLeft, Save, Plus, Trash2, GripVertical, ChevronUp, ChevronDown,
     UserCheck, Settings2, X, Layers, FileText, ToggleLeft, ToggleRight,
     Zap, Play, Flag, Clock, Type, AlignLeft, Hash, Calendar, List, Paperclip, Printer, Upload, Download, Eye,
-    Search, Check, Table2
+    Search, Check, Table2, Edit
 } from 'lucide-react';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
@@ -612,19 +612,56 @@ const WorkflowBuilder: React.FC = () => {
 
     // ========== CUSTOM FIELDS MANAGEMENT ==========
 
+    const resetFieldForm = () => {
+        setNewFieldLabel('');
+        setNewFieldType('text');
+        setNewFieldRequired(false);
+        setNewFieldOptions('');
+        setEditingFieldId(null);
+        setShowAddField(false);
+    };
+
+    const startEditCustomField = (field: WorkflowCustomField) => {
+        if (!canConfigureTemplate) return;
+        setEditingFieldId(field.id);
+        setNewFieldLabel(field.label);
+        setNewFieldType(field.type);
+        setNewFieldRequired(field.required);
+        setNewFieldOptions(field.options ? field.options.join(', ') : '');
+        setShowAddField(true);
+    };
+
     const addCustomField = () => {
         if (!canConfigureTemplate) return;
         if (!newFieldLabel.trim()) return;
-        const field: WorkflowCustomField = {
-            id: generateId(),
-            name: newFieldLabel.trim().toLowerCase().replace(/[^a-z0-9\u00C0-\u024F\u1E00-\u1EFF]/g, '_').replace(/_+/g, '_'),
-            label: newFieldLabel.trim(),
-            type: newFieldType,
-            required: newFieldRequired,
-            options: (newFieldType === 'select' || newFieldType === 'table') ? newFieldOptions.split(',').map(o => o.trim()).filter(Boolean) : undefined,
-            placeholder: '',
-        };
-        setCustomFields(prev => [...prev, field]);
+
+        if (editingFieldId) {
+            setCustomFields(prev => prev.map(f => {
+                if (f.id === editingFieldId) {
+                    return {
+                        ...f,
+                        label: newFieldLabel.trim(),
+                        type: newFieldType,
+                        required: newFieldRequired,
+                        options: (newFieldType === 'select' || newFieldType === 'table') ? newFieldOptions.split(',').map(o => o.trim()).filter(Boolean) : undefined,
+                    };
+                }
+                return f;
+            }));
+            setEditingFieldId(null);
+        } else {
+            const field: WorkflowCustomField = {
+                id: generateId(),
+                name: newFieldLabel.trim().toLowerCase().replace(/[^a-z0-9\u00C0-\u024F\u1E00-\u1EFF]/g, '_').replace(/_+/g, '_'),
+                label: newFieldLabel.trim(),
+                type: newFieldType,
+                required: newFieldRequired,
+                options: (newFieldType === 'select' || newFieldType === 'table') ? newFieldOptions.split(',').map(o => o.trim()).filter(Boolean) : undefined,
+                placeholder: '',
+            };
+            setCustomFields(prev => [...prev, field]);
+        }
+
         setNewFieldLabel('');
         setNewFieldType('text');
         setNewFieldRequired(false);
@@ -1240,7 +1277,14 @@ const WorkflowBuilder: React.FC = () => {
                                 <p className="text-xs text-slate-400">Thêm các trường dữ liệu mà người tạo phiếu cần điền khi gửi yêu cầu.</p>
                             </div>
                             <button
-                                onClick={() => { setShowAddField(true); setEditingFieldId(null); }}
+                                onClick={() => {
+                                    setNewFieldLabel('');
+                                    setNewFieldType('text');
+                                    setNewFieldRequired(false);
+                                    setNewFieldOptions('');
+                                    setEditingFieldId(null);
+                                    setShowAddField(true);
+                                }}
                                 className="flex items-center px-4 py-2.5 bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition font-bold text-sm shadow-lg shadow-violet-500/20"
                             >
                                 <Plus size={15} className="mr-1.5" /> Thêm
@@ -1326,6 +1370,15 @@ const WorkflowBuilder: React.FC = () => {
                                                 <FieldIcon size={10} /> {ftConfig.label}
                                             </span>
 
+                                            {/* Edit */}
+                                            <button
+                                                onClick={() => startEditCustomField(field)}
+                                                className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition opacity-0 group-hover:opacity-100 animate-fade-in"
+                                                title="Chỉnh sửa"
+                                            >
+                                                <Edit size={14} />
+                                            </button>
+
                                             {/* Delete */}
                                             <button
                                                 onClick={() => removeCustomField(field.id)}
@@ -1346,9 +1399,10 @@ const WorkflowBuilder: React.FC = () => {
                             <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
                                 <div className="flex items-center justify-between mb-4">
                                     <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                                        <Plus size={20} className="text-violet-500" /> Thêm trường mới
+                                        {editingFieldId ? <Edit size={20} className="text-violet-500" /> : <Plus size={20} className="text-violet-500" />}
+                                        {editingFieldId ? 'Chỉnh sửa trường tùy chỉnh' : 'Thêm trường mới'}
                                     </h2>
-                                    <button onClick={() => setShowAddField(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"><X size={16} /></button>
+                                    <button onClick={resetFieldForm} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"><X size={16} /></button>
                                 </div>
                                 <div className="space-y-4">
                                     <div>
@@ -1412,13 +1466,13 @@ const WorkflowBuilder: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="flex gap-3 mt-6">
-                                    <button onClick={() => setShowAddField(false)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
+                                    <button onClick={resetFieldForm} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
                                     <button
                                         onClick={addCustomField}
                                         disabled={!newFieldLabel.trim()}
                                         className="flex-1 px-4 py-2.5 bg-violet-600 text-white rounded-xl font-bold text-sm hover:bg-violet-700 transition disabled:opacity-50 shadow-lg shadow-violet-500/20"
                                     >
-                                        Thêm trường
+                                        {editingFieldId ? 'Cập nhật' : 'Thêm trường'}
                                     </button>
                                 </div>
                             </div>

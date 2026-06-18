@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
     ArrowLeft, CheckCircle, Clock, FileText, GitBranch, Image as ImageIcon,
     MessageSquare, Paperclip, RefreshCcw, RotateCcw, Send, User, X, XCircle,
-    AlertCircle, Calendar, Download, Eye, Table2, FileSpreadsheet, ChevronRight, ChevronDown, Check
+    AlertCircle, Calendar, Download, Eye, Table2, FileSpreadsheet, ChevronRight, ChevronDown, Check,
+    Search
 } from 'lucide-react';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
@@ -307,7 +308,7 @@ const WorkflowInstanceDetail: React.FC = () => {
     const navigate = useNavigate();
     const {
         templates, instances, nodes, edges, logs, loadInstanceFormData,
-        processInstance, getInstanceLogs, refreshData,
+        processInstance, getInstanceLogs, refreshData, updateInstanceWatchers,
     } = useWorkflow();
     const { user, users, employees, orgUnits } = useApp();
 
@@ -323,6 +324,11 @@ const WorkflowInstanceDetail: React.FC = () => {
     const [activeAction, setActiveAction] = useState<WorkflowInstanceAction | null>(null);
     const [previewFile, setPreviewFile] = useState<any>(null);
     const [fieldsExpanded, setFieldsExpanded] = useState(true);
+    
+    // Watchers selection modal state
+    const [showWatchersModal, setShowWatchersModal] = useState(false);
+    const [watcherSearchTerm, setWatcherSearchTerm] = useState('');
+    const [tempSelectedWatcherIds, setTempSelectedWatcherIds] = useState<string[]>([]);
 
     const instance = useMemo(() => instances.find(item => item.id === id), [instances, id]);
     const template = useMemo(() => templates.find(item => item.id === instance?.templateId), [templates, instance?.templateId]);
@@ -602,6 +608,27 @@ const WorkflowInstanceDetail: React.FC = () => {
         await refreshData();
     };
 
+    const isDefaultWatcher = useMemo(() => (template?.defaultWatchers || []).includes(user.id), [template, user.id]);
+    const isCustomWatcher = useMemo(() => (instance?.watchers || []).includes(user.id), [instance, user.id]);
+    const isWatching = isDefaultWatcher || isCustomWatcher;
+
+    const handleToggleWatch = async () => {
+        if (!instance) return;
+        let newWatchers = [...(instance.watchers || [])];
+        if (isCustomWatcher) {
+            newWatchers = newWatchers.filter(uid => uid !== user.id);
+        } else {
+            newWatchers.push(user.id);
+        }
+        await updateInstanceWatchers(instance.id, newWatchers);
+    };
+
+    const handleSaveWatchers = async () => {
+        if (!instance) return;
+        await updateInstanceWatchers(instance.id, tempSelectedWatcherIds);
+        setShowWatchersModal(false);
+    };
+
     if (!instance) {
         return (
             <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 p-12 text-center">
@@ -753,7 +780,7 @@ const WorkflowInstanceDetail: React.FC = () => {
                                                             {field.type === 'table' && (
                                                                 <div className="mt-2 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-sm max-w-full">
                                                                     <div className="overflow-x-auto">
-                                                                        <table className="w-full text-xs text-left">
+                                                                        <table className="w-full text-xs text-left" style={{ minWidth: Math.max(600, (field.options || []).length * 150) }}>
                                                                             <thead>
                                                                                 <tr className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-450 font-bold border-b border-slate-200 dark:border-slate-700">
                                                                                     <th className="px-3 py-2 text-center w-10">#</th>
@@ -1063,25 +1090,45 @@ const WorkflowInstanceDetail: React.FC = () => {
                     <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm">
                         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
                             <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400">Người theo dõi</h4>
-                            <span className="text-[10px] font-bold text-indigo-500 hover:underline cursor-pointer">Thêm nhiều người</span>
+                            <span
+                                onClick={() => {
+                                    setTempSelectedWatcherIds(instance.watchers || []);
+                                    setWatcherSearchTerm('');
+                                    setShowWatchersModal(true);
+                                }}
+                                className="text-[10px] font-bold text-indigo-500 hover:underline cursor-pointer"
+                            >
+                                Thêm nhiều người
+                            </span>
                         </div>
                         <div className="mt-3 flex items-center gap-2 overflow-x-auto py-1">
                             <div className="flex -space-x-2.5 overflow-hidden">
                                 {Array.from(new Set([...(template?.defaultWatchers || []), ...(instance.watchers || [])])).slice(0, 8).map((watcherId, idx) => {
                                     const watcherUser = users.find(u => u.id === watcherId);
+                                    const watcherEmployee = employees.find(e => e.userId === watcherId);
+                                    const watcherAvatar = watcherEmployee?.avatarUrl || watcherUser?.avatar;
                                     return (
                                         <div
                                             key={watcherId}
-                                            className="inline-block h-8 w-8 rounded-full ring-2 ring-white dark:ring-slate-900 bg-slate-200 flex items-center justify-center text-[10px] font-black text-slate-600 uppercase border border-slate-100 shadow-sm"
+                                            className="inline-block h-8 w-8 rounded-full ring-2 ring-white dark:ring-slate-900 bg-slate-200 overflow-hidden flex items-center justify-center text-[10px] font-black text-slate-600 uppercase border border-slate-100 shadow-sm"
                                             title={watcherUser?.name || 'N/A'}
                                         >
-                                            {watcherUser?.name ? watcherUser.name.split(' ').pop()?.slice(0, 2) : '?'}
+                                            {watcherAvatar ? (
+                                                <img src={watcherAvatar} alt={watcherUser?.name || ''} className="w-full h-full object-cover" />
+                                            ) : (
+                                                watcherUser?.name ? watcherUser.name.split(' ').pop()?.slice(0, 2) : '?'
+                                            )}
                                         </div>
                                     );
                                 })}
                             </div>
-                            <button className="h-8 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-[10px] font-black text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition ml-auto">
-                                Theo dõi
+                            <button
+                                onClick={handleToggleWatch}
+                                disabled={isDefaultWatcher}
+                                title={isDefaultWatcher ? 'Bạn là người theo dõi mặc định của quy trình này' : undefined}
+                                className="h-8 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-[10px] font-black text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition ml-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isDefaultWatcher ? 'Đang theo dõi (Mặc định)' : isCustomWatcher ? 'Bỏ theo dõi' : 'Theo dõi'}
                             </button>
                         </div>
                     </div>
@@ -1179,6 +1226,125 @@ const WorkflowInstanceDetail: React.FC = () => {
             {/* File Preview Overlay Modal */}
             {previewFile && (
                 <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
+            )}
+
+            {/* Watchers Selection Modal */}
+            {showWatchersModal && (
+                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-[95vw] max-w-md max-h-[85vh] flex flex-col overflow-hidden animate-scale-in">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                            <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                <Eye size={16} className="text-indigo-500" /> Thêm người theo dõi
+                            </h3>
+                            <button onClick={() => setShowWatchersModal(false)} className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 transition-colors">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        
+                        <div className="p-4 border-b border-slate-100 dark:border-slate-800/50">
+                            <div className="relative">
+                                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    type="text"
+                                    value={watcherSearchTerm}
+                                    onChange={e => setWatcherSearchTerm(e.target.value)}
+                                    placeholder="Tìm theo tên hoặc vai trò..."
+                                    className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700 dark:text-slate-200"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2 max-h-[45vh]">
+                            {(() => {
+                                const q = watcherSearchTerm.trim().toLowerCase();
+                                const filteredUsers = users.filter(u => {
+                                    if (!q) return true;
+                                    return u.name?.toLowerCase().includes(q) || (u.role || '').toLowerCase().includes(q);
+                                });
+
+                                if (filteredUsers.length === 0) {
+                                    return (
+                                        <div className="text-center py-8 text-slate-400 text-xs">
+                                            Không tìm thấy người dùng phù hợp
+                                        </div>
+                                    );
+                                }
+
+                                return filteredUsers.map(u => {
+                                    const isDefault = (template?.defaultWatchers || []).includes(u.id);
+                                    const isChecked = isDefault || tempSelectedWatcherIds.includes(u.id);
+                                    return (
+                                        <button
+                                            key={u.id}
+                                            type="button"
+                                            disabled={isDefault}
+                                            onClick={() => {
+                                                if (tempSelectedWatcherIds.includes(u.id)) {
+                                                    setTempSelectedWatcherIds(tempSelectedWatcherIds.filter(id => id !== u.id));
+                                                } else {
+                                                    setTempSelectedWatcherIds([...tempSelectedWatcherIds, u.id]);
+                                                }
+                                            }}
+                                            className={`flex items-center justify-between w-full p-2.5 rounded-xl border text-left transition ${
+                                                isChecked
+                                                    ? 'border-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/20'
+                                                    : 'border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50'
+                                            } ${isDefault ? 'opacity-75 cursor-not-allowed' : ''}`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                {(() => {
+                                                    const emp = employees.find(e => e.userId === u.id);
+                                                    const avatar = emp?.avatarUrl || u.avatar;
+                                                    return (
+                                                        <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/50 overflow-hidden flex items-center justify-center text-[10px] font-black text-indigo-600 dark:text-indigo-400">
+                                                            {avatar ? (
+                                                                <img src={avatar} alt={u.name || ''} className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                u.name ? u.name.split(' ').pop()?.slice(0, 2) : '?'
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
+                                                <div>
+                                                    <span className="block text-xs font-bold text-slate-700 dark:text-slate-200">
+                                                        {u.name}
+                                                    </span>
+                                                    <span className="block text-[10px] text-slate-400 font-semibold mt-0.5">
+                                                        {isDefault ? 'Người theo dõi mặc định' : (u.role || 'Thành viên')}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] font-bold ${
+                                                isChecked
+                                                    ? 'bg-indigo-500 border-indigo-500 text-white'
+                                                    : 'border-slate-300 dark:border-slate-600'
+                                            }`}>
+                                                {isChecked ? '✓' : ''}
+                                            </div>
+                                        </button>
+                                    );
+                                });
+                            })()}
+                        </div>
+
+                        <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/20 flex gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowWatchersModal(false)}
+                                className="flex-1 py-2 px-4 border border-slate-200 dark:border-slate-700 text-xs font-bold rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSaveWatchers}
+                                className="flex-1 py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-xs font-bold rounded-xl text-white shadow-md shadow-indigo-500/20 transition"
+                            >
+                                Lưu thay đổi
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

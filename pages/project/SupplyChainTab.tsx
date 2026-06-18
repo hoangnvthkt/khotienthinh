@@ -319,9 +319,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 purchaseOrderSupplierReturnService.listByPurchaseOrderIds(allPos.map(po => po.id)),
                 poDeliveryScheduleService.listByPurchaseOrderIds(allPos.map(po => po.id)),
             ]).catch(error => {
-                    console.error('Failed to load supplier returns', error);
-                    return [[] as PurchaseOrderSupplierReturn[], {} as Record<string, PurchaseOrderDeliveryBatch[]>] as const;
-                });
+                console.error('Failed to load supplier returns', error);
+                return [[] as PurchaseOrderSupplierReturn[], {} as Record<string, PurchaseOrderDeliveryBatch[]>] as const;
+            });
             setSupplierReturnsByPo(supplierReturnRows.reduce<Record<string, PurchaseOrderSupplierReturn[]>>((acc, item) => {
                 acc[item.purchaseOrderId] = [...(acc[item.purchaseOrderId] || []), item];
                 return acc;

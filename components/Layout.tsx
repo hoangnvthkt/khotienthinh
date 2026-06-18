@@ -15,6 +15,7 @@ import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import { RefreshCw, Menu, AlertTriangle, ExternalLink, Moon, Sun } from 'lucide-react';
+import { Role } from '../types';
 
 const SESSION_TIMEOUT_MS = 12 * 60 * 60 * 1000; // 12 tiếng làm việc (tránh tự động logout trong ngày)
 const WARN_BEFORE_MS = 5 * 60 * 1000; // Cảnh báo 5 phút trước
@@ -128,6 +129,14 @@ const Layout: React.FC = () => {
       </div>
     );
   }
+
+  console.log('DEBUG CHIBIBOT:', {
+    userRole: user?.role,
+    roleAdmin: Role?.ADMIN,
+    allowedModules: user?.allowedModules,
+    hasChibiBot: user?.allowedModules?.includes('CHIBIBOT'),
+    evaluation: user && (user.role === Role.ADMIN || user.allowedModules === undefined || user.allowedModules === null || user.allowedModules.includes('CHIBIBOT'))
+  });
 
   return (
     <div className={`flex h-[100dvh] min-h-[100dvh] w-full overflow-hidden relative transparent`}>
@@ -348,7 +357,9 @@ const Layout: React.FC = () => {
         return <EasterEggs isBirthday={isBirthday} userName={emp?.fullName || user?.name} />;
       })()}
       {/* ChibiBot Virtual Assistant */}
-      <ChibiBot userName={employees.find(e => e.userId === user?.id)?.fullName || user?.name} userId={user?.id} />
+      {user && (user.role === Role.ADMIN || user.allowedModules === undefined || user.allowedModules === null || user.allowedModules.includes('CHIBIBOT')) && (
+        <ChibiBot userName={employees.find(e => e.userId === user?.id)?.fullName || user?.name} userId={user?.id} />
+      )}
     </div>
   );
 };

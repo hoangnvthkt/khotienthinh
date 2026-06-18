@@ -160,7 +160,8 @@ const VoiceTextarea: React.FC<{
     rows?: number;
     placeholder?: string;
     className?: string;
-}> = ({ value, onChange, rows = 3, placeholder, className }) => {
+    bulletPoints?: boolean;
+}> = ({ value, onChange, rows = 3, placeholder, className, bulletPoints }) => {
     const { isListening, isSupported, interimTranscript, toggleListening, resetTranscript } = useVoiceInput({
         onResult: (text) => {
             onChange((value ? value + ' ' : '') + text);
@@ -168,11 +169,52 @@ const VoiceTextarea: React.FC<{
         },
     });
 
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (bulletPoints && e.key === 'Enter') {
+            e.preventDefault();
+            const textarea = e.currentTarget;
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            
+            // Insert newline and bullet point
+            const nextVal = value.slice(0, start) + '\n- ' + value.slice(end);
+            onChange(nextVal);
+            
+            const targetPos = start + 3; // length of '\n- '
+            setTimeout(() => {
+                textarea.setSelectionRange(targetPos, targetPos);
+            }, 0);
+        }
+    };
+
+    const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        let val = e.target.value;
+        if (bulletPoints && val) {
+            // If the textarea was empty before and the user typed a character, auto-prepend '- '
+            if (!value && val.trim() !== '') {
+                const lines = val.split('\n');
+                const processed = lines.map(line => {
+                    if (line.trim() === '') return line;
+                    if (!line.startsWith('- ')) {
+                        if (line.startsWith('-')) {
+                            return '- ' + line.substring(1);
+                        }
+                        return '- ' + line;
+                    }
+                    return line;
+                });
+                val = processed.join('\n');
+            }
+        }
+        onChange(val);
+    };
+
     return (
         <div className="relative">
             <textarea
                 value={value}
-                onChange={e => onChange(e.target.value)}
+                onChange={handleChange}
+                onKeyDown={handleKeyDown}
                 rows={rows}
                 placeholder={placeholder}
                 className={className}
@@ -201,6 +243,7 @@ const VoiceTextarea: React.FC<{
 
 interface DailyLogViewerProps {
     log: DailyLog;
+    siteStaff: ProjectStaff[];
     status: DailyLogStatus;
     statusClassName: string;
     weatherLabel: string;
@@ -223,6 +266,7 @@ interface DailyLogViewerProps {
 
 const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
     log,
+    siteStaff,
     status,
     statusClassName,
     weatherLabel,
@@ -252,6 +296,9 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
             : `${materialRows.length} dòng`;
     const laborCount = (log.laborDetails || []).reduce((sum, row) => sum + Number(row.count || 0), 0);
     const machineShifts = (log.machines || []).reduce((sum, row) => sum + Number(row.shifts || 0), 0);
+    const participatingStaff = (log.staffIds || [])
+        .map(id => siteStaff.find(s => s.userId === id))
+        .filter(Boolean) as ProjectStaff[];
 
     return (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm px-3" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -285,6 +332,12 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                 <div className="border-t border-border pt-3">
                                     <div className="text-[10px] font-black text-muted-foreground uppercase mb-1">Nội dung công việc nghiệm thu</div>
                                     <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">{log.acceptanceDescription}</p>
+                                </div>
+                            )}
+                            {log.nextDayPlan && (
+                                <div className="border-t border-border pt-3">
+                                    <div className="text-[10px] font-black text-muted-foreground uppercase mb-1">Kế hoạch thi công ngày hôm sau</div>
+                                    <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">{log.nextDayPlan}</p>
                                 </div>
                             )}
                             <div className="border-t border-border pt-3">
@@ -339,6 +392,21 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                     <div className="text-sm font-black text-purple-400">{formatNumber(machineShifts)} ca</div>
                                 </div>
                             </div>
+
+                            {/* Cán bộ tham gia */}
+                            {participatingStaff.length > 0 && (
+                                <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2">
+                                    <div className="text-[10px] font-black text-muted-foreground uppercase">Cán bộ tham gia ({participatingStaff.length})</div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {participatingStaff.map(staff => (
+                                            <span key={staff.userId} className="inline-flex flex-col px-2.5 py-1 bg-background border border-border rounded-lg text-xs">
+                                                <span className="font-semibold text-foreground">{staff.userName}</span>
+                                                <span className="text-[10px] text-muted-foreground">{staff.positionName || 'Cán bộ'}</span>
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Supervisor Eval */}
                             {(log.supervisorConstructionEval || log.supervisorAcceptanceEval || log.supervisorSafetyOk !== undefined) && (
@@ -618,6 +686,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [selectedVerifier, setSelectedVerifier] = useState<ProjectStaff | null>(null);
     const [verifierSearch, setVerifierSearch] = useState('');
     const [loadingVerifiers, setLoadingVerifiers] = useState(false);
+    const [siteStaff, setSiteStaff] = useState<ProjectStaff[]>([]);
 
     // ── PBAC: Load user permissions ──
     const [userPerms, setUserPerms] = useState<Set<ProjectPermissionCode>>(new Set());
@@ -707,6 +776,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     useEffect(() => {
         if (!effectiveId) return;
+        const staffPromise = projectId
+            ? projectStaffService.listByProject(projectId, constructionSiteId || undefined)
+            : constructionSiteId
+                ? projectStaffService.listBySite(constructionSiteId)
+                : Promise.resolve([] as ProjectStaff[]);
+
         Promise.all([
             dailyLogService.list(effectiveId, constructionSiteId || null),
             taskService.list(effectiveId, constructionSiteId || null),
@@ -715,7 +790,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             contractLaborCatalogService.list(),
             contractMachineCatalogService.list(),
             partnerService.list(),
-        ]).then(([logRows, taskRows, workBoqRows, completionRows, laborRows, machineRows, partnerRows]) => {
+            staffPromise,
+        ]).then(([logRows, taskRows, workBoqRows, completionRows, laborRows, machineRows, partnerRows, staffRows]) => {
             setLogs(logRows);
             setTasks(deriveProjectTaskProgress(taskRows, completionRows, logRows));
             setWorkBoqItems(workBoqRows);
@@ -723,8 +799,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             setLaborCatalogs(laborRows);
             setMachineCatalogs(machineRows);
             setBusinessPartners(partnerRows);
+            setSiteStaff(uniqueStaffByUser(staffRows || []));
         }).catch(console.error);
-    }, [effectiveId, constructionSiteId]);
+    }, [effectiveId, constructionSiteId, projectId]);
 
     const [showForm, setShowForm] = useState(false);
     const [editing, setEditing] = useState<DailyLog | null>(null);
@@ -763,6 +840,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [uploading, setUploading] = useState(false);
 
     const [fDelayTasks, setFDelayTasks] = useState<DelayTaskEntry[]>([]);
+    const [fNextDayPlan, setFNextDayPlan] = useState('');
+    const [fStaffIds, setFStaffIds] = useState<string[]>([]);
 
     // FastCons detail states
     const [fVolumes, setFVolumes] = useState<DailyLogVolume[]>([]);
@@ -813,6 +892,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setFDate(new Date().toISOString().split('T')[0]);
         setFWeather('sunny'); setFDesc(''); setFIssues('');
         setFAcceptanceDesc('');
+        setFNextDayPlan('');
+        setFStaffIds([]);
         setFWorkSafetyOk(true); setFEnvHygieneOk(true); setFTrafficSafetyOk(true);
         setFSupervisorConstructionEval(''); setFSupervisorAcceptanceEval('');
         setFSupervisorSafetyOk(true); setFSupervisorHygieneOk(true); setFSupervisorTrafficOk(true);
@@ -833,6 +914,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setFDate(l.date); setFWeather(l.weather);
         setFDesc(l.description); setFIssues(l.issues || '');
         setFAcceptanceDesc(l.acceptanceDescription || '');
+        setFNextDayPlan(l.nextDayPlan || '');
+        setFStaffIds(l.staffIds || []);
         setFWorkSafetyOk(l.workSafetyOk ?? true);
         setFEnvHygieneOk(l.envHygieneOk ?? true);
         setFTrafficSafetyOk(l.trafficSafetyOk ?? true);
@@ -1026,6 +1109,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 date: fDate, weather: fWeather, workerCount,
                 description: fDesc, issues: fIssues || undefined,
                 acceptanceDescription: fAcceptanceDesc || undefined,
+                nextDayPlan: fNextDayPlan || undefined,
+                staffIds: fStaffIds,
                 workSafetyOk: fWorkSafetyOk,
                 envHygieneOk: fEnvHygieneOk,
                 trafficSafetyOk: fTrafficSafetyOk,
@@ -1401,6 +1486,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 const issues = normalizeLookupText(l.issues);
                 const creator = normalizeLookupText(l.createdBy || l.submittedBy);
                 const verifier = normalizeLookupText(l.requestedVerifierName || l.verifiedBy);
+                const plan = normalizeLookupText(l.nextDayPlan);
+                const staffNames = (l.staffIds || [])
+                    .map(id => siteStaff.find(s => s.userId === id)?.userName || '')
+                    .join(' ')
+                    .toLowerCase();
+                const normalizedStaff = normalizeLookupText(staffNames);
 
                 const volumesMatch = (l.volumes || []).some(v =>
                     normalizeLookupText(v.workBoqItemName).includes(query) ||
@@ -1415,12 +1506,14 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     issues.includes(query) ||
                     creator.includes(query) ||
                     verifier.includes(query) ||
+                    plan.includes(query) ||
+                    normalizedStaff.includes(query) ||
                     volumesMatch ||
                     materialsMatch;
             });
         }
         return list.sort((a, b) => b.date.localeCompare(a.date));
-    }, [logs, filterMonth, filterStatus, filterWeather, searchQuery]);
+    }, [logs, filterMonth, filterStatus, filterWeather, searchQuery, siteStaff]);
 
     // Stats
     const stats = useMemo(() => {
@@ -1856,8 +1949,14 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                             {/* Summary details for mobile/desktop to show enough content */}
                                             {((l.volumes && l.volumes.length > 0) || 
                                               (l.materials && l.materials.length > 0) || 
-                                              (l.machines && l.machines.length > 0)) && (
+                                              (l.machines && l.machines.length > 0) ||
+                                              (l.staffIds && l.staffIds.length > 0)) && (
                                                 <div className="mt-2 flex flex-wrap gap-x-2.5 gap-y-1 text-[10px] font-bold text-slate-500 dark:text-slate-400 border-t border-slate-100/60 dark:border-slate-800/80 pt-1.5">
+                                                    {l.staffIds && l.staffIds.length > 0 && (
+                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                                                            <Users size={10} /> {l.staffIds.length} cán bộ
+                                                        </span>
+                                                    )}
                                                     {l.volumes && l.volumes.length > 0 && (
                                                         <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
                                                             <Layers size={10} /> {l.volumes.length} hạng mục
@@ -2013,6 +2112,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             {viewingLog && (
                 <DailyLogViewer
                     log={viewingLog}
+                    siteStaff={siteStaff}
                     status={viewingLogStatus}
                     statusClassName={STATUS_CFG[viewingLogStatus].cls}
                     weatherLabel={WEATHER[viewingLog.weather]?.label || ''}
@@ -2114,6 +2214,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     rows={3}
                                     placeholder="Mô tả công việc thi công đã thực hiện trong ngày... (nhấn 🎤 để voice input)"
                                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-muted/30 text-foreground text-sm focus:ring-2 focus:ring-teal-500 outline-none resize-none transition-all"
+                                    bulletPoints={true}
                                 />
                             </div>
                             <div>
@@ -2124,7 +2225,53 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                     rows={3}
                                     placeholder="Mô tả công việc nghiệm thu đã thực hiện trong ngày... (nhấn 🎤 để voice input)"
                                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-muted/30 text-foreground text-sm focus:ring-2 focus:ring-teal-500 outline-none resize-none transition-all"
+                                    bulletPoints={true}
                                 />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Kế hoạch thi công ngày hôm sau</label>
+                                <VoiceTextarea
+                                    value={fNextDayPlan}
+                                    onChange={setFNextDayPlan}
+                                    rows={3}
+                                    placeholder="Kế hoạch thi công của ngày hôm sau... (nhấn 🎤 để voice input)"
+                                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-muted/30 text-foreground text-sm focus:ring-2 focus:ring-teal-500 outline-none resize-none transition-all"
+                                    bulletPoints={true}
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-2">Cán bộ tham gia trong ngày</label>
+                                <div className="border border-slate-200 dark:border-slate-700/60 bg-muted/10 rounded-xl p-3 max-h-[160px] overflow-y-auto">
+                                    {siteStaff.length === 0 ? (
+                                        <div className="text-xs text-muted-foreground py-2 italic text-center">Chưa có cán bộ nào trong danh sách tổ chức công trường</div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                            {siteStaff.map(staff => {
+                                                const isChecked = fStaffIds.includes(staff.userId || '');
+                                                return (
+                                                    <label key={staff.userId} className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer select-none transition-colors border border-transparent hover:border-slate-100 dark:hover:border-slate-700/60">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) {
+                                                                    setFStaffIds([...fStaffIds, staff.userId || '']);
+                                                                } else {
+                                                                    setFStaffIds(fStaffIds.filter(id => id !== staff.userId));
+                                                                }
+                                                            }}
+                                                            className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 w-4 h-4 cursor-pointer"
+                                                        />
+                                                        <div className="flex flex-col min-w-0">
+                                                            <span className="text-xs font-semibold text-slate-750 dark:text-slate-200 truncate">{staff.userName}</span>
+                                                            <span className="text-[10px] text-muted-foreground truncate">{staff.positionName || 'Cán bộ'}</span>
+                                                        </div>
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-100 dark:border-slate-700/60 pt-4">
                                 <div>

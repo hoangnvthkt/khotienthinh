@@ -886,8 +886,12 @@ const Attendance: React.FC = () => {
                     <tr key={emp.id} className={`${idx % 2 === 0 ? '' : 'bg-muted/30'} hover:bg-teal-500/5 transition-colors`}>
                       <td className="sticky left-0 z-10 bg-inherit px-2 py-1.5 border-b border-r border-border">
                         <div className="flex items-center gap-2 min-w-[130px]">
-                          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-teal-400 to-cyan-500 flex items-center justify-center text-white text-[9px] font-black shrink-0">
-                            {emp.fullName.charAt(0)}
+                          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-teal-400 to-cyan-500 overflow-hidden flex items-center justify-center text-white text-[9px] font-black shrink-0">
+                            {emp.avatarUrl ? (
+                              <img src={emp.avatarUrl} alt={emp.fullName} className="w-full h-full object-cover" />
+                            ) : (
+                              emp.fullName.charAt(0)
+                            )}
                           </div>
                           <div className="min-w-0">
                             <div className="text-[11px] font-black text-foreground truncate">{emp.fullName}</div>
