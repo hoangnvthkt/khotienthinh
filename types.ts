@@ -965,6 +965,8 @@ export interface DailyLog {
   workerCount: number;
   description: string;
   acceptanceDescription?: string;
+  nextDayPlan?: string;
+  staffIds?: string[];
   workSafetyOk?: boolean;
   envHygieneOk?: boolean;
   trafficSafetyOk?: boolean;

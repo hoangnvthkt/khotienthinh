@@ -855,6 +855,16 @@ const listAllPurchaseOrderRequestLineLinks = async (
 };
 
 export const poService = {
+    async nextNumber(projectIdOrSiteId?: string | null, constructionSiteId?: string | null): Promise<string> {
+        const { data, error } = await supabase
+            .rpc('next_purchase_order_number_v1', {
+                p_project_id: projectIdOrSiteId || null,
+                p_construction_site_id: constructionSiteId || null,
+                p_prefix: 'PO',
+            });
+        if (error) throw error;
+        return String(data || 'PO-001');
+    },
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<PurchaseOrder[]> {
         return listAllPurchaseOrders(projectIdOrSiteId, constructionSiteId);
     },
