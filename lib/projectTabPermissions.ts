@@ -5,18 +5,21 @@ export const PROJECT_TAB_PERMISSIONS = [
   { key: 'executive', label: 'Điều hành', icon: '🏛️', route: '/da/tabs/executive' },
   { key: 'org', label: 'Tổ chức', icon: '👥', route: '/da/tabs/org' },
   { key: 'budget', label: 'Ngân sách', icon: '📊', route: '/da/tabs/budget' },
+  { key: 'cashflow', label: 'Dòng tiền', icon: '💰', route: '/da/tabs/cashflow' },
   { key: 'contract', label: 'Hợp đồng', icon: '📋', route: '/da/tabs/contract' },
   { key: 'gantt', label: 'Tiến độ', icon: '📐', route: '/da/tabs/gantt' },
   { key: 'weekly_progress', label: 'Chốt tiến độ tuần', icon: '📅', route: '/da/tabs/weekly_progress' },
   { key: 'dailylog', label: 'Nhật ký', icon: '📝', route: '/da/tabs/dailylog' },
-  { key: 'payment', label: 'Nghiệm thu & Thanh toán', icon: '💳', route: '/da/tabs/payment' },
-  { key: 'cashflow', label: 'Dòng tiền', icon: '💰', route: '/da/tabs/cashflow' },
+  { key: 'material', label: 'Vật tư', icon: '📦', route: '/da/tabs/material' },
+  
+  
   { key: 'quality', label: 'Chất lượng', icon: '✅', route: '/da/tabs/quality' },
   { key: 'safety', label: 'An toàn', icon: '🛡️', route: '/da/tabs/safety' },
   { key: 'subcontract', label: 'Nhà thầu', icon: '🏗️', route: '/da/tabs/subcontract' },
-  { key: 'material', label: 'Vật tư', icon: '📦', route: '/da/tabs/material' },
+  
   { key: 'documents', label: 'Tài liệu', icon: '📎', route: '/da/tabs/documents' },
   { key: 'report', label: 'Báo cáo', icon: '📊', route: '/da/tabs/report' },
+  { key: 'payment', label: 'Nghiệm thu & Thanh toán', icon: '💳', route: '/da/tabs/payment' },
 ] as const;
 
 export type ProjectOverviewTabKey = typeof PROJECT_TAB_PERMISSIONS[number]['key'];

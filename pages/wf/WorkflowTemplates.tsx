@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
@@ -32,6 +32,17 @@ const WorkflowTemplates: React.FC = () => {
     const [newWatchers, setNewWatchers] = useState<string[]>([]);
     const [editManagers, setEditManagers] = useState<string[]>([]);
     const [editWatchers, setEditWatchers] = useState<string[]>([]);
+
+    useEffect(() => {
+        const hasActiveOverlay = showCreateModal || !!editingTemplate || !!deleteConfirmId;
+        if (hasActiveOverlay) {
+            const originalOverflow = document.body.style.overflow;
+            document.body.style.overflow = 'hidden';
+            return () => {
+                document.body.style.overflow = originalOverflow;
+            };
+        }
+    }, [showCreateModal, editingTemplate, deleteConfirmId]);
 
     // Helper: User picker component
     const UserPicker: React.FC<{ selected: string[]; onChange: (v: string[]) => void; label: string; icon: React.ReactNode; color: string }> = ({ selected, onChange, label, icon, color }) => {
@@ -278,12 +289,12 @@ const WorkflowTemplates: React.FC = () => {
 
             {/* Create Modal */}
             {showCreateModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 h-[100dvh] max-h-[100dvh] overflow-hidden p-0 sm:p-4">
+                    <div className="glass-card bg-white dark:bg-slate-800 rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-md shadow-2xl flex flex-col h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[90vh] overflow-hidden relative">
                         <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                             <Plus size={20} className="text-accent" /> Tạo quy trình mới
                         </h2>
-                        <div className="space-y-4">
+                        <div className="space-y-4 flex-1 min-h-0 overflow-y-auto -webkit-overflow-scrolling-touch pr-1">
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Tên quy trình *</label>
                                 <input
@@ -313,7 +324,7 @@ const WorkflowTemplates: React.FC = () => {
                                 {createError}
                             </div>
                         )}
-                        <div className="flex gap-3 mt-6">
+                        <div className="flex gap-3 mt-6 border-t border-slate-100 dark:border-slate-700/50 pt-4">
                             <button onClick={() => { setShowCreateModal(false); setCreateError(''); }} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
                             <button onClick={handleCreate} disabled={!newName.trim()} className="flex-1 px-4 py-2.5 bg-accent text-white rounded-xl font-bold text-sm hover:bg-emerald-600 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20">Tạo & Thiết kế</button>
                         </div>
@@ -337,12 +348,12 @@ const WorkflowTemplates: React.FC = () => {
 
             {/* Edit Modal */}
             {editingTemplate && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 h-[100dvh] max-h-[100dvh] overflow-hidden p-0 sm:p-4">
+                    <div className="glass-card bg-white dark:bg-slate-800 rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-md shadow-2xl flex flex-col h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[90vh] overflow-hidden relative">
                         <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                             <Edit2 size={20} className="text-blue-500" /> Sửa quy trình
                         </h2>
-                        <div className="space-y-4">
+                        <div className="space-y-4 flex-1 min-h-0 overflow-y-auto -webkit-overflow-scrolling-touch pr-1">
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Tên quy trình *</label>
                                 <input
@@ -365,7 +376,7 @@ const WorkflowTemplates: React.FC = () => {
                             <UserPicker selected={editManagers} onChange={setEditManagers} label="Quản trị viên" icon={<Shield size={12} className="text-amber-500" />} color="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" />
                             <UserPicker selected={editWatchers} onChange={setEditWatchers} label="Người theo dõi mặc định" icon={<Eye size={12} className="text-blue-500" />} color="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" />
                         </div>
-                        <div className="flex gap-3 mt-6">
+                        <div className="flex gap-3 mt-6 border-t border-slate-100 dark:border-slate-700/50 pt-4">
                             <button onClick={() => setEditingTemplate(null)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
                             <button onClick={handleEdit} disabled={!editName.trim()} className="flex-1 px-4 py-2.5 bg-blue-500 text-white rounded-xl font-bold text-sm hover:bg-blue-600 transition disabled:opacity-50 shadow-lg shadow-blue-500/20">Lưu thay đổi</button>
                         </div>

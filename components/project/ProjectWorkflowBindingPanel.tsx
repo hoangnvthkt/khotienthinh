@@ -85,33 +85,17 @@ const ProjectWorkflowBindingPanel: React.FC<Props> = ({
     : null;
   const selectedScopeMatchesEffective = configuration?.scope === targetScope;
 
+  if (!configuration?.canManage) return null;
+
   return (
     <>
-      <div className={`flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3 ${configuration?.valid ? 'border-emerald-100 bg-emerald-50/60' : 'border-amber-100 bg-amber-50'}`}>
-        <div className="flex min-w-0 items-start gap-2">
-          {configuration?.valid
-            ? <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-600" />
-            : <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-600" />}
-          <div className="min-w-0">
-            <div className="text-[10px] font-black uppercase text-slate-500">Workflow đề xuất vật tư</div>
-            <div className="truncate text-xs font-black text-slate-700">
-              {effectiveTemplate?.name || configuration?.binding?.workflowTemplateId || 'Chưa cấu hình'}
-            </div>
-            <div className="mt-0.5 text-[10px] font-bold text-slate-400">
-              {configuration?.scope ? scopeLabel[configuration.scope] : configuration?.errors?.[0] || 'Phiếu mới chưa thể gửi duyệt.'}
-            </div>
-          </div>
-        </div>
-        {configuration?.canManage && (
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[10px] font-black text-slate-600 hover:bg-slate-50"
-          >
-            <Settings2 size={13} /> Cấu hình
-          </button>
-        )}
-      </div>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-100"
+      >
+        <Settings2 size={12} /> Cấu hình
+      </button>
 
       {open && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-950/45 px-4 py-6">

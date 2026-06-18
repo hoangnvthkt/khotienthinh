@@ -2955,57 +2955,20 @@ const ProjectDashboard: React.FC = () => {
 
         return (
             <div className="space-y-6">
-                {/* Back + Actions */}
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                    <button onClick={() => { setActiveView('list'); setSelectedSiteId(null); setSelectedProjectId(null); }}
-                        className="flex items-center gap-2 text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors">← Danh sách dự án</button>
-                    <div className="flex gap-2 overflow-x-auto pb-1 max-w-full sm:flex-wrap [&::-webkit-scrollbar]:hidden scrollbar-none">
-                        {canManageProjects && (
-                            <button onClick={() => openEditProject(selectedProject)}
-                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100 dark:text-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700 transition-all shrink-0">
-                                <Edit2 size={14} /> Dự án
-                            </button>
-                        )}
-                        {hasSiteLink && (
-                            <>
-                                {canManageCashflowTab && (
-                                    <>
-                                        <button onClick={() => { resetTxForm(); setShowTxForm(true); }}
-                                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100 dark:text-blue-400 dark:bg-blue-950/40 dark:border-blue-800/80 dark:hover:bg-blue-900/40 transition-all shrink-0">
-                                            <Plus size={14} /> Thêm giao dịch
-                                        </button>
-                                        <button onClick={() => fileInputRef.current?.click()}
-                                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-950/40 dark:border-emerald-800/80 dark:hover:bg-emerald-900/40 transition-all shrink-0">
-                                            <Upload size={14} /> Import Excel
-                                        </button>
-                                    </>
-                                )}
-                                <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
-                                {canManageBudgetTab && (
-                                    <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
-                                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-orange-600 bg-orange-50 border border-orange-200 hover:bg-orange-100 dark:text-orange-400 dark:bg-orange-950/40 dark:border-orange-800/80 dark:hover:bg-orange-900/40 transition-all shrink-0">
-                                        <Edit2 size={14} /> Ngân sách
-                                    </button>
-                                )}
-                            </>
-                        )}
-                    </div>
-                </div>
-
                 {/* Header Banner */}
-	                <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-3xl p-6 text-white shadow-xl">
-                    <div className="flex items-center justify-between flex-wrap gap-4">
+	                <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 px-5 text-white shadow-md">
+                    <div className="flex items-center justify-between flex-wrap gap-3">
                         <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center"><HardHat size={24} /></div>
+                            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0"><HardHat size={18} /></div>
                             <div>
-                                <h2 className="text-2xl font-black">{selectedProject.name}</h2>
-                                <p className="text-white/70 text-sm">
+                                <h2 className="text-lg font-bold leading-snug">{selectedProject.name}</h2>
+                                <p className="text-white/85 text-xs mt-0.5">
                                     {selectedProject.code} • {selectedSite ? `Công trường: ${selectedSite.name}` : 'Chưa liên kết công trường HRM'}
                                 </p>
                                 {metaChips.length > 0 && (
-                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                    <div className="mt-1.5 flex flex-wrap gap-1">
                                         {metaChips.map(chip => (
-                                            <span key={chip.label} className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-white/20 text-white border border-white/20">
+                                            <span key={chip.label} className="px-1.5 py-0.5 rounded bg-white/25 text-white text-[9px] font-bold border border-white/10">
                                                 {chip.label}
                                             </span>
                                         ))}
@@ -3014,11 +2977,49 @@ const ProjectDashboard: React.FC = () => {
                             </div>
                         </div>
                         <div className="text-right">
-                            <div className="inline-block px-3 py-1 rounded-full text-sm font-bold bg-white/20 mb-1">{STATUS_CONFIG[statusKey]?.label || statusKey}</div>
-                            <div className="text-3xl font-black">{displayProgress}%</div>
+                            <div className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold bg-white/20 mb-0.5">{STATUS_CONFIG[statusKey]?.label || statusKey}</div>
+                            <div className="text-xl font-extrabold">{displayProgress}%</div>
                         </div>
                     </div>
-                    <div className="mt-4 h-3 bg-white/20 rounded-full overflow-hidden">
+
+                    {/* Action buttons inside the orange card */}
+                    <div className="mt-3.5 flex flex-wrap items-center gap-1.5 border-t border-white/10 pt-3">
+                        <button onClick={() => { setActiveView('list'); setSelectedSiteId(null); setSelectedProjectId(null); }}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-white/10 hover:bg-white/20 text-white transition-all shrink-0">
+                            ← Dự án khác
+                        </button>
+                        {canManageProjects && (
+                            <button onClick={() => openEditProject(selectedProject)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-slate-700 bg-white hover:bg-slate-50 transition-all shrink-0">
+                                <Edit2 size={12} /> Dự án
+                            </button>
+                        )}
+                        {hasSiteLink && (
+                            <>
+                                {canManageCashflowTab && (
+                                    <>
+                                        <button onClick={() => { resetTxForm(); setShowTxForm(true); }}
+                                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 transition-all shrink-0">
+                                            <Plus size={12} /> Giao dịch
+                                        </button>
+                                        <button onClick={() => fileInputRef.current?.click()}
+                                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 transition-all shrink-0">
+                                            <Upload size={12} /> Import Excel
+                                        </button>
+                                    </>
+                                )}
+                                <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
+                                {canManageBudgetTab && (
+                                    <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
+                                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 transition-all shrink-0">
+                                        <Edit2 size={12} /> Ngân sách
+                                    </button>
+                                )}
+                            </>
+                        )}
+                    </div>
+
+                    <div className="mt-3 h-1.5 bg-white/20 rounded-full overflow-hidden">
                         <div className="h-full bg-white rounded-full transition-all duration-700" style={{ width: `${displayProgress}%` }} />
                     </div>
 	                </div>
@@ -3698,15 +3699,17 @@ const ProjectDashboard: React.FC = () => {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center shadow-lg shadow-orange-500/30">
-                    <BarChart3 size={24} className="text-white" />
+            {activeView === 'list' && (
+                <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center shadow-lg shadow-orange-500/30">
+                        <BarChart3 size={24} className="text-white" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-black text-slate-800 dark:text-white">Tổng quan Dự án</h1>
+                        <p className="text-sm text-slate-500">Chi phí tự động cập nhật từ giao dịch • Import • Workflow</p>
+                    </div>
                 </div>
-                <div>
-                    <h1 className="text-2xl font-black text-slate-800 dark:text-white">Tổng quan Dự án</h1>
-                    <p className="text-sm text-slate-500">Chi phí tự động cập nhật từ giao dịch • Import • Workflow</p>
-                </div>
-            </div>
+            )}
 
             {projectImportPreview && (
                 <ExcelImportReviewModal

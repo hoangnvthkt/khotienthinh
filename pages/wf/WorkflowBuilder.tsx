@@ -245,6 +245,17 @@ const WorkflowBuilder: React.FC = () => {
     const lastTemplatesRef = useRef<unknown>(null);
 
     useEffect(() => {
+        const hasActiveOverlay = showAddField || !!editingFieldId;
+        if (hasActiveOverlay) {
+            const originalOverflow = document.body.style.overflow;
+            document.body.style.overflow = 'hidden';
+            return () => {
+                document.body.style.overflow = originalOverflow;
+            };
+        }
+    }, [showAddField, editingFieldId]);
+
+    useEffect(() => {
         if (!templateId) return;
 
         const templatesChanged = lastTemplatesRef.current !== templates;
@@ -1395,8 +1406,8 @@ const WorkflowBuilder: React.FC = () => {
 
                     {/* Add Field Modal */}
                     {showAddField && (
-                        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-                            <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
+                        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 h-[100dvh] max-h-[100dvh] overflow-hidden p-0 sm:p-4">
+                            <div className="glass-card bg-white dark:bg-slate-800 rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-md shadow-2xl flex flex-col h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[90vh] overflow-hidden relative">
                                 <div className="flex items-center justify-between mb-4">
                                     <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
                                         {editingFieldId ? <Edit size={20} className="text-violet-500" /> : <Plus size={20} className="text-violet-500" />}
@@ -1404,7 +1415,7 @@ const WorkflowBuilder: React.FC = () => {
                                     </h2>
                                     <button onClick={resetFieldForm} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"><X size={16} /></button>
                                 </div>
-                                <div className="space-y-4">
+                                <div className="space-y-4 flex-1 min-h-0 overflow-y-auto -webkit-overflow-scrolling-touch pr-1">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Tên trường *</label>
                                         <input
@@ -1465,7 +1476,7 @@ const WorkflowBuilder: React.FC = () => {
                                         </button>
                                     </div>
                                 </div>
-                                <div className="flex gap-3 mt-6">
+                                <div className="flex gap-3 mt-6 border-t border-slate-100 dark:border-slate-700/50 pt-4">
                                     <button onClick={resetFieldForm} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
                                     <button
                                         onClick={addCustomField}

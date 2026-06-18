@@ -659,6 +659,17 @@ const WorkflowInstances: React.FC = () => {
     const [reopenTargetNodeId, setReopenTargetNodeId] = useState('');
     const [reopenComment, setReopenComment] = useState('');
 
+    useEffect(() => {
+        const hasActiveOverlay = showCreateModal || !!editingInstance || !!boardDetailInstanceId || !!deleteConfirmId || !!cancelConfirmId || !!reopenInstanceId;
+        if (hasActiveOverlay) {
+            const originalOverflow = document.body.style.overflow;
+            document.body.style.overflow = 'hidden';
+            return () => {
+                document.body.style.overflow = originalOverflow;
+            };
+        }
+    }, [showCreateModal, editingInstance, boardDetailInstanceId, deleteConfirmId, cancelConfirmId, reopenInstanceId]);
+
     // Step data editing state
     const [stepFormData, setStepFormData] = useState<Record<string, any>>({});
     const [stepExcelData, setStepExcelData] = useState<{ sheets: Record<string, any[][]>; sheetNames: string[] } | null>(null);
@@ -1421,12 +1432,12 @@ const WorkflowInstances: React.FC = () => {
                 const running = isRunning(instance);
 
                 return (
-                    <div className="fixed inset-0 z-50 flex justify-end">
+                    <div className="fixed inset-0 z-50 flex justify-end h-[100dvh] max-h-[100dvh] overflow-hidden">
                         {/* Backdrop */}
                         <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
                         {/* Panel */}
                         <div
-                            className="relative bg-white dark:bg-slate-900 w-full max-w-2xl h-full shadow-2xl overflow-y-auto"
+                            className="relative bg-white dark:bg-slate-900 w-full max-w-2xl h-full shadow-2xl flex flex-col overflow-hidden"
                             style={{ animation: 'slideInRight 0.3s ease-out' }}
                         >
                             {/* Panel Header */}
@@ -1538,7 +1549,7 @@ const WorkflowInstances: React.FC = () => {
                             </div>
 
                             {/* Panel Content */}
-                            <div className="px-6 py-5 space-y-5">
+                            <div className="px-6 py-5 space-y-5 flex-1 min-h-0 overflow-y-auto -webkit-overflow-scrolling-touch">
                                 {/* Timeline */}
                                 <div>
                                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Tiến trình</p>
@@ -2294,12 +2305,12 @@ const WorkflowInstances: React.FC = () => {
 
             {/* Create Instance Modal */}
             {showCreateModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 h-[100dvh] max-h-[100dvh] overflow-hidden p-0 sm:p-4">
+                    <div className="glass-card bg-white dark:bg-slate-800 rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-lg shadow-2xl flex flex-col h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[90vh] overflow-hidden relative">
                         <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                             <Send size={20} className="text-accent" /> Tạo phiếu mới
                         </h2>
-                        <div className="space-y-4">
+                        <div className="space-y-4 flex-1 min-h-0 overflow-y-auto -webkit-overflow-scrolling-touch pr-1">
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Chọn quy trình *</label>
                                 <select
@@ -2347,7 +2358,7 @@ const WorkflowInstances: React.FC = () => {
                                 />
                             </div>
                         </div>
-                        <div className="flex gap-3 mt-6">
+                        <div className="flex gap-3 mt-6 border-t border-slate-100 dark:border-slate-700/50 pt-4">
                             <button onClick={() => setShowCreateModal(false)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
                             <button
                                 onClick={handleCreate}
@@ -2370,12 +2381,12 @@ const WorkflowInstances: React.FC = () => {
                 const editTemplate = templates.find(t => t.id === editingInstance.templateId);
                 const editCustomFields = editTemplate?.customFields || [];
                 return (
-                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-                        <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 h-[100dvh] max-h-[100dvh] overflow-hidden p-0 sm:p-4">
+                        <div className="glass-card bg-white dark:bg-slate-800 rounded-t-2xl sm:rounded-2xl p-6 w-full max-w-lg shadow-2xl flex flex-col h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[90vh] overflow-hidden relative">
                             <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
                                 <Edit2 size={20} className="text-blue-500" /> Sửa phiếu
                             </h2>
-                            <div className="space-y-4">
+                            <div className="space-y-4 flex-1 min-h-0 overflow-y-auto -webkit-overflow-scrolling-touch pr-1">
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Mã phiếu</label>
                                     <input
@@ -2417,7 +2428,7 @@ const WorkflowInstances: React.FC = () => {
                                     />
                                 </div>
                             </div>
-                            <div className="flex gap-3 mt-6">
+                            <div className="flex gap-3 mt-6 border-t border-slate-100 dark:border-slate-700/50 pt-4">
                                 <button onClick={() => setEditingInstance(null)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
                                 <button
                                     onClick={handleEditSave}

@@ -1773,7 +1773,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const formatPoPrintDate = (value?: string | null) => {
         const date = value ? new Date(value) : new Date();
         const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
-        return `Thái Bình, ngày ${safeDate.getDate()} Tháng ${safeDate.getMonth() + 1} Năm ${safeDate.getFullYear()}`;
+        return `Hưng Yên, ngày ${safeDate.getDate()} Tháng ${safeDate.getMonth() + 1} Năm ${safeDate.getFullYear()}`;
     };
 
     const getUserPositionLabel = () => {

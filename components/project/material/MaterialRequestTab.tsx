@@ -273,6 +273,14 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                           <LayoutGrid size={12} /> Kanban
                       </button>
                   </div>
+                  <React.Suspense fallback={null}>
+                      <ProjectWorkflowBindingPanel
+                          projectId={projectId || null}
+                          constructionSiteId={constructionSiteId || null}
+                          templates={workflowTemplates}
+                          onConfigurationChange={onConfigurationChange}
+                      />
+                  </React.Suspense>
                   {canCreateMaterialRequest && (
                     <button
                         onClick={onCreateRequest}
@@ -283,15 +291,6 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                   )}
                 </div>
             </div>
-
-            <React.Suspense fallback={<LazyPanelFallback label="Đang tải cấu hình workflow..." />}>
-                <ProjectWorkflowBindingPanel
-                    projectId={projectId || null}
-                    constructionSiteId={constructionSiteId || null}
-                    templates={workflowTemplates}
-                    onConfigurationChange={onConfigurationChange}
-                />
-            </React.Suspense>
 
             {!canCreateMaterialRequest && (
                 <div className="border-b border-amber-100 bg-amber-50 px-5 py-2 text-[11px] font-bold text-amber-700">

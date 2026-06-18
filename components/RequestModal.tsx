@@ -283,6 +283,16 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [expandedMaterialGroupKeys, setExpandedMaterialGroupKeys] = useState<Set<string>>(() => new Set());
     const [poSourceLabelsById, setPoSourceLabelsById] = useState<Record<string, string>>({});
 
+    useEffect(() => {
+        if (isOpen) {
+            const originalOverflow = document.body.style.overflow;
+            document.body.style.overflow = 'hidden';
+            return () => {
+                document.body.style.overflow = originalOverflow;
+            };
+        }
+    }, [isOpen]);
+
     const [isItemSelectOpen, setItemSelectOpen] = useState(false);
     const [isScannerOpen, setScannerOpen] = useState(false);
 
@@ -2206,8 +2216,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
         && projectWorkflowSubject?.status !== 'RETURNED';
 
     return (
-        <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
-            <div className="bg-card text-card-foreground border border-border rounded-t-2xl sm:rounded-2xl w-full sm:w-[70vw] xl:max-w-[1050px] 2xl:max-w-[1180px] shadow-2xl flex flex-col max-h-[85vh] sm:max-h-[85vh] overflow-hidden relative">
+        <div className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 h-[100dvh] max-h-[100dvh] overflow-hidden">
+            <div className="bg-card text-card-foreground border border-border rounded-t-2xl sm:rounded-2xl w-full sm:w-[70vw] xl:max-w-[1050px] 2xl:max-w-[1180px] shadow-2xl flex flex-col h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[85vh] overflow-hidden relative">
 
                 {/* Decision Overlay */}
                 {showApprovalPanel && (
@@ -2284,7 +2294,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 )}
 
                 {/* Content */}
-                <div className="p-6 overflow-y-auto flex-1 bg-slate-50/10 dark:bg-background/20">
+                <div className="p-6 overflow-y-auto flex-1 min-h-0 bg-slate-50/10 dark:bg-background/20 -webkit-overflow-scrolling-touch">
                     {isEditable && (
                         <div className="mb-5 rounded-xl border border-blue-200/50 bg-card p-4 shadow-sm dark:border-blue-900/40">
                             <label className="mb-2 block text-[10px] font-black uppercase text-blue-600 dark:text-blue-400">
@@ -3187,7 +3197,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         Security: {request?.id.slice(-6) || 'NEW-REQ'}
                     </div>
 
-                    <div className="flex gap-2 sm:gap-3 items-center w-full sm:w-auto justify-end">
+                    <div className="flex gap-2 sm:gap-3 items-center w-full sm:w-auto justify-end overflow-x-auto whitespace-nowrap scrollbar-none py-1">
                         {request && (
                             <button onClick={handlePrintMaterialRequest} className="px-3 py-1.5 sm:px-5 sm:py-2 rounded-lg border border-blue-200/60 text-blue-700 bg-blue-50 text-xs sm:text-sm font-bold hover:bg-blue-100 transition-colors whitespace-nowrap flex items-center">
                                 <Printer size={14} className="mr-1.5 sm:mr-2" /> In đề xuất
