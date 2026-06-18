@@ -3,7 +3,9 @@ import {
     ProjectTask, DailyLog, AcceptanceRecord,
     MaterialBudgetItem, ProjectMaterialRequest, ProjectVendor,
     PurchaseOrder, PaymentSchedule, ProjectBaseline, ProjectWorkBoqItem, PurchaseOrderRequestLineLink,
-    PaymentDossierStatus, PaymentQualityStatus, PaymentScheduleMilestoneType, PurchaseOrderRemovalResult
+    PaymentDossierStatus, PaymentQualityStatus, PaymentScheduleMilestoneType, PurchaseOrderRemovalResult,
+    PurchaseOrderDeliveryBatch,
+    PurchaseOrderDeliveryLine
 } from '../types';
 import { auditService } from './auditService';
 import { dailyLogDetailService } from './dailyLogDetailService';
@@ -581,6 +583,54 @@ const poRequestLineLinkToDb = (link: PurchaseOrderRequestLineLink): any => {
     return row;
 };
 
+const poDeliveryBatchToDb = (batch: PurchaseOrderDeliveryBatch): any => {
+    const row = toDb({
+        id: batch.id,
+        purchaseOrderId: batch.purchaseOrderId,
+        projectId: batch.projectId || null,
+        constructionSiteId: batch.constructionSiteId || null,
+        deliveryNo: Number(batch.deliveryNo || 1),
+        plannedDeliveryDate: batch.plannedDeliveryDate || null,
+        status: batch.status || 'planned',
+        fulfillmentBatchIds: batch.fulfillmentBatchIds || [],
+        note: batch.note || null,
+        createdBy: batch.createdBy || null,
+    });
+    delete row.lines;
+    delete row.created_at;
+    delete row.updated_at;
+    return row;
+};
+
+const poDeliveryLineToDb = (line: PurchaseOrderDeliveryLine): any => {
+    const row = toDb({
+        id: line.id,
+        deliveryBatchId: line.deliveryBatchId,
+        purchaseOrderId: line.purchaseOrderId,
+        purchaseOrderLineId: line.purchaseOrderLineId,
+        itemId: line.itemId,
+        plannedQty: Number(line.plannedQty || 0),
+        unit: line.unit || null,
+        stockPlannedQty: Number(line.stockPlannedQty || 0),
+        stockUnit: line.stockUnit || null,
+    });
+    delete row.created_at;
+    delete row.updated_at;
+    return row;
+};
+
+const poDeliveryBatchFromRows = (batch: any, lineRows: any[]): PurchaseOrderDeliveryBatch => ({
+    ...(fromDb(batch) as PurchaseOrderDeliveryBatch),
+    fulfillmentBatchIds: batch.fulfillment_batch_ids || [],
+    deliveryNo: Number(batch.delivery_no || 1),
+    status: (batch.status || 'planned') as PurchaseOrderDeliveryBatch['status'],
+    lines: lineRows.map(row => ({
+        ...(fromDb(row) as PurchaseOrderDeliveryLine),
+        plannedQty: Number(row.planned_qty || 0),
+        stockPlannedQty: Number(row.stock_planned_qty || 0),
+    })),
+});
+
 // ==================== WORK BOQ (TỪ TIẾN ĐỘ) ====================
 export const workBoqService = {
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectWorkBoqItem[]> {
@@ -942,6 +992,100 @@ export const poService = {
             throw new Error('Không xoá/lưu trữ được PO trên Supabase. Vui lòng kiểm tra quyền xoá hoặc trạng thái PO.');
         }
         return fromDb(data) as PurchaseOrderRemovalResult;
+    },
+};
+
+export const poDeliveryScheduleService = {
+    async listByPurchaseOrderIds(poIds: string[]): Promise<Record<string, PurchaseOrderDeliveryBatch[]>> {
+        const uniqueIds = Array.from(new Set(poIds.filter(Boolean)));
+        if (uniqueIds.length === 0) return {};
+
+        const { data: batchRows, error: batchError } = await supabase
+            .from('purchase_order_delivery_batches')
+            .select('*')
+            .in('purchase_order_id', uniqueIds)
+            .order('delivery_no', { ascending: true });
+        if (batchError) {
+            if (batchError.code === '42P01') return {};
+            throw batchError;
+        }
+        const batches = batchRows || [];
+        if (batches.length === 0) return {};
+
+        const { data: lineRows, error: lineError } = await supabase
+            .from('purchase_order_delivery_lines')
+            .select('*')
+            .in('delivery_batch_id', batches.map(batch => batch.id))
+            .order('created_at', { ascending: true });
+        if (lineError) {
+            if (lineError.code === '42P01') return {};
+            throw lineError;
+        }
+
+        const linesByBatch = new Map<string, any[]>();
+        (lineRows || []).forEach(row => {
+            linesByBatch.set(row.delivery_batch_id, [...(linesByBatch.get(row.delivery_batch_id) || []), row]);
+        });
+
+        return batches.reduce<Record<string, PurchaseOrderDeliveryBatch[]>>((acc, batch) => {
+            const item = poDeliveryBatchFromRows(batch, linesByBatch.get(batch.id) || []);
+            acc[item.purchaseOrderId] = [...(acc[item.purchaseOrderId] || []), item];
+            return acc;
+        }, {});
+    },
+
+    async replaceForPurchaseOrder(po: PurchaseOrder, batches: PurchaseOrderDeliveryBatch[]): Promise<void> {
+        const { data: existingRows, error: existingError } = await supabase
+            .from('purchase_order_delivery_batches')
+            .select('id,status')
+            .eq('purchase_order_id', po.id);
+        if (existingError) {
+            if (existingError.code === '42P01') return;
+            throw existingError;
+        }
+        const lockedBatch = (existingRows || []).find(row => !['planned', 'cancelled'].includes(row.status));
+        if (lockedBatch) {
+            throw new Error('PO đã có đợt giao tạo WMS/đã nhận nên không thể thay lịch giao từ form PO. Vui lòng huỷ hoặc xử lý đợt giao hiện tại trước.');
+        }
+
+        const { error: deleteError } = await supabase
+            .from('purchase_order_delivery_batches')
+            .delete()
+            .eq('purchase_order_id', po.id);
+        if (deleteError) throw deleteError;
+
+        const normalizedBatches = batches
+            .map((batch, index) => ({
+                ...batch,
+                purchaseOrderId: po.id,
+                projectId: po.projectId || null,
+                constructionSiteId: po.constructionSiteId || null,
+                deliveryNo: index + 1,
+                status: batch.status || 'planned',
+                fulfillmentBatchIds: batch.fulfillmentBatchIds || [],
+                lines: (batch.lines || []).filter(line => Number(line.plannedQty || 0) > 0),
+            }))
+            .filter(batch => batch.lines.length > 0);
+        if (normalizedBatches.length === 0) return;
+
+        const { error: batchError } = await supabase
+            .from('purchase_order_delivery_batches')
+            .insert(normalizedBatches.map(poDeliveryBatchToDb));
+        if (batchError) throw batchError;
+
+        const linePayloads = normalizedBatches.flatMap(batch =>
+            batch.lines.map(line => poDeliveryLineToDb({
+                ...line,
+                deliveryBatchId: batch.id,
+                purchaseOrderId: po.id,
+            }))
+        );
+        if (linePayloads.length === 0) return;
+
+        const { error: lineError } = await supabase
+            .from('purchase_order_delivery_lines')
+            .insert(linePayloads);
+        if (lineError) throw lineError;
     },
 };
 

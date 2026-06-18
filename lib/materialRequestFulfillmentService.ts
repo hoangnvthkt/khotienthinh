@@ -8,6 +8,7 @@ import {
   MaterialRequestFulfillmentSummary,
   InventoryItem,
   PurchaseOrder,
+  PurchaseOrderDeliveryBatch,
   PurchaseOrderItem,
   PurchaseOrderRequestLineLink,
   RequestItem,
@@ -184,6 +185,21 @@ const syncPurchaseOrderReceiptFromBatch = async (
       .eq('id', poId);
     if (updateError) throw updateError;
   }
+
+  if (batch.poDeliveryBatchId) {
+    const { data: siblingBatches, error: siblingError } = await supabase
+      .from(BATCH_TABLE)
+      .select('id,status')
+      .eq('po_delivery_batch_id', batch.poDeliveryBatchId);
+    if (siblingError) throw siblingError;
+    const allReceived = (siblingBatches || []).length > 0
+      && (siblingBatches || []).every(row => row.status === 'received');
+    const { error: scheduleError } = await supabase
+      .from('purchase_order_delivery_batches')
+      .update({ status: allReceived ? 'received' : 'wms_pending' })
+      .eq('id', batch.poDeliveryBatchId);
+    if (scheduleError && scheduleError.code !== '42P01') throw scheduleError;
+  }
 };
 
 export interface IssueFulfillmentLineInput {
@@ -257,6 +273,12 @@ export interface EnsurePoDeliveryBatchesInput {
   actorUserId: string;
 }
 
+export interface CreatePoDeliveryReceiptBatchInput {
+  po: PurchaseOrder;
+  deliveryBatch: PurchaseOrderDeliveryBatch;
+  actorUserId: string;
+}
+
 export interface PreparePoReceiptForQualityReviewInput {
   po: PurchaseOrder;
   receiptLines: RecordPoReceiptLineInput[];
@@ -304,6 +326,10 @@ const emptySummary = (request: MaterialRequest): MaterialRequestFulfillmentSumma
       orderedQty,
       issuedQty: 0,
       receivedQty: 0,
+      grossReceivedQty: 0,
+      completedReturnQty: 0,
+      pendingReturnQty: 0,
+      netReceivedQty: 0,
       remainingToIssue: committedQty,
       remainingToReceive: committedQty,
     };
@@ -314,6 +340,10 @@ const emptySummary = (request: MaterialRequest): MaterialRequestFulfillmentSumma
     orderedQty: sum.orderedQty + line.orderedQty,
     issuedQty: sum.issuedQty + line.issuedQty,
     receivedQty: sum.receivedQty + line.receivedQty,
+    grossReceivedQty: sum.grossReceivedQty + Number(line.grossReceivedQty || line.receivedQty || 0),
+    completedReturnQty: sum.completedReturnQty + Number(line.completedReturnQty || 0),
+    pendingReturnQty: sum.pendingReturnQty + Number(line.pendingReturnQty || 0),
+    netReceivedQty: sum.netReceivedQty + Number(line.netReceivedQty ?? line.receivedQty ?? 0),
     remainingToIssue: sum.remainingToIssue + line.remainingToIssue,
     remainingToReceive: sum.remainingToReceive + line.remainingToReceive,
   }), {
@@ -322,6 +352,10 @@ const emptySummary = (request: MaterialRequest): MaterialRequestFulfillmentSumma
     orderedQty: 0,
     issuedQty: 0,
     receivedQty: 0,
+    grossReceivedQty: 0,
+    completedReturnQty: 0,
+    pendingReturnQty: 0,
+    netReceivedQty: 0,
     remainingToIssue: 0,
     remainingToReceive: 0,
   });
@@ -347,6 +381,7 @@ const summarizeRequestWithBatches = (
         target.issuedQty += Number(line.issuedQty || 0);
         if (batch.status === 'received') {
           target.receivedQty += Number(line.receivedQty || 0);
+          target.grossReceivedQty = Number(target.grossReceivedQty || 0) + Number(line.receivedQty || 0);
           (target as any).allocatedQty = Number((target as any).allocatedQty || 0) + Number(line.receivedQty || 0);
         } else if (batch.status === 'variance_pending') {
           (target as any).allocatedQty = Number((target as any).allocatedQty || 0) + Number(line.receivedQty || 0);
@@ -360,6 +395,10 @@ const summarizeRequestWithBatches = (
     const allocatedQty = Number((line as any).allocatedQty || 0);
     line.remainingToIssue = Math.max(0, line.committedQty - allocatedQty);
     line.remainingToReceive = Math.max(0, line.committedQty - line.receivedQty);
+    line.grossReceivedQty = Number(line.grossReceivedQty ?? line.receivedQty ?? 0);
+    line.completedReturnQty = Number(line.completedReturnQty || 0);
+    line.pendingReturnQty = Number(line.pendingReturnQty || 0);
+    line.netReceivedQty = Math.max(0, line.grossReceivedQty - line.completedReturnQty);
     delete (line as any).allocatedQty;
   });
 
@@ -369,6 +408,10 @@ const summarizeRequestWithBatches = (
     orderedQty: sum.orderedQty + line.orderedQty,
     issuedQty: sum.issuedQty + line.issuedQty,
     receivedQty: sum.receivedQty + line.receivedQty,
+    grossReceivedQty: sum.grossReceivedQty + Number(line.grossReceivedQty || line.receivedQty || 0),
+    completedReturnQty: sum.completedReturnQty + Number(line.completedReturnQty || 0),
+    pendingReturnQty: sum.pendingReturnQty + Number(line.pendingReturnQty || 0),
+    netReceivedQty: sum.netReceivedQty + Number(line.netReceivedQty ?? line.receivedQty ?? 0),
     remainingToIssue: sum.remainingToIssue + line.remainingToIssue,
     remainingToReceive: sum.remainingToReceive + line.remainingToReceive,
   }), {
@@ -377,6 +420,10 @@ const summarizeRequestWithBatches = (
     orderedQty: 0,
     issuedQty: 0,
     receivedQty: 0,
+    grossReceivedQty: 0,
+    completedReturnQty: 0,
+    pendingReturnQty: 0,
+    netReceivedQty: 0,
     remainingToIssue: 0,
     remainingToReceive: 0,
   });
@@ -1224,6 +1271,230 @@ export const materialRequestFulfillmentService = {
         if (transactionCreated) await supabase.from('transactions').delete().eq('id', transactionId);
         throw error;
       }
+    }
+
+    return Array.from(new Set(affectedRequestIds));
+  },
+
+  async createPoDeliveryReceiptBatch(input: CreatePoDeliveryReceiptBatchInput): Promise<string[]> {
+    const { po, deliveryBatch } = input;
+    if (!po.id || !deliveryBatch.id) return [];
+    if (!po.targetWarehouseId) {
+      throw new Error('PO chưa có kho nhận nên không thể tạo phiếu nhận cho đợt giao.');
+    }
+    if (deliveryBatch.status !== 'planned') {
+      const { data: existingRows, error: existingError } = await supabase
+        .from(BATCH_TABLE)
+        .select('material_request_id,status')
+        .eq('po_delivery_batch_id', deliveryBatch.id);
+      if (existingError && !isMissingFulfillmentTable(existingError)) throw existingError;
+      return Array.from(new Set((existingRows || []).map(row => row.material_request_id).filter(Boolean)));
+    }
+
+    const { data: existingLineRows, error: existingLineError } = await supabase
+      .from(LINE_TABLE)
+      .select('batch_id, material_request_id')
+      .eq('po_delivery_line_id', (deliveryBatch.lines || []).map(line => line.id)[0] || '__none__');
+    if (existingLineError && !isMissingFulfillmentTable(existingLineError)) throw existingLineError;
+    if ((existingLineRows || []).length > 0) {
+      return Array.from(new Set((existingLineRows || []).map(row => row.material_request_id).filter(Boolean)));
+    }
+
+    const { data: existingBatchRows, error: existingBatchError } = await supabase
+      .from(BATCH_TABLE)
+      .select('material_request_id,status')
+      .eq('po_delivery_batch_id', deliveryBatch.id);
+    if (existingBatchError && !isMissingFulfillmentTable(existingBatchError)) throw existingBatchError;
+    if ((existingBatchRows || []).length > 0) {
+      return Array.from(new Set((existingBatchRows || []).map(row => row.material_request_id).filter(Boolean)));
+    }
+
+    const { data: linkRows, error: linkError } = await supabase
+      .from('purchase_order_request_lines')
+      .select('*')
+      .eq('purchase_order_id', po.id);
+    if (linkError) throw linkError;
+
+    const links = (linkRows || []).map(fromDb) as PurchaseOrderRequestLineLink[];
+    if (links.length === 0) {
+      throw new Error('Đợt giao này chưa gắn dòng đề xuất vật tư nên không thể tạo phiếu WMS/QR theo đề xuất.');
+    }
+
+    const poSourceSuffix = po.vendorName ? ` - ${po.vendorName}` : '';
+    const poNumber = formatPoNumber(po.poNumber);
+    const poItemByLineId = new Map((po.items || []).map(item => [item.lineId || item.itemId, item]));
+    const inventoryById = await loadInventoryForPo(po);
+    const linksByPoLine = new Map<string, PurchaseOrderRequestLineLink[]>();
+    links.forEach(link => {
+      linksByPoLine.set(link.purchaseOrderLineId, [...(linksByPoLine.get(link.purchaseOrderLineId) || []), link]);
+    });
+
+    const allocatedLinks: Array<{
+      link: PurchaseOrderRequestLineLink;
+      poItem: PurchaseOrderItem;
+      deliveryLineId: string;
+      deliveryStockQty: number;
+    }> = [];
+
+    (deliveryBatch.lines || []).forEach(deliveryLine => {
+      const poItem = poItemByLineId.get(deliveryLine.purchaseOrderLineId);
+      if (!poItem) return;
+      const inventory = inventoryById.get(poItem.itemId);
+      let remainingStockQty = Number(deliveryLine.stockPlannedQty || 0);
+      if (remainingStockQty <= 0) {
+        remainingStockQty = poLinePurchaseToStockQty(poItem, Number(deliveryLine.plannedQty || 0), inventory);
+      }
+      if (remainingStockQty <= 0) return;
+
+      const requestLinks = linksByPoLine.get(deliveryLine.purchaseOrderLineId) || [];
+      requestLinks.forEach(link => {
+        if (remainingStockQty <= 0) return;
+        const linkedStockQty = Number(link.orderedQty || remainingStockQty);
+        const deliveryStockQty = Math.min(remainingStockQty, linkedStockQty);
+        if (deliveryStockQty <= 0) return;
+        allocatedLinks.push({
+          link,
+          poItem,
+          deliveryLineId: deliveryLine.id,
+          deliveryStockQty,
+        });
+        remainingStockQty -= deliveryStockQty;
+      });
+    });
+
+    if (allocatedLinks.length === 0) {
+      throw new Error('Đợt giao chưa có số lượng vật tư hợp lệ để tạo phiếu nhận WMS.');
+    }
+
+    const linksByRequest = allocatedLinks.reduce<Map<string, typeof allocatedLinks>>((map, item) => {
+      map.set(item.link.materialRequestId, [...(map.get(item.link.materialRequestId) || []), item]);
+      return map;
+    }, new Map());
+
+    const now = new Date().toISOString();
+    const affectedRequestIds: string[] = [];
+    const createdBatchIds: string[] = [];
+
+    for (const [materialRequestId, requestLinks] of linksByRequest.entries()) {
+      const batchId = newId();
+      const transactionId = `tx-po-delivery-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const requestCode = requestLinks[0]?.link.materialRequestCode || materialRequestId;
+      const linePayloads = requestLinks.map(item => {
+        const inventory = inventoryById.get(item.poItem.itemId);
+        const stockUnit = getPoLineStockUnit(item.poItem, inventory) || item.link.unit || null;
+        return {
+          id: newId(),
+          batchId,
+          materialRequestId,
+          requestLineId: item.link.requestLineId,
+          itemId: item.link.itemId,
+          materialBudgetItemId: item.link.materialBudgetItemId || item.poItem.materialBudgetItemId || null,
+          workBoqItemId: item.link.workBoqItemId || item.poItem.workBoqItemId || null,
+          poId: po.id,
+          poLineId: item.link.purchaseOrderLineId,
+          poDeliveryLineId: item.deliveryLineId,
+          requestedQtySnapshot: Number(item.link.requestedQty || item.deliveryStockQty || 0),
+          committedQtySnapshot: Number(item.link.requestedQty || item.deliveryStockQty || 0),
+          issuedQty: item.deliveryStockQty,
+          receivedQty: 0,
+          unit: stockUnit,
+          varianceReason: null,
+          note: `Đợt ${deliveryBatch.deliveryNo} chờ nhận hàng từ ${poNumber}${poSourceSuffix}`,
+        };
+      }).filter(line => line.issuedQty > 0);
+
+      if (linePayloads.length === 0) continue;
+
+      const transactionPayload = {
+        id: transactionId,
+        type: TransactionType.IMPORT,
+        date: now,
+        items: linePayloads.map(line => {
+          const poItem = poItemByLineId.get(line.poLineId);
+          const inventory = inventoryById.get(line.itemId || poItem?.itemId || '');
+          return buildPoReceiptTransactionItem(poItem, line.issuedQty, inventory, {
+            materialRequestId,
+            requestLineId: line.requestLineId,
+            fulfillmentBatchId: batchId,
+            purchaseOrderDeliveryBatchId: deliveryBatch.id,
+            purchaseOrderDeliveryLineId: line.poDeliveryLineId,
+          });
+        }),
+        targetWarehouseId: po.targetWarehouseId,
+        requesterId: input.actorUserId,
+        approverId: input.actorUserId,
+        status: TransactionStatus.PENDING,
+        note: `${poNumber} - đợt ${deliveryBatch.deliveryNo} đang giao${poSourceSuffix}`,
+        relatedRequestId: materialRequestId,
+      };
+
+      const batchPayload = {
+        id: batchId,
+        projectId: po.projectId || requestLinks[0]?.link.projectId || null,
+        constructionSiteId: po.constructionSiteId || requestLinks[0]?.link.constructionSiteId || null,
+        materialRequestId,
+        batchNo: `${requestCode}-PO-${po.poNumber}-D${deliveryBatch.deliveryNo}`,
+        batchDate: now,
+        sourceWarehouseId: null,
+        targetWarehouseId: po.targetWarehouseId,
+        fulfillmentMode: MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
+        sourceType: 'po_receipt',
+        status: 'issued',
+        transactionId,
+        poDeliveryBatchId: deliveryBatch.id,
+        reason: null,
+        note: `${poNumber}${poSourceSuffix} - đợt giao ${deliveryBatch.deliveryNo} chờ thủ kho kiểm tra SL/CL và xác nhận nhập.`,
+        createdBy: input.actorUserId,
+        issuedBy: input.actorUserId,
+        issuedAt: now,
+      };
+
+      let transactionCreated = false;
+      let batchCreated = false;
+      try {
+        const { error: txError } = await supabase
+          .from('transactions')
+          .insert({
+            id: transactionPayload.id,
+            type: transactionPayload.type,
+            date: transactionPayload.date,
+            items: transactionPayload.items,
+            target_warehouse_id: transactionPayload.targetWarehouseId,
+            requester_id: transactionPayload.requesterId,
+            approver_id: transactionPayload.approverId,
+            status: transactionPayload.status,
+            note: transactionPayload.note,
+            related_request_id: transactionPayload.relatedRequestId,
+          });
+        if (txError) throw txError;
+        transactionCreated = true;
+
+        const { error: batchError } = await supabase
+          .from(BATCH_TABLE)
+          .insert(toDb(batchPayload));
+        if (batchError) throw batchError;
+        batchCreated = true;
+
+        const { error: lineError } = await supabase
+          .from(LINE_TABLE)
+          .insert(linePayloads.map(toDb));
+        if (lineError) throw lineError;
+
+        affectedRequestIds.push(materialRequestId);
+        createdBatchIds.push(batchId);
+      } catch (error) {
+        if (batchCreated) await supabase.from(BATCH_TABLE).delete().eq('id', batchId);
+        if (transactionCreated) await supabase.from('transactions').delete().eq('id', transactionId);
+        throw error;
+      }
+    }
+
+    if (createdBatchIds.length > 0) {
+      const { error: scheduleError } = await supabase
+        .from('purchase_order_delivery_batches')
+        .update({ status: 'wms_pending', fulfillment_batch_ids: createdBatchIds })
+        .eq('id', deliveryBatch.id);
+      if (scheduleError && scheduleError.code !== '42P01') throw scheduleError;
     }
 
     return Array.from(new Set(affectedRequestIds));

@@ -592,7 +592,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     useEffect(() => {
         const handleResize = () => {
             if (window.innerWidth < 1024 && viewMode === 'split') {
-                setViewMode('gantt');
+                setViewMode('table');
             }
         };
         handleResize();
@@ -2265,6 +2265,76 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
     const formTaskHasChildren = !!(editing && childCountByTaskId.get(editing.id));
     const formProgressReadOnly = formTaskHasChildren || fProgressMode !== 'manual';
 
+    // Scroll Syncing Refs
+    const tableScrollRef = useRef<HTMLDivElement>(null);
+    const ganttScrollRef = useRef<HTMLDivElement>(null);
+    const tableTopScrollRef = useRef<HTMLDivElement>(null);
+    const ganttTopScrollRef = useRef<HTMLDivElement>(null);
+
+    // Scroll Width/Visibility States
+    const [tableScrollWidth, setTableScrollWidth] = useState(900);
+    const [ganttScrollWidth, setGanttScrollWidth] = useState(1000);
+    const [showTableTopScroll, setShowTableTopScroll] = useState(false);
+    const [showGanttTopScroll, setShowGanttTopScroll] = useState(false);
+
+    // Callback to update scroll widths and determine visibility of top scrollbars
+    const updateScrollWidths = useCallback(() => {
+        if (tableScrollRef.current) {
+            const hasScroll = tableScrollRef.current.scrollWidth > tableScrollRef.current.clientWidth;
+            setTableScrollWidth(tableScrollRef.current.scrollWidth);
+            setShowTableTopScroll(hasScroll);
+        }
+        if (ganttScrollRef.current) {
+            const innerGantt = ganttScrollRef.current.firstElementChild as HTMLElement;
+            const scrollWidth = innerGantt ? innerGantt.scrollWidth : (ganttOffset + (totalDays + 1) * zoom);
+            const hasScroll = scrollWidth > ganttScrollRef.current.clientWidth;
+            setGanttScrollWidth(scrollWidth);
+            setShowGanttTopScroll(hasScroll);
+        }
+    }, [ganttOffset, totalDays, zoom]);
+
+    // Measure on task updates, viewMode changes, split width adjustments, zoom changes
+    useEffect(() => {
+        updateScrollWidths();
+        const timer = setTimeout(updateScrollWidths, 100);
+        return () => clearTimeout(timer);
+    }, [tasks, viewMode, splitTableWidth, zoom, updateScrollWidths]);
+
+    // Scroll handlers with loop prevention
+    const handleTableScroll = (e: React.UIEvent<HTMLDivElement>) => {
+        const target = e.currentTarget;
+        if (ganttScrollRef.current && ganttScrollRef.current.scrollTop !== target.scrollTop) {
+            ganttScrollRef.current.scrollTop = target.scrollTop;
+        }
+        if (tableTopScrollRef.current && tableTopScrollRef.current.scrollLeft !== target.scrollLeft) {
+            tableTopScrollRef.current.scrollLeft = target.scrollLeft;
+        }
+    };
+
+    const handleTableTopScroll = (e: React.UIEvent<HTMLDivElement>) => {
+        const target = e.currentTarget;
+        if (tableScrollRef.current && tableScrollRef.current.scrollLeft !== target.scrollLeft) {
+            tableScrollRef.current.scrollLeft = target.scrollLeft;
+        }
+    };
+
+    const handleGanttScroll = (e: React.UIEvent<HTMLDivElement>) => {
+        const target = e.currentTarget;
+        if (tableScrollRef.current && tableScrollRef.current.scrollTop !== target.scrollTop) {
+            tableScrollRef.current.scrollTop = target.scrollTop;
+        }
+        if (ganttTopScrollRef.current && ganttTopScrollRef.current.scrollLeft !== target.scrollLeft) {
+            ganttTopScrollRef.current.scrollLeft = target.scrollLeft;
+        }
+    };
+
+    const handleGanttTopScroll = (e: React.UIEvent<HTMLDivElement>) => {
+        const target = e.currentTarget;
+        if (ganttScrollRef.current && ganttScrollRef.current.scrollLeft !== target.scrollLeft) {
+            ganttScrollRef.current.scrollLeft = target.scrollLeft;
+        }
+    };
+
     // ====== Sort icon helper ======
     const SortIcon: React.FC<{ field: SortField }> = ({ field }) => {
         if (sortField !== field) return <ArrowUpDown size={10} className="text-slate-300" />;
@@ -2703,7 +2773,6 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             {([
                                 { mode: 'table' as ViewMode, icon: LayoutList, label: 'Bảng đầy đủ', className: 'flex' },
                                 { mode: 'split' as ViewMode, icon: Columns, label: 'Kết hợp', className: 'hidden lg:flex' },
-                                { mode: 'gantt' as ViewMode, icon: BarChart3, label: 'Gantt', className: 'flex' },
                             ]).map(v => (
                                 <button key={v.mode} onClick={() => setViewMode(v.mode)}
                                     className={`items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${v.className} ${viewMode === v.mode
@@ -2783,100 +2852,169 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                         </button>
                     </div>
                 ) : (
-                    <div className="flex flex-col lg:flex-row overflow-hidden">
-                        {/* ====== TABLE VIEW ====== */}
-                        {(viewMode === 'table' || viewMode === 'split') && (
-                            <div
-                                style={{ width: viewMode === 'split' ? `${splitTableWidth}px` : undefined }}
-                                className={`${viewMode === 'split' ? 'shrink-0 lg:border-r border-b lg:border-b-0 border-border dark:border-slate-700' : 'flex-1'} overflow-auto`}>
-                                <table className={`${viewMode === 'table' ? 'w-full min-w-[900px] lg:min-w-[1530px] table-fixed' : 'w-full min-w-[900px] table-fixed'} text-xs`}>
-                                    <thead>
-                                        <tr className="bg-slate-50/80 dark:bg-slate-700/50 border-b border-border dark:border-slate-700" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
-                                            {viewMode === 'table' && (
-                                                <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[40px]">
-                                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">STT</span>
-                                                </th>
-                                            )}
-                                            {(viewMode === 'table' || viewMode === 'split') && (
-                                                <th className={`sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left ${viewMode === 'split' ? 'w-[80px]' : 'hidden sm:table-cell w-[76px]'}`}>
-                                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Mã WBS</span>
-                                                </th>
-                                            )}
-                                            <th className={`sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-3 py-2.5 text-left ${viewMode === 'split' ? 'w-[220px]' : ''}`}>
-                                                <button onClick={() => handleSort('name')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
-                                                    Công việc <SortIcon field="name" />
-                                                </button>
-                                            </th>
-                                            {viewMode === 'table' && (
-                                                <th className="hidden md:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[128px]">
-                                                    <button onClick={() => handleSort('assignee')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
-                                                        Người thực hiện <SortIcon field="assignee" />
+                    <div className="flex flex-col w-full overflow-hidden">
+                        {/* Custom scrollbars and hidden scrollbar CSS styles */}
+                        <style>{`
+                            .top-scrollbar::-webkit-scrollbar {
+                                height: 6px;
+                            }
+                            .top-scrollbar::-webkit-scrollbar-track {
+                                background: transparent;
+                            }
+                            .top-scrollbar::-webkit-scrollbar-thumb {
+                                background: #cbd5e1;
+                                border-radius: 3px;
+                            }
+                            .dark .top-scrollbar::-webkit-scrollbar-thumb {
+                                background: #475569;
+                            }
+                            .hide-vertical-scrollbar::-webkit-scrollbar {
+                                width: 0px;
+                                background: transparent;
+                            }
+                            .hide-vertical-scrollbar {
+                                -ms-overflow-style: none;
+                                scrollbar-width: none;
+                            }
+                        `}</style>
+
+                        {/* Top Scrollbars Row */}
+                        {(viewMode === 'table' || viewMode === 'split' || viewMode === 'gantt') && (showTableTopScroll || showGanttTopScroll) && (
+                            <div className="flex flex-row shrink-0 bg-slate-50 dark:bg-slate-800 border-b border-border dark:border-slate-700">
+                                {/* Table Top Scrollbar or Spacer */}
+                                {(viewMode === 'table' || viewMode === 'split') && (
+                                    showTableTopScroll ? (
+                                        <div 
+                                            ref={tableTopScrollRef} 
+                                            onScroll={handleTableTopScroll} 
+                                            className="overflow-x-auto overflow-y-hidden top-scrollbar"
+                                            style={{ width: viewMode === 'split' ? `${splitTableWidth}px` : '100%' }}
+                                        >
+                                            <div style={{ width: tableScrollWidth, height: '1px' }} />
+                                        </div>
+                                    ) : viewMode === 'split' ? (
+                                        <div style={{ width: `${splitTableWidth}px` }} className="shrink-0 bg-slate-50 dark:bg-slate-800" />
+                                    ) : null
+                                )}
+
+                                {/* Resizer Spacer */}
+                                {viewMode === 'split' && (
+                                    <div className="w-1.5 shrink-0 bg-slate-100 dark:bg-slate-800 border-x border-border/50 dark:border-slate-700/50" />
+                                )}
+
+                                {/* Gantt Top Scrollbar or Spacer */}
+                                {(viewMode === 'gantt' || viewMode === 'split') && (
+                                    showGanttTopScroll ? (
+                                        <div 
+                                            ref={ganttTopScrollRef} 
+                                            onScroll={handleGanttTopScroll} 
+                                            className="overflow-x-auto overflow-y-hidden flex-1 top-scrollbar"
+                                        >
+                                            <div style={{ width: ganttScrollWidth, height: '1px' }} />
+                                        </div>
+                                    ) : viewMode === 'split' ? (
+                                        <div className="flex-1 bg-slate-50 dark:bg-slate-800" />
+                                    ) : null
+                                )}
+                            </div>
+                        )}
+
+                        <div className="flex flex-col lg:flex-row overflow-hidden" style={{ height: 'calc(100vh - 280px)', minHeight: '480px' }}>
+                            {/* ====== TABLE VIEW ====== */}
+                            {(viewMode === 'table' || viewMode === 'split') && (
+                                <div
+                                    ref={tableScrollRef}
+                                    onScroll={handleTableScroll}
+                                    style={{ width: viewMode === 'split' ? `${splitTableWidth}px` : undefined }}
+                                    className={`${viewMode === 'split' ? 'shrink-0 lg:border-r border-b lg:border-b-0 border-border dark:border-slate-700 hide-vertical-scrollbar' : 'flex-1'} overflow-auto`}>
+                                    <table className={`${viewMode === 'table' ? 'w-full min-w-[900px] lg:min-w-[1530px] table-fixed' : 'w-full min-w-[900px] table-fixed'} text-xs`}>
+                                        <thead>
+                                            <tr className="bg-slate-50/80 dark:bg-slate-700/50 border-b border-border dark:border-slate-700" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
+                                                {viewMode === 'table' && (
+                                                    <th className="sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[40px]">
+                                                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">STT</span>
+                                                    </th>
+                                                )}
+                                                {(viewMode === 'table' || viewMode === 'split') && (
+                                                    <th className={`sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left ${viewMode === 'split' ? 'w-[80px]' : 'hidden sm:table-cell w-[76px]'}`}>
+                                                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Mã WBS</span>
+                                                    </th>
+                                                )}
+                                                <th className={`sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-3 py-2.5 text-left ${viewMode === 'split' ? 'w-[220px]' : ''}`}>
+                                                    <button onClick={() => handleSort('name')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                        Công việc <SortIcon field="name" />
                                                     </button>
                                                 </th>
-                                            )}
-                                            {viewMode === 'table' && (
-                                                <th className="hidden lg:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[88px]">
-                                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Thời gian<br />(ngày)</span>
-                                                </th>
-                                            )}
-                                            {viewMode === 'split' && (
-                                                <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[85px]">
-                                                    <button onClick={() => handleSort('status')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
-                                                        T.Thái <SortIcon field="status" />
+                                                {viewMode === 'table' && (
+                                                    <th className="hidden md:table-cell sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[128px]">
+                                                        <button onClick={() => handleSort('assignee')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                            Người thực hiện <SortIcon field="assignee" />
+                                                        </button>
+                                                    </th>
+                                                )}
+                                                {viewMode === 'table' && (
+                                                    <th className="hidden lg:table-cell sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[88px]">
+                                                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Thời gian<br />(ngày)</span>
+                                                    </th>
+                                                )}
+                                                {viewMode === 'split' && (
+                                                    <th className="sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[85px]">
+                                                        <button onClick={() => handleSort('status')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                            T.Thái <SortIcon field="status" />
+                                                        </button>
+                                                    </th>
+                                                )}
+                                                <th className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[80px]`}>
+                                                    <button onClick={() => handleSort('startDate')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                        BĐ KH <SortIcon field="startDate" />
                                                     </button>
                                                 </th>
-                                            )}
-                                            <th className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[80px]`}>
-                                                <button onClick={() => handleSort('startDate')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
-                                                    BĐ KH <SortIcon field="startDate" />
-                                                </button>
-                                            </th>
-                                            <th className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[80px]`}>
-                                                <button onClick={() => handleSort('endDate')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
-                                                    KT KH <SortIcon field="endDate" />
-                                                </button>
-                                            </th>
-                                            {viewMode === 'table' && (
-                                                <>
-                                                    <th className="hidden lg:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[86px]">
-                                                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">BĐ thực tế</span>
-                                                    </th>
-                                                    <th className="hidden lg:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[86px]">
-                                                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">KT thực tế</span>
-                                                    </th>
-                                                    <th className="hidden lg:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[102px]">
-                                                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">KL tạm tính</span>
-                                                    </th>
-                                                    <th className="hidden lg:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[112px]">
-                                                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Nhân công<br />dự kiến</span>
-                                                    </th>
-                                                </>
-                                            )}
-                                            <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[120px]">
-                                                <button onClick={() => handleSort('progress')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
-                                                    Tiến độ <SortIcon field="progress" />
-                                                </button>
-                                            </th>
-                                            <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[132px]">
-                                                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Tiến độ<br />theo giá trị</span>
-                                            </th>
-                                            {viewMode === 'table' && (
-                                                <th className="hidden xl:table-cell sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[70px]">
-                                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Đơn vị</span>
-                                                </th>
-                                            )}
-                                            {viewMode === 'table' && (
-                                                <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[96px]">
-                                                    <button onClick={() => handleSort('status')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
-                                                        T.Thái <SortIcon field="status" />
+                                                <th className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[80px]`}>
+                                                    <button onClick={() => handleSort('endDate')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                        KT KH <SortIcon field="endDate" />
                                                     </button>
                                                 </th>
-                                            )}
-                                            <th className="sticky top-0 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[80px]">
-                                                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Thao tác</span>
-                                            </th>
-                                        </tr>
-                                    </thead>
+                                                {viewMode === 'table' && (
+                                                    <>
+                                                        <th className="hidden lg:table-cell sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[86px]">
+                                                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">BĐ thực tế</span>
+                                                        </th>
+                                                        <th className="hidden lg:table-cell sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[86px]">
+                                                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">KT thực tế</span>
+                                                        </th>
+                                                        <th className="hidden lg:table-cell sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[102px]">
+                                                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">KL tạm tính</span>
+                                                        </th>
+                                                        <th className="hidden lg:table-cell sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[112px]">
+                                                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Nhân công<br />dự kiến</span>
+                                                        </th>
+                                                    </>
+                                                )}
+                                                <th className="sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[120px]">
+                                                    <button onClick={() => handleSort('progress')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                        Tiến độ <SortIcon field="progress" />
+                                                    </button>
+                                                </th>
+                                                <th className="sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[132px]">
+                                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Tiến độ<br />theo giá trị</span>
+                                                </th>
+                                                {viewMode === 'table' && (
+                                                    <th className="hidden xl:table-cell sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[70px]">
+                                                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Đơn vị</span>
+                                                    </th>
+                                                )}
+                                                {viewMode === 'table' && (
+                                                    <th className="sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-left w-[96px]">
+                                                        <button onClick={() => handleSort('status')} className="flex items-center gap-1 text-[10px] font-black text-muted-foreground uppercase tracking-wider hover:text-slate-600 transition-colors">
+                                                            T.Thái <SortIcon field="status" />
+                                                        </button>
+                                                    </th>
+                                                )}
+                                                <th className="sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-700/95 px-2 py-2.5 text-center w-[80px]">
+                                                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Thao tác</span>
+                                                </th>
+                                            </tr>
+                                        </thead>
                                     <tbody>
 	                                        {(viewMode === 'split' ? taskTree : sortedTasks.map(t => ({ task: t, level: 0, hasChildren: false }))).map(({ task, level, hasChildren }, idx) => {
 	                                            const status = getStatus(task);
@@ -3098,10 +3236,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
 
                         {/* ====== GANTT VIEW ====== */}
                         {(viewMode === 'gantt' || viewMode === 'split') && (
-                            <div className="flex-1 overflow-x-auto overflow-y-hidden relative">
+                            <div 
+                                ref={ganttScrollRef}
+                                onScroll={handleGanttScroll}
+                                className="flex-1 overflow-auto relative"
+                            >
                                 <div className="relative" style={{ width: `${ganttOffset + (totalDays + 1) * zoom}px`, minWidth: '100%' }}>
                                     {/* Month + day headers */}
-                                    <div className="border-b border-border dark:border-slate-700 relative bg-slate-50/50 dark:bg-slate-700/30" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
+                                    <div className="sticky top-0 z-30 border-b border-border dark:border-slate-700 bg-slate-50 dark:bg-slate-800" style={{ height: `${GANTT_HEADER_HEIGHT}px` }}>
                                         {viewMode === 'gantt' && (
                                             <div className="absolute left-0 top-0 bottom-0 z-30 w-[140px] shrink-0 bg-slate-100 dark:bg-slate-800 border-r border-border dark:border-slate-700/80 px-2.5 flex items-center font-black text-muted-foreground dark:text-muted-foreground uppercase tracking-wider text-[9px] select-none shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
                                                 Hạng mục
@@ -3507,6 +3649,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId, canM
                             </div>
                         )}
                     </div>
+                </div>
                 )}
             </div>
 

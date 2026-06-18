@@ -1734,6 +1734,38 @@ export interface PurchaseOrderRemovalResult {
   poNumber: string;
 }
 
+export type PurchaseOrderDeliveryBatchStatus = 'planned' | 'wms_pending' | 'received' | 'cancelled';
+
+export interface PurchaseOrderDeliveryLine {
+  id: string;
+  deliveryBatchId: string;
+  purchaseOrderId: string;
+  purchaseOrderLineId: string;
+  itemId: string;
+  plannedQty: number;
+  unit?: string | null;
+  stockPlannedQty?: number;
+  stockUnit?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PurchaseOrderDeliveryBatch {
+  id: string;
+  purchaseOrderId: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  deliveryNo: number;
+  plannedDeliveryDate?: string | null;
+  status: PurchaseOrderDeliveryBatchStatus;
+  fulfillmentBatchIds?: string[];
+  note?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  lines: PurchaseOrderDeliveryLine[];
+}
+
 export interface PurchaseOrderItem {
   lineId?: string;
   itemId: string;
@@ -1796,6 +1828,8 @@ export interface PurchaseOrderSupplierReturnLine {
   returnQty: number;
   unit?: string | null;
   unitPrice: number;
+  stockReturnQty?: number;
+  stockUnit?: string | null;
   createdAt: string;
 }
 
@@ -2389,6 +2423,7 @@ export interface MaterialRequestFulfillmentLine {
   workBoqItemId?: string | null;
   poId?: string | null;
   poLineId?: string | null;
+  poDeliveryLineId?: string | null;
   requestedQtySnapshot: number;
   committedQtySnapshot: number;
   issuedQty: number;
@@ -2413,6 +2448,7 @@ export interface MaterialRequestFulfillmentBatch {
   sourceType: MaterialRequestFulfillmentSourceType;
   status: MaterialRequestFulfillmentBatchStatus;
   transactionId?: string | null;
+  poDeliveryBatchId?: string | null;
   qrToken?: string | null;
   reason?: string | null;
   note?: string | null;
@@ -2436,6 +2472,10 @@ export interface MaterialRequestLineFulfillmentSummary {
   orderedQty: number;
   issuedQty: number;
   receivedQty: number;
+  grossReceivedQty?: number;
+  completedReturnQty?: number;
+  pendingReturnQty?: number;
+  netReceivedQty?: number;
   remainingToIssue: number;
   remainingToReceive: number;
 }
@@ -2447,6 +2487,10 @@ export interface MaterialRequestFulfillmentSummary {
   orderedQty: number;
   issuedQty: number;
   receivedQty: number;
+  grossReceivedQty?: number;
+  completedReturnQty?: number;
+  pendingReturnQty?: number;
+  netReceivedQty?: number;
   remainingToIssue: number;
   remainingToReceive: number;
   lineSummaries: MaterialRequestLineFulfillmentSummary[];

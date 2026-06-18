@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save, FileDown, Clock, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, Send, CheckCircle, Trash2, Info, Truck, PackageCheck, AlertCircle, XCircle, Plus, User, Loader2, Save, FileDown, Clock, ChevronDown, ChevronRight, Printer } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from '../context/AppContext';
 import {
@@ -1883,6 +1883,91 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
     };
 
+    const handlePrintMaterialRequest = () => {
+        if (!request) return;
+        const escapeHtml = (value: unknown) => String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+        const requesterName = request.requestedBy
+            || users.find(item => item.id === request.requesterId)?.name
+            || employees.find(item => item.userId === request.requesterId)?.fullName
+            || request.requesterId
+            || '-';
+        const rows = (request.items || []).map((line, index) => `
+            <tr>
+                <td class="center">${index + 1}</td>
+                <td>${escapeHtml(getLineName(line))}</td>
+                <td class="center">${escapeHtml(getLineUnit(line))}</td>
+                <td class="right">${Number(line.requestQty || 0).toLocaleString('vi-VN')}</td>
+            </tr>
+        `).join('');
+        const html = `
+            <!doctype html>
+            <html>
+            <head>
+                <meta charset="utf-8" />
+                <title>${escapeHtml(request.code || 'Phieu_de_xuat_vat_tu')}</title>
+                <style>
+                    body { font-family: Arial, sans-serif; color: #111827; padding: 28px; }
+                    h1 { margin: 0 0 18px; text-align: center; font-size: 21px; letter-spacing: 0; }
+                    .meta { display: grid; grid-template-columns: 160px 1fr; gap: 8px 14px; margin-bottom: 18px; font-size: 13px; }
+                    .meta span { color: #4b5563; font-weight: 700; }
+                    .meta strong { color: #111827; }
+                    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                    th, td { border: 1px solid #9ca3af; padding: 8px 9px; text-align: left; vertical-align: top; }
+                    th { background: #f3f4f6; text-align: center; font-size: 11px; text-transform: uppercase; }
+                    .center { text-align: center; }
+                    .right { text-align: right; font-weight: 700; }
+                    .signatures { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 42px; text-align: center; font-size: 12px; font-weight: 700; }
+                    .signature-space { height: 72px; }
+                    @media print { body { padding: 18px; } }
+                </style>
+            </head>
+            <body>
+                <h1>PHIẾU ĐỀ XUẤT VẬT TƯ</h1>
+                <div class="meta">
+                    <span>Tên đề xuất</span><strong>${escapeHtml(request.title || request.code || '-')}</strong>
+                    <span>Người yêu cầu</span><strong>${escapeHtml(requesterName)}</strong>
+                    <span>Kho nhận hàng</span><strong>${escapeHtml(getWarehouseName(request.siteWarehouseId || siteWarehouseId || defaultSiteWarehouseId))}</strong>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:52px;">STT</th>
+                            <th>Tên vật tư đề xuất</th>
+                            <th style="width:90px;">ĐVT</th>
+                            <th style="width:130px;">Số lượng YC</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                <div class="signatures">
+                    <div>Người lập phiếu<div class="signature-space"></div></div>
+                    <div>Phòng vật tư<div class="signature-space"></div></div>
+                    <div>Phòng QLDA<div class="signature-space"></div></div>
+                    <div>Giám đốc vật tư<div class="signature-space"></div></div>
+                </div>
+                <script>
+                    window.addEventListener('load', function () {
+                        window.focus();
+                        setTimeout(function () { window.print(); }, 250);
+                    });
+                </script>
+            </body>
+            </html>
+        `;
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            toast.error('Không thể mở cửa sổ in', 'Trình duyệt đang chặn popup in phiếu đề xuất.');
+            return;
+        }
+        printWindow.document.write(html);
+        printWindow.document.close();
+    };
+
     const handlePrintFulfillmentBatch = async (batch: MaterialRequestFulfillmentBatch, mode: 'print' | 'pdf' = 'print') => {
         if (!request) return;
         try {
@@ -3103,6 +3188,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     </div>
 
                     <div className="flex gap-2 sm:gap-3 items-center w-full sm:w-auto justify-end">
+                        {request && (
+                            <button onClick={handlePrintMaterialRequest} className="px-3 py-1.5 sm:px-5 sm:py-2 rounded-lg border border-blue-200/60 text-blue-700 bg-blue-50 text-xs sm:text-sm font-bold hover:bg-blue-100 transition-colors whitespace-nowrap flex items-center">
+                                <Printer size={14} className="mr-1.5 sm:mr-2" /> In đề xuất
+                            </button>
+                        )}
                         <button onClick={onClose} className="px-3 py-1.5 sm:px-5 sm:py-2 rounded-lg border border-border text-foreground text-xs sm:text-sm font-bold hover:bg-muted transition-colors whitespace-nowrap">
                             Đóng
                         </button>
