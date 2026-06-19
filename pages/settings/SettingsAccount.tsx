@@ -42,8 +42,13 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
     setSavingPassword(true);
     if (isSupabaseConfigured) {
       try {
+        const email = currentUser.email?.trim();
+        if (!email) {
+          throw new Error('Tài khoản chưa có email đăng nhập để xác thực mật khẩu hiện tại.');
+        }
+
         const { error: signInError } = await supabase.auth.signInWithPassword({
-          email: currentUser.email,
+          email,
           password: passwords.current,
         });
         if (signInError) {
@@ -52,18 +57,13 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
           toast.error('Không thể đổi mật khẩu', message);
           return;
         }
-        const response = await supabase.functions.invoke('reset-password', {
-          body: { email: currentUser.email, newPassword: passwords.new },
+
+        const { error: updatePasswordError } = await supabase.auth.updateUser({
+          password: passwords.new,
         });
-        if (response.error) {
-          throw response.error;
-        }
-        const result = response.data;
-        if (result?.error) {
-          throw new Error(result.error);
-        }
-        await updateUser({ ...currentUser, password: passwords.new });
-        const message = 'Đã đổi mật khẩu thành công. Mật khẩu mới đã được cập nhật trên Supabase Auth.';
+        if (updatePasswordError) throw updatePasswordError;
+
+        const message = 'Đã đổi mật khẩu thành công.';
         setPassSuccess(message);
         toast.success('Đã cập nhật mật khẩu');
         setPasswords({ current: '', new: '', confirm: '' });

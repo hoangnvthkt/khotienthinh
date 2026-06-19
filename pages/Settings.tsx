@@ -42,6 +42,7 @@ import {
   formatInventoryItemDeleteBlockers,
   getLocalInventoryItemDeleteBlockers,
 } from '../lib/inventoryItemDeleteGuard';
+import { canAccessSettingsFeature, hasAnySettingsManagementFeature, type SettingsFeatureId } from '../lib/settingsPermissions';
 
 type MaterialCatalogForm = {
   sku: string;
@@ -84,11 +85,15 @@ const Settings: React.FC = () => {
     items, addItem, updateItem, removeItem, transactions, requests, lossNorms, addLossNorm, updateLossNorm, removeLossNorm,
     saveSignature, deleteSignature
   } = useApp();
-  useModuleData('wms');
-  useModuleData('hrm');
-  useModuleData('ts');
-  useModuleData('ex');
-  useModuleData('da');
+  const isSettingsAdmin = currentUser.role === Role.ADMIN;
+  const hasSettingsManagementAccess = hasAnySettingsManagementFeature(currentUser);
+  const canOpenSettingsFeature = (featureId: SettingsFeatureId) => canAccessSettingsFeature(currentUser, featureId);
+  useModuleData('admin', hasSettingsManagementAccess);
+  useModuleData('wms', canOpenSettingsFeature('warehouses') || canOpenSettingsFeature('master-data') || canOpenSettingsFeature('loss-norms') || canOpenSettingsFeature('users'));
+  useModuleData('hrm', canOpenSettingsFeature('hrm-master-data') || canOpenSettingsFeature('org-chart') || canOpenSettingsFeature('work-groups'));
+  useModuleData('ts', isSettingsAdmin);
+  useModuleData('ex', isSettingsAdmin);
+  useModuleData('da', canOpenSettingsFeature('project-master-data') || canOpenSettingsFeature('g8-cost-norms') || canOpenSettingsFeature('inspection-templates') || canOpenSettingsFeature('work-groups'));
   const toast = useToast();
   const { loading: deletingUserLoading, run: runDeleteUser } = useAsyncAction({
     successTitle: 'Đã xoá tài khoản',
@@ -819,21 +824,22 @@ const Settings: React.FC = () => {
   };
 
   const tabs = [
-    { id: 'general', label: 'Chung', icon: SettingsIcon, roles: [Role.ADMIN] },
-    { id: 'warehouses', label: 'Kho bãi', icon: Building, roles: [Role.ADMIN] },
-    { id: 'master-data', label: 'Dữ liệu gốc', icon: Database, roles: [Role.ADMIN] },
-    { id: 'g8-cost-norms', label: 'Định mức G8', icon: FileSpreadsheet, roles: [Role.ADMIN] },
-    { id: 'project-master-data', label: 'Danh mục DA', icon: FolderKanban, roles: [Role.ADMIN] },
-    { id: 'inspection-templates', label: 'Mẫu nghiệm thu', icon: ClipboardCheck, roles: [Role.ADMIN] },
-    { id: 'work-groups', label: 'Nhóm làm việc', icon: Users, roles: [Role.ADMIN] },
-    { id: 'org-chart', label: 'Sơ đồ tổ chức', icon: GitBranch, roles: [Role.ADMIN] },
-    { id: 'loss-norms', label: 'Định mức hao hụt', icon: TrendingDown, roles: [Role.ADMIN] },
-    { id: 'hrm-master-data', label: 'Dữ liệu gốc HRM', icon: Briefcase, roles: [Role.ADMIN] },
-    { id: 'users', label: 'Người dùng', icon: Users, roles: [Role.ADMIN] },
-    { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot, roles: [Role.ADMIN] },
+    { id: 'general', label: 'Chung', icon: SettingsIcon },
+    { id: 'warehouses', label: 'Kho bãi', icon: Building },
+    { id: 'master-data', label: 'Dữ liệu gốc', icon: Database },
+    { id: 'g8-cost-norms', label: 'Định mức G8', icon: FileSpreadsheet },
+    { id: 'project-master-data', label: 'Danh mục DA', icon: FolderKanban },
+    { id: 'inspection-templates', label: 'Mẫu nghiệm thu', icon: ClipboardCheck },
+    { id: 'work-groups', label: 'Nhóm làm việc', icon: Users },
+    { id: 'org-chart', label: 'Sơ đồ tổ chức', icon: GitBranch },
+    { id: 'loss-norms', label: 'Định mức hao hụt', icon: TrendingDown },
+    { id: 'hrm-master-data', label: 'Dữ liệu gốc HRM', icon: Briefcase },
+    { id: 'users', label: 'Người dùng', icon: Users },
+    { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
-    { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle, roles: [Role.ADMIN] },
-  ].filter(tab => !tab.roles || tab.roles.includes(currentUser.role));
+    { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle },
+  ].filter(tab => canOpenSettingsFeature(tab.id as SettingsFeatureId));
+  const activeSettingsTab = tabs.some(tab => tab.id === activeTab) ? activeTab : 'account';
 
   const filteredMaterialItems = useMemo(() => {
     const keyword = materialQuery.trim().toLowerCase();
@@ -848,7 +854,7 @@ const Settings: React.FC = () => {
     if (!tabs.find(t => t.id === activeTab)) {
       setActiveTab('account');
     }
-  }, [currentUser.role]);
+  }, [activeTab, currentUser.role]);
 
   return (
     <div className="space-y-6">
@@ -870,13 +876,15 @@ const Settings: React.FC = () => {
       )}
 
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-black text-slate-800 tracking-tight">Cấu hình hệ thống</h1>
+        <h1 className="text-2xl font-black text-slate-800 tracking-tight">
+          {isSettingsAdmin ? 'Cấu hình hệ thống' : hasSettingsManagementAccess ? 'Cài đặt được phân quyền' : 'Cài đặt cá nhân'}
+        </h1>
         <div className="flex items-center gap-2">
           <div className="px-3 py-1.5 rounded-full bg-white border border-slate-100 shadow-sm">
             <RealtimeBadge realtimeStatus={realtimeStatus} lastEventTime={lastRealtimeEvent} connectionError={connectionError} />
           </div>
           <div className="bg-blue-50 text-accent px-3 py-1 rounded-full text-[10px] font-black uppercase flex items-center border border-blue-100">
-            <AlertCircle size={12} className="mr-1" /> Toàn quyền Admin
+            <AlertCircle size={12} className="mr-1" /> {isSettingsAdmin ? 'Toàn quyền Admin' : hasSettingsManagementAccess ? 'Được cấp quyền Cài đặt' : 'Tài khoản cá nhân'}
           </div>
         </div>
       </div>
@@ -890,7 +898,7 @@ const Settings: React.FC = () => {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`w-full flex items-center px-4 py-3 rounded-xl text-sm font-bold transition-all
-                  ${activeTab === tab.id
+                  ${activeSettingsTab === tab.id
                     ? 'bg-primary text-white shadow-lg shadow-slate-900/20'
                     : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
                   }`}
@@ -904,7 +912,7 @@ const Settings: React.FC = () => {
 
         {/* Content Area */}
         <div className="flex-1">
-          {activeTab === 'general' && (
+          {activeSettingsTab === 'general' && (
             <SettingsGeneral
               appName={appName} setAppName={setAppName}
               appLogo={appLogo} setAppLogo={setAppLogo}
@@ -913,7 +921,7 @@ const Settings: React.FC = () => {
             />
           )}
 
-          {activeTab === 'warehouses' && (
+          {activeSettingsTab === 'warehouses' && (
             <SettingsWarehouses
               warehouses={warehouses}
               isWhModalOpen={isWhModalOpen} setIsWhModalOpen={setIsWhModalOpen}
@@ -927,7 +935,7 @@ const Settings: React.FC = () => {
             />
           )}
 
-          {activeTab === 'master-data' && (
+          {activeSettingsTab === 'master-data' && (
             <div className="animate-in slide-in-from-right-4 duration-300">
               {!activeMasterSection ? (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1445,29 +1453,29 @@ const Settings: React.FC = () => {
             </div>
           )}
 
-          {activeTab === 'project-master-data' && (
+          {activeSettingsTab === 'project-master-data' && (
             <SettingsProjectMasterData />
           )}
 
-          {activeTab === 'g8-cost-norms' && (
+          {activeSettingsTab === 'g8-cost-norms' && (
             <SettingsG8CostNormLibrary actorId={currentUser.id} />
           )}
 
-          {activeTab === 'inspection-templates' && (
+          {activeSettingsTab === 'inspection-templates' && (
             <SettingsInspectionTemplates />
           )}
 
-          {activeTab === 'work-groups' && (
+          {activeSettingsTab === 'work-groups' && (
             <SettingsWorkGroups />
           )}
 
-          {activeTab === 'org-chart' && (
+          {activeSettingsTab === 'org-chart' && (
             <div className="animate-in slide-in-from-right-4 duration-300">
               <OrgChart />
             </div>
           )}
 
-          {activeTab === 'hrm-master-data' && (
+          {activeSettingsTab === 'hrm-master-data' && (
             <div className="animate-in slide-in-from-right-4 duration-300">
               {!activeHrmSection ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1757,7 +1765,7 @@ const Settings: React.FC = () => {
             </div>
           )}
 
-          {activeTab === 'users' && (
+          {activeSettingsTab === 'users' && (
             <SettingsUsers
               users={users} currentUser={currentUser} warehouses={warehouses}
               isUserModalOpen={isUserModalOpen} setIsUserModalOpen={setIsUserModalOpen}
@@ -1772,7 +1780,7 @@ const Settings: React.FC = () => {
             />
           )}
 
-          {activeTab === 'account' && (
+          {activeSettingsTab === 'account' && (
             <div className="space-y-6">
               <SettingsAccount
                 currentUser={currentUser}
@@ -1831,7 +1839,7 @@ const Settings: React.FC = () => {
             </div>
           )}
 
-          {activeTab === 'loss-norms' && (
+          {activeSettingsTab === 'loss-norms' && (
             <div className="space-y-6">
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center">
@@ -1923,7 +1931,7 @@ const Settings: React.FC = () => {
             </div>
           )}
 
-          {activeTab === 'maintenance' && (
+          {activeSettingsTab === 'maintenance' && (
             <SettingsMaintenance triggerAction={triggerAction} clearAllData={clearAllData} />
           )}
         </div>
@@ -2004,7 +2012,7 @@ const Settings: React.FC = () => {
         </div>
       )}
 
-          {activeTab === 'chibi-bot' && (
+          {activeSettingsTab === 'chibi-bot' && (
             <SettingsChibiBot />
           )}
     </div>

@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, Copy, ClipboardPaste } from 'lucide-react';
+import { X, User as UserIcon, Mail, Phone, Shield, Building, Save, Package, Briefcase, GitBranch, BarChart3, Landmark, Loader2, Crown, Inbox, LayoutDashboard, MapPin, Users, Calendar, Clock, CalendarOff, DollarSign, FileSignature, FolderOpen, History, ArrowLeftRight, ClipboardCheck, FileSpreadsheet, FileText, Workflow, Layers, Repeat, Wrench, IdCard, CreditCard, Calculator, Bot, Copy, ClipboardPaste, Settings as SettingsIcon } from 'lucide-react';
 import { Role, User, Warehouse } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { PROJECT_MATERIAL_TAB_PERMISSIONS, PROJECT_TAB_PERMISSIONS } from '../lib/projectTabPermissions';
 import type { ProjectMaterialTabKey, ProjectOverviewTabKey } from '../lib/projectTabPermissions';
+import { getSettingsFeatureToken, SETTINGS_FEATURES, SETTINGS_MODULE_KEY } from '../lib/settingsPermissions';
 
 const PROJECT_TAB_PERMISSION_ICONS: Record<ProjectOverviewTabKey, any> = {
   executive: LayoutDashboard,
@@ -52,6 +53,28 @@ const PROJECT_TAB_SUB_MODULES = PROJECT_TAB_PERMISSIONS.flatMap(tab => {
     ? [tabPermission, ...PROJECT_MATERIAL_TAB_SUB_MODULES]
     : [tabPermission];
 });
+
+const SETTINGS_FEATURE_ICONS: Record<(typeof SETTINGS_FEATURES)[number]['id'], any> = {
+  general: SettingsIcon,
+  warehouses: Building,
+  'master-data': FileSpreadsheet,
+  'g8-cost-norms': Calculator,
+  'project-master-data': FolderOpen,
+  'inspection-templates': ClipboardCheck,
+  'work-groups': Users,
+  'org-chart': GitBranch,
+  'loss-norms': BarChart3,
+  'hrm-master-data': Briefcase,
+  users: Users,
+  'chibi-bot': Bot,
+  maintenance: Wrench,
+};
+
+const SETTINGS_SUB_MODULES = SETTINGS_FEATURES.map(feature => ({
+  to: getSettingsFeatureToken(feature.id),
+  icon: SETTINGS_FEATURE_ICONS[feature.id],
+  label: feature.label,
+}));
 
 // Sub-app definitions per module (matches Sidebar's moduleNavMap)
 const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }[]> = {
@@ -119,6 +142,7 @@ const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }
     { to: '/tender-ai/boq', icon: FileSpreadsheet, label: 'AI BOQ CĐT' },
     { to: '/tender-ai/cost-library', icon: Calculator, label: 'Dự toán nội bộ' },
   ],
+  [SETTINGS_MODULE_KEY]: SETTINGS_SUB_MODULES,
 };
 
 interface UserModalProps {
@@ -181,8 +205,14 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
     { key: 'EP', label: 'EP - Hồ sơ NV', icon: IdCard, color: 'text-sky-600 bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-700' },
     { key: 'HD', label: 'HĐ - Hợp đồng', icon: FileSignature, color: 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700' },
     { key: 'TENDER_AI', label: 'Tender AI', icon: Bot, color: 'text-fuchsia-600 bg-fuchsia-50 border-fuchsia-200 dark:bg-fuchsia-900/30 dark:border-fuchsia-700' },
+    { key: SETTINGS_MODULE_KEY, label: 'CĐ - Cài đặt', icon: SettingsIcon, color: 'text-slate-700 bg-slate-50 border-slate-200 dark:bg-slate-800/50 dark:border-slate-700' },
     { key: 'CHIBIBOT', label: 'Trợ lý ChibiBot', icon: Bot, color: 'text-pink-600 bg-pink-50 border-pink-200 dark:bg-pink-900/30 dark:border-pink-700' },
   ];
+  const DEFAULT_ALLOWED_MODULES = ALL_MODULES
+    .filter(mod => mod.key !== SETTINGS_MODULE_KEY)
+    .map(mod => mod.key);
+  const getLegacyAllowedModules = (profile?: Partial<User> | null) =>
+    profile?.role === Role.ADMIN ? ALL_MODULES.map(m => m.key) : DEFAULT_ALLOWED_MODULES;
 
   const [formData, setFormData] = useState<Partial<User>>({
     name: '',
@@ -205,7 +235,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
 
   useEffect(() => {
     if (userToEdit) {
-      setFormData({ ...userToEdit, password: '', allowedModules: userToEdit.allowedModules || ALL_MODULES.map(m => m.key), allowedSubModules: userToEdit.allowedSubModules || {}, adminModules: userToEdit.adminModules || [], adminSubModules: userToEdit.adminSubModules || {} });
+      setFormData({ ...userToEdit, password: '', allowedModules: userToEdit.allowedModules || getLegacyAllowedModules(userToEdit), allowedSubModules: userToEdit.allowedSubModules || {}, adminModules: userToEdit.adminModules || [], adminSubModules: userToEdit.adminSubModules || {} });
     } else {
       setFormData({
         name: '',
@@ -280,7 +310,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
       ...selectedPermissionSourceUser,
       allowedModules: selectedPermissionSourceUser.role === Role.ADMIN
         ? ALL_MODULES.map(m => m.key)
-        : selectedPermissionSourceUser.allowedModules || ALL_MODULES.map(m => m.key),
+        : selectedPermissionSourceUser.allowedModules || getLegacyAllowedModules(selectedPermissionSourceUser),
       allowedSubModules: selectedPermissionSourceUser.allowedSubModules || {},
       adminModules: selectedPermissionSourceUser.adminModules || [],
       adminSubModules: selectedPermissionSourceUser.adminSubModules || {},
@@ -677,10 +707,13 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                           onChange={(e) => {
                             const modules = formData.allowedModules || [];
                             const subMods = { ...(formData.allowedSubModules || {}) };
+                            const adminSubs = { ...(formData.adminSubModules || {}) };
+                            const oldAdminModules = formData.adminModules || [];
                             if (e.target.checked) {
                               setFormData({ ...formData, allowedModules: [...modules, mod.key], allowedSubModules: subMods });
                             } else {
                               delete subMods[mod.key];
+                              delete adminSubs[mod.key];
                               const nextModules = modules.filter(m => m !== mod.key);
                               setFormData({
                                 ...formData,
@@ -688,6 +721,8 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                                 assignedWarehouseId: mod.key === 'WMS' ? undefined : formData.assignedWarehouseId,
                                 allowedModules: nextModules,
                                 allowedSubModules: subMods,
+                                adminModules: oldAdminModules.filter(m => m !== mod.key),
+                                adminSubModules: adminSubs,
                               });
                             }
                           }}
@@ -711,12 +746,20 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                               checked={isAllSubSelected}
                               onChange={(e) => {
                                 const subMods = { ...(formData.allowedSubModules || {}) };
+                                const adminSubs = { ...(formData.adminSubModules || {}) };
+                                const oldAdminModules = formData.adminModules || [];
                                 if (e.target.checked) {
                                   delete subMods[mod.key]; // empty = all allowed
                                 } else {
                                   subMods[mod.key] = []; // empty array = none selected
+                                  delete adminSubs[mod.key];
                                 }
-                                setFormData({ ...formData, allowedSubModules: subMods });
+                                setFormData({
+                                  ...formData,
+                                  allowedSubModules: subMods,
+                                  adminModules: oldAdminModules.filter(m => m !== mod.key),
+                                  adminSubModules: adminSubs,
+                                });
                               }}
                               className="w-3.5 h-3.5 rounded accent-blue-600"
                             />
@@ -732,11 +775,20 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                                   checked={isSubChecked}
                                   onChange={(e) => {
                                     const subMods = { ...(formData.allowedSubModules || {}) };
+                                    const adminSubs = { ...(formData.adminSubModules || {}) };
+                                    const oldAdminModules = formData.adminModules || [];
                                     let list = Object.prototype.hasOwnProperty.call(subMods, mod.key) ? [...(subMods[mod.key] || [])] : [...allSubRoutes];
                                     if (e.target.checked) {
                                       if (!list.includes(sub.to)) list.push(sub.to);
                                     } else {
                                       list = list.filter(r => r !== sub.to);
+                                      if (oldAdminModules.includes(mod.key)) {
+                                        adminSubs[mod.key] = allSubRoutes.filter(r => r !== sub.to);
+                                      } else {
+                                        const nextAdminList = (adminSubs[mod.key] || []).filter(r => r !== sub.to);
+                                        if (nextAdminList.length === 0) delete adminSubs[mod.key];
+                                        else adminSubs[mod.key] = nextAdminList;
+                                      }
                                     }
                                     // If all selected, remove key (= allow all)
                                     if (list.length === allSubRoutes.length) {
@@ -744,7 +796,12 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, userToEd
                                     } else {
                                       subMods[mod.key] = list;
                                     }
-                                    setFormData({ ...formData, allowedSubModules: subMods });
+                                    setFormData({
+                                      ...formData,
+                                      allowedSubModules: subMods,
+                                      adminModules: oldAdminModules.filter(m => m !== mod.key),
+                                      adminSubModules: adminSubs,
+                                    });
                                   }}
                                   className="w-3.5 h-3.5 rounded accent-blue-600"
                                 />

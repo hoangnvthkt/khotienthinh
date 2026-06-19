@@ -19,6 +19,7 @@ import { ROUTE_TO_MODULE } from './constants/routes';
 import { getProjectAllowedSubModuleRedirect, hasProjectTabPermissionRoute } from './lib/projectTabPermissions';
 import { createPerformanceTrace } from './lib/performanceTrace';
 import { isChatEnabled } from './lib/featureFlags';
+import { hasAnySettingsManagementFeature } from './lib/settingsPermissions';
 
 // Lazy load all page components for code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -191,6 +192,8 @@ const SubModuleGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =
   // Với HashRouter, location.pathname là path thực (không có #)
   // VD: /hrm/dashboard — không cần clean gì thêm
   const pathname = location.pathname;
+  if (pathname === '/settings' || pathname === '/users') return <>{children}</>;
+
   const moduleKey = ROUTE_TO_MODULE[pathname] ||
     Object.entries(ROUTE_TO_MODULE).find(([routePattern]) =>
       routePattern.includes(':') && matchPath({ path: routePattern, end: true }, pathname)
@@ -343,6 +346,7 @@ const AppDataWarmup: React.FC = () => {
   const {
     loadModuleData,
     setActiveRealtimeModules,
+    user,
     users,
     employees,
     orgUnits,
@@ -406,13 +410,17 @@ const AppDataWarmup: React.FC = () => {
     }
 
     if (pathname.startsWith('/settings') || pathname.startsWith('/users')) {
-      setActiveRealtimeModules(['admin']);
-      loadModuleData('admin').catch(err => console.warn('Admin lazy load failed:', err));
+      if (hasAnySettingsManagementFeature(user)) {
+        setActiveRealtimeModules(['admin']);
+        loadModuleData('admin').catch(err => console.warn('Admin lazy load failed:', err));
+      } else {
+        setActiveRealtimeModules([]);
+      }
       return;
     }
 
     setActiveRealtimeModules([]);
-  }, [employees.length, loadModuleData, orgUnits.length, pathname, setActiveRealtimeModules, users.length]);
+  }, [employees.length, loadModuleData, orgUnits.length, pathname, setActiveRealtimeModules, user.role, users.length]);
 
   useEffect(() => {
     const needsWorkflowData = pathname.startsWith('/wf') || pathname === '/employee-dashboard' || pathname === '/custom-dashboard';

@@ -25,6 +25,8 @@ export const canAccessRoute = (
   if (user.role === Role.ADMIN) return true;
 
   const pathname = normalizeRoutePath(route);
+  if (pathname === '/settings' || pathname === '/users') return true;
+
   const moduleKey = getRouteModuleKey(pathname);
   if (!moduleKey) return true;
 

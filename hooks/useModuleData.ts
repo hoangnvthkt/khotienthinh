@@ -6,9 +6,10 @@ import { AppModule, useApp } from '../context/AppContext';
  * Call this in any page that belongs to a module.
  * Data is only fetched once per session (tracked by loadedModulesRef).
  */
-export function useModuleData(module: AppModule) {
+export function useModuleData(module: AppModule, enabled = true) {
   const { loadModuleData } = useApp();
   useEffect(() => {
+    if (!enabled) return;
     loadModuleData(module);
-  }, [module, loadModuleData]);
+  }, [enabled, module, loadModuleData]);
 }
